@@ -52,12 +52,23 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool):
     return df
 
 
-def update_runs(project):
+def update_runs(project, filter_text, user_interacted_with_runs=False):
     if project is None:
         runs = []
     else:
         runs = get_runs(project)
-    return gr.Dropdown(choices=runs, value=runs)
+        if filter_text:
+            runs = [r for r in runs if filter_text in r]
+    if not user_interacted_with_runs:
+        return gr.CheckboxGroup(choices=runs, value=runs)
+    else:
+        return gr.CheckboxGroup(choices=runs)
+
+
+def filter_runs(project, filter_text):
+    runs = get_runs(project)
+    runs = [r for r in runs if filter_text in r]
+    return gr.CheckboxGroup(choices=runs, value=runs)
 
 
 def toggle_timer(cb_value):
@@ -84,15 +95,17 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard") as demo:
         gr.Markdown(
             f"<div style='display: flex; align-items: center; gap: 8px;'><img src='/gradio_api/file={TRACKIO_LOGO_PATH}' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
         )
-        project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
+        project_dd = gr.Dropdown(label="Project")
+        run_tb = gr.Textbox(label="Runs (99)", placeholder="Type to filter...")
+        run_cb = gr.CheckboxGroup(label="Runs", choices=[], interactive=True)
+    with gr.Sidebar(position="right", open=False) as settings_sidebar:
         gr.Markdown("### ⚙️ Settings")
         realtime_cb = gr.Checkbox(label="Refresh realtime", value=True)
         smoothing_cb = gr.Checkbox(label="Smoothing", value=True)
-    with gr.Row():
-        run_dd = gr.Dropdown(label="Run", choices=[], multiselect=True)
 
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
+    user_interacted_with_run_cb = gr.State(False)
 
     gr.on(
         [demo.load],
@@ -100,23 +113,40 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard") as demo:
         outputs=metrics_subset,
     )
     gr.on(
-        [demo.load, timer.tick],
+        [demo.load],
         fn=get_projects,
         outputs=project_dd,
         show_progress="hidden",
     )
     gr.on(
-        [demo.load, project_dd.change, timer.tick],
+        [timer.tick],
         fn=update_runs,
-        inputs=project_dd,
-        outputs=run_dd,
+        inputs=[project_dd, run_tb, user_interacted_with_run_cb],
+        outputs=run_cb,
         show_progress="hidden",
     )
+    gr.on(
+        [demo.load, project_dd.change],
+        fn=update_runs,
+        inputs=[project_dd, run_tb],
+        outputs=run_cb,
+        show_progress="hidden",
+    )
+
     realtime_cb.change(
         fn=toggle_timer,
         inputs=realtime_cb,
         outputs=timer,
         api_name="toggle_timer",
+    )
+    run_cb.input(
+        fn=lambda: True,
+        outputs=user_interacted_with_run_cb,
+    )
+    run_tb.input(
+        fn=filter_runs,
+        inputs=[project_dd, run_tb],
+        outputs=run_cb,
     )
 
     gr.api(
@@ -132,12 +162,12 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard") as demo:
     @gr.render(
         triggers=[
             demo.load,
-            run_dd.change,
+            run_cb.change,
             timer.tick,
             smoothing_cb.change,
             x_lim.change,
         ],
-        inputs=[project_dd, run_dd, smoothing_cb, metrics_subset, x_lim],
+        inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim],
     )
     def update_dashboard(project, runs, smoothing, metrics_subset, x_lim_value):
         dfs = []
@@ -181,4 +211,4 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard") as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[TRACKIO_LOGO_PATH])
+    demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False)
