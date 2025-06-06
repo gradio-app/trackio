@@ -41,13 +41,15 @@ def init(
             - "allow": Resume the run if it exists, otherwise create a new run
             - "never": Never resume a run, always create a new one
     """
-    if not context_vars.current_server.get() and space_id is None:
-        _, url, _ = demo.launch(
-            show_api=False, inline=False, quiet=True, prevent_thread_lock=True
-        )
+    url = context_vars.current_server.get()
+    if url is None:
+        if space_id is None:
+            _, url, _ = demo.launch(
+                show_api=False, inline=False, quiet=True, prevent_thread_lock=True
+            )
+        else:
+            url = space_id
         context_vars.current_server.set(url)
-    else:
-        url = context_vars.current_server.get()
 
     space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
 
@@ -72,8 +74,9 @@ def init(
             )
     context_vars.current_project.set(project)
 
-    space_or_url = space_id if space_id else url
-    client = Client(space_or_url, verbose=False)
+    client = None
+    if not space_id:
+        client = Client(url, verbose=False)
 
     if resume == "must":
         if name is None:
@@ -89,7 +92,13 @@ def init(
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
-    run = Run(project=project, client=client, name=name, config=config)
+    run = Run(
+        url=url,
+        project=project,
+        client=client,
+        name=name,
+        config=config,
+    )
     context_vars.current_run.set(run)
     globals()["config"] = run.config
     return run
