@@ -2,7 +2,10 @@ import os
 from typing import Any
 
 import gradio as gr
+import huggingface_hub as hf
 import pandas as pd
+
+HfApi = hf.HfApi()
 
 try:
     from trackio.sqlite_storage import SQLiteStorage
@@ -139,9 +142,53 @@ def toggle_timer(cb_value):
         return gr.Timer(active=False)
 
 
-def log(project: str, run: str, metrics: dict[str, Any], dataset_id: str) -> None:
-    # Note: the type hint for dataset_id should be str | None but gr.api
+def log(
+    project: str, run: str, metrics: dict[str, Any], dataset_id: str, hf_token: str
+) -> None:
+    # Note: the type hint for dataset_id and hf_token should be str | None but gr.api
     # doesn't support that, see: https://github.com/gradio-app/gradio/issues/11175#issuecomment-2920203317
+    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
+        # check auth token passed in
+        if hf_token is None:
+            raise "Expected an hf_token to be provided when logging to a Space"
+        who = HfApi.whoami(hf_token)
+        access_token = who["auth"]["accessToken"]
+        owner_name = os.getenv("SPACE_AUTHOR_NAME")
+        repo_name = os.getenv("SPACE_REPO_NAME")
+        # make sure the token user is either the author of the space,
+        # or is a member of an org that is the author.
+        orgs = [o["name"] for o in who["orgs"]]
+        if owner_name != who["name"] and owner_name not in orgs:
+            raise PermissionError(
+                "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
+            )
+        # reject fine-grained tokens without specific repo access
+        if access_token["role"] == "fineGrained":
+            matched = False
+            for item in access_token["fineGrained"]["scoped"]:
+                if (
+                    item["entity"]["type"] == "space"
+                    and item["entity"]["name"] == f"{owner_name}/{repo_name}"
+                    and "repo.write" in item["permissions"]
+                ):
+                    matched = True
+                    break
+                if (
+                    item["entity"]["type"] == "user"
+                    and item["entity"]["name"] == owner_name
+                    and "repo.write" in item["permissions"]
+                ):
+                    matched = True
+                    break
+            if not matched:
+                raise PermissionError(
+                    "Expected the provided hf_token with fine grained permissions to provide write access to the space"
+                )
+        # reject read-only tokens
+        elif access_token["role"] != "write":
+            raise PermissionError(
+                "Expected the provided hf_token to provide write permissions"
+            )
     storage = SQLiteStorage(project, run, {}, dataset_id=dataset_id)
     storage.log(metrics)
 

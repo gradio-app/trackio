@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import huggingface_hub
+
 from trackio.run import Run
 
 
@@ -14,5 +16,10 @@ def test_run_log_calls_client():
     metrics = {"x": 1}
     run.log(metrics)
     client.predict.assert_called_once_with(
-        api_name="/log", project="proj", run="run1", metrics=metrics, dataset_id=None
+        api_name="/log",
+        project="proj",
+        run="run1",
+        metrics=metrics,
+        dataset_id=None,
+        hf_token=huggingface_hub.utils.get_token(),
     )
