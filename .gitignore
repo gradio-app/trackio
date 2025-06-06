@@ -1,4 +1,5 @@
 notebooks/
 trackio/__pycache__/
+tests/__pycache__/
 .trackio/
 trackio.db
