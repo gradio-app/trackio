@@ -318,9 +318,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                         min_width=400,
                     )
                 plot.select(update_x_lim, outputs=x_lim)
-                plot.double_click(
-                    lambda: None, outputs=x_lim
-                )
+                plot.double_click(lambda: None, outputs=x_lim)
 
 
 if __name__ == "__main__":
