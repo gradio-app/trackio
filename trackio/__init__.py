@@ -1,11 +1,9 @@
 import contextvars
-import time
 import webbrowser
 from pathlib import Path
 
 import huggingface_hub
 from gradio_client import Client
-from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 
 from trackio.deploy import deploy_as_space
@@ -47,13 +45,15 @@ def init(
         dataset_id: If provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Should be a complete Dataset name like "username/datasetname". If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it.
         config: A dictionary of configuration options. Provided for compatibility with wandb.init()
     """
-    if not current_server.get() and space_id is None:
-        _, url, _ = demo.launch(
-            show_api=False, inline=False, quiet=True, prevent_thread_lock=True
-        )
+    url = current_server.get()
+    if url is None:
+        if space_id is None:
+            _, url, _ = demo.launch(
+                show_api=False, inline=False, quiet=True, prevent_thread_lock=True
+            )
+        else:
+            url = space_id
         current_server.set(url)
-    else:
-        url = current_server.get()
 
     if current_project.get() is None or current_project.get() != project:
         print(f"* Trackio project initialized: {project}")
@@ -71,10 +71,16 @@ def init(
             )
     current_project.set(project)
 
-    space_or_url = space_id if space_id else url
-    client = Client(space_or_url, verbose=False)
+    client = None
+    if not space_id:
+        client = Client(url, verbose=False)
     run = Run(
-        project=project, client=client, name=name, config=config, dataset_id=dataset_id
+        url=url,
+        project=project,
+        client=client,
+        name=name,
+        config=config,
+        dataset_id=dataset_id,
     )
     current_run.set(run)
     globals()["config"] = run.config
@@ -109,19 +115,6 @@ def create_space_if_not_exists(
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
     deploy_as_space(space_id, dataset_id)
-
-    client = None
-    for _ in range(30):
-        try:
-            client = Client(space_id, verbose=False)
-            if client:
-                break
-        except ReadTimeout:
-            print("* Space is not yet ready. Waiting 5 seconds...")
-            time.sleep(5)
-        except ValueError as e:
-            print(f"* Space gave error {e}. Trying again in 5 seconds...")
-            time.sleep(5)
 
 
 def log(metrics: dict) -> None:
