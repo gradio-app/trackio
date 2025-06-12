@@ -4,7 +4,7 @@
 
 `trackio` is a lightweight, free alternative for `wandb` built on top Hugging Face Datasets and Spaces.
 
-![Screen Recording 2025-06-11 at 5 39 32 PM](https://github.com/user-attachments/assets/78abdf8d-50b9-4b5a-a3a9-883e2c122075)
+![Screen Recording 2025-06-11 at 5 39 32 PM](https://github.com/user-attachments/assets/5cf12286-54e7-4119-8a20-88c2cbd37ab6)
 
 
 ## Features
