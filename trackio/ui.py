@@ -148,10 +148,12 @@ def toggle_timer(cb_value):
 
 
 def log(
-    project: str, run: str, metrics: dict[str, Any], dataset_id: str, hf_token: str
+    project: str,
+    run: str,
+    metrics: dict[str, Any],
+    dataset_id: str | None,
+    hf_token: str | None,
 ) -> None:
-    # Note: the type hint for dataset_id and hf_token should be str | None but gr.api
-    # doesn't support that, see: https://github.com/gradio-app/gradio/issues/11175#issuecomment-2920203317
     if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
         # check auth token passed in
         if hf_token is None:
