@@ -130,6 +130,14 @@ Supported query parameters:
 - `project`: (string) Filter the dashboard to show only a specific project
 - `metrics`: (comma-separated list) Filter the dashboard to show only specific metrics, e.g. `train_loss,train_accuracy`
 
+## Examples
+
+To see examples of usage, see these files:
+* [Basic example of logging metrics locally](https://github.com/gradio-app/trackio/blob/main/examples/fake-training.py)
+* [Persisting metrics in a Hugging Face Dataset](https://github.com/gradio-app/trackio/blob/main/examples/persist-dataset.py)
+* [Deploying the dashboard to Spaces](https://github.com/gradio-app/trackio/blob/main/examples/deploy-on-spaces.py)
+* [Deploying to Spaces _and_ persisting in a Dataset](https://github.com/gradio-app/trackio/blob/main/examples/persist-dataset-on-spaces.py)
+
 # License
 
 MIT License 
