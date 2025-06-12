@@ -9,7 +9,7 @@ authors = [
     { name = "Abubakar Abid", email = "abubakar@hf.co" }
 ]
 readme = "README.md"
-requires-python = ">3.9"
+requires-python = ">3.10"
 dependencies = [
     "pandas",
     "huggingface-hub",

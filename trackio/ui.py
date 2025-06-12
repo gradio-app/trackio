@@ -235,14 +235,23 @@ def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
 
 
 def configure(request: gr.Request):
+    sidebar_param = request.query_params.get("sidebar")
+    match sidebar_param:
+        case "collapsed":
+            sidebar = gr.Sidebar(open=False, visible=True)
+        case "hidden":
+            sidebar = gr.Sidebar(visible=False)
+        case _:
+            sidebar = gr.Sidebar(visible=True)
+
     if metrics := request.query_params.get("metrics"):
-        return metrics.split(",")
+        return metrics.split(","), sidebar
     else:
-        return []
+        return [], sidebar
 
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
-    with gr.Sidebar() as sidebar:
+    with gr.Sidebar(visible=False) as sidebar:
         gr.Markdown(
             f"<div style='display: flex; align-items: center; gap: 8px;'><img src='/gradio_api/file={TRACKIO_LOGO_PATH}' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
         )
@@ -262,7 +271,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.on(
         [demo.load],
         fn=configure,
-        outputs=metrics_subset,
+        outputs=[metrics_subset, sidebar]
     )
     gr.on(
         [demo.load],
