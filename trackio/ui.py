@@ -268,11 +268,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
 
-    gr.on(
-        [demo.load],
-        fn=configure,
-        outputs=[metrics_subset, sidebar]
-    )
+    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar])
     gr.on(
         [demo.load],
         fn=get_projects,
