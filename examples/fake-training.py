@@ -1,56 +1,63 @@
+import math
 import random
 import time
 
-from tqdm import tqdm
-
 import trackio as wandb
 
-wandb.init(
-    project=f"fake-training-{random.randint(10000, 99999)}",
-    name="test-run",
-    config=dict(
-        epochs=5,
-        learning_rate=0.001,
-        batch_size=32,
-    ),
-)
-
-EPOCHS = 5
+EPOCHS = 20
 NUM_TRAIN_BATCHES = 100
 NUM_VAL_BATCHES = 20
+PROJECT_ID = random.randint(100000, 999999)
 
-for epoch in range(EPOCHS):
-    train_loss = 0
-    train_accuracy = 0
-    val_loss = 0
-    val_accuracy = 0
+def generate_loss_curve(epoch, max_epochs, base_loss=2.5, min_loss=0.1):
+    """Generate a realistic loss curve that decreases over time with noise"""
+    progress = epoch / max_epochs
+    base_curve = base_loss * math.exp(-3 * progress) + min_loss
+    
+    noise_scale = 0.3 * (1 - progress * 0.7)
+    noise = random.gauss(0, noise_scale)
+    
+    return max(min_loss * 0.5, base_curve + noise)
 
-    for _ in tqdm(range(NUM_TRAIN_BATCHES), desc=f"Epoch {epoch + 1} - Training"):
-        loss = random.uniform(0.2, 1.0)
-        accuracy = random.uniform(0.6, 0.95)
-        train_loss += loss
-        train_accuracy += accuracy
+def generate_accuracy_curve(epoch, max_epochs, max_acc=0.95, min_acc=0.1):
+    """Generate a realistic accuracy curve that increases over time with noise"""
+    progress = epoch / max_epochs
+    base_curve = max_acc / (1 + math.exp(-6 * (progress - 0.5))) + min_acc
+    
+    noise_scale = 0.08 * (1 - progress * 0.5)
+    noise = random.gauss(0, noise_scale)
+    
+    return max(0, min(max_acc, base_curve + noise))
 
-    for _ in tqdm(range(NUM_VAL_BATCHES), desc=f"Epoch {epoch + 1} - Validation"):
-        loss = random.uniform(0.2, 0.9)
-        accuracy = random.uniform(0.65, 0.98)
-        val_loss += loss
-        val_accuracy += accuracy
-
-    train_loss /= NUM_TRAIN_BATCHES
-    train_accuracy /= NUM_TRAIN_BATCHES
-    val_loss /= NUM_VAL_BATCHES
-    val_accuracy /= NUM_VAL_BATCHES
-
-    wandb.log(
-        {
-            "epoch": epoch + 1,
-            "train_loss": train_loss,
-            "train_accuracy": train_accuracy,
-            "val_loss": val_loss,
-            "val_accuracy": val_accuracy,
-        }
+for run in range(3):
+    wandb.init(
+        project=f"fake-training-{PROJECT_ID}",
+        name=f"test-run-{run}",
+        config=dict(
+            epochs=EPOCHS,
+            learning_rate=0.001,
+            batch_size=32,
+        ),
     )
-    time.sleep(1)
 
-wandb.finish()
+    for epoch in range(EPOCHS):
+        train_loss = generate_loss_curve(epoch, EPOCHS, base_loss=2.8, min_loss=0.05)
+        val_loss = generate_loss_curve(epoch, EPOCHS, base_loss=3.2, min_loss=0.12)
+        
+        train_accuracy = generate_accuracy_curve(epoch, EPOCHS, max_acc=0.98, min_acc=0.12)
+        val_accuracy = generate_accuracy_curve(epoch, EPOCHS, max_acc=0.92, min_acc=0.08)
+        
+        if epoch > 2 and random.random() < 0.3:
+            val_loss *= 1.1
+            val_accuracy *= 0.95
+
+        wandb.log(
+            {
+                "train_loss": round(train_loss, 4),
+                "train_accuracy": round(train_accuracy, 4),
+                "val_loss": round(val_loss, 4),
+                "val_accuracy": round(val_accuracy, 4),
+            }
+        )
+
+    wandb.finish()

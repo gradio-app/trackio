@@ -74,7 +74,7 @@ def get_projects(request: gr.Request):
     )
 
 
-def get_runs(project):
+def get_runs(project) -> list[str]:
     if not project:
         return []
     return SQLiteStorage.get_runs(project)
@@ -100,7 +100,10 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool):
         df_original["data_type"] = "original"
 
         df_smoothed = df.copy()
-        df_smoothed[numeric_cols] = df_smoothed[numeric_cols].ewm(alpha=0.1).mean()
+        window_size = max(3, min(10, len(df) // 10))  # Adaptive window size
+        df_smoothed[numeric_cols] = df_smoothed[numeric_cols].rolling(
+            window=window_size, center=True, min_periods=1
+        ).mean()
         df_smoothed["run"] = f"{run}_smoothed"
         df_smoothed["data_type"] = "smoothed"
 
@@ -123,7 +126,7 @@ def update_runs(project, filter_text, user_interacted_with_runs=False):
             runs = [r for r in runs if filter_text in r]
     if not user_interacted_with_runs:
         return gr.CheckboxGroup(
-            choices=runs, value=[runs[0]] if runs else []
+            choices=runs, value=runs
         ), gr.Textbox(label=f"Runs ({num_runs})")
     else:
         return gr.CheckboxGroup(choices=runs), gr.Textbox(label=f"Runs ({num_runs})")

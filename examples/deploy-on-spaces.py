@@ -46,7 +46,6 @@ for epoch in range(EPOCHS):
 
     wandb.log(
         {
-            "epoch": epoch + 1,
             "train_loss": train_loss,
             "train_accuracy": train_accuracy,
             "val_loss": val_loss,
