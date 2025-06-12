@@ -331,7 +331,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             else:
                 last_steps[run] = 0
 
-        print(f"last_steps: {last_steps}")
         return last_steps
 
     timer.tick(

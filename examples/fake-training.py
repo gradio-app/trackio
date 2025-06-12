@@ -44,14 +44,30 @@ for run in range(3):
     )
 
     for epoch in range(EPOCHS):
-        train_loss = generate_loss_curve(epoch, EPOCHS, base_loss=2.8, min_loss=0.05)
-        val_loss = generate_loss_curve(epoch, EPOCHS, base_loss=3.2, min_loss=0.12)
+        train_loss = generate_loss_curve(
+            epoch,
+            EPOCHS,
+            base_loss=random.uniform(2.5, 3.5),
+            min_loss=random.uniform(0.05, 0.15),
+        )
+        val_loss = generate_loss_curve(
+            epoch,
+            EPOCHS,
+            base_loss=random.uniform(2.5, 3.5),
+            min_loss=random.uniform(0.05, 0.15),
+        )
 
         train_accuracy = generate_accuracy_curve(
-            epoch, EPOCHS, max_acc=0.98, min_acc=0.12
+            epoch,
+            EPOCHS,
+            max_acc=random.uniform(0.7, 0.9),
+            min_acc=random.uniform(0.1, 0.3),
         )
         val_accuracy = generate_accuracy_curve(
-            epoch, EPOCHS, max_acc=0.92, min_acc=0.08
+            epoch,
+            EPOCHS,
+            max_acc=random.uniform(0.7, 0.9),
+            min_acc=random.uniform(0.1, 0.3),
         )
 
         if epoch > 2 and random.random() < 0.3:
