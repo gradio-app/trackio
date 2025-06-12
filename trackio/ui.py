@@ -307,17 +307,17 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     )
 
     x_lim = gr.State(None)
-    last_step = gr.State(None)
+    last_steps = gr.State({})
 
     def update_x_lim(select_data: gr.SelectData):
         return select_data.index
 
-    def update_last_step(project, runs):
+    def update_last_steps(project, runs):
         """Update the last step from all runs to detect when new data is available."""
         if not project or not runs:
-            return None
+            return {}
 
-        max_step = 0
+        last_steps = {}
         for run in runs:
             metrics = SQLiteStorage.get_metrics(project, run)
             if metrics:
@@ -325,14 +325,19 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                 if "step" not in df.columns:
                     df["step"] = range(len(df))
                 if not df.empty:
-                    max_step = max(max_step, df["step"].max())
+                    last_steps[run] = df["step"].max().item()
+                else:
+                    last_steps[run] = 0
+            else:
+                last_steps[run] = 0
 
-        return max_step if max_step > 0 else None
+        print(f"last_steps: {last_steps}")
+        return last_steps
 
     timer.tick(
-        fn=update_last_step,
+        fn=update_last_steps,
         inputs=[project_dd, run_cb],
-        outputs=last_step,
+        outputs=last_steps,
         show_progress="hidden",
     )
 
@@ -340,7 +345,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         triggers=[
             demo.load,
             run_cb.change,
-            last_step.change,
+            last_steps.change,
             smoothing_cb.change,
             x_lim.change,
         ],
