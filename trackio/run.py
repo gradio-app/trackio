@@ -1,6 +1,7 @@
 import huggingface_hub
 from gradio_client import Client
 
+from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import generate_readable_name
 
 
@@ -18,8 +19,19 @@ class Run:
         self.name = name or generate_readable_name()
         self.config = config or {}
         self.dataset_id = dataset_id
+        self.storage = SQLiteStorage(project, self.name, self.config)
+        self.last_step = 0
+
+        if name in SQLiteStorage.get_runs(project):
+            metrics = SQLiteStorage.get_metrics(project, name)
+            if metrics:
+                for metric in metrics:
+                    if "step" in metric:
+                        self.last_step = max(self.last_step, metric["step"])
 
     def log(self, metrics: dict):
+        self.last_step += 1            
+        self.storage.log(metrics)
         self.client.predict(
             api_name="/log",
             project=self.project,
@@ -30,4 +42,5 @@ class Run:
         )
 
     def finish(self):
-        pass
+        """Cleanup when run is finished."""
+        self.storage.finish()

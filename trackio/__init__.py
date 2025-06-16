@@ -10,6 +10,7 @@ from huggingface_hub.errors import RepositoryNotFoundError
 
 from trackio.deploy import deploy_as_space
 from trackio.run import Run
+from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH, block_except_in_notebook
 
@@ -36,6 +37,7 @@ def init(
     space_id: str | None = None,
     dataset_id: str | None = None,
     config: dict | None = None,
+    resume: str = "never",
 ) -> Run:
     """
     Creates a new Trackio project and returns a Run object.
@@ -46,6 +48,10 @@ def init(
         space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like "username/reponame". If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
         dataset_id: If provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Should be a complete Dataset name like "username/datasetname". If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it.
         config: A dictionary of configuration options. Provided for compatibility with wandb.init()
+        resume: Controls how to handle resuming a run. Can be one of:
+            - "must": Must resume the run with the given name, raises error if run doesn't exist
+            - "allow": Resume the run if it exists, otherwise create a new run
+            - "never": Never resume a run, always create a new one
     """
     if not current_server.get() and space_id is None:
         _, url, _ = demo.launch(
@@ -73,6 +79,22 @@ def init(
 
     space_or_url = space_id if space_id else url
     client = Client(space_or_url, verbose=False)
+    
+    if resume == "must":
+        if name is None:
+            raise ValueError("Must provide a run name when resume='must'")
+        if name not in SQLiteStorage.get_runs(project):
+            raise ValueError(f"Run '{name}' does not exist in project '{project}'")
+    elif resume == "allow":
+        if name is not None and name in SQLiteStorage.get_runs(project):
+            print(f"* Resuming existing run: {name}")
+        else:
+            name = None
+    elif resume == "never" or resume is None:
+        name = None
+    else:
+        raise ValueError("resume must be one of: 'must', 'allow', 'never', or None")
+
     run = Run(
         project=project, client=client, name=name, config=config, dataset_id=dataset_id
     )
