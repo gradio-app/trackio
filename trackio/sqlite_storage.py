@@ -268,16 +268,20 @@ class SQLiteStorage:
 
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT timestamp, cpu_percent, memory_percent, disk_usage_percent,
-                       network_bytes_sent, network_bytes_recv
-                FROM system_metrics
-                WHERE project_name = ? AND run_name = ?
-                ORDER BY timestamp
-            """,
-                (project, run),
-            )
+            try:
+                cursor.execute(
+                    """
+                    SELECT timestamp, cpu_percent, memory_percent, disk_usage_percent,
+                        network_bytes_sent, network_bytes_recv
+                    FROM system_metrics
+                    WHERE project_name = ? AND run_name = ?
+                    ORDER BY timestamp
+                """,
+                    (project, run),
+                )
+            except sqlite3.Error as e:
+                return []
+
             rows = cursor.fetchall()
 
             results = []
