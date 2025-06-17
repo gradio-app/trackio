@@ -98,12 +98,6 @@ class SQLiteStorage:
 
     def log(self, metrics: dict):
         """Log metrics to the database."""
-        for k in metrics.keys():
-            if k in RESERVED_KEYS or k.startswith("__"):
-                raise ValueError(
-                    f"Please do not use this reserved key as a metric: {k}"
-                )
-
         with self.scheduler.lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()

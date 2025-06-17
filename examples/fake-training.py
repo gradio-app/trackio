@@ -5,8 +5,6 @@ import time
 import trackio as wandb
 
 EPOCHS = 20
-NUM_TRAIN_BATCHES = 100
-NUM_VAL_BATCHES = 20
 PROJECT_ID = random.randint(100000, 999999)
 
 
