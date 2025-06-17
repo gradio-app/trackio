@@ -21,9 +21,9 @@ The project is organized as follows:
 - `sqlite_storage.py`: Implements the SQLite storage backend that persists tracking data.
 
 The flow of data is:
-```
-User API (`__init__.py` or `run.py`) → Gradio UI (`ui.py`) → SQLite Storage (`sqlite_storage.py`)
-```
+
+> User API (`__init__.py` or `run.py`) → Gradio UI (`ui.py`) → SQLite Storage (`sqlite_storage.py`)
+
 
 ## Development Setup
 
