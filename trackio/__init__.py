@@ -82,7 +82,7 @@ def init(
 
     space_or_url = space_id if space_id else url
     client = Client(space_or_url, verbose=False)
-    
+
     if resume == "must":
         if name is None:
             raise ValueError("Must provide a run name when resume='must'")

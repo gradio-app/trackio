@@ -4,7 +4,7 @@ import time
 
 import trackio as wandb
 
-EPOCHS = 20
+EPOCHS = 3
 PROJECT_ID = random.randint(100000, 999999)
 
 

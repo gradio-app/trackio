@@ -102,18 +102,18 @@ class SQLiteStorage:
         with self.scheduler.lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 cursor.execute(
                     """
                     SELECT MAX(step) 
                     FROM metrics 
                     WHERE project_name = ? AND run_name = ?
                     """,
-                    (self.project, self.name)
+                    (self.project, self.name),
                 )
                 last_step = cursor.fetchone()[0]
                 current_step = 0 if last_step is None else last_step + 1
-                
+
                 cursor.execute(
                     """
                     INSERT INTO metrics 
@@ -126,8 +126,7 @@ class SQLiteStorage:
 
     @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:
-        """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object).
-        """
+        """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage._get_project_db_path(project)
         if not os.path.exists(db_path):
             return []

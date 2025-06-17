@@ -376,9 +376,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             return
 
         numeric_cols = master_df.select_dtypes(include="number").columns
-        numeric_cols = [
-            c for c in numeric_cols if c not in RESERVED_KEYS
-        ]
+        numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
 
