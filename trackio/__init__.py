@@ -30,6 +30,10 @@ current_server: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 config = {}
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 
+YELLOW = "\033[93m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
 
 def init(
     project: str,
@@ -66,9 +70,10 @@ def init(
 
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            print(
-                f'\n* View dashboard by running in your terminal: trackio show --project "{project}"'
-            )
+            print("* View dashboard by running in your terminal:")
+            print("="*80)
+            print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
+            print("="*80)
             print(f'* or by running in Python: trackio.show(project="{project}")')
         else:
             create_space_if_not_exists(space_id, dataset_id)
