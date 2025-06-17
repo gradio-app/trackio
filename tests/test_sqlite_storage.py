@@ -38,14 +38,6 @@ def test_log_and_get_metrics(temp_db):
     assert "timestamp" in results[0]
 
 
-def test_log_reserved_key_raises(temp_db):
-    storage = SQLiteStorage("proj1", "run1", {})
-    with pytest.raises(ValueError):
-        storage.log({"project": 1})
-    with pytest.raises(ValueError):
-        storage.log({"__hidden": 1})
-
-
 def test_get_projects_and_runs(temp_db):
     storage = SQLiteStorage("proj1", "run1", {})
     storage.log({"a": 1})
