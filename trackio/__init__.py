@@ -71,9 +71,7 @@ def init(
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             print("* View dashboard by running in your terminal:")
-            print("="*80)
             print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
-            print("="*80)
             print(f'* or by running in Python: trackio.show(project="{project}")')
         else:
             create_space_if_not_exists(space_id, dataset_id)
