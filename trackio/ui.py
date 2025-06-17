@@ -352,7 +352,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         show_progress="hidden",
     )
 
-    with gr.Tab("Charts"):
+    with gr.Tab("📈 Charts"):
 
         @gr.render(
             triggers=[
@@ -418,7 +418,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                         lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
                     )
 
-    with gr.Tab("System"):
+    with gr.Tab("💻 System"):
 
         @gr.render(
             triggers=[
