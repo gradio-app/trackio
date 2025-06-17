@@ -148,13 +148,13 @@ def toggle_timer(cb_value):
 
 
 def _check_auth_token_on_spaces(hf_token: str | None) -> None:
-    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces, check auth token passed in
+    if (
+        os.getenv("SYSTEM") == "spaces"
+    ):
         if hf_token is None:
-<<<<<<< Updated upstream
-            raise "Expected an hf_token to be provided when logging to a Space"
-=======
-            raise PermissionError("Expected a HF_TOKEN to be provided when logging to a Space")
->>>>>>> Stashed changes
+            raise PermissionError(
+                "Expected a HF_TOKEN to be provided when logging to a Space"
+            )
         who = HfApi.whoami(hf_token)
         access_token = who["auth"]["accessToken"]
         owner_name = os.getenv("SPACE_AUTHOR_NAME")
@@ -193,6 +193,7 @@ def _check_auth_token_on_spaces(hf_token: str | None) -> None:
             raise PermissionError(
                 "Expected the provided hf_token to provide write permissions"
             )
+
 
 def log(
     project: str,
@@ -352,6 +353,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     )
 
     with gr.Tab("Charts"):
+
         @gr.render(
             triggers=[
                 demo.load,
@@ -417,6 +419,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                     )
 
     with gr.Tab("System"):
+
         @gr.render(
             triggers=[
                 demo.load,
@@ -428,7 +431,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim],
             show_progress="hidden",
         )
-        def update_system_metrics(project, runs, smoothing, metrics_subset, x_lim_value):
+        def update_system_metrics(
+            project, runs, smoothing, metrics_subset, x_lim_value
+        ):
             if not project or not runs:
                 return
 
@@ -437,7 +442,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                 metrics = SQLiteStorage.get_system_metrics(project, run)
                 if metrics:
                     df = pd.DataFrame(metrics)
-                    df['run'] = run
+                    df["run"] = run
                     dfs.append(df)
 
             if not dfs:
@@ -491,6 +496,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                     show_fullscreen_button=True,
                     min_width=400,
                 )
+
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False)

@@ -2,11 +2,11 @@ import glob
 import json
 import os
 import sqlite3
-import psutil
 import threading
 import time
 from datetime import datetime
 
+import psutil
 from huggingface_hub import CommitScheduler
 
 try:
@@ -212,29 +212,33 @@ class SQLiteStorage:
         while not self._stop_system_metrics.is_set():
             try:
                 metrics = {
-                    'cpu_percent': psutil.cpu_percent(),
-                    'memory_percent': psutil.virtual_memory().percent,
-                    'disk_usage_percent': psutil.disk_usage('/').percent,
-                    'network_bytes_sent': psutil.net_io_counters().bytes_sent,
-                    'network_bytes_recv': psutil.net_io_counters().bytes_recv
+                    "cpu_percent": psutil.cpu_percent(),
+                    "memory_percent": psutil.virtual_memory().percent,
+                    "disk_usage_percent": psutil.disk_usage("/").percent,
+                    "network_bytes_sent": psutil.net_io_counters().bytes_sent,
+                    "network_bytes_recv": psutil.net_io_counters().bytes_recv,
                 }
 
                 with self.scheduler.lock:
                     with sqlite3.connect(self.db_path) as conn:
                         cursor = conn.cursor()
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT INTO system_metrics 
                             (project_name, run_name, cpu_percent, memory_percent, 
                              disk_usage_percent, network_bytes_sent, network_bytes_recv)
                             VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            self.project, self.name,
-                            metrics['cpu_percent'],
-                            metrics['memory_percent'],
-                            metrics['disk_usage_percent'],
-                            metrics['network_bytes_sent'],
-                            metrics['network_bytes_recv']
-                        ))
+                        """,
+                            (
+                                self.project,
+                                self.name,
+                                metrics["cpu_percent"],
+                                metrics["memory_percent"],
+                                metrics["disk_usage_percent"],
+                                metrics["network_bytes_sent"],
+                                metrics["network_bytes_recv"],
+                            ),
+                        )
                         conn.commit()
 
             except Exception as e:
@@ -245,8 +249,7 @@ class SQLiteStorage:
     def _start_system_metrics_collection(self):
         """Start the background thread for collecting system metrics."""
         self._system_metrics_thread = threading.Thread(
-            target=self._collect_system_metrics,
-            daemon=True
+            target=self._collect_system_metrics, daemon=True
         )
         self._system_metrics_thread.start()
 
@@ -265,25 +268,30 @@ class SQLiteStorage:
 
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT timestamp, cpu_percent, memory_percent, disk_usage_percent,
                        network_bytes_sent, network_bytes_recv
                 FROM system_metrics
                 WHERE project_name = ? AND run_name = ?
                 ORDER BY timestamp
-            """, (project, run))
+            """,
+                (project, run),
+            )
             rows = cursor.fetchall()
 
             results = []
             for row in rows:
                 timestamp, cpu, memory, disk, net_sent, net_recv = row
-                results.append({
-                    'timestamp': timestamp,
-                    'cpu_percent': cpu,
-                    'memory_percent': memory,
-                    'disk_usage_percent': disk,
-                    'network_bytes_sent': net_sent,
-                    'network_bytes_recv': net_recv
-                })
+                results.append(
+                    {
+                        "timestamp": timestamp,
+                        "cpu_percent": cpu,
+                        "memory_percent": memory,
+                        "disk_usage_percent": disk,
+                        "network_bytes_sent": net_sent,
+                        "network_bytes_recv": net_recv,
+                    }
+                )
 
             return results
