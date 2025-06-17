@@ -90,10 +90,10 @@ def init(
             print(f"* Resuming existing run: {name}")
         else:
             name = None
-    elif resume == "never" or resume is None:
+    elif resume == "never":
         name = None
     else:
-        raise ValueError("resume must be one of: 'must', 'allow', 'never', or None")
+        raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
     run = Run(
         project=project, client=client, name=name, config=config, dataset_id=dataset_id
