@@ -257,7 +257,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         gr.Markdown(
             f"<div style='display: flex; align-items: center; gap: 8px;'><img src='/gradio_api/file={TRACKIO_LOGO_PATH}' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
         )
-        project_dd = gr.Dropdown(label="Project")
+        project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
         run_cb = gr.CheckboxGroup(
             label="Runs", choices=[], interactive=True, elem_id="run-cb"

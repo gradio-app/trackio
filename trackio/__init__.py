@@ -92,12 +92,8 @@ def init(
         if name is not None and name in SQLiteStorage.get_runs(project):
             print(f"* Resuming existing run: {name}")
     elif resume == "never":
-        print("name", name)
-        print("runs", SQLiteStorage.get_runs(project))
-        print("name in runs", name in SQLiteStorage.get_runs(project))
         if name is not None and name in SQLiteStorage.get_runs(project):
             name = None
-        print("name after", name)
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
