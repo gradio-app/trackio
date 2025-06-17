@@ -147,17 +147,14 @@ def toggle_timer(cb_value):
         return gr.Timer(active=False)
 
 
-def log(
-    project: str,
-    run: str,
-    metrics: dict[str, Any],
-    dataset_id: str | None,
-    hf_token: str | None,
-) -> None:
-    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
-        # check auth token passed in
+def _check_auth_token_on_spaces(hf_token: str | None) -> None:
+    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces, check auth token passed in
         if hf_token is None:
+<<<<<<< Updated upstream
             raise "Expected an hf_token to be provided when logging to a Space"
+=======
+            raise PermissionError("Expected a HF_TOKEN to be provided when logging to a Space")
+>>>>>>> Stashed changes
         who = HfApi.whoami(hf_token)
         access_token = who["auth"]["accessToken"]
         owner_name = os.getenv("SPACE_AUTHOR_NAME")
@@ -196,6 +193,15 @@ def log(
             raise PermissionError(
                 "Expected the provided hf_token to provide write permissions"
             )
+
+def log(
+    project: str,
+    run: str,
+    metrics: dict[str, Any],
+    dataset_id: str | None,
+    hf_token: str | None,
+) -> None:
+    _check_auth_token_on_spaces(hf_token)
     storage = SQLiteStorage(project, run, {}, dataset_id=dataset_id)
     storage.log(metrics)
 
@@ -345,70 +351,146 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         show_progress="hidden",
     )
 
-    @gr.render(
-        triggers=[
-            demo.load,
-            run_cb.change,
-            last_steps.change,
-            smoothing_cb.change,
-            x_lim.change,
-        ],
-        inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim],
-        show_progress="hidden",
-    )
-    def update_dashboard(project, runs, smoothing, metrics_subset, x_lim_value):
-        dfs = []
-        original_runs = runs.copy()
+    with gr.Tab("Charts"):
+        @gr.render(
+            triggers=[
+                demo.load,
+                run_cb.change,
+                last_steps.change,
+                smoothing_cb.change,
+                x_lim.change,
+            ],
+            inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim],
+            show_progress="hidden",
+        )
+        def update_dashboard(project, runs, smoothing, metrics_subset, x_lim_value):
+            dfs = []
+            original_runs = runs.copy()
 
-        for run in runs:
-            df = load_run_data(project, run, smoothing)
-            if df is not None:
-                dfs.append(df)
+            for run in runs:
+                df = load_run_data(project, run, smoothing)
+                if df is not None:
+                    dfs.append(df)
 
-        if dfs:
-            master_df = pd.concat(dfs, ignore_index=True)
-        else:
-            master_df = pd.DataFrame()
+            if dfs:
+                master_df = pd.concat(dfs, ignore_index=True)
+            else:
+                master_df = pd.DataFrame()
 
-        if master_df.empty:
-            return
+            if master_df.empty:
+                return
 
-        numeric_cols = master_df.select_dtypes(include="number").columns
-        numeric_cols = [
-            c for c in numeric_cols if c not in RESERVED_KEYS and c != "step"
-        ]
-        if metrics_subset:
-            numeric_cols = [c for c in numeric_cols if c in metrics_subset]
+            numeric_cols = master_df.select_dtypes(include="number").columns
+            numeric_cols = [
+                c for c in numeric_cols if c not in RESERVED_KEYS and c != "step"
+            ]
+            if metrics_subset:
+                numeric_cols = [c for c in numeric_cols if c in metrics_subset]
 
-        numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
-        color_map = get_color_mapping(original_runs, smoothing)
+            numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
+            color_map = get_color_mapping(original_runs, smoothing)
 
-        with gr.Row(key="row"):
-            for metric_idx, metric_name in enumerate(numeric_cols):
-                metric_df = master_df.dropna(subset=[metric_name])
-                if not metric_df.empty:
-                    plot = gr.LinePlot(
-                        metric_df,
-                        x="step",
-                        y=metric_name,
-                        color="run" if "run" in metric_df.columns else None,
-                        color_map=color_map,
-                        title=metric_name,
-                        key=f"plot-{metric_idx}",
-                        preserved_by_key=None,
-                        x_lim=x_lim_value,
-                        y_lim=[
-                            metric_df[metric_name].min(),
-                            metric_df[metric_name].max(),
-                        ],
-                        show_fullscreen_button=True,
-                        min_width=400,
+            with gr.Row(key="row"):
+                for metric_idx, metric_name in enumerate(numeric_cols):
+                    metric_df = master_df.dropna(subset=[metric_name])
+                    if not metric_df.empty:
+                        plot = gr.LinePlot(
+                            metric_df,
+                            x="step",
+                            y=metric_name,
+                            color="run" if "run" in metric_df.columns else None,
+                            color_map=color_map,
+                            title=metric_name,
+                            key=f"plot-{metric_idx}",
+                            preserved_by_key=None,
+                            x_lim=x_lim_value,
+                            y_lim=[
+                                metric_df[metric_name].min(),
+                                metric_df[metric_name].max(),
+                            ],
+                            show_fullscreen_button=True,
+                            min_width=400,
+                        )
+                    plot.select(update_x_lim, outputs=x_lim, key=f"select-{metric_idx}")
+                    plot.double_click(
+                        lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
                     )
-                plot.select(update_x_lim, outputs=x_lim, key=f"select-{metric_idx}")
-                plot.double_click(
-                    lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
+
+    with gr.Tab("System"):
+        @gr.render(
+            triggers=[
+                demo.load,
+                run_cb.change,
+                last_steps.change,
+                smoothing_cb.change,
+                x_lim.change,
+            ],
+            inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim],
+            show_progress="hidden",
+        )
+        def update_system_metrics(project, runs, smoothing, metrics_subset, x_lim_value):
+            if not project or not runs:
+                return
+
+            dfs = []
+            for run in runs:
+                metrics = SQLiteStorage.get_system_metrics(project, run)
+                if metrics:
+                    df = pd.DataFrame(metrics)
+                    df['run'] = run
+                    dfs.append(df)
+
+            if not dfs:
+                return
+
+            master_df = pd.concat(dfs, ignore_index=True)
+            color_map = get_color_mapping(runs, False)
+
+            with gr.Row():
+                gr.LinePlot(
+                    master_df,
+                    x="timestamp",
+                    y="cpu_percent",
+                    color="run",
+                    color_map=color_map,
+                    title="CPU Usage (%)",
+                    show_fullscreen_button=True,
+                    min_width=400,
                 )
 
+                gr.LinePlot(
+                    master_df,
+                    x="timestamp",
+                    y="memory_percent",
+                    color="run",
+                    color_map=color_map,
+                    title="Memory Usage (%)",
+                    show_fullscreen_button=True,
+                    min_width=400,
+                )
+
+            with gr.Row():
+                gr.LinePlot(
+                    master_df,
+                    x="timestamp",
+                    y="disk_usage_percent",
+                    color="run",
+                    color_map=color_map,
+                    title="Disk Usage (%)",
+                    show_fullscreen_button=True,
+                    min_width=400,
+                )
+
+                gr.LinePlot(
+                    master_df,
+                    x="timestamp",
+                    y=["network_bytes_sent", "network_bytes_recv"],
+                    color="run",
+                    color_map=color_map,
+                    title="Network I/O (bytes)",
+                    show_fullscreen_button=True,
+                    min_width=400,
+                )
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False)

@@ -2,6 +2,10 @@ import glob
 import json
 import os
 import sqlite3
+import psutil
+import threading
+import time
+from datetime import datetime
 
 from huggingface_hub import CommitScheduler
 
@@ -23,11 +27,14 @@ class SQLiteStorage:
         self.db_path = self._get_project_db_path(project)
         self.dataset_id = dataset_id
         self.scheduler = self._get_scheduler()
+        self._system_metrics_thread = None
+        self._stop_system_metrics = threading.Event()
 
         os.makedirs(TRACKIO_DIR, exist_ok=True)
 
         self._init_db()
         self._save_config()
+        self._start_system_metrics_collection()
 
     @staticmethod
     def _get_project_db_path(project: str) -> str:
@@ -80,6 +87,20 @@ class SQLiteStorage:
                         config TEXT NOT NULL,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         PRIMARY KEY (project_name, run_name)
+                    )
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS system_metrics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        project_name TEXT NOT NULL,
+                        run_name TEXT NOT NULL,
+                        cpu_percent REAL,
+                        memory_percent REAL,
+                        disk_usage_percent REAL,
+                        network_bytes_sent INTEGER,
+                        network_bytes_recv INTEGER
                     )
                 """)
 
@@ -186,6 +207,83 @@ class SQLiteStorage:
             )
             return [row[0] for row in cursor.fetchall()]
 
+    def _collect_system_metrics(self):
+        """Collect system metrics and store them in the database."""
+        while not self._stop_system_metrics.is_set():
+            try:
+                metrics = {
+                    'cpu_percent': psutil.cpu_percent(),
+                    'memory_percent': psutil.virtual_memory().percent,
+                    'disk_usage_percent': psutil.disk_usage('/').percent,
+                    'network_bytes_sent': psutil.net_io_counters().bytes_sent,
+                    'network_bytes_recv': psutil.net_io_counters().bytes_recv
+                }
+
+                with self.scheduler.lock:
+                    with sqlite3.connect(self.db_path) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT INTO system_metrics 
+                            (project_name, run_name, cpu_percent, memory_percent, 
+                             disk_usage_percent, network_bytes_sent, network_bytes_recv)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            self.project, self.name,
+                            metrics['cpu_percent'],
+                            metrics['memory_percent'],
+                            metrics['disk_usage_percent'],
+                            metrics['network_bytes_sent'],
+                            metrics['network_bytes_recv']
+                        ))
+                        conn.commit()
+
+            except Exception as e:
+                print(f"Error collecting system metrics: {e}")
+
+            time.sleep(15)  # Collect metrics every 15 seconds
+
+    def _start_system_metrics_collection(self):
+        """Start the background thread for collecting system metrics."""
+        self._system_metrics_thread = threading.Thread(
+            target=self._collect_system_metrics,
+            daemon=True
+        )
+        self._system_metrics_thread.start()
+
     def finish(self):
         """Cleanup when run is finished."""
-        pass
+        self._stop_system_metrics.set()
+        if self._system_metrics_thread:
+            self._system_metrics_thread.join(timeout=1)
+
+    @staticmethod
+    def get_system_metrics(project: str, run: str) -> list[dict]:
+        """Retrieve system metrics for a specific run."""
+        db_path = SQLiteStorage._get_project_db_path(project)
+        if not os.path.exists(db_path):
+            return []
+
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT timestamp, cpu_percent, memory_percent, disk_usage_percent,
+                       network_bytes_sent, network_bytes_recv
+                FROM system_metrics
+                WHERE project_name = ? AND run_name = ?
+                ORDER BY timestamp
+            """, (project, run))
+            rows = cursor.fetchall()
+
+            results = []
+            for row in rows:
+                timestamp, cpu, memory, disk, net_sent, net_recv = row
+                results.append({
+                    'timestamp': timestamp,
+                    'cpu_percent': cpu,
+                    'memory_percent': memory,
+                    'disk_usage_percent': disk,
+                    'network_bytes_sent': net_sent,
+                    'network_bytes_recv': net_recv
+                })
+
+            return results
