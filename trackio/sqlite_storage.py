@@ -7,10 +7,10 @@ from huggingface_hub import CommitScheduler
 
 try:
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
-    from trackio.utils import RESERVED_KEYS, TRACKIO_DIR
+    from trackio.utils import TRACKIO_DIR
 except:  # noqa: E722
     from dummy_commit_scheduler import DummyCommitScheduler
-    from utils import RESERVED_KEYS, TRACKIO_DIR
+    from utils import TRACKIO_DIR
 
 
 class SQLiteStorage:
@@ -69,6 +69,7 @@ class SQLiteStorage:
                         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                         project_name TEXT NOT NULL,
                         run_name TEXT NOT NULL,
+                        step INTEGER NOT NULL,
                         metrics TEXT NOT NULL
                     )
                 """)
@@ -101,19 +102,32 @@ class SQLiteStorage:
         with self.scheduler.lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
+                
+                cursor.execute(
+                    """
+                    SELECT MAX(step) 
+                    FROM metrics 
+                    WHERE project_name = ? AND run_name = ?
+                    """,
+                    (self.project, self.name)
+                )
+                last_step = cursor.fetchone()[0]
+                current_step = 0 if last_step is None else last_step + 1
+                
                 cursor.execute(
                     """
                     INSERT INTO metrics 
-                    (project_name, run_name, metrics)
-                    VALUES (?, ?, ?)
+                    (project_name, run_name, step, metrics)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (self.project, self.name, json.dumps(metrics)),
+                    (self.project, self.name, current_step, json.dumps(metrics)),
                 )
                 conn.commit()
 
     @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:
-        """Retrieve metrics for a specific run."""
+        """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object).
+        """
         db_path = SQLiteStorage._get_project_db_path(project)
         if not os.path.exists(db_path):
             return []
@@ -122,7 +136,7 @@ class SQLiteStorage:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT timestamp, metrics
+                SELECT timestamp, step, metrics
                 FROM metrics
                 WHERE project_name = ? AND run_name = ?
                 ORDER BY timestamp
@@ -133,11 +147,11 @@ class SQLiteStorage:
 
             results = []
             for row in rows:
-                timestamp, metrics_json = row
+                timestamp, step, metrics_json = row
                 metrics = json.loads(metrics_json)
                 metrics["timestamp"] = timestamp
+                metrics["step"] = step
                 results.append(metrics)
-
             return results
 
     @staticmethod

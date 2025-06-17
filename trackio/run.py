@@ -2,7 +2,7 @@ import huggingface_hub
 from gradio_client import Client
 
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.utils import generate_readable_name
+from trackio.utils import RESERVED_KEYS, generate_readable_name
 
 
 class Run:
@@ -20,7 +20,6 @@ class Run:
         self.config = config or {}
         self.dataset_id = dataset_id
         self.storage = SQLiteStorage(project, self.name, self.config)
-        self.last_step = 0
 
         if name in SQLiteStorage.get_runs(project):
             metrics = SQLiteStorage.get_metrics(project, name)
@@ -30,7 +29,11 @@ class Run:
                         self.last_step = max(self.last_step, metric["step"])
 
     def log(self, metrics: dict):
-        self.last_step += 1            
+        for k in metrics.keys():
+            if k in RESERVED_KEYS or k.startswith("__"):
+                raise ValueError(
+                    f"Please do not use this reserved key as a metric: {k}"
+                )
         self.storage.log(metrics)
         self.client.predict(
             api_name="/log",
