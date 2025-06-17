@@ -9,7 +9,7 @@ authors = [
     { name = "Abubakar Abid", email = "abubakar@hf.co" }
 ]
 readme = "README.md"
-requires-python = ">3.10"
+requires-python = ">=3.10"
 dependencies = [
     "pandas",
     "huggingface-hub",
@@ -58,8 +58,7 @@ exclude = [
 line-length = 88
 indent-width = 4
 
-# Assume Python 3.8
-target-version = "py38"
+target-version = "py310"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)
