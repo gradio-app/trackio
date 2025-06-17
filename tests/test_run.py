@@ -1,11 +1,10 @@
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import huggingface_hub
 import pytest
 
 from trackio import Run, init
-from trackio.sqlite_storage import SQLiteStorage
 
 
 class DummyClient:
