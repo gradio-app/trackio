@@ -157,7 +157,9 @@ def log(
     if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
         # check auth token passed in
         if hf_token is None:
-            raise "Expected an hf_token to be provided when logging to a Space"
+            raise PermissionError(
+                "Expected a HF_TOKEN to be provided when logging to a Space"
+            )
         who = HfApi.whoami(hf_token)
         access_token = who["auth"]["accessToken"]
         owner_name = os.getenv("SPACE_AUTHOR_NAME")

@@ -84,6 +84,8 @@ $ trackio show
 or, in Python:
 
 ```py
+import trackio
+
 trackio.show()
 ```
 
@@ -96,6 +98,8 @@ $ trackio show --project "my project"
 or, in Python:
 
 ```py
+import trackio 
+
 trackio.show(project="my project")
 ```
 
