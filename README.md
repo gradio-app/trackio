@@ -4,11 +4,13 @@
 
 `trackio` is a lightweight, free alternative for `wandb` built on top of 🤗 Datasets and Spaces.
 
+<br>
+
 ![Screen Recording 2025-06-11 at 5 39 32 PM](https://github.com/user-attachments/assets/5cf12286-54e7-4119-8a20-88c2cbd37ab6)
 
 
 ## Features
-- **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish` (drop-in replacement: just use `trackio` instead of `wandb`)
+- **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish` (drop-in replacement: just `import trackio as wandb`)
 - Persists logs in a private Hugging Face Dataset
 - Visualize experiments with a Gradio dashboard locally or on Hugging Face Spaces
 - *Local-first* design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id`.
