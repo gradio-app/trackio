@@ -80,7 +80,7 @@ Running the above will print to the terminal instructions on launching the dashb
 You can launch the dashboard by running in your terminal:
 
 ```bash
-$ trackio show
+trackio show
 ```
 
 or, in Python:
@@ -94,7 +94,7 @@ trackio.show()
 You can also provide an optional `project` name as the argument to load a specific project directly:
 
 ```bash
-$ trackio show --project "my project"
+trackio show --project "my project"
 ```
 
 or, in Python:
