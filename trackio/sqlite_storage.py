@@ -2,6 +2,7 @@ import glob
 import json
 import os
 import sqlite3
+from datetime import datetime
 
 from huggingface_hub import CommitScheduler
 
@@ -66,7 +67,7 @@ class SQLiteStorage:
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        timestamp TEXT NOT NULL,
                         project_name TEXT NOT NULL,
                         run_name TEXT NOT NULL,
                         step INTEGER NOT NULL,
@@ -114,13 +115,15 @@ class SQLiteStorage:
                 last_step = cursor.fetchone()[0]
                 current_step = 0 if last_step is None else last_step + 1
 
+                current_timestamp = datetime.now().isoformat()
+
                 cursor.execute(
                     """
                     INSERT INTO metrics 
-                    (project_name, run_name, step, metrics)
-                    VALUES (?, ?, ?, ?)
+                    (timestamp, project_name, run_name, step, metrics)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
-                    (self.project, self.name, current_step, json.dumps(metrics)),
+                    (current_timestamp, self.project, self.name, current_step, json.dumps(metrics)),
                 )
                 conn.commit()
 
