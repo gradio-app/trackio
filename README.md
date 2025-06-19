@@ -2,7 +2,7 @@
 <h1><center> 🎯 Trackio</center></h1>
 </p>
 
-`trackio` is a lightweight, free alternative for `wandb` built on top of 🤗 Datasets and Spaces.
+`trackio` is a lightweight, completely free experiment tracking Python library built on top of 🤗 Datasets and Spaces.
 
 <br>
 
