@@ -80,7 +80,7 @@ def get_runs(project) -> list[str]:
     return SQLiteStorage.get_runs(project)
 
 
-def load_run_data(project: str | None, run: str | None, smoothing: bool):
+def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str):
     if not project or not run:
         return None
     metrics = SQLiteStorage.get_metrics(project, run)
@@ -90,6 +90,14 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool):
 
     if "step" not in df.columns:
         df["step"] = range(len(df))
+
+    if x_axis == "time" and "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        first_timestamp = df["timestamp"].min()
+        df["time"] = (df["timestamp"] - first_timestamp).dt.total_seconds()
+        x_column = "time"
+    else:
+        x_column = "step"
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
@@ -110,10 +118,12 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool):
         df_smoothed["data_type"] = "smoothed"
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
+        combined_df["x_axis"] = x_column
         return combined_df
     else:
         df["run"] = run
         df["data_type"] = "original"
+        df["x_axis"] = x_column
         return df
 
 
@@ -265,6 +275,11 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
         smoothing_cb = gr.Checkbox(label="Smooth metrics", value=True)
+        x_axis_dd = gr.Dropdown(
+            label="X-axis", 
+            choices=["step", "time"], 
+            value="step",
+        )
 
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
@@ -354,16 +369,17 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             last_steps.change,
             smoothing_cb.change,
             x_lim.change,
+            x_axis_dd.change,
         ],
-        inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim],
+        inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim, x_axis_dd],
         show_progress="hidden",
     )
-    def update_dashboard(project, runs, smoothing, metrics_subset, x_lim_value):
+    def update_dashboard(project, runs, smoothing, metrics_subset, x_lim_value, x_axis):
         dfs = []
         original_runs = runs.copy()
 
         for run in runs:
-            df = load_run_data(project, run, smoothing)
+            df = load_run_data(project, run, smoothing, x_axis)
             if df is not None:
                 dfs.append(df)
 
@@ -374,6 +390,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
         if master_df.empty:
             return
+
+        x_column = "step"
+        if dfs and not dfs[0].empty and "x_axis" in dfs[0].columns:
+            x_column = dfs[0]["x_axis"].iloc[0]
 
         numeric_cols = master_df.select_dtypes(include="number").columns
         numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
@@ -389,7 +409,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                 if not metric_df.empty:
                     plot = gr.LinePlot(
                         metric_df,
-                        x="step",
+                        x=x_column,
                         y=metric_name,
                         color="run" if "run" in metric_df.columns else None,
                         color_map=color_map,
