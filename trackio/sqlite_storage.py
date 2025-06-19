@@ -123,7 +123,13 @@ class SQLiteStorage:
                     (timestamp, project_name, run_name, step, metrics)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    (current_timestamp, self.project, self.name, current_step, json.dumps(metrics)),
+                    (
+                        current_timestamp,
+                        self.project,
+                        self.name,
+                        current_step,
+                        json.dumps(metrics),
+                    ),
                 )
                 conn.commit()
 

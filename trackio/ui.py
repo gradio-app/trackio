@@ -80,6 +80,36 @@ def get_runs(project) -> list[str]:
     return SQLiteStorage.get_runs(project)
 
 
+def get_available_metrics(project: str, runs: list[str]) -> list[str]:
+    """Get all available metrics across all runs for x-axis selection."""
+    if not project or not runs:
+        return ["step", "time"]
+
+    all_metrics = set()
+    for run in runs:
+        metrics = SQLiteStorage.get_metrics(project, run)
+        if metrics:
+            df = pd.DataFrame(metrics)
+            numeric_cols = df.select_dtypes(include="number").columns
+            numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
+            all_metrics.update(numeric_cols)
+
+    # Always include step and time as options
+    all_metrics.add("step")
+    all_metrics.add("time")
+
+    # Sort metrics by prefix
+    sorted_metrics = sort_metrics_by_prefix(list(all_metrics))
+
+    # Put step and time at the beginning
+    result = ["step", "time"]
+    for metric in sorted_metrics:
+        if metric not in result:
+            result.append(metric)
+
+    return result
+
+
 def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str):
     if not project or not run:
         return None
@@ -96,8 +126,10 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis:
         first_timestamp = df["timestamp"].min()
         df["time"] = (df["timestamp"] - first_timestamp).dt.total_seconds()
         x_column = "time"
-    else:
+    elif x_axis == "step":
         x_column = "step"
+    else:
+        x_column = x_axis
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
@@ -148,6 +180,16 @@ def filter_runs(project, filter_text):
     runs = get_runs(project)
     runs = [r for r in runs if filter_text in r]
     return gr.CheckboxGroup(choices=runs, value=runs)
+
+
+def update_x_axis_choices(project, runs):
+    """Update x-axis dropdown choices based on available metrics."""
+    available_metrics = get_available_metrics(project, runs)
+    return gr.Dropdown(
+        label="X-axis",
+        choices=available_metrics,
+        value="step",
+    )
 
 
 def toggle_timer(cb_value):
@@ -276,8 +318,8 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
         smoothing_cb = gr.Checkbox(label="Smooth metrics", value=True)
         x_axis_dd = gr.Dropdown(
-            label="X-axis", 
-            choices=["step", "time"], 
+            label="X-axis",
+            choices=["step", "time"],
             value="step",
         )
 
@@ -304,6 +346,13 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         fn=update_runs,
         inputs=[project_dd, run_tb],
         outputs=[run_cb, run_tb],
+        show_progress="hidden",
+    )
+    gr.on(
+        [demo.load, project_dd.change, run_cb.change],
+        fn=update_x_axis_choices,
+        inputs=[project_dd, run_cb],
+        outputs=x_axis_dd,
         show_progress="hidden",
     )
 
