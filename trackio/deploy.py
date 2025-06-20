@@ -6,15 +6,17 @@ from pathlib import Path
 
 import gradio
 import huggingface_hub
+from gradio_client import Client
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
+
+from trackio.sqlite_storage import SQLiteStorage
 
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 
 
 def deploy_as_space(
     title: str,
-    dataset_id: str | None = None,
 ):
     if (
         os.getenv("SYSTEM") == "spaces"
@@ -67,31 +69,20 @@ def deploy_as_space(
     hf_token = huggingface_hub.utils.get_token()
     if hf_token is not None:
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
-    if dataset_id is not None:
-        huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
-        # So that the dataset id is available to the sqlite_storage.py file
-        # if running locally as well.
-        os.environ["TRACKIO_DATASET_ID"] = dataset_id
 
 
 def create_space_if_not_exists(
     space_id: str,
-    dataset_id: str | None = None,
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist.
 
     Args:
         space_id: The ID of the Space to create.
-        dataset_id: The ID of the Dataset to create.
     """
     if "/" not in space_id:
         raise ValueError(
             f"Invalid space ID: {space_id}. Must be in the format: username/reponame."
-        )
-    if dataset_id is not None and "/" not in dataset_id:
-        raise ValueError(
-            f"Invalid dataset ID: {dataset_id}. Must be in the format: username/datasetname."
         )
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
@@ -101,7 +92,6 @@ def create_space_if_not_exists(
         pass
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, dataset_id)
 
     client = None
     for _ in range(30):
@@ -115,3 +105,15 @@ def create_space_if_not_exists(
         except ValueError as e:
             print(f"* Space gave error {e}. Trying again in 5 seconds...")
             time.sleep(5)
+
+
+def overwrite_space_db(space_id: str, project: str) -> None:
+    """
+    Overwrites the database of a Hugging Face Space with the database of a local Trackio project.
+
+    Args:
+        space_id: The ID of the Space to overwrite.
+        project: The name of the project to overwrite.
+    """
+    db_path = SQLiteStorage._get_project_db_path(project)
+    Client(space_id, verbose=False).
