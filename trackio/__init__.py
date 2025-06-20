@@ -221,8 +221,14 @@ def import_csv(
     if df.empty:
         raise ValueError("CSV file is empty")
     
-    if "step" not in df.columns:
-        raise ValueError("CSV file must contain a 'step' column")
+    step_column = None
+    for col in df.columns:
+        if col.lower() == "step":
+            step_column = col
+            break
+    
+    if step_column is None:
+        raise ValueError("CSV file must contain a 'step' or 'Step' column")
     
     if name is None:
         name = csv_path.stem
@@ -236,7 +242,7 @@ def import_csv(
     for index, row in df.iterrows():
         metrics = {}
         for column in df.columns:
-            if column != "step" and pd.notna(row[column]):
+            if column != step_column and pd.notna(row[column]):
                 if isinstance(row[column], (int, float)):
                     metrics[column] = float(row[column])
                 else:
@@ -244,7 +250,7 @@ def import_csv(
         
         if metrics:
             metrics_list.append(metrics)
-            steps.append(int(row["step"]))
+            steps.append(int(row[step_column]))
             
             if "timestamp" in df.columns and pd.notna(row["timestamp"]):
                 timestamps.append(str(row["timestamp"]))
