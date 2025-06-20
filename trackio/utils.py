@@ -221,27 +221,27 @@ def block_except_in_notebook():
 def simplify_column_names(columns: list[str]) -> dict[str, str]:
     """
     Simplifies column names to first 10 alphanumeric characters with unique suffixes.
-    
+
     Args:
         columns: List of original column names
-        
+
     Returns:
         Dictionary mapping original column names to simplified names
     """
     simplified_names = {}
     used_names = set()
-    
+
     for col in columns:
-        alphanumeric = re.sub(r'[^a-zA-Z0-9]', '', col)
+        alphanumeric = re.sub(r"[^a-zA-Z0-9]", "", col)
         base_name = alphanumeric[:10] if alphanumeric else f"col_{len(used_names)}"
-        
+
         final_name = base_name
         suffix = 1
         while final_name in used_names:
             final_name = f"{base_name}_{suffix}"
             suffix += 1
-        
+
         simplified_names[col] = final_name
         used_names.add(final_name)
-    
+
     return simplified_names
