@@ -7,26 +7,24 @@ from datetime import datetime
 from huggingface_hub import CommitScheduler
 
 try:
-    from trackio.dummy_commit_scheduler import DummyCommitScheduler
+    from trackio.context_vars import current_scheduler
     from trackio.utils import TRACKIO_DIR
 except:  # noqa: E722
-    from dummy_commit_scheduler import DummyCommitScheduler
+    from context_vars import current_scheduler
     from utils import TRACKIO_DIR
 
 
 class SQLiteStorage:
-    def __init__(self, project: str, name: str, config: dict):
-        """
-        Basic constructor for the SQLiteStorage class. This
-        will create a new database file for the project if it doesn't exist.
-        """
-        self.project = project
-        self.name = name
-        self.config = config
-        self.db_path = self._get_project_db_path(project)
-        os.makedirs(TRACKIO_DIR, exist_ok=True)
-        self._init_db()
-        self._save_config()
+    # def __init__(self, project: str, name: str, config: dict):
+    #     """
+    #     Basic constructor for the SQLiteStorage class. Should be called before .log()
+    #     because it will create a new database file for the project if it doesn't exist.
+    #     """
+    #     self.project = project
+    #     self.name = name
+    #     self.db_path = self._get_project_db_path(project)
+    #     os.makedirs(TRACKIO_DIR, exist_ok=True)
+    #     self._init_db()
 
     @staticmethod
     def _get_project_db_path(project: str) -> str:
@@ -39,30 +37,11 @@ class SQLiteStorage:
         return os.path.join(TRACKIO_DIR, f"{safe_project_name}.db")
 
     @staticmethod
-    def _get_scheduler() -> CommitScheduler | DummyCommitScheduler:
-        """
-        Get the scheduler for the database based on the environment variables.
-        This applies to both local and Spaces.
-        """
-        hf_token = os.environ.get("HF_TOKEN")
-        dataset_id = os.environ.get("TRACKIO_DATASET_ID")
-        if dataset_id is None:
-            scheduler = DummyCommitScheduler()
-        else:
-            scheduler = CommitScheduler(
-                repo_id=dataset_id,
-                repo_type="dataset",
-                folder_path=TRACKIO_DIR,
-                private=True,
-                squash_history=True,
-                token=hf_token,
-            )
-        return scheduler
-
-    def _init_db(self):
+    def _init_db(project: str):
         """Initialize the SQLite database with required tables."""
-        with self._get_scheduler().lock:
-            with sqlite3.connect(self.db_path) as conn:
+        db_path = SQLiteStorage._get_project_db_path(project)
+        with current_scheduler.get().lock:
+            with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -88,20 +67,15 @@ class SQLiteStorage:
 
                 conn.commit()
 
-    def _save_config(self):
-        """Save the run configuration to the database."""
-        with self._get_scheduler().lock:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT OR REPLACE INTO configs (project_name, run_name, config) VALUES (?, ?, ?)",
-                    (self.project, self.name, json.dumps(self.config)),
-                )
-                conn.commit()
+    def log(self, project: str, run: str, metrics: dict):
+        """
+        Safely log metrics to the database. Before logging, this method will ensure the database exists
+        and is set up with the correct tables. It also uses the scheduler to lock the database so
+        that there is no race condition when logging / syncing to the Hugging Face Dataset.
+        """
+        SQLiteStorage._init_db(project)
 
-    def log(self, metrics: dict):
-        """Log metrics to the database."""
-        with self._get_scheduler().lock:
+        with current_scheduler.get().lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
@@ -155,7 +129,7 @@ class SQLiteStorage:
                 "metrics_list, steps, and timestamps must have the same length"
             )
 
-        with self._get_scheduler().lock:
+        with current_scheduler.get().lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 

@@ -203,7 +203,6 @@ def log(
     project: str,
     run: str,
     metrics: dict[str, Any],
-    dataset_id: str | None,
     hf_token: str | None,
 ) -> None:
     if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
@@ -250,8 +249,7 @@ def log(
             raise PermissionError(
                 "Expected the provided hf_token to provide write permissions"
             )
-    storage = SQLiteStorage(project, run, {}, dataset_id=dataset_id)
-    storage.log(metrics)
+    SQLiteStorage.log(project, run, metrics)
 
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
