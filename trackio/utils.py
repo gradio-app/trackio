@@ -245,3 +245,19 @@ def simplify_column_names(columns: list[str]) -> dict[str, str]:
         used_names.add(final_name)
 
     return simplified_names
+
+
+def print_dashboard_instructions(project: str) -> None:
+    """
+    Prints instructions for viewing the Trackio dashboard.
+
+    Args:
+        project: The name of the project to show dashboard for.
+    """
+    YELLOW = "\033[93m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+
+    print("* View dashboard by running in your terminal:")
+    print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
+    print(f'* or by running in Python: trackio.show(project="{project}")')

@@ -1,10 +1,15 @@
 import io
 import os
+import time
 from importlib.resources import files
 from pathlib import Path
 
 import gradio
 import huggingface_hub
+from httpx import ReadTimeout
+from huggingface_hub.errors import RepositoryNotFoundError
+
+SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 
 
 def deploy_as_space(
@@ -67,3 +72,46 @@ def deploy_as_space(
         # So that the dataset id is available to the sqlite_storage.py file
         # if running locally as well.
         os.environ["TRACKIO_DATASET_ID"] = dataset_id
+
+
+def create_space_if_not_exists(
+    space_id: str,
+    dataset_id: str | None = None,
+) -> None:
+    """
+    Creates a new Hugging Face Space if it does not exist.
+
+    Args:
+        space_id: The ID of the Space to create.
+        dataset_id: The ID of the Dataset to create.
+    """
+    if "/" not in space_id:
+        raise ValueError(
+            f"Invalid space ID: {space_id}. Must be in the format: username/reponame."
+        )
+    if dataset_id is not None and "/" not in dataset_id:
+        raise ValueError(
+            f"Invalid dataset ID: {dataset_id}. Must be in the format: username/datasetname."
+        )
+    try:
+        huggingface_hub.repo_info(space_id, repo_type="space")
+        print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
+        return
+    except RepositoryNotFoundError:
+        pass
+
+    print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
+    deploy_as_space(space_id, dataset_id)
+
+    client = None
+    for _ in range(30):
+        try:
+            client = Client(space_id, verbose=False)
+            if client:
+                break
+        except ReadTimeout:
+            print("* Space is not yet ready. Waiting 5 seconds...")
+            time.sleep(5)
+        except ValueError as e:
+            print(f"* Space gave error {e}. Trying again in 5 seconds...")
+            time.sleep(5)

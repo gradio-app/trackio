@@ -1,16 +1,11 @@
 import contextvars
-import time
 import webbrowser
 from pathlib import Path
 
-import huggingface_hub
 import pandas as pd
 from gradio_client import Client
-from httpx import ReadTimeout
-from huggingface_hub.errors import RepositoryNotFoundError
 
-from trackio import utils
-from trackio.deploy import deploy_as_space
+from trackio import deploy, utils
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
@@ -30,11 +25,6 @@ current_server: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 
 config = {}
-SPACE_URL = "https://huggingface.co/spaces/{space_id}"
-
-YELLOW = "\033[93m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
 
 
 def init(
@@ -72,13 +62,11 @@ def init(
 
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            print("* View dashboard by running in your terminal:")
-            print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
-            print(f'* or by running in Python: trackio.show(project="{project}")')
+            utils.print_dashboard_instructions(project)
         else:
-            create_space_if_not_exists(space_id, dataset_id)
+            deploy.create_space_if_not_exists(space_id, dataset_id)
             print(
-                f"* View dashboard by going to: {SPACE_URL.format(space_id=space_id)}"
+                f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
             )
     current_project.set(project)
 
@@ -105,49 +93,6 @@ def init(
     current_run.set(run)
     globals()["config"] = run.config
     return run
-
-
-def create_space_if_not_exists(
-    space_id: str,
-    dataset_id: str | None = None,
-) -> None:
-    """
-    Creates a new Hugging Face Space if it does not exist.
-
-    Args:
-        space_id: The ID of the Space to create.
-        dataset_id: The ID of the Dataset to create.
-    """
-    if "/" not in space_id:
-        raise ValueError(
-            f"Invalid space ID: {space_id}. Must be in the format: username/reponame."
-        )
-    if dataset_id is not None and "/" not in dataset_id:
-        raise ValueError(
-            f"Invalid dataset ID: {dataset_id}. Must be in the format: username/datasetname."
-        )
-    try:
-        huggingface_hub.repo_info(space_id, repo_type="space")
-        print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
-        return
-    except RepositoryNotFoundError:
-        pass
-
-    print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, dataset_id)
-
-    client = None
-    for _ in range(30):
-        try:
-            client = Client(space_id, verbose=False)
-            if client:
-                break
-        except ReadTimeout:
-            print("* Space is not yet ready. Waiting 5 seconds...")
-            time.sleep(5)
-        except ValueError as e:
-            print(f"* Space gave error {e}. Trying again in 5 seconds...")
-            time.sleep(5)
 
 
 def log(metrics: dict) -> None:
@@ -278,6 +223,10 @@ def import_csv(
     print(
         f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'"
     )
-    print("* View dashboard by running in your terminal:")
-    print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
-    print(f'* or by running in Python: trackio.show(project="{project}")')
+    if space_id is None:
+        utils.print_dashboard_instructions(project)
+    else:
+        deploy.create_space_if_not_exists(space_id, dataset_id)
+        print(
+            f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
+        )
