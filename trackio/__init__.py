@@ -1,5 +1,4 @@
 import contextvars
-import csv
 import time
 import webbrowser
 from pathlib import Path
@@ -10,11 +9,12 @@ from gradio_client import Client
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 
+from trackio import utils
 from trackio.deploy import deploy_as_space
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
-from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH, block_except_in_notebook
+from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
@@ -190,7 +190,9 @@ def show(project: str | None = None):
     dashboard_url = base_url + f"?project={project}" if project else base_url
     print(f"* Trackio UI launched at: {dashboard_url}")
     webbrowser.open(dashboard_url)
-    block_except_in_notebook()
+    utils.block_except_in_notebook()
+
+
 
 
 def import_csv(
@@ -221,6 +223,9 @@ def import_csv(
     if df.empty:
         raise ValueError("CSV file is empty")
     
+    column_mapping = utils.simplify_column_names(df.columns.tolist())
+    df = df.rename(columns=column_mapping)
+        
     step_column = None
     for col in df.columns:
         if col.lower() == "step":
@@ -239,14 +244,24 @@ def import_csv(
     steps = []
     timestamps = []
     
-    for index, row in df.iterrows():
+    numeric_columns = []
+    for column in df.columns:
+        if column == step_column:
+            continue
+        if column == "timestamp":
+            continue
+            
+        try:
+            pd.to_numeric(df[column], errors='raise')
+            numeric_columns.append(column)
+        except (ValueError, TypeError):
+            continue
+    
+    for _, row in df.iterrows():
         metrics = {}
-        for column in df.columns:
-            if column != step_column and pd.notna(row[column]):
-                if isinstance(row[column], (int, float)):
-                    metrics[column] = float(row[column])
-                else:
-                    metrics[column] = str(row[column])
+        for column in numeric_columns:
+            if pd.notna(row[column]):
+                metrics[column] = float(row[column])
         
         if metrics:
             metrics_list.append(metrics)
@@ -258,6 +273,9 @@ def import_csv(
                 timestamps.append("")
     
     if metrics_list:
+        print("metrics_list", metrics_list)
+        print("steps", steps)
+        print("timestamps", timestamps)
         storage.bulk_log(metrics_list, steps, timestamps)
     
     print(f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'")    
