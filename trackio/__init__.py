@@ -1,9 +1,11 @@
 import contextvars
+import csv
 import time
 import webbrowser
 from pathlib import Path
 
 import huggingface_hub
+import pandas as pd
 from gradio_client import Client
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
@@ -189,3 +191,70 @@ def show(project: str | None = None):
     print(f"* Trackio UI launched at: {dashboard_url}")
     webbrowser.open(dashboard_url)
     block_except_in_notebook()
+
+
+def import_csv(
+    csv_path: str,
+    project: str,
+    name: str | None = None,
+    space_id: str | None = None,
+    dataset_id: str | None = None,
+) -> None:
+    """
+    Imports a CSV file into a Trackio project.
+
+    Args:
+        csv_path: The str or Path to the CSV file to import.
+        project: The name of the project to import the CSV file into. Must not be an existing project.
+        name: The name of the Run to import the CSV file into. If not provided, a default name will be generated.
+        space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like "username/reponame". If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
+        dataset_id: If provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Should be a complete Dataset name like "username/datasetname". If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it.
+    """
+    if SQLiteStorage.get_runs(project):
+        raise ValueError(f"Project '{project}' already exists. Cannot import CSV into existing project.")
+    
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+    
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        raise ValueError("CSV file is empty")
+    
+    if "step" not in df.columns:
+        raise ValueError("CSV file must contain a 'step' column")
+    
+    if name is None:
+        name = csv_path.stem
+    
+    storage = SQLiteStorage(project, name, {}, dataset_id=dataset_id)
+    
+    metrics_list = []
+    steps = []
+    timestamps = []
+    
+    for index, row in df.iterrows():
+        metrics = {}
+        for column in df.columns:
+            if column != "step" and pd.notna(row[column]):
+                if isinstance(row[column], (int, float)):
+                    metrics[column] = float(row[column])
+                else:
+                    metrics[column] = str(row[column])
+        
+        if metrics:
+            metrics_list.append(metrics)
+            steps.append(int(row["step"]))
+            
+            if "timestamp" in df.columns and pd.notna(row["timestamp"]):
+                timestamps.append(str(row["timestamp"]))
+            else:
+                timestamps.append("")
+    
+    if metrics_list:
+        storage.bulk_log(metrics_list, steps, timestamps)
+    
+    print(f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'")    
+    print("* View dashboard by running in your terminal:")
+    print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
+    print(f'* or by running in Python: trackio.show(project="{project}")')

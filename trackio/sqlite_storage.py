@@ -133,6 +133,44 @@ class SQLiteStorage:
                 )
                 conn.commit()
 
+    def bulk_log(self, metrics_list: list[dict], steps: list[int] | None = None, timestamps: list[str] | None = None):
+        """Bulk log metrics to the database with specified steps and timestamps."""
+        if not metrics_list:
+            return
+        
+        if steps is None:
+            steps = list(range(len(metrics_list)))
+        
+        if timestamps is None:
+            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+        
+        if len(metrics_list) != len(steps) or len(metrics_list) != len(timestamps):
+            raise ValueError("metrics_list, steps, and timestamps must have the same length")
+        
+        with self.scheduler.lock:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                data = []
+                for i, metrics in enumerate(metrics_list):
+                    data.append((
+                        timestamps[i],
+                        self.project,
+                        self.name,
+                        steps[i],
+                        json.dumps(metrics),
+                    ))
+                
+                cursor.executemany(
+                    """
+                    INSERT INTO metrics 
+                    (timestamp, project_name, run_name, step, metrics)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    data
+                )
+                conn.commit()
+
     @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:
         """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
