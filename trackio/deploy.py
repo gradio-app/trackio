@@ -6,7 +6,7 @@ from pathlib import Path
 
 import gradio
 import huggingface_hub
-from gradio_client import Client
+from gradio_client import Client, handle_file
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 
@@ -112,13 +112,19 @@ def create_space_if_not_exists(
             time.sleep(5)
 
 
-def overwrite_space_db(space_id: str, project: str) -> None:
+def upload_db_to_space(project: str, space_id: str) -> None:
     """
-    Overwrites the database of a Hugging Face Space with the database of a local Trackio project.
+    Uploads the database of a local Trackio project to a Hugging Face Space.
 
     Args:
-        space_id: The ID of the Space to overwrite.
-        project: The name of the project to overwrite.
+        project: The name of the project to upload.
+        space_id: The ID of the Space to upload to.
     """
     db_path = SQLiteStorage._get_project_db_path(project)
-    # Client(space_id, verbose=False).
+    client = Client(space_id, verbose=False)
+    client.predict(
+        api_name="/upload_db_to_space",
+        project=handle_file(db_path),
+        space_id=space_id,
+        hf_token=huggingface_hub.utils.get_token(),
+    )
