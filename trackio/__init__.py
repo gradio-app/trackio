@@ -1,4 +1,5 @@
 import contextvars
+import os
 import webbrowser
 from pathlib import Path
 
@@ -56,10 +57,15 @@ def init(
         current_server.set(url)
     else:
         url = current_server.get()
-
+    
     if current_project.get() is None or current_project.get() != project:
         print(f"* Trackio project initialized: {project}")
-
+        
+        if dataset_id is not None:
+            os.environ["TRACKIO_DATASET_ID"] = dataset_id
+            print(
+                f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}"
+            )
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             utils.print_dashboard_instructions(project)
@@ -88,7 +94,7 @@ def init(
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
     run = Run(
-        project=project, client=client, name=name, config=config, dataset_id=dataset_id
+        project=project, client=client, name=name, config=config
     )
     current_run.set(run)
     globals()["config"] = run.config
@@ -183,7 +189,7 @@ def import_csv(
     if name is None:
         name = csv_path.stem
 
-    storage = SQLiteStorage(project, name, {}, dataset_id=dataset_id)
+    storage = SQLiteStorage(project, name, {})
 
     metrics_list = []
     steps = []

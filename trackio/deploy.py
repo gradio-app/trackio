@@ -90,9 +90,6 @@ def create_space_if_not_exists(
         print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
         if dataset_id is not None:
             huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
-            # So that the dataset id is available to the sqlite_storage.py file
-            # if running locally as well.
-            os.environ["TRACKIO_DATASET_ID"] = dataset_id
         return
     except RepositoryNotFoundError:
         pass
