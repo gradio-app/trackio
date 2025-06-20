@@ -249,7 +249,7 @@ def log(
             raise PermissionError(
                 "Expected the provided hf_token to provide write permissions"
             )
-    SQLiteStorage.log(project, run, metrics)
+    SQLiteStorage.log(project=project, run=run, metrics=metrics)
 
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
