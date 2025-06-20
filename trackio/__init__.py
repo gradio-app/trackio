@@ -223,9 +223,7 @@ def import_csv(
     print(
         f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'"
     )
-    print(
-        f"* Metrics found: {', '.join(metrics_list[0].keys())}"
-    )
+    print(f"* Metrics found: {', '.join(metrics_list[0].keys())}")
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:

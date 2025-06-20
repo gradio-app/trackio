@@ -116,4 +116,4 @@ def overwrite_space_db(space_id: str, project: str) -> None:
         project: The name of the project to overwrite.
     """
     db_path = SQLiteStorage._get_project_db_path(project)
-    Client(space_id, verbose=False).
+    # Client(space_id, verbose=False).
