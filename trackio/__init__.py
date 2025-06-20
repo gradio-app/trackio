@@ -179,8 +179,6 @@ def import_csv(
     if name is None:
         name = csv_path.stem
 
-    storage = SQLiteStorage(project, name, {})
-
     metrics_list = []
     steps = []
     timestamps = []
@@ -214,7 +212,13 @@ def import_csv(
                 timestamps.append("")
 
     if metrics_list:
-        storage.bulk_log(metrics_list, steps, timestamps)
+        SQLiteStorage.bulk_log(
+            project=project,
+            run=name,
+            metrics_list=metrics_list,
+            steps=steps,
+            timestamps=timestamps,
+        )
 
     print(
         f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'"

@@ -28,8 +28,11 @@ class SQLiteStorage:
         return os.path.join(TRACKIO_DIR, f"{safe_project_name}.db")
 
     @staticmethod
-    def _init_db(project: str):
-        """Initialize the SQLite database with required tables."""
+    def _init_db(project: str) -> str:
+        """
+        Initialize the SQLite database with required tables.
+        Returns the database path.
+        """
         db_path = SQLiteStorage._get_project_db_path(project)
         with SQLiteStorage._get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
@@ -57,6 +60,7 @@ class SQLiteStorage:
                 """)
 
                 conn.commit()
+        return db_path
 
     @staticmethod
     def _get_scheduler():
@@ -89,8 +93,7 @@ class SQLiteStorage:
         and is set up with the correct tables. It also uses the scheduler to lock the database so
         that there is no race condition when logging / syncing to the Hugging Face Dataset.
         """
-        SQLiteStorage._init_db(project)
-        db_path = SQLiteStorage._get_project_db_path(project)
+        db_path = SQLiteStorage._init_db(project)
 
         with SQLiteStorage._get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
@@ -148,7 +151,7 @@ class SQLiteStorage:
                 "metrics_list, steps, and timestamps must have the same length"
             )
 
-        db_path = SQLiteStorage._get_project_db_path(project)
+        db_path = SQLiteStorage._init_db(project)
         with SQLiteStorage._get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
