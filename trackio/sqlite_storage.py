@@ -7,29 +7,16 @@ from datetime import datetime
 from huggingface_hub import CommitScheduler
 
 try:
+    from trackio.context_vars import current_scheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import TRACKIO_DIR
 except:  # noqa: E722
+    from context_vars import current_scheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR
 
 
 class SQLiteStorage:
-    def __init__(
-        self, project: str, name: str, config: dict, dataset_id: str | None = None
-    ):
-        self.project = project
-        self.name = name
-        self.config = config
-        self.db_path = self._get_project_db_path(project)
-        self.dataset_id = dataset_id
-        self.scheduler = self._get_scheduler()
-
-        os.makedirs(TRACKIO_DIR, exist_ok=True)
-
-        self._init_db()
-        self._save_config()
-
     @staticmethod
     def _get_project_db_path(project: str) -> str:
         """Get the database path for a specific project."""
@@ -40,28 +27,15 @@ class SQLiteStorage:
             safe_project_name = "default"
         return os.path.join(TRACKIO_DIR, f"{safe_project_name}.db")
 
-    def _get_scheduler(self):
-        hf_token = os.environ.get(
-            "HF_TOKEN"
-        )  # Get the token from the environment variable on Spaces
-        dataset_id = self.dataset_id or os.environ.get("TRACKIO_DATASET_ID")
-        if dataset_id is None:
-            scheduler = DummyCommitScheduler()
-        else:
-            scheduler = CommitScheduler(
-                repo_id=dataset_id,
-                repo_type="dataset",
-                folder_path=TRACKIO_DIR,
-                private=True,
-                squash_history=True,
-                token=hf_token,
-            )
-        return scheduler
-
-    def _init_db(self):
-        """Initialize the SQLite database with required tables."""
-        with self.scheduler.lock:
-            with sqlite3.connect(self.db_path) as conn:
+    @staticmethod
+    def _init_db(project: str) -> str:
+        """
+        Initialize the SQLite database with required tables.
+        Returns the database path.
+        """
+        db_path = SQLiteStorage._get_project_db_path(project)
+        with SQLiteStorage._get_scheduler().lock:
+            with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -86,22 +60,43 @@ class SQLiteStorage:
                 """)
 
                 conn.commit()
+        return db_path
 
-    def _save_config(self):
-        """Save the run configuration to the database."""
-        with self.scheduler.lock:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT OR REPLACE INTO configs (project_name, run_name, config) VALUES (?, ?, ?)",
-                    (self.project, self.name, json.dumps(self.config)),
-                )
-                conn.commit()
+    @staticmethod
+    def _get_scheduler():
+        """
+        Get the scheduler for the database based on the environment variables.
+        This applies to both local and Spaces.
+        """
+        if current_scheduler.get() is not None:
+            return current_scheduler.get()
+        hf_token = os.environ.get("HF_TOKEN")
+        dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+        if dataset_id is None:
+            scheduler = DummyCommitScheduler()
+        else:
+            scheduler = CommitScheduler(
+                repo_id=dataset_id,
+                repo_type="dataset",
+                folder_path=TRACKIO_DIR,
+                private=True,
+                squash_history=True,
+                token=hf_token,
+            )
+        current_scheduler.set(scheduler)
+        return scheduler
 
-    def log(self, metrics: dict):
-        """Log metrics to the database."""
-        with self.scheduler.lock:
-            with sqlite3.connect(self.db_path) as conn:
+    @staticmethod
+    def log(project: str, run: str, metrics: dict):
+        """
+        Safely log metrics to the database. Before logging, this method will ensure the database exists
+        and is set up with the correct tables. It also uses the scheduler to lock the database so
+        that there is no race condition when logging / syncing to the Hugging Face Dataset.
+        """
+        db_path = SQLiteStorage._init_db(project)
+
+        with SQLiteStorage._get_scheduler().lock:
+            with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
 
                 cursor.execute(
@@ -110,7 +105,7 @@ class SQLiteStorage:
                     FROM metrics 
                     WHERE project_name = ? AND run_name = ?
                     """,
-                    (self.project, self.name),
+                    (project, run),
                 )
                 last_step = cursor.fetchone()[0]
                 current_step = 0 if last_step is None else last_step + 1
@@ -125,11 +120,61 @@ class SQLiteStorage:
                     """,
                     (
                         current_timestamp,
-                        self.project,
-                        self.name,
+                        project,
+                        run,
                         current_step,
                         json.dumps(metrics),
                     ),
+                )
+                conn.commit()
+
+    @staticmethod
+    def bulk_log(
+        project: str,
+        run: str,
+        metrics_list: list[dict],
+        steps: list[int] | None = None,
+        timestamps: list[str] | None = None,
+    ):
+        """Bulk log metrics to the database with specified steps and timestamps."""
+        if not metrics_list:
+            return
+
+        if steps is None:
+            steps = list(range(len(metrics_list)))
+
+        if timestamps is None:
+            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+
+        if len(metrics_list) != len(steps) or len(metrics_list) != len(timestamps):
+            raise ValueError(
+                "metrics_list, steps, and timestamps must have the same length"
+            )
+
+        db_path = SQLiteStorage._init_db(project)
+        with SQLiteStorage._get_scheduler().lock:
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+
+                data = []
+                for i, metrics in enumerate(metrics_list):
+                    data.append(
+                        (
+                            timestamps[i],
+                            project,
+                            run,
+                            steps[i],
+                            json.dumps(metrics),
+                        )
+                    )
+
+                cursor.executemany(
+                    """
+                    INSERT INTO metrics 
+                    (timestamp, project_name, run_name, step, metrics)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    data,
                 )
                 conn.commit()
 
