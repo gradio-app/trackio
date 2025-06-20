@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
 from huggingface_hub import CommitScheduler
 
@@ -26,6 +27,9 @@ class SQLiteStorage:
         self.scheduler = self._get_scheduler()
 
         os.makedirs(TRACKIO_DIR, exist_ok=True)
+        if not Path(TRACKIO_DIR / "README.md").exists():
+            with open(TRACKIO_DIR / "README.md", "w") as f:
+                f.write("---\ntags:\n - trackio\n---\n\nThis directory/dataset contains runs logged by Trackio. Each run is stored in a separate sqlite database file.")
 
         self._init_db()
         self._save_config()
