@@ -1,4 +1,5 @@
 import os
+import shutil
 from typing import Any
 
 import gradio as gr
@@ -199,12 +200,7 @@ def toggle_timer(cb_value):
         return gr.Timer(active=False)
 
 
-def log(
-    project: str,
-    run: str,
-    metrics: dict[str, Any],
-    hf_token: str | None,
-) -> None:
+def check_auth(hf_token: str | None) -> None:
     if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
         # check auth token passed in
         if hf_token is None:
@@ -249,6 +245,20 @@ def log(
             raise PermissionError(
                 "Expected the provided hf_token to provide write permissions"
             )
+
+
+def upload_db_to_space(project: str, db: gr.FileData, hf_token: str | None) -> None:
+    check_auth(hf_token)
+    shutil.copy(db["path"], SQLiteStorage._get_project_db_path(project))
+
+
+def log(
+    project: str,
+    run: str,
+    metrics: dict[str, Any],
+    hf_token: str | None,
+) -> None:
+    check_auth(hf_token)
     SQLiteStorage.log(project=project, run=run, metrics=metrics)
 
 
@@ -371,6 +381,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     )
 
     gr.api(
+        fn=upload_db_to_space,
+        api_name="upload_db_to_space",
+    )
+    gr.api(
         fn=log,
         api_name="log",
     )
@@ -478,4 +492,4 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False)
+    demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False, show_error=True)

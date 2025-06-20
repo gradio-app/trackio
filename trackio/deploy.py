@@ -124,7 +124,7 @@ def upload_db_to_space(project: str, space_id: str) -> None:
     client = Client(space_id, verbose=False)
     client.predict(
         api_name="/upload_db_to_space",
-        project=handle_file(db_path),
-        space_id=space_id,
+        project=project,
+        db=handle_file(db_path),
         hf_token=huggingface_hub.utils.get_token(),
     )
