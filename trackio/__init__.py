@@ -273,9 +273,6 @@ def import_csv(
                 timestamps.append("")
     
     if metrics_list:
-        print("metrics_list", metrics_list)
-        print("steps", steps)
-        print("timestamps", timestamps)
         storage.bulk_log(metrics_list, steps, timestamps)
     
     print(f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'")    

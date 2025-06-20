@@ -117,8 +117,6 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis:
     if not metrics:
         return None
     df = pd.DataFrame(metrics)
-    print("df", df)
-    print("df.columns", df.columns)
 
     if "step" not in df.columns:
         df["step"] = range(len(df))
