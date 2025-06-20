@@ -223,11 +223,13 @@ def import_csv(
     print(
         f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'"
     )
-    print(f"* Metrics found: {', '.join(metrics_list[0].keys())}")
+    print(
+        f"* Metrics found: {', '.join(metrics_list[0].keys())}"
+    )
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:
-        deploy.create_space_if_not_exists(space_id)
+        deploy.create_space_if_not_exists(space_id, dataset_id)
         print(
             f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
         )

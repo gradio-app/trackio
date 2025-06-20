@@ -73,6 +73,7 @@ def deploy_as_space(
 
 def create_space_if_not_exists(
     space_id: str,
+    dataset_id: str | None = None,
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist.
@@ -87,6 +88,11 @@ def create_space_if_not_exists(
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
         print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
+        if dataset_id is not None:
+            huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
+            # So that the dataset id is available to the sqlite_storage.py file
+            # if running locally as well.
+            os.environ["TRACKIO_DATASET_ID"] = dataset_id
         return
     except RepositoryNotFoundError:
         pass

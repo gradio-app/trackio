@@ -16,17 +16,17 @@ except:  # noqa: E722
 
 class SQLiteStorage:
     def __init__(
-        self, project: str, name: str, config: dict, dataset_id: str | None = None
+        self, project: str, name: str, config: dict
     ):
+        """
+        Basic constructor for the SQLiteStorage class. This
+        will create a new database file for the project if it doesn't exist.
+        """
         self.project = project
         self.name = name
         self.config = config
         self.db_path = self._get_project_db_path(project)
-        self.dataset_id = dataset_id
-        self.scheduler = self._get_scheduler()
-
         os.makedirs(TRACKIO_DIR, exist_ok=True)
-
         self._init_db()
         self._save_config()
 
@@ -40,11 +40,14 @@ class SQLiteStorage:
             safe_project_name = "default"
         return os.path.join(TRACKIO_DIR, f"{safe_project_name}.db")
 
-    def _get_scheduler(self):
-        hf_token = os.environ.get(
-            "HF_TOKEN"
-        )  # Get the token from the environment variable on Spaces
-        dataset_id = self.dataset_id or os.environ.get("TRACKIO_DATASET_ID")
+    @staticmethod
+    def _get_scheduler() -> CommitScheduler | DummyCommitScheduler:
+        """
+        Get the scheduler for the database based on the environment variables.
+        This applies to both local and Spaces.
+        """
+        hf_token = os.environ.get("HF_TOKEN")
+        dataset_id = os.environ.get("TRACKIO_DATASET_ID")
         if dataset_id is None:
             scheduler = DummyCommitScheduler()
         else:
@@ -60,7 +63,7 @@ class SQLiteStorage:
 
     def _init_db(self):
         """Initialize the SQLite database with required tables."""
-        with self.scheduler.lock:
+        with self._get_scheduler().lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
@@ -89,7 +92,7 @@ class SQLiteStorage:
 
     def _save_config(self):
         """Save the run configuration to the database."""
-        with self.scheduler.lock:
+        with self._get_scheduler().lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
@@ -100,7 +103,7 @@ class SQLiteStorage:
 
     def log(self, metrics: dict):
         """Log metrics to the database."""
-        with self.scheduler.lock:
+        with self._get_scheduler().lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
@@ -154,7 +157,7 @@ class SQLiteStorage:
                 "metrics_list, steps, and timestamps must have the same length"
             )
 
-        with self.scheduler.lock:
+        with self._get_scheduler().lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
