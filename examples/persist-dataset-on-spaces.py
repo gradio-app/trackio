@@ -4,16 +4,18 @@ from tqdm import tqdm
 
 import trackio as wandb
 
+project_id = random.randint(100000, 999999)
+
 wandb.init(
-    project="fake-training",
+    project=f"fake-training-{project_id}",
     name="test-run",
     config=dict(
         epochs=5,
         learning_rate=0.001,
         batch_size=32,
     ),
-    dataset_id="abidlabs/metrics-1234",
-    space_id="abidlabs/trackio-1234",
+    dataset_id=f"abidlabs/metrics-{project_id}",
+    space_id=f"abidlabs/trackio-{project_id}",
 )
 
 EPOCHS = 5

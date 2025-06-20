@@ -27,7 +27,7 @@ class SQLiteStorage:
         self.scheduler = self._get_scheduler()
 
         os.makedirs(TRACKIO_DIR, exist_ok=True)
-        if not Path(TRACKIO_DIR / "README.md").exists():
+        if not (Path(TRACKIO_DIR) / "README.md").exists():
             with open(TRACKIO_DIR / "README.md", "w") as f:
                 f.write("---\ntags:\n - trackio\n---\n\nThis directory/dataset contains runs logged by Trackio. Each run is stored in a separate sqlite database file.")
 
