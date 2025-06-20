@@ -15,9 +15,7 @@ except:  # noqa: E722
 
 
 class SQLiteStorage:
-    def __init__(
-        self, project: str, name: str, config: dict
-    ):
+    def __init__(self, project: str, name: str, config: dict):
         """
         Basic constructor for the SQLiteStorage class. This
         will create a new database file for the project if it doesn't exist.

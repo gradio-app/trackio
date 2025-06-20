@@ -57,10 +57,10 @@ def init(
         current_server.set(url)
     else:
         url = current_server.get()
-    
+
     if current_project.get() is None or current_project.get() != project:
         print(f"* Trackio project initialized: {project}")
-        
+
         if dataset_id is not None:
             os.environ["TRACKIO_DATASET_ID"] = dataset_id
             print(
@@ -93,9 +93,7 @@ def init(
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
-    run = Run(
-        project=project, client=client, name=name, config=config
-    )
+    run = Run(project=project, client=client, name=name, config=config)
     current_run.set(run)
     globals()["config"] = run.config
     return run
@@ -229,9 +227,7 @@ def import_csv(
     print(
         f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'"
     )
-    print(
-        f"* Metrics found: {', '.join(metrics_list[0].keys())}"
-    )
+    print(f"* Metrics found: {', '.join(metrics_list[0].keys())}")
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:
