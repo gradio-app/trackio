@@ -1,4 +1,3 @@
-import contextvars
 import os
 import webbrowser
 from pathlib import Path
@@ -6,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 from gradio_client import Client
 
-from trackio import deploy, utils
+from trackio import context_vars, deploy, utils
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
@@ -14,16 +13,6 @@ from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
-
-current_run: contextvars.ContextVar[Run | None] = contextvars.ContextVar(
-    "current_run", default=None
-)
-current_project: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_project", default=None
-)
-current_server: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_server", default=None
-)
 
 config = {}
 
@@ -50,15 +39,18 @@ def init(
             - "allow": Resume the run if it exists, otherwise create a new run
             - "never": Never resume a run, always create a new one
     """
-    if not current_server.get() and space_id is None:
+    if not context_vars.current_server.get() and space_id is None:
         _, url, _ = demo.launch(
             show_api=False, inline=False, quiet=True, prevent_thread_lock=True
         )
-        current_server.set(url)
+        context_vars.current_server.set(url)
     else:
-        url = current_server.get()
+        url = context_vars.current_server.get()
 
-    if current_project.get() is None or current_project.get() != project:
+    if (
+        context_vars.current_project.get() is None
+        or context_vars.current_project.get() != project
+    ):
         print(f"* Trackio project initialized: {project}")
 
         if dataset_id is not None:
@@ -74,7 +66,7 @@ def init(
             print(
                 f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
             )
-    current_project.set(project)
+    context_vars.current_project.set(project)
 
     space_or_url = space_id if space_id else url
     client = Client(space_or_url, verbose=False)
@@ -94,7 +86,7 @@ def init(
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
     run = Run(project=project, client=client, name=name, config=config)
-    current_run.set(run)
+    context_vars.current_run.set(run)
     globals()["config"] = run.config
     return run
 
@@ -106,18 +98,18 @@ def log(metrics: dict) -> None:
     Args:
         metrics: A dictionary of metrics to log.
     """
-    if current_run.get() is None:
+    if context_vars.current_run.get() is None:
         raise RuntimeError("Call trackio.init() before log().")
-    current_run.get().log(metrics)
+    context_vars.current_run.get().log(metrics)
 
 
 def finish():
     """
     Finishes the current run.
     """
-    if current_run.get() is None:
+    if context_vars.current_run.get() is None:
         raise RuntimeError("Call trackio.init() before finish().")
-    current_run.get().finish()
+    context_vars.current_run.get().finish()
 
 
 def show(project: str | None = None):
