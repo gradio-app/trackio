@@ -21,7 +21,7 @@ def temp_db(monkeypatch):
 
 def test_run_log_calls_client():
     client = DummyClient()
-    run = Run(project="proj", client=client, name="run1")
+    run = Run(url="fake_url", project="proj", client=client, name="run1")
     metrics = {"x": 1}
     run.log(metrics)
     client.predict.assert_called_once_with(
