@@ -2,6 +2,7 @@ import os
 import webbrowser
 from pathlib import Path
 
+import huggingface_hub
 import pandas as pd
 from gradio_client import Client
 
