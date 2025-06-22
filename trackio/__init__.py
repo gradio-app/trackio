@@ -31,8 +31,8 @@ def init(
     Args:
         project: The name of the project (can be an existing project to continue tracking or a new project to start tracking from scratch).
         name: The name of the run (if not provided, a default name will be generated).
-        space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like "username/reponame". If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
-        dataset_id: If provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Should be a complete Dataset name like "username/datasetname". If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it.
+        space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like "username/reponame" or "orgname/reponame", or just "reponame" in which case the Space will be created in the currently-logged-in Hugging Face user's namespace. If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
+        dataset_id: If provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Should be a complete Dataset name like "username/datasetname" or "orgname/datasetname", or just "datasetname" in which case the Dataset will be created in the currently-logged-in Hugging Face user's namespace. If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it. If not provided, the metrics will be logged to a local SQLite database, unless a `space_id` is provided, in which case a Dataset will be automatically created with the same name as the Space but with the "_dataset" suffix.
         config: A dictionary of configuration options. Provided for compatibility with wandb.init()
         resume: Controls how to handle resuming a run. Can be one of:
             - "must": Must resume the run with the given name, raises error if run doesn't exist
@@ -46,6 +46,15 @@ def init(
         context_vars.current_server.set(url)
     else:
         url = context_vars.current_server.get()
+
+    if space_id is not None and "/" not in space_id:
+        username = huggingface_hub.whoami()["name"]
+        space_id = f"{username}/{space_id}"
+    if dataset_id is not None and "/" not in dataset_id:
+        username = huggingface_hub.whoami()["name"]
+        dataset_id = f"{username}/{dataset_id}"
+    if space_id is not None and dataset_id is None:
+        dataset_id = f"{space_id}_dataset"
 
     if (
         context_vars.current_project.get() is None

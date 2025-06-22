@@ -14,7 +14,7 @@ wandb.init(
         learning_rate=0.001,
         batch_size=32,
     ),
-    space_id=f"abidlabs/trackio-{project_id}",
+    space_id=f"trackio-{project_id}",
 )
 
 EPOCHS = 5
