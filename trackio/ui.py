@@ -68,7 +68,7 @@ def get_projects(request: gr.Request):
         value=project,
         allow_custom_value=True,
         interactive=interactive,
-        info=f"&#x21bb; Synced to <a href='https://huggingface.co/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
+        info=f"&#x21bb; Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
         if dataset_id
         else None,
     )
