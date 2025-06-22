@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 
+import huggingface_hub
 from huggingface_hub.constants import HF_HOME
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time"]
@@ -261,3 +262,17 @@ def print_dashboard_instructions(project: str) -> None:
     print("* View dashboard by running in your terminal:")
     print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
     print(f'* or by running in Python: trackio.show(project="{project}")')
+
+
+def preprocess_space_and_dataset_ids(
+    space_id: str | None, dataset_id: str | None
+) -> tuple[str, str]:
+    if space_id is not None and "/" not in space_id:
+        username = huggingface_hub.whoami()["name"]
+        space_id = f"{username}/{space_id}"
+    if dataset_id is not None and "/" not in dataset_id:
+        username = huggingface_hub.whoami()["name"]
+        dataset_id = f"{username}/{dataset_id}"
+    if space_id is not None and dataset_id is None:
+        dataset_id = f"{space_id}_dataset"
+    return space_id, dataset_id

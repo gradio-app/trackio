@@ -2,7 +2,6 @@ import os
 import webbrowser
 from pathlib import Path
 
-import huggingface_hub
 from gradio_client import Client
 
 from trackio import context_vars, deploy, utils
@@ -50,14 +49,7 @@ def init(
     else:
         url = context_vars.current_server.get()
 
-    if space_id is not None and "/" not in space_id:
-        username = huggingface_hub.whoami()["name"]
-        space_id = f"{username}/{space_id}"
-    if dataset_id is not None and "/" not in dataset_id:
-        username = huggingface_hub.whoami()["name"]
-        dataset_id = f"{username}/{dataset_id}"
-    if space_id is not None and dataset_id is None:
-        dataset_id = f"{space_id}_dataset"
+    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
 
     if (
         context_vars.current_project.get() is None
