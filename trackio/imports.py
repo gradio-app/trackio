@@ -108,7 +108,7 @@ def import_csv(
         utils.print_dashboard_instructions(project)
     else:
         deploy.create_space_if_not_exists(space_id, dataset_id)
-        # deploy.upload_db_to_space(project, space_id)
+        # deploy.upload_db_to_space(project, space_id) # TODO: uncomment this
         print(
             f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
         )
