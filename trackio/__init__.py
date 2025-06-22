@@ -65,6 +65,15 @@ def init(
     else:
         url = current_server.get()
 
+    if space_id is not None and "/" not in space_id:
+        username = huggingface_hub.whoami()["name"]
+        space_id = f"{username}/{space_id}"
+    if dataset_id is not None and "/" not in dataset_id:
+        username = huggingface_hub.whoami()["name"]
+        dataset_id = f"{username}/{dataset_id}"
+    if space_id is not None and dataset_id is None:
+        dataset_id = f"{space_id}_dataset"
+
     if current_project.get() is None or current_project.get() != project:
         print(f"* Trackio project initialized: {project}")
 
@@ -116,14 +125,6 @@ def create_space_if_not_exists(
         space_id: The ID of the Space to create.
         dataset_id: The ID of the Dataset to create.
     """
-    if "/" not in space_id:
-        username = huggingface_hub.whoami()["name"]
-        space_id = f"{username}/{space_id}"
-    if dataset_id is not None and "/" not in dataset_id:
-        username = huggingface_hub.whoami()["name"]
-        dataset_id = f"{username}/{dataset_id}"
-    if dataset_id is None:
-        dataset_id = f"{space_id}_dataset"
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
         print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
