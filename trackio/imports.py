@@ -15,7 +15,7 @@ def import_csv(
     dataset_id: str | None = None,
 ) -> None:
     """
-    Imports a CSV file into a Trackio project. TODO: return a Run object so that the user can continue to log metrics to it.
+    Imports a CSV file into a Trackio project. TODO: call init() and return a Run object so that the user can continue to log metrics to it.
 
     Args:
         csv_path: The str or Path to the CSV file to import.
