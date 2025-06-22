@@ -14,36 +14,28 @@ def temp_db(monkeypatch):
         yield tmpdir
 
 
-def test_init_creates_tables_and_config(temp_db):
-    storage = SQLiteStorage("proj1", "run1", {"foo": "bar"})
-    assert os.path.exists(storage.db_path)
-    with sqlite3.connect(storage.db_path) as conn:
+def test_init_creates_metrics_table(temp_db):
+    db_path = SQLiteStorage._init_db("proj1")
+    assert os.path.exists(db_path)
+    with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT config FROM configs WHERE project_name=? AND run_name=?",
-            ("proj1", "run1"),
-        )
-        row = cursor.fetchone()
-        assert row is not None
-        assert "foo" in row[0]
+        cursor.execute("SELECT * FROM metrics")
 
 
 def test_log_and_get_metrics(temp_db):
-    storage = SQLiteStorage("proj1", "run1", {})
     metrics = {"acc": 0.9}
-    storage.log(metrics)
-    results = storage.get_metrics("proj1", "run1")
+    SQLiteStorage.log(project="proj1", run="run1", metrics=metrics)
+    results = SQLiteStorage.get_metrics(project="proj1", run="run1")
     assert len(results) == 1
     assert results[0]["acc"] == 0.9
+    assert results[0]["step"] == 0
     assert "timestamp" in results[0]
 
 
 def test_get_projects_and_runs(temp_db):
-    storage = SQLiteStorage("proj1", "run1", {})
-    storage.log({"a": 1})
-    storage2 = SQLiteStorage("proj2", "run2", {})
-    storage2.log({"b": 2})
-    projects = set(storage.get_projects())
+    SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
+    SQLiteStorage.log(project="proj2", run="run2", metrics={"b": 2})
+    projects = set(SQLiteStorage.get_projects())
     assert {"proj1", "proj2"}.issubset(projects)
-    runs = set(storage.get_runs("proj1"))
+    runs = set(SQLiteStorage.get_runs("proj1"))
     assert "run1" in runs

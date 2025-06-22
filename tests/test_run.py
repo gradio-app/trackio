@@ -29,7 +29,6 @@ def test_run_log_calls_client():
         project="proj",
         run="run1",
         metrics=metrics,
-        dataset_id=None,
         hf_token=huggingface_hub.utils.get_token(),
     )
 

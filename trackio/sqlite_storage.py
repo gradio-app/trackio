@@ -37,7 +37,6 @@ class SQLiteStorage:
         with SQLiteStorage._get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
-
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,17 +47,6 @@ class SQLiteStorage:
                         metrics TEXT NOT NULL
                     )
                 """)
-
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS configs (
-                        project_name TEXT NOT NULL,
-                        run_name TEXT NOT NULL,
-                        config TEXT NOT NULL,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (project_name, run_name)
-                    )
-                """)
-
                 conn.commit()
         return db_path
 
