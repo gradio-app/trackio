@@ -141,5 +141,3 @@ def show(project: str | None = None):
     print(f"* Trackio UI launched at: {dashboard_url}")
     webbrowser.open(dashboard_url)
     utils.block_except_in_notebook()
-
-
