@@ -34,7 +34,7 @@ class SQLiteStorage:
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
-        with SQLiteStorage._get_scheduler().lock:
+        with SQLiteStorage.get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -83,7 +83,7 @@ class SQLiteStorage:
         """
         db_path = SQLiteStorage.init_db(project)
 
-        with SQLiteStorage._get_scheduler().lock:
+        with SQLiteStorage.get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
 
@@ -140,7 +140,7 @@ class SQLiteStorage:
             )
 
         db_path = SQLiteStorage.init_db(project)
-        with SQLiteStorage._get_scheduler().lock:
+        with SQLiteStorage.get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
 
