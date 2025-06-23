@@ -249,7 +249,9 @@ def check_auth(hf_token: str | None) -> None:
 
 def upload_db_to_space(project: str, db: gr.FileData, hf_token: str | None) -> None:
     check_auth(hf_token)
-    shutil.copy(db["path"], SQLiteStorage._get_project_db_path(project))
+    db_path = SQLiteStorage._get_project_db_path(project)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    shutil.copy(db["path"], db_path)
 
 
 def log(
