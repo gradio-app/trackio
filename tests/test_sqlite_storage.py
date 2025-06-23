@@ -5,7 +5,7 @@ from trackio.sqlite_storage import SQLiteStorage
 
 
 def test_init_creates_metrics_table(temp_db):
-    db_path = SQLiteStorage._init_db("proj1")
+    db_path = SQLiteStorage.init_db("proj1")
     assert os.path.exists(db_path)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()

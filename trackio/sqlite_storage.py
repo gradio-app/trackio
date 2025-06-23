@@ -18,7 +18,7 @@ except:  # noqa: E722
 
 class SQLiteStorage:
     @staticmethod
-    def _get_project_db_path(project: str) -> str:
+    def get_project_db_path(project: str) -> str:
         """Get the database path for a specific project."""
         safe_project_name = "".join(
             c for c in project if c.isalnum() or c in ("-", "_")
@@ -28,12 +28,12 @@ class SQLiteStorage:
         return os.path.join(TRACKIO_DIR, f"{safe_project_name}.db")
 
     @staticmethod
-    def _init_db(project: str) -> str:
+    def init_db(project: str) -> str:
         """
         Initialize the SQLite database with required tables.
         Returns the database path.
         """
-        db_path = SQLiteStorage._get_project_db_path(project)
+        db_path = SQLiteStorage.get_project_db_path(project)
         with SQLiteStorage._get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
@@ -51,7 +51,7 @@ class SQLiteStorage:
         return db_path
 
     @staticmethod
-    def _get_scheduler():
+    def get_scheduler():
         """
         Get the scheduler for the database based on the environment variables.
         This applies to both local and Spaces.
@@ -81,7 +81,7 @@ class SQLiteStorage:
         and is set up with the correct tables. It also uses the scheduler to lock the database so
         that there is no race condition when logging / syncing to the Hugging Face Dataset.
         """
-        db_path = SQLiteStorage._init_db(project)
+        db_path = SQLiteStorage.init_db(project)
 
         with SQLiteStorage._get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
@@ -139,7 +139,7 @@ class SQLiteStorage:
                 "metrics_list, steps, and timestamps must have the same length"
             )
 
-        db_path = SQLiteStorage._init_db(project)
+        db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
@@ -169,7 +169,7 @@ class SQLiteStorage:
     @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:
         """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
-        db_path = SQLiteStorage._get_project_db_path(project)
+        db_path = SQLiteStorage.get_project_db_path(project)
         if not os.path.exists(db_path):
             return []
 
@@ -223,7 +223,7 @@ class SQLiteStorage:
     @staticmethod
     def get_runs(project: str) -> list[str]:
         """Get list of all runs for a project."""
-        db_path = SQLiteStorage._get_project_db_path(project)
+        db_path = SQLiteStorage.get_project_db_path(project)
         if not os.path.exists(db_path):
             return []
 

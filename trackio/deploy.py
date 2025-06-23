@@ -128,7 +128,7 @@ def upload_db_to_space(project: str, space_id: str) -> None:
         project: The name of the project to upload.
         space_id: The ID of the Space to upload to.
     """
-    db_path = SQLiteStorage._get_project_db_path(project)
+    db_path = SQLiteStorage.get_project_db_path(project)
     client = Client(space_id, verbose=False)
     client.predict(
         api_name="/upload_db_to_space",
