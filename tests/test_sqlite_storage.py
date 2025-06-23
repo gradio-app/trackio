@@ -1,8 +1,6 @@
 import os
 import sqlite3
 
-import pytest
-
 from trackio.sqlite_storage import SQLiteStorage
 
 
