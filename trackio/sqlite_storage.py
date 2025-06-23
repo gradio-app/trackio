@@ -3,41 +3,22 @@ import json
 import os
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 
 from huggingface_hub import CommitScheduler
 
 try:
+    from trackio.context_vars import current_scheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import TRACKIO_DIR
 except:  # noqa: E722
+    from context_vars import current_scheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR
 
 
 class SQLiteStorage:
-    def __init__(
-        self, project: str, name: str, config: dict, dataset_id: str | None = None
-    ):
-        self.project = project
-        self.name = name
-        self.config = config
-        self.db_path = self._get_project_db_path(project)
-        self.dataset_id = dataset_id
-        self.scheduler = self._get_scheduler()
-
-        os.makedirs(TRACKIO_DIR, exist_ok=True)
-        if not (Path(TRACKIO_DIR) / "README.md").exists():
-            with open(Path(TRACKIO_DIR) / "README.md", "w") as f:
-                f.write(
-                    "---\ntags:\n - trackio\n---\n\nThis directory/dataset contains runs logged by Trackio. Each run is stored in a separate sqlite database file."
-                )
-
-        self._init_db()
-        self._save_config()
-
     @staticmethod
-    def _get_project_db_path(project: str) -> str:
+    def get_project_db_path(project: str) -> str:
         """Get the database path for a specific project."""
         safe_project_name = "".join(
             c for c in project if c.isalnum() or c in ("-", "_")
@@ -46,11 +27,39 @@ class SQLiteStorage:
             safe_project_name = "default"
         return os.path.join(TRACKIO_DIR, f"{safe_project_name}.db")
 
-    def _get_scheduler(self):
-        hf_token = os.environ.get(
-            "HF_TOKEN"
-        )  # Get the token from the environment variable on Spaces
-        dataset_id = self.dataset_id or os.environ.get("TRACKIO_DATASET_ID")
+    @staticmethod
+    def init_db(project: str) -> str:
+        """
+        Initialize the SQLite database with required tables.
+        Returns the database path.
+        """
+        db_path = SQLiteStorage.get_project_db_path(project)
+        with SQLiteStorage.get_scheduler().lock:
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS metrics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        project_name TEXT NOT NULL,
+                        run_name TEXT NOT NULL,
+                        step INTEGER NOT NULL,
+                        metrics TEXT NOT NULL
+                    )
+                """)
+                conn.commit()
+        return db_path
+
+    @staticmethod
+    def get_scheduler():
+        """
+        Get the scheduler for the database based on the environment variables.
+        This applies to both local and Spaces.
+        """
+        if current_scheduler.get() is not None:
+            return current_scheduler.get()
+        hf_token = os.environ.get("HF_TOKEN")
+        dataset_id = os.environ.get("TRACKIO_DATASET_ID")
         if dataset_id is None:
             scheduler = DummyCommitScheduler()
         else:
@@ -62,52 +71,20 @@ class SQLiteStorage:
                 squash_history=True,
                 token=hf_token,
             )
+        current_scheduler.set(scheduler)
         return scheduler
 
-    def _init_db(self):
-        """Initialize the SQLite database with required tables."""
-        with self.scheduler.lock:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
+    @staticmethod
+    def log(project: str, run: str, metrics: dict):
+        """
+        Safely log metrics to the database. Before logging, this method will ensure the database exists
+        and is set up with the correct tables. It also uses the scheduler to lock the database so
+        that there is no race condition when logging / syncing to the Hugging Face Dataset.
+        """
+        db_path = SQLiteStorage.init_db(project)
 
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS metrics (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        project_name TEXT NOT NULL,
-                        run_name TEXT NOT NULL,
-                        step INTEGER NOT NULL,
-                        metrics TEXT NOT NULL
-                    )
-                """)
-
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS configs (
-                        project_name TEXT NOT NULL,
-                        run_name TEXT NOT NULL,
-                        config TEXT NOT NULL,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        PRIMARY KEY (project_name, run_name)
-                    )
-                """)
-
-                conn.commit()
-
-    def _save_config(self):
-        """Save the run configuration to the database."""
-        with self.scheduler.lock:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT OR REPLACE INTO configs (project_name, run_name, config) VALUES (?, ?, ?)",
-                    (self.project, self.name, json.dumps(self.config)),
-                )
-                conn.commit()
-
-    def log(self, metrics: dict):
-        """Log metrics to the database."""
-        with self.scheduler.lock:
-            with sqlite3.connect(self.db_path) as conn:
+        with SQLiteStorage.get_scheduler().lock:
+            with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
 
                 cursor.execute(
@@ -116,7 +93,7 @@ class SQLiteStorage:
                     FROM metrics 
                     WHERE project_name = ? AND run_name = ?
                     """,
-                    (self.project, self.name),
+                    (project, run),
                 )
                 last_step = cursor.fetchone()[0]
                 current_step = 0 if last_step is None else last_step + 1
@@ -131,8 +108,8 @@ class SQLiteStorage:
                     """,
                     (
                         current_timestamp,
-                        self.project,
-                        self.name,
+                        project,
+                        run,
                         current_step,
                         json.dumps(metrics),
                     ),
@@ -140,9 +117,59 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
+    def bulk_log(
+        project: str,
+        run: str,
+        metrics_list: list[dict],
+        steps: list[int] | None = None,
+        timestamps: list[str] | None = None,
+    ):
+        """Bulk log metrics to the database with specified steps and timestamps."""
+        if not metrics_list:
+            return
+
+        if steps is None:
+            steps = list(range(len(metrics_list)))
+
+        if timestamps is None:
+            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+
+        if len(metrics_list) != len(steps) or len(metrics_list) != len(timestamps):
+            raise ValueError(
+                "metrics_list, steps, and timestamps must have the same length"
+            )
+
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage.get_scheduler().lock:
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+
+                data = []
+                for i, metrics in enumerate(metrics_list):
+                    data.append(
+                        (
+                            timestamps[i],
+                            project,
+                            run,
+                            steps[i],
+                            json.dumps(metrics),
+                        )
+                    )
+
+                cursor.executemany(
+                    """
+                    INSERT INTO metrics 
+                    (timestamp, project_name, run_name, step, metrics)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    data,
+                )
+                conn.commit()
+
+    @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:
         """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
-        db_path = SQLiteStorage._get_project_db_path(project)
+        db_path = SQLiteStorage.get_project_db_path(project)
         if not os.path.exists(db_path):
             return []
 
@@ -196,7 +223,7 @@ class SQLiteStorage:
     @staticmethod
     def get_runs(project: str) -> list[str]:
         """Get list of all runs for a project."""
-        db_path = SQLiteStorage._get_project_db_path(project)
+        db_path = SQLiteStorage.get_project_db_path(project)
         if not os.path.exists(db_path):
             return []
 

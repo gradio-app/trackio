@@ -1,4 +1,5 @@
 import random
+import time
 
 from tqdm import tqdm
 
@@ -52,5 +53,6 @@ for epoch in range(EPOCHS):
             "val_accuracy": val_accuracy,
         }
     )
+    time.sleep(1)
 
 wandb.finish()

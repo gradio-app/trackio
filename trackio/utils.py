@@ -1,9 +1,11 @@
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
 
+import huggingface_hub
 from huggingface_hub.constants import HF_HOME
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time"]
@@ -215,3 +217,62 @@ def block_except_in_notebook():
             time.sleep(0.1)
     except (KeyboardInterrupt, OSError):
         print("Keyboard interruption in main thread... closing dashboard.")
+
+
+def simplify_column_names(columns: list[str]) -> dict[str, str]:
+    """
+    Simplifies column names to first 10 alphanumeric or "/" characters with unique suffixes.
+
+    Args:
+        columns: List of original column names
+
+    Returns:
+        Dictionary mapping original column names to simplified names
+    """
+    simplified_names = {}
+    used_names = set()
+
+    for col in columns:
+        alphanumeric = re.sub(r"[^a-zA-Z0-9/]", "", col)
+        base_name = alphanumeric[:10] if alphanumeric else f"col_{len(used_names)}"
+
+        final_name = base_name
+        suffix = 1
+        while final_name in used_names:
+            final_name = f"{base_name}_{suffix}"
+            suffix += 1
+
+        simplified_names[col] = final_name
+        used_names.add(final_name)
+
+    return simplified_names
+
+
+def print_dashboard_instructions(project: str) -> None:
+    """
+    Prints instructions for viewing the Trackio dashboard.
+
+    Args:
+        project: The name of the project to show dashboard for.
+    """
+    YELLOW = "\033[93m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+
+    print("* View dashboard by running in your terminal:")
+    print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
+    print(f'* or by running in Python: trackio.show(project="{project}")')
+
+
+def preprocess_space_and_dataset_ids(
+    space_id: str | None, dataset_id: str | None
+) -> tuple[str | None, str | None]:
+    if space_id is not None and "/" not in space_id:
+        username = huggingface_hub.whoami()["name"]
+        space_id = f"{username}/{space_id}"
+    if dataset_id is not None and "/" not in dataset_id:
+        username = huggingface_hub.whoami()["name"]
+        dataset_id = f"{username}/{dataset_id}"
+    if space_id is not None and dataset_id is None:
+        dataset_id = f"{space_id}_dataset"
+    return space_id, dataset_id

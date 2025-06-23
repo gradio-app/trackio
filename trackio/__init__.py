@@ -1,38 +1,22 @@
-import contextvars
-import time
+import os
 import webbrowser
 from pathlib import Path
 
-import huggingface_hub
 from gradio_client import Client
-from httpx import ReadTimeout
-from huggingface_hub.errors import RepositoryNotFoundError
 
-from trackio.deploy import deploy_as_space
+from trackio import context_vars, deploy, utils
+from trackio.imports import import_csv
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
-from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH, block_except_in_notebook
+from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
+__all__ = ["init", "log", "finish", "show", "import_csv"]
 
-current_run: contextvars.ContextVar[Run | None] = contextvars.ContextVar(
-    "current_run", default=None
-)
-current_project: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_project", default=None
-)
-current_server: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_server", default=None
-)
 
 config = {}
-SPACE_URL = "https://huggingface.co/spaces/{space_id}"
-
-YELLOW = "\033[93m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
 
 
 def init(
@@ -57,37 +41,36 @@ def init(
             - "allow": Resume the run if it exists, otherwise create a new run
             - "never": Never resume a run, always create a new one
     """
-    if not current_server.get() and space_id is None:
+    if not context_vars.current_server.get() and space_id is None:
         _, url, _ = demo.launch(
             show_api=False, inline=False, quiet=True, prevent_thread_lock=True
         )
-        current_server.set(url)
+        context_vars.current_server.set(url)
     else:
-        url = current_server.get()
+        url = context_vars.current_server.get()
 
-    if space_id is not None and "/" not in space_id:
-        username = huggingface_hub.whoami()["name"]
-        space_id = f"{username}/{space_id}"
-    if dataset_id is not None and "/" not in dataset_id:
-        username = huggingface_hub.whoami()["name"]
-        dataset_id = f"{username}/{dataset_id}"
-    if space_id is not None and dataset_id is None:
-        dataset_id = f"{space_id}_dataset"
+    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
 
-    if current_project.get() is None or current_project.get() != project:
+    if (
+        context_vars.current_project.get() is None
+        or context_vars.current_project.get() != project
+    ):
         print(f"* Trackio project initialized: {project}")
 
+        if dataset_id is not None:
+            os.environ["TRACKIO_DATASET_ID"] = dataset_id
+            print(
+                f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}"
+            )
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            print("* View dashboard by running in your terminal:")
-            print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
-            print(f'* or by running in Python: trackio.show(project="{project}")')
+            utils.print_dashboard_instructions(project)
         else:
-            create_space_if_not_exists(space_id, dataset_id)
+            deploy.create_space_if_not_exists(space_id, dataset_id)
             print(
-                f"* View dashboard by going to: {SPACE_URL.format(space_id=space_id)}"
+                f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
             )
-    current_project.set(project)
+    context_vars.current_project.set(project)
 
     space_or_url = space_id if space_id else url
     client = Client(space_or_url, verbose=False)
@@ -106,47 +89,10 @@ def init(
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
-    run = Run(
-        project=project, client=client, name=name, config=config, dataset_id=dataset_id
-    )
-    current_run.set(run)
+    run = Run(project=project, client=client, name=name, config=config)
+    context_vars.current_run.set(run)
     globals()["config"] = run.config
     return run
-
-
-def create_space_if_not_exists(
-    space_id: str,
-    dataset_id: str | None = None,
-) -> None:
-    """
-    Creates a new Hugging Face Space if it does not exist.
-
-    Args:
-        space_id: The ID of the Space to create.
-        dataset_id: The ID of the Dataset to create.
-    """
-    try:
-        huggingface_hub.repo_info(space_id, repo_type="space")
-        print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
-        return
-    except RepositoryNotFoundError:
-        pass
-
-    print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, dataset_id)
-
-    client = None
-    for _ in range(30):
-        try:
-            client = Client(space_id, verbose=False)
-            if client:
-                break
-        except ReadTimeout:
-            print("* Space is not yet ready. Waiting 5 seconds...")
-            time.sleep(5)
-        except ValueError as e:
-            print(f"* Space gave error {e}. Trying again in 5 seconds...")
-            time.sleep(5)
 
 
 def log(metrics: dict) -> None:
@@ -156,18 +102,18 @@ def log(metrics: dict) -> None:
     Args:
         metrics: A dictionary of metrics to log.
     """
-    if current_run.get() is None:
+    if context_vars.current_run.get() is None:
         raise RuntimeError("Call trackio.init() before log().")
-    current_run.get().log(metrics)
+    context_vars.current_run.get().log(metrics)
 
 
 def finish():
     """
     Finishes the current run.
     """
-    if current_run.get() is None:
+    if context_vars.current_run.get() is None:
         raise RuntimeError("Call trackio.init() before finish().")
-    current_run.get().finish()
+    context_vars.current_run.get().finish()
 
 
 def show(project: str | None = None):
@@ -189,4 +135,4 @@ def show(project: str | None = None):
     dashboard_url = base_url + f"?project={project}" if project else base_url
     print(f"* Trackio UI launched at: {dashboard_url}")
     webbrowser.open(dashboard_url)
-    block_except_in_notebook()
+    utils.block_except_in_notebook()
