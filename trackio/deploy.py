@@ -40,12 +40,12 @@ def deploy_as_space(
         huggingface_hub.login(add_to_git_credential=False)
         whoami = hf_api.whoami()
 
-    space_id = huggingface_hub.create_repo(
+    huggingface_hub.create_repo(
         space_id,
         space_sdk="gradio",
         repo_type="space",
         exist_ok=True,
-    ).repo_id
+    )
 
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
