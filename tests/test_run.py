@@ -1,4 +1,3 @@
-import tempfile
 from unittest.mock import MagicMock
 
 import huggingface_hub
@@ -10,13 +9,6 @@ from trackio import Run, init
 class DummyClient:
     def __init__(self):
         self.predict = MagicMock()
-
-
-@pytest.fixture
-def temp_db(monkeypatch):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        monkeypatch.setattr("trackio.sqlite_storage.TRACKIO_DIR", tmpdir)
-        yield tmpdir
 
 
 def test_run_log_calls_client():

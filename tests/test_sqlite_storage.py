@@ -1,17 +1,9 @@
 import os
 import sqlite3
-import tempfile
 
 import pytest
 
 from trackio.sqlite_storage import SQLiteStorage
-
-
-@pytest.fixture
-def temp_db(monkeypatch):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        monkeypatch.setattr("trackio.sqlite_storage.TRACKIO_DIR", tmpdir)
-        yield tmpdir
 
 
 def test_init_creates_metrics_table(temp_db):
