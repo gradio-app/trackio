@@ -16,7 +16,8 @@ SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 
 
 def deploy_as_space(
-    title: str,
+    space_id: str,
+    dataset_id: str | None = None,
 ):
     if (
         os.getenv("SYSTEM") == "spaces"
@@ -40,12 +41,11 @@ def deploy_as_space(
         whoami = hf_api.whoami()
 
     space_id = huggingface_hub.create_repo(
-        title,
+        space_id,
         space_sdk="gradio",
         repo_type="space",
         exist_ok=True,
     ).repo_id
-    assert space_id == title  # not sure why these would differ
 
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
@@ -69,6 +69,8 @@ def deploy_as_space(
     hf_token = huggingface_hub.utils.get_token()
     if hf_token is not None:
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
+    if dataset_id is not None:
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
 
 
 def create_space_if_not_exists(
@@ -76,14 +78,19 @@ def create_space_if_not_exists(
     dataset_id: str | None = None,
 ) -> None:
     """
-    Creates a new Hugging Face Space if it does not exist.
+    Creates a new Hugging Face Space if it does not exist. If a dataset_id is provided, it will be added as a space variable.
 
     Args:
         space_id: The ID of the Space to create.
+        dataset_id: The ID of the Dataset to add to the Space.
     """
     if "/" not in space_id:
         raise ValueError(
-            f"Invalid space ID: {space_id}. Must be in the format: username/reponame."
+            f"Invalid space ID: {space_id}. Must be in the format: username/reponame or orgname/reponame."
+        )
+    if dataset_id is not None and "/" not in dataset_id:
+        raise ValueError(
+            f"Invalid dataset ID: {dataset_id}. Must be in the format: username/datasetname or orgname/datasetname."
         )
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
@@ -97,6 +104,7 @@ def create_space_if_not_exists(
         pass
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
+    deploy_as_space(space_id, dataset_id)
 
     client = None
     for _ in range(30):
