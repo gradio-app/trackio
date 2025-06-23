@@ -221,7 +221,7 @@ def block_except_in_notebook():
 
 def simplify_column_names(columns: list[str]) -> dict[str, str]:
     """
-    Simplifies column names to first 10 alphanumeric characters with unique suffixes.
+    Simplifies column names to first 10 alphanumeric or "/" characters with unique suffixes.
 
     Args:
         columns: List of original column names
@@ -233,7 +233,7 @@ def simplify_column_names(columns: list[str]) -> dict[str, str]:
     used_names = set()
 
     for col in columns:
-        alphanumeric = re.sub(r"[^a-zA-Z0-9]", "", col)
+        alphanumeric = re.sub(r"[^a-zA-Z0-9/]", "", col)
         base_name = alphanumeric[:10] if alphanumeric else f"col_{len(used_names)}"
 
         final_name = base_name
@@ -266,7 +266,7 @@ def print_dashboard_instructions(project: str) -> None:
 
 def preprocess_space_and_dataset_ids(
     space_id: str | None, dataset_id: str | None
-) -> tuple[str, str]:
+) -> tuple[str | None, str | None]:
     if space_id is not None and "/" not in space_id:
         username = huggingface_hub.whoami()["name"]
         space_id = f"{username}/{space_id}"
