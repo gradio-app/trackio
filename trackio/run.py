@@ -36,7 +36,6 @@ class Run:
             try:
                 client = Client(self.url, verbose=False)
                 with self._client_lock:
-                    print("[trackio] Successfully initialized client in background.")
                     self._client = client
                     if len(self._queued_logs) > 0:
                         for queued_log in self._queued_logs:
@@ -44,7 +43,7 @@ class Run:
                         self._queued_logs.clear()
                     break
             except Exception as e:
-                print(f"[trackio] Failed to initialize client in background: {e}")
+                pass
             if sleep_coefficient is not None:
                 time.sleep(0.1 * sleep_coefficient)
 
