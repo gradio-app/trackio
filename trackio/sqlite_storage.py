@@ -34,6 +34,7 @@ class SQLiteStorage:
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         with SQLiteStorage.get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
