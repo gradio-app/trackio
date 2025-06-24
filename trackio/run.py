@@ -42,7 +42,7 @@ class Run:
                             self._client.predict(**queued_log)
                         self._queued_logs.clear()
                     break
-            except Exception as e:
+            except Exception:
                 pass
             if sleep_coefficient is not None:
                 time.sleep(0.1 * sleep_coefficient)

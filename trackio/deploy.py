@@ -106,6 +106,17 @@ def create_space_if_not_exists(
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
     deploy_as_space(space_id, dataset_id)
 
+
+def wait_until_space_exists(
+    space_id: str,
+) -> None:
+    """
+    Blocks the current thread until the space exists.
+    May raise a TimeoutError if this takes quite a while.
+
+    Args:
+        space_id: The ID of the Space to wait for.
+    """
     client = None
     for _ in range(30):
         try:
@@ -113,11 +124,10 @@ def create_space_if_not_exists(
             if client:
                 break
         except ReadTimeout:
-            print("* Space is not yet ready. Waiting 5 seconds...")
             time.sleep(5)
-        except ValueError as e:
-            print(f"* Space gave error {e}. Trying again in 5 seconds...")
+        except ValueError:
             time.sleep(5)
+    raise TimeoutError("Waiting for space to exist took longer than expected")
 
 
 def upload_db_to_space(project: str, space_id: str) -> None:
