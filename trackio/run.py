@@ -2,11 +2,10 @@ import threading
 import time
 from collections import deque
 
-import backoff
 import huggingface_hub
 from gradio_client import Client
 
-from trackio.utils import RESERVED_KEYS, generate_readable_name
+from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
 
 class Run:
@@ -32,7 +31,7 @@ class Run:
             self._client_thread.start()
 
     def _init_client_background(self):
-        fib = backoff.fibo()
+        fib = fibo()
         for sleep_coefficient in fib:
             try:
                 client = Client(self.url, verbose=False)
