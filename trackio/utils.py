@@ -276,3 +276,11 @@ def preprocess_space_and_dataset_ids(
     if space_id is not None and dataset_id is None:
         dataset_id = f"{space_id}_dataset"
     return space_id, dataset_id
+
+
+def fibo():
+    """Generator for Fibonacci backoff: 1, 1, 2, 3, 5, 8, ..."""
+    a, b = 1, 1
+    while True:
+        yield a
+        a, b = b, a + b
