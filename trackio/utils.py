@@ -10,6 +10,7 @@ from huggingface_hub.constants import HF_HOME
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time"]
 TRACKIO_DIR = os.path.join(HF_HOME, "trackio")
+Path(TRACKIO_DIR).mkdir(parents=True, exist_ok=True)
 
 TRACKIO_LOGO_PATH = str(Path(__file__).parent.joinpath("trackio_logo.png"))
 
