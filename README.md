@@ -151,4 +151,4 @@ MIT License
 
 # Pronunciation
 
-Trackio is pronounced TRACK-YO, as in "track yo' experiments"
+Trackio is pronounced TRACK-yo, as in "track yo' experiments"
