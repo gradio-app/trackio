@@ -1,11 +1,10 @@
 <p align="center">
-    <img width="482" alt="image" src="https://github.com/user-attachments/assets/bc08df0d-09b8-42aa-8206-4ac4b295b0b1" />
+    <img width="382" alt="image" src="https://github.com/user-attachments/assets/bc08df0d-09b8-42aa-8206-4ac4b295b0b1" />
 
 </p>
 
 `trackio` is a lightweight, 💯 free experiment tracking Python library built on top of 🤗 Datasets and Spaces.
 
-<br>
 
 ![Screen Recording 2025-06-11 at 5 39 32 PM](https://github.com/user-attachments/assets/5cf12286-54e7-4119-8a20-88c2cbd37ab6)
 
