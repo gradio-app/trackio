@@ -98,8 +98,13 @@ def import_csv(
             timestamps=timestamps,
         )
 
+    if len(metrics_list) > 1000:
+        warning = "Warning: Importing more than 1000 rows may produce plots that render slowly."
+    else:
+        warning = ""
+
     print(
-        f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'"
+        f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'. {warning}"
     )
     print(f"* Metrics found: {', '.join(metrics_list[0].keys())}")
 

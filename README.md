@@ -1,11 +1,10 @@
 <p align="center">
-    <img width="482" alt="image" src="https://github.com/user-attachments/assets/bc08df0d-09b8-42aa-8206-4ac4b295b0b1" />
+    <img width="382" alt="image" src="https://github.com/user-attachments/assets/bc08df0d-09b8-42aa-8206-4ac4b295b0b1" />
 
 </p>
 
 `trackio` is a lightweight, 💯 free experiment tracking Python library built on top of 🤗 Datasets and Spaces.
 
-<br>
 
 ![Screen Recording 2025-06-11 at 5 39 32 PM](https://github.com/user-attachments/assets/5cf12286-54e7-4119-8a20-88c2cbd37ab6)
 
@@ -15,7 +14,7 @@
 - *Local-first* design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id`.
 - Everything here, including hosting on Spaces, is **free**!
 
-Trackio is designed to be lightweight (<1000 lines of Python code total), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
+Trackio is designed to be lightweight (the core codebase is <1,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
 
 
 ## Installation
@@ -32,7 +31,7 @@ uv pip install trackio
 
 ## Usage
 
-The usage of `trackio` is designed to be a drop-in replacement for `wandb` in most cases:
+The usage of `trackio` is designed to be a identical to `wandb` in most cases:
 
 ```python
 import trackio as wandb
