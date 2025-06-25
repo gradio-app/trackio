@@ -148,3 +148,7 @@ To get started and see basic examples of usage, see these files:
 # License
 
 MIT License 
+
+# Pronunciation
+
+Trackio is pronounced TRACK-YO, as in "track yo' experiments"
