@@ -14,7 +14,7 @@
 - *Local-first* design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id`.
 - Everything here, including hosting on Spaces, is **free**!
 
-Trackio is designed to be lightweight (<1000 lines of Python code total), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
+Trackio is designed to be lightweight (the core codebase is <1,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
 
 
 ## Installation
