@@ -73,7 +73,7 @@ simulate_multiple_runs()
 
 Running the above will print to the terminal instructions on launching the dashboard.
 
-# Dashboard
+## Dashboard
 
 You can launch the dashboard by running in your terminal:
 
@@ -145,10 +145,10 @@ To get started and see basic examples of usage, see these files:
 * [Persisting metrics in a Hugging Face Dataset](https://github.com/gradio-app/trackio/blob/main/examples/persist-dataset.py)
 * [Deploying the dashboard to Spaces](https://github.com/gradio-app/trackio/blob/main/examples/deploy-on-spaces.py)
 
-# License
+## License
 
 MIT License 
 
-# Pronunciation
+## Pronunciation
 
 Trackio is pronounced TRACK-yo, as in "track yo' experiments"
