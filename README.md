@@ -31,7 +31,7 @@ uv pip install trackio
 
 ## Usage
 
-The usage of `trackio` is designed to be a drop-in replacement for `wandb` in most cases:
+The usage of `trackio` is designed to be a identical to `wandb` in most cases:
 
 ```python
 import trackio as wandb
