@@ -10,7 +10,6 @@ from gradio_client import Client, handle_file
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 
-from trackio import utils
 from trackio.sqlite_storage import SQLiteStorage
 
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
@@ -118,13 +117,14 @@ def wait_until_space_exists(
     Args:
         space_id: The ID of the Space to wait for.
     """
-    fib = utils.fibo()
-    for _ in range(30):
+    delay = 1
+    for _ in range(10):
         try:
             Client(space_id, verbose=False)
             return
         except (ReadTimeout, ValueError):
-            time.sleep(5 * next(fib))
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
     raise TimeoutError("Waiting for space to exist took longer than expected")
 
 
