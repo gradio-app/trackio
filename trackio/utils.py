@@ -11,13 +11,17 @@ import numpy as np
 import pandas as pd
 from huggingface_hub.constants import HF_HOME
 
+_WHOAMI_CACHE: str | None = None
+
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time"]
 TRACKIO_DIR = os.path.join(HF_HOME, "trackio")
+PROJECTS_INDEX_PATH = os.path.join(TRACKIO_DIR, "projects_index.json")
 
 TRACKIO_LOGO_PATH = str(Path(__file__).parent.joinpath("trackio_logo.png"))
 
-# Word lists used for generating readable run names
-ADJECTIVES = [
+# Word lists used for generating readable run names. Stored as tuples to
+# avoid accidental modification and reduce per-process memory overhead.
+ADJECTIVES = (
     "dainty",
     "brave",
     "calm",
@@ -108,9 +112,9 @@ ADJECTIVES = [
     "upstanding",
     "vibrant",
     "whimsical",
-]
+)
 
-NOUNS = [
+NOUNS = (
     "sunset",
     "forest",
     "river",
@@ -201,18 +205,22 @@ NOUNS = [
     "wavelet",
     "tide",
     "current",
-]
+)
 
 # Precompiled regex for column simplification
 SIMPLIFY_REGEX = re.compile(r"[^a-zA-Z0-9/]")
 
 
+# Keep track of generated names to avoid duplicates in constant time.
+_NAME_COUNTER: defaultdict[str, int] = defaultdict(int)
+
+
 def generate_readable_name() -> str:
     """Generate a random, human readable name like ``dainty-sunset-1``."""
-    adjective = random.choice(ADJECTIVES)
-    noun = random.choice(NOUNS)
-    number = random.randint(1, 99)
-    return f"{adjective}-{noun}-{number}"
+    base = f"{random.choice(ADJECTIVES)}-{random.choice(NOUNS)}"
+    number = _NAME_COUNTER[base]
+    _NAME_COUNTER[base] += 1
+    return f"{base}-{number}"
 
 
 def block_except_in_notebook():
@@ -227,29 +235,22 @@ def block_except_in_notebook():
 
 
 def simplify_column_names(columns: list[str]) -> dict[str, str]:
-    """
-    Simplifies column names to first 10 alphanumeric or "/" characters with unique suffixes.
+    """Vectorized simplification of column names."""
+    if not columns:
+        return {}
 
-    Args:
-        columns: List of original column names
+    s = pd.Series(columns)
+    cleaned = s.str.replace(SIMPLIFY_REGEX, "", regex=True).str.slice(0, 10)
+    cleaned = cleaned.fillna("col")
 
-    Returns:
-        Dictionary mapping original column names to simplified names
-    """
-    simplified_names: dict[str, str] = {}
-    suffix_counter: defaultdict[str, int] = defaultdict(int)
+    result = []
+    counter: defaultdict[str, int] = defaultdict(int)
+    for base in cleaned:
+        suffix = counter[base]
+        result.append(base if suffix == 0 else f"{base}_{suffix}")
+        counter[base] += 1
 
-    for col in columns:
-        alphanumeric = SIMPLIFY_REGEX.sub("", col)
-        base_name = alphanumeric[:10] if alphanumeric else "col"
-
-        suffix = suffix_counter[base_name]
-        final_name = base_name if suffix == 0 else f"{base_name}_{suffix}"
-        suffix_counter[base_name] += 1
-
-        simplified_names[col] = final_name
-
-    return simplified_names
+    return dict(zip(columns, result))
 
 
 def print_dashboard_instructions(project: str) -> None:
@@ -280,11 +281,19 @@ def downsample_df(df: "pd.DataFrame", max_points: int) -> "pd.DataFrame":
 def preprocess_space_and_dataset_ids(
     space_id: str | None, dataset_id: str | None
 ) -> tuple[str | None, str | None]:
-    if space_id is not None and "/" not in space_id:
-        username = huggingface_hub.whoami()["name"]
+    username = None
+    if (space_id and "/" not in space_id) or (dataset_id and "/" not in dataset_id):
+        global _WHOAMI_CACHE
+        if _WHOAMI_CACHE is None:
+            try:
+                _WHOAMI_CACHE = huggingface_hub.whoami(token=False)["name"]
+            except Exception:
+                _WHOAMI_CACHE = "user"
+        username = _WHOAMI_CACHE
+
+    if space_id is not None and "/" not in space_id and username is not None:
         space_id = f"{username}/{space_id}"
-    if dataset_id is not None and "/" not in dataset_id:
-        username = huggingface_hub.whoami()["name"]
+    if dataset_id is not None and "/" not in dataset_id and username is not None:
         dataset_id = f"{username}/{dataset_id}"
     if space_id is not None and dataset_id is None:
         dataset_id = f"{space_id}_dataset"

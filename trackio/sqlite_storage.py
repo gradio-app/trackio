@@ -6,17 +6,55 @@ from datetime import datetime
 
 from huggingface_hub import CommitScheduler
 
-try:
+try:  # absolute imports when installed
     from trackio.context_vars import current_scheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
-    from trackio.utils import TRACKIO_DIR
-except:  # noqa: E722
+    from trackio.utils import PROJECTS_INDEX_PATH, TRACKIO_DIR
+except Exception:  # relative imports for local execution
     from context_vars import current_scheduler
     from dummy_commit_scheduler import DummyCommitScheduler
-    from utils import TRACKIO_DIR
+    from utils import PROJECTS_INDEX_PATH, TRACKIO_DIR
 
 
 class SQLiteStorage:
+    _last_step_cache: dict[tuple[str, str], int] = {}
+    _metrics_cache: dict[tuple[str, str], list[dict]] = {}
+
+    @staticmethod
+    def _get_connection(db_path: str) -> sqlite3.Connection:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @staticmethod
+    def get_last_step(project: str, run: str) -> int:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not os.path.exists(db_path):
+            return -1
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT MAX(step) FROM metrics WHERE project_name = ? AND run_name = ?",
+                (project, run),
+            )
+            val = cursor.fetchone()[0]
+            return -1 if val is None else int(val)
+
+    @staticmethod
+    def _update_project_index(project: str | None) -> None:
+        os.makedirs(os.path.dirname(PROJECTS_INDEX_PATH), exist_ok=True)
+        try:
+            if os.path.exists(PROJECTS_INDEX_PATH):
+                with open(PROJECTS_INDEX_PATH, "r") as f:
+                    data = set(json.load(f))
+            else:
+                data = set()
+            if project is not None and project not in data:
+                data.add(project)
+                with open(PROJECTS_INDEX_PATH, "w") as f:
+                    json.dump(sorted(data), f)
+        except Exception:
+            pass
     @staticmethod
     def get_project_db_path(project: str) -> str:
         """Get the database path for a specific project."""
@@ -34,6 +72,9 @@ class SQLiteStorage:
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
+        if not os.path.exists(db_path):
+            SQLiteStorage._last_step_cache.clear()
+            SQLiteStorage._metrics_cache.clear()
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         with SQLiteStorage.get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
@@ -52,6 +93,12 @@ class SQLiteStorage:
                     """
                     CREATE INDEX IF NOT EXISTS idx_metrics_proj_run_step
                     ON metrics(project_name, run_name, step)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_metrics_project
+                    ON metrics(project_name)
                     """
                 )
                 conn.commit()
@@ -91,25 +138,26 @@ class SQLiteStorage:
         db_path = SQLiteStorage.init_db(project)
 
         with SQLiteStorage.get_scheduler().lock:
-            with sqlite3.connect(db_path) as conn:
+            with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
-                cursor.execute(
-                    """
-                    SELECT MAX(step) 
-                    FROM metrics 
-                    WHERE project_name = ? AND run_name = ?
-                    """,
-                    (project, run),
-                )
-                last_step = cursor.fetchone()[0]
-                current_step = 0 if last_step is None else last_step + 1
+                key = (project, run)
+                if key not in SQLiteStorage._last_step_cache:
+                    cursor.execute(
+                        "SELECT MAX(step) FROM metrics WHERE project_name = ? AND run_name = ?",
+                        key,
+                    )
+                    last = cursor.fetchone()[0]
+                    SQLiteStorage._last_step_cache[key] = -1 if last is None else last
+
+                current_step = SQLiteStorage._last_step_cache[key] + 1
+                SQLiteStorage._last_step_cache[key] = current_step
 
                 current_timestamp = datetime.now().isoformat()
 
                 cursor.execute(
                     """
-                    INSERT INTO metrics 
+                    INSERT INTO metrics
                     (timestamp, project_name, run_name, step, metrics)
                     VALUES (?, ?, ?, ?, ?)
                     """,
@@ -122,6 +170,7 @@ class SQLiteStorage:
                     ),
                 )
                 conn.commit()
+        SQLiteStorage._update_project_index(project)
 
     @staticmethod
     def bulk_log(
@@ -148,7 +197,7 @@ class SQLiteStorage:
 
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage.get_scheduler().lock:
-            with sqlite3.connect(db_path) as conn:
+            with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
                 data = []
@@ -165,13 +214,18 @@ class SQLiteStorage:
 
                 cursor.executemany(
                     """
-                    INSERT INTO metrics 
+                    INSERT INTO metrics
                     (timestamp, project_name, run_name, step, metrics)
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     data,
                 )
                 conn.commit()
+
+                key = (project, run)
+                if data:
+                    SQLiteStorage._last_step_cache[key] = data[-1][3]
+        SQLiteStorage._update_project_index(project)
 
     @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:
@@ -180,7 +234,7 @@ class SQLiteStorage:
         if not os.path.exists(db_path):
             return []
 
-        with sqlite3.connect(db_path) as conn:
+        with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -191,33 +245,58 @@ class SQLiteStorage:
                 """,
                 (project, run),
             )
-            rows = cursor.fetchall()
+            key = (project, run)
+            last_cached = SQLiteStorage._metrics_cache.get(key, [])
+            last_step = last_cached[-1]["step"] if last_cached else -1
 
-            results = []
-            for row in rows:
-                timestamp, step, metrics_json = row
-                metrics = json.loads(metrics_json)
+            cursor.execute(
+                "SELECT timestamp, step, metrics FROM metrics WHERE project_name = ? AND run_name = ? AND step > ? ORDER BY step",
+                (project, run, last_step),
+            )
+            new_rows = cursor.fetchall()
+
+            for row in new_rows:
+                timestamp = row["timestamp"]
+                step = row["step"]
+                metrics = json.loads(row["metrics"])
                 metrics["timestamp"] = timestamp
                 metrics["step"] = step
-                results.append(metrics)
-            return results
+                last_cached.append(metrics)
+
+            SQLiteStorage._metrics_cache[key] = last_cached
+            return list(last_cached)
 
     @staticmethod
     def get_projects() -> list[str]:
-        """Get list of all projects by scanning database files."""
+        """Get list of all projects."""
+        if os.path.exists(PROJECTS_INDEX_PATH):
+            try:
+                with open(PROJECTS_INDEX_PATH, "r") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+
         projects: set[str] = set()
         if not os.path.exists(TRACKIO_DIR):
             return []
 
         for db_file in glob.glob(os.path.join(TRACKIO_DIR, "*.db")):
             try:
-                with sqlite3.connect(db_file) as conn:
-                    for row in conn.execute("SELECT project_name FROM metrics"):
+                with SQLiteStorage._get_connection(db_file) as conn:
+                    for row in conn.execute(
+                        "SELECT DISTINCT project_name FROM metrics"
+                    ):
                         projects.add(row[0])
             except sqlite3.Error:
                 continue
 
-        return list(projects)
+        if projects:
+            try:
+                with open(PROJECTS_INDEX_PATH, "w") as f:
+                    json.dump(sorted(projects), f)
+            except Exception:
+                pass
+        return sorted(projects)
 
     @staticmethod
     def get_runs(project: str) -> list[str]:
@@ -226,7 +305,7 @@ class SQLiteStorage:
         if not os.path.exists(db_path):
             return []
 
-        with sqlite3.connect(db_path) as conn:
+        with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT DISTINCT run_name FROM metrics WHERE project_name = ?",

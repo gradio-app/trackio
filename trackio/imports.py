@@ -67,23 +67,23 @@ def import_csv(
         if c not in {step_column, "timestamp"}
     ]
 
-    col_indices = [df.columns.get_loc(c) for c in numeric_columns]
-    step_idx = df.columns.get_loc(step_column)
-    ts_idx = df.columns.get_loc("timestamp") if "timestamp" in df.columns else None
+    numeric_data = df[numeric_columns].to_numpy()
+    step_data = df[step_column].to_numpy()
+    ts_data = df["timestamp"].to_numpy() if "timestamp" in df.columns else None
 
-    for row in df.itertuples(index=False, name=None):
+    for i in range(len(df)):
         metrics = {}
-        for metric_name, idx in zip(numeric_columns, col_indices):
-            val = row[idx]
+        row_vals = numeric_data[i]
+        for metric_name, val in zip(numeric_columns, row_vals):
             if pd.notna(val):
                 metrics[metric_name] = float(val)
 
         if metrics:
             metrics_list.append(metrics)
-            steps.append(int(row[step_idx]))
+            steps.append(int(step_data[i]))
 
-            if ts_idx is not None and pd.notna(row[ts_idx]):
-                timestamps.append(str(row[ts_idx]))
+            if ts_data is not None and pd.notna(ts_data[i]):
+                timestamps.append(str(ts_data[i]))
             else:
                 timestamps.append("")
 
