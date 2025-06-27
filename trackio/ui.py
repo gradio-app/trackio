@@ -10,10 +10,10 @@ HfApi = hf.HfApi()
 
 try:
     from trackio.sqlite_storage import SQLiteStorage
-    from trackio.utils import RESERVED_KEYS, TRACKIO_LOGO_PATH
+    from trackio.utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, downsample_df
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH
+    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, downsample_df
 
 css = """
 #run-cb .wrap {
@@ -476,6 +476,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             for metric_idx, metric_name in enumerate(numeric_cols):
                 metric_df = master_df.dropna(subset=[metric_name])
                 if not metric_df.empty:
+                    metric_df = downsample_df(metric_df, 1000)
                     plot = gr.LinePlot(
                         metric_df,
                         x=x_column,

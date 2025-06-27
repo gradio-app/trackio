@@ -61,31 +61,29 @@ def import_csv(
     steps = []
     timestamps = []
 
-    numeric_columns = []
-    for column in df.columns:
-        if column == step_column:
-            continue
-        if column == "timestamp":
-            continue
+    numeric_columns = [
+        c
+        for c in df.select_dtypes(include="number").columns
+        if c not in {step_column, "timestamp"}
+    ]
 
-        try:
-            pd.to_numeric(df[column], errors="raise")
-            numeric_columns.append(column)
-        except (ValueError, TypeError):
-            continue
+    col_indices = [df.columns.get_loc(c) for c in numeric_columns]
+    step_idx = df.columns.get_loc(step_column)
+    ts_idx = df.columns.get_loc("timestamp") if "timestamp" in df.columns else None
 
-    for _, row in df.iterrows():
+    for row in df.itertuples(index=False, name=None):
         metrics = {}
-        for column in numeric_columns:
-            if pd.notna(row[column]):
-                metrics[column] = float(row[column])
+        for metric_name, idx in zip(numeric_columns, col_indices):
+            val = row[idx]
+            if pd.notna(val):
+                metrics[metric_name] = float(val)
 
         if metrics:
             metrics_list.append(metrics)
-            steps.append(int(row[step_column]))
+            steps.append(int(row[step_idx]))
 
-            if "timestamp" in df.columns and pd.notna(row["timestamp"]):
-                timestamps.append(str(row["timestamp"]))
+            if ts_idx is not None and pd.notna(row[ts_idx]):
+                timestamps.append(str(row[ts_idx]))
             else:
                 timestamps.append("")
 

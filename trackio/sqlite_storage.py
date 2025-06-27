@@ -48,6 +48,12 @@ class SQLiteStorage:
                         metrics TEXT NOT NULL
                     )
                 """)
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_metrics_proj_run_step
+                    ON metrics(project_name, run_name, step)
+                    """
+                )
                 conn.commit()
         return db_path
 
@@ -199,27 +205,19 @@ class SQLiteStorage:
     @staticmethod
     def get_projects() -> list[str]:
         """Get list of all projects by scanning database files."""
-        projects = []
+        projects: set[str] = set()
         if not os.path.exists(TRACKIO_DIR):
-            return projects
+            return []
 
-        db_files = glob.glob(os.path.join(TRACKIO_DIR, "*.db"))
-
-        for db_file in db_files:
+        for db_file in glob.glob(os.path.join(TRACKIO_DIR, "*.db")):
             try:
                 with sqlite3.connect(db_file) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name='metrics'"
-                    )
-                    if cursor.fetchone():
-                        cursor.execute("SELECT DISTINCT project_name FROM metrics")
-                        project_names = [row[0] for row in cursor.fetchall()]
-                        projects.extend(project_names)
+                    for row in conn.execute("SELECT project_name FROM metrics"):
+                        projects.add(row[0])
             except sqlite3.Error:
                 continue
 
-        return list(set(projects))
+        return list(projects)
 
     @staticmethod
     def get_runs(project: str) -> list[str]:

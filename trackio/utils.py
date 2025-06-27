@@ -3,9 +3,12 @@ import random
 import re
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import huggingface_hub
+import numpy as np
+import pandas as pd
 from huggingface_hub.constants import HF_HOME
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time"]
@@ -13,197 +16,201 @@ TRACKIO_DIR = os.path.join(HF_HOME, "trackio")
 
 TRACKIO_LOGO_PATH = str(Path(__file__).parent.joinpath("trackio_logo.png"))
 
+# Word lists used for generating readable run names
+ADJECTIVES = [
+    "dainty",
+    "brave",
+    "calm",
+    "eager",
+    "fancy",
+    "gentle",
+    "happy",
+    "jolly",
+    "kind",
+    "lively",
+    "merry",
+    "nice",
+    "proud",
+    "quick",
+    "silly",
+    "tidy",
+    "witty",
+    "zealous",
+    "bright",
+    "shy",
+    "bold",
+    "clever",
+    "daring",
+    "elegant",
+    "faithful",
+    "graceful",
+    "honest",
+    "inventive",
+    "jovial",
+    "keen",
+    "lucky",
+    "modest",
+    "noble",
+    "optimistic",
+    "patient",
+    "quirky",
+    "resourceful",
+    "sincere",
+    "thoughtful",
+    "upbeat",
+    "valiant",
+    "warm",
+    "youthful",
+    "zesty",
+    "adventurous",
+    "breezy",
+    "cheerful",
+    "delightful",
+    "energetic",
+    "fearless",
+    "glad",
+    "hopeful",
+    "imaginative",
+    "joyful",
+    "kindly",
+    "luminous",
+    "mysterious",
+    "neat",
+    "outgoing",
+    "playful",
+    "radiant",
+    "spirited",
+    "tranquil",
+    "unique",
+    "vivid",
+    "wise",
+    "zany",
+    "artful",
+    "bubbly",
+    "charming",
+    "dazzling",
+    "earnest",
+    "festive",
+    "gentlemanly",
+    "hearty",
+    "intrepid",
+    "jubilant",
+    "knightly",
+    "lively",
+    "magnetic",
+    "nimble",
+    "orderly",
+    "peaceful",
+    "quick-witted",
+    "robust",
+    "sturdy",
+    "trusty",
+    "upstanding",
+    "vibrant",
+    "whimsical",
+]
 
-def generate_readable_name():
-    """
-    Generates a random, readable name like "dainty-sunset-1"
-    """
-    adjectives = [
-        "dainty",
-        "brave",
-        "calm",
-        "eager",
-        "fancy",
-        "gentle",
-        "happy",
-        "jolly",
-        "kind",
-        "lively",
-        "merry",
-        "nice",
-        "proud",
-        "quick",
-        "silly",
-        "tidy",
-        "witty",
-        "zealous",
-        "bright",
-        "shy",
-        "bold",
-        "clever",
-        "daring",
-        "elegant",
-        "faithful",
-        "graceful",
-        "honest",
-        "inventive",
-        "jovial",
-        "keen",
-        "lucky",
-        "modest",
-        "noble",
-        "optimistic",
-        "patient",
-        "quirky",
-        "resourceful",
-        "sincere",
-        "thoughtful",
-        "upbeat",
-        "valiant",
-        "warm",
-        "youthful",
-        "zesty",
-        "adventurous",
-        "breezy",
-        "cheerful",
-        "delightful",
-        "energetic",
-        "fearless",
-        "glad",
-        "hopeful",
-        "imaginative",
-        "joyful",
-        "kindly",
-        "luminous",
-        "mysterious",
-        "neat",
-        "outgoing",
-        "playful",
-        "radiant",
-        "spirited",
-        "tranquil",
-        "unique",
-        "vivid",
-        "wise",
-        "zany",
-        "artful",
-        "bubbly",
-        "charming",
-        "dazzling",
-        "earnest",
-        "festive",
-        "gentlemanly",
-        "hearty",
-        "intrepid",
-        "jubilant",
-        "knightly",
-        "lively",
-        "magnetic",
-        "nimble",
-        "orderly",
-        "peaceful",
-        "quick-witted",
-        "robust",
-        "sturdy",
-        "trusty",
-        "upstanding",
-        "vibrant",
-        "whimsical",
-    ]
-    nouns = [
-        "sunset",
-        "forest",
-        "river",
-        "mountain",
-        "breeze",
-        "meadow",
-        "ocean",
-        "valley",
-        "sky",
-        "field",
-        "cloud",
-        "star",
-        "rain",
-        "leaf",
-        "stone",
-        "flower",
-        "bird",
-        "tree",
-        "wave",
-        "trail",
-        "island",
-        "desert",
-        "hill",
-        "lake",
-        "pond",
-        "grove",
-        "canyon",
-        "reef",
-        "bay",
-        "peak",
-        "glade",
-        "marsh",
-        "cliff",
-        "dune",
-        "spring",
-        "brook",
-        "cave",
-        "plain",
-        "ridge",
-        "wood",
-        "blossom",
-        "petal",
-        "root",
-        "branch",
-        "seed",
-        "acorn",
-        "pine",
-        "willow",
-        "cedar",
-        "elm",
-        "falcon",
-        "eagle",
-        "sparrow",
-        "robin",
-        "owl",
-        "finch",
-        "heron",
-        "crane",
-        "duck",
-        "swan",
-        "fox",
-        "wolf",
-        "bear",
-        "deer",
-        "moose",
-        "otter",
-        "beaver",
-        "lynx",
-        "hare",
-        "badger",
-        "butterfly",
-        "bee",
-        "ant",
-        "beetle",
-        "dragonfly",
-        "firefly",
-        "ladybug",
-        "moth",
-        "spider",
-        "worm",
-        "coral",
-        "kelp",
-        "shell",
-        "pebble",
-        "boulder",
-        "cobble",
-        "sand",
-        "wavelet",
-        "tide",
-        "current",
-    ]
-    adjective = random.choice(adjectives)
-    noun = random.choice(nouns)
+NOUNS = [
+    "sunset",
+    "forest",
+    "river",
+    "mountain",
+    "breeze",
+    "meadow",
+    "ocean",
+    "valley",
+    "sky",
+    "field",
+    "cloud",
+    "star",
+    "rain",
+    "leaf",
+    "stone",
+    "flower",
+    "bird",
+    "tree",
+    "wave",
+    "trail",
+    "island",
+    "desert",
+    "hill",
+    "lake",
+    "pond",
+    "grove",
+    "canyon",
+    "reef",
+    "bay",
+    "peak",
+    "glade",
+    "marsh",
+    "cliff",
+    "dune",
+    "spring",
+    "brook",
+    "cave",
+    "plain",
+    "ridge",
+    "wood",
+    "blossom",
+    "petal",
+    "root",
+    "branch",
+    "seed",
+    "acorn",
+    "pine",
+    "willow",
+    "cedar",
+    "elm",
+    "falcon",
+    "eagle",
+    "sparrow",
+    "robin",
+    "owl",
+    "finch",
+    "heron",
+    "crane",
+    "duck",
+    "swan",
+    "fox",
+    "wolf",
+    "bear",
+    "deer",
+    "moose",
+    "otter",
+    "beaver",
+    "lynx",
+    "hare",
+    "badger",
+    "butterfly",
+    "bee",
+    "ant",
+    "beetle",
+    "dragonfly",
+    "firefly",
+    "ladybug",
+    "moth",
+    "spider",
+    "worm",
+    "coral",
+    "kelp",
+    "shell",
+    "pebble",
+    "boulder",
+    "cobble",
+    "sand",
+    "wavelet",
+    "tide",
+    "current",
+]
+
+# Precompiled regex for column simplification
+SIMPLIFY_REGEX = re.compile(r"[^a-zA-Z0-9/]")
+
+
+def generate_readable_name() -> str:
+    """Generate a random, human readable name like ``dainty-sunset-1``."""
+    adjective = random.choice(ADJECTIVES)
+    noun = random.choice(NOUNS)
     number = random.randint(1, 99)
     return f"{adjective}-{noun}-{number}"
 
@@ -229,21 +236,18 @@ def simplify_column_names(columns: list[str]) -> dict[str, str]:
     Returns:
         Dictionary mapping original column names to simplified names
     """
-    simplified_names = {}
-    used_names = set()
+    simplified_names: dict[str, str] = {}
+    suffix_counter: defaultdict[str, int] = defaultdict(int)
 
     for col in columns:
-        alphanumeric = re.sub(r"[^a-zA-Z0-9/]", "", col)
-        base_name = alphanumeric[:10] if alphanumeric else f"col_{len(used_names)}"
+        alphanumeric = SIMPLIFY_REGEX.sub("", col)
+        base_name = alphanumeric[:10] if alphanumeric else "col"
 
-        final_name = base_name
-        suffix = 1
-        while final_name in used_names:
-            final_name = f"{base_name}_{suffix}"
-            suffix += 1
+        suffix = suffix_counter[base_name]
+        final_name = base_name if suffix == 0 else f"{base_name}_{suffix}"
+        suffix_counter[base_name] += 1
 
         simplified_names[col] = final_name
-        used_names.add(final_name)
 
     return simplified_names
 
@@ -262,6 +266,15 @@ def print_dashboard_instructions(project: str) -> None:
     print("* View dashboard by running in your terminal:")
     print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
     print(f'* or by running in Python: trackio.show(project="{project}")')
+
+
+def downsample_df(df: "pd.DataFrame", max_points: int) -> "pd.DataFrame":
+    """Return a subset of ``df`` limited to ``max_points`` rows."""
+    if len(df) <= max_points:
+        return df
+
+    indices = np.linspace(0, len(df) - 1, num=max_points, dtype=int)
+    return df.iloc[indices].reset_index(drop=True)
 
 
 def preprocess_space_and_dataset_ids(
