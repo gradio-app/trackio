@@ -55,6 +55,7 @@ class SQLiteStorage:
                     json.dump(sorted(data), f)
         except Exception:
             pass
+
     @staticmethod
     def get_project_db_path(project: str) -> str:
         """Get the database path for a specific project."""

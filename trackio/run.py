@@ -19,6 +19,7 @@ class Run:
         "config",
         "_queued_logs",
     )
+
     def __init__(
         self,
         url: str,
