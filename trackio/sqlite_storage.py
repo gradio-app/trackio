@@ -269,7 +269,9 @@ class SQLiteStorage:
 
     @staticmethod
     def get_projects() -> list[str]:
-        """Get list of all projects."""
+        """
+        Get list of all projects. by scanning the database files in the trackio directory.
+        """
         projects: set[str] = set()
         if not os.path.exists(TRACKIO_DIR):
             return []
