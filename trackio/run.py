@@ -42,7 +42,7 @@ class Run:
                             self._client.predict(**queued_log)
                         self._queued_logs.clear()
                     break
-            except Exception as e:
+            except Exception:
                 pass
             if sleep_coefficient is not None:
                 time.sleep(0.1 * sleep_coefficient)
@@ -83,5 +83,4 @@ class Run:
         """Cleanup when run is finished."""
         # wait for background client thread, in case it has a queue of logs to flush.
         if self._client_thread is not None:
-            print("Uploading logs to Trackio server...")
             self._client_thread.join()
