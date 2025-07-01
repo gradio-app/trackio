@@ -9,17 +9,6 @@ from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
 
 class Run:
-    __slots__ = (
-        "url",
-        "project",
-        "_client_lock",
-        "_client_thread",
-        "_client",
-        "name",
-        "config",
-        "_queued_logs",
-    )
-
     def __init__(
         self,
         url: str,
