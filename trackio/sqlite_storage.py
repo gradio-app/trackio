@@ -10,7 +10,7 @@ try:  # absolute imports when installed
     from trackio.context_vars import current_scheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import PROJECTS_INDEX_PATH, TRACKIO_DIR
-except Exception:  # relative imports for local execution
+except Exception:  # relative imports for local execution on Spaces
     from context_vars import current_scheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import PROJECTS_INDEX_PATH, TRACKIO_DIR
