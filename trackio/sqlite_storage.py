@@ -1,8 +1,8 @@
-import glob
 import json
 import os
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
 from huggingface_hub import CommitScheduler
 
@@ -21,15 +21,15 @@ class SQLiteStorage:
     _metrics_cache: dict[tuple[str, str], list[dict]] = {}
 
     @staticmethod
-    def _get_connection(db_path: str) -> sqlite3.Connection:
-        conn = sqlite3.connect(db_path)
+    def _get_connection(db_path: Path) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         return conn
 
     @staticmethod
     def get_last_step(project: str, run: str) -> int:
         db_path = SQLiteStorage.get_project_db_path(project)
-        if not os.path.exists(db_path):
+        if not db_path.exists():
             return -1
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
@@ -41,14 +41,14 @@ class SQLiteStorage:
             return -1 if val is None else int(val)
 
     @staticmethod
-    def get_project_db_path(project: str) -> str:
+    def get_project_db_path(project: str) -> Path:
         """Get the database path for a specific project."""
         safe_project_name = "".join(
             c for c in project if c.isalnum() or c in ("-", "_")
         ).rstrip()
         if not safe_project_name:
             safe_project_name = "default"
-        return os.path.join(TRACKIO_DIR, f"{safe_project_name}.db")
+        return TRACKIO_DIR / f"{safe_project_name}.db"
 
     @staticmethod
     def init_db(project: str) -> str:
@@ -57,10 +57,10 @@ class SQLiteStorage:
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
-        if not os.path.exists(db_path):
+        if not db_path.exists():
             SQLiteStorage._last_step_cache.clear()
             SQLiteStorage._metrics_cache.clear()
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage.get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
@@ -205,7 +205,7 @@ class SQLiteStorage:
     def get_metrics(project: str, run: str) -> list[dict]:
         """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
-        if not os.path.exists(db_path):
+        if not db_path.exists():
             return []
 
         with SQLiteStorage._get_connection(db_path) as conn:
@@ -246,25 +246,19 @@ class SQLiteStorage:
         Get list of all projects by scanning the database files in the trackio directory.
         """
         projects: set[str] = set()
-        if not os.path.exists(TRACKIO_DIR):
+        if not TRACKIO_DIR.exists():
             return []
 
-        for db_file in glob.glob(os.path.join(TRACKIO_DIR, "*.db")):
-            try:
-                # Extract project name from filename (remove .db extension)
-                project_name = os.path.basename(db_file)[:-3]
-                # Convert back from safe filename to original project name if possible
-                # For now, we'll use the filename as the project name
-                projects.add(project_name)
-            except Exception:
-                continue
+        for db_file in TRACKIO_DIR.glob("*.db"):
+            project_name = db_file.stem
+            projects.add(project_name)
         return sorted(projects)
 
     @staticmethod
     def get_runs(project: str) -> list[str]:
         """Get list of all runs for a project."""
         db_path = SQLiteStorage.get_project_db_path(project)
-        if not os.path.exists(db_path):
+        if not db_path.exists():
             return []
 
         with SQLiteStorage._get_connection(db_path) as conn:
