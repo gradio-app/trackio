@@ -41,7 +41,9 @@ def init(
             - "allow": Resume the run if it exists, otherwise create a new run
             - "never": Never resume a run, always create a new one
     """
+    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
     url = context_vars.current_server.get()
+
     if url is None:
         if space_id is None:
             _, url, _ = demo.launch(
@@ -50,8 +52,6 @@ def init(
         else:
             url = space_id
         context_vars.current_server.set(url)
-
-    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
 
     if (
         context_vars.current_project.get() is None
