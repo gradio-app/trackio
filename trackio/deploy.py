@@ -40,7 +40,14 @@ def deploy_as_space(
         if e.response.status_code in [401, 403]:  # unauthorized or forbidden
             print("Need 'write' access token to create a Spaces repo.")
             huggingface_hub.login(add_to_git_credential=False)
-        raise e
+            huggingface_hub.create_repo(
+                space_id,
+                space_sdk="gradio",
+                repo_type="space",
+                exist_ok=True,
+            )
+        else:
+            raise ValueError(f"Failed to create Space: {e}")
 
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
@@ -101,7 +108,11 @@ def create_space_if_not_exists(
         if e.response.status_code in [401, 403]:  # unauthorized or forbidden
             print("Need 'write' access token to create a Spaces repo.")
             huggingface_hub.login(add_to_git_credential=False)
-        raise e
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_DATASET_ID", dataset_id
+            )
+        else:
+            raise ValueError(f"Failed to create Space: {e}")
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
     deploy_as_space(space_id, dataset_id)
