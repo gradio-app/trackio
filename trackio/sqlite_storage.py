@@ -34,8 +34,8 @@ class SQLiteStorage:
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT MAX(step) FROM metrics WHERE project_name = ? AND run_name = ?",
-                (project, run),
+                "SELECT MAX(step) FROM metrics WHERE run_name = ?",
+                (run,),
             )
             val = cursor.fetchone()[0]
             return -1 if val is None else int(val)
@@ -68,7 +68,6 @@ class SQLiteStorage:
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
-                        project_name TEXT NOT NULL,
                         run_name TEXT NOT NULL,
                         step INTEGER NOT NULL,
                         metrics TEXT NOT NULL
@@ -76,14 +75,8 @@ class SQLiteStorage:
                 """)
                 cursor.execute(
                     """
-                    CREATE INDEX IF NOT EXISTS idx_metrics_proj_run_step
-                    ON metrics(project_name, run_name, step)
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_metrics_project
-                    ON metrics(project_name)
+                    CREATE INDEX IF NOT EXISTS idx_metrics_run_step
+                    ON metrics(run_name, step)
                     """
                 )
                 conn.commit()
@@ -129,8 +122,8 @@ class SQLiteStorage:
                 key = (project, run)
                 if key not in SQLiteStorage._last_step_cache:
                     cursor.execute(
-                        "SELECT MAX(step) FROM metrics WHERE project_name = ? AND run_name = ?",
-                        key,
+                        "SELECT MAX(step) FROM metrics WHERE run_name = ?",
+                        (run,),
                     )
                     last = cursor.fetchone()[0]
                     SQLiteStorage._last_step_cache[key] = -1 if last is None else last
@@ -143,19 +136,17 @@ class SQLiteStorage:
                 cursor.execute(
                     """
                     INSERT INTO metrics
-                    (timestamp, project_name, run_name, step, metrics)
-                    VALUES (?, ?, ?, ?, ?)
+                    (timestamp, run_name, step, metrics)
+                    VALUES (?, ?, ?, ?)
                     """,
                     (
                         current_timestamp,
-                        project,
                         run,
                         current_step,
                         json.dumps(metrics),
                     ),
                 )
                 conn.commit()
-        SQLiteStorage._update_project_index(project)
 
     @staticmethod
     def bulk_log(
@@ -190,7 +181,6 @@ class SQLiteStorage:
                     data.append(
                         (
                             timestamps[i],
-                            project,
                             run,
                             steps[i],
                             json.dumps(metrics),
@@ -200,8 +190,8 @@ class SQLiteStorage:
                 cursor.executemany(
                     """
                     INSERT INTO metrics
-                    (timestamp, project_name, run_name, step, metrics)
-                    VALUES (?, ?, ?, ?, ?)
+                    (timestamp, run_name, step, metrics)
+                    VALUES (?, ?, ?, ?)
                     """,
                     data,
                 )
@@ -209,8 +199,7 @@ class SQLiteStorage:
 
                 key = (project, run)
                 if data:
-                    SQLiteStorage._last_step_cache[key] = data[-1][3]
-        SQLiteStorage._update_project_index(project)
+                    SQLiteStorage._last_step_cache[key] = data[-1][2]
 
     @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:
@@ -225,18 +214,18 @@ class SQLiteStorage:
                 """
                 SELECT timestamp, step, metrics
                 FROM metrics
-                WHERE project_name = ? AND run_name = ?
+                WHERE run_name = ?
                 ORDER BY timestamp
                 """,
-                (project, run),
+                (run,),
             )
             key = (project, run)
             last_cached = SQLiteStorage._metrics_cache.get(key, [])
             last_step = last_cached[-1]["step"] if last_cached else -1
 
             cursor.execute(
-                "SELECT timestamp, step, metrics FROM metrics WHERE project_name = ? AND run_name = ? AND step > ? ORDER BY step",
-                (project, run, last_step),
+                "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ? AND step > ? ORDER BY step",
+                (run, last_step),
             )
             new_rows = cursor.fetchall()
 
@@ -254,7 +243,7 @@ class SQLiteStorage:
     @staticmethod
     def get_projects() -> list[str]:
         """
-        Get list of all projects. by scanning the database files in the trackio directory.
+        Get list of all projects by scanning the database files in the trackio directory.
         """
         projects: set[str] = set()
         if not os.path.exists(TRACKIO_DIR):
@@ -262,12 +251,12 @@ class SQLiteStorage:
 
         for db_file in glob.glob(os.path.join(TRACKIO_DIR, "*.db")):
             try:
-                with SQLiteStorage._get_connection(db_file) as conn:
-                    for row in conn.execute(
-                        "SELECT DISTINCT project_name FROM metrics"
-                    ):
-                        projects.add(row[0])
-            except sqlite3.Error:
+                # Extract project name from filename (remove .db extension)
+                project_name = os.path.basename(db_file)[:-3]
+                # Convert back from safe filename to original project name if possible
+                # For now, we'll use the filename as the project name
+                projects.add(project_name)
+            except Exception:
                 continue
         return sorted(projects)
 
@@ -281,8 +270,7 @@ class SQLiteStorage:
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT DISTINCT run_name FROM metrics WHERE project_name = ?",
-                (project,),
+                "SELECT DISTINCT run_name FROM metrics",
             )
             return [row[0] for row in cursor.fetchall()]
 
