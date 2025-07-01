@@ -118,11 +118,11 @@ def wait_until_space_exists(
         space_id: The ID of the Space to wait for.
     """
     client = None
-    for _ in range(30):
+    for _ in range(int(os.getenv("TRACKIO_SPACE_WAIT_ATTEMPTS", "30"))):
         try:
             client = Client(space_id, verbose=False)
             if client:
-                break
+                return
         except ReadTimeout:
             time.sleep(5)
         except ValueError:
