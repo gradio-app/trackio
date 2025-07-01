@@ -128,16 +128,14 @@ def wait_until_space_exists(
     Args:
         space_id: The ID of the Space to wait for.
     """
-    client = None
-    for _ in range(30):
+    delay = 1
+    for _ in range(10):
         try:
-            client = Client(space_id, verbose=False)
-            if client:
-                break
-        except ReadTimeout:
-            time.sleep(5)
-        except ValueError:
-            time.sleep(5)
+            Client(space_id, verbose=False)
+            return
+        except (ReadTimeout, ValueError):
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
     raise TimeoutError("Waiting for space to exist took longer than expected")
 
 

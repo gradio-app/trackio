@@ -145,6 +145,12 @@ To get started and see basic examples of usage, see these files:
 * [Persisting metrics in a Hugging Face Dataset](https://github.com/gradio-app/trackio/blob/main/examples/persist-dataset.py)
 * [Deploying the dashboard to Spaces](https://github.com/gradio-app/trackio/blob/main/examples/deploy-on-spaces.py)
 
+## Note: Trackio is in Beta (DB Schema May Change)
+
+Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio sqlite database may change, which may require migrating or deleting existing database files (located by default at: `~/.cache/huggingface/trackio`).  
+
+Since Trackio is in beta, your feedback is welcome! Please create issues with bug reports or feature requests.
+
 ## License
 
 MIT License 
