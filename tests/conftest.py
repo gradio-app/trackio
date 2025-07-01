@@ -1,11 +1,6 @@
-import os
-import sys
 import tempfile
 
 import pytest
-
-# Ensure local package is imported before site packages
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
 @pytest.fixture
