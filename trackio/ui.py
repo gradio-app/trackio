@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import Any, Dict
+from typing import Any
 
 import gradio as gr
 import huggingface_hub as hf
@@ -8,14 +8,12 @@ import pandas as pd
 
 HfApi = hf.HfApi()
 
-RUN_CACHE: Dict[tuple[str, str, bool, str], tuple[int, pd.DataFrame]] = {}
-
 try:
     from trackio.sqlite_storage import SQLiteStorage
-    from trackio.utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, downsample_df
+    from trackio.utils import RESERVED_KEYS, TRACKIO_LOGO_PATH
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, downsample_df
+    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH
 
 css = """
 #run-cb .wrap {
@@ -116,12 +114,6 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
 def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str):
     if not project or not run:
         return None
-    cache_key = (project, run, smoothing, x_axis)
-    last_step = SQLiteStorage.get_last_step(project, run)
-    cached = RUN_CACHE.get(cache_key)
-    if cached and cached[0] == last_step:
-        return cached[1]
-
     metrics = SQLiteStorage.get_metrics(project, run)
     if not metrics:
         return None
@@ -160,13 +152,11 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis:
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        RUN_CACHE[cache_key] = (last_step, combined_df)
         return combined_df
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        RUN_CACHE[cache_key] = (last_step, df)
         return df
 
 
@@ -420,8 +410,17 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
         last_steps = {}
         for run in runs:
-            step = SQLiteStorage.get_last_step(project, run)
-            last_steps[run] = 0 if step == -1 else step
+            metrics = SQLiteStorage.get_metrics(project, run)
+            if metrics:
+                df = pd.DataFrame(metrics)
+                if "step" not in df.columns:
+                    df["step"] = range(len(df))
+                if not df.empty:
+                    last_steps[run] = df["step"].max().item()
+                else:
+                    last_steps[run] = 0
+            else:
+                last_steps[run] = 0
 
         return last_steps
 
@@ -477,7 +476,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             for metric_idx, metric_name in enumerate(numeric_cols):
                 metric_df = master_df.dropna(subset=[metric_name])
                 if not metric_df.empty:
-                    metric_df = downsample_df(metric_df, 1000)
                     plot = gr.LinePlot(
                         metric_df,
                         x=x_column,
