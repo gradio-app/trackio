@@ -270,13 +270,6 @@ class SQLiteStorage:
     @staticmethod
     def get_projects() -> list[str]:
         """Get list of all projects."""
-        if os.path.exists(PROJECTS_INDEX_PATH):
-            try:
-                with open(PROJECTS_INDEX_PATH, "r") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-
         projects: set[str] = set()
         if not os.path.exists(TRACKIO_DIR):
             return []
