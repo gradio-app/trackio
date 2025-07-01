@@ -285,13 +285,6 @@ class SQLiteStorage:
                         projects.add(row[0])
             except sqlite3.Error:
                 continue
-
-        if projects:
-            try:
-                with open(PROJECTS_INDEX_PATH, "w") as f:
-                    json.dump(sorted(projects), f)
-            except Exception:
-                pass
         return sorted(projects)
 
     @staticmethod
