@@ -147,7 +147,7 @@ To get started and see basic examples of usage, see these files:
 
 ## Note: Trackio is in Beta (DB Schema May Change)
 
-Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio database (located by default at: `~/.cache/huggingface/trackio`) may change.  
+Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio sqlite database may change, which may require migrating or deleting existing database files (located by default at: `~/.cache/huggingface/trackio`).  
 
 Since Trackio is in beta, your feedback is welcome! Please create issues with bug reports or feature requests.
 
