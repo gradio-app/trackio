@@ -17,9 +17,6 @@ except Exception:  # relative imports for local execution on Spaces
 
 
 class SQLiteStorage:
-    _last_step_cache: dict[tuple[str, str], int] = {}
-    _metrics_cache: dict[tuple[str, str], list[dict]] = {}
-
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path))
@@ -43,9 +40,6 @@ class SQLiteStorage:
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
-        if not db_path.exists():
-            SQLiteStorage._last_step_cache.clear()
-            SQLiteStorage._metrics_cache.clear()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage.get_scheduler().lock:
             with sqlite3.connect(db_path) as conn:
@@ -105,17 +99,7 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
-                key = (project, run)
-                if key not in SQLiteStorage._last_step_cache:
-                    cursor.execute(
-                        "SELECT MAX(step) FROM metrics WHERE run_name = ?",
-                        (run,),
-                    )
-                    last = cursor.fetchone()[0]
-                    SQLiteStorage._last_step_cache[key] = -1 if last is None else last
-
-                current_step = SQLiteStorage._last_step_cache[key] + 1
-                SQLiteStorage._last_step_cache[key] = current_step
+                current_step = 0
 
                 current_timestamp = datetime.now().isoformat()
 
@@ -183,10 +167,6 @@ class SQLiteStorage:
                 )
                 conn.commit()
 
-                key = (project, run)
-                if data:
-                    SQLiteStorage._last_step_cache[key] = data[-1][2]
-
     @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:
         """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
@@ -205,13 +185,10 @@ class SQLiteStorage:
                 """,
                 (run,),
             )
-            key = (project, run)
-            last_cached = SQLiteStorage._metrics_cache.get(key, [])
-            last_step = last_cached[-1]["step"] if last_cached else -1
 
             cursor.execute(
-                "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ? AND step > ? ORDER BY step",
-                (run, last_step),
+                "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ? ORDER BY step",
+                (run,),
             )
             new_rows = cursor.fetchall()
 
@@ -221,10 +198,8 @@ class SQLiteStorage:
                 metrics = json.loads(row["metrics"])
                 metrics["timestamp"] = timestamp
                 metrics["step"] = step
-                last_cached.append(metrics)
 
-            SQLiteStorage._metrics_cache[key] = last_cached
-            return list(last_cached)
+            return new_rows
 
     @staticmethod
     def get_projects() -> list[str]:
