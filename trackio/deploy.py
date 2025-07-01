@@ -37,9 +37,7 @@ def deploy_as_space(
             exist_ok=True,
         )
     except HTTPError as e:
-        if (
-            e.response.status_code == 401 or e.response.status_code == 403
-        ):  # Unauthorized or Forbidden
+        if e.response.status_code in [401, 403]:  # unauthorized or forbidden
             print("Need 'write' access token to create a Spaces repo.")
             huggingface_hub.login(add_to_git_credential=False)
         raise e
@@ -100,9 +98,7 @@ def create_space_if_not_exists(
     except RepositoryNotFoundError:
         pass
     except HTTPError as e:
-        if (
-            e.response.status_code == 401 or e.response.status_code == 403
-        ):  # Unauthorized or Forbidden
+        if e.response.status_code in [401, 403]:  # unauthorized or forbidden
             print("Need 'write' access token to create a Spaces repo.")
             huggingface_hub.login(add_to_git_credential=False)
         raise e
