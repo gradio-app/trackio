@@ -195,20 +195,15 @@ class SQLiteStorage:
                 (run,),
             )
 
-            cursor.execute(
-                "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ? ORDER BY step",
-                (run,),
-            )
-            new_rows = cursor.fetchall()
-
-            for row in new_rows:
-                timestamp = row["timestamp"]
-                step = row["step"]
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
                 metrics = json.loads(row["metrics"])
-                metrics["timestamp"] = timestamp
-                metrics["step"] = step
+                metrics["timestamp"] = row["timestamp"]
+                metrics["step"] = row["step"]
+                results.append(metrics)
 
-            return new_rows
+            return results
 
     @staticmethod
     def get_projects() -> list[str]:
