@@ -27,20 +27,6 @@ class SQLiteStorage:
         return conn
 
     @staticmethod
-    def get_last_step(project: str, run: str) -> int:
-        db_path = SQLiteStorage.get_project_db_path(project)
-        if not db_path.exists():
-            return -1
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT MAX(step) FROM metrics WHERE run_name = ?",
-                (run,),
-            )
-            val = cursor.fetchone()[0]
-            return -1 if val is None else int(val)
-
-    @staticmethod
     def get_project_db_path(project: str) -> Path:
         """Get the database path for a specific project."""
         safe_project_name = "".join(
