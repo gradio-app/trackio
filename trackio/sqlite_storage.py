@@ -41,22 +41,6 @@ class SQLiteStorage:
             return -1 if val is None else int(val)
 
     @staticmethod
-    def _update_project_index(project: str | None) -> None:
-        os.makedirs(os.path.dirname(PROJECTS_INDEX_PATH), exist_ok=True)
-        try:
-            if os.path.exists(PROJECTS_INDEX_PATH):
-                with open(PROJECTS_INDEX_PATH, "r") as f:
-                    data = set(json.load(f))
-            else:
-                data = set()
-            if project is not None and project not in data:
-                data.add(project)
-                with open(PROJECTS_INDEX_PATH, "w") as f:
-                    json.dump(sorted(data), f)
-        except Exception:
-            pass
-
-    @staticmethod
     def get_project_db_path(project: str) -> str:
         """Get the database path for a specific project."""
         safe_project_name = "".join(
