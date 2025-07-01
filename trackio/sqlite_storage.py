@@ -34,7 +34,7 @@ class SQLiteStorage:
         return TRACKIO_DIR / f"{safe_project_name}.db"
 
     @staticmethod
-    def init_db(project: str) -> str:
+    def init_db(project: str) -> Path:
         """
         Initialize the SQLite database with required tables.
         Returns the database path.
@@ -99,7 +99,16 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
-                current_step = 0
+                cursor.execute(
+                    """
+                    SELECT MAX(step) 
+                    FROM metrics 
+                    WHERE run_name = ?
+                    """,
+                    (run,),
+                )
+                last_step = cursor.fetchone()[0]
+                current_step = 0 if last_step is None else last_step + 1
 
                 current_timestamp = datetime.now().isoformat()
 
