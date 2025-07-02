@@ -10,10 +10,10 @@ HfApi = hf.HfApi()
 
 try:
     from trackio.sqlite_storage import SQLiteStorage
-    from trackio.utils import RESERVED_KEYS, TRACKIO_LOGO_PATH
+    from trackio.utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, get_color_mapping, downsample
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH
+    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, get_color_mapping, downsample
 
 css = """
 #run-cb .wrap {
@@ -24,35 +24,6 @@ css = """
     padding: 6px;
 }
 """
-
-COLOR_PALETTE = [
-    "#3B82F6",
-    "#EF4444",
-    "#10B981",
-    "#F59E0B",
-    "#8B5CF6",
-    "#EC4899",
-    "#06B6D4",
-    "#84CC16",
-    "#F97316",
-    "#6366F1",
-]
-
-
-def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
-    """Generate color mapping for runs, with transparency for original data when smoothing is enabled."""
-    color_map = {}
-
-    for i, run in enumerate(runs):
-        base_color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
-
-        if smoothing:
-            color_map[f"{run}_smoothed"] = base_color
-            color_map[f"{run}_original"] = base_color + "4D"
-        else:
-            color_map[run] = base_color
-
-    return color_map
 
 
 def get_projects(request: gr.Request):
@@ -475,21 +446,18 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         with gr.Row(key="row"):
             for metric_idx, metric_name in enumerate(numeric_cols):
                 metric_df = master_df.dropna(subset=[metric_name])
+                color = "run" if "run" in metric_df.columns else None
                 if not metric_df.empty:
                     plot = gr.LinePlot(
-                        metric_df,
+                        downsample(metric_df, x_column, metric_name, color, x_lim_value),
                         x=x_column,
                         y=metric_name,
-                        color="run" if "run" in metric_df.columns else None,
+                        color=color,
                         color_map=color_map,
                         title=metric_name,
                         key=f"plot-{metric_idx}",
                         preserved_by_key=None,
                         x_lim=x_lim_value,
-                        y_lim=[
-                            metric_df[metric_name].min(),
-                            metric_df[metric_name].max(),
-                        ],
                         show_fullscreen_button=True,
                         min_width=400,
                     )
