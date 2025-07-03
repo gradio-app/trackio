@@ -286,6 +286,7 @@ def fibo():
         yield a
         a, b = b, a + b
 
+
 COLOR_PALETTE = [
     "#3B82F6",
     "#EF4444",
@@ -298,6 +299,7 @@ COLOR_PALETTE = [
     "#F97316",
     "#6366F1",
 ]
+
 
 def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
     """Generate color mapping for runs, with transparency for original data when smoothing is enabled."""
@@ -314,24 +316,31 @@ def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
 
     return color_map
 
-def downsample(df: pd.DataFrame, x: str, y: str, color: str | None, x_lim: tuple[float, float] | None = None) -> pd.DataFrame:
+
+def downsample(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    color: str | None,
+    x_lim: tuple[float, float] | None = None,
+) -> pd.DataFrame:
     if df.empty:
         return df
-    
+
     columns_to_keep = [x, y]
     if color is not None and color in df.columns:
         columns_to_keep.append(color)
     df = df[columns_to_keep].copy()
-    
+
     n_bins = 100
-    
+
     if color is not None and color in df.columns:
         groups = df.groupby(color)
     else:
         groups = [(None, df)]
-    
+
     downsampled_indices = []
-    
+
     for _, group_df in groups:
         if group_df.empty:
             continue
@@ -355,7 +364,7 @@ def downsample(df: pd.DataFrame, x: str, y: str, color: str | None, x_lim: tuple
 
         if group_df.empty:
             continue
-                
+
         if x_min == x_max:
             min_y_idx = group_df[y].idxmin()
             max_y_idx = group_df[y].idxmax()
@@ -364,30 +373,32 @@ def downsample(df: pd.DataFrame, x: str, y: str, color: str | None, x_lim: tuple
             else:
                 downsampled_indices.append(min_y_idx)
             continue
-            
+
         if len(group_df) < 500:
             downsampled_indices.extend(group_df.index.tolist())
             continue
-        
-        bins = np.linspace(x_min, x_max, n_bins + 1)
-        group_df['bin'] = pd.cut(group_df[x], bins=bins, labels=False, include_lowest=True)
 
-        for bin_idx in group_df['bin'].dropna().unique():
-            bin_data = group_df[group_df['bin'] == bin_idx]
+        bins = np.linspace(x_min, x_max, n_bins + 1)
+        group_df["bin"] = pd.cut(
+            group_df[x], bins=bins, labels=False, include_lowest=True
+        )
+
+        for bin_idx in group_df["bin"].dropna().unique():
+            bin_data = group_df[group_df["bin"] == bin_idx]
             if bin_data.empty:
                 continue
 
             min_y_idx = bin_data[y].idxmin()
             max_y_idx = bin_data[y].idxmax()
-            
+
             downsampled_indices.append(min_y_idx)
             if min_y_idx != max_y_idx:
                 downsampled_indices.append(max_y_idx)
-    
+
     unique_indices = list(set(downsampled_indices))
-    
+
     downsampled_df = df.loc[unique_indices].copy()
     downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
-    downsampled_df = downsampled_df.drop(columns=['bin'], errors='ignore')
+    downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
 
     return downsampled_df

@@ -440,7 +440,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                 color = "run" if "run" in metric_df.columns else None
                 if not metric_df.empty:
                     plot = gr.LinePlot(
-                        downsample(metric_df, x_column, metric_name, color, x_lim_value),
+                        downsample(
+                            metric_df, x_column, metric_name, color, x_lim_value
+                        ),
                         x=x_column,
                         y=metric_name,
                         color=color,
