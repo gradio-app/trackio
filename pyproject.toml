@@ -2,6 +2,12 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+include = [
+  "README.md",
+  "LICENSE",
+]
+
 [project]
 name = "trackio"
 description = "A small Python library created to help developers protect their applications from Server Side Request Forgery (SSRF) attacks."
@@ -13,7 +19,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pandas",
     "huggingface-hub",
-    "gradio>=5.34.2",
+    "gradio>=5.35.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

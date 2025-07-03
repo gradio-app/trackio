@@ -9,6 +9,7 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
+from requests import HTTPError
 
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -27,25 +28,26 @@ def deploy_as_space(
     trackio_path = files("trackio")
 
     hf_api = huggingface_hub.HfApi()
-    whoami = None
-    login = False
-    try:
-        whoami = hf_api.whoami()
-        if whoami["auth"]["accessToken"]["role"] != "write":
-            login = True
-    except OSError:
-        login = True
-    if login:
-        print("Need 'write' access token to create a Spaces repo.")
-        huggingface_hub.login(add_to_git_credential=False)
-        whoami = hf_api.whoami()
 
-    huggingface_hub.create_repo(
-        space_id,
-        space_sdk="gradio",
-        repo_type="space",
-        exist_ok=True,
-    )
+    try:
+        huggingface_hub.create_repo(
+            space_id,
+            space_sdk="gradio",
+            repo_type="space",
+            exist_ok=True,
+        )
+    except HTTPError as e:
+        if e.response.status_code in [401, 403]:  # unauthorized or forbidden
+            print("Need 'write' access token to create a Spaces repo.")
+            huggingface_hub.login(add_to_git_credential=False)
+            huggingface_hub.create_repo(
+                space_id,
+                space_sdk="gradio",
+                repo_type="space",
+                exist_ok=True,
+            )
+        else:
+            raise ValueError(f"Failed to create Space: {e}")
 
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
@@ -102,6 +104,15 @@ def create_space_if_not_exists(
         return
     except RepositoryNotFoundError:
         pass
+    except HTTPError as e:
+        if e.response.status_code in [401, 403]:  # unauthorized or forbidden
+            print("Need 'write' access token to create a Spaces repo.")
+            huggingface_hub.login(add_to_git_credential=False)
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_DATASET_ID", dataset_id
+            )
+        else:
+            raise ValueError(f"Failed to create Space: {e}")
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
     deploy_as_space(space_id, dataset_id)
@@ -117,16 +128,14 @@ def wait_until_space_exists(
     Args:
         space_id: The ID of the Space to wait for.
     """
-    client = None
-    for _ in range(30):
+    delay = 1
+    for _ in range(10):
         try:
-            client = Client(space_id, verbose=False)
-            if client:
-                break
-        except ReadTimeout:
-            time.sleep(5)
-        except ValueError:
-            time.sleep(5)
+            Client(space_id, verbose=False)
+            return
+        except (ReadTimeout, ValueError):
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
     raise TimeoutError("Waiting for space to exist took longer than expected")
 
 

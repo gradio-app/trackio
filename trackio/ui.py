@@ -379,21 +379,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         if not project or not runs:
             return {}
 
-        last_steps = {}
-        for run in runs:
-            metrics = SQLiteStorage.get_metrics(project, run)
-            if metrics:
-                df = pd.DataFrame(metrics)
-                if "step" not in df.columns:
-                    df["step"] = range(len(df))
-                if not df.empty:
-                    last_steps[run] = df["step"].max().item()
-                else:
-                    last_steps[run] = 0
-            else:
-                last_steps[run] = 0
-
-        return last_steps
+        return SQLiteStorage.get_max_steps_for_runs(project, runs)
 
     timer.tick(
         fn=update_last_steps,
