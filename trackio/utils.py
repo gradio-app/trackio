@@ -6,9 +6,9 @@ import time
 from pathlib import Path
 
 import huggingface_hub
-from huggingface_hub.constants import HF_HOME
 import numpy as np
 import pandas as pd
+from huggingface_hub.constants import HF_HOME
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time"]
 TRACKIO_DIR = os.path.join(HF_HOME, "trackio")
