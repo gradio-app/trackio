@@ -286,9 +286,9 @@ def configure(request: gr.Request):
         case "collapsed":
             sidebar = gr.Sidebar(open=False, visible=True)
         case "hidden":
-            sidebar = gr.Sidebar(visible=False)
+            sidebar = gr.Sidebar(open=False, visible=False)
         case _:
-            sidebar = gr.Sidebar(visible=True)
+            sidebar = gr.Sidebar(open=True, visible=True)
 
     if metrics := request.query_params.get("metrics"):
         return metrics.split(","), sidebar
@@ -297,7 +297,7 @@ def configure(request: gr.Request):
 
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
-    with gr.Sidebar(visible=False) as sidebar:
+    with gr.Sidebar(open=False) as sidebar:
         gr.Markdown(
             f"<div style='display: flex; align-items: center; gap: 8px;'><img src='/gradio_api/file={TRACKIO_LOGO_PATH}' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
         )

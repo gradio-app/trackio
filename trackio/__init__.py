@@ -47,7 +47,11 @@ def init(
     if url is None:
         if space_id is None:
             _, url, _ = demo.launch(
-                show_api=False, inline=False, quiet=True, prevent_thread_lock=True
+                show_api=False,
+                inline=False,
+                quiet=True,
+                prevent_thread_lock=True,
+                show_error=True,
             )
         else:
             url = space_id

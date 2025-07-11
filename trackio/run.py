@@ -83,5 +83,5 @@ class Run:
         """Cleanup when run is finished."""
         # wait for background client thread, in case it has a queue of logs to flush.
         if self._client_thread is not None:
-            print("Uploading logs to Trackio server...")
+            print(f"* Uploading logs to Trackio Space: {self.url} (please wait...)")
             self._client_thread.join()
