@@ -1,10 +1,12 @@
 import json
 import os
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from huggingface_hub import CommitScheduler
+from huggingface_hub import CommitScheduler, hf_hub_download
+from huggingface_hub.errors import EntryNotFoundError
 
 try:  # absolute imports when installed
     from trackio.context_vars import current_scheduler
@@ -17,6 +19,8 @@ except Exception:  # relative imports for local execution on Spaces
 
 
 class SQLiteStorage:
+    _dataset_import_attempted = False
+
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path))
@@ -24,24 +28,43 @@ class SQLiteStorage:
         return conn
 
     @staticmethod
-    def get_project_db_path(project: str) -> Path:
-        """Get the database path for a specific project."""
+    def get_project_db_filename(project: str) -> Path:
+        """Get the database filename for a specific project."""
         safe_project_name = "".join(
             c for c in project if c.isalnum() or c in ("-", "_")
         ).rstrip()
         if not safe_project_name:
             safe_project_name = "default"
-        return TRACKIO_DIR / f"{safe_project_name}.db"
+        return f"{safe_project_name}.db"
+
+    @staticmethod
+    def get_project_db_path(project: str) -> Path:
+        """Get the database path for a specific project."""
+        filename = SQLiteStorage.get_project_db_filename(project)
+        return TRACKIO_DIR / filename
 
     @staticmethod
     def init_db(project: str) -> Path:
         """
         Initialize the SQLite database with required tables.
+        If there is a dataset ID provided, copies from that dataset instead.
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage.get_scheduler().lock:
+            dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+            if dataset_id is not None and not SQLiteStorage._dataset_import_attempted:
+                filename = SQLiteStorage.get_project_db_filename(project)
+                try:
+                    downloaded_path = hf_hub_download(
+                        dataset_id, filename, repo_type="dataset"
+                    )
+                    shutil.copy(downloaded_path, db_path)
+                except EntryNotFoundError:
+                    pass
+                SQLiteStorage._dataset_import_attempted = True
+
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
