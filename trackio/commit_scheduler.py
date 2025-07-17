@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from io import SEEK_END, SEEK_SET, BytesIO
 from pathlib import Path
 from threading import Lock, Thread
-from typing import Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 from huggingface_hub.hf_api import (
     DEFAULT_IGNORE_PATTERNS,
@@ -68,6 +68,8 @@ class CommitScheduler:
             useful to avoid degraded performances on the repo when it grows too large.
         hf_api (`HfApi`, *optional*):
             The [`HfApi`] client to use to commit to the Hub. Can be set with custom settings (user agent, token,...).
+        on_before_commit (`Callable[[], None]`, *optional*):
+            If specified, a function that will be called before the CommitScheduler lists files to create a commit.
 
     Example:
     ```py
@@ -118,8 +120,10 @@ class CommitScheduler:
         ignore_patterns: Optional[Union[List[str], str]] = None,
         squash_history: bool = False,
         hf_api: Optional["HfApi"] = None,
+        on_before_commit: Optional[Callable[[], None]] = None,
     ) -> None:
         self.api = hf_api or HfApi(token=token)
+        self.on_before_commit = on_before_commit
 
         # Folder
         self.folder_path = Path(folder_path).expanduser().resolve()
@@ -239,6 +243,9 @@ class CommitScheduler:
         """
         # Check files to upload (with lock)
         with self.lock:
+            if self.on_before_commit is not None:
+                self.on_before_commit()
+
             logger.debug("Listing files to upload for scheduled commit.")
 
             # List files from folder (taken from `_prepare_upload_folder_additions`)
