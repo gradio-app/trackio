@@ -11,9 +11,13 @@ from pathlib import Path
 from threading import Lock, Thread
 from typing import Dict, List, Optional, Union
 
-from huggingface_hub.hf_api import DEFAULT_IGNORE_PATTERNS, CommitInfo, CommitOperationAdd, HfApi
+from huggingface_hub.hf_api import (
+    DEFAULT_IGNORE_PATTERNS,
+    CommitInfo,
+    CommitOperationAdd,
+    HfApi,
+)
 from huggingface_hub.utils import filter_repo_objects
-
 
 logger = logging.getLogger(__name__)
 
@@ -129,18 +133,24 @@ class CommitScheduler:
         self.ignore_patterns = ignore_patterns + DEFAULT_IGNORE_PATTERNS
 
         if self.folder_path.is_file():
-            raise ValueError(f"'folder_path' must be a directory, not a file: '{self.folder_path}'.")
+            raise ValueError(
+                f"'folder_path' must be a directory, not a file: '{self.folder_path}'."
+            )
         self.folder_path.mkdir(parents=True, exist_ok=True)
 
         # Repository
-        repo_url = self.api.create_repo(repo_id=repo_id, private=private, repo_type=repo_type, exist_ok=True)
+        repo_url = self.api.create_repo(
+            repo_id=repo_id, private=private, repo_type=repo_type, exist_ok=True
+        )
         self.repo_id = repo_url.repo_id
         self.repo_type = repo_type
         self.revision = revision
         self.token = token
 
         # Keep track of already uploaded files
-        self.last_uploaded: Dict[Path, float] = {}  # key is local path, value is timestamp
+        self.last_uploaded: Dict[
+            Path, float
+        ] = {}  # key is local path, value is timestamp
 
         # Scheduler
         if not every > 0:
@@ -149,7 +159,9 @@ class CommitScheduler:
         self.every = every
         self.squash_history = squash_history
 
-        logger.info(f"Scheduled job to push '{self.folder_path}' to '{self.repo_id}' every {self.every} minutes.")
+        logger.info(
+            f"Scheduled job to push '{self.folder_path}' to '{self.repo_id}' every {self.every} minutes."
+        )
         self._scheduler_thread = Thread(target=self._run_scheduler, daemon=True)
         self._scheduler_thread.start()
         atexit.register(self._push_to_hub)
@@ -197,10 +209,14 @@ class CommitScheduler:
             value = self.push_to_hub()
             if self.squash_history:
                 logger.info("(Background) squashing repo history.")
-                self.api.super_squash_history(repo_id=self.repo_id, repo_type=self.repo_type, branch=self.revision)
+                self.api.super_squash_history(
+                    repo_id=self.repo_id, repo_type=self.repo_type, branch=self.revision
+                )
             return value
         except Exception as e:
-            logger.error(f"Error while pushing to Hub: {e}")  # Depending on the setup, error might be silenced
+            logger.error(
+                f"Error while pushing to Hub: {e}"
+            )  # Depending on the setup, error might be silenced
             raise
 
     def push_to_hub(self) -> Optional[CommitInfo]:
@@ -228,7 +244,9 @@ class CommitScheduler:
             # List files from folder (taken from `_prepare_upload_folder_additions`)
             relpath_to_abspath = {
                 path.relative_to(self.folder_path).as_posix(): path
-                for path in sorted(self.folder_path.glob("**/*"))  # sorted to be deterministic
+                for path in sorted(
+                    self.folder_path.glob("**/*")
+                )  # sorted to be deterministic
                 if path.is_file()
             }
             prefix = f"{self.path_in_repo.strip('/')}/" if self.path_in_repo else ""
@@ -236,11 +254,16 @@ class CommitScheduler:
             # Filter with pattern + filter out unchanged files + retrieve current file size
             files_to_upload: List[_FileToUpload] = []
             for relpath in filter_repo_objects(
-                relpath_to_abspath.keys(), allow_patterns=self.allow_patterns, ignore_patterns=self.ignore_patterns
+                relpath_to_abspath.keys(),
+                allow_patterns=self.allow_patterns,
+                ignore_patterns=self.ignore_patterns,
             ):
                 local_path = relpath_to_abspath[relpath]
                 stat = local_path.stat()
-                if self.last_uploaded.get(local_path) is None or self.last_uploaded[local_path] != stat.st_mtime:
+                if (
+                    self.last_uploaded.get(local_path) is None
+                    or self.last_uploaded[local_path] != stat.st_mtime
+                ):
                     files_to_upload.append(
                         _FileToUpload(
                             local_path=local_path,
@@ -260,7 +283,9 @@ class CommitScheduler:
         add_operations = [
             CommitOperationAdd(
                 # Cap the file to its current size, even if the user append data to it while a scheduled commit is happening
-                path_or_fileobj=PartialFileIO(file_to_upload.local_path, size_limit=file_to_upload.size_limit),
+                path_or_fileobj=PartialFileIO(
+                    file_to_upload.local_path, size_limit=file_to_upload.size_limit
+                ),
                 path_in_repo=file_to_upload.path_in_repo,
             )
             for file_to_upload in files_to_upload
@@ -311,13 +336,19 @@ class PartialFileIO(BytesIO):
         return super().__del__()
 
     def __repr__(self) -> str:
-        return f"<PartialFileIO file_path={self._file_path} size_limit={self._size_limit}>"
+        return (
+            f"<PartialFileIO file_path={self._file_path} size_limit={self._size_limit}>"
+        )
 
     def __len__(self) -> int:
         return self._size_limit
 
     def __getattribute__(self, name: str):
-        if name.startswith("_") or name in ("read", "tell", "seek"):  # only 3 public methods supported
+        if name.startswith("_") or name in (
+            "read",
+            "tell",
+            "seek",
+        ):  # only 3 public methods supported
             return super().__getattribute__(name)
         raise NotImplementedError(f"PartialFileIO does not support '{name}'.")
 
