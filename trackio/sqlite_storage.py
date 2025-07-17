@@ -97,7 +97,8 @@ class SQLiteStorage:
                 return SQLiteStorage._current_scheduler
             hf_token = os.environ.get("HF_TOKEN")
             dataset_id = os.environ.get("TRACKIO_DATASET_ID")
-            if dataset_id is None:
+            space_repo_name = os.environ.get("SPACE_REPO_NAME")
+            if dataset_id is None or space_repo_name is None:
                 scheduler = DummyCommitScheduler()
             else:
                 scheduler = CommitScheduler(
