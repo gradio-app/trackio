@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Lock
 
 import huggingface_hub as hf
+import pandas as pd
 
 try:  # absolute imports when installed
     from trackio.commit_scheduler import CommitScheduler
@@ -75,7 +76,22 @@ class SQLiteStorage:
         return db_path
 
     @staticmethod
-    def get_scheduler():
+    def export_as_parquet(project):
+        """
+        Exports the project DB file as Parquet under the same path but with extension ".parquet".
+        """
+
+        def _export():
+            db_path = SQLiteStorage.get_project_db_path(project)
+            parquet_path = db_path.with_suffix(".parquet")
+            with sqlite3.connect(db_path) as conn:
+                df = pd.read_sql("SELECT * from metrics", conn)
+                df.to_parquet(parquet_path)
+
+        return _export
+
+    @staticmethod
+    def get_scheduler(project):
         """
         Get the scheduler for the database based on the environment variables.
         This applies to both local and Spaces.
@@ -94,8 +110,10 @@ class SQLiteStorage:
                     repo_type="dataset",
                     folder_path=TRACKIO_DIR,
                     private=True,
+                    allow_patterns="*.parquet",
                     squash_history=True,
                     token=hf_token,
+                    on_before_commit=SQLiteStorage.export_as_parquet(project),
                 )
             SQLiteStorage._current_scheduler = scheduler
             return scheduler
@@ -109,7 +127,7 @@ class SQLiteStorage:
         """
         db_path = SQLiteStorage.init_db(project)
 
-        with SQLiteStorage.get_scheduler().lock:
+        with SQLiteStorage.get_scheduler(project).lock:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
@@ -165,7 +183,7 @@ class SQLiteStorage:
             )
 
         db_path = SQLiteStorage.init_db(project)
-        with SQLiteStorage.get_scheduler().lock:
+        with SQLiteStorage.get_scheduler(project).lock:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
