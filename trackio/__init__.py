@@ -41,6 +41,8 @@ def init(
             - "allow": Resume the run if it exists, otherwise create a new run
             - "never": Never resume a run, always create a new one
     """
+    if space_id is None and dataset_id is not None:
+        raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
     url = context_vars.current_server.get()
 
