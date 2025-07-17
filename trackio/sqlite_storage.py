@@ -4,22 +4,23 @@ import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from threading import Lock
 
 from huggingface_hub import CommitScheduler, hf_hub_download
 from huggingface_hub.errors import EntryNotFoundError
 
 try:  # absolute imports when installed
-    from trackio.context_vars import current_scheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import TRACKIO_DIR
 except Exception:  # relative imports for local execution on Spaces
-    from context_vars import current_scheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR
 
 
 class SQLiteStorage:
     _dataset_import_attempted = False
+    _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
+    _scheduler_lock = Lock()
 
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
@@ -91,23 +92,24 @@ class SQLiteStorage:
         Get the scheduler for the database based on the environment variables.
         This applies to both local and Spaces.
         """
-        if current_scheduler.get() is not None:
-            return current_scheduler.get()
-        hf_token = os.environ.get("HF_TOKEN")
-        dataset_id = os.environ.get("TRACKIO_DATASET_ID")
-        if dataset_id is None:
-            scheduler = DummyCommitScheduler()
-        else:
-            scheduler = CommitScheduler(
-                repo_id=dataset_id,
-                repo_type="dataset",
-                folder_path=TRACKIO_DIR,
-                private=True,
-                squash_history=True,
-                token=hf_token,
-            )
-        current_scheduler.set(scheduler)
-        return scheduler
+        with SQLiteStorage._scheduler_lock:
+            if SQLiteStorage._current_scheduler is not None:
+                return SQLiteStorage._current_scheduler
+            hf_token = os.environ.get("HF_TOKEN")
+            dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+            if dataset_id is None:
+                scheduler = DummyCommitScheduler()
+            else:
+                scheduler = CommitScheduler(
+                    repo_id=dataset_id,
+                    repo_type="dataset",
+                    folder_path=TRACKIO_DIR,
+                    private=True,
+                    squash_history=True,
+                    token=hf_token,
+                )
+            SQLiteStorage._current_scheduler = scheduler
+            return scheduler
 
     @staticmethod
     def log(project: str, run: str, metrics: dict):
