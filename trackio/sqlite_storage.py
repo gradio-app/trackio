@@ -6,8 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import Lock
 
-from huggingface_hub import hf_hub_download
-from huggingface_hub.errors import EntryNotFoundError
+import huggingface_hub as hf
 
 try:  # absolute imports when installed
     from trackio.commit_scheduler import CommitScheduler
@@ -56,18 +55,6 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage.get_scheduler().lock:
-            dataset_id = os.environ.get("TRACKIO_DATASET_ID")
-            if dataset_id is not None and not SQLiteStorage._dataset_import_attempted:
-                filename = SQLiteStorage.get_project_db_filename(project)
-                try:
-                    downloaded_path = hf_hub_download(
-                        dataset_id, filename, repo_type="dataset"
-                    )
-                    shutil.copy(downloaded_path, db_path)
-                except EntryNotFoundError:
-                    pass
-                SQLiteStorage._dataset_import_attempted = True
-
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -234,10 +221,37 @@ class SQLiteStorage:
             return results
 
     @staticmethod
+    def load_from_dataset():
+        dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+        space_repo_name = os.environ.get("SPACE_REPO_NAME")
+        if dataset_id is not None and space_repo_name is not None:
+            hfapi = hf.HfApi()
+            if not TRACKIO_DIR.exists():
+                TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
+            with SQLiteStorage.get_scheduler().lock:
+                try:
+                    files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
+                    for file in files:
+                        if not file.endswith(".db"):
+                            continue
+                        downloaded_path = hf.hf_hub_download(
+                            dataset_id, file, repo_type="dataset"
+                        )
+                        shutil.copy(downloaded_path, TRACKIO_DIR)
+                except hf.errors.EntryNotFoundError:
+                    pass
+                except hf.errors.RepositoryNotFoundError:
+                    pass
+        SQLiteStorage._dataset_import_attempted = True
+
+    @staticmethod
     def get_projects() -> list[str]:
         """
         Get list of all projects by scanning the database files in the trackio directory.
         """
+        if not SQLiteStorage._dataset_import_attempted:
+            SQLiteStorage.load_from_dataset()
+
         projects: set[str] = set()
         if not TRACKIO_DIR.exists():
             return []
