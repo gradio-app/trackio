@@ -5,8 +5,7 @@ from pathlib import Path
 from gradio_client import Client
 
 from trackio import context_vars, deploy, utils
-from trackio.imports import import_csv
-from trackio.imports import import_tf_events
+from trackio.imports import import_csv, import_tf_events
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
@@ -14,7 +13,7 @@ from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
-__all__ = ["init", "log", "finish", "show", "import_csv"]
+__all__ = ["init", "log", "finish", "show", "import_csv", "import_tf_events"]
 
 
 config = {}
@@ -118,18 +117,20 @@ def log(metrics: dict) -> None:
     Args:
         metrics: A dictionary of metrics to log.
     """
-    if context_vars.current_run.get() is None:
+    run = context_vars.current_run.get()
+    if run is None:
         raise RuntimeError("Call trackio.init() before log().")
-    context_vars.current_run.get().log(metrics)
+    run.log(metrics)
 
 
 def finish():
     """
     Finishes the current run.
     """
-    if context_vars.current_run.get() is None:
+    run = context_vars.current_run.get()
+    if run is None:
         raise RuntimeError("Call trackio.init() before finish().")
-    context_vars.current_run.get().finish()
+    run.finish()
 
 
 def show(project: str | None = None):

@@ -2,10 +2,10 @@ import os
 from pathlib import Path
 
 import pandas as pd
+from tbparse import SummaryReader
 
 from trackio import deploy, utils
 from trackio.sqlite_storage import SQLiteStorage
-from tbparse import SummaryReader
 
 
 def import_csv(
@@ -78,14 +78,15 @@ def import_csv(
     for _, row in df.iterrows():
         metrics = {}
         for column in numeric_columns:
-            if pd.notna(row[column]):
-                metrics[column] = float(row[column])
+            value = row[column]
+            if bool(pd.notna(value)):
+                metrics[column] = float(value)
 
         if metrics:
             metrics_list.append(metrics)
             steps.append(int(row[step_column]))
 
-            if "timestamp" in df.columns and pd.notna(row["timestamp"]):
+            if "timestamp" in df.columns and bool(pd.notna(row["timestamp"])):
                 timestamps.append(str(row["timestamp"]))
             else:
                 timestamps.append("")
