@@ -5,7 +5,7 @@ from trackio.sqlite_storage import SQLiteStorage
 
 def test_import_from_tf_events(temp_db):
     # Use the pre-generated TensorFlow events directory
-    log_dir = Path(__file__).parent / "simple_tf_run"
+    log_dir = Path(__file__).parent / "tf_test_run"
     trackio.import_tf_events(
         log_dir=str(log_dir),
         project="test_tf_project",
@@ -13,14 +13,16 @@ def test_import_from_tf_events(temp_db):
     )
 
     results = SQLiteStorage.get_metrics(project="test_tf_project", run="test_run_main")
-    # There should be 3 steps × 2 metrics = 6 entries
-    assert len(results) == 6
+    # There should be 5 steps × 2 metrics = 10 entries
+    assert len(results) == 10
 
     # Check values for each step
     expected = [
-        {"step": 0, "loss": 1.0, "accuracy": 0.8},
-        {"step": 1, "loss": 0.5, "accuracy": 0.9},
-        {"step": 2, "loss": 0.33333334, "accuracy": 1.0},
+        {"step": 0, "accuracy": 0.80, "loss": 1 / 1.0},
+        {"step": 1, "accuracy": 0.82, "loss": 1 / 2.0},
+        {"step": 2, "accuracy": 0.84, "loss": 1 / 3.0},
+        {"step": 3, "accuracy": 0.86, "loss": 1 / 4.0},
+        {"step": 4, "accuracy": 0.88, "loss": 1 / 5.0},
     ]
     for exp in expected:
         step_metrics = [r for r in results if r["step"] == exp["step"]]
