@@ -1,22 +1,29 @@
 import json
 import os
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from threading import Lock
 
-from huggingface_hub import CommitScheduler
+from huggingface_hub import hf_hub_download
+from huggingface_hub.errors import EntryNotFoundError
 
 try:  # absolute imports when installed
-    from trackio.context_vars import current_scheduler
+    from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import TRACKIO_DIR
 except Exception:  # relative imports for local execution on Spaces
-    from context_vars import current_scheduler
+    from commit_scheduler import CommitScheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR
 
 
 class SQLiteStorage:
+    _dataset_import_attempted = False
+    _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
+    _scheduler_lock = Lock()
+
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path))
@@ -24,24 +31,43 @@ class SQLiteStorage:
         return conn
 
     @staticmethod
-    def get_project_db_path(project: str) -> Path:
-        """Get the database path for a specific project."""
+    def get_project_db_filename(project: str) -> Path:
+        """Get the database filename for a specific project."""
         safe_project_name = "".join(
             c for c in project if c.isalnum() or c in ("-", "_")
         ).rstrip()
         if not safe_project_name:
             safe_project_name = "default"
-        return TRACKIO_DIR / f"{safe_project_name}.db"
+        return f"{safe_project_name}.db"
+
+    @staticmethod
+    def get_project_db_path(project: str) -> Path:
+        """Get the database path for a specific project."""
+        filename = SQLiteStorage.get_project_db_filename(project)
+        return TRACKIO_DIR / filename
 
     @staticmethod
     def init_db(project: str) -> Path:
         """
         Initialize the SQLite database with required tables.
+        If there is a dataset ID provided, copies from that dataset instead.
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage.get_scheduler().lock:
+            dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+            if dataset_id is not None and not SQLiteStorage._dataset_import_attempted:
+                filename = SQLiteStorage.get_project_db_filename(project)
+                try:
+                    downloaded_path = hf_hub_download(
+                        dataset_id, filename, repo_type="dataset"
+                    )
+                    shutil.copy(downloaded_path, db_path)
+                except EntryNotFoundError:
+                    pass
+                SQLiteStorage._dataset_import_attempted = True
+
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -68,23 +94,25 @@ class SQLiteStorage:
         Get the scheduler for the database based on the environment variables.
         This applies to both local and Spaces.
         """
-        if current_scheduler.get() is not None:
-            return current_scheduler.get()
-        hf_token = os.environ.get("HF_TOKEN")
-        dataset_id = os.environ.get("TRACKIO_DATASET_ID")
-        if dataset_id is None:
-            scheduler = DummyCommitScheduler()
-        else:
-            scheduler = CommitScheduler(
-                repo_id=dataset_id,
-                repo_type="dataset",
-                folder_path=TRACKIO_DIR,
-                private=True,
-                squash_history=True,
-                token=hf_token,
-            )
-        current_scheduler.set(scheduler)
-        return scheduler
+        with SQLiteStorage._scheduler_lock:
+            if SQLiteStorage._current_scheduler is not None:
+                return SQLiteStorage._current_scheduler
+            hf_token = os.environ.get("HF_TOKEN")
+            dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+            space_repo_name = os.environ.get("SPACE_REPO_NAME")
+            if dataset_id is None or space_repo_name is None:
+                scheduler = DummyCommitScheduler()
+            else:
+                scheduler = CommitScheduler(
+                    repo_id=dataset_id,
+                    repo_type="dataset",
+                    folder_path=TRACKIO_DIR,
+                    private=True,
+                    squash_history=True,
+                    token=hf_token,
+                )
+            SQLiteStorage._current_scheduler = scheduler
+            return scheduler
 
     @staticmethod
     def log(project: str, run: str, metrics: dict):
