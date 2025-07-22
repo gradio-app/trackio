@@ -13,7 +13,7 @@ class Run:
         self,
         url: str,
         project: str,
-        client: Client,
+        client: Client | None,
         name: str | None = None,
         config: dict | None = None,
     ):

@@ -6,6 +6,7 @@ from gradio_client import Client
 
 from trackio import context_vars, deploy, utils
 from trackio.imports import import_csv
+from trackio.imports import import_tf_events
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
