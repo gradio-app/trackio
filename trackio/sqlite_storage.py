@@ -81,20 +81,22 @@ class SQLiteStorage:
         Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
         """
         # don't attempt to export (potentially wrong/blank) data before importing for the first time
+        print("Zach was here, in export")
         if not SQLiteStorage._dataset_import_attempted:
+            print("Zach was here, no import yet, waiting")
             return
         all_paths = os.listdir(TRACKIO_DIR)
         db_paths = [f for f in all_paths if f.endswith(".db")]
         for db_path in db_paths:
             db_path = TRACKIO_DIR / db_path
             parquet_path = db_path.with_suffix(".parquet")
-            with SQLiteStorage.get_scheduler().lock:
-                if (not parquet_path.exists()) or (
-                    db_path.stat().st_mtime > parquet_path.stat().st_mtime
-                ):
-                    with sqlite3.connect(db_path) as conn:
-                        df = pd.read_sql("SELECT * from metrics", conn)
-                    df.to_parquet(parquet_path)
+            if (not parquet_path.exists()) or (
+                db_path.stat().st_mtime > parquet_path.stat().st_mtime
+            ):
+                print(f"Zach was here, exporting to {parquet_path}")
+                with sqlite3.connect(db_path) as conn:
+                    df = pd.read_sql("SELECT * from metrics", conn)
+                df.to_parquet(parquet_path)
 
     @staticmethod
     def import_from_parquet():
@@ -106,10 +108,9 @@ class SQLiteStorage:
         for parquet_path in parquet_paths:
             parquet_path = TRACKIO_DIR / parquet_path
             db_path = parquet_path.with_suffix(".db")
-            with SQLiteStorage.get_scheduler().lock:
-                df = pd.read_parquet(parquet_path)
-                with sqlite3.connect(db_path) as conn:
-                    df.to_sql("metrics", conn, if_exists="replace", index=False)
+            df = pd.read_parquet(parquet_path)
+            with sqlite3.connect(db_path) as conn:
+                df.to_sql("metrics", conn, if_exists="replace", index=False)
 
     @staticmethod
     def get_scheduler():
@@ -135,6 +136,7 @@ class SQLiteStorage:
                     squash_history=True,
                     token=hf_token,
                     on_before_commit=SQLiteStorage.export_to_parquet,
+                    every=0.5,
                 )
             SQLiteStorage._current_scheduler = scheduler
             return scheduler
@@ -281,8 +283,8 @@ class SQLiteStorage:
                     pass
                 except hf.errors.RepositoryNotFoundError:
                     pass
-            if updated:
-                SQLiteStorage.import_from_parquet()
+                if updated:
+                    SQLiteStorage.import_from_parquet()
         SQLiteStorage._dataset_import_attempted = True
 
     @staticmethod
