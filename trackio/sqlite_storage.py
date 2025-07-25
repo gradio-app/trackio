@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -234,10 +233,9 @@ class SQLiteStorage:
                     for file in files:
                         if not file.endswith(".db"):
                             continue
-                        downloaded_path = hf.hf_hub_download(
-                            dataset_id, file, repo_type="dataset"
+                        hf.hf_hub_download(
+                            dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR
                         )
-                        shutil.copy(downloaded_path, TRACKIO_DIR)
                 except hf.errors.EntryNotFoundError:
                     pass
                 except hf.errors.RepositoryNotFoundError:
