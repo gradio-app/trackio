@@ -88,10 +88,10 @@ class SQLiteStorage:
         for db_path in db_paths:
             db_path = TRACKIO_DIR / db_path
             parquet_path = db_path.with_suffix(".parquet")
-            if (not parquet_path.exists()) or (
-                db_path.stat().st_mtime > parquet_path.stat().st_mtime
-            ):
-                with SQLiteStorage.get_scheduler().lock:
+            with SQLiteStorage.get_scheduler().lock:
+                if (not parquet_path.exists()) or (
+                    db_path.stat().st_mtime > parquet_path.stat().st_mtime
+                ):
                     with sqlite3.connect(db_path) as conn:
                         df = pd.read_sql("SELECT * from metrics", conn)
                     df.to_parquet(parquet_path)
