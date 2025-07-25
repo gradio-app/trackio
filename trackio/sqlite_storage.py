@@ -91,6 +91,20 @@ class SQLiteStorage:
         return _export
 
     @staticmethod
+    def import_from_parquet():
+        """
+        Imports to all DB files that have matching files under the same path but with extension ".parquet".
+        """
+
+        all_paths = os.listdir(TRACKIO_DIR)
+        parquet_paths = [f for f in all_paths if f.endswith(".parquet")]
+        for parquet_path in parquet_paths:
+            df = pd.read_parquet(parquet_path)
+            db_path = Path(parquet_path).with_suffix(".db")
+            with sqlite3.connect(db_path) as conn:
+                df.to_sql("metrics", conn, if_exists="replace", index=False)
+
+    @staticmethod
     def get_scheduler(project):
         """
         Get the scheduler for the database based on the environment variables.
@@ -243,21 +257,25 @@ class SQLiteStorage:
         space_repo_name = os.environ.get("SPACE_REPO_NAME")
         if dataset_id is not None and space_repo_name is not None:
             hfapi = hf.HfApi()
+            updated = False
             if not TRACKIO_DIR.exists():
                 TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
             with SQLiteStorage.get_scheduler().lock:
                 try:
                     files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                     for file in files:
-                        if not file.endswith(".db"):
+                        if not file.endswith(".parquet"):
                             continue
                         hf.hf_hub_download(
                             dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR
                         )
+                        updated = True
                 except hf.errors.EntryNotFoundError:
                     pass
                 except hf.errors.RepositoryNotFoundError:
                     pass
+            if updated:
+                SQLiteStorage.import_from_parquet()
         SQLiteStorage._dataset_import_attempted = True
 
     @staticmethod
