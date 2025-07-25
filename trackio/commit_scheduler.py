@@ -289,10 +289,9 @@ class CommitScheduler:
         logger.debug("Removing unchanged files since previous scheduled commit.")
         add_operations = [
             CommitOperationAdd(
-                # Cap the file to its current size, even if the user append data to it while a scheduled commit is happening
-                path_or_fileobj=PartialFileIO(
-                    file_to_upload.local_path, size_limit=file_to_upload.size_limit
-                ),
+                # TODO: Cap the file to its current size, even if the user append data to it while a scheduled commit is happening
+                # (requires an upstream fix for XET-535: `hf_xet` should support `BinaryIO` for upload)
+                path_or_fileobj=file_to_upload.local_path,
                 path_in_repo=file_to_upload.path_in_repo,
             )
             for file_to_upload in files_to_upload
