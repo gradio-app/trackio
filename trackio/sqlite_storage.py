@@ -76,36 +76,40 @@ class SQLiteStorage:
         return db_path
 
     @staticmethod
-    def export_as_parquet(project):
+    def export_to_parquet():
         """
-        Exports the project DB file as Parquet under the same path but with extension ".parquet".
+        Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
         """
-
-        def _export():
-            db_path = SQLiteStorage.get_project_db_path(project)
+        # don't attempt to export (potentially wrong/blank) data before importing for the first time
+        if not SQLiteStorage._dataset_import_attempted:
+            return
+        all_paths = os.listdir(TRACKIO_DIR)
+        db_paths = [f for f in all_paths if f.endswith(".db")]
+        for db_path in db_paths:
+            db_path = TRACKIO_DIR / db_path
             parquet_path = db_path.with_suffix(".parquet")
-            with sqlite3.connect(db_path) as conn:
-                df = pd.read_sql("SELECT * from metrics", conn)
+            with SQLiteStorage.get_scheduler().lock:
+                with sqlite3.connect(db_path) as conn:
+                    df = pd.read_sql("SELECT * from metrics", conn)
                 df.to_parquet(parquet_path)
-
-        return _export
 
     @staticmethod
     def import_from_parquet():
         """
         Imports to all DB files that have matching files under the same path but with extension ".parquet".
         """
-
         all_paths = os.listdir(TRACKIO_DIR)
         parquet_paths = [f for f in all_paths if f.endswith(".parquet")]
         for parquet_path in parquet_paths:
-            df = pd.read_parquet(parquet_path)
-            db_path = Path(parquet_path).with_suffix(".db")
-            with sqlite3.connect(db_path) as conn:
-                df.to_sql("metrics", conn, if_exists="replace", index=False)
+            parquet_path = TRACKIO_DIR / parquet_path
+            db_path = parquet_path.with_suffix(".db")
+            with SQLiteStorage.get_scheduler().lock:
+                df = pd.read_parquet(parquet_path)
+                with sqlite3.connect(db_path) as conn:
+                    df.to_sql("metrics", conn, if_exists="replace", index=False)
 
     @staticmethod
-    def get_scheduler(project):
+    def get_scheduler():
         """
         Get the scheduler for the database based on the environment variables.
         This applies to both local and Spaces.
@@ -127,7 +131,7 @@ class SQLiteStorage:
                     allow_patterns="*.parquet",
                     squash_history=True,
                     token=hf_token,
-                    on_before_commit=SQLiteStorage.export_as_parquet(project),
+                    on_before_commit=SQLiteStorage.export_to_parquet,
                 )
             SQLiteStorage._current_scheduler = scheduler
             return scheduler
@@ -141,7 +145,7 @@ class SQLiteStorage:
         """
         db_path = SQLiteStorage.init_db(project)
 
-        with SQLiteStorage.get_scheduler(project).lock:
+        with SQLiteStorage.get_scheduler().lock:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
@@ -197,7 +201,7 @@ class SQLiteStorage:
             )
 
         db_path = SQLiteStorage.init_db(project)
-        with SQLiteStorage.get_scheduler(project).lock:
+        with SQLiteStorage.get_scheduler().lock:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
