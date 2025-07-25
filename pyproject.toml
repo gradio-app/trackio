@@ -3,24 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-include = [
-  "README.md",
-  "LICENSE",
-]
+include = ["README.md", "LICENSE"]
 
 [project]
 name = "trackio"
 description = "A small Python library created to help developers protect their applications from Server Side Request Forgery (SSRF) attacks."
-authors = [
-    { name = "Abubakar Abid", email = "abubakar@hf.co" }
-]
+authors = [{ name = "Abubakar Abid", email = "abubakar@hf.co" }]
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "pandas",
-    "huggingface-hub",
-    "gradio>=5.35.0",
-]
+dependencies = ["pandas", "huggingface-hub", "gradio>=5.35.0", "tbparse"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -33,10 +24,7 @@ homepage = "https://github.com/gradio-app/trackio"
 repository = "https://github.com/gradio-app/trackio"
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "ruff==0.9.3"
-]
+dev = ["pytest", "ruff==0.9.3"]
 
 [project.scripts]
 trackio = "trackio.cli:main"
