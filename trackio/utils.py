@@ -15,9 +15,9 @@ TRACKIO_DIR = Path(HF_HOME) / "trackio"
 TRACKIO_LOGO_PATH = str(Path(__file__).parent.joinpath("trackio_logo.png"))
 
 
-def generate_readable_name():
+def generate_readable_name(used_names: list[str]) -> str:
     """
-    Generates a random, readable name like "dainty-sunset-1"
+    Generates a random, readable name like "dainty-sunset-0"
     """
     adjectives = [
         "dainty",
@@ -34,6 +34,7 @@ def generate_readable_name():
         "nice",
         "proud",
         "quick",
+        "hugging",
         "silly",
         "tidy",
         "witty",
@@ -196,17 +197,23 @@ def generate_readable_name():
         "kelp",
         "shell",
         "pebble",
+        "face",
         "boulder",
         "cobble",
         "sand",
         "wavelet",
         "tide",
         "current",
+        "mist",
     ]
-    adjective = random.choice(adjectives)
-    noun = random.choice(nouns)
-    number = random.randint(1, 99)
-    return f"{adjective}-{noun}-{number}"
+    number = 0
+    name = f"{adjectives[0]}-{nouns[0]}-{number}"
+    while name in used_names:
+        number += 1
+        adjective = adjectives[number % len(adjectives)]
+        noun = nouns[number % len(nouns)]
+        name = f"{adjective}-{noun}-{number}"
+    return name
 
 
 def block_except_in_notebook():

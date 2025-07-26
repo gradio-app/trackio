@@ -5,6 +5,7 @@ from collections import deque
 import huggingface_hub
 from gradio_client import Client
 
+from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
 
@@ -22,7 +23,7 @@ class Run:
         self._client_lock = threading.Lock()
         self._client_thread = None
         self._client = client
-        self.name = name or generate_readable_name()
+        self.name = name or generate_readable_name(SQLiteStorage.get_runs(project))
         self.config = config or {}
         self._queued_logs = deque()
 
