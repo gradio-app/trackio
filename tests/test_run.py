@@ -20,6 +20,7 @@ def test_run_log_calls_client():
         api_name="/log",
         project="proj",
         run="run1",
+        step=None,
         metrics=metrics,
         hf_token=huggingface_hub.utils.get_token(),
     )

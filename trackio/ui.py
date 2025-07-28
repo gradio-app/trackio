@@ -240,10 +240,11 @@ def log(
     project: str,
     run: str,
     metrics: dict[str, Any],
+    step: int | None,
     hf_token: str | None,
 ) -> None:
     check_auth(hf_token)
-    SQLiteStorage.log(project=project, run=run, metrics=metrics)
+    SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
