@@ -1,6 +1,6 @@
 <p align="center">
 
-<img width="4065" height="1269" alt="Tackio_logo_type_light" src="https://github.com/user-attachments/assets/6d6a41e7-fbc1-43ec-bda6-15f9ff4bd25c" />
+<img width="75%" src="https://github.com/user-attachments/assets/6d6a41e7-fbc1-43ec-bda6-15f9ff4bd25c" />
 
 
 </p>
