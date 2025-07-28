@@ -1,5 +1,7 @@
 <p align="center">
-    <img width="382" alt="image" src="https://github.com/user-attachments/assets/bc08df0d-09b8-42aa-8206-4ac4b295b0b1" />
+
+<img width="4065" height="1269" alt="Tackio_logo_type_light" src="https://github.com/user-attachments/assets/6d6a41e7-fbc1-43ec-bda6-15f9ff4bd25c" />
+
 
 </p>
 
