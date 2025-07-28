@@ -1,7 +1,8 @@
 # Generates a simple tfevents file for testing. Output is written to tf_test_run directory.
 
-from tensorboardX import SummaryWriter
 from pathlib import Path
+
+from tensorboardX import SummaryWriter
 
 
 def create_tfevents_tensorboardx(log_dir: Path):
