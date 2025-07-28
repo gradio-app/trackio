@@ -45,7 +45,7 @@ def init(
         settings: Not used. Provided for compatibility with wandb.init()
     """
     if settings is not None:
-        print(
+        warnings.warn(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
