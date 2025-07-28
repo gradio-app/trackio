@@ -66,17 +66,13 @@ class Run:
             if self._client is None:
                 # client can still be None for a Space while the Space is still initializing.
                 # queue up log items for when the client is not None.
-                self._queued_logs.append(
-                    payload
-                )
+                self._queued_logs.append(payload)
             else:
                 assert (
                     len(self._queued_logs) == 0
                 )  # queue should have been flushed on client init
                 # write the current log item
-                self._client.predict(
-                    **payload
-                )
+                self._client.predict(**payload)
 
     def finish(self):
         """Cleanup when run is finished."""
