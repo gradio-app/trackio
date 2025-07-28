@@ -12,13 +12,13 @@ try:
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.utils import (
         RESERVED_KEYS,
-        TRACKIO_LOGO_PATH,
+        TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
     )
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, downsample, get_color_mapping
+    from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
 
 css = """
 #run-cb .wrap {
@@ -300,7 +300,7 @@ def configure(request: gr.Request):
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         gr.Markdown(
-            f"<div style='display: flex; align-items: center; gap: 8px;'><img src='/gradio_api/file={TRACKIO_LOGO_PATH}' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_light.png' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
@@ -462,4 +462,4 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False, show_error=True)
+    demo.launch(allowed_paths=[TRACKIO_LOGO_DIR], show_api=False, show_error=True)
