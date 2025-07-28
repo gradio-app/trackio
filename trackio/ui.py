@@ -461,7 +461,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
         
-        # Apply metric filter if provided
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
