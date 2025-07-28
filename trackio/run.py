@@ -48,24 +48,26 @@ class Run:
             if sleep_coefficient is not None:
                 time.sleep(0.1 * sleep_coefficient)
 
-    def log(self, metrics: dict):
+    def log(self, metrics: dict, step: int | None = None):
         for k in metrics.keys():
             if k in RESERVED_KEYS or k.startswith("__"):
                 raise ValueError(
                     f"Please do not use this reserved key as a metric: {k}"
                 )
+        payload = dict(
+            api_name="/log",
+            project=self.project,
+            run=self.name,
+            metrics=metrics,
+            step=step,
+            hf_token=huggingface_hub.utils.get_token(),
+        )
         with self._client_lock:
             if self._client is None:
                 # client can still be None for a Space while the Space is still initializing.
                 # queue up log items for when the client is not None.
                 self._queued_logs.append(
-                    dict(
-                        api_name="/log",
-                        project=self.project,
-                        run=self.name,
-                        metrics=metrics,
-                        hf_token=huggingface_hub.utils.get_token(),
-                    )
+                    payload
                 )
             else:
                 assert (
@@ -73,11 +75,7 @@ class Run:
                 )  # queue should have been flushed on client init
                 # write the current log item
                 self._client.predict(
-                    api_name="/log",
-                    project=self.project,
-                    run=self.name,
-                    metrics=metrics,
-                    hf_token=huggingface_hub.utils.get_token(),
+                    **payload
                 )
 
     def finish(self):

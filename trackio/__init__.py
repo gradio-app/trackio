@@ -1,6 +1,7 @@
 import os
 import webbrowser
 from pathlib import Path
+from typing import Any
 
 from gradio_client import Client
 
@@ -26,6 +27,7 @@ def init(
     dataset_id: str | None = None,
     config: dict | None = None,
     resume: str = "never",
+    settings: Any = None,
 ) -> Run:
     """
     Creates a new Trackio project and returns a Run object.
@@ -40,7 +42,11 @@ def init(
             - "must": Must resume the run with the given name, raises error if run doesn't exist
             - "allow": Resume the run if it exists, otherwise create a new run
             - "never": Never resume a run, always create a new one
+        settings: Not used. Provided for compatibility with wandb.init()
     """
+    if settings is not None:
+        print("* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented.")
+
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
@@ -110,12 +116,13 @@ def init(
     return run
 
 
-def log(metrics: dict) -> None:
+def log(metrics: dict, step: int | None = None) -> None:
     """
     Logs metrics to the current run.
 
     Args:
         metrics: A dictionary of metrics to log.
+        step: The step number. If not provided, the step will be incremented automatically.
     """
     if context_vars.current_run.get() is None:
         raise RuntimeError("Call trackio.init() before log().")
