@@ -315,7 +315,7 @@ def configure(request: gr.Request):
             sidebar = gr.Sidebar(open=False, visible=False)
         case _:
             sidebar = gr.Sidebar(open=True, visible=True)
-    
+
     if dark_mode:
         logo = gr.Markdown(
             f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%'>"
@@ -324,7 +324,6 @@ def configure(request: gr.Request):
         logo = gr.Markdown(
             f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
         )
-
 
     if metrics := request.query_params.get("metrics"):
         return metrics.split(","), sidebar, logo
