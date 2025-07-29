@@ -283,6 +283,7 @@ def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
 
 def configure(request: gr.Request):
     sidebar_param = request.query_params.get("sidebar")
+    dark_mode = request.query_params.get("__theme") == "dark"
     match sidebar_param:
         case "collapsed":
             sidebar = gr.Sidebar(open=False, visible=True)
@@ -290,17 +291,27 @@ def configure(request: gr.Request):
             sidebar = gr.Sidebar(open=False, visible=False)
         case _:
             sidebar = gr.Sidebar(open=True, visible=True)
+    
+    if dark_mode:
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%'>"
+        )
+    else:
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
+        )
+
 
     if metrics := request.query_params.get("metrics"):
-        return metrics.split(","), sidebar
+        return metrics.split(","), sidebar, logo
     else:
-        return [], sidebar
+        return [], sidebar, logo
 
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
-        gr.Markdown(
-            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_light.png' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
@@ -320,7 +331,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
 
-    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar])
+    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar, logo])
     gr.on(
         [demo.load],
         fn=get_projects,
