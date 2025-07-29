@@ -5,6 +5,7 @@ from collections import deque
 import huggingface_hub
 from gradio_client import Client
 
+from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
 
@@ -22,7 +23,7 @@ class Run:
         self._client_lock = threading.Lock()
         self._client_thread = None
         self._client = client
-        self.name = name or generate_readable_name()
+        self.name = name or generate_readable_name(SQLiteStorage.get_runs(project))
         self.config = config or {}
         self._queued_logs = deque()
 
@@ -47,37 +48,31 @@ class Run:
             if sleep_coefficient is not None:
                 time.sleep(0.1 * sleep_coefficient)
 
-    def log(self, metrics: dict):
+    def log(self, metrics: dict, step: int | None = None):
         for k in metrics.keys():
             if k in RESERVED_KEYS or k.startswith("__"):
                 raise ValueError(
                     f"Please do not use this reserved key as a metric: {k}"
                 )
+        payload = dict(
+            api_name="/log",
+            project=self.project,
+            run=self.name,
+            metrics=metrics,
+            step=step,
+            hf_token=huggingface_hub.utils.get_token(),
+        )
         with self._client_lock:
             if self._client is None:
                 # client can still be None for a Space while the Space is still initializing.
                 # queue up log items for when the client is not None.
-                self._queued_logs.append(
-                    dict(
-                        api_name="/log",
-                        project=self.project,
-                        run=self.name,
-                        metrics=metrics,
-                        hf_token=huggingface_hub.utils.get_token(),
-                    )
-                )
+                self._queued_logs.append(payload)
             else:
                 assert (
                     len(self._queued_logs) == 0
                 )  # queue should have been flushed on client init
                 # write the current log item
-                self._client.predict(
-                    api_name="/log",
-                    project=self.project,
-                    run=self.name,
-                    metrics=metrics,
-                    hf_token=huggingface_hub.utils.get_token(),
-                )
+                self._client.predict(**payload)
 
     def finish(self):
         """Cleanup when run is finished."""

@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from typing import Any
 
@@ -12,13 +13,13 @@ try:
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.utils import (
         RESERVED_KEYS,
-        TRACKIO_LOGO_PATH,
+        TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
     )
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, downsample, get_color_mapping
+    from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
 
 css = """
 #run-cb .wrap {
@@ -240,10 +241,34 @@ def log(
     project: str,
     run: str,
     metrics: dict[str, Any],
+    step: int | None,
     hf_token: str | None,
 ) -> None:
     check_auth(hf_token)
-    SQLiteStorage.log(project=project, run=run, metrics=metrics)
+    SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
+
+
+def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
+    """
+    Filter metrics using regex pattern.
+
+    Args:
+        metrics: List of metric names to filter
+        filter_pattern: Regex pattern to match against metric names
+
+    Returns:
+        List of metric names that match the pattern
+    """
+    if not filter_pattern.strip():
+        return metrics
+
+    try:
+        pattern = re.compile(filter_pattern, re.IGNORECASE)
+        return [metric for metric in metrics if pattern.search(metric)]
+    except re.error:
+        return [
+            metric for metric in metrics if filter_pattern.lower() in metric.lower()
+        ]
 
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
@@ -282,6 +307,7 @@ def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
 
 def configure(request: gr.Request):
     sidebar_param = request.query_params.get("sidebar")
+    dark_mode = request.query_params.get("__theme") == "dark"
     match sidebar_param:
         case "collapsed":
             sidebar = gr.Sidebar(open=False, visible=True)
@@ -290,16 +316,25 @@ def configure(request: gr.Request):
         case _:
             sidebar = gr.Sidebar(open=True, visible=True)
 
-    if metrics := request.query_params.get("metrics"):
-        return metrics.split(","), sidebar
+    if dark_mode:
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%'>"
+        )
     else:
-        return [], sidebar
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
+        )
+
+    if metrics := request.query_params.get("metrics"):
+        return metrics.split(","), sidebar, logo
+    else:
+        return [], sidebar, logo
 
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
-        gr.Markdown(
-            f"<div style='display: flex; align-items: center; gap: 8px;'><img src='/gradio_api/file={TRACKIO_LOGO_PATH}' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
@@ -314,12 +349,18 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             choices=["step", "time"],
             value="step",
         )
+        metric_filter_tb = gr.Textbox(
+            label="Metric Filter (regex)",
+            placeholder="e.g., loss|ndcg@10|gpu",
+            value="",
+            info="Filter metrics using regex patterns. Leave empty to show all metrics.",
+        )
 
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
 
-    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar])
+    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar, logo])
     gr.on(
         [demo.load],
         fn=get_projects,
@@ -401,11 +442,22 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             smoothing_cb.change,
             x_lim.change,
             x_axis_dd.change,
+            metric_filter_tb.change,
         ],
-        inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim, x_axis_dd],
+        inputs=[
+            project_dd,
+            run_cb,
+            smoothing_cb,
+            metrics_subset,
+            x_lim,
+            x_axis_dd,
+            metric_filter_tb,
+        ],
         show_progress="hidden",
     )
-    def update_dashboard(project, runs, smoothing, metrics_subset, x_lim_value, x_axis):
+    def update_dashboard(
+        project, runs, smoothing, metrics_subset, x_lim_value, x_axis, metric_filter
+    ):
         dfs = []
         original_runs = runs.copy()
 
@@ -430,6 +482,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
+
+        if metric_filter and metric_filter.strip():
+            numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
         numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
@@ -461,4 +516,4 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False, show_error=True)
+    demo.launch(allowed_paths=[TRACKIO_LOGO_DIR], show_api=False, show_error=True)

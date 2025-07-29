@@ -138,7 +138,7 @@ class SQLiteStorage:
             return scheduler
 
     @staticmethod
-    def log(project: str, run: str, metrics: dict):
+    def log(project: str, run: str, metrics: dict, step: int | None = None):
         """
         Safely log metrics to the database. Before logging, this method will ensure the database exists
         and is set up with the correct tables. It also uses the scheduler to lock the database so
@@ -159,7 +159,10 @@ class SQLiteStorage:
                     (run,),
                 )
                 last_step = cursor.fetchone()[0]
-                current_step = 0 if last_step is None else last_step + 1
+                if step is None:
+                    current_step = 0 if last_step is None else last_step + 1
+                else:
+                    current_step = step
 
                 current_timestamp = datetime.now().isoformat()
 

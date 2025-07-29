@@ -1,6 +1,8 @@
 import os
+import warnings
 import webbrowser
 from pathlib import Path
+from typing import Any
 
 from gradio_client import Client
 
@@ -9,7 +11,7 @@ from trackio.imports import import_csv, import_tf_events
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
-from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH
+from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
@@ -26,6 +28,7 @@ def init(
     dataset_id: str | None = None,
     config: dict | None = None,
     resume: str = "never",
+    settings: Any = None,
 ) -> Run:
     """
     Creates a new Trackio project and returns a Run object.
@@ -40,7 +43,13 @@ def init(
             - "must": Must resume the run with the given name, raises error if run doesn't exist
             - "allow": Resume the run if it exists, otherwise create a new run
             - "never": Never resume a run, always create a new one
+        settings: Not used. Provided for compatibility with wandb.init()
     """
+    if settings is not None:
+        warnings.warn(
+            "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
+        )
+
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
@@ -110,12 +119,13 @@ def init(
     return run
 
 
-def log(metrics: dict) -> None:
+def log(metrics: dict, step: int | None = None) -> None:
     """
     Logs metrics to the current run.
 
     Args:
         metrics: A dictionary of metrics to log.
+        step: The step number. If not provided, the step will be incremented automatically.
     """
     run = context_vars.current_run.get()
     if run is None:
@@ -145,8 +155,8 @@ def show(project: str | None = None):
         quiet=True,
         inline=False,
         prevent_thread_lock=True,
-        favicon_path=TRACKIO_LOGO_PATH,
-        allowed_paths=[TRACKIO_LOGO_PATH],
+        favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
+        allowed_paths=[TRACKIO_LOGO_DIR],
     )
     base_url = share_url + "/" if share_url else url
     dashboard_url = base_url + f"?project={project}" if project else base_url
