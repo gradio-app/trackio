@@ -1,12 +1,15 @@
 <p align="center">
-    <img width="382" alt="image" src="https://github.com/user-attachments/assets/bc08df0d-09b8-42aa-8206-4ac4b295b0b1" />
+
+<img width="75%" src="https://github.com/user-attachments/assets/6d6a41e7-fbc1-43ec-bda6-15f9ff4bd25c" />
+
 
 </p>
 
-`trackio` is a lightweight, 💯 free experiment tracking Python library built on top of 🤗 Datasets and Spaces.
+`trackio` is a lightweight, free experiment tracking Python library built on top of 🤗 Datasets and Spaces.
 
 
-![Screen Recording 2025-06-11 at 5 39 32 PM](https://github.com/user-attachments/assets/5cf12286-54e7-4119-8a20-88c2cbd37ab6)
+![Screen Recording 2025-07-28 at 5 26 32 PM](https://github.com/user-attachments/assets/f3eac49e-d8ee-4fc0-b1ca-aedfc6d6fae1)
+
 
 - **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish` (drop-in replacement: just `import trackio as wandb`)
 - *Local-first* design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id`.

@@ -11,7 +11,7 @@ from trackio.imports import import_csv
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
-from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH
+from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
@@ -153,8 +153,8 @@ def show(project: str | None = None):
         quiet=True,
         inline=False,
         prevent_thread_lock=True,
-        favicon_path=TRACKIO_LOGO_PATH,
-        allowed_paths=[TRACKIO_LOGO_PATH],
+        favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
+        allowed_paths=[TRACKIO_LOGO_DIR],
     )
     base_url = share_url + "/" if share_url else url
     dashboard_url = base_url + f"?project={project}" if project else base_url

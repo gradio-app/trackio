@@ -13,13 +13,13 @@ try:
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.utils import (
         RESERVED_KEYS,
-        TRACKIO_LOGO_PATH,
+        TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
     )
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, downsample, get_color_mapping
+    from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
 
 css = """
 #run-cb .wrap {
@@ -307,6 +307,7 @@ def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
 
 def configure(request: gr.Request):
     sidebar_param = request.query_params.get("sidebar")
+    dark_mode = request.query_params.get("__theme") == "dark"
     match sidebar_param:
         case "collapsed":
             sidebar = gr.Sidebar(open=False, visible=True)
@@ -315,16 +316,25 @@ def configure(request: gr.Request):
         case _:
             sidebar = gr.Sidebar(open=True, visible=True)
 
-    if metrics := request.query_params.get("metrics"):
-        return metrics.split(","), sidebar
+    if dark_mode:
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%'>"
+        )
     else:
-        return [], sidebar
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
+        )
+
+    if metrics := request.query_params.get("metrics"):
+        return metrics.split(","), sidebar, logo
+    else:
+        return [], sidebar, logo
 
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
-        gr.Markdown(
-            f"<div style='display: flex; align-items: center; gap: 8px;'><img src='/gradio_api/file={TRACKIO_LOGO_PATH}' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
+        logo = gr.Markdown(
+            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
@@ -350,7 +360,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
 
-    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar])
+    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar, logo])
     gr.on(
         [demo.load],
         fn=get_projects,
@@ -506,4 +516,4 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False, show_error=True)
+    demo.launch(allowed_paths=[TRACKIO_LOGO_DIR], show_api=False, show_error=True)
