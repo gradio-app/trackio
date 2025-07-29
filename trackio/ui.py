@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from typing import Any
 
@@ -247,6 +248,29 @@ def log(
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
 
+def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
+    """
+    Filter metrics using regex pattern.
+
+    Args:
+        metrics: List of metric names to filter
+        filter_pattern: Regex pattern to match against metric names
+
+    Returns:
+        List of metric names that match the pattern
+    """
+    if not filter_pattern.strip():
+        return metrics
+
+    try:
+        pattern = re.compile(filter_pattern, re.IGNORECASE)
+        return [metric for metric in metrics if pattern.search(metric)]
+    except re.error:
+        return [
+            metric for metric in metrics if filter_pattern.lower() in metric.lower()
+        ]
+
+
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
     """
     Sort metrics by grouping prefixes together.
@@ -325,6 +349,12 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             label="X-axis",
             choices=["step", "time"],
             value="step",
+        )
+        metric_filter_tb = gr.Textbox(
+            label="Metric Filter (regex)",
+            placeholder="e.g., loss|ndcg@10|gpu",
+            value="",
+            info="Filter metrics using regex patterns. Leave empty to show all metrics.",
         )
 
     timer = gr.Timer(value=1)
@@ -413,11 +443,22 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             smoothing_cb.change,
             x_lim.change,
             x_axis_dd.change,
+            metric_filter_tb.change,
         ],
-        inputs=[project_dd, run_cb, smoothing_cb, metrics_subset, x_lim, x_axis_dd],
+        inputs=[
+            project_dd,
+            run_cb,
+            smoothing_cb,
+            metrics_subset,
+            x_lim,
+            x_axis_dd,
+            metric_filter_tb,
+        ],
         show_progress="hidden",
     )
-    def update_dashboard(project, runs, smoothing, metrics_subset, x_lim_value, x_axis):
+    def update_dashboard(
+        project, runs, smoothing, metrics_subset, x_lim_value, x_axis, metric_filter
+    ):
         dfs = []
         original_runs = runs.copy()
 
@@ -442,6 +483,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
+
+        if metric_filter and metric_filter.strip():
+            numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
         numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
