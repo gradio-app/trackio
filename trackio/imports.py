@@ -35,11 +35,11 @@ def import_csv(
             f"Project '{project}' already exists. Cannot import CSV into existing project."
         )
 
-    path = Path(csv_path)
-    if not path.exists():
-        raise FileNotFoundError(f"CSV file not found: {path}")
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
-    df = pd.read_csv(path)
+    df = pd.read_csv(csv_path)
     if df.empty:
         raise ValueError("CSV file is empty")
 
@@ -56,7 +56,7 @@ def import_csv(
         raise ValueError("CSV file must contain a 'step' or 'Step' column")
 
     if name is None:
-        name = path.stem
+        name = csv_path.stem
 
     metrics_list = []
     steps = []
@@ -101,7 +101,7 @@ def import_csv(
         )
 
     print(
-        f"* Imported {len(metrics_list)} rows from {path} into project '{project}' as run '{name}'"
+        f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'"
     )
     print(f"* Metrics found: {', '.join(metrics_list[0].keys())}")
 
