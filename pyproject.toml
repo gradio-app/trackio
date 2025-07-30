@@ -10,7 +10,7 @@ include = [
 
 [project]
 name = "trackio"
-description = "A small Python library created to help developers protect their applications from Server Side Request Forgery (SSRF) attacks."
+description = "A lightweight, local-first, and free experiment tracking library built on top of Hugging Face Datasets and Spaces."
 authors = [
     { name = "Abubakar Abid", email = "abubakar@hf.co" }
 ]
