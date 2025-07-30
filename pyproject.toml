@@ -12,7 +12,8 @@ include = [
 name = "trackio"
 description = "A lightweight, local-first, and free experiment tracking library built on top of Hugging Face Datasets and Spaces."
 authors = [
-    { name = "Abubakar Abid", email = "abubakar@hf.co" }
+    { name = "Abubakar Abid", email = "abubakar@huggingface.co" },
+    { name = "Zach Nation", email = "zach@huggingface.co" },
 ]
 readme = "README.md"
 requires-python = ">=3.10"
