@@ -12,6 +12,7 @@ def test_basic_logging(temp_db):
     assert len(results) == 2
     assert results[0]["loss"] == 0.1
     assert results[0]["step"] == 0
+
     assert results[1]["loss"] == 0.2
     assert results[1]["acc"] == 0.9
     assert results[1]["step"] == 1
