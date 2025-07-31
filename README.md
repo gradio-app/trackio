@@ -22,6 +22,8 @@ Trackio is designed to be lightweight (the core codebase is <1,000 lines of Pyth
 
 ## Installation
 
+Trackio requires [Python 3.10 or higher](https://www.python.org/downloads/). Install with `pip`:
+
 ```bash
 pip install trackio
 ```
