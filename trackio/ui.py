@@ -207,7 +207,10 @@ def check_auth(hf_token: str | None) -> None:
                     matched = True
                     break
                 if (
-                    item["entity"]["type"] == "user"
+                    (
+                        item["entity"]["type"] == "user"
+                        or item["entity"]["type"] == "org"
+                    )
                     and item["entity"]["name"] == owner_name
                     and "repo.write" in item["permissions"]
                 ):
