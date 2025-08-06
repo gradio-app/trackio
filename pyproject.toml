@@ -12,10 +12,9 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pandas",
-    "huggingface-hub",
-    "gradio>=5.35.0",
-    "tbparse",
+    "pandas<3.0.0",
+    "huggingface-hub<1.0.0",
+    "gradio>=5.35.0,<6.0.0"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -32,6 +31,10 @@ repository = "https://github.com/gradio-app/trackio"
 dev = [
     "pytest",
     "ruff==0.9.3"
+]
+tensorboard = [
+    "tbparse==0.0.9",
+    "tensorboardX>=2.0.0,<3.0.0",
 ]
 
 [project.scripts]
