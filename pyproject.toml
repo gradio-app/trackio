@@ -12,8 +12,8 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pandas",
-    "huggingface-hub",
+    "pandas<3.0.0",
+    "huggingface-hub<1.0.0",
     "gradio>=5.35.0"
 ]
 classifiers = [
@@ -34,7 +34,7 @@ dev = [
 ]
 tensorboard = [
     "tbparse==0.0.9",
-    "tensorboardX>=2,<3",
+    "tensorboardX>=2.0.0,<3.0.0",
 ]
 
 [project.scripts]
