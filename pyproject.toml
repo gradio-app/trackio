@@ -14,8 +14,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pandas",
     "huggingface-hub",
-    "gradio>=5.35.0",
-    "tbparse",
+    "gradio>=5.35.0"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

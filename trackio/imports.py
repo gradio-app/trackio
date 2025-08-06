@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 
 import pandas as pd
-from tbparse import SummaryReader
 
 from trackio import deploy, utils
 from trackio.sqlite_storage import SQLiteStorage
@@ -139,6 +138,13 @@ def import_tf_events(
         space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like username/reponame" ororgname/reponame", or just "reponame" in which case the Space will be created in the currently-logged-in Hugging Face user's namespace. If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
         dataset_id: If provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Should be a complete Dataset name likeusername/datasetname" or "orgname/datasetname", or just "datasetname" in which case the Dataset will be created in the currently-logged-in Hugging Face user's namespace. If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it. If not provided, the metrics will be logged to a local SQLite database, unless a `space_id` is provided, in which case a Dataset will be automatically created with the same name as the Space but with the_dataset suffix.
     """
+    try:
+        from tbparse import SummaryReader
+    except ImportError:
+        raise ImportError(
+            "The `tbparse` package is not installed but is required for `import_tf_events`. Please install it with `pip install tbparse`."
+        )
+
     if SQLiteStorage.get_runs(project):
         raise ValueError(
             f"Project '{project}' already exists. Cannot import TF events into existing project."
