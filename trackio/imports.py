@@ -142,7 +142,7 @@ def import_tf_events(
         from tbparse import SummaryReader
     except ImportError:
         raise ImportError(
-            "The `tbparse` package is not installed but is required for `import_tf_events`. Please install it with `pip install tbparse`."
+            "The `tbparse` package is not installed but is required for `import_tf_events`. Please install trackio with the `tensorboard` extra: `pip install trackio[tensorboard]`."
         )
 
     if SQLiteStorage.get_runs(project):
