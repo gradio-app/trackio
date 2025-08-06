@@ -32,6 +32,9 @@ dev = [
     "pytest",
     "ruff==0.9.3"
 ]
+tensorboard = [
+    "tbparse==0.0.9"
+]
 
 [project.scripts]
 trackio = "trackio.cli:main"
