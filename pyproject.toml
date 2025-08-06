@@ -34,7 +34,7 @@ dev = [
 ]
 tensorboard = [
     "tbparse==0.0.9",
-    "tensorboardX",
+    "tensorboardX>=2,<3",
 ]
 
 [project.scripts]
