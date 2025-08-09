@@ -313,6 +313,7 @@ def configure(request: gr.Request):
     else:
         return [], sidebar
 
+
 css = """
 #run-cb .wrap { gap: 2px; }
 #run-cb .wrap label {
