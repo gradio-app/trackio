@@ -129,7 +129,7 @@ def log(metrics: dict, step: int | None = None) -> None:
     """
     run = context_vars.current_run.get()
     if run is None:
-        raise RuntimeError("Call trackio.init() before log().")
+        raise RuntimeError("Call trackio.init() before trackio.log().")
     run.log(
         metrics=metrics,
         step=step,
@@ -142,7 +142,7 @@ def finish():
     """
     run = context_vars.current_run.get()
     if run is None:
-        raise RuntimeError("Call trackio.init() before finish().")
+        raise RuntimeError("Call trackio.init() before trackio.finish().")
     run.finish()
 
 
