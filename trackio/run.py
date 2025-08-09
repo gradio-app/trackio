@@ -5,6 +5,7 @@ from collections import deque
 import huggingface_hub
 from gradio_client import Client
 
+from trackio.data_types.table import Table
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
@@ -48,12 +49,19 @@ class Run:
             if sleep_coefficient is not None:
                 time.sleep(0.1 * sleep_coefficient)
 
+    @staticmethod
+    def _replace_tables(metrics):
+        for k, v in metrics.items():
+            if isinstance(v, Table):
+                metrics[k] = v.to_dict()
+
     def log(self, metrics: dict, step: int | None = None):
         for k in metrics.keys():
             if k in RESERVED_KEYS or k.startswith("__"):
                 raise ValueError(
                     f"Please do not use this reserved key as a metric: {k}"
                 )
+        Run._replace_tables(metrics)
         payload = dict(
             api_name="/log",
             project=self.project,
@@ -68,9 +76,11 @@ class Run:
                 # queue up log items for when the client is not None.
                 self._queued_logs.append(payload)
             else:
-                assert (
-                    len(self._queued_logs) == 0
-                )  # queue should have been flushed on client init
+                # flush the queue
+                if len(self._queued_logs) > 0:
+                    for queued_log in self._queued_logs:
+                        self._client.predict(**queued_log)
+                    self._queued_logs.clear()
                 # write the current log item
                 self._client.predict(**payload)
 
