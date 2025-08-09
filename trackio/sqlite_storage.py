@@ -93,6 +93,14 @@ class SQLiteStorage:
             ):
                 with sqlite3.connect(db_path) as conn:
                     df = pd.read_sql("SELECT * from metrics", conn)
+                # break out the single JSON metrics column into individual columns
+                metrics = df["metrics"].copy()
+                metrics = pd.DataFrame(
+                    metrics.apply(json.loads).values.tolist(), index=df.index
+                )
+                del df["metrics"]
+                for col in metrics.columns:
+                    df[col] = metrics[col]
                 df.to_parquet(parquet_path)
 
     @staticmethod
@@ -107,6 +115,17 @@ class SQLiteStorage:
             db_path = parquet_path.with_suffix(".db")
             df = pd.read_parquet(parquet_path)
             with sqlite3.connect(db_path) as conn:
+                # fix up df to have a single JSON metrics column
+                if "metrics" not in df.columns:
+                    # separate other columns from metrics
+                    metrics = df.copy()
+                    other_cols = ["id", "timestamp", "run_name", "step"]
+                    df = df[other_cols]
+                    for col in other_cols:
+                        del metrics[col]
+                    # combine them all into a single metrics col
+                    metrics = json.loads(metrics.to_json(orient="records"))
+                    df["metrics"] = [json.dumps(row) for row in metrics]
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
 
     @staticmethod

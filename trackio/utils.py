@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from huggingface_hub.constants import HF_HOME
 
-RESERVED_KEYS = ["project", "run", "timestamp", "step", "time"]
+RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_DIR = Path(HF_HOME) / "trackio"
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
