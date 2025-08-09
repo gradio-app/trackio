@@ -598,10 +598,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
-
+            
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
-
+            
         nested_metric_groups = utils.group_metrics_with_subprefixes(list(numeric_cols))
         color_map = utils.get_color_mapping(original_runs, smoothing)
 
@@ -707,6 +707,24 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     metric_idx += 1
         if images_by_run and any(any(images) for images in images_by_run.values()):
             create_image_section(images_by_run)
+
+        with gr.Row(key="row", label="Tables"):
+            table_cols = master_df.select_dtypes(include="object").columns
+            table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
+            if metrics_subset:
+                table_cols = [c for c in table_cols if c in metrics_subset]
+            if metric_filter and metric_filter.strip():
+                table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
+
+            for metric_idx, metric_name in enumerate(table_cols):
+                metric_df = master_df.dropna(subset=[metric_name])
+                if not metric_df.empty:
+                    value = metric_df[metric_name].iloc[-1]
+                    try:
+                        df = pd.DataFrame(value)
+                        gr.DataFrame(df, label=f"{metric_name} (latest)")
+                    except:  # noqa: E722
+                        pass
 
 
 if __name__ == "__main__":
