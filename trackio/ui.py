@@ -540,6 +540,13 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
 
+        table_cols = master_df.select_dtypes(include="object").columns
+        table_cols = [c for c in table_cols if c not in RESERVED_KEYS]
+        if metrics_subset:
+            table_cols = [c for c in table_cols if c in metrics_subset]
+        if metric_filter and metric_filter.strip():
+            table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
+
         with gr.Row(key="row"):
             for metric_idx, metric_name in enumerate(numeric_cols):
                 metric_df = master_df.dropna(subset=[metric_name])
@@ -560,10 +567,19 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                         show_fullscreen_button=True,
                         min_width=400,
                     )
-                plot.select(update_x_lim, outputs=x_lim, key=f"select-{metric_idx}")
-                plot.double_click(
-                    lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
-                )
+                    plot.select(update_x_lim, outputs=x_lim, key=f"select-{metric_idx}")
+                    plot.double_click(
+                        lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
+                    )
+            for metric_idx, metric_name in enumerate(table_cols):
+                metric_df = master_df.dropna(subset=[metric_name])
+                if not metric_df.empty:
+                    value = metric_df[metric_name].iloc[-1]
+                    try:
+                        df = pd.DataFrame(value)
+                        gr.DataFrame(df, label=f"{metric_name} (latest)")
+                    except:  # noqa: E722
+                        pass
 
 
 if __name__ == "__main__":

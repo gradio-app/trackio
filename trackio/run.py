@@ -4,6 +4,7 @@ import time
 import huggingface_hub
 from gradio_client import Client
 
+from trackio.data_types.table import Table
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import LogEntry
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
@@ -72,12 +73,19 @@ class Run:
 
         self._batch_sender()
 
+    @staticmethod
+    def _replace_tables(metrics):
+        for k, v in metrics.items():
+            if isinstance(v, Table):
+                metrics[k] = v.to_dict()
+
     def log(self, metrics: dict, step: int | None = None):
         for k in metrics.keys():
             if k in RESERVED_KEYS or k.startswith("__"):
                 raise ValueError(
                     f"Please do not use this reserved key as a metric: {k}"
                 )
+        Run._replace_tables(metrics)
 
         log_entry: LogEntry = {
             "project": self.project,

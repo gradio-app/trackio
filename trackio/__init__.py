@@ -7,11 +7,14 @@ from typing import Any
 from gradio_client import Client
 
 from trackio import context_vars, deploy, utils
+from trackio.data_types import table
 from trackio.imports import import_csv, import_tf_events
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
+
+Table = table.Table
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
