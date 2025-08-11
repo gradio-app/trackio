@@ -20,7 +20,7 @@ for run in range(3):
     )
     for epoch in range(EPOCHS):
         random_value = random.random()
-        
+
         # update results
         result = {
             "run": run,
@@ -32,7 +32,7 @@ for run in range(3):
         else:
             result_table = pd.concat([result_table, pd.DataFrame([result])])
         result_table.fillna(0)
-        
+
         # log the result table
         wandb.log(
             {
