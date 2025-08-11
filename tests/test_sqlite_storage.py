@@ -29,3 +29,34 @@ def test_get_projects_and_runs(temp_db):
     assert {"proj1", "proj2"}.issubset(projects)
     runs = set(SQLiteStorage.get_runs("proj1"))
     assert "run1" in runs
+
+
+def test_import_export(temp_db):
+    db_path_1 = SQLiteStorage.init_db("proj1")
+    db_path_2 = SQLiteStorage.init_db("proj2")
+
+    # log some data, export to parquet, keep a copy in `metrics`
+    SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
+    SQLiteStorage.log(project="proj2", run="run2", metrics={"b": 2})
+    SQLiteStorage.export_to_parquet()
+    metrics_before = {}
+    for proj in SQLiteStorage.get_projects():
+        if proj not in metrics_before:
+            metrics_before[proj] = {}
+        for run in SQLiteStorage.get_runs(proj):
+            metrics_before[proj][run] = SQLiteStorage.get_metrics(proj, run)
+
+    # clear existing SQLite data
+    os.unlink(db_path_1)
+    os.unlink(db_path_2)
+
+    # import from parquet, compare copies
+    SQLiteStorage.import_from_parquet()
+    metrics_after = {}
+    for proj in SQLiteStorage.get_projects():
+        if proj not in metrics_after:
+            metrics_after[proj] = {}
+        for run in SQLiteStorage.get_runs(proj):
+            metrics_after[proj][run] = SQLiteStorage.get_metrics(proj, run)
+
+    assert metrics_before == metrics_after
