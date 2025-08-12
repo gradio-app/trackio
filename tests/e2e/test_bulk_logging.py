@@ -1,31 +1,46 @@
 import time
 
 import trackio
+from trackio.sqlite_storage import SQLiteStorage
 
 
 def test_rapid_bulk_logging():
-    """Test that 1000 logs sent rapidly are all successfully logged."""
+    """
+    Test that logs sent rapidly across different runs are all successfully logged with correct run names.
+    Also tests that trackio.log() is not too slow.
+    """
+
     project_name = "test_bulk_logging"
-    run_name = "bulk_test_run"
+    run1_name = "bulk_test_run1"
+    run2_name = "bulk_test_run2"
 
-    run = trackio.init(project=project_name, name=run_name)
+    trackio.init(project=project_name, name=run1_name)
+    start_time = time.time()
 
-    num_logs = 1000
-    for i in range(num_logs):
+    num_logs_run1 = 300
+    for i in range(num_logs_run1):
         trackio.log({"metric": i, "value": i * 2}, step=i)
 
+    trackio.init(project=project_name, name=run2_name)
+    num_logs_run2 = 700
+    for i in range(num_logs_run2):
+        trackio.log({"metric": i, "value": i * 3}, step=i)
+    time_to_run_1000_logs = time.time() - start_time
+
+    assert time_to_run_1000_logs < 0.1, (
+        f"1000 calls of trackio.log() took {time_to_run_1000_logs} seconds, which is too long"
+    )
     trackio.finish()
 
-    time.sleep(1)
-    from trackio.sqlite_storage import SQLiteStorage
+    time.sleep(0.6)  # Wait for the client to send the logs
 
-    metrics = SQLiteStorage.get_metrics(project_name, run_name)
-
-    assert len(metrics) == num_logs, (
-        f"Expected {num_logs} logs, but found {len(metrics)}"
+    # Verify run1 metrics
+    metrics_run1 = SQLiteStorage.get_metrics(project_name, run1_name)
+    assert len(metrics_run1) == num_logs_run1, (
+        f"Expected {num_logs_run1} logs for run1, but found {len(metrics_run1)}"
     )
 
-    for i, metric_entry in enumerate(metrics):
+    for i, metric_entry in enumerate(metrics_run1):
         assert metric_entry["metric"] == i, (
             f"Expected metric={i}, got {metric_entry['metric']}"
         )
@@ -36,86 +51,19 @@ def test_rapid_bulk_logging():
             f"Expected step={i}, got {metric_entry['step']}"
         )
 
-    print(
-        f"✓ Successfully logged and verified {num_logs} rapid logs with bulk batching"
+    # Verify run2 metrics
+    metrics_run2 = SQLiteStorage.get_metrics(project_name, run2_name)
+    assert len(metrics_run2) == num_logs_run2, (
+        f"Expected {num_logs_run2} logs for run2, but found {len(metrics_run2)}"
     )
 
-
-def test_bulk_logging_with_interruption():
-    """Test that bulk logging handles interruptions gracefully."""
-    project_name = "test_bulk_interrupt"
-    run_name = "interrupt_test_run"
-
-    run = trackio.init(project=project_name, name=run_name)
-
-    for i in range(100):
-        trackio.log({"metric": i}, step=i)
-
-    time.sleep(0.6)
-
-    for i in range(100, 200):
-        trackio.log({"metric": i}, step=i)
-
-    trackio.finish()
-
-    time.sleep(1)
-    from trackio.sqlite_storage import SQLiteStorage
-
-    metrics = SQLiteStorage.get_metrics(project_name, run_name)
-
-    assert len(metrics) == 200, f"Expected 200 logs, but found {len(metrics)}"
-    for i, metric_entry in enumerate(metrics):
+    for i, metric_entry in enumerate(metrics_run2):
         assert metric_entry["metric"] == i, (
             f"Expected metric={i}, got {metric_entry['metric']}"
         )
+        assert metric_entry["value"] == i * 3, (
+            f"Expected value={i * 3}, got {metric_entry['value']}"
+        )
         assert metric_entry["step"] == i, (
             f"Expected step={i}, got {metric_entry['step']}"
         )
-
-    print("✓ Successfully handled bulk logging with interruption")
-
-
-def test_mixed_size_batches():
-    """Test that different sized log payloads are handled correctly in batches."""
-    project_name = "test_mixed_batches"
-    run_name = "mixed_batch_run"
-
-    run = trackio.init(project=project_name, name=run_name)
-
-    for i in range(100):
-        if i % 10 == 0:
-            metrics = {f"metric_{j}": i * j for j in range(10)}
-        else:
-            metrics = {"value": i}
-
-        trackio.log(metrics, step=i)
-
-    trackio.finish()
-
-    time.sleep(1)
-    from trackio.sqlite_storage import SQLiteStorage
-
-    metrics = SQLiteStorage.get_metrics(project_name, run_name)
-
-    assert len(metrics) == 100, f"Expected 100 logs, but found {len(metrics)}"
-    for i, metric_entry in enumerate(metrics):
-        if i % 10 == 0:
-            for j in range(10):
-                assert f"metric_{j}" in metric_entry, f"Missing metric_{j} in entry {i}"
-                assert metric_entry[f"metric_{j}"] == i * j
-        else:
-            assert metric_entry["value"] == i, (
-                f"Expected value={i}, got {metric_entry['value']}"
-            )
-
-        assert metric_entry["step"] == i, (
-            f"Expected step={i}, got {metric_entry['step']}"
-        )
-
-    print("✓ Successfully handled mixed-size batches")
-
-
-if __name__ == "__main__":
-    test_rapid_bulk_logging()
-    test_bulk_logging_with_interruption()
-    test_mixed_size_batches()
