@@ -241,6 +241,20 @@ def log(
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
 
+def bulk_log(
+    logs: list[dict[str, Any]],
+    hf_token: str | None,
+) -> None:
+    check_auth(hf_token)
+    for log_entry in logs:
+        SQLiteStorage.log(
+            project=log_entry["project"],
+            run=log_entry["run"],
+            metrics=log_entry["metrics"],
+            step=log_entry.get("step"),
+        )
+
+
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
     """
     Filter metrics using regex pattern.
@@ -410,6 +424,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.api(
         fn=log,
         api_name="log",
+    )
+    gr.api(
+        fn=bulk_log,
+        api_name="bulk_log",
     )
 
     x_lim = gr.State(None)
