@@ -246,12 +246,21 @@ def bulk_log(
     hf_token: str | None,
 ) -> None:
     check_auth(hf_token)
+
+    logs_by_run = {}
     for log_entry in logs:
-        SQLiteStorage.log(
-            project=log_entry["project"],
-            run=log_entry["run"],
-            metrics=log_entry["metrics"],
-            step=log_entry.get("step"),
+        key = (log_entry["project"], log_entry["run"])
+        if key not in logs_by_run:
+            logs_by_run[key] = {"metrics": [], "steps": []}
+        logs_by_run[key]["metrics"].append(log_entry["metrics"])
+        logs_by_run[key]["steps"].append(log_entry.get("step"))
+
+    for (project, run), data in logs_by_run.items():
+        SQLiteStorage.bulk_log(
+            project=project,
+            run=run,
+            metrics_list=data["metrics"],
+            steps=data["steps"],
         )
 
 

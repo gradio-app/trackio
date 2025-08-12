@@ -17,15 +17,11 @@ def test_run_log_calls_client():
     metrics = {"x": 1}
     run.log(metrics)
 
-    # Since logging is now batched, we need to wait or trigger the batch
-    # Let's check that the log was added to pending logs instead
     import time
 
-    time.sleep(0.6)  # Wait for batch interval
+    time.sleep(0.6)
 
-    # The predict should have been called with bulk_log
     assert client.predict.called
-    # Check that it was called with the bulk_log API
     call_args = client.predict.call_args
     if call_args:
         assert (
@@ -44,7 +40,7 @@ def test_init_resume_modes(temp_db):
     assert run.name == "new-run"
 
     run.log({"x": 1})
-    run.finish()  # Ensure the run is finished and logs are flushed
+    run.finish()
 
     run = init(
         project="test-project",
