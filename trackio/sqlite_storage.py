@@ -219,7 +219,7 @@ class SQLiteStorage:
         with SQLiteStorage.get_scheduler().lock:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 if steps is None:
                     steps = list(range(len(metrics_list)))
                 elif any(s is None for s in steps):
@@ -228,7 +228,7 @@ class SQLiteStorage:
                     )
                     last_step = cursor.fetchone()[0]
                     current_step = 0 if last_step is None else last_step + 1
-                    
+
                     processed_steps = []
                     for step in steps:
                         if step is None:
@@ -238,7 +238,9 @@ class SQLiteStorage:
                             processed_steps.append(step)
                     steps = processed_steps
 
-                if len(metrics_list) != len(steps) or len(metrics_list) != len(timestamps):
+                if len(metrics_list) != len(steps) or len(metrics_list) != len(
+                    timestamps
+                ):
                     raise ValueError(
                         "metrics_list, steps, and timestamps must have the same length"
                     )

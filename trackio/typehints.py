@@ -6,4 +6,3 @@ class LogEntry(TypedDict):
     run: str
     metrics: dict[str, Any]
     step: int | None
-

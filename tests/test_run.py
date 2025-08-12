@@ -1,8 +1,8 @@
 import time
 from unittest.mock import MagicMock
 
-import pytest
 import huggingface_hub
+import pytest
 
 from trackio import Run, init
 
@@ -24,6 +24,7 @@ def test_run_log_calls_client():
         logs=[{"project": "proj", "run": "run1", "metrics": metrics, "step": None}],
         hf_token=huggingface_hub.utils.get_token(),
     )
+
 
 def test_init_resume_modes(temp_db):
     run = init(
