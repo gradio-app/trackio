@@ -256,12 +256,39 @@ def bulk_log(
         logs_by_run[key]["steps"].append(log_entry.get("step"))
 
     for (project, run), data in logs_by_run.items():
-        SQLiteStorage.bulk_log(
-            project=project,
-            run=run,
-            metrics_list=data["metrics"],
-            steps=data["steps"],
-        )
+        steps_list = data["steps"]
+
+        if all(s is None for s in steps_list):
+            SQLiteStorage.bulk_log(
+                project=project,
+                run=run,
+                metrics_list=data["metrics"],
+                steps=None,
+            )
+        else:
+            db_path = SQLiteStorage.init_db(project)
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,)
+                )
+                last_step = cursor.fetchone()[0]
+                current_step = 0 if last_step is None else last_step + 1
+
+            processed_steps = []
+            for step in steps_list:
+                if step is None:
+                    processed_steps.append(current_step)
+                    current_step += 1
+                else:
+                    processed_steps.append(step)
+
+            SQLiteStorage.bulk_log(
+                project=project,
+                run=run,
+                metrics_list=data["metrics"],
+                steps=processed_steps,
+            )
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:

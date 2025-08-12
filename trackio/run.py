@@ -1,12 +1,20 @@
 import threading
 import time
 from collections import deque
+from typing import Any, TypedDict
 
 import huggingface_hub
 from gradio_client import Client
 
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
+
+
+class LogEntry(TypedDict):
+    project: str
+    run: str
+    metrics: dict[str, Any]
+    step: int | None
 
 
 class Run:
@@ -25,16 +33,12 @@ class Run:
         self._client = client
         self.name = name or generate_readable_name(SQLiteStorage.get_runs(project))
         self.config = config or {}
-        self._queued_logs = []
+        self._queued_logs: list[LogEntry] = []
         self._stop_flag = threading.Event()
 
-        if client is None:
-            self._client_thread = threading.Thread(target=self._init_client_background)
-            self._client_thread.start()
-        else:
-            self._client_thread = threading.Thread(target=self._batch_sender)
-            self._client_thread.daemon = True
-            self._client_thread.start()
+        self._client_thread = threading.Thread(target=self._init_client_background)
+        self._client_thread.daemon = True
+        self._client_thread.start()
 
     def _batch_sender(self):
         """Background thread that sends batched logs every 500ms."""
@@ -53,17 +57,18 @@ class Run:
                     )
 
     def _init_client_background(self):
-        fib = fibo()
-        for sleep_coefficient in fib:
-            try:
-                client = Client(self.url, verbose=False)
-                with self._client_lock:
-                    self._client = client
-                break
-            except Exception:
-                pass
-            if sleep_coefficient is not None:
-                time.sleep(0.1 * sleep_coefficient)
+        if self._client is None:
+            fib = fibo()
+            for sleep_coefficient in fib:
+                try:
+                    client = Client(self.url, verbose=False)
+                    with self._client_lock:
+                        self._client = client
+                    break
+                except Exception:
+                    pass
+                if sleep_coefficient is not None:
+                    time.sleep(0.1 * sleep_coefficient)
 
         self._batch_sender()
 
@@ -74,7 +79,7 @@ class Run:
                     f"Please do not use this reserved key as a metric: {k}"
                 )
 
-        log_entry = {
+        log_entry: LogEntry = {
             "project": self.project,
             "run": self.name,
             "metrics": metrics,
