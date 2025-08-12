@@ -81,8 +81,7 @@ When given a GitHub issue to solve, follow this workflow:
 2. **Implement the solution** following the existing code patterns and conventions
 3. **Run tests** to ensure nothing is broken: `pytest`
 4. **Run linting/formatting**: `ruff check --fix --select I && ruff format`
-5. **Commit changes** with a descriptive message referencing the issue
-6. **Push the branch** to origin to automatically open a PR with a descriptive body message (1 sentence describing what the PR does and referencing the issue if applicable, e.g., "Adds a 'Log scale X-axis' checkbox to the sidebar below the X-axis dropdown, which implements log scale functionality for all plots when checkbox is enabled. Closes: #121")
+5. That's it. Never use the `git` commit command after a task is finished.
 
 ### Git Commands for Issue Workflow
 ```bash
