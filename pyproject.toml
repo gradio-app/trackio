@@ -30,7 +30,8 @@ repository = "https://github.com/gradio-app/trackio"
 [project.optional-dependencies]
 dev = [
     "pytest",
-    "ruff==0.9.3"
+    "ruff==0.9.3",
+    "pyarrow>=21.0",
 ]
 tensorboard = [
     "tbparse==0.0.9",
