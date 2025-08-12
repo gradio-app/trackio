@@ -85,16 +85,7 @@ When given a GitHub issue to solve, follow this workflow:
 
 ### Git Commands for Issue Workflow
 ```bash
-# Create and switch to new branch
 git checkout -b fix-issue-NUMBER
-
-# After implementing changes, add and commit
-git add -A
-git commit -m "Fix issue #NUMBER: Brief description"
-
-# Push branch and create PR with descriptive body
-git push -u origin fix-issue-NUMBER
-gh pr create --title "Fix issue #NUMBER: Brief description" --body "One sentence describing what the PR does and closes: #NUMBER"
 ```
 
 Always ensure tests pass and code is formatted before pushing.
