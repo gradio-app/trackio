@@ -5,6 +5,7 @@ from typing import Any
 
 import gradio as gr
 import huggingface_hub as hf
+import numpy as np
 import pandas as pd
 
 HfApi = hf.HfApi()
@@ -78,7 +79,13 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
-def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str):
+def load_run_data(
+    project: str | None,
+    run: str | None,
+    smoothing: bool,
+    x_axis: str,
+    log_scale: bool = False,
+):
     if not project or not run:
         return None
     metrics = SQLiteStorage.get_metrics(project, run)
@@ -98,6 +105,13 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis:
         x_column = "step"
     else:
         x_column = x_axis
+
+    if log_scale and x_column in df.columns:
+        x_vals = df[x_column]
+        if (x_vals <= 0).any():
+            df[x_column] = np.log10(np.maximum(x_vals, 0) + 1)
+        else:
+            df[x_column] = np.log10(x_vals)
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
@@ -347,6 +361,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             choices=["step", "time"],
             value="step",
         )
+        log_scale_cb = gr.Checkbox(label="Log scale X-axis", value=False)
         metric_filter_tb = gr.Textbox(
             label="Metric Filter (regex)",
             placeholder="e.g., loss|ndcg@10|gpu",
@@ -440,6 +455,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             smoothing_cb.change,
             x_lim.change,
             x_axis_dd.change,
+            log_scale_cb.change,
             metric_filter_tb.change,
         ],
         inputs=[
@@ -449,18 +465,26 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             metrics_subset,
             x_lim,
             x_axis_dd,
+            log_scale_cb,
             metric_filter_tb,
         ],
         show_progress="hidden",
     )
     def update_dashboard(
-        project, runs, smoothing, metrics_subset, x_lim_value, x_axis, metric_filter
+        project,
+        runs,
+        smoothing,
+        metrics_subset,
+        x_lim_value,
+        x_axis,
+        log_scale,
+        metric_filter,
     ):
         dfs = []
         original_runs = runs.copy()
 
         for run in runs:
-            df = load_run_data(project, run, smoothing, x_axis)
+            df = load_run_data(project, run, smoothing, x_axis, log_scale)
             if df is not None:
                 dfs.append(df)
 
