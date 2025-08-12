@@ -46,26 +46,11 @@ class Run:
                     logs_to_send = self._queued_logs.copy()
                     self._queued_logs.clear()
 
-                    try:
-                        self._client.predict(
-                            api_name="/bulk_log",
-                            logs=logs_to_send,
-                            hf_token=huggingface_hub.utils.get_token(),
-                        )
-                    except Exception:
-                        for log_entry in logs_to_send:
-                            payload = dict(
-                                api_name="/log",
-                                project=log_entry["project"],
-                                run=log_entry["run"],
-                                metrics=log_entry["metrics"],
-                                step=log_entry.get("step"),
-                                hf_token=huggingface_hub.utils.get_token(),
-                            )
-                            try:
-                                self._client.predict(**payload)
-                            except Exception:
-                                pass
+                    self._client.predict(
+                        api_name="/bulk_log",
+                        logs=logs_to_send,
+                        hf_token=huggingface_hub.utils.get_token(),
+                    )
 
     def _init_client_background(self):
         fib = fibo()
@@ -107,26 +92,11 @@ class Run:
             if self._queued_logs and self._client is not None:
                 logs_to_send = self._queued_logs.copy()
                 self._queued_logs.clear()
-                try:
-                    self._client.predict(
-                        api_name="/bulk_log",
-                        logs=logs_to_send,
-                        hf_token=huggingface_hub.utils.get_token(),
-                    )
-                except Exception:
-                    for log_entry in logs_to_send:
-                        payload = dict(
-                            api_name="/log",
-                            project=log_entry["project"],
-                            run=log_entry["run"],
-                            metrics=log_entry["metrics"],
-                            step=log_entry.get("step"),
-                            hf_token=huggingface_hub.utils.get_token(),
-                        )
-                        try:
-                            self._client.predict(**payload)
-                        except Exception:
-                            pass
+                self._client.predict(
+                    api_name="/bulk_log",
+                    logs=logs_to_send,
+                    hf_token=huggingface_hub.utils.get_token(),
+                )
 
         if self._client_thread is not None:
             print(f"* Uploading logs to Trackio Space: {self.url} (please wait...)")
