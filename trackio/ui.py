@@ -5,6 +5,7 @@ from typing import Any
 
 import gradio as gr
 import huggingface_hub as hf
+import numpy as np
 import pandas as pd
 
 HfApi = hf.HfApi()
@@ -104,6 +105,16 @@ def load_run_data(
         x_column = "step"
     else:
         x_column = x_axis
+
+    # Apply log scale transformation to x values if requested
+    if log_scale and x_column in df.columns:
+        # Ensure x values are positive for log transformation
+        x_vals = df[x_column]
+        if (x_vals <= 0).any():
+            # Add 1 to handle zero values, shift by 1 then apply log10
+            df[x_column] = np.log10(np.maximum(x_vals, 0) + 1)
+        else:
+            df[x_column] = np.log10(x_vals)
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
@@ -520,7 +531,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                         key=f"plot-{metric_idx}",
                         preserved_by_key=None,
                         x_lim=x_lim_value,
-                        x_log_scale=log_scale,
                         show_fullscreen_button=True,
                         min_width=400,
                     )
