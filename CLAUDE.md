@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Code Style
+
+- Avoid writing inline comments in code
+
 ## Commands
 
 ### Development Setup
