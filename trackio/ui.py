@@ -12,6 +12,7 @@ HfApi = hf.HfApi()
 
 try:
     from trackio.sqlite_storage import SQLiteStorage
+    from trackio.typehints import LogEntry
     from trackio.utils import (
         RESERVED_KEYS,
         TRACKIO_LOGO_DIR,
@@ -20,6 +21,7 @@ try:
     )
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
+    from typehints import LogEntry
     from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
 
 
@@ -255,6 +257,29 @@ def log(
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
 
+def bulk_log(
+    logs: list[LogEntry],
+    hf_token: str | None,
+) -> None:
+    check_auth(hf_token)
+
+    logs_by_run = {}
+    for log_entry in logs:
+        key = (log_entry["project"], log_entry["run"])
+        if key not in logs_by_run:
+            logs_by_run[key] = {"metrics": [], "steps": []}
+        logs_by_run[key]["metrics"].append(log_entry["metrics"])
+        logs_by_run[key]["steps"].append(log_entry.get("step"))
+
+    for (project, run), data in logs_by_run.items():
+        SQLiteStorage.bulk_log(
+            project=project,
+            run=run,
+            metrics_list=data["metrics"],
+            steps=data["steps"],
+        )
+
+
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
     """
     Filter metrics using regex pattern.
@@ -425,6 +450,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.api(
         fn=log,
         api_name="log",
+    )
+    gr.api(
+        fn=bulk_log,
+        api_name="bulk_log",
     )
 
     x_lim = gr.State(None)
