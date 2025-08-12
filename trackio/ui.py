@@ -722,7 +722,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                     value = metric_df[metric_name].iloc[-1]
                     try:
                         df = pd.DataFrame(value)
-                        gr.DataFrame(df, label=f"{metric_name} (latest)")
+                        gr.DataFrame(df, label=f"{metric_name} (latest)", key=f"table-{metric_idx}")
                     except:  # noqa: E722
                         pass
 
