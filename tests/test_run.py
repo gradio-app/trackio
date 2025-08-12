@@ -1,7 +1,8 @@
+import time
 from unittest.mock import MagicMock
 
-import huggingface_hub
 import pytest
+import huggingface_hub
 
 from trackio import Run, init
 
@@ -17,18 +18,12 @@ def test_run_log_calls_client():
     metrics = {"x": 1}
     run.log(metrics)
 
-    import time
-
-    time.sleep(0.6)
-
-    assert client.predict.called
-    call_args = client.predict.call_args
-    if call_args:
-        assert (
-            call_args.kwargs.get("api_name") == "/bulk_log"
-            or call_args.kwargs.get("api_name") == "/log"
-        )
-
+    time.sleep(0.6)  # Wait for the client to send the log
+    client.predict.assert_called_once_with(
+        api_name="/bulk_log",
+        logs=[{"project": "proj", "run": "run1", "metrics": metrics, "step": None}],
+        hf_token=huggingface_hub.utils.get_token(),
+    )
 
 def test_init_resume_modes(temp_db):
     run = init(
