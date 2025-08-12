@@ -41,7 +41,7 @@ class Run:
         self._client_thread.start()
 
     def _batch_sender(self):
-        """Background thread that sends batched logs every 500ms."""
+        """Send batched logs every 500ms."""
         while not self._stop_flag.is_set():
             time.sleep(0.5)
 
