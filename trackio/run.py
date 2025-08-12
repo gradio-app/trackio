@@ -1,20 +1,12 @@
 import threading
 import time
-from collections import deque
-from typing import Any, TypedDict
 
 import huggingface_hub
 from gradio_client import Client
 
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.typehints import LogEntry
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
-
-
-class LogEntry(TypedDict):
-    project: str
-    run: str
-    metrics: dict[str, Any]
-    step: int | None
 
 
 class Run:

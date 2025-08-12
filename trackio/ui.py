@@ -11,6 +11,7 @@ HfApi = hf.HfApi()
 
 try:
     from trackio.sqlite_storage import SQLiteStorage
+    from trackio.typehints import LogEntry
     from trackio.utils import (
         RESERVED_KEYS,
         TRACKIO_LOGO_DIR,
@@ -19,6 +20,7 @@ try:
     )
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
+    from typehints import LogEntry
     from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
 
 
@@ -242,7 +244,7 @@ def log(
 
 
 def bulk_log(
-    logs: list[dict[str, Any]],
+    logs: list[LogEntry],
     hf_token: str | None,
 ) -> None:
     check_auth(hf_token)
