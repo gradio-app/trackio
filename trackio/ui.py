@@ -78,7 +78,13 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
-def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str):
+def load_run_data(
+    project: str | None,
+    run: str | None,
+    smoothing: bool,
+    x_axis: str,
+    log_scale: bool = False,
+):
     if not project or not run:
         return None
     metrics = SQLiteStorage.get_metrics(project, run)
@@ -347,6 +353,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             choices=["step", "time"],
             value="step",
         )
+        log_scale_cb = gr.Checkbox(label="Log scale X-axis", value=False)
         metric_filter_tb = gr.Textbox(
             label="Metric Filter (regex)",
             placeholder="e.g., loss|ndcg@10|gpu",
@@ -440,6 +447,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             smoothing_cb.change,
             x_lim.change,
             x_axis_dd.change,
+            log_scale_cb.change,
             metric_filter_tb.change,
         ],
         inputs=[
@@ -449,18 +457,26 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             metrics_subset,
             x_lim,
             x_axis_dd,
+            log_scale_cb,
             metric_filter_tb,
         ],
         show_progress="hidden",
     )
     def update_dashboard(
-        project, runs, smoothing, metrics_subset, x_lim_value, x_axis, metric_filter
+        project,
+        runs,
+        smoothing,
+        metrics_subset,
+        x_lim_value,
+        x_axis,
+        log_scale,
+        metric_filter,
     ):
         dfs = []
         original_runs = runs.copy()
 
         for run in runs:
-            df = load_run_data(project, run, smoothing, x_axis)
+            df = load_run_data(project, run, smoothing, x_axis, log_scale)
             if df is not None:
                 dfs.append(df)
 
@@ -504,6 +520,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                         key=f"plot-{metric_idx}",
                         preserved_by_key=None,
                         x_lim=x_lim_value,
+                        x_log_scale=log_scale,
                         show_fullscreen_button=True,
                         min_width=400,
                     )
