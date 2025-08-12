@@ -82,7 +82,7 @@ When given a GitHub issue to solve, follow this workflow:
 3. **Run tests** to ensure nothing is broken: `pytest`
 4. **Run linting/formatting**: `ruff check --fix --select I && ruff format`
 5. **Commit changes** with a descriptive message referencing the issue
-6. **Push the branch** to origin to automatically open a PR
+6. **Push the branch** to origin to automatically open a PR with a descriptive body message (1 sentence describing what the PR does and referencing the issue if applicable, e.g., "Adds a 'Log scale X-axis' checkbox to the sidebar below the X-axis dropdown, which implements log scale functionality for all plots when checkbox is enabled. Closes: #121")
 
 ### Git Commands for Issue Workflow
 ```bash
@@ -93,8 +93,9 @@ git checkout -b fix-issue-NUMBER
 git add -A
 git commit -m "Fix issue #NUMBER: Brief description"
 
-# Push branch to create PR
+# Push branch and create PR with descriptive body
 git push -u origin fix-issue-NUMBER
+gh pr create --title "Fix issue #NUMBER: Brief description" --body "One sentence describing what the PR does and closes: #NUMBER"
 ```
 
 Always ensure tests pass and code is formatted before pushing.
