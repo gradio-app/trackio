@@ -106,12 +106,9 @@ def load_run_data(
     else:
         x_column = x_axis
 
-    # Apply log scale transformation to x values if requested
     if log_scale and x_column in df.columns:
-        # Ensure x values are positive for log transformation
         x_vals = df[x_column]
         if (x_vals <= 0).any():
-            # Add 1 to handle zero values, shift by 1 then apply log10
             df[x_column] = np.log10(np.maximum(x_vals, 0) + 1)
         else:
             df[x_column] = np.log10(x_vals)
