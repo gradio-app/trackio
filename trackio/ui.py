@@ -87,6 +87,7 @@ def load_run_data(
     smoothing: bool,
     x_axis: str,
     log_scale: bool = False,
+    log_y_scale: bool = False,
 ):
     if not project or not run:
         return None
@@ -114,6 +115,18 @@ def load_run_data(
             df[x_column] = np.log10(np.maximum(x_vals, 0) + 1)
         else:
             df[x_column] = np.log10(x_vals)
+
+    if log_y_scale:
+        numeric_cols = df.select_dtypes(include="number").columns
+        numeric_cols = [
+            c for c in numeric_cols if c not in RESERVED_KEYS and c != x_column
+        ]
+        for col in numeric_cols:
+            y_vals = df[col]
+            if (y_vals <= 0).any():
+                df[col] = np.log10(np.maximum(y_vals, 0) + 1)
+            else:
+                df[col] = np.log10(y_vals)
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
@@ -387,6 +400,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             value="step",
         )
         log_scale_cb = gr.Checkbox(label="Log scale X-axis", value=False)
+        log_y_scale_cb = gr.Checkbox(label="Log scale Y-axis", value=False)
         metric_filter_tb = gr.Textbox(
             label="Metric Filter (regex)",
             placeholder="e.g., loss|ndcg@10|gpu",
@@ -485,6 +499,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             x_lim.change,
             x_axis_dd.change,
             log_scale_cb.change,
+            log_y_scale_cb.change,
             metric_filter_tb.change,
         ],
         inputs=[
@@ -495,6 +510,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             x_lim,
             x_axis_dd,
             log_scale_cb,
+            log_y_scale_cb,
             metric_filter_tb,
         ],
         show_progress="hidden",
@@ -507,13 +523,14 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         x_lim_value,
         x_axis,
         log_scale,
+        log_y_scale,
         metric_filter,
     ):
         dfs = []
         original_runs = runs.copy()
 
         for run in runs:
-            df = load_run_data(project, run, smoothing, x_axis, log_scale)
+            df = load_run_data(project, run, smoothing, x_axis, log_scale, log_y_scale)
             if df is not None:
                 dfs.append(df)
 
