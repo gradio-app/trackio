@@ -15,6 +15,5 @@ jobs:
       pr_number: ${{ github.event.number }}
       repo_owner: gradio-app
       package: trackio
-      languages: en
       version_tag_suffix: ""
       custom_container: huggingface/transformers-doc-builder
