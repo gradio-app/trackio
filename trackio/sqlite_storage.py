@@ -93,6 +93,14 @@ class SQLiteStorage:
             ):
                 with sqlite3.connect(db_path) as conn:
                     df = pd.read_sql("SELECT * from metrics", conn)
+                # break out the single JSON metrics column into individual columns
+                metrics = df["metrics"].copy()
+                metrics = pd.DataFrame(
+                    metrics.apply(json.loads).values.tolist(), index=df.index
+                )
+                del df["metrics"]
+                for col in metrics.columns:
+                    df[col] = metrics[col]
                 df.to_parquet(parquet_path)
 
     @staticmethod
@@ -107,6 +115,17 @@ class SQLiteStorage:
             db_path = parquet_path.with_suffix(".db")
             df = pd.read_parquet(parquet_path)
             with sqlite3.connect(db_path) as conn:
+                # fix up df to have a single JSON metrics column
+                if "metrics" not in df.columns:
+                    # separate other columns from metrics
+                    metrics = df.copy()
+                    other_cols = ["id", "timestamp", "run_name", "step"]
+                    df = df[other_cols]
+                    for col in other_cols:
+                        del metrics[col]
+                    # combine them all into a single metrics col
+                    metrics = json.loads(metrics.to_json(orient="records"))
+                    df["metrics"] = [json.dumps(row) for row in metrics]
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
 
     @staticmethod
@@ -193,21 +212,38 @@ class SQLiteStorage:
         if not metrics_list:
             return
 
-        if steps is None:
-            steps = list(range(len(metrics_list)))
-
         if timestamps is None:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
-
-        if len(metrics_list) != len(steps) or len(metrics_list) != len(timestamps):
-            raise ValueError(
-                "metrics_list, steps, and timestamps must have the same length"
-            )
 
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage.get_scheduler().lock:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
+
+                if steps is None:
+                    steps = list(range(len(metrics_list)))
+                elif any(s is None for s in steps):
+                    cursor.execute(
+                        "SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,)
+                    )
+                    last_step = cursor.fetchone()[0]
+                    current_step = 0 if last_step is None else last_step + 1
+
+                    processed_steps = []
+                    for step in steps:
+                        if step is None:
+                            processed_steps.append(current_step)
+                            current_step += 1
+                        else:
+                            processed_steps.append(step)
+                    steps = processed_steps
+
+                if len(metrics_list) != len(steps) or len(metrics_list) != len(
+                    timestamps
+                ):
+                    raise ValueError(
+                        "metrics_list, steps, and timestamps must have the same length"
+                    )
 
                 data = []
                 for i, metrics in enumerate(metrics_list):

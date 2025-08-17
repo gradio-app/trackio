@@ -7,15 +7,15 @@ from typing import Any
 from gradio_client import Client
 
 from trackio import context_vars, deploy, utils
-from trackio.imports import import_csv
+from trackio.imports import import_csv, import_tf_events
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
-from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_PATH
+from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
-__all__ = ["init", "log", "finish", "show", "import_csv"]
+__all__ = ["init", "log", "finish", "show", "import_csv", "import_tf_events"]
 
 
 config = {}
@@ -127,18 +127,23 @@ def log(metrics: dict, step: int | None = None) -> None:
         metrics: A dictionary of metrics to log.
         step: The step number. If not provided, the step will be incremented automatically.
     """
-    if context_vars.current_run.get() is None:
-        raise RuntimeError("Call trackio.init() before log().")
-    context_vars.current_run.get().log(metrics)
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.log().")
+    run.log(
+        metrics=metrics,
+        step=step,
+    )
 
 
 def finish():
     """
     Finishes the current run.
     """
-    if context_vars.current_run.get() is None:
-        raise RuntimeError("Call trackio.init() before finish().")
-    context_vars.current_run.get().finish()
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.finish().")
+    run.finish()
 
 
 def show(project: str | None = None):
@@ -153,8 +158,8 @@ def show(project: str | None = None):
         quiet=True,
         inline=False,
         prevent_thread_lock=True,
-        favicon_path=TRACKIO_LOGO_PATH,
-        allowed_paths=[TRACKIO_LOGO_PATH],
+        favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
+        allowed_paths=[TRACKIO_LOGO_DIR],
     )
     base_url = share_url + "/" if share_url else url
     dashboard_url = base_url + f"?project={project}" if project else base_url

@@ -5,31 +5,24 @@ from typing import Any
 
 import gradio as gr
 import huggingface_hub as hf
+import numpy as np
 import pandas as pd
 
 HfApi = hf.HfApi()
 
 try:
     from trackio.sqlite_storage import SQLiteStorage
+    from trackio.typehints import LogEntry
     from trackio.utils import (
         RESERVED_KEYS,
-        TRACKIO_LOGO_PATH,
+        TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
     )
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_PATH, downsample, get_color_mapping
-
-css = """
-#run-cb .wrap {
-    gap: 2px;
-}
-#run-cb .wrap label {
-    line-height: 1;
-    padding: 6px;
-}
-"""
+    from typehints import LogEntry
+    from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
 
 
 def get_projects(request: gr.Request):
@@ -88,7 +81,13 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
-def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str):
+def load_run_data(
+    project: str | None,
+    run: str | None,
+    smoothing: bool,
+    x_axis: str,
+    log_scale: bool = False,
+):
     if not project or not run:
         return None
     metrics = SQLiteStorage.get_metrics(project, run)
@@ -108,6 +107,13 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis:
         x_column = "step"
     else:
         x_column = x_axis
+
+    if log_scale and x_column in df.columns:
+        x_vals = df[x_column]
+        if (x_vals <= 0).any():
+            df[x_column] = np.log10(np.maximum(x_vals, 0) + 1)
+        else:
+            df[x_column] = np.log10(x_vals)
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
@@ -207,7 +213,10 @@ def check_auth(hf_token: str | None) -> None:
                     matched = True
                     break
                 if (
-                    item["entity"]["type"] == "user"
+                    (
+                        item["entity"]["type"] == "user"
+                        or item["entity"]["type"] == "org"
+                    )
                     and item["entity"]["name"] == owner_name
                     and "repo.write" in item["permissions"]
                 ):
@@ -246,6 +255,29 @@ def log(
 ) -> None:
     check_auth(hf_token)
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
+
+
+def bulk_log(
+    logs: list[LogEntry],
+    hf_token: str | None,
+) -> None:
+    check_auth(hf_token)
+
+    logs_by_run = {}
+    for log_entry in logs:
+        key = (log_entry["project"], log_entry["run"])
+        if key not in logs_by_run:
+            logs_by_run[key] = {"metrics": [], "steps": []}
+        logs_by_run[key]["metrics"].append(log_entry["metrics"])
+        logs_by_run[key]["steps"].append(log_entry.get("step"))
+
+    for (project, run), data in logs_by_run.items():
+        SQLiteStorage.bulk_log(
+            project=project,
+            run=run,
+            metrics_list=data["metrics"],
+            steps=data["steps"],
+        )
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
@@ -321,10 +353,25 @@ def configure(request: gr.Request):
         return [], sidebar
 
 
+css = """
+#run-cb .wrap { gap: 2px; }
+#run-cb .wrap label {
+    line-height: 1;
+    padding: 6px;
+}
+.logo-light { display: block; } 
+.logo-dark { display: none; }
+.dark .logo-light { display: none; }
+.dark .logo-dark { display: block; }
+"""
+
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
-        gr.Markdown(
-            f"<div style='display: flex; align-items: center; gap: 8px;'><img src='/gradio_api/file={TRACKIO_LOGO_PATH}' width='32' height='32'><span style='font-size: 2em; font-weight: bold;'>Trackio</span></div>"
+        logo = gr.Markdown(
+            f"""
+                <img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%' class='logo-light'>
+                <img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
+            """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
@@ -339,6 +386,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             choices=["step", "time"],
             value="step",
         )
+        log_scale_cb = gr.Checkbox(label="Log scale X-axis", value=False)
         metric_filter_tb = gr.Textbox(
             label="Metric Filter (regex)",
             placeholder="e.g., loss|ndcg@10|gpu",
@@ -403,6 +451,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         fn=log,
         api_name="log",
     )
+    gr.api(
+        fn=bulk_log,
+        api_name="bulk_log",
+    )
 
     x_lim = gr.State(None)
     last_steps = gr.State({})
@@ -432,6 +484,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             smoothing_cb.change,
             x_lim.change,
             x_axis_dd.change,
+            log_scale_cb.change,
             metric_filter_tb.change,
         ],
         inputs=[
@@ -441,18 +494,26 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             metrics_subset,
             x_lim,
             x_axis_dd,
+            log_scale_cb,
             metric_filter_tb,
         ],
         show_progress="hidden",
     )
     def update_dashboard(
-        project, runs, smoothing, metrics_subset, x_lim_value, x_axis, metric_filter
+        project,
+        runs,
+        smoothing,
+        metrics_subset,
+        x_lim_value,
+        x_axis,
+        log_scale,
+        metric_filter,
     ):
         dfs = []
         original_runs = runs.copy()
 
         for run in runs:
-            df = load_run_data(project, run, smoothing, x_axis)
+            df = load_run_data(project, run, smoothing, x_axis, log_scale)
             if df is not None:
                 dfs.append(df)
 
@@ -506,4 +567,4 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[TRACKIO_LOGO_PATH], show_api=False, show_error=True)
+    demo.launch(allowed_paths=[TRACKIO_LOGO_DIR], show_api=False, show_error=True)

@@ -1,3 +1,4 @@
+import time
 from unittest.mock import MagicMock
 
 import huggingface_hub
@@ -16,12 +17,11 @@ def test_run_log_calls_client():
     run = Run(url="fake_url", project="proj", client=client, name="run1")
     metrics = {"x": 1}
     run.log(metrics)
+
+    time.sleep(0.6)  # Wait for the client to send the log
     client.predict.assert_called_once_with(
-        api_name="/log",
-        project="proj",
-        run="run1",
-        step=None,
-        metrics=metrics,
+        api_name="/bulk_log",
+        logs=[{"project": "proj", "run": "run1", "metrics": metrics, "step": None}],
         hf_token=huggingface_hub.utils.get_token(),
     )
 
@@ -36,6 +36,7 @@ def test_init_resume_modes(temp_db):
     assert run.name == "new-run"
 
     run.log({"x": 1})
+    run.finish()
 
     run = init(
         project="test-project",
