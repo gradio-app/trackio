@@ -249,16 +249,15 @@ def upload_db_to_space(
     os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
     shutil.copy(uploaded_db["path"], db_project_path)
 
-def bulk_upload_media(
-    uploads: list[UploadEntry],
-    hf_token: str | None
-) -> None:
+
+def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     check_auth(hf_token)
     for upload in uploads:
         media_path = FileStorage.init_project_media_path(
             upload["project"], upload["run"], upload["step"]
         )
         shutil.copy(upload["uploaded_file"]["path"], media_path)
+
 
 def log(
     project: str,
@@ -366,9 +365,12 @@ def configure(request: gr.Request):
     else:
         return [], sidebar
 
+
 def create_image_section(all_images: dict[list[dict]]):
     gr.Markdown("## Media")
-    ordered_runs = sorted(all_images.keys(), key=lambda r: all_images[r][-1]["timestamp"], reverse=True)
+    ordered_runs = sorted(
+        all_images.keys(), key=lambda r: all_images[r][-1]["timestamp"], reverse=True
+    )
     for run in ordered_runs:
         run_image_data = all_images[run]
         grouped_images = {}
@@ -382,6 +384,7 @@ def create_image_section(all_images: dict[list[dict]]):
         for key, images in grouped_images.items():
             with gr.Accordion(label=key, key=f"media-accordion-{run}-{key}"):
                 gr.Gallery([(image._pil, image.caption) for image in images], columns=6)
+
 
 css = """
 #run-cb .wrap { gap: 2px; }
@@ -544,7 +547,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         metric_filter,
     ):
         dfs = []
-        all_images = {} 
+        all_images = {}
         original_runs = runs.copy()
 
         for run in runs:
@@ -575,7 +578,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
         numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
-
 
         gr.Markdown("## Metrics")
         with gr.Row(key="row"):

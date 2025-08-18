@@ -116,7 +116,7 @@ def init(
         client=client,
         name=name,
         config=config,
-        space_id = space_id,
+        space_id=space_id,
     )
     context_vars.current_run.set(run)
     globals()["config"] = run.config

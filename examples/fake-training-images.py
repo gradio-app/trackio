@@ -10,11 +10,13 @@ import trackio as wandb
 EPOCHS = 12
 W = H = 128
 
+
 def lissajous(t, w=W, h=H):
     # Smooth target path
     x = (w // 2) + int((w // 3) * math.sin(2.0 * t))
     y = (h // 2) + int((h // 3) * math.sin(3.0 * t + math.pi / 4))
     return x, y
+
 
 def render_overlay(target_xy, pred_xy):
     img = PILImage.new("RGB", (W, H), "black")
@@ -31,6 +33,7 @@ def render_overlay(target_xy, pred_xy):
     # connector line
     draw.line([(tx, ty), (px, py)], fill=(255, 255, 0), width=1)
     return img
+
 
 def main():
     project_id = random.randint(10000, 99999)
@@ -51,8 +54,12 @@ def main():
             # Simple "training": move prediction toward target with decaying noise
             lr = 0.35
             noise_scale = max(0.0, 5.0 * (1.0 - epoch / (EPOCHS - 1)))
-            pred_x += lr * (target[0] - pred_x) + random.uniform(-noise_scale, noise_scale)
-            pred_y += lr * (target[1] - pred_y) + random.uniform(-noise_scale, noise_scale)
+            pred_x += lr * (target[0] - pred_x) + random.uniform(
+                -noise_scale, noise_scale
+            )
+            pred_y += lr * (target[1] - pred_y) + random.uniform(
+                -noise_scale, noise_scale
+            )
             pred = (int(round(pred_x)), int(round(pred_y)))
 
             # Loss: Euclidean distance
@@ -66,13 +73,16 @@ def main():
                     "target_y": target[1],
                     "pred_x": pred[0],
                     "pred_y": pred[1],
-                    "overlay": wandb.Image(overlay, caption=f"step={epoch}, loss={loss:.2f}"),
+                    "overlay": wandb.Image(
+                        overlay, caption=f"step={epoch}, loss={loss:.2f}"
+                    ),
                 },
                 step=epoch,
             )
             time.sleep(0.2)
 
         wandb.finish()
+
 
 if __name__ == "__main__":
     main()

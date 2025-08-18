@@ -9,6 +9,7 @@ class LogEntry(TypedDict):
     metrics: dict[str, Any]
     step: int | None
 
+
 class UploadEntry(TypedDict):
     project: str
     run: str

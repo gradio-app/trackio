@@ -18,7 +18,7 @@ class Run:
         client: Client | None,
         name: str | None = None,
         config: dict | None = None,
-        space_id: str | None = None
+        space_id: str | None = None,
     ):
         self.url = url
         self.project = project

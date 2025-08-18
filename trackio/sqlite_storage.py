@@ -303,7 +303,10 @@ class SQLiteStorage:
                 }
                 image_keys = []
                 for key, value in metrics.items():
-                    if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
+                    if (
+                        isinstance(value, dict)
+                        and value.get("_type") == TrackioImage.TYPE
+                    ):
                         image_keys.append(key)
                         try:
                             image = TrackioImage._from_dict(value)
