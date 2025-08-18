@@ -17,7 +17,7 @@ def test_image_logging(temp_dir):
 		trackio.log(metrics={"loss": 0.2, "img1": image1, "img2": image2})
 		trackio.finish()
 
-		metrics, images = SQLiteStorage.get_metrics(project=PROJECT_NAME, run="test_run")
+		metrics, images = SQLiteStorage.get_logs(project=PROJECT_NAME, run="test_run")
 
 		assert len(metrics) == 2
 		assert len(images) == 2

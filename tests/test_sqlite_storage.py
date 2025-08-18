@@ -15,7 +15,7 @@ def test_init_creates_metrics_table(temp_dir):
 def test_log_and_get_metrics(temp_dir):
     metrics = {"acc": 0.9}
     SQLiteStorage.log(project="proj1", run="run1", metrics=metrics)
-    results = SQLiteStorage.get_metrics(project="proj1", run="run1")
+    results, _ = SQLiteStorage.get_logs(project="proj1", run="run1")
     assert len(results) == 1
     assert results[0]["acc"] == 0.9
     assert results[0]["step"] == 0

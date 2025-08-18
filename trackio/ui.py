@@ -68,7 +68,7 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
 
     all_metrics = set()
     for run in runs:
-        metrics = SQLiteStorage.get_metrics(project, run)
+        metrics, _ = SQLiteStorage.get_logs(project, run)
         if metrics:
             df = pd.DataFrame(metrics)
             numeric_cols = df.select_dtypes(include="number").columns
@@ -95,7 +95,7 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis:
     if not project or not run:
         return None, None
 
-    numeric_metrics, image_data = SQLiteStorage.get_metrics(project, run)
+    numeric_metrics, image_data = SQLiteStorage.get_logs(project, run)
     if not numeric_metrics and not image_data:
         return None, None
 

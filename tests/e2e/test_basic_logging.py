@@ -8,7 +8,7 @@ def test_basic_logging(temp_dir):
     trackio.log(metrics={"loss": 0.2, "acc": 0.9})
     trackio.finish()
 
-    results = SQLiteStorage.get_metrics(project="test_project", run="test_run")
+    results, _ = SQLiteStorage.get_logs(project="test_project", run="test_run")
     assert len(results) == 2
     assert results[0]["loss"] == 0.1
     assert results[0]["step"] == 0

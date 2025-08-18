@@ -233,8 +233,8 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
-    def get_metrics(project: str, run: str) -> tuple[list[dict], list[dict]]:
-        """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
+    def get_logs(project: str, run: str) -> tuple[list[dict], list[dict]]:
+        """Retrieve metrics and media for a specific run. Both include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
