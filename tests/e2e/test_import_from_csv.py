@@ -4,7 +4,7 @@ import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_import_from_csv(temp_db):
+def test_import_from_csv(temp_dir):
     trackio.import_csv(
         csv_path=str(Path(__file__).parent / "logs.csv"),
         project="test_project",

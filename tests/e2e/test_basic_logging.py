@@ -2,7 +2,7 @@ import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_basic_logging(temp_db):
+def test_basic_logging(temp_dir):
     trackio.init(project="test_project", name="test_run")
     trackio.log(metrics={"loss": 0.1})
     trackio.log(metrics={"loss": 0.2, "acc": 0.9})

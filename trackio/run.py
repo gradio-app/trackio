@@ -61,7 +61,7 @@ class Run:
         for key, value in metrics.items():
             if isinstance(value, TrackioImage):
                 value.save_to_file(self.project, self.name, step)
-                serializable_metrics[key] = value.to_json()
+                serializable_metrics[key] = value.to_dict()
                 if self._space_id:
                     # Upload local media when deploying to space
                     self.queue_payload(dict(
