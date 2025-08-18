@@ -342,10 +342,10 @@ def configure(request: gr.Request):
         return [], sidebar, logo
 
 def create_image_section(all_images: dict[list[dict]]):
-    with gr.Row(key="media-row"):
-        gr.Markdown("## Media")
-
-    for run, run_image_data in all_images.items():
+    gr.Markdown("## Media")
+    ordered_runs = sorted(all_images.keys(), key=lambda r: all_images[r][-1]["timestamp"], reverse=True)
+    for run in ordered_runs:
+        run_image_data = all_images[run]
         grouped_images = {}
         for image_data in run_image_data:
             for key, image in image_data["images"].items():
@@ -353,10 +353,10 @@ def create_image_section(all_images: dict[list[dict]]):
                     grouped_images[key] = []
                 grouped_images[key].append(image)
 
-        with gr.Accordion(label=run, key=f"run-{run}"):
-            for key, images in grouped_images.items():
-                with gr.Accordion(label=key, key=f"media-accordion-{run}-{key}"):
-                    gr.Gallery([(image._pil, image.caption) for image in images], columns=6)
+        gr.Markdown(f"### {run}")
+        for key, images in grouped_images.items():
+            with gr.Accordion(label=key, key=f"media-accordion-{run}-{key}"):
+                gr.Gallery([(image._pil, image.caption) for image in images], columns=6)
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
