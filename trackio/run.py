@@ -60,16 +60,16 @@ class Run:
             step = 0
         for key, value in metrics.items():
             if isinstance(value, TrackioImage):
-                value.save_to_file(self.project, self.name, step)
-                serializable_metrics[key] = value.to_dict()
+                value._save(self.project, self.name, step)
+                serializable_metrics[key] = value._to_dict()
                 if self._space_id:
                     # Upload local media when deploying to space
-                    self.queue_payload(dict(
+                    self._queue_payload(dict(
                         api_name="/upload_media_to_space",
                         project=self.project,
                         run=self.name,
                         step=step,
-                        uploaded_file=handle_file(value.get_absolute_file_path()),
+                        uploaded_file=handle_file(value._get_absolute_file_path()),
                         hf_token=huggingface_hub.utils.get_token(),
                     ))
             else:
@@ -84,7 +84,7 @@ class Run:
                 )
         
         serializable_metrics = self._process_media(metrics, step)
-        self.queue_payload(dict(
+        self._queue_payload(dict(
             api_name="/log",
             project=self.project,
             run=self.name,
@@ -93,7 +93,7 @@ class Run:
             hf_token=huggingface_hub.utils.get_token(),
         ))
 
-    def queue_payload(self, payload: dict):
+    def _queue_payload(self, payload: dict):
         with self._client_lock:
             if self._client is None:
                 # client can still be None for a Space while the Space is still initializing.

@@ -270,7 +270,7 @@ class SQLiteStorage:
                     if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
                         image_keys.append(key)
                         try:
-                            image = TrackioImage.from_dict(value)
+                            image = TrackioImage._from_dict(value)
                             entry_images["images"][key] = image
                         except Exception as e:
                             print(f"Error loading image '{key}': {e}")

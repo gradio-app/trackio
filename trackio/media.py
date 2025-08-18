@@ -2,8 +2,7 @@ import io
 from pathlib import Path
 import uuid
 import numpy as np
-from PIL import Image as PILImage, UnidentifiedImageError
-from typing import Union, Optional
+from PIL import Image as PILImage
 
 try: # absolute imports when installed
     from trackio.utils import TRACKIO_DIR
@@ -15,64 +14,52 @@ except ImportError: # relative imports for local execution on Spaces
 class TrackioImage:
 	TYPE = "trackio.image"
 
-	def __init__(self, value: Union[str, np.ndarray, PILImage.Image], caption: Optional[str] = None):
+	def __init__(self, value: str | np.ndarray | PILImage.Image, caption: str | None = None):
 		self.caption = caption
-		self._pil = self._convert_to_pil(value)
+		self._pil = TrackioImage._as_pil(value)
 		self._file_path: Path | None = None
 		self._file_format: str | None = None
 
-	def _convert_to_pil(self, value: Union[str, np.ndarray, PILImage.Image]) -> PILImage.Image:
+	@staticmethod
+	def _as_pil(value: str | np.ndarray | PILImage.Image) -> PILImage.Image:
 		try:
 			if isinstance(value, str):
-				return self._from_path(value)
+				return PILImage.open(value).convert("RGBA")
 			elif isinstance(value, np.ndarray):
-				return self._from_array(value)
+				arr = np.asarray(value).astype("uint8")
+				return PILImage.fromarray(arr).convert("RGBA")
 			elif isinstance(value, PILImage.Image):
 				return value.convert("RGBA")
-			else:
-				raise ValueError(f"Unsupported image type: {type(value)}")
 		except Exception as e:
 			raise ValueError(f"Failed to process image data: {value}") from e
-
-	def _from_array(self, arr: np.ndarray) -> PILImage.Image:
-		arr = np.asarray(arr).astype("uint8")
-		return PILImage.fromarray(arr).convert("RGBA")
-
-	def _from_path(self, path: str) -> PILImage.Image:
-		try:
-			return PILImage.open(path).convert("RGBA")
-		except FileNotFoundError as e:
-			raise ValueError(f"Image file not found: {path}") from e 
-		except UnidentifiedImageError as e:
-			raise ValueError(f"File is not a valid image: {path}") from e
 	
-	def save_to_file(self, project: str, run: str, step: int = 0, format: str = "PNG") -> str:
+	def _save(self, project: str, run: str, step: int = 0, format: str = "PNG") -> str:
 		if not self._file_path:
-			# Save under: {TRACKIO_DIR}/media/{project}/{run}/{step}/{uuid}.{ext}
+			# Save image as {TRACKIO_DIR}/media/{project}/{run}/{step}/{uuid}.{ext}
 			filename = f"{uuid.uuid4()}.{format.lower()}"
 			path = FileStorage.save_image(self._pil, project, run, step, filename, format=format)
 			self._file_path = path.relative_to(TRACKIO_DIR)
 			self._file_format = format
 		return str(self._file_path)
 	
-	def get_relative_file_path(self) -> Path | None:
+	def _get_relative_file_path(self) -> Path | None:
 		return self._file_path
 	
-	def get_absolute_file_path(self) -> Path | None:
+	def _get_absolute_file_path(self) -> Path | None:
 		return TRACKIO_DIR / self._file_path
 	
-	def to_dict(self) -> dict:
+	def _to_dict(self) -> dict:
 		if not self._file_path:
 			raise ValueError("Image must be saved to file before serialization")
 		return {
 			"_type": self.TYPE,
-			"file_path": str(self.get_relative_file_path()),
+			"file_path": str(self._get_relative_file_path()),
 			"file_format": self._file_format,
 			"caption": self.caption,
 		}
 
 	@classmethod
-	def from_dict(cls, obj: dict) -> "TrackioImage":
+	def _from_dict(cls, obj: dict) -> "TrackioImage":
 		if not isinstance(obj, dict):
 			raise TypeError(f"Expected dict, got {type(obj).__name__}")
 		if obj.get("_type") != cls.TYPE:
@@ -84,7 +71,7 @@ class TrackioImage:
 		
 		absolute_path = TRACKIO_DIR / file_path
 		try:
-			if not absolute_path.exists():
+			if not absolute_path.is_file():
 				raise ValueError(f"Image file not found: {file_path}")
 			pil = PILImage.open(absolute_path).convert("RGBA")
 			instance = cls(pil, caption=obj.get("caption"))

@@ -27,11 +27,11 @@ def test_image_logging(temp_dir):
 		assert metrics[0]["step"] == images[0]["step"]
 		assert metrics[0]["timestamp"] == images[0]["timestamp"]
 		assert len(images[0]["images"]) == 1
-		assert images[0]["images"]["img1"].to_dict() == image1.to_dict()
+		assert images[0]["images"]["img1"]._to_dict() == image1._to_dict()
 
 		assert metrics[1]["loss"] == 0.2
 		assert metrics[1]["timestamp"] == images[1]["timestamp"]
 		assert metrics[1]["step"] == images[1]["step"]
 		assert len(images[1]["images"]) == 2
-		assert images[1]["images"]["img1"].to_dict() == image1.to_dict()
-		assert images[1]["images"]["img2"].to_dict() == image2.to_dict()
+		assert images[1]["images"]["img1"]._to_dict() == image1._to_dict()
+		assert images[1]["images"]["img2"]._to_dict() == image2._to_dict()
