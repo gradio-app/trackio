@@ -6,6 +6,7 @@ from typing import Any
 import gradio as gr
 import huggingface_hub as hf
 import pandas as pd
+from PIL import Image as PILImage
 
 HfApi = hf.HfApi()
 
@@ -17,9 +18,11 @@ try:
         downsample,
         get_color_mapping,
     )
+    from trackio.file_storage import FileStorage
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
     from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
+    from file_storage import FileStorage
 
 css = """
 #run-cb .wrap {
@@ -88,13 +91,15 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
-def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str):
+def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str) -> tuple[pd.DataFrame, list[dict]]:
     if not project or not run:
-        return None
-    metrics = SQLiteStorage.get_metrics(project, run)
-    if not metrics:
-        return None
-    df = pd.DataFrame(metrics)
+        return None, None
+
+    numeric_metrics, image_data = SQLiteStorage.get_metrics(project, run)
+    if not numeric_metrics and not image_data:
+        return None, None
+
+    df = pd.DataFrame(numeric_metrics)
 
     if "step" not in df.columns:
         df["step"] = range(len(df))
@@ -129,12 +134,12 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis:
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        return combined_df
+        return combined_df, image_data
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        return df
+        return df, image_data
 
 
 def update_runs(project, filter_text, user_interacted_with_runs=False):
@@ -236,6 +241,12 @@ def upload_db_to_space(
     os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
     shutil.copy(uploaded_db["path"], db_project_path)
 
+def upload_media_to_space(
+    project: str, run: str, step: int, uploaded_file: gr.FileData, hf_token: str | None
+) -> None:
+    check_auth(hf_token)
+    media_path = FileStorage.init_project_media_path(project, run, step)
+    shutil.copy(uploaded_file["path"], media_path)
 
 def log(
     project: str,
@@ -330,6 +341,22 @@ def configure(request: gr.Request):
     else:
         return [], sidebar, logo
 
+def create_image_section(all_images: dict[list[dict]]):
+    with gr.Row(key="media-row"):
+        gr.Markdown("## Media")
+
+    for run, run_image_data in all_images.items():
+        grouped_images = {}
+        for image_data in run_image_data:
+            for key, image in image_data["images"].items():
+                if key not in grouped_images:
+                    grouped_images[key] = []
+                grouped_images[key].append(image)
+
+        with gr.Accordion(label=run, key=f"run-{run}"):
+            for key, images in grouped_images.items():
+                with gr.Accordion(label=key, key=f"media-accordion-{run}-{key}"):
+                    gr.Gallery([(image._pil, image.caption) for image in images], columns=6)
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
@@ -410,6 +437,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         api_name="upload_db_to_space",
     )
     gr.api(
+        fn=upload_media_to_space,
+        api_name="upload_media_to_space",
+    )
+    gr.api(
         fn=log,
         api_name="log",
     )
@@ -459,13 +490,15 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         project, runs, smoothing, metrics_subset, x_lim_value, x_axis, metric_filter
     ):
         dfs = []
+        all_images = {} 
         original_runs = runs.copy()
 
         for run in runs:
-            df = load_run_data(project, run, smoothing, x_axis)
+            df, images = load_run_data(project, run, smoothing, x_axis)
             if df is not None:
                 dfs.append(df)
-
+            if images is not None:
+                all_images[run] = images
         if dfs:
             master_df = pd.concat(dfs, ignore_index=True)
         else:
@@ -489,6 +522,8 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
 
+
+        gr.Markdown("## Metrics")
         with gr.Row(key="row"):
             for metric_idx, metric_name in enumerate(numeric_cols):
                 metric_df = master_df.dropna(subset=[metric_name])
@@ -513,6 +548,8 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                 plot.double_click(
                     lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
                 )
+        if all_images:
+            create_image_section(all_images)
 
 
 if __name__ == "__main__":

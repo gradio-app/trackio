@@ -12,10 +12,12 @@ try:  # absolute imports when installed
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import TRACKIO_DIR
+    from trackio.media import TrackioImage
 except Exception:  # relative imports for local execution on Spaces
     from commit_scheduler import CommitScheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR
+    from media import TrackioImage
 
 
 class SQLiteStorage:
@@ -129,7 +131,7 @@ class SQLiteStorage:
                     repo_type="dataset",
                     folder_path=TRACKIO_DIR,
                     private=True,
-                    allow_patterns="*.parquet",
+                    allow_patterns=["*.parquet", "media/**/*"],
                     squash_history=True,
                     token=hf_token,
                     on_before_commit=SQLiteStorage.export_to_parquet,
@@ -231,7 +233,7 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
-    def get_metrics(project: str, run: str) -> list[dict]:
+    def get_metrics(project: str, run: str) -> tuple[list[dict], list[dict]]:
         """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -250,14 +252,37 @@ class SQLiteStorage:
             )
 
             rows = cursor.fetchall()
-            results = []
+            numeric_metrics = []
+            image_data = []
             for row in rows:
                 metrics = json.loads(row["metrics"])
                 metrics["timestamp"] = row["timestamp"]
                 metrics["step"] = row["step"]
-                results.append(metrics)
 
-            return results
+                # images for this entry
+                entry_images = {
+                    "timestamp": row["timestamp"],
+                    "step": row["step"],
+                    "images": {},
+                }
+                image_keys = []
+                for key, value in metrics.items():
+                    if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
+                        image_keys.append(key)
+                        try:
+                            image = TrackioImage.from_json(value)
+                            entry_images["images"][key] = image
+                        except Exception as e:
+                            print(f"Error loading image '{key}': {e}")
+
+                for key in image_keys:
+                    del metrics[key]
+
+                numeric_metrics.append(metrics)
+                if image_keys:
+                    image_data.append(entry_images)
+
+            return numeric_metrics, image_data
 
     @staticmethod
     def load_from_dataset():
@@ -272,7 +297,8 @@ class SQLiteStorage:
                 try:
                     files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                     for file in files:
-                        if not file.endswith(".parquet"):
+                        # Download parquet and media assets
+                        if not (file.endswith(".parquet") or file.startswith("media/")):
                             continue
                         hf.hf_hub_download(
                             dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR

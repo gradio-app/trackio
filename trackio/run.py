@@ -3,8 +3,9 @@ import time
 from collections import deque
 
 import huggingface_hub
-from gradio_client import Client
+from gradio_client import Client, handle_file
 
+from trackio.media import TrackioImage
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
@@ -17,6 +18,7 @@ class Run:
         client: Client | None,
         name: str | None = None,
         config: dict | None = None,
+        space_id: str | None = None
     ):
         self.url = url
         self.project = project
@@ -26,6 +28,7 @@ class Run:
         self.name = name or generate_readable_name(SQLiteStorage.get_runs(project))
         self.config = config or {}
         self._queued_logs = deque()
+        self._space_id = space_id
 
         if client is None:
             self._client_thread = threading.Thread(target=self._init_client_background)
@@ -48,20 +51,49 @@ class Run:
             if sleep_coefficient is not None:
                 time.sleep(0.1 * sleep_coefficient)
 
+    def _process_media(self, metrics, step: int | None) -> dict:
+        """
+        Serialize media in metrics and upload to space if needed.
+        """
+        serializable_metrics = {}
+        if not step:
+            step = 0
+        for key, value in metrics.items():
+            if isinstance(value, TrackioImage):
+                value.save_to_file(self.project, self.name, step)
+                serializable_metrics[key] = value.to_json()
+                if self._space_id:
+                    # Upload local media when deploying to space
+                    self.queue_payload(dict(
+                        api_name="/upload_media_to_space",
+                        project=self.project,
+                        run=self.name,
+                        step=step,
+                        uploaded_file=handle_file(value.get_absolute_file_path()),
+                        hf_token=huggingface_hub.utils.get_token(),
+                    ))
+            else:
+                serializable_metrics[key] = value
+        return serializable_metrics
+
     def log(self, metrics: dict, step: int | None = None):
         for k in metrics.keys():
             if k in RESERVED_KEYS or k.startswith("__"):
                 raise ValueError(
                     f"Please do not use this reserved key as a metric: {k}"
                 )
-        payload = dict(
+        
+        serializable_metrics = self._process_media(metrics, step)
+        self.queue_payload(dict(
             api_name="/log",
             project=self.project,
             run=self.name,
-            metrics=metrics,
+            metrics=serializable_metrics,
             step=step,
             hf_token=huggingface_hub.utils.get_token(),
-        )
+        ))
+
+    def queue_payload(self, payload: dict):
         with self._client_lock:
             if self._client is None:
                 # client can still be None for a Space while the Space is still initializing.

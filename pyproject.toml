@@ -12,9 +12,11 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pandas",
-    "huggingface-hub",
     "gradio>=5.35.0",
+    "huggingface-hub",
+    "numpy",
+    "pandas",
+    "pillow",
     "tbparse",
 ]
 classifiers = [
