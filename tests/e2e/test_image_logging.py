@@ -3,7 +3,7 @@ import numpy as np
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
-PROJECT_NAME = "__TRACKIO_TEST_MEDIA_PROJECT__"
+PROJECT_NAME = "test_project"
 
 
 def test_image_logging(temp_dir):
