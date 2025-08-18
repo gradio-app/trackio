@@ -6,11 +6,11 @@ from typing import Any
 import gradio as gr
 import huggingface_hub as hf
 import pandas as pd
-from PIL import Image as PILImage
 
 HfApi = hf.HfApi()
 
 try:
+    from trackio.file_storage import FileStorage
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.utils import (
         RESERVED_KEYS,
@@ -18,11 +18,10 @@ try:
         downsample,
         get_color_mapping,
     )
-    from trackio.file_storage import FileStorage
 except:  # noqa: E722
+    from file_storage import FileStorage
     from sqlite_storage import SQLiteStorage
     from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
-    from file_storage import FileStorage
 
 css = """
 #run-cb .wrap {

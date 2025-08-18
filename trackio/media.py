@@ -1,15 +1,15 @@
-import io
-from pathlib import Path
 import uuid
+from pathlib import Path
+
 import numpy as np
 from PIL import Image as PILImage
 
 try: # absolute imports when installed
-    from trackio.utils import TRACKIO_DIR
     from trackio.file_storage import FileStorage
+    from trackio.utils import TRACKIO_DIR
 except ImportError: # relative imports for local execution on Spaces
-    from utils import TRACKIO_DIR
     from file_storage import FileStorage
+    from utils import TRACKIO_DIR
 
 class TrackioImage:
 	TYPE = "trackio.image"

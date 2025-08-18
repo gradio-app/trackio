@@ -1,10 +1,7 @@
-import shutil
 import numpy as np
-import pytest
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.utils import TRACKIO_DIR
 
 PROJECT_NAME = "__TRACKIO_TEST_MEDIA_PROJECT__"
 

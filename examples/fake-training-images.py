@@ -1,7 +1,9 @@
 import math
 import random
 import time
-from PIL import Image as PILImage, ImageDraw
+
+from PIL import Image as PILImage
+from PIL import ImageDraw
 
 import trackio as wandb
 
