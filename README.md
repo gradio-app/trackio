@@ -5,7 +5,7 @@
 
 </p>
 
-`trackio` is a lightweight, free experiment tracking Python library built on top of 🤗 Datasets and Spaces.
+`trackio` is a lightweight, free experiment tracking Python library built on top of Hugging Face Datasets and Spaces 🤗.
 
 
 ![Screen Recording 2025-07-28 at 5 26 32 PM](https://github.com/user-attachments/assets/f3eac49e-d8ee-4fc0-b1ca-aedfc6d6fae1)
@@ -21,6 +21,8 @@ Trackio is designed to be lightweight (the core codebase is <1,000 lines of Pyth
 
 
 ## Installation
+
+Trackio requires [Python 3.10 or higher](https://www.python.org/downloads/). Install with `pip`:
 
 ```bash
 pip install trackio

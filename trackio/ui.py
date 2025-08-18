@@ -5,6 +5,7 @@ from typing import Any
 
 import gradio as gr
 import huggingface_hub as hf
+import numpy as np
 import pandas as pd
 
 HfApi = hf.HfApi()
@@ -12,6 +13,7 @@ HfApi = hf.HfApi()
 try:
     from trackio.file_storage import FileStorage
     from trackio.sqlite_storage import SQLiteStorage
+    from trackio.typehints import LogEntry, UploadEntry
     from trackio.utils import (
         RESERVED_KEYS,
         TRACKIO_LOGO_DIR,
@@ -21,17 +23,8 @@ try:
 except:  # noqa: E722
     from file_storage import FileStorage
     from sqlite_storage import SQLiteStorage
+    from typehints import LogEntry, UploadEntry
     from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
-
-css = """
-#run-cb .wrap {
-    gap: 2px;
-}
-#run-cb .wrap label {
-    line-height: 1;
-    padding: 6px;
-}
-"""
 
 
 def get_projects(request: gr.Request):
@@ -90,7 +83,13 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
-def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis: str) -> tuple[pd.DataFrame, list[dict]]:
+def load_run_data(
+    project: str | None,
+    run: str | None,
+    smoothing: bool,
+    x_axis: str,
+    log_scale: bool = False,
+) -> tuple[pd.DataFrame, list[dict]]:
     if not project or not run:
         return None, None
 
@@ -112,6 +111,13 @@ def load_run_data(project: str | None, run: str | None, smoothing: bool, x_axis:
         x_column = "step"
     else:
         x_column = x_axis
+
+    if log_scale and x_column in df.columns:
+        x_vals = df[x_column]
+        if (x_vals <= 0).any():
+            df[x_column] = np.log10(np.maximum(x_vals, 0) + 1)
+        else:
+            df[x_column] = np.log10(x_vals)
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
@@ -211,7 +217,10 @@ def check_auth(hf_token: str | None) -> None:
                     matched = True
                     break
                 if (
-                    item["entity"]["type"] == "user"
+                    (
+                        item["entity"]["type"] == "user"
+                        or item["entity"]["type"] == "org"
+                    )
                     and item["entity"]["name"] == owner_name
                     and "repo.write" in item["permissions"]
                 ):
@@ -240,12 +249,16 @@ def upload_db_to_space(
     os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
     shutil.copy(uploaded_db["path"], db_project_path)
 
-def upload_media_to_space(
-    project: str, run: str, step: int, uploaded_file: gr.FileData, hf_token: str | None
+def bulk_upload_media(
+    uploads: list[UploadEntry],
+    hf_token: str | None
 ) -> None:
     check_auth(hf_token)
-    media_path = FileStorage.init_project_media_path(project, run, step)
-    shutil.copy(uploaded_file["path"], media_path)
+    for upload in uploads:
+        media_path = FileStorage.init_project_media_path(
+            upload["project"], upload["run"], upload["step"]
+        )
+        shutil.copy(upload["uploaded_file"]["path"], media_path)
 
 def log(
     project: str,
@@ -256,6 +269,29 @@ def log(
 ) -> None:
     check_auth(hf_token)
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
+
+
+def bulk_log(
+    logs: list[LogEntry],
+    hf_token: str | None,
+) -> None:
+    check_auth(hf_token)
+
+    logs_by_run = {}
+    for log_entry in logs:
+        key = (log_entry["project"], log_entry["run"])
+        if key not in logs_by_run:
+            logs_by_run[key] = {"metrics": [], "steps": []}
+        logs_by_run[key]["metrics"].append(log_entry["metrics"])
+        logs_by_run[key]["steps"].append(log_entry.get("step"))
+
+    for (project, run), data in logs_by_run.items():
+        SQLiteStorage.bulk_log(
+            project=project,
+            run=run,
+            metrics_list=data["metrics"],
+            steps=data["steps"],
+        )
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
@@ -317,7 +353,6 @@ def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
 
 def configure(request: gr.Request):
     sidebar_param = request.query_params.get("sidebar")
-    dark_mode = request.query_params.get("__theme") == "dark"
     match sidebar_param:
         case "collapsed":
             sidebar = gr.Sidebar(open=False, visible=True)
@@ -326,19 +361,10 @@ def configure(request: gr.Request):
         case _:
             sidebar = gr.Sidebar(open=True, visible=True)
 
-    if dark_mode:
-        logo = gr.Markdown(
-            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%'>"
-        )
-    else:
-        logo = gr.Markdown(
-            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
-        )
-
     if metrics := request.query_params.get("metrics"):
-        return metrics.split(","), sidebar, logo
+        return metrics.split(","), sidebar
     else:
-        return [], sidebar, logo
+        return [], sidebar
 
 def create_image_section(all_images: dict[list[dict]]):
     gr.Markdown("## Media")
@@ -357,10 +383,25 @@ def create_image_section(all_images: dict[list[dict]]):
             with gr.Accordion(label=key, key=f"media-accordion-{run}-{key}"):
                 gr.Gallery([(image._pil, image.caption) for image in images], columns=6)
 
+css = """
+#run-cb .wrap { gap: 2px; }
+#run-cb .wrap label {
+    line-height: 1;
+    padding: 6px;
+}
+.logo-light { display: block; } 
+.logo-dark { display: none; }
+.dark .logo-light { display: none; }
+.dark .logo-dark { display: block; }
+"""
+
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
-            f"<img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%'>"
+            f"""
+                <img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%' class='logo-light'>
+                <img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
+            """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
@@ -375,6 +416,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             choices=["step", "time"],
             value="step",
         )
+        log_scale_cb = gr.Checkbox(label="Log scale X-axis", value=False)
         metric_filter_tb = gr.Textbox(
             label="Metric Filter (regex)",
             placeholder="e.g., loss|ndcg@10|gpu",
@@ -386,7 +428,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
 
-    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar, logo])
+    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar])
     gr.on(
         [demo.load],
         fn=get_projects,
@@ -436,12 +478,16 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         api_name="upload_db_to_space",
     )
     gr.api(
-        fn=upload_media_to_space,
-        api_name="upload_media_to_space",
+        fn=bulk_upload_media,
+        api_name="bulk_upload_media",
     )
     gr.api(
         fn=log,
         api_name="log",
+    )
+    gr.api(
+        fn=bulk_log,
+        api_name="bulk_log",
     )
 
     x_lim = gr.State(None)
@@ -472,6 +518,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             smoothing_cb.change,
             x_lim.change,
             x_axis_dd.change,
+            log_scale_cb.change,
             metric_filter_tb.change,
         ],
         inputs=[
@@ -481,19 +528,27 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             metrics_subset,
             x_lim,
             x_axis_dd,
+            log_scale_cb,
             metric_filter_tb,
         ],
         show_progress="hidden",
     )
     def update_dashboard(
-        project, runs, smoothing, metrics_subset, x_lim_value, x_axis, metric_filter
+        project,
+        runs,
+        smoothing,
+        metrics_subset,
+        x_lim_value,
+        x_axis,
+        log_scale,
+        metric_filter,
     ):
         dfs = []
         all_images = {} 
         original_runs = runs.copy()
 
         for run in runs:
-            df, images = load_run_data(project, run, smoothing, x_axis)
+            df, images = load_run_data(project, run, smoothing, x_axis, log_scale)
             if df is not None:
                 dfs.append(df)
             if images is not None:

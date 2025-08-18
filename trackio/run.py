@@ -1,12 +1,12 @@
 import threading
 import time
-from collections import deque
 
 import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio.media import TrackioImage
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.typehints import LogEntry, UploadEntry
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
 
@@ -25,31 +25,48 @@ class Run:
         self._client_lock = threading.Lock()
         self._client_thread = None
         self._client = client
+        self._space_id = space_id
         self.name = name or generate_readable_name(SQLiteStorage.get_runs(project))
         self.config = config or {}
-        self._queued_logs = deque()
-        self._space_id = space_id
+        self._queued_logs: list[LogEntry] = []
+        self._queued_uploads: list[UploadEntry] = []
+        self._stop_flag = threading.Event()
 
-        if client is None:
-            self._client_thread = threading.Thread(target=self._init_client_background)
-            self._client_thread.start()
+        self._client_thread = threading.Thread(target=self._init_client_background)
+        self._client_thread.daemon = True
+        self._client_thread.start()
+
+    def _batch_sender(self):
+        """Send batched logs every 500ms."""
+        while not self._stop_flag.is_set():
+            time.sleep(0.5)
+
+            with self._client_lock:
+                if self._queued_logs and self._client is not None:
+                    logs_to_send = self._queued_logs.copy()
+                    self._queued_logs.clear()
+
+                    self._client.predict(
+                        api_name="/bulk_log",
+                        logs=logs_to_send,
+                        hf_token=huggingface_hub.utils.get_token(),
+                    )
 
     def _init_client_background(self):
-        fib = fibo()
-        for sleep_coefficient in fib:
-            try:
-                client = Client(self.url, verbose=False)
-                with self._client_lock:
-                    self._client = client
-                    if len(self._queued_logs) > 0:
-                        for queued_log in self._queued_logs:
-                            self._client.predict(**queued_log)
-                        self._queued_logs.clear()
+        if self._client is None:
+            fib = fibo()
+            for sleep_coefficient in fib:
+                try:
+                    client = Client(self.url, verbose=False)
+                    with self._client_lock:
+                        self._client = client
                     break
-            except Exception:
-                pass
-            if sleep_coefficient is not None:
-                time.sleep(0.1 * sleep_coefficient)
+                except Exception:
+                    pass
+                if sleep_coefficient is not None:
+                    time.sleep(0.1 * sleep_coefficient)
+
+        self._batch_sender()
 
     def _process_media(self, metrics, step: int | None) -> dict:
         """
@@ -64,14 +81,14 @@ class Run:
                 serializable_metrics[key] = value._to_dict()
                 if self._space_id:
                     # Upload local media when deploying to space
-                    self._queue_payload(dict(
-                        api_name="/upload_media_to_space",
-                        project=self.project,
-                        run=self.name,
-                        step=step,
-                        uploaded_file=handle_file(value._get_absolute_file_path()),
-                        hf_token=huggingface_hub.utils.get_token(),
-                    ))
+                    upload_entry: UploadEntry = {
+                        "project": self.project,
+                        "run": self.name,
+                        "step": step,
+                        "uploaded_file": handle_file(value._get_absolute_file_path()),
+                    }
+                    with self._client_lock:
+                        self._queued_uploads.append(upload_entry)
             else:
                 serializable_metrics[key] = value
         return serializable_metrics
@@ -82,33 +99,40 @@ class Run:
                 raise ValueError(
                     f"Please do not use this reserved key as a metric: {k}"
                 )
-        
-        serializable_metrics = self._process_media(metrics, step)
-        self._queue_payload(dict(
-            api_name="/log",
-            project=self.project,
-            run=self.name,
-            metrics=serializable_metrics,
-            step=step,
-            hf_token=huggingface_hub.utils.get_token(),
-        ))
 
-    def _queue_payload(self, payload: dict):
+        metrics = self._process_media(metrics, step)
+        log_entry: LogEntry = {
+            "project": self.project,
+            "run": self.name,
+            "metrics": metrics,
+            "step": step,
+        }
+
         with self._client_lock:
-            if self._client is None:
-                # client can still be None for a Space while the Space is still initializing.
-                # queue up log items for when the client is not None.
-                self._queued_logs.append(payload)
-            else:
-                assert (
-                    len(self._queued_logs) == 0
-                )  # queue should have been flushed on client init
-                # write the current log item
-                self._client.predict(**payload)
+            self._queued_logs.append(log_entry)
 
     def finish(self):
         """Cleanup when run is finished."""
-        # wait for background client thread, in case it has a queue of logs to flush.
+        self._stop_flag.set()
+
+        with self._client_lock:
+            if self._queued_logs and self._client is not None:
+                logs_to_send = self._queued_logs.copy()
+                self._queued_logs.clear()
+                self._client.predict(
+                    api_name="/bulk_log",
+                    logs=logs_to_send,
+                    hf_token=huggingface_hub.utils.get_token(),
+                )
+            if self._queued_uploads and self._client is not None:
+                uploads_to_send = self._queued_uploads.copy()
+                self._queued_uploads.clear()
+                self._client.predict(
+                    api_name="/bulk_upload_media",
+                    uploads=uploads_to_send,
+                    hf_token=huggingface_hub.utils.get_token(),
+                )
+
         if self._client_thread is not None:
             print(f"* Uploading logs to Trackio Space: {self.url} (please wait...)")
-            self._client_thread.join()
+            self._client_thread.join(timeout=30)

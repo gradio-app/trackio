@@ -60,6 +60,19 @@ def deploy_as_space(
             repo_type="space",
         )
 
+    # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
+    # Make sure necessary dependencies are installed by creating a requirements.txt.
+    requirements_content = """
+pyarrow>=21.0
+    """
+    requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
+    hf_api.upload_file(
+        path_or_fileobj=requirements_buffer,
+        path_in_repo="requirements.txt",
+        repo_id=space_id,
+        repo_type="space",
+    )
+
     huggingface_hub.utils.disable_progress_bars()
     hf_api.upload_folder(
         repo_id=space_id,
