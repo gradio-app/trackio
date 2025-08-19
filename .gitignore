@@ -1,6 +1,7 @@
 notebooks/
 trackio/__pycache__/
 tests/__pycache__/
+tf_test_run/events.out.tfevents.*
 .trackio/
 trackio.db
 *.pyc

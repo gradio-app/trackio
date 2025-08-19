@@ -280,6 +280,26 @@ def bulk_log(
         )
 
 
+def get_data(
+    project: str,
+    run: str,
+    hf_token: str | None,
+) -> list[dict[str, Any]]:
+    """
+    Retrieve all logged data for a specific project and run.
+
+    Args:
+        project: The name of the project
+        run: The name of the run
+        hf_token: Hugging Face token for authentication
+
+    Returns:
+        List of metrics with timestamps and step numbers
+    """
+    check_auth(hf_token)
+    return SQLiteStorage.get_metrics(project=project, run=run)
+
+
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
     """
     Filter metrics using regex pattern.
@@ -499,6 +519,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.api(
         fn=bulk_log,
         api_name="bulk_log",
+    )
+    gr.api(
+        fn=get_data,
+        api_name="get_data",
     )
 
     x_lim = gr.State(None)
