@@ -8,6 +8,8 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import LogEntry
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
+BATCH_SEND_INTERVAL = 0.5
+
 
 class Run:
     def __init__(
@@ -33,25 +35,22 @@ class Run:
         self._client_thread.start()
 
     def _batch_sender(self):
-        """Send batched logs every 500ms."""
+        """Send batched logs every BATCH_SEND_INTERVAL."""
         while not self._stop_flag.is_set() or len(self._queued_logs) > 0:
+            # If the stop flag has been set, then just quickly send all
+            # the logs and exit.
             if not self._stop_flag.is_set():
-                time.sleep(0.5)
+                time.sleep(BATCH_SEND_INTERVAL)
 
             with self._client_lock:
                 if self._queued_logs and self._client is not None:
                     logs_to_send = self._queued_logs.copy()
                     self._queued_logs.clear()
-
-                    hf_token = huggingface_hub.utils.get_token()
-                    result = self._client.predict(
+                    self._client.predict(
                         api_name="/bulk_log",
                         logs=logs_to_send,
-                        hf_token=hf_token,
+                        hf_token=huggingface_hub.utils.get_token(),
                     )
-
-                if self._stop_flag.is_set() and len(self._queued_logs) == 0:
-                    break
 
     def _init_client_background(self):
         if self._client is None:
@@ -59,12 +58,7 @@ class Run:
             for sleep_coefficient in fib:
                 try:
                     client = Client(self.url, verbose=False)
-                    
-                    try:
-                        test_result = client.predict(api_name="/test")
-                    except Exception:
-                        pass
-                    
+
                     with self._client_lock:
                         self._client = client
                     break
@@ -94,21 +88,9 @@ class Run:
 
     def finish(self):
         """Cleanup when run is finished."""
-        with self._client_lock:
-            if self._queued_logs and self._client is not None:
-                logs_to_send = self._queued_logs.copy()
-                self._queued_logs.clear()
-                
-                hf_token = huggingface_hub.utils.get_token()
-                result = self._client.predict(
-                    api_name="/bulk_log",
-                    logs=logs_to_send,
-                    hf_token=hf_token,
-                )
-        
         self._stop_flag.set()
-        time.sleep(1.0)
-        
+        time.sleep(2 * BATCH_SEND_INTERVAL)
+
         if self._client_thread is not None:
             print(f"* Uploading logs to Trackio Space: {self.url} (please wait...)")
             self._client_thread.join()
