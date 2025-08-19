@@ -6,3 +6,7 @@
   - local: quickstart
     title: Quickstart
   title: Getting started
+- sections:
+  - local: api
+    title: API Reference
+  title: API
