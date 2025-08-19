@@ -18,11 +18,20 @@ try:
         TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
+        group_metrics_by_prefix,
+        sort_metrics_by_prefix,
     )
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
     from typehints import LogEntry
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
+    from utils import (
+        RESERVED_KEYS,
+        TRACKIO_LOGO_DIR,
+        downsample,
+        get_color_mapping,
+        group_metrics_by_prefix,
+        sort_metrics_by_prefix,
+    )
 
 
 def get_projects(request: gr.Request):
@@ -301,85 +310,6 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
         return [
             metric for metric in metrics if filter_pattern.lower() in metric.lower()
         ]
-
-
-def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
-    """
-    Sort metrics by grouping prefixes together for dropdown/list display.
-    Metrics without prefixes come first, then grouped by prefix.
-
-    Example:
-    Input: ["train/loss", "loss", "train/acc", "val/loss"]
-    Output: ["loss", "train/acc", "train/loss", "val/loss"]
-    """
-    groups = group_metrics_by_prefix(metrics)
-    result = []
-
-    # Add non-prefixed metrics first (from "charts" group)
-    if "charts" in groups:
-        result.extend(groups["charts"])
-
-    # Add prefixed metrics by group
-    for group_name in sorted(groups.keys()):
-        if group_name != "charts":
-            result.extend(groups[group_name])
-
-    return result
-
-
-def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
-    """
-    Group metrics by their prefix. Metrics without prefix go to 'charts' group.
-    This replaces sort_metrics_by_prefix and reuses its existing logic.
-
-    Args:
-        metrics: List of metric names
-
-    Returns:
-        Dictionary with prefix names as keys and lists of metrics as values
-
-    Example:
-        Input: ["loss", "accuracy", "train/loss", "train/acc", "val/loss"]
-        Output: {
-            "charts": ["loss", "accuracy"],
-            "train": ["train/loss", "train/acc"],
-            "val": ["val/loss"]
-        }
-    """
-    no_prefix = []
-    with_prefix = []
-
-    # Separate metrics with and without prefixes (reusing existing logic)
-    for metric in metrics:
-        if "/" in metric:
-            with_prefix.append(metric)
-        else:
-            no_prefix.append(metric)
-
-    no_prefix.sort()
-
-    # Group prefixed metrics by prefix (reusing existing logic)
-    prefix_groups = {}
-    for metric in with_prefix:
-        prefix = metric.split("/")[0]
-        if prefix not in prefix_groups:
-            prefix_groups[prefix] = []
-        prefix_groups[prefix].append(metric)
-
-    # Sort each group's metrics
-    for prefix in prefix_groups:
-        prefix_groups[prefix].sort()
-
-    # Build final groups dictionary
-    groups = {}
-    if no_prefix:
-        groups["charts"] = no_prefix
-
-    # Add prefixed groups in sorted order
-    for prefix in sorted(prefix_groups.keys()):
-        groups[prefix] = prefix_groups[prefix]
-
-    return groups
 
 
 def configure(request: gr.Request):
