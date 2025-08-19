@@ -408,3 +408,74 @@ def downsample(
     downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
 
     return downsampled_df
+
+
+def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
+    """
+    Sort metrics by grouping prefixes together for dropdown/list display.
+    Metrics without prefixes come first, then grouped by prefix.
+
+    Example:
+    Input: ["train/loss", "loss", "train/acc", "val/loss"]
+    Output: ["loss", "train/acc", "train/loss", "val/loss"]
+    """
+    groups = group_metrics_by_prefix(metrics)
+    result = []
+    
+    if "charts" in groups:
+        result.extend(groups["charts"])
+    
+    for group_name in sorted(groups.keys()):
+        if group_name != "charts":
+            result.extend(groups[group_name])
+    
+    return result
+
+
+def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
+    """
+    Group metrics by their prefix. Metrics without prefix go to 'charts' group.
+
+    Args:
+        metrics: List of metric names
+
+    Returns:
+        Dictionary with prefix names as keys and lists of metrics as values
+
+    Example:
+        Input: ["loss", "accuracy", "train/loss", "train/acc", "val/loss"]
+        Output: {
+            "charts": ["loss", "accuracy"],
+            "train": ["train/loss", "train/acc"],
+            "val": ["val/loss"]
+        }
+    """
+    no_prefix = []
+    with_prefix = []
+
+    for metric in metrics:
+        if "/" in metric:
+            with_prefix.append(metric)
+        else:
+            no_prefix.append(metric)
+
+    no_prefix.sort()
+
+    prefix_groups = {}
+    for metric in with_prefix:
+        prefix = metric.split("/")[0]
+        if prefix not in prefix_groups:
+            prefix_groups[prefix] = []
+        prefix_groups[prefix].append(metric)
+
+    for prefix in prefix_groups:
+        prefix_groups[prefix].sort()
+
+    groups = {}
+    if no_prefix:
+        groups["charts"] = no_prefix
+    
+    for prefix in sorted(prefix_groups.keys()):
+        groups[prefix] = prefix_groups[prefix]
+
+    return groups
