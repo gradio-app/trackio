@@ -8,6 +8,8 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import LogEntry
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 
+BATCH_SEND_INTERVAL = 0.5
+
 
 class Run:
     def __init__(
@@ -33,15 +35,17 @@ class Run:
         self._client_thread.start()
 
     def _batch_sender(self):
-        """Send batched logs every 500ms."""
-        while not self._stop_flag.is_set():
-            time.sleep(0.5)
+        """Send batched logs every BATCH_SEND_INTERVAL."""
+        while not self._stop_flag.is_set() or len(self._queued_logs) > 0:
+            # If the stop flag has been set, then just quickly send all
+            # the logs and exit.
+            if not self._stop_flag.is_set():
+                time.sleep(BATCH_SEND_INTERVAL)
 
             with self._client_lock:
                 if self._queued_logs and self._client is not None:
                     logs_to_send = self._queued_logs.copy()
                     self._queued_logs.clear()
-
                     self._client.predict(
                         api_name="/bulk_log",
                         logs=logs_to_send,
@@ -54,6 +58,7 @@ class Run:
             for sleep_coefficient in fib:
                 try:
                     client = Client(self.url, verbose=False)
+
                     with self._client_lock:
                         self._client = client
                     break
@@ -85,16 +90,9 @@ class Run:
         """Cleanup when run is finished."""
         self._stop_flag.set()
 
-        with self._client_lock:
-            if self._queued_logs and self._client is not None:
-                logs_to_send = self._queued_logs.copy()
-                self._queued_logs.clear()
-                self._client.predict(
-                    api_name="/bulk_log",
-                    logs=logs_to_send,
-                    hf_token=huggingface_hub.utils.get_token(),
-                )
+        # Wait for the batch sender to finish before joining the client thread.
+        time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
             print(f"* Uploading logs to Trackio Space: {self.url} (please wait...)")
-            self._client_thread.join(timeout=30)
+            self._client_thread.join()

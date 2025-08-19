@@ -81,6 +81,6 @@ for run in range(3):
             }
         )
 
-        time.sleep(0.5)
+        time.sleep(0.2)
 
-    wandb.finish()
+wandb.finish()
