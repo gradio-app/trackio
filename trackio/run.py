@@ -89,6 +89,8 @@ class Run:
     def finish(self):
         """Cleanup when run is finished."""
         self._stop_flag.set()
+
+        # Wait for the batch sender to finish before joining the client thread.
         time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
