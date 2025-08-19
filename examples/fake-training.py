@@ -76,6 +76,8 @@ for run in range(3):
             {
                 "train/loss": round(train_loss, 4),
                 "train/accuracy": round(train_accuracy, 4),
+                "train/random/seed1": random.random(),
+                "train/random/seed2": random.random(),
                 "val/loss": round(val_loss, 4),
                 "val/accuracy": round(val_accuracy, 4),
             }

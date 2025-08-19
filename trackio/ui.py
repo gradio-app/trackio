@@ -18,7 +18,7 @@ try:
         TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
-        group_metrics_by_prefix,
+        group_metrics_with_subprefixes,
         sort_metrics_by_prefix,
     )
 except:  # noqa: E722
@@ -29,7 +29,7 @@ except:  # noqa: E722
         TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
-        group_metrics_by_prefix,
+        group_metrics_with_subprefixes,
         sort_metrics_by_prefix,
     )
 
@@ -512,51 +512,105 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
-        numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
-        metric_groups = group_metrics_by_prefix(numeric_cols)
+        nested_metric_groups = group_metrics_with_subprefixes(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
 
         metric_idx = 0
-        for group_name in sorted(metric_groups.keys()):
-            group_metrics = metric_groups[group_name]
+        for group_name in sorted(nested_metric_groups.keys()):
+            group_data = nested_metric_groups[group_name]
 
             with gr.Accordion(
-                label=group_name, 
-                open=True, 
+                label=group_name,
+                open=True,
                 key=f"accordion-{group_name}",
                 preserved_by_key=["value", "open"],
             ):
-                with gr.Row(key=f"row-{group_name}"):
-                    for metric_name in group_metrics:
-                        metric_df = master_df.dropna(subset=[metric_name])
-                        color = "run" if "run" in metric_df.columns else None
-                        if not metric_df.empty:
-                            plot = gr.LinePlot(
-                                downsample(
-                                    metric_df,
-                                    x_column,
-                                    metric_name,
-                                    color,
-                                    x_lim_value,
-                                ),
-                                x=x_column,
-                                y=metric_name,
-                                color=color,
-                                color_map=color_map,
-                                title=metric_name,
-                                key=f"plot-{metric_idx}",
-                                preserved_by_key=None,
-                                x_lim=x_lim_value,
-                                show_fullscreen_button=True,
-                                min_width=400,
-                            )
-                            plot.select(
-                                update_x_lim, outputs=x_lim, key=f"select-{metric_idx}"
-                            )
-                            plot.double_click(
-                                lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
-                            )
-                        metric_idx += 1
+                # Render direct metrics at this level
+                if group_data["direct_metrics"]:
+                    with gr.Row(key=f"row-{group_name}-direct"):
+                        for metric_name in group_data["direct_metrics"]:
+                            metric_df = master_df.dropna(subset=[metric_name])
+                            color = "run" if "run" in metric_df.columns else None
+                            if not metric_df.empty:
+                                plot = gr.LinePlot(
+                                    downsample(
+                                        metric_df,
+                                        x_column,
+                                        metric_name,
+                                        color,
+                                        x_lim_value,
+                                    ),
+                                    x=x_column,
+                                    y=metric_name,
+                                    color=color,
+                                    color_map=color_map,
+                                    title=metric_name,
+                                    key=f"plot-{metric_idx}",
+                                    preserved_by_key=None,
+                                    x_lim=x_lim_value,
+                                    show_fullscreen_button=True,
+                                    min_width=400,
+                                )
+                                plot.select(
+                                    update_x_lim,
+                                    outputs=x_lim,
+                                    key=f"select-{metric_idx}",
+                                )
+                                plot.double_click(
+                                    lambda: None,
+                                    outputs=x_lim,
+                                    key=f"double-{metric_idx}",
+                                )
+                            metric_idx += 1
+
+                # If there are subgroups, create nested accordions
+                if group_data["subgroups"]:
+                    for subgroup_name in sorted(group_data["subgroups"].keys()):
+                        subgroup_metrics = group_data["subgroups"][subgroup_name]
+
+                        with gr.Accordion(
+                            label=subgroup_name,
+                            open=True,
+                            key=f"accordion-{group_name}-{subgroup_name}",
+                            preserved_by_key=["value", "open"],
+                        ):
+                            with gr.Row(key=f"row-{group_name}-{subgroup_name}"):
+                                for metric_name in subgroup_metrics:
+                                    metric_df = master_df.dropna(subset=[metric_name])
+                                    color = (
+                                        "run" if "run" in metric_df.columns else None
+                                    )
+                                    if not metric_df.empty:
+                                        plot = gr.LinePlot(
+                                            downsample(
+                                                metric_df,
+                                                x_column,
+                                                metric_name,
+                                                color,
+                                                x_lim_value,
+                                            ),
+                                            x=x_column,
+                                            y=metric_name,
+                                            color=color,
+                                            color_map=color_map,
+                                            title=metric_name,
+                                            key=f"plot-{metric_idx}",
+                                            preserved_by_key=None,
+                                            x_lim=x_lim_value,
+                                            show_fullscreen_button=True,
+                                            min_width=400,
+                                        )
+                                        plot.select(
+                                            update_x_lim,
+                                            outputs=x_lim,
+                                            key=f"select-{metric_idx}",
+                                        )
+                                        plot.double_click(
+                                            lambda: None,
+                                            outputs=x_lim,
+                                            key=f"double-{metric_idx}",
+                                        )
+                                    metric_idx += 1
 
 
 if __name__ == "__main__":

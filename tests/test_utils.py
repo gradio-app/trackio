@@ -28,3 +28,29 @@ def test_group_metrics_by_prefix():
         "val": ["val/loss"],
     }
     assert result == expected
+
+
+def test_group_metrics_with_subprefixes():
+    metrics = [
+        "loss",
+        "train/acc",
+        "train/loss/normalized",
+        "train/loss/unnormalized",
+        "val/loss",
+        "test/f1/micro",
+        "test/f1/macro",
+    ]
+    result = utils.group_metrics_with_subprefixes(metrics)
+    expected = {
+        "charts": {"direct_metrics": ["loss"], "subgroups": {}},
+        "train": {
+            "direct_metrics": ["train/acc"],
+            "subgroups": {"loss": ["train/loss/normalized", "train/loss/unnormalized"]},
+        },
+        "val": {"direct_metrics": ["val/loss"], "subgroups": {}},
+        "test": {
+            "direct_metrics": [],
+            "subgroups": {"f1": ["test/f1/macro", "test/f1/micro"]},
+        },
+    }
+    assert result == expected
