@@ -415,20 +415,26 @@ def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
     Sort metrics by grouping prefixes together for dropdown/list display.
     Metrics without prefixes come first, then grouped by prefix.
 
+    Args:
+        metrics: List of metric names
+
+    Returns:
+        List of metric names sorted by prefix
+
     Example:
     Input: ["train/loss", "loss", "train/acc", "val/loss"]
     Output: ["loss", "train/acc", "train/loss", "val/loss"]
     """
     groups = group_metrics_by_prefix(metrics)
     result = []
-    
+
     if "charts" in groups:
         result.extend(groups["charts"])
-    
+
     for group_name in sorted(groups.keys()):
         if group_name != "charts":
             result.extend(groups[group_name])
-    
+
     return result
 
 
@@ -474,7 +480,7 @@ def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
     groups = {}
     if no_prefix:
         groups["charts"] = no_prefix
-    
+
     for prefix in sorted(prefix_groups.keys()):
         groups[prefix] = prefix_groups[prefix]
 
