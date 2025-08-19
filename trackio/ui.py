@@ -606,7 +606,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
-        numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
+        metric_groups = group_metrics_by_prefix(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
 
         metric_idx = 0
