@@ -337,6 +337,43 @@ def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
     return no_prefix + sorted_with_prefix
 
 
+def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
+    """
+    Group metrics by their prefix. Metrics without prefix go to 'charts' group.
+
+    Args:
+        metrics: List of metric names
+
+    Returns:
+        Dictionary with prefix names as keys and lists of metrics as values
+
+    Example:
+        Input: ["loss", "accuracy", "train/loss", "train/acc", "val/loss"]
+        Output: {
+            "charts": ["loss", "accuracy"],
+            "train": ["train/loss", "train/acc"],
+            "val": ["val/loss"]
+        }
+    """
+    groups = {}
+
+    for metric in metrics:
+        if "/" in metric:
+            prefix = metric.split("/")[0]
+            if prefix not in groups:
+                groups[prefix] = []
+            groups[prefix].append(metric)
+        else:
+            if "charts" not in groups:
+                groups["charts"] = []
+            groups["charts"].append(metric)
+
+    for group_name in groups:
+        groups[group_name].sort()
+
+    return groups
+
+
 def configure(request: gr.Request):
     sidebar_param = request.query_params.get("sidebar")
     match sidebar_param:
