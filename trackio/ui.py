@@ -513,6 +513,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
         numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
+        metric_groups = group_metrics_by_prefix(numeric_cols)
         color_map = get_color_mapping(original_runs, smoothing)
 
         metric_idx = 0
@@ -520,7 +521,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             group_metrics = metric_groups[group_name]
 
             with gr.Accordion(
-                label=group_name, open=True, key=f"accordion-{group_name}"
+                label=group_name, 
+                open=True, 
+                key=f"accordion-{group_name}",
+                preserved_by_key=["value", "open"],
             ):
                 with gr.Row(key=f"row-{group_name}"):
                     for metric_name in group_metrics:
