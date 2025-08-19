@@ -577,30 +577,44 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
 
-        with gr.Row(key="row"):
-            for metric_idx, metric_name in enumerate(numeric_cols):
-                metric_df = master_df.dropna(subset=[metric_name])
-                color = "run" if "run" in metric_df.columns else None
-                if not metric_df.empty:
-                    plot = gr.LinePlot(
-                        downsample(
-                            metric_df, x_column, metric_name, color, x_lim_value
-                        ),
-                        x=x_column,
-                        y=metric_name,
-                        color=color,
-                        color_map=color_map,
-                        title=metric_name,
-                        key=f"plot-{metric_idx}",
-                        preserved_by_key=None,
-                        x_lim=x_lim_value,
-                        show_fullscreen_button=True,
-                        min_width=400,
-                    )
-                plot.select(update_x_lim, outputs=x_lim, key=f"select-{metric_idx}")
-                plot.double_click(
-                    lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
-                )
+        metric_idx = 0
+        for group_name in sorted(metric_groups.keys()):
+            group_metrics = metric_groups[group_name]
+
+            with gr.Accordion(
+                label=group_name, open=True, key=f"accordion-{group_name}"
+            ):
+                with gr.Row(key=f"row-{group_name}"):
+                    for metric_name in group_metrics:
+                        metric_df = master_df.dropna(subset=[metric_name])
+                        color = "run" if "run" in metric_df.columns else None
+                        if not metric_df.empty:
+                            plot = gr.LinePlot(
+                                downsample(
+                                    metric_df,
+                                    x_column,
+                                    metric_name,
+                                    color,
+                                    x_lim_value,
+                                ),
+                                x=x_column,
+                                y=metric_name,
+                                color=color,
+                                color_map=color_map,
+                                title=metric_name,
+                                key=f"plot-{metric_idx}",
+                                preserved_by_key=None,
+                                x_lim=x_lim_value,
+                                show_fullscreen_button=True,
+                                min_width=400,
+                            )
+                            plot.select(
+                                update_x_lim, outputs=x_lim, key=f"select-{metric_idx}"
+                            )
+                            plot.double_click(
+                                lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
+                            )
+                        metric_idx += 1
 
 
 if __name__ == "__main__":
