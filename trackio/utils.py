@@ -20,8 +20,6 @@ def generate_readable_name(used_names: list[str], space_id: str | None = None) -
     If space_id is provided, generates username-timestamp format instead.
     """
     if space_id is not None:
-        import time
-
         username = huggingface_hub.whoami()["name"]
         timestamp = int(time.time())
         return f"{username}-{timestamp}"
