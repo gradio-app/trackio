@@ -107,6 +107,10 @@ def init(
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
+    # For remote runs (space_id provided), pass space_id to generate username-timestamp names
+    if name is None and space_id is not None:
+        name = utils.generate_readable_name(SQLiteStorage.get_runs(project), space_id)
+
     run = Run(
         url=url,
         project=project,
