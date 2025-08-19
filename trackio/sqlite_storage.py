@@ -214,9 +214,8 @@ class SQLiteStorage:
 
         if timestamps is None:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
-        
+
         db_path = SQLiteStorage.init_db(project)
-        
         with SQLiteStorage.get_scheduler().lock:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
@@ -242,8 +241,9 @@ class SQLiteStorage:
                 if len(metrics_list) != len(steps) or len(metrics_list) != len(
                     timestamps
                 ):
-                    error_msg = f"metrics_list, steps, and timestamps must have the same length. Got: {len(metrics_list)}, {len(steps)}, {len(timestamps)}"
-                    raise ValueError(error_msg)
+                    raise ValueError(
+                        "metrics_list, steps, and timestamps must have the same length"
+                    )
 
                 data = []
                 for i, metrics in enumerate(metrics_list):
@@ -255,7 +255,7 @@ class SQLiteStorage:
                             json.dumps(metrics),
                         )
                     )
-                
+
                 cursor.executemany(
                     """
                     INSERT INTO metrics
