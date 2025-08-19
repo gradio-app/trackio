@@ -43,16 +43,12 @@ class Run:
                     logs_to_send = self._queued_logs.copy()
                     self._queued_logs.clear()
 
-                    try:
-                        hf_token = huggingface_hub.utils.get_token()
-                        result = self._client.predict(
-                            api_name="/bulk_log",
-                            logs=logs_to_send,
-                            hf_token=hf_token,
-                        )
-                    except Exception as e:
-                        import traceback
-                        traceback.print_exc()
+                    hf_token = huggingface_hub.utils.get_token()
+                    result = self._client.predict(
+                        api_name="/bulk_log",
+                        logs=logs_to_send,
+                        hf_token=hf_token,
+                    )
 
                 if self._stop_flag.is_set() and len(self._queued_logs) == 0:
                     break
@@ -103,16 +99,12 @@ class Run:
                 logs_to_send = self._queued_logs.copy()
                 self._queued_logs.clear()
                 
-                try:
-                    hf_token = huggingface_hub.utils.get_token()
-                    result = self._client.predict(
-                        api_name="/bulk_log",
-                        logs=logs_to_send,
-                        hf_token=hf_token,
-                    )
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
+                hf_token = huggingface_hub.utils.get_token()
+                result = self._client.predict(
+                    api_name="/bulk_log",
+                    logs=logs_to_send,
+                    hf_token=hf_token,
+                )
         
         self._stop_flag.set()
         time.sleep(1.0)

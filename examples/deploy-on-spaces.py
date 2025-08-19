@@ -32,13 +32,14 @@ def generate_accuracy_curve(epoch, max_epochs, max_acc=0.95, min_acc=0.1):
 
 for run in range(3):
     wandb.init(
-        project=f"fake-training-{PROJECT_ID}",
+        project=f"deploy-on-spaces-{PROJECT_ID}",
         name=f"test-run-{run}",
         config=dict(
             epochs=EPOCHS,
             learning_rate=0.001,
             batch_size=32,
         ),
+        space_id=f"trackio-on-spaces-{PROJECT_ID}",
     )
 
     for epoch in range(EPOCHS):
@@ -81,6 +82,6 @@ for run in range(3):
             }
         )
 
-        time.sleep(0.5)
+        time.sleep(0.2)
 
     wandb.finish()
