@@ -305,41 +305,32 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
     """
-    Sort metrics by grouping prefixes together.
+    Sort metrics by grouping prefixes together for dropdown/list display.
     Metrics without prefixes come first, then grouped by prefix.
 
     Example:
     Input: ["train/loss", "loss", "train/acc", "val/loss"]
     Output: ["loss", "train/acc", "train/loss", "val/loss"]
     """
-    no_prefix = []
-    with_prefix = []
+    groups = group_metrics_by_prefix(metrics)
+    result = []
 
-    for metric in metrics:
-        if "/" in metric:
-            with_prefix.append(metric)
-        else:
-            no_prefix.append(metric)
+    # Add non-prefixed metrics first (from "charts" group)
+    if "charts" in groups:
+        result.extend(groups["charts"])
 
-    no_prefix.sort()
+    # Add prefixed metrics by group
+    for group_name in sorted(groups.keys()):
+        if group_name != "charts":
+            result.extend(groups[group_name])
 
-    prefix_groups = {}
-    for metric in with_prefix:
-        prefix = metric.split("/")[0]
-        if prefix not in prefix_groups:
-            prefix_groups[prefix] = []
-        prefix_groups[prefix].append(metric)
-
-    sorted_with_prefix = []
-    for prefix in sorted(prefix_groups.keys()):
-        sorted_with_prefix.extend(sorted(prefix_groups[prefix]))
-
-    return no_prefix + sorted_with_prefix
+    return result
 
 
 def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
     """
     Group metrics by their prefix. Metrics without prefix go to 'charts' group.
+    This replaces sort_metrics_by_prefix and reuses its existing logic.
 
     Args:
         metrics: List of metric names
@@ -355,21 +346,38 @@ def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
             "val": ["val/loss"]
         }
     """
-    groups = {}
+    no_prefix = []
+    with_prefix = []
 
+    # Separate metrics with and without prefixes (reusing existing logic)
     for metric in metrics:
         if "/" in metric:
-            prefix = metric.split("/")[0]
-            if prefix not in groups:
-                groups[prefix] = []
-            groups[prefix].append(metric)
+            with_prefix.append(metric)
         else:
-            if "charts" not in groups:
-                groups["charts"] = []
-            groups["charts"].append(metric)
+            no_prefix.append(metric)
 
-    for group_name in groups:
-        groups[group_name].sort()
+    no_prefix.sort()
+
+    # Group prefixed metrics by prefix (reusing existing logic)
+    prefix_groups = {}
+    for metric in with_prefix:
+        prefix = metric.split("/")[0]
+        if prefix not in prefix_groups:
+            prefix_groups[prefix] = []
+        prefix_groups[prefix].append(metric)
+
+    # Sort each group's metrics
+    for prefix in prefix_groups:
+        prefix_groups[prefix].sort()
+
+    # Build final groups dictionary
+    groups = {}
+    if no_prefix:
+        groups["charts"] = no_prefix
+
+    # Add prefixed groups in sorted order
+    for prefix in sorted(prefix_groups.keys()):
+        groups[prefix] = prefix_groups[prefix]
 
     return groups
 
