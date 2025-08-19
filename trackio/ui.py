@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 from typing import Any
+from datetime import datetime
 
 import gradio as gr
 import huggingface_hub as hf
@@ -183,6 +184,11 @@ def toggle_timer(cb_value):
         return gr.Timer(active=False)
 
 
+def test_connection():
+    """Simple test endpoint to verify the Space is working."""
+    return {"status": "ok", "message": "Space is working", "timestamp": str(datetime.now())}
+
+
 def check_auth(hf_token: str | None) -> None:
     if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
         # check auth token passed in
@@ -190,47 +196,54 @@ def check_auth(hf_token: str | None) -> None:
             raise PermissionError(
                 "Expected a HF_TOKEN to be provided when logging to a Space"
             )
-        who = HfApi.whoami(hf_token)
-        access_token = who["auth"]["accessToken"]
-        owner_name = os.getenv("SPACE_AUTHOR_NAME")
-        repo_name = os.getenv("SPACE_REPO_NAME")
-        # make sure the token user is either the author of the space,
-        # or is a member of an org that is the author.
-        orgs = [o["name"] for o in who["orgs"]]
-        if owner_name != who["name"] and owner_name not in orgs:
-            raise PermissionError(
-                "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
-            )
-        # reject fine-grained tokens without specific repo access
-        if access_token["role"] == "fineGrained":
-            matched = False
-            for item in access_token["fineGrained"]["scoped"]:
-                if (
-                    item["entity"]["type"] == "space"
-                    and item["entity"]["name"] == f"{owner_name}/{repo_name}"
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-                if (
-                    (
-                        item["entity"]["type"] == "user"
-                        or item["entity"]["type"] == "org"
-                    )
-                    and item["entity"]["name"] == owner_name
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-            if not matched:
+        
+        try:
+            who = HfApi.whoami(hf_token)
+            access_token = who["auth"]["accessToken"]
+            owner_name = os.getenv("SPACE_AUTHOR_NAME")
+            repo_name = os.getenv("SPACE_REPO_NAME")
+            
+            # make sure the token user is either the author of the space,
+            # or is a member of an org that is the author.
+            orgs = [o["name"] for o in who["orgs"]]
+            
+            if owner_name != who["name"] and owner_name not in orgs:
                 raise PermissionError(
-                    "Expected the provided hf_token with fine grained permissions to provide write access to the space"
+                    "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
                 )
-        # reject read-only tokens
-        elif access_token["role"] != "write":
-            raise PermissionError(
-                "Expected the provided hf_token to provide write permissions"
-            )
+            
+            # reject fine-grained tokens without specific repo access
+            if access_token["role"] == "fineGrained":
+                matched = False
+                for item in access_token["fineGrained"]["scoped"]:
+                    if (
+                        item["entity"]["type"] == "space"
+                        and item["entity"]["name"] == f"{owner_name}/{repo_name}"
+                        and "repo.write" in item["permissions"]
+                    ):
+                        matched = True
+                        break
+                    if (
+                        (
+                            item["entity"]["type"] == "user"
+                            or item["entity"]["type"] == "org"
+                        )
+                        and item["entity"]["name"] == owner_name
+                        and "repo.write" in item["permissions"]
+                    ):
+                        matched = True
+                        break
+                if not matched:
+                    raise PermissionError(
+                        "Expected the provided hf_token with fine grained permissions to provide write access to the space"
+                    )
+            # reject read-only tokens
+            elif access_token["role"] != "write":
+                raise PermissionError(
+                    "Expected the provided hf_token to provide write permissions"
+                )
+        except Exception as e:
+            raise
 
 
 def upload_db_to_space(
@@ -270,7 +283,7 @@ def bulk_log(
             logs_by_run[key] = {"metrics": [], "steps": []}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["steps"].append(log_entry.get("step"))
-
+    
     for (project, run), data in logs_by_run.items():
         SQLiteStorage.bulk_log(
             project=project,
@@ -454,6 +467,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.api(
         fn=bulk_log,
         api_name="bulk_log",
+    )
+    gr.api(
+        fn=test_connection,
+        api_name="test",
     )
 
     x_lim = gr.State(None)

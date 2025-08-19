@@ -37,7 +37,7 @@ def init(
         project: The name of the project (can be an existing project to continue tracking or a new project to start tracking from scratch).
         name: The name of the run (if not provided, a default name will be generated).
         space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like "username/reponame" or "orgname/reponame", or just "reponame" in which case the Space will be created in the currently-logged-in Hugging Face user's namespace. If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
-        dataset_id: If a space_id is provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Specify a Dataset with name like "username/datasetname" or "orgname/datasetname", or "datasetname" (uses currently-logged-in Hugging Face user's namespace), or None (uses the same name as the Space but with the "_dataset" suffix). If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it.
+        dataset_id: If a space_id is provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Specify a Dataset with name like "username/datasetname" or "orgname/datasetname", or "datasetname" (uses currently-logged-in Hugging Face user's namespace), or None (uses the same name as the Space but with the "_dataset" suffix). If the Dataset already exists, the project will be appended to it.
         config: A dictionary of configuration options. Provided for compatibility with wandb.init()
         resume: Controls how to handle resuming a run. Can be one of:
             - "must": Must resume the run with the given name, raises error if run doesn't exist
@@ -52,7 +52,9 @@ def init(
 
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
+    
     space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
+    
     url = context_vars.current_server.get()
 
     if url is None:
@@ -114,6 +116,7 @@ def init(
         name=name,
         config=config,
     )
+    
     context_vars.current_run.set(run)
     globals()["config"] = run.config
     return run

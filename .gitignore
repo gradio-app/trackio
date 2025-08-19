@@ -4,3 +4,4 @@ tests/__pycache__/
 .trackio/
 trackio.db
 *.pyc
+.venv/
