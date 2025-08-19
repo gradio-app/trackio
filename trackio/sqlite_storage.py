@@ -217,58 +217,54 @@ class SQLiteStorage:
         
         db_path = SQLiteStorage.init_db(project)
         
-        try:
-            with SQLiteStorage.get_scheduler().lock:
-                with SQLiteStorage._get_connection(db_path) as conn:
-                    cursor = conn.cursor()
+        with SQLiteStorage.get_scheduler().lock:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
 
-                    if steps is None:
-                        steps = list(range(len(metrics_list)))
-                    elif any(s is None for s in steps):
-                        cursor.execute(
-                            "SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,)
-                        )
-                        last_step = cursor.fetchone()[0]
-                        current_step = 0 if last_step is None else last_step + 1
-
-                        processed_steps = []
-                        for step in steps:
-                            if step is None:
-                                processed_steps.append(current_step)
-                                current_step += 1
-                            else:
-                                processed_steps.append(step)
-                        steps = processed_steps
-
-                    if len(metrics_list) != len(steps) or len(metrics_list) != len(
-                        timestamps
-                    ):
-                        error_msg = f"metrics_list, steps, and timestamps must have the same length. Got: {len(metrics_list)}, {len(steps)}, {len(timestamps)}"
-                        raise ValueError(error_msg)
-
-                    data = []
-                    for i, metrics in enumerate(metrics_list):
-                        data.append(
-                            (
-                                timestamps[i],
-                                run,
-                                steps[i],
-                                json.dumps(metrics),
-                            )
-                        )
-                    
-                    cursor.executemany(
-                        """
-                        INSERT INTO metrics
-                        (timestamp, run_name, step, metrics)
-                        VALUES (?, ?, ?, ?)
-                        """,
-                        data,
+                if steps is None:
+                    steps = list(range(len(metrics_list)))
+                elif any(s is None for s in steps):
+                    cursor.execute(
+                        "SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,)
                     )
-                    conn.commit()
-                    
-        except Exception as e:
-            raise
+                    last_step = cursor.fetchone()[0]
+                    current_step = 0 if last_step is None else last_step + 1
+
+                    processed_steps = []
+                    for step in steps:
+                        if step is None:
+                            processed_steps.append(current_step)
+                            current_step += 1
+                        else:
+                            processed_steps.append(step)
+                    steps = processed_steps
+
+                if len(metrics_list) != len(steps) or len(metrics_list) != len(
+                    timestamps
+                ):
+                    error_msg = f"metrics_list, steps, and timestamps must have the same length. Got: {len(metrics_list)}, {len(steps)}, {len(timestamps)}"
+                    raise ValueError(error_msg)
+
+                data = []
+                for i, metrics in enumerate(metrics_list):
+                    data.append(
+                        (
+                            timestamps[i],
+                            run,
+                            steps[i],
+                            json.dumps(metrics),
+                        )
+                    )
+                
+                cursor.executemany(
+                    """
+                    INSERT INTO metrics
+                    (timestamp, run_name, step, metrics)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    data,
+                )
+                conn.commit()
 
     @staticmethod
     def get_metrics(project: str, run: str) -> list[dict]:

@@ -2,7 +2,6 @@ import os
 import re
 import shutil
 from typing import Any
-from datetime import datetime
 
 import gradio as gr
 import huggingface_hub as hf
@@ -177,16 +176,8 @@ def update_x_axis_choices(project, runs):
     )
 
 
-def toggle_timer(cb_value):
-    if cb_value:
-        return gr.Timer(active=True)
-    else:
-        return gr.Timer(active=False)
-
-
-def test_connection():
-    """Simple test endpoint to verify the Space is working."""
-    return {"status": "ok", "message": "Space is working", "timestamp": str(datetime.now())}
+def toggle_timer(realtime: bool):
+    return gr.Timer(active=realtime)
 
 
 def check_auth(hf_token: str | None) -> None:
@@ -467,10 +458,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.api(
         fn=bulk_log,
         api_name="bulk_log",
-    )
-    gr.api(
-        fn=test_connection,
-        api_name="test",
     )
 
     x_lim = gr.State(None)
