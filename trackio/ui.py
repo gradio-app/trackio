@@ -723,8 +723,8 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                     try:
                         df = pd.DataFrame(value)
                         gr.DataFrame(df, label=f"{metric_name} (latest)", key=f"table-{metric_idx}")
-                    except:  # noqa: E722
-                        pass
+                    except Exception as e:
+                        gr.Warning(f"Column {metric_name} failed to render as a table: {e}")
 
 
 if __name__ == "__main__":
