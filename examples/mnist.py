@@ -5,11 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 
-import trackio as wandb
-
 n_log_test_examples = 20
-n_runs = 3
-n_epochs = 3
 batch_size_train = 64
 batch_size_test = 1000
 learning_rate = 0.01
@@ -95,57 +91,19 @@ class MnistClassifier:
         self.network.eval()
         test_loss = 0
         correct = 0
-        preds = []
-        targets = []
+        error_preds = []
+        error_targets = []
         with torch.no_grad():
-            for batch_idx, (data, target) in enumerate(test_loader):
+            for _, (data, target) in enumerate(test_loader):
                 output = self.network(data)
                 test_loss += F.nll_loss(output, target, size_average=False).item()
                 pred = output.data.max(1, keepdim=True)[1]
                 correct += pred.eq(target.data.view_as(pred)).sum()
-                if batch_idx % log_interval == 0:
-                    for p in pred.numpy().tolist():
-                        preds.append(p[0])
-                    for t in target.data.numpy().tolist():
-                        targets.append(t)
+                for (p,t) in zip(pred.numpy().tolist(), target.data.numpy().tolist()):
+                    if p[0] != t and len(error_preds) < n_log_test_examples:
+                        error_preds.append(p[0])
+                        error_targets.append(t)
         test_loss /= len(test_loader.dataset)
         test_accuracy = float((100.0 * correct) / len(test_loader.dataset))
-        targets = targets[:n_log_test_examples]
-        preds = preds[:n_log_test_examples]
-        test_results = pd.DataFrame({"target": targets, "prediction": preds})
-        return (test_loss, test_accuracy, test_results)
-
-
-for run in range(n_runs):
-    classifier = MnistClassifier()
-    wandb.init(
-        project="mnist-classifier",
-        config={"epochs": n_epochs, "learning_rate": 0.001, "batch_size": 64},
-    )
-
-    def train(epoch):
-        classifier.start_train()
-        for batch_idx, (data, target) in enumerate(train_loader):
-            loss = classifier.step_train(data, target)
-            if batch_idx % log_interval == 0:
-                wandb.log(
-                    {
-                        "train_percent_complete": 100.0 * batch_idx / len(train_loader),
-                        "train_loss": loss,
-                    },
-                    step=(epoch * len(train_loader)) + batch_idx,
-                )
-
-    def test(epoch):
-        test_loss, test_accuracy, test_results = classifier.test()
-        wandb.log(
-            {
-                "test_loss": test_loss,
-                "test_accuracy": test_accuracy,
-                "test_results": wandb.Table(dataframe=test_results),
-            }
-        )
-
-    for epoch in range(n_epochs):
-        train(epoch)
-        test(epoch)
+        test_errors = pd.DataFrame({"target": error_targets, "prediction": error_preds})
+        return (test_loss, test_accuracy, test_errors)
