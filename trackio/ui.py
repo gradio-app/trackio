@@ -722,9 +722,15 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                     value = metric_df[metric_name].iloc[-1]
                     try:
                         df = pd.DataFrame(value)
-                        gr.DataFrame(df, label=f"{metric_name} (latest)", key=f"table-{metric_idx}")
+                        gr.DataFrame(
+                            df,
+                            label=f"{metric_name} (latest)",
+                            key=f"table-{metric_idx}",
+                        )
                     except Exception as e:
-                        gr.Warning(f"Column {metric_name} failed to render as a table: {e}")
+                        gr.Warning(
+                            f"Column {metric_name} failed to render as a table: {e}"
+                        )
 
 
 if __name__ == "__main__":
