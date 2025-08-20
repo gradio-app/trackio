@@ -20,6 +20,7 @@ class TrackioImage:
 
     Demo: fake-training-images
     """
+
     def __init__(
         self, value: str | np.ndarray | PILImage.Image, caption: str | None = None
     ):
