@@ -269,8 +269,8 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
-    def get_logs(project: str, run: str) -> tuple[list[dict], list[dict]]:
-        """Retrieve metrics and media for a specific run. Both include the step count (int) and the timestamp (datetime object)."""
+    def get_logs(project: str, run: str) -> list[dict]:
+        """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
@@ -288,39 +288,13 @@ class SQLiteStorage:
             )
 
             rows = cursor.fetchall()
-            numeric_metrics = []
-            image_data = []
+            results = []
             for row in rows:
                 metrics = json.loads(row["metrics"])
                 metrics["timestamp"] = row["timestamp"]
                 metrics["step"] = row["step"]
-
-                # images for this entry
-                entry_images = {
-                    "timestamp": row["timestamp"],
-                    "step": row["step"],
-                    "images": {},
-                }
-                image_keys = []
-                for key, value in metrics.items():
-                    if (
-                        isinstance(value, dict)
-                        and value.get("_type") == TrackioImage.TYPE
-                    ):
-                        image_keys.append(key)
-                        try:
-                            image = TrackioImage._from_dict(value)
-                            entry_images["images"][key] = image
-                        except Exception as e:
-                            print(f"Error loading image '{key}': {e}")
-
-                for key in image_keys:
-                    del metrics[key]
-
-                numeric_metrics.append(metrics)
-                if image_keys:
-                    image_data.append(entry_images)
-            return numeric_metrics, image_data
+                results.append(metrics)
+            return results
 
     @staticmethod
     def load_from_dataset():

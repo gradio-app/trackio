@@ -15,7 +15,7 @@ def test_init_creates_metrics_table(temp_dir):
 def test_log_and_get_metrics(temp_dir):
     metrics = {"acc": 0.9}
     SQLiteStorage.log(project="proj1", run="run1", metrics=metrics)
-    results, _ = SQLiteStorage.get_logs(project="proj1", run="run1")
+    results = SQLiteStorage.get_logs(project="proj1", run="run1")
     assert len(results) == 1
     assert results[0]["acc"] == 0.9
     assert results[0]["step"] == 0
@@ -44,7 +44,7 @@ def test_import_export(temp_dir):
         if proj not in metrics_before:
             metrics_before[proj] = {}
         for run in SQLiteStorage.get_runs(proj):
-            metrics_before[proj][run], _ = SQLiteStorage.get_logs(proj, run)
+            metrics_before[proj][run] = SQLiteStorage.get_logs(proj, run)
 
     # clear existing SQLite data
     os.unlink(db_path_1)
@@ -57,6 +57,6 @@ def test_import_export(temp_dir):
         if proj not in metrics_after:
             metrics_after[proj] = {}
         for run in SQLiteStorage.get_runs(proj):
-            metrics_after[proj][run], _ = SQLiteStorage.get_logs(proj, run)
+            metrics_after[proj][run] = SQLiteStorage.get_logs(proj, run)
 
     assert metrics_before == metrics_after

@@ -35,7 +35,7 @@ def test_rapid_bulk_logging():
     time.sleep(0.6)  # Wait for the client to send the logs
 
     # Verify run1 metrics
-    metrics_run1, _ = SQLiteStorage.get_logs(project_name, run1_name)
+    metrics_run1 = SQLiteStorage.get_logs(project_name, run1_name)
     assert len(metrics_run1) == num_logs_run1, (
         f"Expected {num_logs_run1} logs for run1, but found {len(metrics_run1)}"
     )
@@ -52,7 +52,7 @@ def test_rapid_bulk_logging():
         )
 
     # Verify run2 metrics
-    metrics_run2, _ = SQLiteStorage.get_logs(project_name, run2_name)
+    metrics_run2 = SQLiteStorage.get_logs(project_name, run2_name)
     assert len(metrics_run2) == num_logs_run2, (
         f"Expected {num_logs_run2} logs for run2, but found {len(metrics_run2)}"
     )

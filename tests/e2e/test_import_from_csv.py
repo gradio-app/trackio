@@ -11,7 +11,7 @@ def test_import_from_csv(temp_dir):
         name="test_run",
     )
 
-    results, _ = SQLiteStorage.get_logs(project="test_project", run="test_run")
+    results = SQLiteStorage.get_logs(project="test_project", run="test_run")
     assert len(results) == 4
     assert results[0]["train/loss"] == 12.2
     assert results[0]["train/acc"] == 82.2
