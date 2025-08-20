@@ -19,13 +19,16 @@ class Run:
         client: Client | None,
         name: str | None = None,
         config: dict | None = None,
+        space_id: str | None = None,
     ):
         self.url = url
         self.project = project
         self._client_lock = threading.Lock()
         self._client_thread = None
         self._client = client
-        self.name = name or generate_readable_name(SQLiteStorage.get_runs(project))
+        self.name = name or generate_readable_name(
+            SQLiteStorage.get_runs(project), space_id
+        )
         self.config = config or {}
         self._queued_logs: list[LogEntry] = []
         self._stop_flag = threading.Event()
@@ -94,5 +97,7 @@ class Run:
         time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
-            print(f"* Uploading logs to Trackio Space: {self.url} (please wait...)")
+            print(
+                f"* Run finished. Uploading logs to Trackio Space: {self.url} (please wait...)"
+            )
             self._client_thread.join()
