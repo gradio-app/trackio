@@ -18,11 +18,20 @@ try:
         TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
+        group_metrics_with_subprefixes,
+        sort_metrics_by_prefix,
     )
 except:  # noqa: E722
     from sqlite_storage import SQLiteStorage
     from typehints import LogEntry
-    from utils import RESERVED_KEYS, TRACKIO_LOGO_DIR, downsample, get_color_mapping
+    from utils import (
+        RESERVED_KEYS,
+        TRACKIO_LOGO_DIR,
+        downsample,
+        get_color_mapping,
+        group_metrics_with_subprefixes,
+        sort_metrics_by_prefix,
+    )
 
 
 def get_projects(request: gr.Request):
@@ -303,40 +312,6 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
         ]
 
 
-def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
-    """
-    Sort metrics by grouping prefixes together.
-    Metrics without prefixes come first, then grouped by prefix.
-
-    Example:
-    Input: ["train/loss", "loss", "train/acc", "val/loss"]
-    Output: ["loss", "train/acc", "train/loss", "val/loss"]
-    """
-    no_prefix = []
-    with_prefix = []
-
-    for metric in metrics:
-        if "/" in metric:
-            with_prefix.append(metric)
-        else:
-            no_prefix.append(metric)
-
-    no_prefix.sort()
-
-    prefix_groups = {}
-    for metric in with_prefix:
-        prefix = metric.split("/")[0]
-        if prefix not in prefix_groups:
-            prefix_groups[prefix] = []
-        prefix_groups[prefix].append(metric)
-
-    sorted_with_prefix = []
-    for prefix in sorted(prefix_groups.keys()):
-        sorted_with_prefix.extend(sorted(prefix_groups[prefix]))
-
-    return no_prefix + sorted_with_prefix
-
-
 def configure(request: gr.Request):
     sidebar_param = request.query_params.get("sidebar")
     match sidebar_param:
@@ -537,33 +512,107 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
-        numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
+        nested_metric_groups = group_metrics_with_subprefixes(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
 
-        with gr.Row(key="row"):
-            for metric_idx, metric_name in enumerate(numeric_cols):
-                metric_df = master_df.dropna(subset=[metric_name])
-                color = "run" if "run" in metric_df.columns else None
-                if not metric_df.empty:
-                    plot = gr.LinePlot(
-                        downsample(
-                            metric_df, x_column, metric_name, color, x_lim_value
-                        ),
-                        x=x_column,
-                        y=metric_name,
-                        color=color,
-                        color_map=color_map,
-                        title=metric_name,
-                        key=f"plot-{metric_idx}",
-                        preserved_by_key=None,
-                        x_lim=x_lim_value,
-                        show_fullscreen_button=True,
-                        min_width=400,
-                    )
-                plot.select(update_x_lim, outputs=x_lim, key=f"select-{metric_idx}")
-                plot.double_click(
-                    lambda: None, outputs=x_lim, key=f"double-{metric_idx}"
-                )
+        metric_idx = 0
+        for group_name in sorted(nested_metric_groups.keys()):
+            group_data = nested_metric_groups[group_name]
+
+            with gr.Accordion(
+                label=group_name,
+                open=True,
+                key=f"accordion-{group_name}",
+                preserved_by_key=["value", "open"],
+            ):
+                # Render direct metrics at this level
+                if group_data["direct_metrics"]:
+                    with gr.Row(key=f"row-{group_name}-direct"):
+                        for metric_name in group_data["direct_metrics"]:
+                            metric_df = master_df.dropna(subset=[metric_name])
+                            color = "run" if "run" in metric_df.columns else None
+                            if not metric_df.empty:
+                                plot = gr.LinePlot(
+                                    downsample(
+                                        metric_df,
+                                        x_column,
+                                        metric_name,
+                                        color,
+                                        x_lim_value,
+                                    ),
+                                    x=x_column,
+                                    y=metric_name,
+                                    y_title=metric_name.split("/")[-1],
+                                    color=color,
+                                    color_map=color_map,
+                                    title=metric_name,
+                                    key=f"plot-{metric_idx}",
+                                    preserved_by_key=None,
+                                    x_lim=x_lim_value,
+                                    show_fullscreen_button=True,
+                                    min_width=400,
+                                )
+                                plot.select(
+                                    update_x_lim,
+                                    outputs=x_lim,
+                                    key=f"select-{metric_idx}",
+                                )
+                                plot.double_click(
+                                    lambda: None,
+                                    outputs=x_lim,
+                                    key=f"double-{metric_idx}",
+                                )
+                            metric_idx += 1
+
+                # If there are subgroups, create nested accordions
+                if group_data["subgroups"]:
+                    for subgroup_name in sorted(group_data["subgroups"].keys()):
+                        subgroup_metrics = group_data["subgroups"][subgroup_name]
+
+                        with gr.Accordion(
+                            label=subgroup_name,
+                            open=True,
+                            key=f"accordion-{group_name}-{subgroup_name}",
+                            preserved_by_key=["value", "open"],
+                        ):
+                            with gr.Row(key=f"row-{group_name}-{subgroup_name}"):
+                                for metric_name in subgroup_metrics:
+                                    metric_df = master_df.dropna(subset=[metric_name])
+                                    color = (
+                                        "run" if "run" in metric_df.columns else None
+                                    )
+                                    if not metric_df.empty:
+                                        plot = gr.LinePlot(
+                                            downsample(
+                                                metric_df,
+                                                x_column,
+                                                metric_name,
+                                                color,
+                                                x_lim_value,
+                                            ),
+                                            x=x_column,
+                                            y=metric_name,
+                                            y_title=metric_name.split("/")[-1],
+                                            color=color,
+                                            color_map=color_map,
+                                            title=metric_name,
+                                            key=f"plot-{metric_idx}",
+                                            preserved_by_key=None,
+                                            x_lim=x_lim_value,
+                                            show_fullscreen_button=True,
+                                            min_width=400,
+                                        )
+                                        plot.select(
+                                            update_x_lim,
+                                            outputs=x_lim,
+                                            key=f"select-{metric_idx}",
+                                        )
+                                        plot.double_click(
+                                            lambda: None,
+                                            outputs=x_lim,
+                                            key=f"double-{metric_idx}",
+                                        )
+                                    metric_idx += 1
 
 
 if __name__ == "__main__":
