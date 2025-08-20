@@ -84,6 +84,7 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
 
     return result
 
+
 def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
     image_data = {}
     logs = sorted(logs, key=lambda x: x.get("step", 0))
@@ -94,6 +95,7 @@ def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
                     image_data[key] = []
                 image_data[key].append(TrackioImage._from_dict(value))
     return image_data
+
 
 def load_run_data(
     project: str | None,
@@ -384,7 +386,12 @@ def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]
         for run, images_by_key in images_by_run.items():
             with gr.Tab(label=run, elem_classes=("media-tab")):
                 for key, images in images_by_key.items():
-                    gr.Gallery([(image._pil, image.caption) for image in images], label=key, columns=6, elem_classes=("media-gallery"))
+                    gr.Gallery(
+                        [(image._pil, image.caption) for image in images],
+                        label=key,
+                        columns=6,
+                        elem_classes=("media-gallery"),
+                    )
 
 
 css = """
@@ -557,7 +564,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         original_runs = runs.copy()
 
         for run in runs:
-            df, images_by_key = load_run_data(project, run, smoothing, x_axis, log_scale)
+            df, images_by_key = load_run_data(
+                project, run, smoothing, x_axis, log_scale
+            )
             if df is not None:
                 dfs.append(df)
                 images_by_run[run] = images_by_key
