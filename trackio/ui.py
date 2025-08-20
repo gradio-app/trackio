@@ -527,7 +527,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             ):
                 # Render direct metrics at this level
                 if group_data["direct_metrics"]:
-                    with gr.Draggable(key=f"row-{group_name}-direct", orientation="row"):
+                    with gr.Draggable(
+                        key=f"row-{group_name}-direct", orientation="row"
+                    ):
                         for metric_name in group_data["direct_metrics"]:
                             metric_df = master_df.dropna(subset=[metric_name])
                             color = "run" if "run" in metric_df.columns else None
