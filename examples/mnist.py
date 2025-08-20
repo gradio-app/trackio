@@ -99,7 +99,7 @@ class MnistClassifier:
                 test_loss += F.nll_loss(output, target, size_average=False).item()
                 pred = output.data.max(1, keepdim=True)[1]
                 correct += pred.eq(target.data.view_as(pred)).sum()
-                for (p,t) in zip(pred.numpy().tolist(), target.data.numpy().tolist()):
+                for p, t in zip(pred.numpy().tolist(), target.data.numpy().tolist()):
                     if p[0] != t and len(error_preds) < n_log_test_examples:
                         error_preds.append(p[0])
                         error_targets.append(t)

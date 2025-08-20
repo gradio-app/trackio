@@ -1,6 +1,6 @@
-import trackio as wandb
+from mnist import MnistClassifier, batch_size_train, learning_rate, train_loader
 
-from mnist import MnistClassifier, train_loader, learning_rate, batch_size_train
+import trackio as wandb
 
 n_runs = 3
 n_epochs = 3
@@ -10,7 +10,11 @@ for run in range(n_runs):
     classifier = MnistClassifier()
     wandb.init(
         project="mnist-classifier",
-        config={"epochs": n_epochs, "learning_rate": learning_rate, "batch_size": batch_size_train},
+        config={
+            "epochs": n_epochs,
+            "learning_rate": learning_rate,
+            "batch_size": batch_size_train,
+        },
     )
 
     for epoch in range(n_epochs):
