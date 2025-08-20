@@ -26,7 +26,7 @@ try:
 except:  # noqa: E722
     from file_storage import FileStorage
     from sqlite_storage import SQLiteStorage
-    from typehints import LogEntry
+    from typehints import LogEntry, UploadEntry
     from media import TrackioImage
     from utils import (
         RESERVED_KEYS,
@@ -102,7 +102,10 @@ def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
             if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
                 if key not in image_data:
                     image_data[key] = []
-                image_data[key].append(TrackioImage._from_dict(value))
+                try:
+                    image_data[key].append(TrackioImage._from_dict(value))
+                except Exception as e:
+                    print(f"Image not currently available: {key}: {e}")
     return image_data
 
 
@@ -357,16 +360,17 @@ def configure(request: gr.Request):
 
 
 def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
-    with gr.Group(elem_classes=("media-group")):
-        for run, images_by_key in images_by_run.items():
-            with gr.Tab(label=run, elem_classes=("media-tab")):
-                for key, images in images_by_key.items():
-                    gr.Gallery(
-                        [(image._pil, image.caption) for image in images],
-                        label=key,
-                        columns=6,
-                        elem_classes=("media-gallery"),
-                    )
+    with gr.Accordion(label="media"):
+        with gr.Group(elem_classes=("media-group")):
+            for run, images_by_key in images_by_run.items():
+                with gr.Tab(label=run, elem_classes=("media-tab")):
+                    for key, images in images_by_key.items():
+                        gr.Gallery(
+                            [(image._pil, image.caption) for image in images],
+                            label=key,
+                            columns=6,
+                            elem_classes=("media-gallery"),
+                        )
 
 
 css = """
