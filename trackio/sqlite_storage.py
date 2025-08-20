@@ -11,12 +11,10 @@ import pandas as pd
 try:  # absolute imports when installed
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
-    from trackio.media import TrackioImage
     from trackio.utils import TRACKIO_DIR
 except Exception:  # relative imports for local execution on Spaces
     from commit_scheduler import CommitScheduler
     from dummy_commit_scheduler import DummyCommitScheduler
-    from media import TrackioImage
     from utils import TRACKIO_DIR
 
 

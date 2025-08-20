@@ -42,7 +42,9 @@ def main():
     # Execute and log two separate runs under the same project
     for run_index in range(1, 3):
         run_name = f"image-run-{run_index}"
-        wandb.init(project=project_name, name=run_name)
+        wandb.init(
+            project=project_name, name=run_name
+        )
 
         # Start prediction somewhere random; it will chase the target
         pred_x, pred_y = random.randint(0, W - 1), random.randint(0, H - 1)

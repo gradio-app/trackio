@@ -12,9 +12,9 @@ HfApi = hf.HfApi()
 
 try:
     from trackio.file_storage import FileStorage
+    from trackio.media import TrackioImage
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.typehints import LogEntry, UploadEntry
-    from trackio.media import TrackioImage
     from trackio.utils import (
         RESERVED_KEYS,
         TRACKIO_LOGO_DIR,
@@ -25,9 +25,9 @@ try:
     )
 except:  # noqa: E722
     from file_storage import FileStorage
+    from media import TrackioImage
     from sqlite_storage import SQLiteStorage
     from typehints import LogEntry, UploadEntry
-    from media import TrackioImage
     from utils import (
         RESERVED_KEYS,
         TRACKIO_LOGO_DIR,
