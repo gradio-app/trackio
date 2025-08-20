@@ -14,10 +14,15 @@ TRACKIO_DIR = Path(HF_HOME) / "trackio"
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
 
-def generate_readable_name(used_names: list[str]) -> str:
+def generate_readable_name(used_names: list[str], space_id: str | None = None) -> str:
     """
-    Generates a random, readable name like "dainty-sunset-0"
+    Generates a random, readable name like "dainty-sunset-0".
+    If space_id is provided, generates username-timestamp format instead.
     """
+    if space_id is not None:
+        username = huggingface_hub.whoami()["name"]
+        timestamp = int(time.time())
+        return f"{username}-{timestamp}"
     adjectives = [
         "dainty",
         "brave",
