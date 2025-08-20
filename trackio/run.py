@@ -28,7 +28,9 @@ class Run:
         self._client_thread = None
         self._client = client
         self._space_id = space_id
-        self.name = name or generate_readable_name(SQLiteStorage.get_runs(project))
+        self.name = name or generate_readable_name(
+            SQLiteStorage.get_runs(project), space_id
+        )
         self.config = config or {}
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
@@ -132,5 +134,7 @@ class Run:
         time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
-            print(f"* Uploading logs to Trackio Space: {self.url} (please wait...)")
+            print(
+                f"* Run finished. Uploading logs to Trackio Space: {self.url} (please wait...)"
+            )
             self._client_thread.join()
