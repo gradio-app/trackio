@@ -367,23 +367,23 @@ def configure(request: gr.Request):
 
 
 def create_image_section(all_images: dict[list[dict]]):
-    gr.Markdown("## Media")
     ordered_runs = sorted(
         all_images.keys(), key=lambda r: all_images[r][-1]["timestamp"], reverse=True
     )
-    for run in ordered_runs:
-        run_image_data = all_images[run]
-        grouped_images = {}
-        for image_data in run_image_data:
-            for key, image in image_data["images"].items():
-                if key not in grouped_images:
-                    grouped_images[key] = []
-                grouped_images[key].append(image)
+    with gr.Group(elem_classes=("media-group")):
+        for run in ordered_runs:
+            run_image_data = all_images[run]
+            grouped_images = {}
+            for image_data in run_image_data:
+                for key, image in image_data["images"].items():
+                    if key not in grouped_images:
+                        grouped_images[key] = []
+                    grouped_images[key].append(image)
 
-        gr.Markdown(f"### {run}")
-        for key, images in grouped_images.items():
-            with gr.Accordion(label=key, key=f"media-accordion-{run}-{key}"):
-                gr.Gallery([(image._pil, image.caption) for image in images], columns=6)
+            # gr.Markdown(f"### {run}")
+            with gr.Tab(label=run, elem_classes=("media-tab")):
+                for key, images in grouped_images.items():
+                    gr.Gallery([(image._pil, image.caption) for image in images], label=key, columns=6, elem_classes=("media-gallery"))
 
 
 css = """
@@ -396,6 +396,16 @@ css = """
 .logo-dark { display: none; }
 .dark .logo-light { display: none; }
 .dark .logo-dark { display: block; }
+
+.media-gallery {
+    max-height: 325px;
+}
+.media-group, .media-group > div {
+    background: none;
+}
+.media-group .tabs {
+    padding: 0.5em;
+}
 """
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
@@ -579,7 +589,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         numeric_cols = sort_metrics_by_prefix(list(numeric_cols))
         color_map = get_color_mapping(original_runs, smoothing)
 
-        gr.Markdown("## Metrics")
         with gr.Row(key="row"):
             for metric_idx, metric_name in enumerate(numeric_cols):
                 metric_df = master_df.dropna(subset=[metric_name])
