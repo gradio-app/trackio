@@ -13,17 +13,22 @@ except ImportError:  # relative imports for local execution on Spaces
 
 
 class TrackioImage:
-    TYPE = "trackio.image"
-
     """
     Creates an image that can be logged with trackio.
 
     Demo: fake-training-images
     """
 
+    TYPE = "trackio.image"
+
     def __init__(
         self, value: str | np.ndarray | PILImage.Image, caption: str | None = None
     ):
+        """
+        Parameters:
+            value: A string path to an image, a numpy array, or a PIL Image.
+            caption: A string caption for the image.
+        """
         self.caption = caption
         self._pil = TrackioImage._as_pil(value)
         self._file_path: Path | None = None
