@@ -380,7 +380,6 @@ def create_image_section(all_images: dict[list[dict]]):
                         grouped_images[key] = []
                     grouped_images[key].append(image)
 
-            # gr.Markdown(f"### {run}")
             with gr.Tab(label=run, elem_classes=("media-tab")):
                 for key, images in grouped_images.items():
                     gr.Gallery([(image._pil, image.caption) for image in images], label=key, columns=6, elem_classes=("media-gallery"))
@@ -396,16 +395,11 @@ css = """
 .logo-dark { display: none; }
 .dark .logo-light { display: none; }
 .dark .logo-dark { display: block; }
+.dark .caption-label { color: white; }
 
-.media-gallery {
-    max-height: 325px;
-}
-.media-group, .media-group > div {
-    background: none;
-}
-.media-group .tabs {
-    padding: 0.5em;
-}
+.media-gallery { max-height: 325px; }
+.media-group, .media-group > div { background: none; }
+.media-group .tabs { padding: 0.5em; }
 """
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
