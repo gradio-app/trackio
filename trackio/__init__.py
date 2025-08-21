@@ -72,7 +72,7 @@ def init(
             - `"never"`: Never resume a run, always create a new one
         settings (`Any`, *optional*, defaults to `None`):
             Not used. Provided for compatibility with `wandb.init()`.
-    
+
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
