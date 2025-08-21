@@ -1,5 +1,5 @@
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import huggingface_hub
 import pytest
@@ -14,7 +14,7 @@ class DummyClient:
 
 def test_run_log_calls_client():
     client = DummyClient()
-    run = Run(url="fake_url", project="proj", client=client, name="run1")
+    run = Run(url="fake_url", project="proj", client=client, name="run1", space_id=None)
     metrics = {"x": 1}
     run.log(metrics)
 
@@ -79,3 +79,20 @@ def test_init_resume_modes(temp_db):
     )
     assert isinstance(run, Run)
     assert run.name == "nonexistent-run"
+
+
+@patch("huggingface_hub.whoami")
+@patch("time.time")
+def test_run_name_generation_with_space_id(mock_time, mock_whoami):
+    mock_whoami.return_value = {"name": "testuser"}
+    mock_time.return_value = 1234567890
+
+    client = DummyClient()
+    run = Run(
+        url="fake_url",
+        project="proj",
+        client=client,
+        name=None,
+        space_id="testuser/test-space",
+    )
+    assert run.name == "testuser-1234567890"

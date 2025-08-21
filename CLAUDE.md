@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Code Style
 
-- Avoid writing inline comments in code
+- AVOID inline comments in code!!!
 
 ## Commands
 

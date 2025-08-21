@@ -14,10 +14,15 @@ TRACKIO_DIR = Path(HF_HOME) / "trackio"
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
 
-def generate_readable_name(used_names: list[str]) -> str:
+def generate_readable_name(used_names: list[str], space_id: str | None = None) -> str:
     """
-    Generates a random, readable name like "dainty-sunset-0"
+    Generates a random, readable name like "dainty-sunset-0".
+    If space_id is provided, generates username-timestamp format instead.
     """
+    if space_id is not None:
+        username = huggingface_hub.whoami()["name"]
+        timestamp = int(time.time())
+        return f"{username}-{timestamp}"
     adjectives = [
         "dainty",
         "brave",
@@ -408,3 +413,140 @@ def downsample(
     downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
 
     return downsampled_df
+
+
+def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
+    """
+    Sort metrics by grouping prefixes together for dropdown/list display.
+    Metrics without prefixes come first, then grouped by prefix.
+
+    Args:
+        metrics: List of metric names
+
+    Returns:
+        List of metric names sorted by prefix
+
+    Example:
+    Input: ["train/loss", "loss", "train/acc", "val/loss"]
+    Output: ["loss", "train/acc", "train/loss", "val/loss"]
+    """
+    groups = group_metrics_by_prefix(metrics)
+    result = []
+
+    if "charts" in groups:
+        result.extend(groups["charts"])
+
+    for group_name in sorted(groups.keys()):
+        if group_name != "charts":
+            result.extend(groups[group_name])
+
+    return result
+
+
+def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
+    """
+    Group metrics by their prefix. Metrics without prefix go to 'charts' group.
+
+    Args:
+        metrics: List of metric names
+
+    Returns:
+        Dictionary with prefix names as keys and lists of metrics as values
+
+    Example:
+        Input: ["loss", "accuracy", "train/loss", "train/acc", "val/loss"]
+        Output: {
+            "charts": ["loss", "accuracy"],
+            "train": ["train/loss", "train/acc"],
+            "val": ["val/loss"]
+        }
+    """
+    no_prefix = []
+    with_prefix = []
+
+    for metric in metrics:
+        if "/" in metric:
+            with_prefix.append(metric)
+        else:
+            no_prefix.append(metric)
+
+    no_prefix.sort()
+
+    prefix_groups = {}
+    for metric in with_prefix:
+        prefix = metric.split("/")[0]
+        if prefix not in prefix_groups:
+            prefix_groups[prefix] = []
+        prefix_groups[prefix].append(metric)
+
+    for prefix in prefix_groups:
+        prefix_groups[prefix].sort()
+
+    groups = {}
+    if no_prefix:
+        groups["charts"] = no_prefix
+
+    for prefix in sorted(prefix_groups.keys()):
+        groups[prefix] = prefix_groups[prefix]
+
+    return groups
+
+
+def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
+    """
+    Group metrics with simple 2-level nested structure detection.
+
+    Returns a dictionary where each prefix group can have:
+    - direct_metrics: list of metrics at this level (e.g., "train/acc")
+    - subgroups: dict of subgroup name -> list of metrics (e.g., "loss" -> ["train/loss/norm", "train/loss/unnorm"])
+
+    Example:
+        Input: ["loss", "train/acc", "train/loss/normalized", "train/loss/unnormalized", "val/loss"]
+        Output: {
+            "charts": {
+                "direct_metrics": ["loss"],
+                "subgroups": {}
+            },
+            "train": {
+                "direct_metrics": ["train/acc"],
+                "subgroups": {
+                    "loss": ["train/loss/normalized", "train/loss/unnormalized"]
+                }
+            },
+            "val": {
+                "direct_metrics": ["val/loss"],
+                "subgroups": {}
+            }
+        }
+    """
+    result = {}
+
+    for metric in metrics:
+        if "/" not in metric:
+            if "charts" not in result:
+                result["charts"] = {"direct_metrics": [], "subgroups": {}}
+            result["charts"]["direct_metrics"].append(metric)
+        else:
+            parts = metric.split("/")
+            main_prefix = parts[0]
+
+            if main_prefix not in result:
+                result[main_prefix] = {"direct_metrics": [], "subgroups": {}}
+
+            if len(parts) == 2:
+                result[main_prefix]["direct_metrics"].append(metric)
+            else:
+                subprefix = parts[1]
+                if subprefix not in result[main_prefix]["subgroups"]:
+                    result[main_prefix]["subgroups"][subprefix] = []
+                result[main_prefix]["subgroups"][subprefix].append(metric)
+
+    for group_data in result.values():
+        group_data["direct_metrics"].sort()
+        for subgroup_metrics in group_data["subgroups"].values():
+            subgroup_metrics.sort()
+
+    if "charts" in result and not result["charts"]["direct_metrics"]:
+        del result["charts"]
+
+    return result
