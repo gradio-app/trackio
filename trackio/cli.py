@@ -13,11 +13,17 @@ def main():
     ui_parser.add_argument(
         "--project", required=False, help="Project name to show in the dashboard"
     )
+    ui_parser.add_argument(
+        "--theme",
+        required=False,
+        default="citrus",
+        help="A Gradio Theme to use for the dashboard instead of the default 'citrus', can be a built-in theme (e.g. 'soft', 'default'), a theme from the Hub (e.g. 'gstaff/xkcd').",
+    )
 
     args = parser.parse_args()
 
     if args.command == "show":
-        show(args.project)
+        show(args.project, args.theme)
     else:
         parser.print_help()
 

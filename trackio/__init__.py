@@ -1,9 +1,13 @@
+import hashlib
 import os
 import warnings
 import webbrowser
 from pathlib import Path
 from typing import Any
 
+from gradio.blocks import BUILT_IN_THEMES
+from gradio.themes import Default as DefaultTheme
+from gradio.themes import ThemeClass
 from gradio_client import Client
 
 from trackio import context_vars, deploy, utils
@@ -19,6 +23,8 @@ __all__ = ["init", "log", "finish", "show", "import_csv", "import_tf_events"]
 
 
 config = {}
+
+DEFAULT_THEME = "citrus"
 
 
 def init(
@@ -138,6 +144,7 @@ def init(
         client=client,
         name=name,
         config=config,
+        space_id=space_id,
     )
     context_vars.current_run.set(run)
     globals()["config"] = run.config
@@ -174,7 +181,7 @@ def finish():
     run.finish()
 
 
-def show(project: str | None = None):
+def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     """
     Launches the Trackio dashboard.
 
@@ -183,6 +190,29 @@ def show(project: str | None = None):
             The name of the project whose runs to show. If not provided, all projects
             will be shown and the user can select one.
     """
+    if theme != DEFAULT_THEME:
+        # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
+        # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
+        # will be able to remove this code.
+        if isinstance(theme, str):
+            if theme.lower() in BUILT_IN_THEMES:
+                theme = BUILT_IN_THEMES[theme.lower()]
+            else:
+                try:
+                    theme = ThemeClass.from_hub(theme)
+                except Exception as e:
+                    warnings.warn(f"Cannot load {theme}. Caught Exception: {str(e)}")
+                    theme = DefaultTheme()
+        if not isinstance(theme, ThemeClass):
+            warnings.warn("Theme should be a class loaded from gradio.themes")
+            theme = DefaultTheme()
+        demo.theme: ThemeClass = theme
+        demo.theme_css = theme._get_theme_css()
+        demo.stylesheets = theme._stylesheets
+        theme_hasher = hashlib.sha256()
+        theme_hasher.update(demo.theme_css.encode("utf-8"))
+        demo.theme_hash = theme_hasher.hexdigest()
+
     _, url, share_url = demo.launch(
         show_api=False,
         quiet=True,
@@ -191,6 +221,7 @@ def show(project: str | None = None):
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
         allowed_paths=[TRACKIO_LOGO_DIR],
     )
+
     base_url = share_url + "/" if share_url else url
     dashboard_url = base_url + f"?project={project}" if project else base_url
     print(f"* Trackio UI launched at: {dashboard_url}")
