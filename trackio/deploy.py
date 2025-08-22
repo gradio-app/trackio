@@ -82,9 +82,8 @@ pyarrow>=21.0
         ignore_patterns=["README.md"],
     )
 
-    hf_token = huggingface_hub.utils.get_token()
     huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", PERSISTENT_STORAGE_DIR)
-    if hf_token is not None:
+    if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
