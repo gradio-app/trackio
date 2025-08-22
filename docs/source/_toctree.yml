@@ -1,3 +1,16 @@
 - sections:
   - local: index
     title: Trackio
+  - local: installation
+    title: Installation
+  - local: quickstart
+    title: Quickstart
+  title: Getting started
+- sections:
+  - local: track
+    title: Track
+  title: How-to guides
+- sections:
+  - local: api
+    title: API Reference
+  title: API
