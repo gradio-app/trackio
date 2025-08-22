@@ -11,8 +11,10 @@ import pandas as pd
 HfApi = hf.HfApi()
 
 try:
+    from trackio.file_storage import FileStorage
+    from trackio.media import TrackioImage
     from trackio.sqlite_storage import SQLiteStorage
-    from trackio.typehints import LogEntry
+    from trackio.typehints import LogEntry, UploadEntry
     from trackio.utils import (
         RESERVED_KEYS,
         TRACKIO_LOGO_DIR,
@@ -22,8 +24,10 @@ try:
         sort_metrics_by_prefix,
     )
 except:  # noqa: E722
+    from file_storage import FileStorage
+    from media import TrackioImage
     from sqlite_storage import SQLiteStorage
-    from typehints import LogEntry
+    from typehints import LogEntry, UploadEntry
     from utils import (
         RESERVED_KEYS,
         TRACKIO_LOGO_DIR,
@@ -67,7 +71,7 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
 
     all_metrics = set()
     for run in runs:
-        metrics = SQLiteStorage.get_metrics(project, run)
+        metrics = SQLiteStorage.get_logs(project, run)
         if metrics:
             df = pd.DataFrame(metrics)
             numeric_cols = df.select_dtypes(include="number").columns
@@ -90,19 +94,37 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
+def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
+    image_data = {}
+    logs = sorted(logs, key=lambda x: x.get("step", 0))
+    for log in logs:
+        for key, value in log.items():
+            if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
+                if key not in image_data:
+                    image_data[key] = []
+                try:
+                    image_data[key].append(TrackioImage._from_dict(value))
+                except Exception as e:
+                    print(f"Image not currently available: {key}: {e}")
+    return image_data
+
+
 def load_run_data(
     project: str | None,
     run: str | None,
     smoothing: bool,
     x_axis: str,
     log_scale: bool = False,
-):
+) -> tuple[pd.DataFrame, dict]:
     if not project or not run:
-        return None
-    metrics = SQLiteStorage.get_metrics(project, run)
-    if not metrics:
-        return None
-    df = pd.DataFrame(metrics)
+        return None, None
+
+    logs = SQLiteStorage.get_logs(project, run)
+    if not logs:
+        return None, None
+
+    images = extract_images(logs)
+    df = pd.DataFrame(logs)
 
     if "step" not in df.columns:
         df["step"] = range(len(df))
@@ -144,12 +166,12 @@ def load_run_data(
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        return combined_df
+        return combined_df, images
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        return df
+        return df, images
 
 
 def update_runs(project, filter_text, user_interacted_with_runs=False):
@@ -255,6 +277,15 @@ def upload_db_to_space(
     shutil.copy(uploaded_db["path"], db_project_path)
 
 
+def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
+    check_auth(hf_token)
+    for upload in uploads:
+        media_path = FileStorage.init_project_media_path(
+            upload["project"], upload["run"], upload["step"]
+        )
+        shutil.copy(upload["uploaded_file"]["path"], media_path)
+
+
 def log(
     project: str,
     run: str,
@@ -328,6 +359,20 @@ def configure(request: gr.Request):
         return [], sidebar
 
 
+def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
+    with gr.Accordion(label="media"):
+        with gr.Group(elem_classes=("media-group")):
+            for run, images_by_key in images_by_run.items():
+                with gr.Tab(label=run, elem_classes=("media-tab")):
+                    for key, images in images_by_key.items():
+                        gr.Gallery(
+                            [(image._pil, image.caption) for image in images],
+                            label=key,
+                            columns=6,
+                            elem_classes=("media-gallery"),
+                        )
+
+
 css = """
 #run-cb .wrap { gap: 2px; }
 #run-cb .wrap label {
@@ -338,6 +383,11 @@ css = """
 .logo-dark { display: none; }
 .dark .logo-light { display: none; }
 .dark .logo-dark { display: block; }
+.dark .caption-label { color: white; }
+
+.media-gallery { max-height: 325px; }
+.media-group, .media-group > div { background: none; }
+.media-group .tabs { padding: 0.5em; }
 """
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
@@ -423,6 +473,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         api_name="upload_db_to_space",
     )
     gr.api(
+        fn=bulk_upload_media,
+        api_name="bulk_upload_media",
+    )
+    gr.api(
         fn=log,
         api_name="log",
     )
@@ -485,13 +539,16 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         metric_filter,
     ):
         dfs = []
+        images_by_run = {}
         original_runs = runs.copy()
 
         for run in runs:
-            df = load_run_data(project, run, smoothing, x_axis, log_scale)
+            df, images_by_key = load_run_data(
+                project, run, smoothing, x_axis, log_scale
+            )
             if df is not None:
                 dfs.append(df)
-
+                images_by_run[run] = images_by_key
         if dfs:
             master_df = pd.concat(dfs, ignore_index=True)
         else:
@@ -613,6 +670,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                             key=f"double-{metric_idx}",
                                         )
                                     metric_idx += 1
+
+        if images_by_run:
+            create_image_section(images_by_run)
 
 
 if __name__ == "__main__":
