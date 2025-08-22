@@ -24,10 +24,11 @@ def get_project_info() -> str | None:
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
     if dataset_id:
         sync_status = utils.get_sync_status(SQLiteStorage.get_scheduler())
+        upgrade_message = "Syncing every 5 min (<a class='upgrade-tooltip' href='#'>Upgrade<span class='tooltip-text'>To avoid losing data between syncs, click 'Upgrade' to open settings and add persistent storage.</span></a>)"
         if sync_status is not None:
-            info = f"&#x21bb; Synced {sync_status} min ago to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> | syncing every 5 min"
+            info = f"&#x21bb; Synced {sync_status} min ago to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> | {upgrade_message}"
         else:
-            info = f"&#x21bb; Not synced yet to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> | syncing every 5 min"
+            info = f"&#x21bb; Not synced yet to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> | {upgrade_message}"
     else:
         info = None
     return info
@@ -332,6 +333,34 @@ css = """
 .logo-dark { display: none; }
 .dark .logo-light { display: none; }
 .dark .logo-dark { display: block; }
+
+.upgrade-tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.upgrade-tooltip .tooltip-text {
+    visibility: hidden;
+    width: 250px;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    padding: 8px;
+    position: absolute;
+    z-index: 100;
+    top: 125%;
+    left: 50%;
+    margin-left: -100px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.upgrade-tooltip:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
 """
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
