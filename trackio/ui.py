@@ -71,14 +71,11 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
             numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
             all_metrics.update(numeric_cols)
 
-    # Always include step and time as options
     all_metrics.add("step")
     all_metrics.add("time")
 
-    # Sort metrics by prefix
     sorted_metrics = utils.sort_metrics_by_prefix(list(all_metrics))
 
-    # Put step and time at the beginning
     result = ["step", "time"]
     for metric in sorted_metrics:
         if metric not in result:
