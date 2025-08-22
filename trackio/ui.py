@@ -149,10 +149,6 @@ def load_run_data(
         return df
 
 
-def update_project_sync_status(project_dd_value):
-    return gr.Dropdown(info=info)
-
-
 def update_runs(project, filter_text, user_interacted_with_runs=False):
     if project is None:
         runs = []
@@ -540,7 +536,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                             color = "run" if "run" in metric_df.columns else None
                             if not metric_df.empty:
                                 plot = gr.LinePlot(
-                                    downsample(
+                                    utils.downsample(
                                         metric_df,
                                         x_column,
                                         metric_name,
@@ -590,7 +586,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     )
                                     if not metric_df.empty:
                                         plot = gr.LinePlot(
-                                            downsample(
+                                            utils.downsample(
                                                 metric_df,
                                                 x_column,
                                                 metric_name,

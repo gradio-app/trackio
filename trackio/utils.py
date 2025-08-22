@@ -11,6 +11,7 @@ from huggingface_hub.constants import HF_HOME
 
 if TYPE_CHECKING:
     from trackio.commit_scheduler import CommitScheduler
+    from trackio.dummy_commit_scheduler import DummyCommitScheduler
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_DIR = Path(HF_HOME) / "trackio"
@@ -556,9 +557,11 @@ def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
     return result
 
 
-def get_sync_status(scheduler: "CommitScheduler") -> int | None:
+def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int | None:
     """Get the sync status from the CommitScheduler in an integer number of minutes, or None if not synced yet."""
-    if scheduler.last_push_time:
+    if getattr(
+        scheduler, "last_push_time", None
+    ):  # DummyCommitScheduler doesn't have last_push_time
         time_diff = time.time() - scheduler.last_push_time
         return int(time_diff / 60)
     else:
