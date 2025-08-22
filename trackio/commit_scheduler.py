@@ -6,7 +6,6 @@ import os
 import time
 from concurrent.futures import Future
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from io import SEEK_END, SEEK_SET, BytesIO
 from pathlib import Path
 from threading import Lock, Thread
@@ -153,8 +152,7 @@ class CommitScheduler:
         self.token = token
 
         self.last_uploaded: Dict[Path, float] = {}
-
-        self.last_push_time: Optional[datetime] = None
+        self.last_push_time: float | None = None
 
         if not every > 0:
             raise ValueError(f"'every' must be a positive integer, not '{every}'.")
@@ -309,7 +307,7 @@ class CommitScheduler:
         for file in files_to_upload:
             self.last_uploaded[file.local_path] = file.last_modified
 
-        self.last_push_time = datetime.now(timezone.utc)
+        self.last_push_time = time.time()
 
         return commit_info
 

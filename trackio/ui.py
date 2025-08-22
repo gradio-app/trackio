@@ -11,29 +11,13 @@ import pandas as pd
 HfApi = hf.HfApi()
 
 try:
+    import trackio.utils as utils
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.typehints import LogEntry
-    from trackio.utils import (
-        RESERVED_KEYS,
-        TRACKIO_LOGO_DIR,
-        downsample,
-        get_color_mapping,
-        get_sync_status,
-        group_metrics_with_subprefixes,
-        sort_metrics_by_prefix,
-    )
 except:  # noqa: E722
+    import utils
     from sqlite_storage import SQLiteStorage
     from typehints import LogEntry
-    from utils import (
-        RESERVED_KEYS,
-        TRACKIO_LOGO_DIR,
-        downsample,
-        get_color_mapping,
-        get_sync_status,
-        group_metrics_with_subprefixes,
-        sort_metrics_by_prefix,
-    )
 
 
 def get_projects(request: gr.Request):
@@ -46,7 +30,7 @@ def get_projects(request: gr.Request):
         project = projects[0] if projects else None
 
     if dataset_id:
-        sync_status = get_sync_status()
+        sync_status = utils.get_sync_status()
         info = f"&#x21bb; {sync_status} | Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
     else:
         info = None
@@ -78,7 +62,7 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
         if metrics:
             df = pd.DataFrame(metrics)
             numeric_cols = df.select_dtypes(include="number").columns
-            numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
+            numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
             all_metrics.update(numeric_cols)
 
     # Always include step and time as options
@@ -86,7 +70,7 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     all_metrics.add("time")
 
     # Sort metrics by prefix
-    sorted_metrics = sort_metrics_by_prefix(list(all_metrics))
+    sorted_metrics = utils.sort_metrics_by_prefix(list(all_metrics))
 
     # Put step and time at the beginning
     result = ["step", "time"]
@@ -133,7 +117,7 @@ def load_run_data(
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
-        numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
+        numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
 
         df_original = df.copy()
         df_original["run"] = f"{run}_original"
@@ -163,7 +147,7 @@ def update_project_sync_status(project_dd_value):
     """Update the project dropdown info with latest sync status."""
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
     if dataset_id:
-        sync_status = get_sync_status()
+        sync_status = utils.get_sync_status()
         info = f"&#x21bb; {sync_status} | Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
     else:
         info = None
@@ -363,8 +347,8 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
             f"""
-                <img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%' class='logo-light'>
-                <img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
+                <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%' class='logo-light'>
+                <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
             """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
@@ -531,15 +515,15 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             x_column = dfs[0]["x_axis"].iloc[0]
 
         numeric_cols = master_df.select_dtypes(include="number").columns
-        numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
+        numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
 
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
-        nested_metric_groups = group_metrics_with_subprefixes(list(numeric_cols))
-        color_map = get_color_mapping(original_runs, smoothing)
+        nested_metric_groups = utils.group_metrics_with_subprefixes(list(numeric_cols))
+        color_map = utils.get_color_mapping(original_runs, smoothing)
 
         metric_idx = 0
         for group_name in sorted(nested_metric_groups.keys()):
@@ -642,4 +626,4 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[TRACKIO_LOGO_DIR], show_api=False, show_error=True)
+    demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)

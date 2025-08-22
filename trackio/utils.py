@@ -559,9 +559,8 @@ def get_sync_status() -> str:
         from trackio.sqlite_storage import SQLiteStorage
 
         scheduler = SQLiteStorage.get_scheduler()
-        if hasattr(scheduler, "last_push_time") and scheduler.last_push_time:
-            now = datetime.now(timezone.utc)
-            time_diff = now - scheduler.last_push_time
+        if scheduler.last_push_time:
+            time_diff = time.time() - scheduler.last_push_time
             minutes = int(time_diff.total_seconds() / 60)
 
             if minutes < 1:
