@@ -151,12 +151,9 @@ class CommitScheduler:
         self.revision = revision
         self.token = token
 
-        # Keep track of already uploaded files
-        self.last_uploaded: Dict[
-            Path, float
-        ] = {}  # key is local path, value is timestamp
+        self.last_uploaded: Dict[Path, float] = {}
+        self.last_push_time: float | None = None
 
-        # Scheduler
         if not every > 0:
             raise ValueError(f"'every' must be a positive integer, not '{every}'.")
         self.lock = Lock()
@@ -307,9 +304,11 @@ class CommitScheduler:
             revision=self.revision,
         )
 
-        # Successful commit: keep track of the latest "last_modified" for each file
         for file in files_to_upload:
             self.last_uploaded[file.local_path] = file.last_modified
+
+        self.last_push_time = time.time()
+
         return commit_info
 
 
