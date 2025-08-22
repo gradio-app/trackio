@@ -6,7 +6,7 @@ import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_import_from_tf_events(temp_db):
+def test_import_from_tf_events(temp_dir):
     test_run_dir = "tf_test_run"
 
     def create_tfevents_tensorboardx(log_dir: Path):
@@ -28,7 +28,7 @@ def test_import_from_tf_events(temp_db):
         name="test_run",
     )
 
-    results = SQLiteStorage.get_metrics(project="test_tf_project", run="test_run_main")
+    results = SQLiteStorage.get_logs(project="test_tf_project", run="test_run_main")
     # There should be 5 steps × 2 metrics = 10 entries
     assert len(results) == 10
 
