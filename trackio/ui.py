@@ -20,8 +20,20 @@ except:  # noqa: E722
     from typehints import LogEntry
 
 
-def get_projects(request: gr.Request):
+def get_project_info() -> str | None:
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+    if dataset_id:
+        sync_status = utils.get_sync_status(SQLiteStorage.get_scheduler())
+        if sync_status is not None:
+            info = f"&#x21bb; Synced {sync_status} min ago to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> | syncing every 5 min"
+        else:
+            info = f"&#x21bb; Not synced yet to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> | syncing every 5 min"
+    else:
+        info = None
+    return info
+
+
+def get_projects(request: gr.Request):
     projects = SQLiteStorage.get_projects()
     if project := request.query_params.get("project"):
         interactive = False
@@ -29,19 +41,13 @@ def get_projects(request: gr.Request):
         interactive = True
         project = projects[0] if projects else None
 
-    if dataset_id:
-        sync_status = utils.get_sync_status()
-        info = f"&#x21bb; {sync_status} | Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
-    else:
-        info = None
-
     return gr.Dropdown(
         label="Project",
         choices=projects,
         value=project,
         allow_custom_value=True,
         interactive=interactive,
-        info=info,
+        info=get_project_info(),
     )
 
 
@@ -144,14 +150,6 @@ def load_run_data(
 
 
 def update_project_sync_status(project_dd_value):
-    """Update the project dropdown info with latest sync status."""
-    dataset_id = os.environ.get("TRACKIO_DATASET_ID")
-    if dataset_id:
-        sync_status = utils.get_sync_status()
-        info = f"&#x21bb; {sync_status} | Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
-    else:
-        info = None
-
     return gr.Dropdown(info=info)
 
 
@@ -392,8 +390,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     )
     gr.on(
         [timer.tick],
-        fn=update_project_sync_status,
-        inputs=[project_dd],
+        fn=lambda: gr.Dropdown(info=get_project_info()),
         outputs=[project_dd],
         show_progress="hidden",
     )

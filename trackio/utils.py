@@ -1,13 +1,16 @@
 import re
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import huggingface_hub
 import numpy as np
 import pandas as pd
 from huggingface_hub.constants import HF_HOME
+
+if TYPE_CHECKING:
+    from trackio.commit_scheduler import CommitScheduler
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_DIR = Path(HF_HOME) / "trackio"
@@ -553,21 +556,10 @@ def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
     return result
 
 
-def get_sync_status() -> str:
-    """Get the sync status from the CommitScheduler."""
-    try:
-        from trackio.sqlite_storage import SQLiteStorage
-
-        scheduler = SQLiteStorage.get_scheduler()
-        if scheduler.last_push_time:
-            time_diff = time.time() - scheduler.last_push_time
-            minutes = int(time_diff.total_seconds() / 60)
-
-            if minutes < 1:
-                return "Synced just now"
-            else:
-                return f"Synced {minutes} min ago"
-        else:
-            return "Not synced yet"
-    except Exception:
-        return "Sync status unknown"
+def get_sync_status(scheduler: "CommitScheduler") -> int | None:
+    """Get the sync status from the CommitScheduler in an integer number of minutes, or None if not synced yet."""
+    if scheduler.last_push_time:
+        time_diff = time.time() - scheduler.last_push_time
+        return int(time_diff / 60)
+    else:
+        return None
