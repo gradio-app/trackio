@@ -1,7 +1,6 @@
 import os
 import re
 import shutil
-from datetime import datetime, timezone
 from typing import Any
 
 import gradio as gr
@@ -19,6 +18,7 @@ try:
         TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
+        get_sync_status,
         group_metrics_with_subprefixes,
         sort_metrics_by_prefix,
     )
@@ -30,34 +30,10 @@ except:  # noqa: E722
         TRACKIO_LOGO_DIR,
         downsample,
         get_color_mapping,
+        get_sync_status,
         group_metrics_with_subprefixes,
         sort_metrics_by_prefix,
     )
-
-
-def get_sync_status() -> str:
-    """Get the sync status from the CommitScheduler."""
-    try:
-        scheduler = SQLiteStorage.get_scheduler()
-        if hasattr(scheduler, "last_push_time") and scheduler.last_push_time:
-            now = datetime.now(timezone.utc)
-            time_diff = now - scheduler.last_push_time
-
-            minutes = int(time_diff.total_seconds() / 60)
-            if minutes < 1:
-                return "Synced just now"
-            elif minutes < 60:
-                return f"Synced {minutes} min ago"
-            elif minutes < 1440:
-                hours = minutes // 60
-                return f"Synced {hours} hour{'s' if hours > 1 else ''} ago"
-            else:
-                days = minutes // 1440
-                return f"Synced {days} day{'s' if days > 1 else ''} ago"
-        else:
-            return "Not synced yet"
-    except Exception:
-        return "Sync status unknown"
 
 
 def get_projects(request: gr.Request):
