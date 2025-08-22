@@ -6,6 +6,7 @@ import os
 import time
 from concurrent.futures import Future
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from io import SEEK_END, SEEK_SET, BytesIO
 from pathlib import Path
 from threading import Lock, Thread
@@ -155,6 +156,9 @@ class CommitScheduler:
         self.last_uploaded: Dict[
             Path, float
         ] = {}  # key is local path, value is timestamp
+
+        # Track last push time
+        self.last_push_time: Optional[datetime] = None
 
         # Scheduler
         if not every > 0:
@@ -310,6 +314,10 @@ class CommitScheduler:
         # Successful commit: keep track of the latest "last_modified" for each file
         for file in files_to_upload:
             self.last_uploaded[file.local_path] = file.last_modified
+
+        # Update last push time
+        self.last_push_time = datetime.now(timezone.utc)
+
         return commit_info
 
 

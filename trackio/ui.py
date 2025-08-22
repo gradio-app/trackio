@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from datetime import datetime, timezone
 from typing import Any
 
 import gradio as gr
@@ -34,6 +35,34 @@ except:  # noqa: E722
     )
 
 
+def get_sync_status() -> str:
+    """Get the sync status from the CommitScheduler."""
+    if os.getenv("SYSTEM") != "spaces":
+        return ""
+
+    try:
+        scheduler = SQLiteStorage.get_scheduler()
+        if hasattr(scheduler, "last_push_time") and scheduler.last_push_time:
+            now = datetime.now(timezone.utc)
+            time_diff = now - scheduler.last_push_time
+
+            minutes = int(time_diff.total_seconds() / 60)
+            if minutes < 1:
+                return "Synced just now"
+            elif minutes < 60:
+                return f"Synced {minutes} min ago"
+            elif minutes < 1440:
+                hours = minutes // 60
+                return f"Synced {hours} hour{'s' if hours > 1 else ''} ago"
+            else:
+                days = minutes // 1440
+                return f"Synced {days} day{'s' if days > 1 else ''} ago"
+        else:
+            return "Not synced yet"
+    except Exception:
+        return "Sync status unknown"
+
+
 def get_projects(request: gr.Request):
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
     projects = SQLiteStorage.get_projects()
@@ -42,15 +71,22 @@ def get_projects(request: gr.Request):
     else:
         interactive = True
         project = projects[0] if projects else None
+
+    if dataset_id and os.getenv("SYSTEM") == "spaces":
+        sync_status = get_sync_status()
+        info = f"&#x21bb; {sync_status} | Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
+    elif dataset_id:
+        info = f"&#x21bb; Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
+    else:
+        info = None
+
     return gr.Dropdown(
         label="Project",
         choices=projects,
         value=project,
         allow_custom_value=True,
         interactive=interactive,
-        info=f"&#x21bb; Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
-        if dataset_id
-        else None,
+        info=info,
     )
 
 
@@ -150,6 +186,20 @@ def load_run_data(
         df["data_type"] = "original"
         df["x_axis"] = x_column
         return df
+
+
+def update_project_sync_status(project_dd_value):
+    """Update the project dropdown info with latest sync status."""
+    dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+    if dataset_id and os.getenv("SYSTEM") == "spaces":
+        sync_status = get_sync_status()
+        info = f"&#x21bb; {sync_status} | Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
+    elif dataset_id:
+        info = f"&#x21bb; Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
+    else:
+        info = None
+
+    return gr.Dropdown(info=info)
 
 
 def update_runs(project, filter_text, user_interacted_with_runs=False):
@@ -385,6 +435,13 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         fn=update_runs,
         inputs=[project_dd, run_tb, user_interacted_with_run_cb],
         outputs=[run_cb, run_tb],
+        show_progress="hidden",
+    )
+    gr.on(
+        [timer.tick],
+        fn=update_project_sync_status,
+        inputs=[project_dd],
+        outputs=[project_dd],
         show_progress="hidden",
     )
     gr.on(
