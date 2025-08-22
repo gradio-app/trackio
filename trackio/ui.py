@@ -22,9 +22,10 @@ except:  # noqa: E722
 
 def get_project_info() -> str | None:
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+    space_id = os.environ.get("SPACE_ID")
     if dataset_id:
         sync_status = utils.get_sync_status(SQLiteStorage.get_scheduler())
-        upgrade_message = "Syncing every 5 min (<a class='upgrade-tooltip' href='#'>Upgrade<span class='tooltip-text'>To avoid losing data between syncs, click 'Upgrade' to open settings and add persistent storage.</span></a>)"
+        upgrade_message = f"Syncing every 5 min (<a class='upgrade-tooltip' href='https://huggingface.co/spaces/{space_id}/settings'>Upgrade<span class='tooltip-text'>To avoid losing data between syncs, click on 'Upgrade' to open settings and add (small) Persistent Storage.</span></a>)"
         if sync_status is not None:
             info = f"&#x21bb; Synced {sync_status} min ago to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> | {upgrade_message}"
         else:
