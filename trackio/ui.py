@@ -37,9 +37,6 @@ except:  # noqa: E722
 
 def get_sync_status() -> str:
     """Get the sync status from the CommitScheduler."""
-    if os.getenv("SYSTEM") != "spaces":
-        return ""
-
     try:
         scheduler = SQLiteStorage.get_scheduler()
         if hasattr(scheduler, "last_push_time") and scheduler.last_push_time:
@@ -72,11 +69,9 @@ def get_projects(request: gr.Request):
         interactive = True
         project = projects[0] if projects else None
 
-    if dataset_id and os.getenv("SYSTEM") == "spaces":
+    if dataset_id:
         sync_status = get_sync_status()
         info = f"&#x21bb; {sync_status} | Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
-    elif dataset_id:
-        info = f"&#x21bb; Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
     else:
         info = None
 
@@ -191,11 +186,9 @@ def load_run_data(
 def update_project_sync_status(project_dd_value):
     """Update the project dropdown info with latest sync status."""
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
-    if dataset_id and os.getenv("SYSTEM") == "spaces":
+    if dataset_id:
         sync_status = get_sync_status()
         info = f"&#x21bb; {sync_status} | Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
-    elif dataset_id:
-        info = f"&#x21bb; Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
     else:
         info = None
 
