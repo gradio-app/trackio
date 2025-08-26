@@ -1,6 +1,8 @@
 
 # Dashboard
 
+## Launching a Local Dashboard
+
 You can launch the dashboard by running in your terminal:
 
 <hfoptions id="language">
@@ -110,4 +112,9 @@ trackio.log({"train/loss": 0.5, "train/accuracy": 0.8, "val/loss": 0.6, "val/acc
 
 The dashboard will automatically create two groups of plots: `"train"` and `"val"`, each containing the `"loss"` and `"accuracy"` plots.
 
-<iframe src="https://trackio-documentation.hf.space/?project=organize-your-plots" width=600 height=630 frameBorder="0"></iframe>  
+<iframe 
+    src="https://trackio-documentation.hf.space/?project=organize-your-plots&sidebar=hidden" 
+    width="600" 
+    height="630" 
+    style="border:0;">
+</iframe>
