@@ -12,7 +12,7 @@ The dashboard will automatically create two groups of plots: `"train"` and `"val
 
 <iframe 
     src="https://trackio-documentation.hf.space/?project=organize-your-plots&sidebar=hidden" 
-    width="600" 
+    style="width: 100%; border:0;" 
     height="630" 
     style="border:0;">
 </iframe>
