@@ -7,7 +7,7 @@ A project is a collection of **runs**, where each run represents a single execut
 
 ## Initialization
 
-To start tracking an experiment with Trackio, you first need to initialize a project:
+To start tracking an experiment with Trackio, you first need to initialize a project with the [`init`] function:
 
 ```python
 import trackio
