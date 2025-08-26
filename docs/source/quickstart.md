@@ -49,7 +49,7 @@ import trackio as wandb
 
 You can launch the dashboard by running in your terminal:
 
-<hfoptions id="dashboard">
+<hfoptions id="language">
 <hfoption id="bash">
 
 ```bash
@@ -70,7 +70,7 @@ trackio.show()
 
 You can also provide an optional `project` name as the argument to load a specific project directly:
 
-<hfoptions id="provide_project">
+<hfoptions id="language">
 <hfoption id="bash">
 
 ```bash
@@ -93,16 +93,16 @@ trackio.show(project="my-project")
 
 When calling `trackio.init()`, by default the service will run locally and store project data on the local machine.
 
-But if you pass a `space_id` to `init`, like:
+But if you pass a `space_id` to [`init`], like:
 
 ```py
-trackio.init(project="my-project", space_id="org_name/space_name")
+trackio.init(project="my-project", space_id="orgname/space_id")
 ```
 
 or
 
 ```py
-trackio.init(project="my-project", space_id="user_name/space_name")
+trackio.init(project="my-project", space_id="username/space_id")
 ```
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.

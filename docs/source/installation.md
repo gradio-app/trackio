@@ -6,7 +6,7 @@ You can install Trackio either from PyPI or from source:
 
 Install the library with pip or [uv](https://docs.astral.sh/uv/):
 
-<hfoptions id="install">
+<hfoptions id="package_manager">
 <hfoption id="uv">
 
 uv is a fast Rust-based Python package and project manager. Refer to [Installation](https://docs.astral.sh/uv/getting-started/installation/) for installation instructions.

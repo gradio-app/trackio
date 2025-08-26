@@ -112,13 +112,13 @@ When calling `trackio.init()`, by default the service will run locally and store
 But if you pass a `space_id` to `init`, like:
 
 ```py
-trackio.init(project="my-project", space_id="org_name/space_name")
+trackio.init(project="my-project", space_id="orgname/space_id")
 ```
 
 or
 
 ```py
-trackio.init(project="my-project", space_id="user_name/space_name")
+trackio.init(project="my-project", space_id="username/space_id")
 ```
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
