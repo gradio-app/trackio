@@ -12,10 +12,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Read version
+        id: get_version
+        run: echo "version=$(cat trackio/version.txt)" >> $GITHUB_OUTPUT
+        
       - name: Debug - Show version.txt content
-        run: cat trackio/version.txt
-      
+        run: echo "Version is ${{ steps.get_version.outputs.version }}"
+        
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -30,6 +34,7 @@ jobs:
         run: python -m build
         
       - name: Publish to PyPI
+        if: ${{ !contains(steps.get_version.outputs.version, 'dev') }}
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
