@@ -4,14 +4,6 @@
 > [!NOTE]
 > VERSION needs to be formatted following the `v{major}.{minor}.{patch}` convention. We need to follow this convention to be able to retrieve versioned scripts.
 
-### 0. Prerequisites
-
-- Dependencies:
-  - twine and build: `pip install build twine`
-- Create an account in (and join the `trl` project):
-   - PyPI: https://pypi.org/
-   - Test PyPI: https://test.pypi.org/
-
 ## Major/Minor Release
 
 ### 1. Ensure your local repository is up to date with the upstream repository
@@ -108,7 +100,7 @@ This ensures that future patch releases (`v{major}.{minor}.1`, `v{major}.{minor}
 
 5. Once the pull request is approved, merge it into `main`.
 
-6. The codebase is now ready for the next development cycle, inform the team in the #trl-internal channel.
+6. The codebase is now ready for the next development cycle, inform the team in the #prj-trackio channel.
 
 ## Making a patch release
 
@@ -157,7 +149,7 @@ git push origin v{major}.{minor}.{patch}
 
 ### 7. Create a GitHub Release
 
-1. Go to the repo’s [releases section](https://github.com/huggingface/trl/releases) on GitHub.
+1. Go to the repo’s [releases section](https://github.com/huggingface/trackio/releases) on GitHub.
 2. Click **Draft a new release**.
 3. Select the `v{major}.{minor}.{patch}` tag you just created in step 6.
 4. Add a title (`v{major}.{minor}.{patch}`) and a short description of what’s new.
