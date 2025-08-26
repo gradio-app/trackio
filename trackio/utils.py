@@ -2,11 +2,16 @@ import re
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import huggingface_hub
 import numpy as np
 import pandas as pd
 from huggingface_hub.constants import HF_HOME
+
+if TYPE_CHECKING:
+    from trackio.commit_scheduler import CommitScheduler
+    from trackio.dummy_commit_scheduler import DummyCommitScheduler
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_DIR = Path(HF_HOME) / "trackio"
@@ -286,7 +291,7 @@ def preprocess_space_and_dataset_ids(
         username = huggingface_hub.whoami()["name"]
         dataset_id = f"{username}/{dataset_id}"
     if space_id is not None and dataset_id is None:
-        dataset_id = f"{space_id}_dataset"
+        dataset_id = f"{space_id}-dataset"
     return space_id, dataset_id
 
 
@@ -550,3 +555,14 @@ def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
         del result["charts"]
 
     return result
+
+
+def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int | None:
+    """Get the sync status from the CommitScheduler in an integer number of minutes, or None if not synced yet."""
+    if getattr(
+        scheduler, "last_push_time", None
+    ):  # DummyCommitScheduler doesn't have last_push_time
+        time_diff = time.time() - scheduler.last_push_time
+        return int(time_diff / 60)
+    else:
+        return None

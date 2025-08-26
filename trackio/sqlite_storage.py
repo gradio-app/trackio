@@ -148,7 +148,7 @@ class SQLiteStorage:
                     repo_type="dataset",
                     folder_path=TRACKIO_DIR,
                     private=True,
-                    allow_patterns="*.parquet",
+                    allow_patterns=["*.parquet", "media/**/*"],
                     squash_history=True,
                     token=hf_token,
                     on_before_commit=SQLiteStorage.export_to_parquet,
@@ -267,8 +267,8 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
-    def get_metrics(project: str, run: str) -> list[dict]:
-        """Retrieve metrics for a specific run. The metrics also include the step count (int) and the timestamp (datetime object)."""
+    def get_logs(project: str, run: str) -> list[dict]:
+        """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
@@ -292,7 +292,6 @@ class SQLiteStorage:
                 metrics["timestamp"] = row["timestamp"]
                 metrics["step"] = row["step"]
                 results.append(metrics)
-
             return results
 
     @staticmethod
@@ -308,7 +307,8 @@ class SQLiteStorage:
                 try:
                     files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                     for file in files:
-                        if not file.endswith(".parquet"):
+                        # Download parquet and media assets
+                        if not (file.endswith(".parquet") or file.startswith("media/")):
                             continue
                         hf.hf_hub_download(
                             dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR

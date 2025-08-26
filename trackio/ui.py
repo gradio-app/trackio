@@ -11,46 +11,53 @@ import pandas as pd
 HfApi = hf.HfApi()
 
 try:
+    import trackio.utils as utils
+    from trackio.file_storage import FileStorage
+    from trackio.media import TrackioImage
     from trackio.sqlite_storage import SQLiteStorage
-    from trackio.typehints import LogEntry
-    from trackio.utils import (
-        RESERVED_KEYS,
-        TRACKIO_LOGO_DIR,
-        downsample,
-        get_color_mapping,
-        group_metrics_with_subprefixes,
-        sort_metrics_by_prefix,
-    )
+    from trackio.typehints import LogEntry, UploadEntry
 except:  # noqa: E722
+    import utils
+    from file_storage import FileStorage
+    from media import TrackioImage
     from sqlite_storage import SQLiteStorage
-    from typehints import LogEntry
-    from utils import (
-        RESERVED_KEYS,
-        TRACKIO_LOGO_DIR,
-        downsample,
-        get_color_mapping,
-        group_metrics_with_subprefixes,
-        sort_metrics_by_prefix,
-    )
+    from typehints import LogEntry, UploadEntry
+
+
+def get_project_info() -> str | None:
+    dataset_id = os.environ.get("TRACKIO_DATASET_ID")
+    space_id = os.environ.get("SPACE_ID")
+    persistent_storage_enabled = os.environ.get(
+        "PERSISTANT_STORAGE_ENABLED"
+    )  # Space env name has a typo
+    if persistent_storage_enabled:
+        return "&#10024; Persistent Storage is enabled, logs are stored directly in this Space."
+    if dataset_id:
+        sync_status = utils.get_sync_status(SQLiteStorage.get_scheduler())
+        upgrade_message = f"New changes are synced every 5 min <span class='info-container'><input type='checkbox' class='info-checkbox' id='upgrade-info'><label for='upgrade-info' class='info-icon'>&#9432;</label><span class='info-expandable'> To avoid losing data between syncs, <a href='https://huggingface.co/spaces/{space_id}/settings' class='accent-link'>click here</a> to open this Space's settings and add Persistent Storage.</span></span>"
+        if sync_status is not None:
+            info = f"&#x21bb; Backed up {sync_status} min ago to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank' class='accent-link'>{dataset_id}</a> | {upgrade_message}"
+        else:
+            info = f"&#x21bb; Not backed up yet to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank' class='accent-link'>{dataset_id}</a> | {upgrade_message}"
+        return info
+    return None
 
 
 def get_projects(request: gr.Request):
-    dataset_id = os.environ.get("TRACKIO_DATASET_ID")
     projects = SQLiteStorage.get_projects()
     if project := request.query_params.get("project"):
         interactive = False
     else:
         interactive = True
         project = projects[0] if projects else None
+
     return gr.Dropdown(
         label="Project",
         choices=projects,
         value=project,
         allow_custom_value=True,
         interactive=interactive,
-        info=f"&#x21bb; Synced to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank'>{dataset_id}</a> every 5 min"
-        if dataset_id
-        else None,
+        info=get_project_info(),
     )
 
 
@@ -67,21 +74,18 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
 
     all_metrics = set()
     for run in runs:
-        metrics = SQLiteStorage.get_metrics(project, run)
+        metrics = SQLiteStorage.get_logs(project, run)
         if metrics:
             df = pd.DataFrame(metrics)
             numeric_cols = df.select_dtypes(include="number").columns
-            numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
+            numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
             all_metrics.update(numeric_cols)
 
-    # Always include step and time as options
     all_metrics.add("step")
     all_metrics.add("time")
 
-    # Sort metrics by prefix
-    sorted_metrics = sort_metrics_by_prefix(list(all_metrics))
+    sorted_metrics = utils.sort_metrics_by_prefix(list(all_metrics))
 
-    # Put step and time at the beginning
     result = ["step", "time"]
     for metric in sorted_metrics:
         if metric not in result:
@@ -90,19 +94,37 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
+def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
+    image_data = {}
+    logs = sorted(logs, key=lambda x: x.get("step", 0))
+    for log in logs:
+        for key, value in log.items():
+            if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
+                if key not in image_data:
+                    image_data[key] = []
+                try:
+                    image_data[key].append(TrackioImage._from_dict(value))
+                except Exception as e:
+                    print(f"Image not currently available: {key}: {e}")
+    return image_data
+
+
 def load_run_data(
     project: str | None,
     run: str | None,
     smoothing: bool,
     x_axis: str,
     log_scale: bool = False,
-):
+) -> tuple[pd.DataFrame, dict]:
     if not project or not run:
-        return None
-    metrics = SQLiteStorage.get_metrics(project, run)
-    if not metrics:
-        return None
-    df = pd.DataFrame(metrics)
+        return None, None
+
+    logs = SQLiteStorage.get_logs(project, run)
+    if not logs:
+        return None, None
+
+    images = extract_images(logs)
+    df = pd.DataFrame(logs)
 
     if "step" not in df.columns:
         df["step"] = range(len(df))
@@ -126,7 +148,7 @@ def load_run_data(
 
     if smoothing:
         numeric_cols = df.select_dtypes(include="number").columns
-        numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
+        numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
 
         df_original = df.copy()
         df_original["run"] = f"{run}_original"
@@ -144,12 +166,12 @@ def load_run_data(
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        return combined_df
+        return combined_df, images
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        return df
+        return df, images
 
 
 def update_runs(project, filter_text, user_interacted_with_runs=False):
@@ -255,6 +277,15 @@ def upload_db_to_space(
     shutil.copy(uploaded_db["path"], db_project_path)
 
 
+def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
+    check_auth(hf_token)
+    for upload in uploads:
+        media_path = FileStorage.init_project_media_path(
+            upload["project"], upload["run"], upload["step"]
+        )
+        shutil.copy(upload["uploaded_file"]["path"], media_path)
+
+
 def log(
     project: str,
     run: str,
@@ -328,6 +359,20 @@ def configure(request: gr.Request):
         return [], sidebar
 
 
+def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
+    with gr.Accordion(label="media"):
+        with gr.Group(elem_classes=("media-group")):
+            for run, images_by_key in images_by_run.items():
+                with gr.Tab(label=run, elem_classes=("media-tab")):
+                    for key, images in images_by_key.items():
+                        gr.Gallery(
+                            [(image._pil, image.caption) for image in images],
+                            label=key,
+                            columns=6,
+                            elem_classes=("media-gallery"),
+                        )
+
+
 css = """
 #run-cb .wrap { gap: 2px; }
 #run-cb .wrap label {
@@ -338,14 +383,46 @@ css = """
 .logo-dark { display: none; }
 .dark .logo-light { display: none; }
 .dark .logo-dark { display: block; }
+.dark .caption-label { color: white; }
+
+.info-container {
+    position: relative;
+    display: inline;
+}
+.info-checkbox {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.info-icon {
+    border-bottom: 1px dotted;
+    cursor: pointer;
+    user-select: none;
+    color: var(--color-accent);
+}
+.info-expandable {
+    display: none;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+.info-checkbox:checked ~ .info-expandable {
+    display: inline;
+    opacity: 1;
+}
+.info-icon:hover { opacity: 0.8; }
+.accent-link { font-weight: bold; }
+
+.media-gallery { max-height: 325px; }
+.media-group, .media-group > div { background: none; }
+.media-group .tabs { padding: 0.5em; }
 """
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
             f"""
-                <img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%' class='logo-light'>
-                <img src='/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
+                <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%' class='logo-light'>
+                <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
             """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
@@ -388,6 +465,12 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         show_progress="hidden",
     )
     gr.on(
+        [timer.tick],
+        fn=lambda: gr.Dropdown(info=get_project_info()),
+        outputs=[project_dd],
+        show_progress="hidden",
+    )
+    gr.on(
         [demo.load, project_dd.change],
         fn=update_runs,
         inputs=[project_dd, run_tb],
@@ -421,6 +504,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.api(
         fn=upload_db_to_space,
         api_name="upload_db_to_space",
+    )
+    gr.api(
+        fn=bulk_upload_media,
+        api_name="bulk_upload_media",
     )
     gr.api(
         fn=log,
@@ -485,13 +572,16 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         metric_filter,
     ):
         dfs = []
+        images_by_run = {}
         original_runs = runs.copy()
 
         for run in runs:
-            df = load_run_data(project, run, smoothing, x_axis, log_scale)
+            df, images_by_key = load_run_data(
+                project, run, smoothing, x_axis, log_scale
+            )
             if df is not None:
                 dfs.append(df)
-
+                images_by_run[run] = images_by_key
         if dfs:
             master_df = pd.concat(dfs, ignore_index=True)
         else:
@@ -505,15 +595,15 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             x_column = dfs[0]["x_axis"].iloc[0]
 
         numeric_cols = master_df.select_dtypes(include="number").columns
-        numeric_cols = [c for c in numeric_cols if c not in RESERVED_KEYS]
+        numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
 
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
-        nested_metric_groups = group_metrics_with_subprefixes(list(numeric_cols))
-        color_map = get_color_mapping(original_runs, smoothing)
+        nested_metric_groups = utils.group_metrics_with_subprefixes(list(numeric_cols))
+        color_map = utils.get_color_mapping(original_runs, smoothing)
 
         metric_idx = 0
         for group_name in sorted(nested_metric_groups.keys()):
@@ -533,7 +623,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                             color = "run" if "run" in metric_df.columns else None
                             if not metric_df.empty:
                                 plot = gr.LinePlot(
-                                    downsample(
+                                    utils.downsample(
                                         metric_df,
                                         x_column,
                                         metric_name,
@@ -583,7 +673,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     )
                                     if not metric_df.empty:
                                         plot = gr.LinePlot(
-                                            downsample(
+                                            utils.downsample(
                                                 metric_df,
                                                 x_column,
                                                 metric_name,
@@ -613,7 +703,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                             key=f"double-{metric_idx}",
                                         )
                                     metric_idx += 1
+        if images_by_run and any(any(images) for images in images_by_run.values()):
+            create_image_section(images_by_run)
 
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[TRACKIO_LOGO_DIR], show_api=False, show_error=True)
+    demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
