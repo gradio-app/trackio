@@ -47,12 +47,12 @@ import trackio as wandb
 
 ## Dashboard
 
-You can launch the dashboard by running in your terminal:
+You can launch the dashboard by running:
 
 <hfoptions id="language">
-<hfoption id="bash">
+<hfoption id="Shell">
 
-```bash
+```sh
 trackio show
 ```
 
@@ -71,9 +71,9 @@ trackio.show()
 You can also provide an optional `project` name as the argument to load a specific project directly:
 
 <hfoptions id="language">
-<hfoption id="bash">
+<hfoption id="Shell">
 
-```bash
+```sh
 trackio show --project "my-project"
 ```
 
