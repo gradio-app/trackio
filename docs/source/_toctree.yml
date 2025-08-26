@@ -9,6 +9,8 @@
 - sections:
   - local: track
     title: Track
+  - local: dashboard
+    title: Dashboard
   title: How-to guides
 - sections:
   - local: api
