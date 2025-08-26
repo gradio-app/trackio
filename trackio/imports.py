@@ -165,8 +165,8 @@ def import_tf_events(
         space_id (`str` or `None`, *optional*, defaults to `None`):
             If provided, the project will be logged to a Hugging Face Space instead of a
             local directory. Should be a complete Space name like `"username/reponame"`
-            or `"orgname/reponame", or just `"reponame"` in which case the Space will be
-            created in the currently-logged-in Hugging Face user's namespace. If the
+            or `"orgname/reponame"`, or just `"reponame"` in which case the Space will
+            be created in the currently-logged-in Hugging Face user's namespace. If the
             Space does not exist, it will be created. If the Space already exists, the
             project will be logged to it.
         dataset_id (`str` or `None`, *optional*, defaults to `None`):
