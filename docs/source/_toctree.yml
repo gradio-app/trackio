@@ -9,8 +9,12 @@
 - sections:
   - local: track
     title: Track
-  - local: dashboard
-    title: Dashboard
+  - local: launch
+    title: Launch the Dashboard
+  - local: deploy_embed
+    title: Deploy and Embed Dashboards
+  - local: manage
+    title: Manage Projects
   title: How-to guides
 - sections:
   - local: api
