@@ -32,11 +32,40 @@ You can also install the latest version from source. First clone the repo and th
 ```bash
 git clone https://github.com/gradio-app/trackio.git
 cd trackio/
-pip install -e .
 ```
+
+<hfoptions id="package_manager">
+<hfoption id="uv">
+
+```sh
+uv pip install .
+```
+
+</hfoption>
+<hfoption id="pip">
+
+```sh
+pip install .
+```
+
+</hfoption>
+</hfoptions>
 
 If you want the development install you can replace the pip install with the following:
 
-```bash
+<hfoptions id="package_manager">
+<hfoption id="uv">
+
+```sh
+uv pip install -e .
+```
+
+</hfoption>
+<hfoption id="pip">
+
+```sh
 pip install -e .
 ```
+
+</hfoption>
+</hfoptions>
