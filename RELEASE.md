@@ -1,4 +1,3 @@
-
 # Making a release
 
 > [!NOTE]
