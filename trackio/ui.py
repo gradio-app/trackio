@@ -21,7 +21,7 @@ except:  # noqa: E722
     from file_storage import FileStorage
     from media import TrackioImage
     from sqlite_storage import SQLiteStorage
-    from typehints import LogEntry
+    from typehints import LogEntry, UploadEntry
 
 
 def get_project_info() -> str | None:
