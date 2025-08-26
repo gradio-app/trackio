@@ -194,8 +194,8 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
             will be shown and the user can select one.
         theme (`str` or `ThemeClass`, *optional*, defaults to `"citrus"`):
             A Gradio Theme to use for the dashboard instead of the default `"citrus"`,
-            can be a built-in theme (e.g. 'soft', 'default'), a theme from the Hub (e.g.
-            'gstaff/xkcd'), or a custom Theme class.
+            can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
+            (e.g. `"gstaff/xkcd"`), or a custom Theme class.
     """
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
