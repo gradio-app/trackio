@@ -13,16 +13,7 @@ if TYPE_CHECKING:
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
 
-RESERVED_KEYS = [
-    "project",
-    "run",
-    "timestamp",
-    "step",
-    "time",
-    "metrics",
-    "data_type",
-    "x_axis",
-]
+RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_DIR = Path(HF_HOME) / "trackio"
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
