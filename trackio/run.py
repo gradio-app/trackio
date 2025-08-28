@@ -4,9 +4,9 @@ import time
 import huggingface_hub
 from gradio_client import Client, handle_file
 
-from trackio.data_types.table import Table
 from trackio.media import TrackioImage
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.table import Table
 from trackio.typehints import LogEntry, UploadEntry
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
 

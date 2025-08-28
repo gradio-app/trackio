@@ -12,17 +12,17 @@ HfApi = hf.HfApi()
 
 try:
     import trackio.utils as utils
-    from trackio.data_types.table import Table
     from trackio.file_storage import FileStorage
     from trackio.media import TrackioImage
     from trackio.sqlite_storage import SQLiteStorage
+    from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
 except:  # noqa: E722
     import utils
-    from data_types.table import Table
     from file_storage import FileStorage
     from media import TrackioImage
     from sqlite_storage import SQLiteStorage
+    from table import Table
     from typehints import LogEntry, UploadEntry
 
 
