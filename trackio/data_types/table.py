@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 class Table:
     TYPE = "trackio.table"
-    
+
     def __init__(
         self,
         columns=None,

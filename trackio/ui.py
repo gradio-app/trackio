@@ -709,7 +709,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     metric_idx += 1
         if images_by_run and any(any(images) for images in images_by_run.values()):
             create_image_section(images_by_run)
-        
+
         table_cols = master_df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
         if metrics_subset:
@@ -723,9 +723,11 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                         metric_df = master_df.dropna(subset=[metric_name])
                         if not metric_df.empty:
                             value = metric_df[metric_name].iloc[-1]
-                            if type(value) == dict and \
-                               "_type" in value and \
-                               value["_type"] == Table.TYPE:
+                            if (
+                                isinstance(value, dict)
+                                and "_type" in value
+                                and value["_type"] == Table.TYPE
+                            ):
                                 try:
                                     df = pd.DataFrame(value["_value"])
                                     gr.DataFrame(
