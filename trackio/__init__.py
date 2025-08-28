@@ -40,19 +40,44 @@ def init(
     settings: Any = None,
 ) -> Run:
     """
-    Creates a new Trackio project and returns a Run object.
+    Creates a new Trackio project and returns a [`Run`] object.
 
     Args:
-        project: The name of the project (can be an existing project to continue tracking or a new project to start tracking from scratch).
-        name: The name of the run (if not provided, a default name will be generated).
-        space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like "username/reponame" or "orgname/reponame", or just "reponame" in which case the Space will be created in the currently-logged-in Hugging Face user's namespace. If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
-        dataset_id: If a space_id is provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Specify a Dataset with name like "username/datasetname" or "orgname/datasetname", or "datasetname" (uses currently-logged-in Hugging Face user's namespace), or None (uses the same name as the Space but with the "_dataset" suffix). If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it.
-        config: A dictionary of configuration options. Provided for compatibility with wandb.init()
-        resume: Controls how to handle resuming a run. Can be one of:
-            - "must": Must resume the run with the given name, raises error if run doesn't exist
-            - "allow": Resume the run if it exists, otherwise create a new run
-            - "never": Never resume a run, always create a new one
-        settings: Not used. Provided for compatibility with wandb.init()
+        project (`str`):
+            The name of the project (can be an existing project to continue tracking or
+            a new project to start tracking from scratch).
+        name (`str` or `None`, *optional*, defaults to `None`):
+            The name of the run (if not provided, a default name will be generated).
+        space_id (`str` or `None`, *optional*, defaults to `None`):
+            If provided, the project will be logged to a Hugging Face Space instead of
+            a local directory. Should be a complete Space name like
+            `"username/reponame"` or `"orgname/reponame"`, or just `"reponame"` in which
+            case the Space will be created in the currently-logged-in Hugging Face
+            user's namespace. If the Space does not exist, it will be created. If the
+            Space already exists, the project will be logged to it.
+        dataset_id (`str` or `None`, *optional*, defaults to `None`):
+            If a `space_id` is provided, a persistent Hugging Face Dataset will be
+            created and the metrics will be synced to it every 5 minutes. Specify a
+            Dataset with name like `"username/datasetname"` or `"orgname/datasetname"`,
+            or `"datasetname"` (uses currently-logged-in Hugging Face user's namespace),
+            or `None` (uses the same name as the Space but with the `"_dataset"`
+            suffix). If the Dataset does not exist, it will be created. If the Dataset
+            already exists, the project will be appended to it.
+        config (`dict` or `None`, *optional*, defaults to `None`):
+            A dictionary of configuration options. Provided for compatibility with
+            `wandb.init()`.
+        resume (`str`, *optional*, defaults to `"never"`):
+            Controls how to handle resuming a run. Can be one of:
+
+            - `"must"`: Must resume the run with the given name, raises error if run
+              doesn't exist
+            - `"allow"`: Resume the run if it exists, otherwise create a new run
+            - `"never"`: Never resume a run, always create a new one
+        settings (`Any`, *optional*, defaults to `None`):
+            Not used. Provided for compatibility with `wandb.init()`.
+
+    Returns:
+        `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
     if settings is not None:
         warnings.warn(
@@ -134,8 +159,11 @@ def log(metrics: dict, step: int | None = None) -> None:
     Logs metrics to the current run.
 
     Args:
-        metrics: A dictionary of metrics to log.
-        step: The step number. If not provided, the step will be incremented automatically.
+        metrics (`dict`):
+            A dictionary of metrics to log.
+        step (`int` or `None`, *optional*, defaults to `None`):
+            The step number. If not provided, the step will be incremented
+            automatically.
     """
     run = context_vars.current_run.get()
     if run is None:
@@ -161,8 +189,13 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     Launches the Trackio dashboard.
 
     Args:
-        project: The name of the project whose runs to show. If not provided, all projects will be shown and the user can select one.
-        theme: The Gradio theme to use. Can be any built-in Gradio theme (e.g. "citrus", "soft", "default"), theme from the Hub (https://huggingface.co/spaces/gradio/theme-gallery), or a custom gradio.themes.ThemeClass
+        project (`str` or `None`, *optional*, defaults to `None`):
+            The name of the project whose runs to show. If not provided, all projects
+            will be shown and the user can select one.
+        theme (`str` or `ThemeClass`, *optional*, defaults to `"citrus"`):
+            A Gradio Theme to use for the dashboard instead of the default `"citrus"`,
+            can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
+            (e.g. `"gstaff/xkcd"`), or a custom Theme class.
     """
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
