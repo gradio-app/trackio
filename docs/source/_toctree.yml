@@ -1,0 +1,26 @@
+- sections:
+  - local: index
+    title: Trackio
+  - local: installation
+    title: Installation
+  - local: quickstart
+    title: Quickstart
+  title: Getting started
+- sections:
+  - local: track
+    title: Track
+  - local: launch
+    title: Launch the Dashboard
+  - local: deploy_embed
+    title: Deploy and Embed Dashboards
+  - local: manage
+    title: Manage Projects
+  title: How-to guides
+- sections:
+  - local: transformers_integration
+    title: Transformers Trainer
+  title: Integration
+- sections:
+  - local: api
+    title: API Reference
+  title: API

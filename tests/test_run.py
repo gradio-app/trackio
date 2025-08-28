@@ -26,7 +26,7 @@ def test_run_log_calls_client():
     )
 
 
-def test_init_resume_modes(temp_db):
+def test_init_resume_modes(temp_dir):
     run = init(
         project="test-project",
         name="new-run",
