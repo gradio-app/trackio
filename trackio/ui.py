@@ -598,10 +598,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
-            
+
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
-            
+
         nested_metric_groups = utils.group_metrics_with_subprefixes(list(numeric_cols))
         color_map = utils.get_color_mapping(original_runs, smoothing)
 
