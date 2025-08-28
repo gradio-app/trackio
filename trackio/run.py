@@ -113,7 +113,7 @@ class Run:
     def _replace_tables(metrics):
         for k, v in metrics.items():
             if isinstance(v, Table):
-                metrics[k] = v.to_dict()
+                metrics[k] = v._to_dict()
 
     def log(self, metrics: dict, step: int | None = None):
         for k in metrics.keys():

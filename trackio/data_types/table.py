@@ -2,6 +2,8 @@ from typing import Literal, Optional
 
 
 class Table:
+    TYPE = "trackio.table"
+    
     def __init__(
         self,
         columns=None,
@@ -23,5 +25,8 @@ class Table:
         else:
             self.data = dataframe.to_dict(orient="records")
 
-    def to_dict(self):
-        return self.data
+    def _to_dict(self):
+        return {
+            "_type": self.TYPE,
+            "_value": self.data,
+        }

@@ -12,12 +12,14 @@ HfApi = hf.HfApi()
 
 try:
     import trackio.utils as utils
+    from trackio.data_types.table import Table
     from trackio.file_storage import FileStorage
     from trackio.media import TrackioImage
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.typehints import LogEntry, UploadEntry
 except:  # noqa: E722
     import utils
+    from data_types.table import Table
     from file_storage import FileStorage
     from media import TrackioImage
     from sqlite_storage import SQLiteStorage
@@ -715,24 +717,26 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         if metric_filter and metric_filter.strip():
             table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
         if len(table_cols) > 0:
-            with gr.Accordion("Tables", open=True):
+            with gr.Accordion("tables", open=True):
                 with gr.Row(key="row"):
-
                     for metric_idx, metric_name in enumerate(table_cols):
                         metric_df = master_df.dropna(subset=[metric_name])
                         if not metric_df.empty:
                             value = metric_df[metric_name].iloc[-1]
-                            try:
-                                df = pd.DataFrame(value)
-                                gr.DataFrame(
-                                    df,
-                                    label=f"{metric_name} (latest)",
-                                    key=f"table-{metric_idx}",
-                                )
-                            except Exception as e:
-                                gr.Warning(
-                                    f"Column {metric_name} failed to render as a table: {e}"
-                                )
+                            if type(value) == dict and \
+                               "_type" in value and \
+                               value["_type"] == Table.TYPE:
+                                try:
+                                    df = pd.DataFrame(value["_value"])
+                                    gr.DataFrame(
+                                        df,
+                                        label=f"{metric_name} (latest)",
+                                        key=f"table-{metric_idx}",
+                                    )
+                                except Exception as e:
+                                    gr.Warning(
+                                        f"Column {metric_name} failed to render as a table: {e}"
+                                    )
 
 
 if __name__ == "__main__":
