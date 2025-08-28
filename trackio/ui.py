@@ -707,30 +707,32 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     metric_idx += 1
         if images_by_run and any(any(images) for images in images_by_run.values()):
             create_image_section(images_by_run)
+        
+        table_cols = master_df.select_dtypes(include="object").columns
+        table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
+        if metrics_subset:
+            table_cols = [c for c in table_cols if c in metrics_subset]
+        if metric_filter and metric_filter.strip():
+            table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
+        if len(table_cols) > 0:
+            with gr.Accordion("Tables", open=True):
+                with gr.Row(key="row"):
 
-        with gr.Row(key="row", label="Tables"):
-            table_cols = master_df.select_dtypes(include="object").columns
-            table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
-            if metrics_subset:
-                table_cols = [c for c in table_cols if c in metrics_subset]
-            if metric_filter and metric_filter.strip():
-                table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
-
-            for metric_idx, metric_name in enumerate(table_cols):
-                metric_df = master_df.dropna(subset=[metric_name])
-                if not metric_df.empty:
-                    value = metric_df[metric_name].iloc[-1]
-                    try:
-                        df = pd.DataFrame(value)
-                        gr.DataFrame(
-                            df,
-                            label=f"{metric_name} (latest)",
-                            key=f"table-{metric_idx}",
-                        )
-                    except Exception as e:
-                        gr.Warning(
-                            f"Column {metric_name} failed to render as a table: {e}"
-                        )
+                    for metric_idx, metric_name in enumerate(table_cols):
+                        metric_df = master_df.dropna(subset=[metric_name])
+                        if not metric_df.empty:
+                            value = metric_df[metric_name].iloc[-1]
+                            try:
+                                df = pd.DataFrame(value)
+                                gr.DataFrame(
+                                    df,
+                                    label=f"{metric_name} (latest)",
+                                    key=f"table-{metric_idx}",
+                                )
+                            except Exception as e:
+                                gr.Warning(
+                                    f"Column {metric_name} failed to render as a table: {e}"
+                                )
 
 
 if __name__ == "__main__":
