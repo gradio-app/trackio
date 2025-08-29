@@ -164,6 +164,10 @@ Since Trackio is in beta, your feedback is welcome! Please create issues with bu
 
 MIT License
 
+## Documentation
+
+The complete documentation and API reference for each version fo Trackio can be found at: https://huggingface.co/docs/trackio/index
+
 ## Pronunciation
 
 Trackio is pronounced TRACK-yo, as in "track yo' experiments"
