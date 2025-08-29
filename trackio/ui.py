@@ -734,6 +734,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                         df,
                                         label=f"{metric_name} (latest)",
                                         key=f"table-{metric_idx}",
+                                        wrap=True,
                                     )
                                 except Exception as e:
                                     gr.Warning(
