@@ -16,6 +16,5 @@ jobs:
       repo_owner: gradio-app
       package: trackio
       version_tag_suffix: ""
-      custom_container: huggingface/transformers-doc-builder
     secrets:
       hf_token: ${{ secrets.HF_DOC_BUILD }}
