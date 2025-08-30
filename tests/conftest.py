@@ -5,8 +5,9 @@ import pytest
 
 
 @pytest.fixture
-def temp_db(monkeypatch):
-    """Fixture that creates a temporary directory for database storage and patches the TRACKIO_DIR."""
+def temp_dir(monkeypatch):
+    """Fixture that creates a temporary TRACKIO_DIR."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        monkeypatch.setattr("trackio.sqlite_storage.TRACKIO_DIR", Path(tmpdir))
+        for name in ("trackio.sqlite_storage", "trackio.media", "trackio.file_storage"):
+            monkeypatch.setattr(f"{name}.TRACKIO_DIR", Path(tmpdir))
         yield tmpdir

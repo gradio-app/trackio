@@ -15,19 +15,41 @@ def import_csv(
     dataset_id: str | None = None,
 ) -> None:
     """
-    Imports a CSV file into a Trackio project. The CSV file must contain a "step" column, may optionally
-    contain a "timestamp" column, and any other columns will be treated as metrics. It should also include
-    a header row with the column names.
+    Imports a CSV file into a Trackio project. The CSV file must contain a `"step"`
+    column, may optionally contain a `"timestamp"` column, and any other columns will be
+    treated as metrics. It should also include a header row with the column names.
 
     TODO: call init() and return a Run object so that the user can continue to log metrics to it.
 
     Args:
-        csv_path: The str or Path to the CSV file to import.
-        project: The name of the project to import the CSV file into. Must not be an existing project.
-        name: The name of the Run to import the CSV file into. If not provided, a default name will be generated.
-        name: The name of the run (if not provided, a default name will be generated).
-        space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like "username/reponame" or "orgname/reponame", or just "reponame" in which case the Space will be created in the currently-logged-in Hugging Face user's namespace. If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
-        dataset_id: If provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Should be a complete Dataset name like "username/datasetname" or "orgname/datasetname", or just "datasetname" in which case the Dataset will be created in the currently-logged-in Hugging Face user's namespace. If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it. If not provided, the metrics will be logged to a local SQLite database, unless a `space_id` is provided, in which case a Dataset will be automatically created with the same name as the Space but with the "_dataset" suffix.
+        csv_path (`str` or `Path`):
+            The str or Path to the CSV file to import.
+        project (`str`):
+            The name of the project to import the CSV file into. Must not be an existing
+            project.
+        name (`str` or `None`, *optional*, defaults to `None`):
+            The name of the Run to import the CSV file into. If not provided, a default
+            name will be generated.
+        name (`str` or `None`, *optional*, defaults to `None`):
+            The name of the run (if not provided, a default name will be generated).
+        space_id (`str` or `None`, *optional*, defaults to `None`):
+            If provided, the project will be logged to a Hugging Face Space instead of a
+            local directory. Should be a complete Space name like `"username/reponame"`
+            or `"orgname/reponame"`, or just `"reponame"` in which case the Space will
+            be created in the currently-logged-in Hugging Face user's namespace. If the
+            Space does not exist, it will be created. If the Space already exists, the
+            project will be logged to it.
+        dataset_id (`str` or `None`, *optional*, defaults to `None`):
+            If provided, a persistent Hugging Face Dataset will be created and the
+            metrics will be synced to it every 5 minutes. Should be a complete Dataset
+            name like `"username/datasetname"` or `"orgname/datasetname"`, or just
+            `"datasetname"` in which case the Dataset will be created in the
+            currently-logged-in Hugging Face user's namespace. If the Dataset does not
+            exist, it will be created. If the Dataset already exists, the project will
+            be appended to it. If not provided, the metrics will be logged to a local
+            SQLite database, unless a `space_id` is provided, in which case a Dataset
+            will be automatically created with the same name as the Space but with the
+            `"_dataset"` suffix.
     """
     if SQLiteStorage.get_runs(project):
         raise ValueError(
@@ -128,15 +150,36 @@ def import_tf_events(
     dataset_id: str | None = None,
 ) -> None:
     """
-    Imports TensorFlow Events files from a directory into a Trackio project.
-    Each subdirectory in the log directory will be imported as a separate run.
+    Imports TensorFlow Events files from a directory into a Trackio project. Each
+    subdirectory in the log directory will be imported as a separate run.
 
     Args:
-        log_dir: The str or Path to the directory containing TensorFlow Events files.
-        project: The name of the project to import the TensorFlow Events files into. Must not be an existing project.
-        name: The name prefix for runs (if not provided, will use directory names). Each subdirectory will create a separate run.
-        space_id: If provided, the project will be logged to a Hugging Face Space instead of a local directory. Should be a complete Space name like username/reponame" ororgname/reponame", or just "reponame" in which case the Space will be created in the currently-logged-in Hugging Face user's namespace. If the Space does not exist, it will be created. If the Space already exists, the project will be logged to it.
-        dataset_id: If provided, a persistent Hugging Face Dataset will be created and the metrics will be synced to it every 5 minutes. Should be a complete Dataset name likeusername/datasetname" or "orgname/datasetname", or just "datasetname" in which case the Dataset will be created in the currently-logged-in Hugging Face user's namespace. If the Dataset does not exist, it will be created. If the Dataset already exists, the project will be appended to it. If not provided, the metrics will be logged to a local SQLite database, unless a `space_id` is provided, in which case a Dataset will be automatically created with the same name as the Space but with the_dataset suffix.
+        log_dir (`str` or `Path`):
+            The str or Path to the directory containing TensorFlow Events files.
+        project (`str`):
+            The name of the project to import the TensorFlow Events files into. Must not
+            be an existing project.
+        name (`str` or `None`, *optional*, defaults to `None`):
+            The name prefix for runs (if not provided, will use directory names). Each
+            subdirectory will create a separate run.
+        space_id (`str` or `None`, *optional*, defaults to `None`):
+            If provided, the project will be logged to a Hugging Face Space instead of a
+            local directory. Should be a complete Space name like `"username/reponame"`
+            or `"orgname/reponame"`, or just `"reponame"` in which case the Space will
+            be created in the currently-logged-in Hugging Face user's namespace. If the
+            Space does not exist, it will be created. If the Space already exists, the
+            project will be logged to it.
+        dataset_id (`str` or `None`, *optional*, defaults to `None`):
+            If provided, a persistent Hugging Face Dataset will be created and the
+            metrics will be synced to it every 5 minutes. Should be a complete Dataset
+            name like `"username/datasetname"` or `"orgname/datasetname"`, or just
+            `"datasetname"` in which case the Dataset will be created in the
+            currently-logged-in Hugging Face user's namespace. If the Dataset does not
+            exist, it will be created. If the Dataset already exists, the project will
+            be appended to it. If not provided, the metrics will be logged to a local
+            SQLite database, unless a `space_id` is provided, in which case a Dataset
+            will be automatically created with the same name as the Space but with the
+            `"_dataset"` suffix.
     """
     try:
         from tbparse import SummaryReader

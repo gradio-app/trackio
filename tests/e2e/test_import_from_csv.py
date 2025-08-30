@@ -4,14 +4,14 @@ import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_import_from_csv(temp_db):
+def test_import_from_csv(temp_dir):
     trackio.import_csv(
         csv_path=str(Path(__file__).parent / "logs.csv"),
         project="test_project",
         name="test_run",
     )
 
-    results = SQLiteStorage.get_metrics(project="test_project", run="test_run")
+    results = SQLiteStorage.get_logs(project="test_project", run="test_run")
     assert len(results) == 4
     assert results[0]["train/loss"] == 12.2
     assert results[0]["train/acc"] == 82.2
