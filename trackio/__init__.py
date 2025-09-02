@@ -142,12 +142,18 @@ def init(
             raise ValueError("Must provide a run name when resume='must'")
         if name not in SQLiteStorage.get_runs(project):
             raise ValueError(f"Run '{name}' does not exist in project '{project}'")
+        resumed = True
     elif resume == "allow":
-        if name is not None and name in SQLiteStorage.get_runs(project):
-            print(f"* Resuming existing run: {name}")
+        resumed = name is not None and name in SQLiteStorage.get_runs(project)
     elif resume == "never":
         if name is not None and name in SQLiteStorage.get_runs(project):
+            warnings.warn(
+                f"* Warning: resume='never' but a run '{name}' already exists in "
+                f"project '{project}'. Generating a new name and instead. If you want "
+                "to resume this run, call init() with resume='must' or resume='allow'."
+            )
             name = None
+        resumed = False
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
@@ -159,6 +165,12 @@ def init(
         config=config,
         space_id=space_id,
     )
+
+    if resumed:
+        print(f"* Resumed existing run: {run.name}")
+    else:
+        print(f"* Created new run: {run.name}")
+
     context_vars.current_run.set(run)
     globals()["config"] = run.config
     return run
