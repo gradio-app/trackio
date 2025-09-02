@@ -15,12 +15,22 @@ from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioImage
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.table import Table
 from trackio.ui import demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
-__all__ = ["init", "log", "finish", "show", "import_csv", "import_tf_events", "Image"]
+__all__ = [
+    "init",
+    "log",
+    "finish",
+    "show",
+    "import_csv",
+    "import_tf_events",
+    "Image",
+    "Table",
+]
 
 Image = TrackioImage
 
