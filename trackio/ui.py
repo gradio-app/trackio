@@ -419,7 +419,7 @@ css = """
 .media-group .tabs { padding: 0.5em; }
 """
 
-with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
+with gr.Blocks(title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
             f"""
@@ -740,7 +740,11 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     gr.Warning(
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
-
+with demo.route("Manage Runs", "/manage-runs"):
+    with gr.Row():
+        gr.Button("Delete Run", variant="stop", size="sm")
+    with gr.Row():
+        gr.Dataframe([[False, "alpha-bravo-gamma-1"], [False, "alpha-bravo-gamma-2"], [False, "alpha-bravo-gamma-3"]], datatype=["bool", "str"], headers=["", "Run Name"], column_widths=["30px", "90%"], interactive=True, static_columns=[1], scale=100)
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
