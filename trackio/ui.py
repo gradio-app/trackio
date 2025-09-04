@@ -100,7 +100,7 @@ class MediaData:
     caption: str | None
     file_path: str
 
-def extract_images(logs: list[dict]) -> dict[str, list[MediaData]]:
+def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
     media_by_key: dict[str, list[MediaData]] = {}
     logs = sorted(logs, key=lambda x: x.get("step", 0))
     for log in logs:
@@ -135,7 +135,7 @@ def load_run_data(
     if not logs:
         return None, None
 
-    images = extract_images(logs)
+    media = extract_media(logs)
     df = pd.DataFrame(logs)
 
     if "step" not in df.columns:
@@ -178,12 +178,12 @@ def load_run_data(
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        return combined_df, images
+        return combined_df, media
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        return df, images
+        return df, media
 
 
 def update_runs(project, filter_text, user_interacted_with_runs=False):
@@ -382,6 +382,7 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
                             label=key,
                             columns=6,
                             elem_classes=("media-gallery"),
+                            object_fit="contain",
                         )
 
 
