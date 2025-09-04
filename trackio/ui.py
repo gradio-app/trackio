@@ -382,7 +382,6 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
                             label=key,
                             columns=6,
                             elem_classes=("media-gallery"),
-                            object_fit="contain",
                         )
 
 
@@ -425,7 +424,7 @@ css = """
 .info-icon:hover { opacity: 0.8; }
 .accent-link { font-weight: bold; }
 
-.media-gallery { max-height: 325px; }
+.media-tab { max-height: 325px; overflow-y: scroll; }
 .media-group, .media-group > div { background: none; }
 .media-group .tabs { padding: 0.5em; }
 """
