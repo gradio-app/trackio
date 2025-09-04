@@ -35,7 +35,7 @@ def _is_trackio_installed_from_source() -> bool:
 
         return False
     except Exception:
-        return False
+        return True
 
 
 def deploy_as_space(
