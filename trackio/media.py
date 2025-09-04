@@ -179,10 +179,6 @@ class TrackioVideo:
             value = value[np.newaxis, ...]
         
         value = TrackioVideo._tile_batched_videos(value)
-        
-        # Convert final result from (F, H, W, C) to (F, C, H, W) for mediapy
-        value = np.transpose(value, (0, 3, 1, 2))
-        
         return value
     
     @staticmethod
