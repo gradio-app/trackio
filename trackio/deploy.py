@@ -1,3 +1,4 @@
+import importlib.metadata
 import io
 import os
 import time
@@ -11,10 +12,33 @@ from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 from requests import HTTPError
 
+import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 PERSISTENT_STORAGE_DIR = "/data/.huggingface/trackio"
+
+
+def _is_trackio_installed_from_source() -> bool:
+    """Check if trackio is installed from source/editable install vs PyPI."""
+    try:
+        # Method 1: Check if __file__ is in a development directory (not site-packages)
+        trackio_file = trackio.__file__
+        if "site-packages" not in trackio_file:
+            return True
+
+        # Method 2: Check for .pth file which indicates editable install
+        dist = importlib.metadata.distribution("trackio")
+        if dist.files:
+            files = list(dist.files)
+            has_pth = any(".pth" in str(f) for f in files)
+            if has_pth:
+                return True
+
+        return False
+    except Exception:
+        # Fallback: if we can't determine, assume PyPI install for safety
+        return False
 
 
 def deploy_as_space(
@@ -63,9 +87,21 @@ def deploy_as_space(
 
     # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
     # Make sure necessary dependencies are installed by creating a requirements.txt.
-    requirements_content = """
+    is_source_install = _is_trackio_installed_from_source()
+
+    if is_source_install:
+        # For source installs, only include pyarrow (trackio will be uploaded as source)
+        requirements_content = """
 pyarrow>=21.0
-    """
+        """
+    else:
+        # For PyPI installs, pin trackio to the current version
+        trackio_version = getattr(trackio, "__version__", "latest")
+        requirements_content = f"""
+pyarrow>=21.0
+trackio=={trackio_version}
+        """
+
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(
         path_or_fileobj=requirements_buffer,
@@ -75,12 +111,15 @@ pyarrow>=21.0
     )
 
     huggingface_hub.utils.disable_progress_bars()
-    hf_api.upload_folder(
-        repo_id=space_id,
-        repo_type="space",
-        folder_path=trackio_path,
-        ignore_patterns=["README.md"],
-    )
+
+    # Only upload trackio source code if it's installed from source
+    if is_source_install:
+        hf_api.upload_folder(
+            repo_id=space_id,
+            repo_type="space",
+            folder_path=trackio_path,
+            ignore_patterns=["README.md"],
+        )
 
     huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", PERSISTENT_STORAGE_DIR)
     if hf_token := huggingface_hub.utils.get_token():
