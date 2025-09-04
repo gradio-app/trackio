@@ -104,7 +104,7 @@ class TrackioImage:
             raise ValueError(f"Failed to load image from file: {absolute_path}") from e
 
 TrackioVideoSourceType = str | Path | np.ndarray
-TrackioVideoFormatType = Literal["gif", "mp4", "webm", "ogg"]
+TrackioVideoFormatType = Literal["gif", "mp4", "webm"]
 
 class TrackioVideo:
     """
@@ -126,6 +126,8 @@ class TrackioVideo:
         self._fps = fps
         self._format = format
         self._file_path: Path | None = None
+        if isinstance(self._value, np.ndarray) and self._format is None:
+            self._format = "gif"
 
     @property
     def _codec(self) -> str | None:
@@ -134,7 +136,7 @@ class TrackioVideo:
                 return "gif"
             case "mp4":
                 return "h264"
-            case "webm" | "ogg":
+            case "webm":
                 return "vp9"
             case _:
                 return None
@@ -169,7 +171,7 @@ class TrackioVideo:
     @staticmethod
     def _process_ndarray(value: np.ndarray) -> np.ndarray:
         # Verify value is either 4D (single video) or 5D array (batched videos).
-        # Expected format: (frames, channels, height, width) for 4D or (batch, frames, channels, height, width) for 5D
+        # Expected format: (frames, channels, height, width) or (batch, frames, channels, height, width)
         if value.ndim < 4:
             raise ValueError("Video requires at least 4 dimensions (frames, channels, height, width)")
         if value.ndim > 5:
