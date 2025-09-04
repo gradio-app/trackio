@@ -157,7 +157,7 @@ def load_run_data(
         df_original["data_type"] = "original"
 
         df_smoothed = df.copy()
-        window_size = max(3, min(smoothing_granularity, len(df)))  # Allow full range up to data length
+        window_size = max(3, min(smoothing_granularity, len(df)))
         df_smoothed[numeric_cols] = (
             df_smoothed[numeric_cols]
             .rolling(window=window_size, center=True, min_periods=1)
