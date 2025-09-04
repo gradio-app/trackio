@@ -5,4 +5,5 @@ tf_test_run/
 .trackio/
 trackio.db
 *.pyc
+*.claude/
 .venv/
