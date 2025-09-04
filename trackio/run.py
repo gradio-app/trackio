@@ -4,7 +4,7 @@ import time
 import huggingface_hub
 from gradio_client import Client, handle_file
 
-from trackio.media import TrackioImage, TrackioVideo
+from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import LogEntry, UploadEntry
 from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
@@ -49,7 +49,9 @@ class Run:
                 time.sleep(BATCH_SEND_INTERVAL)
 
             with self._client_lock:
-                if self._queued_logs and self._client is not None:
+                if self._client is None:
+                    return
+                if self._queued_logs:
                     logs_to_send = self._queued_logs.copy()
                     self._queued_logs.clear()
                     self._client.predict(
@@ -57,7 +59,7 @@ class Run:
                         logs=logs_to_send,
                         hf_token=huggingface_hub.utils.get_token(),
                     )
-                if self._queued_uploads and self._client is not None:
+                if self._queued_uploads:
                     uploads_to_send = self._queued_uploads.copy()
                     self._queued_uploads.clear()
                     self._client.predict(
@@ -91,7 +93,7 @@ class Run:
         if not step:
             step = 0
         for key, value in metrics.items():
-            if isinstance(value, TrackioImage):
+            if isinstance(value, TrackioMedia):
                 value._save(self.project, self.name, step)
                 serializable_metrics[key] = value._to_dict()
                 if self._space_id:
@@ -104,20 +106,6 @@ class Run:
                     }
                     with self._client_lock:
                         self._queued_uploads.append(upload_entry)
-            elif isinstance(value, TrackioVideo):
-                value._save(self.project, self.name, step)
-                if self._space_id:
-                    serializable_metrics[key] = value._to_dict()
-                    upload_entry: UploadEntry = {
-                        "project": self.project,
-                        "run": self.name,
-                        "step": step,
-                        "uploaded_file": handle_file(value._get_absolute_file_path()),
-                    }
-                    with self._client_lock:
-                        self._queued_uploads.append(upload_entry)
-                else:
-                    serializable_metrics[key] = value._to_dict()
             else:
                 serializable_metrics[key] = value
         return serializable_metrics

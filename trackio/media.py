@@ -1,6 +1,7 @@
 import os
 import shutil
 import uuid
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Literal
 
@@ -17,7 +18,79 @@ except ImportError:  # relative imports for local execution on Spaces
     from utils import MEDIA_DIR
 
 TrackioImageSourceType = str | Path | np.ndarray | PILImage.Image
-class TrackioImage:
+
+class TrackioMedia(ABC):
+    """
+    Abstract base class for Trackio media objects
+    Provides shared functionality for file handling and serialization.
+    """
+    
+    TYPE: str
+    
+    def __init_subclass__(cls, **kwargs):
+        """Ensure subclasses define the TYPE attribute."""
+        super().__init_subclass__(**kwargs)
+        if not hasattr(cls, 'TYPE') or cls.TYPE is None:
+            raise TypeError(f"Class {cls.__name__} must define TYPE attribute")
+    
+    def __init__(self, value, caption: str | None = None):
+        self.caption = caption
+        self._value = value
+        self._file_path: Path | None = None
+        
+        # Validate file existence for string/Path inputs
+        if isinstance(self._value, str | Path):
+            if not os.path.isfile(self._value):
+                raise ValueError(f"File not found: {self._value}")
+    
+    def _file_extension(self) -> str:
+        if self._file_path:
+            return self._file_path.suffix[1:].lower()
+        if isinstance(self._value, str | Path):
+            path = Path(self._value)
+            return path.suffix[1:].lower()
+        if hasattr(self, '_format') and self._format:
+            return self._format
+        return "unknown"
+    
+    def _get_relative_file_path(self) -> Path | None:
+        return self._file_path
+    
+    def _get_absolute_file_path(self) -> Path | None:
+        if self._file_path:
+            return MEDIA_DIR / self._file_path
+        return None
+    
+    def _save(self, project: str, run: str, step: int = 0):
+        if self._file_path:
+            return
+        
+        media_dir = FileStorage.init_project_media_path(project, run, step)
+        filename = f"{uuid.uuid4()}.{self._file_extension()}"
+        file_path = media_dir / filename
+        
+        # Delegate to subclass-specific save logic
+        self._save_media(file_path)
+        
+        self._file_path = file_path.relative_to(MEDIA_DIR)
+    
+    @abstractmethod
+    def _save_media(self, file_path: Path):
+        """
+        Performs the actual media saving logic.
+        """
+        pass
+    
+    def _to_dict(self) -> dict:
+        if not self._file_path:
+            raise ValueError("Media must be saved to file before serialization")
+        return {
+            "_type": self.TYPE,
+            "file_path": str(self._get_relative_file_path()),
+            "caption": self.caption,
+        }
+
+class TrackioImage(TrackioMedia):
     """
     Creates an image that can be logged with trackio.
 
@@ -34,16 +107,11 @@ class TrackioImage:
             value: A string path to an image, a numpy array, or a PIL Image.
             caption: A string caption for the image.
         """
-        self.caption = caption
-        self._value = value
-        self._file_path: Path | None = None
+        super().__init__(value, caption)
         self._format: str | None = None
 
         if isinstance(self._value, np.ndarray | PILImage.Image) and self._format is None:
             self._format = "png"
-        if isinstance(self._value, str | Path):
-            if not os.path.isfile(self._value):
-                raise ValueError(f"File not found: {self._value}")
 
     def _as_pil(self) -> PILImage.Image | None:
         try:
@@ -56,22 +124,7 @@ class TrackioImage:
             raise ValueError(f"Failed to process image data: {self._value}") from e
         return None
 
-    def _file_extension(self) -> str:
-        if self._file_path:
-            return self._file_path.suffix[1:].lower()
-        if isinstance(self._value, str | Path):
-            path = Path(self._value)
-            return path.suffix[1:].lower()
-        if self._format:
-            return self._format
-
-    def _save(self, project: str, run: str, step: int = 0):
-        if self._file_path:
-            return
-
-        media_dir = FileStorage.init_project_media_path(project, run, step)
-        filename = f"{uuid.uuid4()}.{self._file_extension()}"
-        file_path = media_dir / filename
+    def _save_media(self, file_path: Path):
         if pil := self._as_pil():
             pil.save(file_path, format=self._format)
         elif isinstance(self._value, str | Path):
@@ -79,27 +132,11 @@ class TrackioImage:
                 shutil.copy(self._value, file_path)
             else:
                 raise ValueError(f"File not found: {self._value}")
-        self._file_path = file_path.relative_to(MEDIA_DIR)
-
-    def _get_relative_file_path(self) -> Path | None:
-        return self._file_path
-
-    def _get_absolute_file_path(self) -> Path | None:
-        return MEDIA_DIR / self._file_path
-
-    def _to_dict(self) -> dict:
-        if not self._file_path:
-            raise ValueError("Image must be saved to file before serialization")
-        return {
-            "_type": self.TYPE,
-            "file_path": str(self._get_relative_file_path()),
-            "caption": self.caption,
-        }
 
 TrackioVideoSourceType = str | Path | np.ndarray
 TrackioVideoFormatType = Literal["gif", "mp4", "webm"]
 
-class TrackioVideo:
+class TrackioVideo(TrackioMedia):
     """
     Creates a video that can be logged with trackio.
 
@@ -114,16 +151,11 @@ class TrackioVideo:
         fps: int | None = None,
         format: TrackioVideoFormatType | None = None,
     ):
-        self._value = value
-        self._caption = caption
+        super().__init__(value, caption)
         self._fps = fps
         self._format = format
-        self._file_path: Path | None = None
         if isinstance(self._value, np.ndarray) and self._format is None:
             self._format = "gif"
-        if isinstance(self._value, str | Path):
-            if not os.path.isfile(self._value):
-                raise ValueError(f"File not found: {self._value}")
 
     @property
     def _codec(self) -> str | None:
@@ -137,34 +169,15 @@ class TrackioVideo:
             case _:
                 return None
 
-    def _save(self, project: str, run: str, step: int = 0):
-        if self._file_path:
-            return
-
-        media_dir = FileStorage.init_project_media_path(project, run, step)
-        filename = f"{uuid.uuid4()}.{self._file_extension()}"
-        media_path = media_dir / filename
+    def _save_media(self, file_path: Path):
         if isinstance(self._value, np.ndarray):
             video = TrackioVideo._process_ndarray(self._value)
-            mp.write_video(media_path, video, fps=self._fps, codec=self._codec)
+            mp.write_video(file_path, video, fps=self._fps, codec=self._codec)
         elif isinstance(self._value, str | Path):
             if os.path.isfile(self._value):
-                shutil.copy(self._value, media_path)
+                shutil.copy(self._value, file_path)
             else:
                 raise ValueError(f"File not found: {self._value}")
-        self._file_path = media_path.relative_to(MEDIA_DIR)
-    
-    def _get_absolute_file_path(self) -> Path | None:
-        return MEDIA_DIR / self._file_path
-
-    def _file_extension(self) -> str:
-        if self._file_path:
-            return self._file_path.suffix[1:].lower()
-        if isinstance(self._value, str | Path):
-            path = Path(self._value)
-            return path.suffix[1:].lower()
-        if self._format:
-            return self._format
     
     @staticmethod
     def _process_ndarray(value: np.ndarray) -> np.ndarray:
@@ -209,13 +222,3 @@ class TrackioVideo:
         video = video.transpose(2, 0, 4, 1, 5, 3)
         video = video.reshape(frames, n_rows * height, n_cols * width, channels)
         return video
-
-    def _get_relative_file_path(self) -> Path | None:
-        return self._file_path
-        
-    def _to_dict(self) -> dict:
-        return {
-            "_type": self.TYPE,
-            "file_path": str(self._get_relative_file_path()),
-            "caption": self._caption,
-        }
