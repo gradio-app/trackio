@@ -17,6 +17,7 @@ dependencies = [
     "gradio>=5.43.1,<6.0.0",
     "numpy<3.0.0",
     "pillow<12.0.0",
+    "mediapy>=1.2.0,<2.0.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

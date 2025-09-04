@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import time
@@ -332,6 +333,11 @@ def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
 
     return color_map
 
+def get_space() -> str | None:
+    # Copy of gradio's utils.get_space()
+    if os.getenv("SYSTEM") == "spaces":
+        return os.getenv("SPACE_ID")
+    return None
 
 def downsample(
     df: pd.DataFrame,

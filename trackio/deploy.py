@@ -65,6 +65,7 @@ def deploy_as_space(
     # Make sure necessary dependencies are installed by creating a requirements.txt.
     requirements_content = """
 pyarrow>=21.0
+mediapy>=1.0.0
     """
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(

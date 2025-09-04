@@ -12,7 +12,7 @@ from gradio_client import Client
 
 from trackio import context_vars, deploy, utils
 from trackio.imports import import_csv, import_tf_events
-from trackio.media import TrackioImage
+from trackio.media import TrackioImage, TrackioVideo
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import demo
@@ -23,6 +23,7 @@ __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 __all__ = ["init", "log", "finish", "show", "import_csv", "import_tf_events", "Image"]
 
 Image = TrackioImage
+Video = TrackioVideo
 
 
 config = {}
@@ -226,7 +227,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
         inline=False,
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
-        allowed_paths=[TRACKIO_LOGO_DIR],
+        allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
     )
 
     base_url = share_url + "/" if share_url else url

@@ -8,18 +8,19 @@ import huggingface_hub as hf
 import numpy as np
 import pandas as pd
 
+
 HfApi = hf.HfApi()
 
 try:
     import trackio.utils as utils
     from trackio.file_storage import FileStorage
-    from trackio.media import TrackioImage
+    from trackio.media import TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.typehints import LogEntry, UploadEntry
 except:  # noqa: E722
     import utils
     from file_storage import FileStorage
-    from media import TrackioImage
+    from media import TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from typehints import LogEntry, UploadEntry
 
@@ -93,20 +94,38 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
 
     return result
 
+from dataclasses import dataclass
+@dataclass
+class MediaData:
+    caption: str | None
+    file_path: str
 
-def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
-    image_data = {}
+def get_path_for_media(path: str) -> str:
+    if utils.get_space():
+        # When running in a space, media is stored in the gradio app directory
+        # so we need to return the path as is.
+        return path
+    return utils.TRACKIO_DIR / path
+
+def extract_images(logs: list[dict]) -> dict[str, list[MediaData]]:
+    media_by_key: dict[str, list[MediaData]] = {}
     logs = sorted(logs, key=lambda x: x.get("step", 0))
     for log in logs:
         for key, value in log.items():
-            if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
-                if key not in image_data:
-                    image_data[key] = []
-                try:
-                    image_data[key].append(TrackioImage._from_dict(value))
-                except Exception as e:
-                    print(f"Image not currently available: {key}: {e}")
-    return image_data
+            if isinstance(value, dict):
+                type = value.get("_type")
+                if type == TrackioImage.TYPE or type == TrackioVideo.TYPE:
+                    if key not in media_by_key:
+                        media_by_key[key] = []
+                    try:
+                        media_data = MediaData(
+                            file_path=get_path_for_media(value.get("file_path")),
+                            caption=value.get("caption"),
+                        )
+                        media_by_key[key].append(media_data)
+                    except Exception as e:
+                        print(f"Media currently unavailable: {key}: {e}")
+    return media_by_key
 
 
 def load_run_data(
@@ -359,14 +378,14 @@ def configure(request: gr.Request):
         return [], sidebar
 
 
-def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
+def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
     with gr.Accordion(label="media"):
         with gr.Group(elem_classes=("media-group")):
-            for run, images_by_key in images_by_run.items():
+            for run, media_by_key in media_by_run.items():
                 with gr.Tab(label=run, elem_classes=("media-tab")):
-                    for key, images in images_by_key.items():
+                    for key, media_item in media_by_key.items():
                         gr.Gallery(
-                            [(image._pil, image.caption) for image in images],
+                            [(item.file_path, item.caption) for item in media_item],
                             label=key,
                             columns=6,
                             elem_classes=("media-gallery"),
@@ -704,7 +723,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                         )
                                     metric_idx += 1
         if images_by_run and any(any(images) for images in images_by_run.values()):
-            create_image_section(images_by_run)
+            create_media_section(images_by_run)
 
 
 if __name__ == "__main__":
