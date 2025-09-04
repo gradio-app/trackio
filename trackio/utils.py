@@ -1,3 +1,4 @@
+import math
 import re
 import sys
 import time
@@ -566,3 +567,62 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return int(time_diff / 60)
     else:
         return None
+
+
+def sanitize_infinity_values(obj):
+    """
+    Recursively sanitize infinity and NaN values in a nested structure to make it JSON-compliant.
+
+    Converts:
+    - float('inf') -> "Infinity"
+    - float('-inf') -> "-Infinity"
+    - float('nan') -> "NaN"
+
+    This ensures compatibility with JSON serialization while preserving the information.
+    """
+    if isinstance(obj, dict):
+        return {key: sanitize_infinity_values(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_infinity_values(item) for item in obj]
+    elif isinstance(obj, float):
+        if math.isinf(obj):
+            return "Infinity" if obj > 0 else "-Infinity"
+        elif math.isnan(obj):
+            return "NaN"
+        return obj
+    elif isinstance(obj, np.floating):
+        float_val = float(obj)
+        if math.isinf(float_val):
+            return "Infinity" if float_val > 0 else "-Infinity"
+        elif math.isnan(float_val):
+            return "NaN"
+        return float_val
+    else:
+        return obj
+
+
+def deserialize_infinity_values(obj):
+    """
+    Recursively deserialize infinity and NaN string values back to their numeric forms.
+
+    Converts:
+    - "Infinity" -> float('inf')
+    - "-Infinity" -> float('-inf')
+    - "NaN" -> float('nan')
+
+    This restores the numeric values for proper visualization and calculations.
+    """
+    if isinstance(obj, dict):
+        return {key: deserialize_infinity_values(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [deserialize_infinity_values(item) for item in obj]
+    elif isinstance(obj, str):
+        if obj == "Infinity":
+            return float("inf")
+        elif obj == "-Infinity":
+            return float("-inf")
+        elif obj == "NaN":
+            return float("nan")
+        return obj
+    else:
+        return obj
