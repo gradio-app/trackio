@@ -440,7 +440,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             maximum=20,
             value=10,
             step=1,
-            info="0 = no smoothing"
+            info="0 = no smoothing",
         )
         x_axis_dd = gr.Dropdown(
             label="X-axis",
