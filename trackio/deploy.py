@@ -91,7 +91,7 @@ def deploy_as_space(
 pyarrow>=21.0
         """
     else:
-        trackio_version = getattr(trackio, "__version__", "latest")
+        trackio_version = trackio.__version__
         requirements_content = f"""
 pyarrow>=21.0
 trackio=={trackio_version}
