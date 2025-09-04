@@ -114,7 +114,7 @@ def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
 def load_run_data(
     project: str | None,
     run: str | None,
-    smoothing: bool,
+    smoothing_granularity: int,
     x_axis: str,
     log_scale: bool = False,
 ) -> tuple[pd.DataFrame, dict]:
@@ -148,7 +148,7 @@ def load_run_data(
         else:
             df[x_column] = np.log10(x_vals)
 
-    if smoothing:
+    if smoothing_granularity > 0:
         numeric_cols = df.select_dtypes(include="number").columns
         numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
 
@@ -157,7 +157,7 @@ def load_run_data(
         df_original["data_type"] = "original"
 
         df_smoothed = df.copy()
-        window_size = max(3, min(10, len(df) // 10))  # Adaptive window size
+        window_size = max(3, min(smoothing_granularity, len(df)))
         df_smoothed[numeric_cols] = (
             df_smoothed[numeric_cols]
             .rolling(window=window_size, center=True, min_periods=1)
@@ -434,7 +434,14 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         )
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
-        smoothing_cb = gr.Checkbox(label="Smooth metrics", value=True)
+        smoothing_slider = gr.Slider(
+            label="Smoothing Factor",
+            minimum=0,
+            maximum=20,
+            value=10,
+            step=1,
+            info="0 = no smoothing",
+        )
         x_axis_dd = gr.Dropdown(
             label="X-axis",
             choices=["step", "time"],
@@ -545,7 +552,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             demo.load,
             run_cb.change,
             last_steps.change,
-            smoothing_cb.change,
+            smoothing_slider.change,
             x_lim.change,
             x_axis_dd.change,
             log_scale_cb.change,
@@ -554,7 +561,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         inputs=[
             project_dd,
             run_cb,
-            smoothing_cb,
+            smoothing_slider,
             metrics_subset,
             x_lim,
             x_axis_dd,
@@ -566,7 +573,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     def update_dashboard(
         project,
         runs,
-        smoothing,
+        smoothing_granularity,
         metrics_subset,
         x_lim_value,
         x_axis,
@@ -579,7 +586,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
         for run in runs:
             df, images_by_key = load_run_data(
-                project, run, smoothing, x_axis, log_scale
+                project, run, smoothing_granularity, x_axis, log_scale
             )
             if df is not None:
                 dfs.append(df)
@@ -605,7 +612,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
         nested_metric_groups = utils.group_metrics_with_subprefixes(list(numeric_cols))
-        color_map = utils.get_color_mapping(original_runs, smoothing)
+        color_map = utils.get_color_mapping(original_runs, smoothing_granularity > 0)
 
         metric_idx = 0
         for group_name in sorted(nested_metric_groups.keys()):
