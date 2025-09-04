@@ -163,9 +163,12 @@ class TrackioVideo:
 
     def _file_extension(self) -> str:
         if self._format is None:
-            if self._file_path is None:
-                raise ValueError("File format not specified and no file path provided")
-            return self._file_path.suffix[1:].lower()
+            if self._file_path:
+                return self._file_path.suffix[1:].lower()
+            if isinstance(self._value, str | Path):
+                path = Path(self._value)
+                return path.suffix[1:].lower()
+            raise ValueError("File format not specified and no file path provided")
         return self._format
     
     @staticmethod
