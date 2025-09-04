@@ -13,12 +13,10 @@ try:  # absolute imports when installed
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import TRACKIO_DIR
-    from trackio.file_storage import FileStorage
 except Exception:  # relative imports for local execution on Spaces
     from commit_scheduler import CommitScheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR
-    from file_storage import FileStorage
 
 
 class SQLiteStorage:
@@ -314,9 +312,8 @@ class SQLiteStorage:
                         is_parquet = file.endswith(".parquet")
                         # Download parquet and media assets
                         if is_media or is_parquet:
-                            local_dir = TRACKIO_DIR if is_parquet else FileStorage.get_base_path()
                             hf.hf_hub_download(
-                                dataset_id, file, repo_type="dataset", local_dir=local_dir
+                                dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR
                             )
                             updated = True
                 except hf.errors.EntryNotFoundError:

@@ -100,13 +100,6 @@ class MediaData:
     caption: str | None
     file_path: str
 
-def get_path_for_media(path: str) -> str:
-    if utils.get_space():
-        # When running in a space, media is stored in the gradio app directory
-        # so we need to return the path as is.
-        return path
-    return utils.TRACKIO_DIR / path
-
 def extract_images(logs: list[dict]) -> dict[str, list[MediaData]]:
     media_by_key: dict[str, list[MediaData]] = {}
     logs = sorted(logs, key=lambda x: x.get("step", 0))
@@ -119,7 +112,7 @@ def extract_images(logs: list[dict]) -> dict[str, list[MediaData]]:
                         media_by_key[key] = []
                     try:
                         media_data = MediaData(
-                            file_path=get_path_for_media(value.get("file_path")),
+                            file_path=utils.MEDIA_DIR / value.get("file_path"),
                             caption=value.get("caption"),
                         )
                         media_by_key[key].append(media_data)
@@ -436,6 +429,7 @@ css = """
 .media-group .tabs { padding: 0.5em; }
 """
 
+gr.set_static_paths(paths=[utils.MEDIA_DIR])
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(

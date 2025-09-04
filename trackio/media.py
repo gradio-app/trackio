@@ -11,10 +11,10 @@ import mediapy as mp
 
 try:  # absolute imports when installed
     from trackio.file_storage import FileStorage
-    from trackio.utils import TRACKIO_DIR
+    from trackio.utils import MEDIA_DIR
 except ImportError:  # relative imports for local execution on Spaces
     from file_storage import FileStorage
-    from utils import TRACKIO_DIR
+    from utils import MEDIA_DIR
 
 class TrackioImage:
     """
@@ -53,12 +53,12 @@ class TrackioImage:
 
     def _save(self, project: str, run: str, step: int = 0, format: str = "PNG") -> str:
         if not self._file_path:
-            # Save image as {TRACKIO_DIR}/media/{project}/{run}/{step}/{uuid}.{ext}
+            # Save image as {MEDIA_DIR}/media/{project}/{run}/{step}/{uuid}.{ext}
             filename = f"{uuid.uuid4()}.{format.lower()}"
             path = FileStorage.save_image(
                 self._pil, project, run, step, filename, format=format
             )
-            self._file_path = path.relative_to(TRACKIO_DIR)
+            self._file_path = path.relative_to(MEDIA_DIR)
             self._file_format = format
         return str(self._file_path)
 
@@ -66,7 +66,7 @@ class TrackioImage:
         return self._file_path
 
     def _get_absolute_file_path(self) -> Path | None:
-        return TRACKIO_DIR / self._file_path
+        return MEDIA_DIR / self._file_path
 
     def _to_dict(self) -> dict:
         if not self._file_path:
@@ -91,7 +91,7 @@ class TrackioImage:
                 f"'file_path' must be string, got {type(file_path).__name__}"
             )
 
-        absolute_path = TRACKIO_DIR / file_path
+        absolute_path = MEDIA_DIR / file_path
         try:
             if not absolute_path.is_file():
                 raise ValueError(f"Image file not found: {file_path}")
@@ -154,10 +154,10 @@ class TrackioVideo:
                 shutil.copy(self._value, media_path)
             else:
                 raise ValueError(f"File not found: {self._value}")
-        self._file_path = media_path.relative_to(TRACKIO_DIR)
+        self._file_path = media_path.relative_to(MEDIA_DIR)
     
     def _get_absolute_file_path(self) -> Path | None:
-        return TRACKIO_DIR / self._file_path
+        return MEDIA_DIR / self._file_path
 
     def _file_extension(self) -> str:
         if self._format is None:
@@ -165,13 +165,6 @@ class TrackioVideo:
                 raise ValueError("File format not specified and no file path provided")
             return self._file_path.suffix[1:].lower()
         return self._format
-    
-    # def _gen_upload_file_path(self, project: str, run: str, step: int) -> Path:
-    #     if self._upload_file_path:
-    #         return self._upload_file_path
-    #     filename = f"{uuid.uuid4()}.{self._file_extension()}"
-    #     dir = FileStorage.init_project_media_path(project, run, step)
-    #     return Path.home() / dir.relative_to(TRACKIO_DIR) /  filename
     
     @staticmethod
     def _process_ndarray(value: np.ndarray) -> np.ndarray:

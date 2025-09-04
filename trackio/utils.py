@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_DIR = Path(HF_HOME) / "trackio"
+MEDIA_DIR = TRACKIO_DIR / "media"
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
@@ -332,12 +333,6 @@ def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
             color_map[run] = base_color
 
     return color_map
-
-def get_space() -> str | None:
-    # Copy of gradio's utils.get_space()
-    if os.getenv("SYSTEM") == "spaces":
-        return os.getenv("SPACE_ID")
-    return None
 
 def downsample(
     df: pd.DataFrame,
