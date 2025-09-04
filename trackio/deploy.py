@@ -91,10 +91,9 @@ def deploy_as_space(
 pyarrow>=21.0
         """
     else:
-        trackio_version = trackio.__version__
         requirements_content = f"""
 pyarrow>=21.0
-trackio=={trackio_version}
+trackio=={trackio.__version__}
         """
 
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
