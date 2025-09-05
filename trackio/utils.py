@@ -1,4 +1,3 @@
-import math
 import re
 import sys
 import time
@@ -567,70 +566,3 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return int(time_diff / 60)
     else:
         return None
-
-
-def sanitize_infinity_values(metrics):
-    """
-    Sanitize infinity and NaN values in metrics dict to make it JSON-compliant.
-    Only handles top-level float values.
-
-    Converts:
-    - float('inf') -> "Infinity"
-    - float('-inf') -> "-Infinity"
-    - float('nan') -> "NaN"
-
-    Example:
-        {"loss": float('inf'), "accuracy": 0.95} -> {"loss": "Infinity", "accuracy": 0.95}
-    """
-    if not isinstance(metrics, dict):
-        return metrics
-
-    result = {}
-    for key, value in metrics.items():
-        if isinstance(value, float):
-            if math.isinf(value):
-                result[key] = "Infinity" if value > 0 else "-Infinity"
-            elif math.isnan(value):
-                result[key] = "NaN"
-            else:
-                result[key] = value
-        elif isinstance(value, np.floating):
-            float_val = float(value)
-            if math.isinf(float_val):
-                result[key] = "Infinity" if float_val > 0 else "-Infinity"
-            elif math.isnan(float_val):
-                result[key] = "NaN"
-            else:
-                result[key] = float_val
-        else:
-            result[key] = value
-    return result
-
-
-def deserialize_infinity_values(metrics):
-    """
-    Deserialize infinity and NaN string values back to their numeric forms.
-    Only handles top-level string values.
-
-    Converts:
-    - "Infinity" -> float('inf')
-    - "-Infinity" -> float('-inf')
-    - "NaN" -> float('nan')
-
-    Example:
-        {"loss": "Infinity", "accuracy": 0.95} -> {"loss": float('inf'), "accuracy": 0.95}
-    """
-    if not isinstance(metrics, dict):
-        return metrics
-
-    result = {}
-    for key, value in metrics.items():
-        if value == "Infinity":
-            result[key] = float("inf")
-        elif value == "-Infinity":
-            result[key] = float("-inf")
-        elif value == "NaN":
-            result[key] = float("nan")
-        else:
-            result[key] = value
-    return result
