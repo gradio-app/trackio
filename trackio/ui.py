@@ -355,19 +355,16 @@ def configure(request: gr.Request):
         case _:
             sidebar = gr.Sidebar(open=True, visible=True)
 
-    metrics_regex_param = request.query_params.get("metrics_regex", "")
+    metrics_param = request.query_params.get("metrics", "")
 
-    if metrics := request.query_params.get("metrics"):
-        return metrics.split(","), sidebar, metrics_regex_param
-    else:
-        return [], sidebar, metrics_regex_param
+    return [], sidebar, metrics_param
 
 
-def toggle_embed_visibility(current_visible: bool, project: str, metrics_regex: str):
+def toggle_embed_visibility(current_visible: bool, project: str, metrics: str):
     """Toggle the visibility of the embed textbox and update content if showing."""
     new_visible = not current_visible
     if new_visible:
-        embed_code = generate_embed_code(project, metrics_regex)
+        embed_code = utils.generate_embed_code(project, metrics)
         return (
             gr.Button("😶‍🌫️ Hide embed code", size="sm", variant="secondary"),
             gr.Textbox(visible=True, value=embed_code),
@@ -381,34 +378,10 @@ def toggle_embed_visibility(current_visible: bool, project: str, metrics_regex: 
         )
 
 
-def generate_embed_code(project: str, metrics_regex: str):
-    """Generate the embed iframe code based on current settings."""
-    space_host = os.environ.get("SPACE_HOST", "")
-    if not space_host:
-        return ""
-
-    params = []
-
-    if project:
-        params.append(f"project={project}")
-
-    if metrics_regex and metrics_regex.strip():
-        params.append(f"metrics_regex={metrics_regex}")
-
-    params.append("sidebar=hidden")
-
-    query_string = "&".join(params)
-    embed_url = f"https://{space_host}?{query_string}"
-
-    return (
-        f'<iframe src="{embed_url}" width="1600" height="500" frameBorder="0"></iframe>'
-    )
-
-
-def update_embed_code_if_visible(visible: bool, project: str, metrics_regex: str):
+def update_embed_code_if_visible(visible: bool, project: str, metrics: str):
     """Update embed code only if the textbox is currently visible."""
     if visible:
-        embed_code = generate_embed_code(project, metrics_regex)
+        embed_code = utils.generate_embed_code(project, metrics)
         return gr.Textbox(value=embed_code)
     else:
         return gr.Textbox()

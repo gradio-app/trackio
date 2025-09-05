@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import time
@@ -566,3 +567,27 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return int(time_diff / 60)
     else:
         return None
+
+
+def generate_embed_code(project: str, metrics: str) -> str:
+    """Generate the embed iframe code based on current settings."""
+    space_host = os.environ.get("SPACE_HOST", "")
+    if not space_host:
+        return ""
+
+    params = []
+
+    if project:
+        params.append(f"project={project}")
+
+    if metrics and metrics.strip():
+        params.append(f"metrics={metrics}")
+
+    params.append("sidebar=hidden")
+
+    query_string = "&".join(params)
+    embed_url = f"https://{space_host}?{query_string}"
+
+    return (
+        f'<iframe src="{embed_url}" width="1600" height="500" frameBorder="0"></iframe>'
+    )
