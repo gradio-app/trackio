@@ -355,10 +355,63 @@ def configure(request: gr.Request):
         case _:
             sidebar = gr.Sidebar(open=True, visible=True)
 
+    metrics_regex_param = request.query_params.get("metrics_regex", "")
+
     if metrics := request.query_params.get("metrics"):
-        return metrics.split(","), sidebar
+        return metrics.split(","), sidebar, metrics_regex_param
     else:
-        return [], sidebar
+        return [], sidebar, metrics_regex_param
+
+
+def toggle_embed_visibility(current_visible: bool, project: str, metrics_regex: str):
+    """Toggle the visibility of the embed textbox and update content if showing."""
+    new_visible = not current_visible
+    if new_visible:
+        embed_code = generate_embed_code(project, metrics_regex)
+        return (
+            gr.Button("😶‍🌫️ Hide embed code", size="sm", variant="secondary"),
+            gr.Textbox(visible=True, value=embed_code),
+            new_visible,
+        )
+    else:
+        return (
+            gr.Button("🔗 Show embed code", size="sm", variant="secondary"),
+            gr.Textbox(visible=False, value=""),
+            new_visible,
+        )
+
+
+def generate_embed_code(project: str, metrics_regex: str):
+    """Generate the embed iframe code based on current settings."""
+    space_host = os.environ.get("SPACE_HOST", "")
+    if not space_host:
+        return ""
+
+    params = []
+
+    if project:
+        params.append(f"project={project}")
+
+    if metrics_regex and metrics_regex.strip():
+        params.append(f"metrics_regex={metrics_regex}")
+
+    params.append("sidebar=hidden")
+
+    query_string = "&".join(params)
+    embed_url = f"https://{space_host}?{query_string}"
+
+    return (
+        f'<iframe src="{embed_url}" width="1600" height="500" frameBorder="0"></iframe>'
+    )
+
+
+def update_embed_code_if_visible(visible: bool, project: str, metrics_regex: str):
+    """Update embed code only if the textbox is currently visible."""
+    if visible:
+        embed_code = generate_embed_code(project, metrics_regex)
+        return gr.Textbox(value=embed_code)
+    else:
+        return gr.Textbox()
 
 
 def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
@@ -428,6 +481,23 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
+
+        # Only show embed functionality on Spaces
+        if os.environ.get("SPACE_HOST"):
+            with gr.Group():
+                embed_textbox = gr.Textbox(
+                    label="",
+                    max_lines=4,
+                    show_copy_button=True,
+                    visible=False,
+                    value="",
+                )
+                embed_btn = gr.Button(
+                    "🔗 Show embed code", size="sm", variant="secondary"
+                )
+        else:
+            embed_textbox = None
+            embed_btn = None
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
         run_cb = gr.CheckboxGroup(
             label="Runs", choices=[], interactive=True, elem_id="run-cb"
@@ -458,8 +528,11 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
+    embed_visible = gr.State(False)
 
-    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar])
+    gr.on(
+        [demo.load], fn=configure, outputs=[metrics_subset, sidebar, metric_filter_tb]
+    )
     gr.on(
         [demo.load],
         fn=get_projects,
@@ -509,6 +582,23 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         inputs=[project_dd, run_tb],
         outputs=run_cb,
     )
+
+    # Embed button functionality - only set up if embed components exist (on Spaces)
+    if embed_btn and embed_textbox:
+        embed_btn.click(
+            fn=toggle_embed_visibility,
+            inputs=[embed_visible, project_dd, metric_filter_tb],
+            outputs=[embed_btn, embed_textbox, embed_visible],
+            show_progress="hidden",
+        )
+
+        # Update embed code when metrics filter changes (only if visible)
+        metric_filter_tb.change(
+            fn=update_embed_code_if_visible,
+            inputs=[embed_visible, project_dd, metric_filter_tb],
+            outputs=embed_textbox,
+            show_progress="hidden",
+        )
 
     gr.api(
         fn=upload_db_to_space,
