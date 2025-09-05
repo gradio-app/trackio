@@ -593,5 +593,5 @@ def generate_embed_code(project: str, metrics: str, selected_runs: list = None) 
     embed_url = f"https://{space_host}?{query_string}"
 
     return (
-        f'<iframe src="{embed_url}" width="1600" height="500" frameBorder="0"></iframe>'
+        f'<iframe src="{embed_url}" style="width:1600px; height:500px; border:0;"></iframe>'
     )
