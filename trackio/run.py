@@ -8,7 +8,12 @@ from trackio.media import TrackioImage
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import LogEntry, UploadEntry
-from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
+from trackio.utils import (
+    RESERVED_KEYS,
+    fibo,
+    generate_readable_name,
+    serialize_values,
+)
 
 BATCH_SEND_INTERVAL = 0.5
 
@@ -124,6 +129,7 @@ class Run:
         Run._replace_tables(metrics)
 
         metrics = self._process_media(metrics, step)
+        metrics = serialize_values(metrics)
         log_entry: LogEntry = {
             "project": self.project,
             "run": self.name,
