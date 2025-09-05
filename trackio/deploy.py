@@ -90,7 +90,7 @@ def deploy_as_space(
 
     # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
     # Make sure necessary dependencies are installed by creating a requirements.txt.
-    is_source_install = not _is_trackio_installed_from_source()
+    is_source_install = _is_trackio_installed_from_source()
 
     if is_source_install:
         requirements_content = """pyarrow>=21.0"""
