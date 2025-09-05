@@ -455,7 +455,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
-        # Only show embed functionality on Spaces
         if os.environ.get("SPACE_HOST"):
             with gr.Group():
                 embed_textbox = gr.Textbox(
@@ -556,7 +555,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         outputs=run_cb,
     )
 
-    # Embed button functionality - only set up if embed components exist (on Spaces)
     if embed_btn and embed_textbox:
         embed_btn.click(
             fn=toggle_embed_visibility,
@@ -565,7 +563,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             show_progress="hidden",
         )
 
-        # Update embed code when metrics filter changes (only if visible)
         metric_filter_tb.change(
             fn=update_embed_code_if_visible,
             inputs=[embed_visible, project_dd, metric_filter_tb],
