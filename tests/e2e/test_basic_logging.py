@@ -57,7 +57,6 @@ def test_infinity_logging(temp_dir):
     assert len(results) == 1
     log = results[0]
 
-    # Check that infinity values were properly deserialized back to floats
     assert math.isinf(log["loss"]) and log["loss"] > 0
     assert math.isinf(log["accuracy"]) and log["accuracy"] < 0
     assert math.isnan(log["f1_score"])
