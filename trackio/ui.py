@@ -605,6 +605,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
         numeric_cols = master_df.select_dtypes(include="number").columns
         numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
+
+        if x_column in numeric_cols:
+            numeric_cols.remove(x_column)
+
         if metrics_subset:
             numeric_cols = [c for c in numeric_cols if c in metrics_subset]
 
