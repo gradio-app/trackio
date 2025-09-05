@@ -1,7 +1,4 @@
-import os
 from pathlib import Path
-
-from PIL import Image as PILImage
 
 try:  # absolute imports when installed
     from trackio.utils import MEDIA_DIR
@@ -11,7 +8,7 @@ except ImportError:  # relative imports for local execution on Spaces
 
 class FileStorage:
     @staticmethod
-    def gen_project_media_path(
+    def get_project_media_path(
         project: str,
         run: str | None = None,
         step: int | None = None,
@@ -35,6 +32,6 @@ class FileStorage:
     def init_project_media_path(
         project: str, run: str | None = None, step: int | None = None
     ) -> Path:
-        path = FileStorage.gen_project_media_path(project, run, step)
+        path = FileStorage.get_project_media_path(project, run, step)
         path.mkdir(parents=True, exist_ok=True)
         return path

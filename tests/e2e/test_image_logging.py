@@ -1,6 +1,7 @@
 import numpy as np
 
 import trackio
+from trackio.media import TrackioImage
 from trackio.sqlite_storage import SQLiteStorage
 
 PROJECT_NAME = "test_project"
@@ -27,9 +28,17 @@ def test_image_logging(temp_dir):
 
     assert metrics[0]["loss"] == 0.1
     assert metrics[0]["step"] == 0
-    assert metrics[0]["img1"] == image1._to_dict()
+    assert metrics[0]["img1"].get("_type") == TrackioImage.TYPE
+    assert metrics[0]["img1"].get("file_path") == str(image1._get_relative_file_path())
+    assert metrics[0]["img1"].get("caption") == "test_caption1"
 
     assert metrics[1]["loss"] == 0.2
     assert metrics[1]["step"] == 1
-    assert metrics[1]["img1"] == image1._to_dict()
-    assert metrics[1]["img2"] == image2._to_dict()
+
+    assert metrics[1]["img1"].get("_type") == TrackioImage.TYPE
+    assert metrics[1]["img1"].get("file_path") == str(image1._get_relative_file_path())
+    assert metrics[1]["img1"].get("caption") == "test_caption1"
+
+    assert metrics[1]["img2"].get("_type") == TrackioImage.TYPE
+    assert metrics[1]["img2"].get("file_path") == str(image2._get_relative_file_path())
+    assert metrics[1]["img2"].get("caption") == "test_caption2"
