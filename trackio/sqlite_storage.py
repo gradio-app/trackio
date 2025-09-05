@@ -13,13 +13,13 @@ try:  # absolute imports when installed
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import (
         TRACKIO_DIR,
-        deserialize_infinity_values,
-        sanitize_infinity_values,
+        deserialize_values,
+        serialize_values,
     )
 except Exception:  # relative imports for local execution on Spaces
     from commit_scheduler import CommitScheduler
     from dummy_commit_scheduler import DummyCommitScheduler
-    from utils import TRACKIO_DIR, deserialize_infinity_values, sanitize_infinity_values
+    from utils import TRACKIO_DIR, deserialize_values, serialize_values
 
 
 class SQLiteStorage:
@@ -101,7 +101,7 @@ class SQLiteStorage:
                 metrics = df["metrics"].copy()
                 metrics = pd.DataFrame(
                     metrics.apply(
-                        lambda x: deserialize_infinity_values(json.loads(x))
+                        lambda x: deserialize_values(json.loads(x))
                     ).values.tolist(),
                     index=df.index,
                 )
@@ -133,7 +133,7 @@ class SQLiteStorage:
                     # combine them all into a single metrics col
                     metrics = json.loads(metrics.to_json(orient="records"))
                     df["metrics"] = [
-                        json.dumps(sanitize_infinity_values(row)) for row in metrics
+                        json.dumps(serialize_values(row)) for row in metrics
                     ]
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
 
@@ -204,7 +204,7 @@ class SQLiteStorage:
                         current_timestamp,
                         run,
                         current_step,
-                        json.dumps(sanitize_infinity_values(metrics)),
+                        json.dumps(serialize_values(metrics)),
                     ),
                 )
                 conn.commit()
@@ -261,7 +261,7 @@ class SQLiteStorage:
                             timestamps[i],
                             run,
                             steps[i],
-                            json.dumps(sanitize_infinity_values(metrics)),
+                            json.dumps(serialize_values(metrics)),
                         )
                     )
 
@@ -298,7 +298,7 @@ class SQLiteStorage:
             results = []
             for row in rows:
                 metrics = json.loads(row["metrics"])
-                metrics = deserialize_infinity_values(metrics)
+                metrics = deserialize_values(metrics)
                 metrics["timestamp"] = row["timestamp"]
                 metrics["step"] = row["step"]
                 results.append(metrics)

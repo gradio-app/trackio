@@ -1,3 +1,5 @@
+import math
+
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -36,3 +38,27 @@ def test_basic_logging_with_step(temp_dir):
     assert results[1]["step"] == 2
     assert "timestamp" in results[0]
     assert "timestamp" in results[1]
+
+
+def test_infinity_logging(temp_dir):
+    """Test end-to-end logging of infinity and NaN values."""
+    trackio.init(project="test_infinity", name="test_run")
+    trackio.log(
+        metrics={
+            "loss": float("inf"),
+            "accuracy": float("-inf"),
+            "f1_score": float("nan"),
+            "normal_value": 0.95,
+        }
+    )
+    trackio.finish()
+
+    results = SQLiteStorage.get_logs(project="test_infinity", run="test_run")
+    assert len(results) == 1
+    log = results[0]
+
+    # Check that infinity values were properly deserialized back to floats
+    assert math.isinf(log["loss"]) and log["loss"] > 0
+    assert math.isinf(log["accuracy"]) and log["accuracy"] < 0
+    assert math.isnan(log["f1_score"])
+    assert log["normal_value"] == 0.95

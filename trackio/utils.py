@@ -569,9 +569,9 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return None
 
 
-def sanitize_infinity_values(metrics):
+def serialize_values(metrics):
     """
-    Sanitize infinity and NaN values in metrics dict to make it JSON-compliant.
+    Serialize infinity and NaN values in metrics dict to make it JSON-compliant.
     Only handles top-level float values.
 
     Converts:
@@ -607,7 +607,7 @@ def sanitize_infinity_values(metrics):
     return result
 
 
-def deserialize_infinity_values(metrics):
+def deserialize_values(metrics):
     """
     Deserialize infinity and NaN string values back to their numeric forms.
     Only handles top-level string values.
