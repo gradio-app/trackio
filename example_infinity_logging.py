@@ -63,34 +63,19 @@ def main():
         }
     )
 
-    # Log complex nested structure with infinity values
+    # Log multiple infinity values together
     trackio.log(
         {
             "epoch": 5,
-            "train_metrics": {
-                "train": {
-                    "loss": 0.05,
-                    "accuracy": 0.99,
-                    "grad_norm": float("inf"),  # Nested infinity
-                },
-                "validation": {
-                    "loss": float("-inf"),  # Nested negative infinity
-                    "accuracy": 0.985,
-                    "f1_score": float("nan"),  # Nested NaN
-                },
-            },
-            "hyperparameters": {
-                "batch_size": 32,
-                "learning_rate": 0.0001,
-                "temperature": float("inf"),  # Infinity in hyperparameters
-            },
-            "edge_cases": [
-                1.0,
-                float("inf"),
-                -5.0,
-                float("-inf"),
-                float("nan"),
-            ],  # List with mixed values
+            "train_loss": 0.05,
+            "train_accuracy": 0.99,
+            "train_grad_norm": float("inf"),  # Infinity value
+            "val_loss": float("-inf"),  # Negative infinity
+            "val_accuracy": 0.985,
+            "val_f1_score": float("nan"),  # NaN value
+            "batch_size": 32,
+            "learning_rate": 0.0001,
+            "temperature": float("inf"),  # Another infinity
         }
     )
 

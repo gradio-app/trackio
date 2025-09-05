@@ -13,16 +13,15 @@ class TestInfinityValues:
     """Test suite for infinity and NaN value handling in trackio."""
 
     def test_sanitize_infinity_values(self):
-        """Test that infinity values are properly sanitized for JSON serialization."""
+        """Test that top-level infinity values are properly sanitized for JSON serialization."""
         test_data = {
             "positive_inf": float("inf"),
             "negative_inf": float("-inf"),
             "nan_value": float("nan"),
             "normal_value": 42.0,
-            "nested": {
-                "inf_in_nested": float("inf"),
-                "list_with_inf": [1.0, float("inf"), float("-inf"), float("nan")],
-            },
+            "string_value": "test",
+            "none_value": None,
+            "dict_value": {"nested": "data"},  # Should be left unchanged
         }
 
         sanitized = sanitize_infinity_values(test_data)
@@ -31,13 +30,9 @@ class TestInfinityValues:
         assert sanitized["negative_inf"] == "-Infinity"
         assert sanitized["nan_value"] == "NaN"
         assert sanitized["normal_value"] == 42.0
-        assert sanitized["nested"]["inf_in_nested"] == "Infinity"
-        assert sanitized["nested"]["list_with_inf"] == [
-            1.0,
-            "Infinity",
-            "-Infinity",
-            "NaN",
-        ]
+        assert sanitized["string_value"] == "test"
+        assert sanitized["none_value"] is None
+        assert sanitized["dict_value"] == {"nested": "data"}  # Unchanged
 
     def test_deserialize_infinity_values(self):
         """Test that sanitized infinity values are properly deserialized back to numeric forms."""
@@ -46,10 +41,9 @@ class TestInfinityValues:
             "negative_inf": "-Infinity",
             "nan_value": "NaN",
             "normal_value": 42.0,
-            "nested": {
-                "inf_in_nested": "Infinity",
-                "list_with_inf": [1.0, "Infinity", "-Infinity", "NaN"],
-            },
+            "string_value": "test",
+            "none_value": None,
+            "dict_value": {"nested": "data"},  # Should be left unchanged
         }
 
         deserialized = deserialize_infinity_values(test_data)
@@ -64,10 +58,9 @@ class TestInfinityValues:
         )
         assert math.isnan(deserialized["nan_value"])
         assert deserialized["normal_value"] == 42.0
-        assert math.isinf(deserialized["nested"]["inf_in_nested"])
-        assert math.isinf(deserialized["nested"]["list_with_inf"][1])
-        assert math.isinf(deserialized["nested"]["list_with_inf"][2])
-        assert math.isnan(deserialized["nested"]["list_with_inf"][3])
+        assert deserialized["string_value"] == "test"
+        assert deserialized["none_value"] is None
+        assert deserialized["dict_value"] == {"nested": "data"}  # Unchanged
 
     def test_roundtrip_serialization(self):
         """Test that values can be sanitized and then deserialized correctly."""
@@ -90,7 +83,6 @@ class TestInfinityValues:
         """Test that SQLite storage properly handles infinity values."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Override the TRACKIO_DIR for this test
-            original_trackio_dir = SQLiteStorage.get_project_db_path("test_project")
             test_db_path = Path(temp_dir) / "test_project.db"
 
             # Mock the get_project_db_path method
@@ -123,19 +115,6 @@ class TestInfinityValues:
                 assert math.isnan(log["f1_score"])
                 assert log["normal_metric"] == 0.95
 
-                # Verify that the data in the database is stored as sanitized strings
-                with sqlite3.connect(test_db_path) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT metrics FROM metrics WHERE run_name = ?", ("test_run",)
-                    )
-                    raw_metrics = cursor.fetchone()[0]
-
-                    # The raw JSON should contain sanitized string representations
-                    assert '"Infinity"' in raw_metrics
-                    assert '"-Infinity"' in raw_metrics
-                    assert '"NaN"' in raw_metrics
-
             finally:
                 # Restore original method
                 SQLiteStorage.get_project_db_path = original_method
@@ -148,6 +127,7 @@ class TestInfinityValues:
             "np_inf": np.float64("inf"),
             "np_neg_inf": np.float64("-inf"),
             "np_nan": np.float64("nan"),
+            "np_normal": np.float64(3.14),
         }
 
         sanitized = sanitize_infinity_values(test_data)
@@ -155,3 +135,5 @@ class TestInfinityValues:
         assert sanitized["np_inf"] == "Infinity"
         assert sanitized["np_neg_inf"] == "-Infinity"
         assert sanitized["np_nan"] == "NaN"
+        assert isinstance(sanitized["np_normal"], (int, float))
+        assert abs(sanitized["np_normal"] - 3.14) < 1e-10

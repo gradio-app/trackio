@@ -569,60 +569,68 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return None
 
 
-def sanitize_infinity_values(obj):
+def sanitize_infinity_values(metrics):
     """
-    Recursively sanitize infinity and NaN values in a nested structure to make it JSON-compliant.
+    Sanitize infinity and NaN values in metrics dict to make it JSON-compliant.
+    Only handles top-level float values.
 
     Converts:
     - float('inf') -> "Infinity"
     - float('-inf') -> "-Infinity"
     - float('nan') -> "NaN"
 
-    This ensures compatibility with JSON serialization while preserving the information.
+    Example:
+        {"loss": float('inf'), "accuracy": 0.95} -> {"loss": "Infinity", "accuracy": 0.95}
     """
-    if isinstance(obj, dict):
-        return {key: sanitize_infinity_values(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [sanitize_infinity_values(item) for item in obj]
-    elif isinstance(obj, float):
-        if math.isinf(obj):
-            return "Infinity" if obj > 0 else "-Infinity"
-        elif math.isnan(obj):
-            return "NaN"
-        return obj
-    elif isinstance(obj, np.floating):
-        float_val = float(obj)
-        if math.isinf(float_val):
-            return "Infinity" if float_val > 0 else "-Infinity"
-        elif math.isnan(float_val):
-            return "NaN"
-        return float_val
-    else:
-        return obj
+    if not isinstance(metrics, dict):
+        return metrics
+
+    result = {}
+    for key, value in metrics.items():
+        if isinstance(value, float):
+            if math.isinf(value):
+                result[key] = "Infinity" if value > 0 else "-Infinity"
+            elif math.isnan(value):
+                result[key] = "NaN"
+            else:
+                result[key] = value
+        elif isinstance(value, np.floating):
+            float_val = float(value)
+            if math.isinf(float_val):
+                result[key] = "Infinity" if float_val > 0 else "-Infinity"
+            elif math.isnan(float_val):
+                result[key] = "NaN"
+            else:
+                result[key] = float_val
+        else:
+            result[key] = value
+    return result
 
 
-def deserialize_infinity_values(obj):
+def deserialize_infinity_values(metrics):
     """
-    Recursively deserialize infinity and NaN string values back to their numeric forms.
+    Deserialize infinity and NaN string values back to their numeric forms.
+    Only handles top-level string values.
 
     Converts:
     - "Infinity" -> float('inf')
     - "-Infinity" -> float('-inf')
     - "NaN" -> float('nan')
 
-    This restores the numeric values for proper visualization and calculations.
+    Example:
+        {"loss": "Infinity", "accuracy": 0.95} -> {"loss": float('inf'), "accuracy": 0.95}
     """
-    if isinstance(obj, dict):
-        return {key: deserialize_infinity_values(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [deserialize_infinity_values(item) for item in obj]
-    elif isinstance(obj, str):
-        if obj == "Infinity":
-            return float("inf")
-        elif obj == "-Infinity":
-            return float("-inf")
-        elif obj == "NaN":
-            return float("nan")
-        return obj
-    else:
-        return obj
+    if not isinstance(metrics, dict):
+        return metrics
+
+    result = {}
+    for key, value in metrics.items():
+        if value == "Infinity":
+            result[key] = float("inf")
+        elif value == "-Infinity":
+            result[key] = float("-inf")
+        elif value == "NaN":
+            result[key] = float("nan")
+        else:
+            result[key] = value
+    return result
