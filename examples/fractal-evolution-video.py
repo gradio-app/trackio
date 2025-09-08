@@ -313,7 +313,6 @@ def main():
     trackio.init(
         project=f"fractal-evolution-video-{project_id}",
         name="fractal-parameter-comparison",
-        space_id=f"fractal-evolution-video-{project_id}",
     )
 
     # Process each parameter set
