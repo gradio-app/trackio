@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
-TRACKIO_DIR = os.environ.get("TRACKIO_DIR", Path(HF_HOME) / "trackio")
+TRACKIO_DIR = Path(os.environ.get("TRACKIO_DIR", Path(HF_HOME) / "trackio"))
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
