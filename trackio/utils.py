@@ -20,6 +20,10 @@ TRACKIO_DIR = Path(os.environ.get("TRACKIO_DIR", Path(HF_HOME) / "trackio"))
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
+def _setup_trackio_dir():
+    TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
+
+_setup_trackio_dir()
 
 def generate_readable_name(used_names: list[str], space_id: str | None = None) -> str:
     """
