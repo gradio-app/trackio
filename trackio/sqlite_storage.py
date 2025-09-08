@@ -8,7 +8,6 @@ from threading import Lock
 import huggingface_hub as hf
 import pandas as pd
 
-
 try:  # absolute imports when installed
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
@@ -313,7 +312,10 @@ class SQLiteStorage:
                         # Download parquet and media assets
                         if is_media or is_parquet:
                             hf.hf_hub_download(
-                                dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR
+                                dataset_id,
+                                file,
+                                repo_type="dataset",
+                                local_dir=TRACKIO_DIR,
                             )
                             updated = True
                 except hf.errors.EntryNotFoundError:

@@ -5,10 +5,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Literal
 
+import mediapy as mp
 import numpy as np
 from PIL import Image as PILImage
-import mediapy as mp
-
 
 try:  # absolute imports when installed
     from trackio.file_storage import FileStorage
@@ -17,68 +16,69 @@ except ImportError:  # relative imports for local execution on Spaces
     from file_storage import FileStorage
     from utils import MEDIA_DIR
 
+
 class TrackioMedia(ABC):
     """
     Abstract base class for Trackio media objects
     Provides shared functionality for file handling and serialization.
     """
-    
+
     TYPE: str
-    
+
     def __init_subclass__(cls, **kwargs):
         """Ensure subclasses define the TYPE attribute."""
         super().__init_subclass__(**kwargs)
-        if not hasattr(cls, 'TYPE') or cls.TYPE is None:
+        if not hasattr(cls, "TYPE") or cls.TYPE is None:
             raise TypeError(f"Class {cls.__name__} must define TYPE attribute")
-    
+
     def __init__(self, value, caption: str | None = None):
         self.caption = caption
         self._value = value
         self._file_path: Path | None = None
-        
+
         # Validate file existence for string/Path inputs
         if isinstance(self._value, str | Path):
             if not os.path.isfile(self._value):
                 raise ValueError(f"File not found: {self._value}")
-    
+
     def _file_extension(self) -> str:
         if self._file_path:
             return self._file_path.suffix[1:].lower()
         if isinstance(self._value, str | Path):
             path = Path(self._value)
             return path.suffix[1:].lower()
-        if hasattr(self, '_format') and self._format:
+        if hasattr(self, "_format") and self._format:
             return self._format
         return "unknown"
-    
+
     def _get_relative_file_path(self) -> Path | None:
         return self._file_path
-    
+
     def _get_absolute_file_path(self) -> Path | None:
         if self._file_path:
             return MEDIA_DIR / self._file_path
         return None
-    
+
     def _save(self, project: str, run: str, step: int = 0):
         if self._file_path:
             return
-        
+
         media_dir = FileStorage.init_project_media_path(project, run, step)
         filename = f"{uuid.uuid4()}.{self._file_extension()}"
         file_path = media_dir / filename
-        
+
         # Delegate to subclass-specific save logic
         self._save_media(file_path)
-        
+
         self._file_path = file_path.relative_to(MEDIA_DIR)
-    
+
     @abstractmethod
     def _save_media(self, file_path: Path):
         """
         Performs the actual media saving logic.
         """
         pass
-    
+
     def _to_dict(self) -> dict:
         if not self._file_path:
             raise ValueError("Media must be saved to file before serialization")
@@ -88,7 +88,9 @@ class TrackioMedia(ABC):
             "caption": self.caption,
         }
 
+
 TrackioImageSourceType = str | Path | np.ndarray | PILImage.Image
+
 
 class TrackioImage(TrackioMedia):
     """
@@ -99,9 +101,7 @@ class TrackioImage(TrackioMedia):
 
     TYPE = "trackio.image"
 
-    def __init__(
-        self, value: TrackioImageSourceType, caption: str | None = None
-    ):
+    def __init__(self, value: TrackioImageSourceType, caption: str | None = None):
         """
         Parameters:
             value: A path to an image, a numpy array, or a PIL Image.
@@ -110,7 +110,10 @@ class TrackioImage(TrackioMedia):
         super().__init__(value, caption)
         self._format: str | None = None
 
-        if isinstance(self._value, np.ndarray | PILImage.Image) and self._format is None:
+        if (
+            isinstance(self._value, np.ndarray | PILImage.Image)
+            and self._format is None
+        ):
             self._format = "png"
 
     def _as_pil(self) -> PILImage.Image | None:
@@ -133,8 +136,10 @@ class TrackioImage(TrackioMedia):
             else:
                 raise ValueError(f"File not found: {self._value}")
 
+
 TrackioVideoSourceType = str | Path | np.ndarray
 TrackioVideoFormatType = Literal["gif", "mp4", "webm"]
+
 
 class TrackioVideo(TrackioMedia):
     """
@@ -145,7 +150,8 @@ class TrackioVideo(TrackioMedia):
 
     TYPE = "trackio.video"
 
-    def __init__(self,
+    def __init__(
+        self,
         value: TrackioVideoSourceType,
         caption: str | None = None,
         fps: int | None = None,
@@ -185,27 +191,31 @@ class TrackioVideo(TrackioMedia):
                 shutil.copy(self._value, file_path)
             else:
                 raise ValueError(f"File not found: {self._value}")
-    
+
     @staticmethod
     def _process_ndarray(value: np.ndarray) -> np.ndarray:
         # Verify value is either 4D (single video) or 5D array (batched videos).
         # Expected format: (frames, channels, height, width) or (batch, frames, channels, height, width)
         if value.ndim < 4:
-            raise ValueError("Video requires at least 4 dimensions (frames, channels, height, width)")
+            raise ValueError(
+                "Video requires at least 4 dimensions (frames, channels, height, width)"
+            )
         if value.ndim > 5:
-            raise ValueError("Videos can have at most 5 dimensions (batch, frames, channels, height, width)")
+            raise ValueError(
+                "Videos can have at most 5 dimensions (batch, frames, channels, height, width)"
+            )
         if value.ndim == 4:
             # Reshape to 5D with single batch: (1, frames, channels, height, width)
             value = value[np.newaxis, ...]
-        
+
         value = TrackioVideo._tile_batched_videos(value)
         return value
-    
+
     @staticmethod
     def _tile_batched_videos(video: np.ndarray) -> np.ndarray:
-        """ 
+        """
         Tiles a batch of videos into a grid of videos.
-        
+
         Input format: (batch, frames, channels, height, width) - original FCHW format
         Output format: (frames, total_height, total_width, channels)
         """

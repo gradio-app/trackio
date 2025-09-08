@@ -1,13 +1,13 @@
 import os
 import re
 import shutil
+from dataclasses import dataclass
 from typing import Any
 
 import gradio as gr
 import huggingface_hub as hf
 import numpy as np
 import pandas as pd
-
 
 HfApi = hf.HfApi()
 
@@ -94,11 +94,12 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
 
     return result
 
-from dataclasses import dataclass
+
 @dataclass
 class MediaData:
     caption: str | None
     file_path: str
+
 
 def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
     media_by_key: dict[str, list[MediaData]] = {}

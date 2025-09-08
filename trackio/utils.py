@@ -1,4 +1,3 @@
-import os
 import re
 import sys
 import time
@@ -333,6 +332,7 @@ def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
             color_map[run] = base_color
 
     return color_map
+
 
 def downsample(
     df: pd.DataFrame,
