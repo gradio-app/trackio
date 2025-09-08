@@ -195,7 +195,7 @@ class TrackioVideo(TrackioMedia):
         trackio.log({"file_video": video})
         
         # Create video with specific format
-        video = trackio.Video(frames, caption="GIF video", fps=10, format="gif")
+        video = trackio.Video(frames, caption="GIF video", fps=10, format="mp4")
         trackio.log({"gif_video": video})
         ```
     """
