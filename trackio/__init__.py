@@ -5,12 +5,11 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-from huggingface_hub import SpaceStorage
-
 from gradio.blocks import BUILT_IN_THEMES
 from gradio.themes import Default as DefaultTheme
 from gradio.themes import ThemeClass
 from gradio_client import Client
+from huggingface_hub import SpaceStorage
 
 from trackio import context_vars, deploy, utils
 from trackio.imports import import_csv, import_tf_events
