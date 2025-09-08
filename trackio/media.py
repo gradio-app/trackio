@@ -101,6 +101,27 @@ class TrackioImage(TrackioMedia):
             A path to an image, a PIL Image, or a numpy array of shape (height, width, channels).
         caption (`str`, *optional*, defaults to `None`):
             A string caption for the image.
+
+    Example:
+        ```python
+        import trackio
+        import numpy as np
+        from PIL import Image
+        
+        # Create an image from numpy array
+        image_data = np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8)
+        image = trackio.Image(image_data, caption="Random image")
+        trackio.log({"my_image": image})
+        
+        # Create an image from PIL Image
+        pil_image = Image.new('RGB', (100, 100), color='red')
+        image = trackio.Image(pil_image, caption="Red square")
+        trackio.log({"red_image": image})
+        
+        # Create an image from file path
+        image = trackio.Image("path/to/image.jpg", caption="Photo from file")
+        trackio.log({"file_image": image})
+        ```
     """
 
     TYPE = "trackio.image"
@@ -153,6 +174,30 @@ class TrackioVideo(TrackioMedia):
             Frames per second for the video. Only relevant when using a numpy array.
         format (`Literal["gif", "mp4", "webm"]`, *optional*, defaults to `None`):
             Video format ("gif", "mp4", or "webm"). Only relevant when using a numpy array.
+
+    Example:
+        ```python
+        import trackio
+        import numpy as np
+        
+        # Create a simple video from numpy array
+        frames = np.random.randint(0, 255, (10, 3, 64, 64), dtype=np.uint8)
+        video = trackio.Video(frames, caption="Random video", fps=30)
+        trackio.log({"my_video": video})
+        
+        # Create a batch of videos
+        batch_frames = np.random.randint(0, 255, (3, 10, 3, 64, 64), dtype=np.uint8)
+        batch_video = trackio.Video(batch_frames, caption="Batch of videos", fps=15)
+        trackio.log({"batch_video": batch_video})
+        
+        # Create video from file path
+        video = trackio.Video("path/to/video.mp4", caption="Video from file")
+        trackio.log({"file_video": video})
+        
+        # Create video with specific format
+        video = trackio.Video(frames, caption="GIF video", fps=10, format="gif")
+        trackio.log({"gif_video": video})
+        ```
     """
 
     TYPE = "trackio.video"
