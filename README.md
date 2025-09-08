@@ -137,7 +137,7 @@ One of the reasons we created `trackio` was to make it easy to embed live dashbo
 If you are hosting your Trackio dashboard on Spaces, then you can embed the url of that Space as an IFrame. You can even use query parameters to only specific projects and/or metrics, e.g.
 
 ```html
-<iframe src="https://abidlabs-trackio-1234.hf.space/?project=my-project&metrics=train_loss,train_accuracy&sidebar=hidden" width=1600 height=500 frameBorder="0">
+<iframe src="https://abidlabs-trackio-1234.hf.space/?project=my-project&metrics=train_loss,train_accuracy&sidebar=hidden" style="width:1600px; height:500px; border:0;">
 ```
 
 Supported query parameters:
