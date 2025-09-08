@@ -103,9 +103,13 @@ class TrackioImage(TrackioMedia):
 
     def __init__(self, value: TrackioImageSourceType, caption: str | None = None):
         """
-        Parameters:
-            value: A path to an image, a numpy array, or a PIL Image.
-            caption: A string caption for the image.
+        Initializes a TrackioImage object.
+
+        Args:
+            value (`str`, `Path`, `numpy.ndarray`, or `PIL.Image`, *optional*, defaults to `None`):
+                A path to an image, a numpy array, or a PIL Image.
+            caption (`str`, *optional*, defaults to `None`):
+                A string caption for the image.
         """
         super().__init__(value, caption)
         self._format: str | None = None
@@ -158,11 +162,17 @@ class TrackioVideo(TrackioMedia):
         format: TrackioVideoFormatType | None = None,
     ):
         """
-        Parameters:
-            value: A path to a video file, or a numpy array of shape (frames, channels, height, width) or (batch, frames, channels, height, width).
-            caption: A string caption for the video.
-            fps: Frames per second for the video. Only relevant when using a numpy array.
-            format: Video format ("gif", "mp4", or "webm"). Only relevant when using a numpy array.
+        Initializes a TrackioVideo object.
+
+        Args:
+            value (`str`, `Path`, or `numpy.ndarray`, *optional*, defaults to `None`):
+                A path to a video file, or a numpy array of shape (frames, channels, height, width) or (batch, frames, channels, height, width).
+            caption (`str`, *optional*, defaults to `None`):
+                A string caption for the video.
+            fps (`int`, *optional*, defaults to `None`):
+                Frames per second for the video. Only relevant when using a numpy array.
+            format (`Literal["gif", "mp4", "webm"]`, *optional*, defaults to `None`):
+                Video format ("gif", "mp4", or "webm"). Only relevant when using a numpy array.
         """
         super().__init__(value, caption)
         self._fps = fps
