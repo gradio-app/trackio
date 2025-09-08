@@ -369,26 +369,6 @@ def configure(request: gr.Request):
     return [], sidebar, metrics_param, selected_runs
 
 
-def toggle_embed_visibility(
-    current_visible: bool, project: str, metrics: str, selected_runs: list
-):
-    """Toggle the visibility of the embed textbox and update content if showing."""
-    new_visible = not current_visible
-    if new_visible:
-        embed_code = utils.generate_embed_code(project, metrics, selected_runs)
-        return (
-            gr.Button("😶‍🌫️ Hide embed code", size="sm", variant="secondary"),
-            gr.Textbox(visible=True, value=embed_code),
-            new_visible,
-        )
-    else:
-        return (
-            gr.Button("🔗 Show embed code", size="sm", variant="secondary"),
-            gr.Textbox(visible=False, value=""),
-            new_visible,
-        )
-
-
 def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
     with gr.Accordion(label="media"):
         with gr.Group(elem_classes=("media-group")):
@@ -494,7 +474,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
-    embed_visible = gr.State(False)
     selected_runs_from_url = gr.State([])
 
     gr.on(
