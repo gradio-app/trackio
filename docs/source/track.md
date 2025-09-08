@@ -78,6 +78,28 @@ trackio.log(
     style="border:0;">
 </iframe>
 
+### Logging images
+
+You can log images using the [`Image`] class.
+
+```python
+trackio.log({"image": trackio.Image(value="path/to/image.png", caption="Image caption")})
+```
+
+Images can be logged from a path, a numpy array, or a PIL Image.
+
+### Logging videos
+
+You can log videos using the [`Video`] class.
+
+```python
+trackio.log({"video": trackio.Video(value="path/to/video.mp4", caption="Video caption")})
+```
+
+Videos can be logged from a path or a numpy array.
+Numpy arrays should be of shape (frames, channels, height, width) or (batch, frames, channels, height, width).
+When using a numpy array, you can specify the fps and format (gif, mp4, or webm).
+
 ## Finishing a Run
 
 When your run is complete, finalize it with [`finish`].

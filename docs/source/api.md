@@ -31,3 +31,11 @@
 ## Table
 
 [[autodoc]] Table
+
+## Image
+
+[[autodoc]] Image
+
+## Video
+
+[[autodoc]] Video
