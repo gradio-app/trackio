@@ -227,7 +227,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
         inline=False,
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
-        allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
+        allowed_paths=[TRACKIO_LOGO_DIR],
     )
 
     base_url = share_url + "/" if share_url else url
