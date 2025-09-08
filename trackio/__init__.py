@@ -67,7 +67,7 @@ def init(
             case the Space will be created in the currently-logged-in Hugging Face
             user's namespace. If the Space does not exist, it will be created. If the
             Space already exists, the project will be logged to it.
-        space_storage (`SpaceStorage` or `None`, *optional*, defaults to `None`):
+        space_storage ([`~huggingface_hub.SpaceStorage`] or `None`, *optional*, defaults to `None`):
             Choice of persistent storage tier.
         dataset_id (`str` or `None`, *optional*, defaults to `None`):
             If a `space_id` is provided, a persistent Hugging Face Dataset will be
