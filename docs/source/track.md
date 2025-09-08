@@ -49,6 +49,35 @@ trackio.log({
 })
 ```
 
+### Logging tables
+
+You can log tabular data using the [`Table`] class. This is useful for tracking results like predictions, or any structured data.
+
+```python
+import pandas as pd
+
+df = pd.DataFrame(
+    {
+        "prompt": ["Trackio", "Logging is"],
+        "completion": ["is great!", "easy and fun!"],
+        "reward": [0.123, 0.456],
+    }
+)
+trackio.log(
+    {
+        ...
+        "texts": trackio.Table(dataframe=df),
+    }
+)
+```
+
+<iframe 
+    src="https://trackio-documentation.hf.space/?project=log-table&metrics=loss,text&sidebar=hidden" 
+    width="600" 
+    height="630" 
+    style="border:0;">
+</iframe>
+
 ## Finishing a Run
 
 When your run is complete, finalize it with [`finish`].

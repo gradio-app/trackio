@@ -6,8 +6,14 @@ from gradio_client import Client, handle_file
 
 from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.table import Table
 from trackio.typehints import LogEntry, UploadEntry
-from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
+from trackio.utils import (
+    RESERVED_KEYS,
+    fibo,
+    generate_readable_name,
+    serialize_values,
+)
 
 BATCH_SEND_INTERVAL = 0.5
 
@@ -110,14 +116,22 @@ class Run:
                 serializable_metrics[key] = value
         return serializable_metrics
 
+    @staticmethod
+    def _replace_tables(metrics):
+        for k, v in metrics.items():
+            if isinstance(v, Table):
+                metrics[k] = v._to_dict()
+
     def log(self, metrics: dict, step: int | None = None):
         for k in metrics.keys():
             if k in RESERVED_KEYS or k.startswith("__"):
                 raise ValueError(
                     f"Please do not use this reserved key as a metric: {k}"
                 )
+        Run._replace_tables(metrics)
 
         metrics = self._process_media(metrics, step)
+        metrics = serialize_values(metrics)
         log_entry: LogEntry = {
             "project": self.project,
             "run": self.name,
