@@ -173,7 +173,9 @@ def load_run_data(
         return df, images
 
 
-def update_runs(project, filter_text, user_interacted_with_runs=False):
+def update_runs(
+    project, filter_text, user_interacted_with_runs=False, selected_runs_from_url=None
+):
     if project is None:
         runs = []
         num_runs = 0
@@ -182,8 +184,13 @@ def update_runs(project, filter_text, user_interacted_with_runs=False):
         num_runs = len(runs)
         if filter_text:
             runs = [r for r in runs if filter_text in r]
+
     if not user_interacted_with_runs:
-        return gr.CheckboxGroup(choices=runs, value=runs), gr.Textbox(
+        if selected_runs_from_url:
+            value = [r for r in runs if r in selected_runs_from_url]
+        else:
+            value = runs
+        return gr.CheckboxGroup(choices=runs, value=value), gr.Textbox(
             label=f"Runs ({num_runs})"
         )
     else:
@@ -352,10 +359,11 @@ def configure(request: gr.Request):
         case _:
             sidebar = gr.Sidebar(open=True, visible=True)
 
-    if metrics := request.query_params.get("metrics"):
-        return metrics.split(","), sidebar
-    else:
-        return [], sidebar
+    metrics_param = request.query_params.get("metrics", "")
+    runs_param = request.query_params.get("runs", "")
+    selected_runs = runs_param.split(",") if runs_param else []
+
+    return [], sidebar, metrics_param, selected_runs
 
 
 def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
@@ -425,6 +433,14 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
+
+        embed_code = gr.Code(
+            label="Embed this view",
+            max_lines=2,
+            lines=2,
+            language="html",
+            visible=bool(os.environ.get("SPACE_HOST")),
+        )
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
         run_cb = gr.CheckboxGroup(
             label="Runs", choices=[], interactive=True, elem_id="run-cb"
@@ -455,8 +471,13 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
+    selected_runs_from_url = gr.State([])
 
-    gr.on([demo.load], fn=configure, outputs=[metrics_subset, sidebar])
+    gr.on(
+        [demo.load],
+        fn=configure,
+        outputs=[metrics_subset, sidebar, metric_filter_tb, selected_runs_from_url],
+    )
     gr.on(
         [demo.load],
         fn=get_projects,
@@ -466,7 +487,12 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.on(
         [timer.tick],
         fn=update_runs,
-        inputs=[project_dd, run_tb, user_interacted_with_run_cb],
+        inputs=[
+            project_dd,
+            run_tb,
+            user_interacted_with_run_cb,
+            selected_runs_from_url,
+        ],
         outputs=[run_cb, run_tb],
         show_progress="hidden",
     )
@@ -479,7 +505,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.on(
         [demo.load, project_dd.change],
         fn=update_runs,
-        inputs=[project_dd, run_tb],
+        inputs=[project_dd, run_tb, gr.State(False), selected_runs_from_url],
         outputs=[run_cb, run_tb],
         show_progress="hidden",
     )
@@ -505,6 +531,15 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         fn=filter_runs,
         inputs=[project_dd, run_tb],
         outputs=run_cb,
+    )
+
+    gr.on(
+        [demo.load, project_dd.change, metric_filter_tb.change, run_cb.change],
+        fn=utils.generate_embed_code,
+        inputs=[project_dd, metric_filter_tb, run_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        queue=False,
     )
 
     gr.api(
