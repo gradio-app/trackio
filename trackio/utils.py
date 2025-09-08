@@ -593,9 +593,7 @@ def generate_embed_code(project: str, metrics: str, selected_runs: list = None) 
     query_string = "&".join(params)
     embed_url = f"https://{space_host}?{query_string}"
 
-    return (
-        f'<iframe src="{embed_url}" style="width:1600px; height:500px; border:0;"></iframe>'
-    )
+    return f'<iframe src="{embed_url}" style="width:1600px; height:500px; border:0;"></iframe>'
 
 
 def serialize_values(metrics):
