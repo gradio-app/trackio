@@ -94,23 +94,18 @@ TrackioImageSourceType = str | Path | np.ndarray | PILImage.Image
 
 class TrackioImage(TrackioMedia):
     """
-    Creates an image that can be logged with trackio.
+    Initializes an Image object.
 
-    Demo: fake-training-images
+    Args:
+        value (`str`, `Path`, `numpy.ndarray`, or `PIL.Image`, *optional*, defaults to `None`):
+            A path to an image, a PIL Image, or a numpy array of shape (height, width, channels).
+        caption (`str`, *optional*, defaults to `None`):
+            A string caption for the image.
     """
 
     TYPE = "trackio.image"
 
     def __init__(self, value: TrackioImageSourceType, caption: str | None = None):
-        """
-        Initializes a TrackioImage object.
-
-        Args:
-            value (`str`, `Path`, `numpy.ndarray`, or `PIL.Image`, *optional*, defaults to `None`):
-                A path to an image, a numpy array, or a PIL Image.
-            caption (`str`, *optional*, defaults to `None`):
-                A string caption for the image.
-        """
         super().__init__(value, caption)
         self._format: str | None = None
 
@@ -147,9 +142,17 @@ TrackioVideoFormatType = Literal["gif", "mp4", "webm"]
 
 class TrackioVideo(TrackioMedia):
     """
-    Creates a video that can be logged with trackio.
+    Initializes a Video object.
 
-    Demo: fractal-evolution-video
+    Args:
+        value (`str`, `Path`, or `numpy.ndarray`, *optional*, defaults to `None`):
+            A path to a video file, or a numpy array of shape (frames, channels, height, width) or (batch, frames, channels, height, width).
+        caption (`str`, *optional*, defaults to `None`):
+            A string caption for the video.
+        fps (`int`, *optional*, defaults to `None`):
+            Frames per second for the video. Only relevant when using a numpy array.
+        format (`Literal["gif", "mp4", "webm"]`, *optional*, defaults to `None`):
+            Video format ("gif", "mp4", or "webm"). Only relevant when using a numpy array.
     """
 
     TYPE = "trackio.video"
@@ -161,19 +164,6 @@ class TrackioVideo(TrackioMedia):
         fps: int | None = None,
         format: TrackioVideoFormatType | None = None,
     ):
-        """
-        Initializes a TrackioVideo object.
-
-        Args:
-            value (`str`, `Path`, or `numpy.ndarray`, *optional*, defaults to `None`):
-                A path to a video file, or a numpy array of shape (frames, channels, height, width) or (batch, frames, channels, height, width).
-            caption (`str`, *optional*, defaults to `None`):
-                A string caption for the video.
-            fps (`int`, *optional*, defaults to `None`):
-                Frames per second for the video. Only relevant when using a numpy array.
-            format (`Literal["gif", "mp4", "webm"]`, *optional*, defaults to `None`):
-                Video format ("gif", "mp4", or "webm"). Only relevant when using a numpy array.
-        """
         super().__init__(value, caption)
         self._fps = fps
         self._format = format
