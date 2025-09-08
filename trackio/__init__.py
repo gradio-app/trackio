@@ -29,6 +29,7 @@ __all__ = [
     "import_csv",
     "import_tf_events",
     "Image",
+    "Video",
     "Table",
 ]
 
