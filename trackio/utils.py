@@ -21,7 +21,9 @@ TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
 
 def persistent_storage_enabled() -> bool:
-    return os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
+    return (
+        os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
+    )  # typo in the name of the environment variable
 
 
 def _get_trackio_dir() -> Path:
