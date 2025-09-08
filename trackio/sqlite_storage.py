@@ -320,6 +320,8 @@ class SQLiteStorage:
                         # Download parquet and media assets
                         if not (file.endswith(".parquet") or file.startswith("media/")):
                             continue
+                        if (TRACKIO_DIR / file).exists():
+                            continue
                         hf.hf_hub_download(
                             dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR
                         )

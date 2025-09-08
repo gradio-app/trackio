@@ -16,14 +16,18 @@ if TYPE_CHECKING:
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
-TRACKIO_DIR = Path(os.environ.get("TRACKIO_DIR", Path(HF_HOME) / "trackio"))
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
-def _setup_trackio_dir():
-    TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
+def persistent_storage_enabled() -> bool:
+    return os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
 
-_setup_trackio_dir()
+def _get_trackio_dir() -> Path:
+    if persistent_storage_enabled():
+        return Path("/data/trackio")
+    return Path(HF_HOME) / "trackio"
+
+TRACKIO_DIR = _get_trackio_dir()
 
 def generate_readable_name(used_names: list[str], space_id: str | None = None) -> str:
     """

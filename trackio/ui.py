@@ -29,10 +29,7 @@ except:  # noqa: E722
 def get_project_info() -> str | None:
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
     space_id = os.environ.get("SPACE_ID")
-    persistent_storage_enabled = os.environ.get(
-        "PERSISTANT_STORAGE_ENABLED"
-    )  # Space env name has a typo
-    if persistent_storage_enabled:
+    if utils.persistent_storage_enabled():
         return "&#10024; Persistent Storage is enabled, logs are stored directly in this Space."
     if dataset_id:
         sync_status = utils.get_sync_status(SQLiteStorage.get_scheduler())

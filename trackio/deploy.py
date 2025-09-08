@@ -14,11 +14,11 @@ from requests import HTTPError
 from trackio.sqlite_storage import SQLiteStorage
 
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
-PERSISTENT_STORAGE_DIR = "/data/.huggingface/trackio"
 
 
 def deploy_as_space(
     space_id: str,
+    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
 ):
     if (
@@ -34,6 +34,7 @@ def deploy_as_space(
         huggingface_hub.create_repo(
             space_id,
             space_sdk="gradio",
+            space_storage=space_storage,
             repo_type="space",
             exist_ok=True,
         )
@@ -44,6 +45,7 @@ def deploy_as_space(
             huggingface_hub.create_repo(
                 space_id,
                 space_sdk="gradio",
+                space_storage=space_storage,
                 repo_type="space",
                 exist_ok=True,
             )
@@ -82,7 +84,6 @@ pyarrow>=21.0
         ignore_patterns=["README.md"],
     )
 
-    huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", PERSISTENT_STORAGE_DIR)
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if dataset_id is not None:
@@ -91,6 +92,7 @@ pyarrow>=21.0
 
 def create_space_if_not_exists(
     space_id: str,
+    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
 ) -> None:
     """
@@ -129,7 +131,7 @@ def create_space_if_not_exists(
             raise ValueError(f"Failed to create Space: {e}")
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, dataset_id)
+    deploy_as_space(space_id, space_storage, dataset_id)
 
 
 def wait_until_space_exists(
