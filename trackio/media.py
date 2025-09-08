@@ -17,8 +17,6 @@ except ImportError:  # relative imports for local execution on Spaces
     from file_storage import FileStorage
     from utils import MEDIA_DIR
 
-TrackioImageSourceType = str | Path | np.ndarray | PILImage.Image
-
 class TrackioMedia(ABC):
     """
     Abstract base class for Trackio media objects
@@ -90,6 +88,8 @@ class TrackioMedia(ABC):
             "caption": self.caption,
         }
 
+TrackioImageSourceType = str | Path | np.ndarray | PILImage.Image
+
 class TrackioImage(TrackioMedia):
     """
     Creates an image that can be logged with trackio.
@@ -104,7 +104,7 @@ class TrackioImage(TrackioMedia):
     ):
         """
         Parameters:
-            value: A string path to an image, a numpy array, or a PIL Image.
+            value: A path to an image, a numpy array, or a PIL Image.
             caption: A string caption for the image.
         """
         super().__init__(value, caption)
@@ -140,7 +140,7 @@ class TrackioVideo(TrackioMedia):
     """
     Creates a video that can be logged with trackio.
 
-    Demo: video-demo
+    Demo: fractal-evolution-video
     """
 
     TYPE = "trackio.video"
@@ -151,6 +151,13 @@ class TrackioVideo(TrackioMedia):
         fps: int | None = None,
         format: TrackioVideoFormatType | None = None,
     ):
+        """
+        Parameters:
+            value: A path to a video file, or a numpy array of shape (frames, channels, height, width) or (batch, frames, channels, height, width).
+            caption: A string caption for the video.
+            fps: Frames per second for the video. Only relevant when using a numpy array.
+            format: Video format ("gif", "mp4", or "webm"). Only relevant when using a numpy array.
+        """
         super().__init__(value, caption)
         self._fps = fps
         self._format = format

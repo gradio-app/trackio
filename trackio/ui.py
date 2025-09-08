@@ -424,7 +424,7 @@ css = """
 .info-icon:hover { opacity: 0.8; }
 .accent-link { font-weight: bold; }
 
-.media-gallery .fixed-height { min-height: 250px; }
+.media-gallery .fixed-height { min-height: 275px; }
 .media-group, .media-group > div { background: none; }
 .media-group .tabs { padding: 0.5em; }
 .media-tab { max-height: 500px; overflow-y: scroll; }
