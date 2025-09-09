@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -22,15 +23,59 @@ except Exception:  # relative imports for local execution on Spaces
     from utils import TRACKIO_DIR, deserialize_values, serialize_values
 
 
+def retry_on_database_lock(max_retries: int = 3, delay: float = 0.1):
+    """Decorator to retry database operations when encountering locking errors."""
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    last_exception = e
+                    if (
+                        "database is locked" in str(e).lower()
+                        or "database disk image is malformed" in str(e).lower()
+                    ):
+                        if attempt < max_retries:
+                            # Exponential backoff with jitter
+                            sleep_time = delay * (2**attempt) + (time.time() % 0.01)
+                            time.sleep(sleep_time)
+                            continue
+                    # Re-raise if not a locking error or if we've exhausted retries
+                    raise
+                except Exception:
+                    # Re-raise non-database errors immediately
+                    raise
+            # This should never be reached, but just in case
+            raise last_exception
+
+        return wrapper
+
+    return decorator
+
+
 class SQLiteStorage:
     _dataset_import_attempted = False
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
     @staticmethod
-    def _get_connection(db_path: Path) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(db_path))
+    def _get_connection(db_path: Path, timeout: float = 30.0) -> sqlite3.Connection:
+        """Get database connection with WAL mode and proper timeout settings."""
+        conn = sqlite3.connect(str(db_path), timeout=timeout)
         conn.row_factory = sqlite3.Row
+
+        # Enable WAL mode for better concurrency
+        conn.execute("PRAGMA journal_mode=WAL")
+
+        # Set busy timeout for better handling of concurrent access
+        conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
+
+        # Enable foreign key constraints
+        conn.execute("PRAGMA foreign_keys=ON")
+
         return conn
 
     @staticmethod
@@ -59,7 +104,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage.get_scheduler().lock:
-            with sqlite3.connect(db_path) as conn:
+            with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS metrics (
@@ -95,7 +140,7 @@ class SQLiteStorage:
             if (not parquet_path.exists()) or (
                 db_path.stat().st_mtime > parquet_path.stat().st_mtime
             ):
-                with sqlite3.connect(db_path) as conn:
+                with SQLiteStorage._get_connection(db_path) as conn:
                     df = pd.read_sql("SELECT * from metrics", conn)
                 # break out the single JSON metrics column into individual columns
                 metrics = df["metrics"].copy()
@@ -121,7 +166,7 @@ class SQLiteStorage:
             parquet_path = TRACKIO_DIR / parquet_path
             db_path = parquet_path.with_suffix(".db")
             df = pd.read_parquet(parquet_path)
-            with sqlite3.connect(db_path) as conn:
+            with SQLiteStorage._get_connection(db_path) as conn:
                 # fix up df to have a single JSON metrics column
                 if "metrics" not in df.columns:
                     # separate other columns from metrics
@@ -166,6 +211,7 @@ class SQLiteStorage:
             return scheduler
 
     @staticmethod
+    @retry_on_database_lock(max_retries=5, delay=0.1)
     def log(project: str, run: str, metrics: dict, step: int | None = None):
         """
         Safely log metrics to the database. Before logging, this method will ensure the database exists
@@ -210,6 +256,7 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
+    @retry_on_database_lock(max_retries=5, delay=0.1)
     def bulk_log(
         project: str,
         run: str,
@@ -276,11 +323,15 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
+    @retry_on_database_lock(max_retries=3, delay=0.05)
     def get_logs(project: str, run: str) -> list[dict]:
         """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
+
+        # Ensure database is initialized
+        SQLiteStorage.init_db(project)
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
@@ -352,11 +403,15 @@ class SQLiteStorage:
         return sorted(projects)
 
     @staticmethod
+    @retry_on_database_lock(max_retries=3, delay=0.05)
     def get_runs(project: str) -> list[str]:
         """Get list of all runs for a project."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
+
+        # Ensure database is initialized
+        SQLiteStorage.init_db(project)
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
@@ -366,11 +421,15 @@ class SQLiteStorage:
             return [row[0] for row in cursor.fetchall()]
 
     @staticmethod
+    @retry_on_database_lock(max_retries=3, delay=0.05)
     def get_max_steps_for_runs(project: str, runs: list[str]) -> dict[str, int]:
         """Efficiently get the maximum step for multiple runs in a single query."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return {run: 0 for run in runs}
+
+        # Ensure database is initialized
+        SQLiteStorage.init_db(project)
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
