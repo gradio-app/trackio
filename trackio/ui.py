@@ -203,6 +203,23 @@ def filter_runs(project, filter_text):
     return gr.CheckboxGroup(choices=runs, value=runs)
 
 
+def select_all_runs(project, filter_text):
+    """Select all available runs (filtered if filter text is provided)."""
+    if project is None:
+        return gr.CheckboxGroup(value=[])
+    
+    runs = get_runs(project)
+    if filter_text:
+        runs = [r for r in runs if filter_text in r]
+    
+    return gr.CheckboxGroup(value=runs)
+
+
+def deselect_all_runs():
+    """Deselect all runs."""
+    return gr.CheckboxGroup(value=[])
+
+
 def update_x_axis_choices(project, runs):
     """Update x-axis dropdown choices based on available metrics."""
     available_metrics = get_available_metrics(project, runs)
@@ -442,6 +459,10 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             visible=bool(os.environ.get("SPACE_HOST")),
         )
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
+
+        select_all_btn = gr.Button("Select All")
+        deselect_all_btn = gr.Button("Deselect All")
+        
         run_cb = gr.CheckboxGroup(
             label="Runs", choices=[], interactive=True, elem_id="run-cb"
         )
@@ -541,7 +562,17 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         show_progress="hidden",
         queue=False,
     )
-
+    select_all_btn.click(
+        fn=select_all_runs,
+        inputs=[project_dd, run_tb],
+        outputs=run_cb,
+        show_progress="hidden",
+    )
+    deselect_all_btn.click(
+        fn=deselect_all_runs,
+        outputs=run_cb,
+        show_progress="hidden",
+    )
     gr.api(
         fn=upload_db_to_space,
         api_name="upload_db_to_space",
