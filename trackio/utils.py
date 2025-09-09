@@ -341,8 +341,8 @@ def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
         base_color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
 
         if smoothing:
+            color_map[run] = base_color + "4D"
             color_map[f"{run}_smoothed"] = base_color
-            color_map[f"{run}_original"] = base_color + "4D"
         else:
             color_map[run] = base_color
 
@@ -430,7 +430,16 @@ def downsample(
     unique_indices = list(set(downsampled_indices))
 
     downsampled_df = df.loc[unique_indices].copy()
-    downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
+
+    if color is not None and color in downsampled_df.columns:
+        downsampled_df = (
+            downsampled_df.groupby(color, sort=False)
+            .apply(lambda group: group.sort_values(x))
+            .reset_index(drop=True)
+        )
+    else:
+        downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
+
     downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
 
     return downsampled_df

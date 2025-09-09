@@ -150,7 +150,7 @@ def load_run_data(
         numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
 
         df_original = df.copy()
-        df_original["run"] = f"{run}_original"
+        df_original["run"] = run
         df_original["data_type"] = "original"
 
         df_smoothed = df.copy()
@@ -623,8 +623,26 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             if df is not None:
                 dfs.append(df)
                 images_by_run[run] = images_by_key
+
         if dfs:
-            master_df = pd.concat(dfs, ignore_index=True)
+            if smoothing_granularity > 0:
+                original_dfs = []
+                smoothed_dfs = []
+                for df in dfs:
+                    original_data = df[df["data_type"] == "original"]
+                    smoothed_data = df[df["data_type"] == "smoothed"]
+                    if not original_data.empty:
+                        original_dfs.append(original_data)
+                    if not smoothed_data.empty:
+                        smoothed_dfs.append(smoothed_data)
+
+                all_dfs = original_dfs + smoothed_dfs
+                master_df = (
+                    pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+                )
+
+            else:
+                master_df = pd.concat(dfs, ignore_index=True)
         else:
             master_df = pd.DataFrame()
 
