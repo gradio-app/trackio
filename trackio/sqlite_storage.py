@@ -36,15 +36,14 @@ class ProcessLock:
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
         self.lockfile = open(self.lockfile_path, "w")
 
-        # Try to acquire lock with retries
-        max_retries = 100  # 10 seconds max wait (100 * 0.1s)
+        max_retries = 100
         for attempt in range(max_retries):
             try:
                 fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return self
             except IOError:
                 if attempt < max_retries - 1:
-                    time.sleep(0.1)  # Wait 100ms before retry
+                    time.sleep(0.1)
                 else:
                     raise IOError("Could not acquire database lock after 10 seconds")
 
@@ -68,7 +67,6 @@ class SQLiteStorage:
 
     @staticmethod
     def _get_process_lock(project: str) -> ProcessLock:
-        """Get a cross-process lock for the database."""
         lockfile_path = TRACKIO_DIR / f"{project}.lock"
         return ProcessLock(lockfile_path)
 
@@ -213,7 +211,6 @@ class SQLiteStorage:
         """
         db_path = SQLiteStorage.init_db(project)
 
-        # Use cross-process lock to prevent database locking errors
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
@@ -265,7 +262,6 @@ class SQLiteStorage:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
 
         db_path = SQLiteStorage.init_db(project)
-        # Use cross-process lock to prevent database locking errors
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()

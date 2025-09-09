@@ -142,21 +142,16 @@ def test_concurrent_database_access_without_errors():
             f"Got {total_db_locked_errors} 'database is locked' errors - ProcessLock fix failed"
         )
 
-        # Verify that operations were successful
         assert total_operations > 0, "Some operations should have succeeded"
 
-        # Verify database integrity by using SQLiteStorage methods
         import os
 
         os.environ["XDG_CACHE_HOME"] = str(temp_trackio_dir)
 
         from trackio.sqlite_storage import SQLiteStorage
 
-        # Check that we can read the data back
         runs = SQLiteStorage.get_runs(project)
         assert len(runs) > 0, "Should have created some runs"
-
-        # Verify we can get logs for the runs
         total_logs = 0
         for run in runs:
             logs = SQLiteStorage.get_logs(project, run)
