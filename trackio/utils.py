@@ -431,7 +431,7 @@ def downsample(
 
     downsampled_df = df.loc[unique_indices].copy()
 
-    if color is not None and color in downsampled_df.columns:
+    if color is not None:
         downsampled_df = (
             downsampled_df.groupby(color, sort=False)
             .apply(lambda group: group.sort_values(x))
