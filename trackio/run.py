@@ -27,6 +27,7 @@ class Run:
         name: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
+        resumed: bool = False,
     ):
         self.url = url
         self.project = project
@@ -37,7 +38,10 @@ class Run:
         self.name = name or generate_readable_name(
             SQLiteStorage.get_runs(project), space_id
         )
-        self.id = SQLiteStorage.add_run(project, self.name)
+        if resumed:
+            self.id = SQLiteStorage.get_run_id(project, self.name)
+        else:
+            self.id = SQLiteStorage.add_run(project, self.name)
         self.config = config or {}
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []

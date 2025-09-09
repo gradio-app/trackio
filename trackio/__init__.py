@@ -164,6 +164,7 @@ def init(
         name=name,
         config=config,
         space_id=space_id,
+        resumed=resumed,
     )
 
     if resumed:

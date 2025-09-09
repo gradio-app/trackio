@@ -116,7 +116,7 @@ def import_csv(
         run_id = SQLiteStorage.add_run(project, name)
         SQLiteStorage.bulk_log(
             project=project,
-            run=run_id,
+            run_id=run_id,
             metrics_list=metrics_list,
             steps=steps,
             timestamps=timestamps,
