@@ -12,7 +12,7 @@ class DummyClient:
         self.predict = MagicMock()
 
 
-def test_run_log_calls_client():
+def test_run_log_calls_client(temp_dir):
     client = DummyClient()
     run = Run(url="fake_url", project="proj", client=client, name="run1", space_id=None)
     metrics = {"x": 1}
@@ -21,7 +21,7 @@ def test_run_log_calls_client():
     time.sleep(0.6)  # Wait for the client to send the log
     client.predict.assert_called_once_with(
         api_name="/bulk_log",
-        logs=[{"project": "proj", "run": "run1", "metrics": metrics, "step": None}],
+        logs=[{"project": "proj", "run_id": run.id, "metrics": metrics, "step": None}],
         hf_token=huggingface_hub.utils.get_token(),
     )
 
@@ -83,7 +83,7 @@ def test_init_resume_modes(temp_dir):
 
 @patch("huggingface_hub.whoami")
 @patch("time.time")
-def test_run_name_generation_with_space_id(mock_time, mock_whoami):
+def test_run_name_generation_with_space_id(mock_time, mock_whoami, temp_dir):
     mock_whoami.return_value = {"name": "testuser"}
     mock_time.return_value = 1234567890
 

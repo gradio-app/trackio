@@ -4,7 +4,7 @@ import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_rapid_bulk_logging():
+def test_rapid_bulk_logging(temp_dir):
     """
     Test that logs sent rapidly across different runs are all successfully logged with correct run names.
     Also tests that trackio.log() is not too slow.
@@ -14,14 +14,14 @@ def test_rapid_bulk_logging():
     run1_name = "bulk_test_run1"
     run2_name = "bulk_test_run2"
 
-    trackio.init(project=project_name, name=run1_name)
+    run1 = trackio.init(project=project_name, name=run1_name)
     start_time = time.time()
 
     num_logs_run1 = 300
     for i in range(num_logs_run1):
         trackio.log({"metric": i, "value": i * 2}, step=i)
 
-    trackio.init(project=project_name, name=run2_name)
+    run2 = trackio.init(project=project_name, name=run2_name)
     num_logs_run2 = 700
     for i in range(num_logs_run2):
         trackio.log({"metric": i, "value": i * 3}, step=i)
@@ -35,7 +35,7 @@ def test_rapid_bulk_logging():
     time.sleep(0.6)  # Wait for the client to send the logs
 
     # Verify run1 metrics
-    metrics_run1 = SQLiteStorage.get_logs(project_name, run1_name)
+    metrics_run1 = SQLiteStorage.get_logs(project_name, run1.id)
     assert len(metrics_run1) == num_logs_run1, (
         f"Expected {num_logs_run1} logs for run1, but found {len(metrics_run1)}"
     )
@@ -52,7 +52,7 @@ def test_rapid_bulk_logging():
         )
 
     # Verify run2 metrics
-    metrics_run2 = SQLiteStorage.get_logs(project_name, run2_name)
+    metrics_run2 = SQLiteStorage.get_logs(project_name, run2.id)
     assert len(metrics_run2) == num_logs_run2, (
         f"Expected {num_logs_run2} logs for run2, but found {len(metrics_run2)}"
     )

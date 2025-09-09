@@ -5,12 +5,12 @@ from trackio.sqlite_storage import SQLiteStorage
 
 
 def test_basic_logging(temp_dir):
-    trackio.init(project="test_project", name="test_run")
+    run = trackio.init(project="test_project", name="test_run")
     trackio.log(metrics={"loss": 0.1})
     trackio.log(metrics={"loss": 0.2, "acc": 0.9})
     trackio.finish()
 
-    results = SQLiteStorage.get_logs(project="test_project", run="test_run")
+    results = SQLiteStorage.get_logs(project="test_project", run_id=run.id)
     assert len(results) == 2
     assert results[0]["loss"] == 0.1
     assert results[0]["step"] == 0
@@ -23,12 +23,12 @@ def test_basic_logging(temp_dir):
 
 
 def test_basic_logging_with_step(temp_dir):
-    trackio.init(project="test_project", name="test_run")
+    run = trackio.init(project="test_project", name="test_run")
     trackio.log(metrics={"loss": 0.1}, step=0)
     trackio.log(metrics={"loss": 0.2, "acc": 0.9}, step=2)
     trackio.finish()
 
-    results = SQLiteStorage.get_logs(project="test_project", run="test_run")
+    results = SQLiteStorage.get_logs(project="test_project", run_id=run.id)
     assert len(results) == 2
     assert results[0]["loss"] == 0.1
     assert results[0]["step"] == 0
@@ -42,7 +42,7 @@ def test_basic_logging_with_step(temp_dir):
 
 def test_infinity_logging(temp_dir):
     """Test end-to-end logging of infinity and NaN values."""
-    trackio.init(project="test_infinity", name="test_run")
+    run = trackio.init(project="test_infinity", name="test_run")
     trackio.log(
         metrics={
             "loss": float("inf"),
@@ -53,7 +53,7 @@ def test_infinity_logging(temp_dir):
     )
     trackio.finish()
 
-    results = SQLiteStorage.get_logs(project="test_infinity", run="test_run")
+    results = SQLiteStorage.get_logs(project="test_infinity", run_id=run.id)
     assert len(results) == 1
     log = results[0]
 
