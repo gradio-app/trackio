@@ -32,6 +32,7 @@ class SQLiteStorage:
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -64,21 +65,6 @@ class SQLiteStorage:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS metrics (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        run_id INTEGER NOT NULL,
-                        step INTEGER NOT NULL,
-                        metrics TEXT NOT NULL
-                    )
-                """)
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_metrics_run_step
-                    ON metrics(run_id, step)
-                    """
-                )
-                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS runs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL UNIQUE,
@@ -89,6 +75,22 @@ class SQLiteStorage:
                     CREATE INDEX IF NOT EXISTS idx_runs_name
                     ON runs(name)
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS metrics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id INTEGER NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        step INTEGER NOT NULL,
+                        metrics TEXT NOT NULL,
+                        FOREIGN KEY (run_id) REFERENCES runs(id)
+                    )
+                """)
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_metrics_run_step
+                    ON metrics(run_id, step)
+                    """
+                )
                 conn.commit()
         return db_path
 
