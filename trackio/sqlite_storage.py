@@ -95,7 +95,7 @@ class SQLiteStorage:
         """
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        with SQLiteStorage.get_scheduler().lock:
+        with SQLiteStorage._get_process_lock(project):
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
