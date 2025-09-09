@@ -1,6 +1,8 @@
+import fcntl
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -22,6 +24,37 @@ except Exception:  # relative imports for local execution on Spaces
     from utils import TRACKIO_DIR, deserialize_values, serialize_values
 
 
+class ProcessLock:
+    """A simple file-based lock that works across processes."""
+
+    def __init__(self, lockfile_path: Path):
+        self.lockfile_path = lockfile_path
+        self.lockfile = None
+
+    def __enter__(self):
+        """Acquire the lock with retry logic."""
+        self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
+        self.lockfile = open(self.lockfile_path, "w")
+
+        # Try to acquire lock with retries
+        max_retries = 100  # 10 seconds max wait (100 * 0.1s)
+        for attempt in range(max_retries):
+            try:
+                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return self
+            except IOError:
+                if attempt < max_retries - 1:
+                    time.sleep(0.1)  # Wait 100ms before retry
+                else:
+                    raise IOError("Could not acquire database lock after 10 seconds")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Release the lock."""
+        if self.lockfile:
+            fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+            self.lockfile.close()
+
+
 class SQLiteStorage:
     _dataset_import_attempted = False
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
@@ -32,6 +65,12 @@ class SQLiteStorage:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         return conn
+
+    @staticmethod
+    def _get_process_lock(project: str) -> ProcessLock:
+        """Get a cross-process lock for the database."""
+        lockfile_path = TRACKIO_DIR / f"{project}.lock"
+        return ProcessLock(lockfile_path)
 
     @staticmethod
     def get_project_db_filename(project: str) -> Path:
@@ -169,12 +208,13 @@ class SQLiteStorage:
     def log(project: str, run: str, metrics: dict, step: int | None = None):
         """
         Safely log metrics to the database. Before logging, this method will ensure the database exists
-        and is set up with the correct tables. It also uses the scheduler to lock the database so
-        that there is no race condition when logging / syncing to the Hugging Face Dataset.
+        and is set up with the correct tables. It also uses a cross-process lock to prevent
+        database locking errors when multiple processes access the same database.
         """
         db_path = SQLiteStorage.init_db(project)
 
-        with SQLiteStorage.get_scheduler().lock:
+        # Use cross-process lock to prevent database locking errors
+        with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
@@ -225,7 +265,8 @@ class SQLiteStorage:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
 
         db_path = SQLiteStorage.init_db(project)
-        with SQLiteStorage.get_scheduler().lock:
+        # Use cross-process lock to prevent database locking errors
+        with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
