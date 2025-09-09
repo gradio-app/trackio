@@ -8,6 +8,8 @@ from threading import Lock
 import huggingface_hub as hf
 import pandas as pd
 
+from trackio.sqlite_types import RunEntry
+
 try:  # absolute imports when installed
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
@@ -65,7 +67,7 @@ class SQLiteStorage:
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
-                        run_name TEXT NOT NULL,
+                        run_id INTEGER NOT NULL,
                         step INTEGER NOT NULL,
                         metrics TEXT NOT NULL
                     )
@@ -73,9 +75,20 @@ class SQLiteStorage:
                 cursor.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_step
-                    ON metrics(run_name, step)
+                    ON metrics(run_id, step)
                     """
                 )
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS runs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL
+                    )
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_runs_name
+                    ON runs(name)
+                """)
                 conn.commit()
         return db_path
 
@@ -91,51 +104,75 @@ class SQLiteStorage:
         db_paths = [f for f in all_paths if f.endswith(".db")]
         for db_path in db_paths:
             db_path = TRACKIO_DIR / db_path
-            parquet_path = db_path.with_suffix(".parquet")
-            if (not parquet_path.exists()) or (
-                db_path.stat().st_mtime > parquet_path.stat().st_mtime
-            ):
-                with sqlite3.connect(db_path) as conn:
-                    df = pd.read_sql("SELECT * from metrics", conn)
-                # break out the single JSON metrics column into individual columns
-                metrics = df["metrics"].copy()
-                metrics = pd.DataFrame(
-                    metrics.apply(
-                        lambda x: deserialize_values(json.loads(x))
-                    ).values.tolist(),
-                    index=df.index,
-                )
-                del df["metrics"]
-                for col in metrics.columns:
-                    df[col] = metrics[col]
-                df.to_parquet(parquet_path)
+            SQLiteStorage.export_metrics_to_parquet(db_path)
+            SQLiteStorage.export_runs_to_parquet(db_path)
+
+    @staticmethod
+    def export_metrics_to_parquet(db_path: Path):
+        """
+        Exports the metrics table to a Parquet file.
+        """
+        parquet_path = db_path.with_suffix(".metrics.parquet")
+        if (not parquet_path.exists()) or (
+            db_path.stat().st_mtime > parquet_path.stat().st_mtime
+        ):
+            with sqlite3.connect(db_path) as conn:
+                df = pd.read_sql("SELECT * from metrics", conn)
+            # break out the single JSON metrics column into individual columns
+            metrics = df["metrics"].copy()
+            metrics = pd.DataFrame(
+                metrics.apply(
+                    lambda x: deserialize_values(json.loads(x))
+                ).values.tolist(),
+                index=df.index,
+            )
+            del df["metrics"]
+            for col in metrics.columns:
+                df[col] = metrics[col]
+            df.to_parquet(parquet_path)
+
+    @staticmethod
+    def export_runs_to_parquet(db_path: Path):
+        """
+        Exports the runs table to a Parquet file.
+        """
+        parquet_path = db_path.with_suffix(".runs.parquet")
+        if (not parquet_path.exists()) or (
+            db_path.stat().st_mtime > parquet_path.stat().st_mtime
+        ):
+            with sqlite3.connect(db_path) as conn:
+                df = pd.read_sql("SELECT * from runs", conn)
+            df.to_parquet(parquet_path)
 
     @staticmethod
     def import_from_parquet():
         """
         Imports to all DB files that have matching files under the same path but with extension ".parquet".
         """
-        all_paths = os.listdir(TRACKIO_DIR)
-        parquet_paths = [f for f in all_paths if f.endswith(".parquet")]
-        for parquet_path in parquet_paths:
-            parquet_path = TRACKIO_DIR / parquet_path
-            db_path = parquet_path.with_suffix(".db")
+        for parquet_path in TRACKIO_DIR.glob("*.parquet"):
+            db_path = parquet_path.with_suffix("").with_suffix(".db")
+            table = parquet_path.stem.split(".")[1]
             df = pd.read_parquet(parquet_path)
             with sqlite3.connect(db_path) as conn:
-                # fix up df to have a single JSON metrics column
-                if "metrics" not in df.columns:
-                    # separate other columns from metrics
-                    metrics = df.copy()
-                    other_cols = ["id", "timestamp", "run_name", "step"]
-                    df = df[other_cols]
-                    for col in other_cols:
-                        del metrics[col]
-                    # combine them all into a single metrics col
-                    metrics = json.loads(metrics.to_json(orient="records"))
-                    df["metrics"] = [
-                        json.dumps(serialize_values(row)) for row in metrics
-                    ]
-                df.to_sql("metrics", conn, if_exists="replace", index=False)
+                if table == "metrics":
+                    # fix up df to have a single JSON metrics column
+                    if "metrics" not in df.columns:
+                        # separate other columns from metrics
+                        metrics = df.copy()
+                        other_cols = ["id", "timestamp", "run_id", "step"]
+                        df = df[other_cols]
+                        for col in other_cols:
+                            del metrics[col]
+                        # combine them all into a single metrics col
+                        metrics = json.loads(metrics.to_json(orient="records"))
+                        df["metrics"] = [
+                            json.dumps(serialize_values(row)) for row in metrics
+                        ]
+                    df.to_sql("metrics", conn, if_exists="replace", index=False)
+                elif table == "runs":
+                    df.to_sql("runs", conn, if_exists="replace", index=False)
+                else:
+                    raise ValueError(f"Unknown table: {table}")
 
     @staticmethod
     def get_scheduler():
@@ -166,7 +203,7 @@ class SQLiteStorage:
             return scheduler
 
     @staticmethod
-    def log(project: str, run: str, metrics: dict, step: int | None = None):
+    def log(project: str, run_id: int, metrics: dict, step: int | None = None):
         """
         Safely log metrics to the database. Before logging, this method will ensure the database exists
         and is set up with the correct tables. It also uses the scheduler to lock the database so
@@ -182,9 +219,9 @@ class SQLiteStorage:
                     """
                     SELECT MAX(step) 
                     FROM metrics 
-                    WHERE run_name = ?
+                    WHERE run_id = ?
                     """,
-                    (run,),
+                    (run_id,),
                 )
                 last_step = cursor.fetchone()[0]
                 if step is None:
@@ -197,12 +234,12 @@ class SQLiteStorage:
                 cursor.execute(
                     """
                     INSERT INTO metrics
-                    (timestamp, run_name, step, metrics)
+                    (timestamp, run_id, step, metrics)
                     VALUES (?, ?, ?, ?)
                     """,
                     (
                         current_timestamp,
-                        run,
+                        run_id,
                         current_step,
                         json.dumps(serialize_values(metrics)),
                     ),
@@ -212,7 +249,7 @@ class SQLiteStorage:
     @staticmethod
     def bulk_log(
         project: str,
-        run: str,
+        run_id: int,
         metrics_list: list[dict],
         steps: list[int] | None = None,
         timestamps: list[str] | None = None,
@@ -233,7 +270,7 @@ class SQLiteStorage:
                     steps = list(range(len(metrics_list)))
                 elif any(s is None for s in steps):
                     cursor.execute(
-                        "SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,)
+                        "SELECT MAX(step) FROM metrics WHERE run_id = ?", (run_id,)
                     )
                     last_step = cursor.fetchone()[0]
                     current_step = 0 if last_step is None else last_step + 1
@@ -259,7 +296,7 @@ class SQLiteStorage:
                     data.append(
                         (
                             timestamps[i],
-                            run,
+                            run_id,
                             steps[i],
                             json.dumps(serialize_values(metrics)),
                         )
@@ -268,7 +305,7 @@ class SQLiteStorage:
                 cursor.executemany(
                     """
                     INSERT INTO metrics
-                    (timestamp, run_name, step, metrics)
+                    (timestamp, run_id, step, metrics)
                     VALUES (?, ?, ?, ?)
                     """,
                     data,
@@ -276,7 +313,41 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
-    def get_logs(project: str, run: str) -> list[dict]:
+    def add_run(project: str, run: str) -> int:
+        """Add a run to the database and return the ID of the run."""
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage.get_scheduler().lock:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO runs
+                    (name, created_at)
+                    VALUES (?, ?)
+                    """,
+                    (run, datetime.now().isoformat()),
+                )
+                conn.commit()
+                run_id = cursor.lastrowid
+        if run_id is None:
+            raise ValueError(f"Failed to add run {run} to database")
+        return run_id
+
+    @staticmethod
+    def get_run_id(project: str, run: str | None) -> int | None:
+        """Get the ID of a run by name."""
+        if run is None:
+            return None
+            
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM runs WHERE name = ?", (run,))
+            result = cursor.fetchone()
+            return result[0] if result is not None else None
+
+    @staticmethod
+    def get_logs(project: str, run_id: int) -> list[dict]:
         """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -288,10 +359,10 @@ class SQLiteStorage:
                 """
                 SELECT timestamp, step, metrics
                 FROM metrics
-                WHERE run_name = ?
+                WHERE run_id = ?
                 ORDER BY timestamp
                 """,
-                (run,),
+                (run_id,),
             )
 
             rows = cursor.fetchall()
@@ -350,7 +421,7 @@ class SQLiteStorage:
         return sorted(projects)
 
     @staticmethod
-    def get_runs(project: str) -> list[str]:
+    def get_runs(project: str) -> list[RunEntry]:
         """Get list of all runs for a project."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -359,33 +430,33 @@ class SQLiteStorage:
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT DISTINCT run_name FROM metrics",
+                "SELECT * FROM runs",
             )
-            return [row[0] for row in cursor.fetchall()]
+            return [RunEntry.from_dict(row) for row in cursor.fetchall()]
 
     @staticmethod
-    def get_max_steps_for_runs(project: str, runs: list[str]) -> dict[str, int]:
+    def get_max_steps_for_runs(project: str, run_ids: list[int]) -> dict[int, int]:
         """Efficiently get the maximum step for multiple runs in a single query."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
-            return {run: 0 for run in runs}
+            return {run: 0 for run in run_ids}
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            placeholders = ",".join("?" * len(runs))
+            placeholders = ",".join("?" * len(run_ids))
             cursor.execute(
                 f"""
-                SELECT run_name, MAX(step) as max_step
+                SELECT run_id, MAX(step) as max_step
                 FROM metrics
-                WHERE run_name IN ({placeholders})
-                GROUP BY run_name
+                WHERE run_id IN ({placeholders})
+                GROUP BY run_id
                 """,
-                runs,
+                run_ids,
             )
 
-            results = {run: 0 for run in runs}  # Default to 0 for runs with no data
+            results = {run: 0 for run in run_ids}  # Default to 0 for runs with no data
             for row in cursor.fetchall():
-                results[row["run_name"]] = row["max_step"]
+                results[row["run_id"]] = row["max_step"]
 
             return results
 

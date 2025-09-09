@@ -1,12 +1,13 @@
 import os
 import re
 import shutil
-from typing import Any
 
 import gradio as gr
 import huggingface_hub as hf
 import numpy as np
 import pandas as pd
+
+from trackio import sqlite_types
 
 HfApi = hf.HfApi()
 
@@ -63,20 +64,20 @@ def get_projects(request: gr.Request):
     )
 
 
-def get_runs(project) -> list[str]:
+def get_runs(project) -> list[sqlite_types.RunEntry]:
     if not project:
         return []
     return SQLiteStorage.get_runs(project)
 
 
-def get_available_metrics(project: str, runs: list[str]) -> list[str]:
+def get_available_metrics(project: str, runs_ids: list[int]) -> list[str]:
     """Get all available metrics across all runs for x-axis selection."""
-    if not project or not runs:
+    if not project or not runs_ids:
         return ["step", "time"]
 
     all_metrics = set()
-    for run in runs:
-        metrics = SQLiteStorage.get_logs(project, run)
+    for run_id in runs_ids:
+        metrics = SQLiteStorage.get_logs(project, run_id)
         if metrics:
             df = pd.DataFrame(metrics)
             numeric_cols = df.select_dtypes(include="number").columns
@@ -183,16 +184,16 @@ def update_runs(
         runs = []
         num_runs = 0
     else:
-        runs = get_runs(project)
+        runs = [r.to_tuple() for r in get_runs(project)]
         num_runs = len(runs)
         if filter_text:
-            runs = [r for r in runs if filter_text in r]
+            runs = [r for r in runs if filter_text in r.name]
 
     if not user_interacted_with_runs:
         if selected_runs_from_url:
-            value = [r for r in runs if r in selected_runs_from_url]
+            value = [r.id for r in runs if r.id in selected_runs_from_url]
         else:
-            value = runs
+            value = [r.id for r in runs]
         return gr.CheckboxGroup(choices=runs, value=value), gr.Textbox(
             label=f"Runs ({num_runs})"
         )
@@ -202,13 +203,13 @@ def update_runs(
 
 def filter_runs(project, filter_text):
     runs = get_runs(project)
-    runs = [r for r in runs if filter_text in r]
-    return gr.CheckboxGroup(choices=runs, value=runs)
+    runs = [r.to_tuple() for r in runs if filter_text in r.name]
+    return gr.CheckboxGroup(choices=runs, value=[r.id for r in runs])
 
 
-def update_x_axis_choices(project, runs):
+def update_x_axis_choices(project, runs_ids):
     """Update x-axis dropdown choices based on available metrics."""
-    available_metrics = get_available_metrics(project, runs)
+    available_metrics = get_available_metrics(project, runs_ids)
     return gr.Dropdown(
         label="X-axis",
         choices=available_metrics,
@@ -290,20 +291,9 @@ def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     check_auth(hf_token)
     for upload in uploads:
         media_path = FileStorage.init_project_media_path(
-            upload["project"], upload["run"], upload["step"]
+            upload["project"], upload["run_id"], upload["step"]
         )
         shutil.copy(upload["uploaded_file"]["path"], media_path)
-
-
-def log(
-    project: str,
-    run: str,
-    metrics: dict[str, Any],
-    step: int | None,
-    hf_token: str | None,
-) -> None:
-    check_auth(hf_token)
-    SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
 
 def bulk_log(
@@ -314,16 +304,16 @@ def bulk_log(
 
     logs_by_run = {}
     for log_entry in logs:
-        key = (log_entry["project"], log_entry["run"])
+        key = (log_entry["project"], log_entry["run_id"])
         if key not in logs_by_run:
             logs_by_run[key] = {"metrics": [], "steps": []}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["steps"].append(log_entry.get("step"))
 
-    for (project, run), data in logs_by_run.items():
+    for (project, run_id), data in logs_by_run.items():
         SQLiteStorage.bulk_log(
             project=project,
-            run=run,
+            run_id=run_id,
             metrics_list=data["metrics"],
             steps=data["steps"],
         )
@@ -554,10 +544,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         api_name="bulk_upload_media",
     )
     gr.api(
-        fn=log,
-        api_name="log",
-    )
-    gr.api(
         fn=bulk_log,
         api_name="bulk_log",
     )
@@ -568,12 +554,11 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     def update_x_lim(select_data: gr.SelectData):
         return select_data.index
 
-    def update_last_steps(project, runs):
+    def update_last_steps(project, run_ids):
         """Update the last step from all runs to detect when new data is available."""
-        if not project or not runs:
+        if not project or not run_ids:
             return {}
-
-        return SQLiteStorage.get_max_steps_for_runs(project, runs)
+        return SQLiteStorage.get_max_steps_for_runs(project, run_ids)
 
     timer.tick(
         fn=update_last_steps,

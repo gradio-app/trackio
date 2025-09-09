@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 from huggingface_hub.constants import HF_HOME
 
+from trackio.sqlite_types import RunEntryTuple
+
 if TYPE_CHECKING:
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
@@ -570,7 +572,9 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return None
 
 
-def generate_embed_code(project: str, metrics: str, selected_runs: list = None) -> str:
+def generate_embed_code(
+    project: str, metrics: str, selected_runs: list[RunEntryTuple] = None
+) -> str:
     """Generate the embed iframe code based on current settings."""
     space_host = os.environ.get("SPACE_HOST", "")
     if not space_host:
@@ -585,7 +589,8 @@ def generate_embed_code(project: str, metrics: str, selected_runs: list = None) 
         params.append(f"metrics={metrics}")
 
     if selected_runs:
-        runs_param = ",".join(selected_runs)
+        run_ids = [str(r[1]) for r in selected_runs]
+        runs_param = ",".join(run_ids)
         params.append(f"runs={runs_param}")
 
     params.append("sidebar=hidden")

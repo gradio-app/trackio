@@ -113,9 +113,10 @@ def import_csv(
                 timestamps.append("")
 
     if metrics_list:
+        run_id = SQLiteStorage.add_run(project, name)
         SQLiteStorage.bulk_log(
             project=project,
-            run=name,
+            run=run_id,
             metrics_list=metrics_list,
             steps=steps,
             timestamps=timestamps,
@@ -246,9 +247,10 @@ def import_tf_events(
                     timestamps.append("")
 
             if metrics_list:
+                run_id = SQLiteStorage.add_run(project, run_name)
                 SQLiteStorage.bulk_log(
                     project=project,
-                    run=str(run_name),
+                    run_id=run_id,
                     metrics_list=metrics_list,
                     steps=steps,
                     timestamps=timestamps,

@@ -37,6 +37,7 @@ class Run:
         self.name = name or generate_readable_name(
             SQLiteStorage.get_runs(project), space_id
         )
+        self.id = SQLiteStorage.add_run(project, self.name)
         self.config = config or {}
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
@@ -104,7 +105,7 @@ class Run:
                     # Upload local media when deploying to space
                     upload_entry: UploadEntry = {
                         "project": self.project,
-                        "run": self.name,
+                        "run_id": self.id,
                         "step": step,
                         "uploaded_file": handle_file(value._get_absolute_file_path()),
                     }
@@ -132,7 +133,7 @@ class Run:
         metrics = serialize_values(metrics)
         log_entry: LogEntry = {
             "project": self.project,
-            "run": self.name,
+            "run_id": self.id,
             "metrics": metrics,
             "step": step,
         }
