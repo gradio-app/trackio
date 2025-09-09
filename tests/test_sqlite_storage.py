@@ -14,7 +14,7 @@ def test_init_creates_metrics_table(temp_dir):
 
 def test_log_and_get_metrics(temp_dir):
     metrics = {"acc": 0.9}
-    run_id = SQLiteStorage.add_run(project="proj1", run="run1")
+    run_id = SQLiteStorage.add_run(project="proj1", name="run1")
     SQLiteStorage.log(project="proj1", run_id=run_id, metrics=metrics)
     results = SQLiteStorage.get_logs(project="proj1", run_id=run_id)
     assert len(results) == 1
@@ -24,8 +24,8 @@ def test_log_and_get_metrics(temp_dir):
 
 
 def test_get_projects_and_runs(temp_dir):
-    run1_id = SQLiteStorage.add_run(project="proj1", run="run1")
-    run2_id = SQLiteStorage.add_run(project="proj2", run="run2")
+    run1_id = SQLiteStorage.add_run(project="proj1", name="run1")
+    run2_id = SQLiteStorage.add_run(project="proj2", name="run2")
     SQLiteStorage.log(project="proj1", run_id=run1_id, metrics={"a": 1})
     SQLiteStorage.log(project="proj2", run_id=run2_id, metrics={"b": 2})
     projects = set(SQLiteStorage.get_projects())
@@ -39,8 +39,8 @@ def test_import_export(temp_dir):
     db_path_2 = SQLiteStorage.init_db("proj2")
 
     # log some data, export to parquet, keep a copy in `metrics`
-    run1_id = SQLiteStorage.add_run(project="proj1", run="run1")
-    run2_id = SQLiteStorage.add_run(project="proj2", run="run2")
+    run1_id = SQLiteStorage.add_run(project="proj1", name="run1")
+    run2_id = SQLiteStorage.add_run(project="proj2", name="run2")
     SQLiteStorage.log(project="proj1", run_id=run1_id, metrics={"a": 1})
     SQLiteStorage.log(project="proj2", run_id=run2_id, metrics={"b": 2})
     SQLiteStorage.export_to_parquet()

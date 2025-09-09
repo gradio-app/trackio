@@ -11,6 +11,7 @@ class RunEntryTuple(NamedTuple):
 class RunEntry:
     id: int
     name: str
+    group: str | None
     created_at: str
 
     @classmethod
@@ -18,6 +19,7 @@ class RunEntry:
         return cls(
             id=data["id"],
             name=data["name"],
+            group=data["group"],
             created_at=data["created_at"],
         )
 

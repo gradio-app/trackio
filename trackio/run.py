@@ -25,24 +25,26 @@ class Run:
         project: str,
         client: Client | None,
         name: str | None = None,
+        group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
         resumed: bool = False,
     ):
         self.url = url
         self.project = project
-        self._client_lock = threading.Lock()
-        self._client_thread = None
-        self._client = client
-        self._space_id = space_id
+        self.group = group
         self.name = name or generate_readable_name(
             SQLiteStorage.get_runs(project), space_id
         )
         if resumed:
             self.id = SQLiteStorage.get_run_id(project, self.name)
         else:
-            self.id = SQLiteStorage.add_run(project, self.name)
+            self.id = SQLiteStorage.add_run(project, self.name, self.group)
         self.config = config or {}
+        self._client_lock = threading.Lock()
+        self._client_thread = None
+        self._client = client
+        self._space_id = space_id
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._stop_flag = threading.Event()

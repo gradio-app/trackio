@@ -68,6 +68,7 @@ class SQLiteStorage:
                     CREATE TABLE IF NOT EXISTS runs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL UNIQUE,
+                        group TEXT,
                         created_at TEXT NOT NULL
                     )
                 """)
@@ -315,7 +316,7 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
-    def add_run(project: str, run: str) -> int:
+    def add_run(project: str, name: str, group: str | None = None) -> int:
         """Add a run to the database and return the ID of the run."""
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage.get_scheduler().lock:
@@ -324,15 +325,15 @@ class SQLiteStorage:
                 cursor.execute(
                     """
                     INSERT INTO runs
-                    (name, created_at)
-                    VALUES (?, ?)
+                    (name, group, created_at)
+                    VALUES (?, ?, ?)
                     """,
-                    (run, datetime.now().isoformat()),
+                    (name, group, datetime.now().isoformat()),
                 )
                 conn.commit()
                 run_id = cursor.lastrowid
         if run_id is None:
-            raise ValueError(f"Failed to add run {run} to database")
+            raise ValueError(f"Failed to add run {name} to database")
         return run_id
 
     @staticmethod
