@@ -218,7 +218,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.init_db(project)
 
         with SQLiteStorage._get_process_lock(project):
-            with SQLiteStorage._get_connection(db_path) as conn:
+            with SQLiteStorage._get_connection(db_path, timeout=30.0) as conn:
                 cursor = conn.cursor()
 
                 cursor.execute(
@@ -273,7 +273,7 @@ class SQLiteStorage:
 
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
-            with SQLiteStorage._get_connection(db_path) as conn:
+            with SQLiteStorage._get_connection(db_path, timeout=30.0) as conn:
                 cursor = conn.cursor()
 
                 if steps is None:
@@ -329,7 +329,7 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        with SQLiteStorage._get_connection(db_path) as conn:
+        with SQLiteStorage._get_connection(db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -405,7 +405,7 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        with SQLiteStorage._get_connection(db_path) as conn:
+        with SQLiteStorage._get_connection(db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT DISTINCT run_name FROM metrics",
@@ -419,7 +419,7 @@ class SQLiteStorage:
         if not db_path.exists():
             return {run: 0 for run in runs}
 
-        with SQLiteStorage._get_connection(db_path) as conn:
+        with SQLiteStorage._get_connection(db_path, timeout=30.0) as conn:
             cursor = conn.cursor()
             placeholders = ",".join("?" * len(runs))
             cursor.execute(
