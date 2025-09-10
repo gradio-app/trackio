@@ -5,16 +5,17 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Literal
 
-import mediapy as mp
 import numpy as np
 from PIL import Image as PILImage
 
 try:  # absolute imports when installed
     from trackio.file_storage import FileStorage
     from trackio.utils import MEDIA_DIR
+    from trackio.video_writer import write_video
 except ImportError:  # relative imports for local execution on Spaces
     from file_storage import FileStorage
     from utils import MEDIA_DIR
+    from video_writer import write_video
 
 
 class TrackioMedia(ABC):
@@ -173,31 +174,25 @@ class TrackioVideo(TrackioMedia):
         # Create a simple video from numpy array
         frames = np.random.randint(0, 255, (10, 3, 64, 64), dtype=np.uint8)
         video = trackio.Video(frames, caption="Random video", fps=30)
-        trackio.log({"my_video": video})
 
         # Create a batch of videos
         batch_frames = np.random.randint(0, 255, (3, 10, 3, 64, 64), dtype=np.uint8)
         batch_video = trackio.Video(batch_frames, caption="Batch of videos", fps=15)
-        trackio.log({"batch_video": batch_video})
 
         # Create video from file path
         video = trackio.Video("path/to/video.mp4", caption="Video from file")
-        trackio.log({"file_video": video})
-
-        # Create video with specific format
-        video = trackio.Video(frames, caption="GIF video", fps=10, format="mp4")
-        trackio.log({"mp4_video": video})
         ```
 
     Args:
         value (`str`, `Path`, or `numpy.ndarray`, *optional*, defaults to `None`):
-            A path to a video file, or a numpy array of shape (frames, channels, height, width) or (batch, frames, channels, height, width).
+            A path to a video file, or a numpy array.
+            Array is expected to have shape of either (frames, channels, height, width) or (batch, frames, channels, height, width).
         caption (`str`, *optional*, defaults to `None`):
             A string caption for the video.
         fps (`int`, *optional*, defaults to `None`):
-            Frames per second for the video. Only relevant when using a numpy array.
+            Frames per second for the video. Only used when value is an ndarray. Default is `24`.
         format (`Literal["gif", "mp4", "webm"]`, *optional*, defaults to `None`):
-            Video format ("gif", "mp4", or "webm"). Only relevant when using a numpy array.
+            Video format ("gif", "mp4", or "webm"). Only used when value is an ndarray. Default is "gif".
     """
 
     TYPE = "trackio.video"
@@ -210,13 +205,17 @@ class TrackioVideo(TrackioMedia):
         format: TrackioVideoFormatType | None = None,
     ):
         super().__init__(value, caption)
+        if isinstance(value, np.ndarray):
+            if format is None:
+                format = "gif"
+            if fps is None:
+                fps = 24
         self._fps = fps
         self._format = format
-        if isinstance(self._value, np.ndarray) and self._format is None:
-            self._format = "gif"
+            
 
     @property
-    def _codec(self) -> str | None:
+    def _codec(self) -> str:
         match self._format:
             case "gif":
                 return "gif"
@@ -225,12 +224,12 @@ class TrackioVideo(TrackioMedia):
             case "webm":
                 return "vp9"
             case _:
-                return None
+                raise ValueError(f"Unsupported format: {self._format}")
 
     def _save_media(self, file_path: Path):
         if isinstance(self._value, np.ndarray):
             video = TrackioVideo._process_ndarray(self._value)
-            mp.write_video(file_path, video, fps=self._fps, codec=self._codec)
+            write_video(file_path, video, fps=self._fps, codec=self._codec)
         elif isinstance(self._value, str | Path):
             if os.path.isfile(self._value):
                 shutil.copy(self._value, file_path)
