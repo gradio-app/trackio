@@ -1,11 +1,9 @@
 from pathlib import Path
 
-from PIL import Image as PILImage
-
 try:  # absolute imports when installed
-    from trackio.utils import TRACKIO_DIR
+    from trackio.utils import MEDIA_DIR
 except ImportError:  # relative imports for local execution on Spaces
-    from utils import TRACKIO_DIR
+    from utils import MEDIA_DIR
 
 
 class FileStorage:
@@ -21,7 +19,7 @@ class FileStorage:
         if step is not None and run is None:
             raise ValueError("step requires run")
 
-        path = TRACKIO_DIR / "media" / project
+        path = MEDIA_DIR / project
         if run:
             path /= run
         if step is not None:
@@ -37,23 +35,3 @@ class FileStorage:
         path = FileStorage.get_project_media_path(project, run, step)
         path.mkdir(parents=True, exist_ok=True)
         return path
-
-    @staticmethod
-    def save_image(
-        image: PILImage.Image,
-        project: str,
-        run: str,
-        step: int,
-        filename: str,
-        format: str = "PNG",
-    ) -> Path:
-        path = FileStorage.init_project_media_path(project, run, step) / filename
-        image.save(path, format=format)
-        return path
-
-    @staticmethod
-    def get_image(project: str, run: str, step: int, filename: str) -> PILImage.Image:
-        path = FileStorage.get_project_media_path(project, run, step, filename)
-        if not path.exists():
-            raise FileNotFoundError(f"Image file not found: {path}")
-        return PILImage.open(path).convert("RGBA")

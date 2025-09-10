@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from dataclasses import dataclass
 from typing import Any
 
 import gradio as gr
@@ -13,14 +14,14 @@ HfApi = hf.HfApi()
 try:
     import trackio.utils as utils
     from trackio.file_storage import FileStorage
-    from trackio.media import TrackioImage
+    from trackio.media import TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
 except:  # noqa: E722
     import utils
     from file_storage import FileStorage
-    from media import TrackioImage
+    from media import TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
@@ -93,19 +94,31 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
-def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
-    image_data = {}
+@dataclass
+class MediaData:
+    caption: str | None
+    file_path: str
+
+
+def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
+    media_by_key: dict[str, list[MediaData]] = {}
     logs = sorted(logs, key=lambda x: x.get("step", 0))
     for log in logs:
         for key, value in log.items():
-            if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
-                if key not in image_data:
-                    image_data[key] = []
-                try:
-                    image_data[key].append(TrackioImage._from_dict(value))
-                except Exception as e:
-                    print(f"Image not currently available: {key}: {e}")
-    return image_data
+            if isinstance(value, dict):
+                type = value.get("_type")
+                if type == TrackioImage.TYPE or type == TrackioVideo.TYPE:
+                    if key not in media_by_key:
+                        media_by_key[key] = []
+                    try:
+                        media_data = MediaData(
+                            file_path=utils.MEDIA_DIR / value.get("file_path"),
+                            caption=value.get("caption"),
+                        )
+                        media_by_key[key].append(media_data)
+                    except Exception as e:
+                        print(f"Media currently unavailable: {key}: {e}")
+    return media_by_key
 
 
 def load_run_data(
@@ -122,7 +135,7 @@ def load_run_data(
     if not logs:
         return None, None
 
-    images = extract_images(logs)
+    media = extract_media(logs)
     df = pd.DataFrame(logs)
 
     if "step" not in df.columns:
@@ -165,12 +178,12 @@ def load_run_data(
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        return combined_df, images
+        return combined_df, media
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        return df, images
+        return df, media
 
 
 def update_runs(
@@ -371,14 +384,14 @@ def configure(request: gr.Request):
     return [], sidebar, metrics_param, selected_runs
 
 
-def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
+def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
     with gr.Accordion(label="media"):
         with gr.Group(elem_classes=("media-group")):
-            for run, images_by_key in images_by_run.items():
+            for run, media_by_key in media_by_run.items():
                 with gr.Tab(label=run, elem_classes=("media-tab")):
-                    for key, images in images_by_key.items():
+                    for key, media_item in media_by_key.items():
                         gr.Gallery(
-                            [(image._pil, image.caption) for image in images],
+                            [(item.file_path, item.caption) for item in media_item],
                             label=key,
                             columns=6,
                             elem_classes=("media-gallery"),
@@ -424,11 +437,13 @@ css = """
 .info-icon:hover { opacity: 0.8; }
 .accent-link { font-weight: bold; }
 
-.media-gallery { max-height: 325px; }
+.media-gallery .fixed-height { min-height: 275px; }
 .media-group, .media-group > div { background: none; }
 .media-group .tabs { padding: 0.5em; }
+.media-tab { max-height: 500px; overflow-y: scroll; }
 """
 
+gr.set_static_paths(paths=[utils.MEDIA_DIR])
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
@@ -773,7 +788,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                         )
                                     metric_idx += 1
         if images_by_run and any(any(images) for images in images_by_run.values()):
-            create_image_section(images_by_run)
+            create_media_section(images_by_run)
 
         table_cols = master_df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
