@@ -2,10 +2,11 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Literal
+
 import numpy as np
 
+VideoCodec = Literal["h264", "vp9", "gif"]
 
-type VideoCodec = Literal["h264", "vp9", "gif"]
 
 def _check_ffmpeg_installed() -> None:
     """Raise an error if ffmpeg is not available on the system PATH."""
@@ -14,6 +15,7 @@ def _check_ffmpeg_installed() -> None:
             "ffmpeg is required to write video but was not found on your system. "
             "Please install ffmpeg and ensure it is available on your PATH."
         )
+
 
 def _check_array_format(video: np.ndarray) -> None:
     """Raise an error if the array is not in the expected format."""
@@ -28,6 +30,7 @@ def _check_array_format(video: np.ndarray) -> None:
             "Please convert your video data to uint8 format."
         )
 
+
 def _check_path(file_path: str | Path) -> None:
     """Raise an error if the parent directory does not exist."""
     file_path = Path(file_path)
@@ -35,9 +38,14 @@ def _check_path(file_path: str | Path) -> None:
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            raise ValueError(f"Failed to create parent directory {file_path.parent}: {e}")
+            raise ValueError(
+                f"Failed to create parent directory {file_path.parent}: {e}"
+            )
 
-def write_video(file_path: str | Path, video: np.ndarray, fps: float, codec: VideoCodec) -> None:
+
+def write_video(
+    file_path: str | Path, video: np.ndarray, fps: float, codec: VideoCodec
+) -> None:
     """RGB uint8 only, shape (F, H, W, 3)."""
     _check_ffmpeg_installed()
     _check_path(file_path)
@@ -55,25 +63,35 @@ def write_video(file_path: str | Path, video: np.ndarray, fps: float, codec: Vid
     cmd = [
         "ffmpeg",
         "-y",
-        "-f", "rawvideo",
-        "-s", f"{width}x{height}",
-        "-pix_fmt", "rgb24",
-        "-r", str(fps),
-        "-i", "-",
+        "-f",
+        "rawvideo",
+        "-s",
+        f"{width}x{height}",
+        "-pix_fmt",
+        "rgb24",
+        "-r",
+        str(fps),
+        "-i",
+        "-",
         "-an",
     ]
 
     if codec == "gif":
         video_filter = "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
         cmd += [
-            "-vf", video_filter,
-            "-loop", "0",
+            "-vf",
+            video_filter,
+            "-loop",
+            "0",
         ]
     elif codec == "h264":
         cmd += [
-            "-vcodec", "libx264",
-            "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
+            "-vcodec",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
         ]
     elif codec == "vp9":
         bpp = 0.08
@@ -85,9 +103,12 @@ def write_video(file_path: str | Path, video: np.ndarray, fps: float, codec: Vid
         else:
             bitrate = str(max(bps, 1))
         cmd += [
-            "-vcodec", "libvpx-vp9",
-            "-b:v", bitrate,
-            "-pix_fmt", "yuv420p",
+            "-vcodec",
+            "libvpx-vp9",
+            "-b:v",
+            bitrate,
+            "-pix_fmt",
+            "yuv420p",
         ]
     cmd += [out_path]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -97,7 +118,9 @@ def write_video(file_path: str | Path, video: np.ndarray, fps: float, codec: Vid
     finally:
         if proc.stdin:
             proc.stdin.close()
-        stderr = proc.stderr.read().decode("utf-8", errors="ignore") if proc.stderr else ""
+        stderr = (
+            proc.stderr.read().decode("utf-8", errors="ignore") if proc.stderr else ""
+        )
         ret = proc.wait()
         if ret != 0:
             raise RuntimeError(f"ffmpeg failed with code {ret}\n{stderr}")

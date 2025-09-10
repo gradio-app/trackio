@@ -214,7 +214,6 @@ class TrackioVideo(TrackioMedia):
                 fps = 24
         self._fps = fps
         self._format = format
-            
 
     @property
     def _codec(self) -> str:
