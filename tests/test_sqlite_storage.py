@@ -74,8 +74,6 @@ def _worker_using_sqlite_storage(
     This will be protected by ProcessLock when available.
     """
     def aggressive_get_connection(db_path):
-        import sqlite3
-
         conn = sqlite3.connect(str(db_path), timeout=0.01)
         conn.row_factory = sqlite3.Row
         return conn
