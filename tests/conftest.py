@@ -1,10 +1,11 @@
 import tempfile
 from pathlib import Path
 
-import mediapy as mp
 import numpy as np
 import pytest
 from PIL import Image as PILImage
+
+from trackio.video_writer import write_video
 
 
 @pytest.fixture
@@ -44,20 +45,17 @@ def image_path(image_ndarray, tmp_path):
 
 @pytest.fixture
 def video_ndarray():
-    # (F, C, H, W) for usage by TrackioVideo
     return np.random.randint(255, size=(60, 3, 128, 96), dtype=np.uint8)
 
 
 @pytest.fixture
 def video_ndarray_batch():
-    # (B, F, C, H, W) for usage by TrackioVideo
     return np.random.randint(255, size=(5, 60, 3, 128, 96), dtype=np.uint8)
 
 
 @pytest.fixture
 def video_path(video_ndarray, tmp_path):
     file_path = Path(tmp_path, "foo.mp4")
-    # transpose from (F, C, H, W) -> (F, H, W, C) for usage by mediapy
     video_ndarray = video_ndarray.transpose(0, 2, 3, 1)
-    mp.write_video(file_path, video_ndarray, codec="h264", fps=30)
+    write_video(file_path, video_ndarray, codec="h264", fps=30)
     return file_path
