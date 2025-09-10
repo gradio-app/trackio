@@ -497,12 +497,16 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         [demo.load],
         fn=configure,
         outputs=[metrics_subset, sidebar, metric_filter_tb, selected_runs_from_url],
+        queue=False,
+        api_name=False,
     )
     gr.on(
         [demo.load],
         fn=get_projects,
         outputs=project_dd,
         show_progress="hidden",
+        queue=False,
+        api_name=False,
     )
     gr.on(
         [timer.tick],
@@ -515,12 +519,14 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         ],
         outputs=[run_cb, run_tb],
         show_progress="hidden",
+        api_name=False,
     )
     gr.on(
         [timer.tick],
         fn=lambda: gr.Dropdown(info=get_project_info()),
         outputs=[project_dd],
         show_progress="hidden",
+        api_name=False,
     )
     gr.on(
         [demo.load, project_dd.change],
@@ -528,37 +534,61 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         inputs=[project_dd, run_tb, gr.State(False), selected_runs_from_url],
         outputs=[run_cb, run_tb],
         show_progress="hidden",
-    )
-    gr.on(
-        [demo.load, project_dd.change, run_cb.change],
+        queue=False,
+        api_name=False,
+    ).then(
         fn=update_x_axis_choices,
         inputs=[project_dd, run_cb],
         outputs=x_axis_dd,
         show_progress="hidden",
+        queue=False,
+        api_name=False,
+    ).then(
+        fn=utils.generate_embed_code,
+        inputs=[project_dd, metric_filter_tb, run_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+
+    gr.on(
+        [run_cb.input],
+        fn=update_x_axis_choices,
+        inputs=[project_dd, run_cb],
+        outputs=x_axis_dd,
+        show_progress="hidden",
+        queue=False,
+        api_name=False,
+    )
+    gr.on(
+        [metric_filter_tb.change, run_cb.change],
+        fn=utils.generate_embed_code,
+        inputs=[project_dd, metric_filter_tb, run_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
     )
 
     realtime_cb.change(
         fn=toggle_timer,
         inputs=realtime_cb,
         outputs=timer,
-        api_name="toggle_timer",
+        api_name=False,
+        queue=False,
     )
     run_cb.input(
         fn=lambda: True,
         outputs=user_interacted_with_run_cb,
+        api_name=False,
+        queue=False,
     )
     run_tb.input(
         fn=filter_runs,
         inputs=[project_dd, run_tb],
         outputs=run_cb,
-    )
-
-    gr.on(
-        [demo.load, project_dd.change, metric_filter_tb.change, run_cb.change],
-        fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, run_cb],
-        outputs=embed_code,
-        show_progress="hidden",
+        api_name=False,
         queue=False,
     )
 
@@ -585,18 +615,18 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     def update_x_lim(select_data: gr.SelectData):
         return select_data.index
 
-    def update_last_steps(project, runs):
-        """Update the last step from all runs to detect when new data is available."""
-        if not project or not runs:
+    def update_last_steps(project):
+        """Check the last step for each run to detect when new data is available."""
+        if not project:
             return {}
-
-        return SQLiteStorage.get_max_steps_for_runs(project, runs)
+        return SQLiteStorage.get_max_steps_for_runs(project)
 
     timer.tick(
         fn=update_last_steps,
-        inputs=[project_dd, run_cb],
+        inputs=[project_dd],
         outputs=last_steps,
         show_progress="hidden",
+        api_name=False,
     )
 
     @gr.render(
@@ -621,6 +651,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             metric_filter_tb,
         ],
         show_progress="hidden",
+        queue=False,
     )
     def update_dashboard(
         project,
