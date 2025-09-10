@@ -9,6 +9,7 @@ from gradio.blocks import BUILT_IN_THEMES
 from gradio.themes import Default as DefaultTheme
 from gradio.themes import ThemeClass
 from gradio_client import Client
+from huggingface_hub import SpaceStorage
 
 from trackio import context_vars, deploy, utils
 from trackio.imports import import_csv, import_tf_events
@@ -46,6 +47,7 @@ def init(
     project: str,
     name: str | None = None,
     space_id: str | None = None,
+    space_storage: SpaceStorage | None = None,
     dataset_id: str | None = None,
     config: dict | None = None,
     resume: str = "never",
@@ -67,6 +69,8 @@ def init(
             case the Space will be created in the currently-logged-in Hugging Face
             user's namespace. If the Space does not exist, it will be created. If the
             Space already exists, the project will be logged to it.
+        space_storage ([`~huggingface_hub.SpaceStorage`] or `None`, *optional*, defaults to `None`):
+            Choice of persistent storage tier.
         dataset_id (`str` or `None`, *optional*, defaults to `None`):
             If a `space_id` is provided, a persistent Hugging Face Dataset will be
             created and the metrics will be synced to it every 5 minutes. Specify a
@@ -129,7 +133,7 @@ def init(
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             utils.print_dashboard_instructions(project)
         else:
-            deploy.create_space_if_not_exists(space_id, dataset_id)
+            deploy.create_space_if_not_exists(space_id, space_storage, dataset_id)
             print(
                 f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
             )

@@ -317,17 +317,15 @@ class SQLiteStorage:
                 try:
                     files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                     for file in files:
-                        is_media = file.startswith("media/")
-                        is_parquet = file.endswith(".parquet")
                         # Download parquet and media assets
-                        if is_media or is_parquet:
-                            hf.hf_hub_download(
-                                dataset_id,
-                                file,
-                                repo_type="dataset",
-                                local_dir=TRACKIO_DIR,
-                            )
-                            updated = True
+                        if not (file.endswith(".parquet") or file.startswith("media/")):
+                            continue
+                        if (TRACKIO_DIR / file).exists():
+                            continue
+                        hf.hf_hub_download(
+                            dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR
+                        )
+                        updated = True
                 except hf.errors.EntryNotFoundError:
                     pass
                 except hf.errors.RepositoryNotFoundError:
