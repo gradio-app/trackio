@@ -1,3 +1,4 @@
+import importlib.metadata
 import io
 import os
 import time
@@ -11,14 +12,40 @@ from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 from requests import HTTPError
 
+import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
-PERSISTENT_STORAGE_DIR = "/data/.huggingface/trackio"
+
+
+def _is_trackio_installed_from_source() -> bool:
+    """Check if trackio is installed from source/editable install vs PyPI."""
+    try:
+        trackio_file = trackio.__file__
+        if "site-packages" not in trackio_file:
+            return True
+
+        dist = importlib.metadata.distribution("trackio")
+        if dist.files:
+            files = list(dist.files)
+            has_pth = any(".pth" in str(f) for f in files)
+            if has_pth:
+                return True
+
+        return False
+    except (
+        AttributeError,
+        importlib.metadata.PackageNotFoundError,
+        importlib.metadata.MetadataError,
+        ValueError,
+        TypeError,
+    ):
+        return True
 
 
 def deploy_as_space(
     space_id: str,
+    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
 ):
     if (
@@ -34,6 +61,7 @@ def deploy_as_space(
         huggingface_hub.create_repo(
             space_id,
             space_sdk="gradio",
+            space_storage=space_storage,
             repo_type="space",
             exist_ok=True,
         )
@@ -44,6 +72,7 @@ def deploy_as_space(
             huggingface_hub.create_repo(
                 space_id,
                 space_sdk="gradio",
+                space_storage=space_storage,
                 repo_type="space",
                 exist_ok=True,
             )
@@ -63,9 +92,14 @@ def deploy_as_space(
 
     # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
     # Make sure necessary dependencies are installed by creating a requirements.txt.
-    requirements_content = """
-pyarrow>=21.0
-    """
+    is_source_install = _is_trackio_installed_from_source()
+
+    if is_source_install:
+        requirements_content = """pyarrow>=21.0"""
+    else:
+        requirements_content = f"""pyarrow>=21.0
+trackio=={trackio.__version__}"""
+
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(
         path_or_fileobj=requirements_buffer,
@@ -75,14 +109,25 @@ pyarrow>=21.0
     )
 
     huggingface_hub.utils.disable_progress_bars()
-    hf_api.upload_folder(
-        repo_id=space_id,
-        repo_type="space",
-        folder_path=trackio_path,
-        ignore_patterns=["README.md"],
-    )
 
-    huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", PERSISTENT_STORAGE_DIR)
+    if is_source_install:
+        hf_api.upload_folder(
+            repo_id=space_id,
+            repo_type="space",
+            folder_path=trackio_path,
+            ignore_patterns=["README.md"],
+        )
+    else:
+        app_file_content = """import trackio
+trackio.show()"""
+        app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
+        hf_api.upload_file(
+            path_or_fileobj=app_file_buffer,
+            path_in_repo="ui.py",
+            repo_id=space_id,
+            repo_type="space",
+        )
+
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if dataset_id is not None:
@@ -91,6 +136,7 @@ pyarrow>=21.0
 
 def create_space_if_not_exists(
     space_id: str,
+    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
 ) -> None:
     """
@@ -129,7 +175,7 @@ def create_space_if_not_exists(
             raise ValueError(f"Failed to create Space: {e}")
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, dataset_id)
+    deploy_as_space(space_id, space_storage, dataset_id)
 
 
 def wait_until_space_exists(

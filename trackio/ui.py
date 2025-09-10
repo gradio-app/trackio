@@ -1,6 +1,8 @@
 import os
 import re
 import shutil
+from dataclasses import dataclass
+from typing import Any
 
 import gradio as gr
 import huggingface_hub as hf
@@ -14,14 +16,14 @@ HfApi = hf.HfApi()
 try:
     import trackio.utils as utils
     from trackio.file_storage import FileStorage
-    from trackio.media import TrackioImage
+    from trackio.media import TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
 except:  # noqa: E722
     import utils
     from file_storage import FileStorage
-    from media import TrackioImage
+    from media import TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
@@ -30,14 +32,11 @@ except:  # noqa: E722
 def get_project_info() -> str | None:
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
     space_id = os.environ.get("SPACE_ID")
-    persistent_storage_enabled = os.environ.get(
-        "PERSISTANT_STORAGE_ENABLED"
-    )  # Space env name has a typo
-    if persistent_storage_enabled:
+    if utils.persistent_storage_enabled():
         return "&#10024; Persistent Storage is enabled, logs are stored directly in this Space."
     if dataset_id:
         sync_status = utils.get_sync_status(SQLiteStorage.get_scheduler())
-        upgrade_message = f"New changes are synced every 5 min <span class='info-container'><input type='checkbox' class='info-checkbox' id='upgrade-info'><label for='upgrade-info' class='info-icon'>&#9432;</label><span class='info-expandable'> To avoid losing data between syncs, <a href='https://huggingface.co/spaces/{space_id}/settings' class='accent-link'>click here</a> to open this Space's settings and add Persistent Storage.</span></span>"
+        upgrade_message = f"New changes are synced every 5 min <span class='info-container'><input type='checkbox' class='info-checkbox' id='upgrade-info'><label for='upgrade-info' class='info-icon'>&#9432;</label><span class='info-expandable'> To avoid losing data between syncs, <a href='https://huggingface.co/spaces/{space_id}/settings' class='accent-link'>click here</a> to open this Space's settings and add Persistent Storage. Make sure data is synced prior to enabling.</span></span>"
         if sync_status is not None:
             info = f"&#x21bb; Backed up {sync_status} min ago to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank' class='accent-link'>{dataset_id}</a> | {upgrade_message}"
         else:
@@ -97,19 +96,31 @@ def get_available_metrics(project: str, runs_ids: list[int]) -> list[str]:
     return result
 
 
-def extract_images(logs: list[dict]) -> dict[str, list[TrackioImage]]:
-    image_data = {}
+@dataclass
+class MediaData:
+    caption: str | None
+    file_path: str
+
+
+def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
+    media_by_key: dict[str, list[MediaData]] = {}
     logs = sorted(logs, key=lambda x: x.get("step", 0))
     for log in logs:
         for key, value in log.items():
-            if isinstance(value, dict) and value.get("_type") == TrackioImage.TYPE:
-                if key not in image_data:
-                    image_data[key] = []
-                try:
-                    image_data[key].append(TrackioImage._from_dict(value))
-                except Exception as e:
-                    print(f"Image not currently available: {key}: {e}")
-    return image_data
+            if isinstance(value, dict):
+                type = value.get("_type")
+                if type == TrackioImage.TYPE or type == TrackioVideo.TYPE:
+                    if key not in media_by_key:
+                        media_by_key[key] = []
+                    try:
+                        media_data = MediaData(
+                            file_path=utils.MEDIA_DIR / value.get("file_path"),
+                            caption=value.get("caption"),
+                        )
+                        media_by_key[key].append(media_data)
+                    except Exception as e:
+                        print(f"Media currently unavailable: {key}: {e}")
+    return media_by_key
 
 
 def load_run_data(
@@ -126,7 +137,7 @@ def load_run_data(
     if not logs:
         return None, None
 
-    images = extract_images(logs)
+    media = extract_media(logs)
     df = pd.DataFrame(logs)
 
     if "step" not in df.columns:
@@ -154,7 +165,7 @@ def load_run_data(
         numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
 
         df_original = df.copy()
-        df_original["run"] = f"{run}_original"
+        df_original["run"] = run
         df_original["data_type"] = "original"
 
         df_smoothed = df.copy()
@@ -169,12 +180,12 @@ def load_run_data(
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        return combined_df, images
+        return combined_df, media
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        return df, images
+        return df, media
 
 
 def update_runs(
@@ -296,6 +307,22 @@ def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
         shutil.copy(upload["uploaded_file"]["path"], media_path)
 
 
+def log(
+    project: str,
+    run: str,
+    metrics: dict[str, Any],
+    step: int | None,
+    hf_token: str | None,
+) -> None:
+    """
+    Note: this method is not used in the latest versions of Trackio (replaced by bulk_log) but
+    is kept for backwards compatibility for users who are connecting to a newer version of
+    a Trackio Spaces dashboard with an older version of Trackio installed locally.
+    """
+    check_auth(hf_token)
+    SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
+
+
 def bulk_log(
     logs: list[LogEntry],
     hf_token: str | None,
@@ -359,14 +386,14 @@ def configure(request: gr.Request):
     return [], sidebar, metrics_param, selected_runs
 
 
-def create_image_section(images_by_run: dict[str, dict[str, list[TrackioImage]]]):
+def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
     with gr.Accordion(label="media"):
         with gr.Group(elem_classes=("media-group")):
-            for run, images_by_key in images_by_run.items():
+            for run, media_by_key in media_by_run.items():
                 with gr.Tab(label=run, elem_classes=("media-tab")):
-                    for key, images in images_by_key.items():
+                    for key, media_item in media_by_key.items():
                         gr.Gallery(
-                            [(image._pil, image.caption) for image in images],
+                            [(item.file_path, item.caption) for item in media_item],
                             label=key,
                             columns=6,
                             elem_classes=("media-gallery"),
@@ -412,11 +439,13 @@ css = """
 .info-icon:hover { opacity: 0.8; }
 .accent-link { font-weight: bold; }
 
-.media-gallery { max-height: 325px; }
+.media-gallery .fixed-height { min-height: 275px; }
 .media-group, .media-group > div { background: none; }
 .media-group .tabs { padding: 0.5em; }
+.media-tab { max-height: 500px; overflow-y: scroll; }
 """
 
+gr.set_static_paths(paths=[utils.MEDIA_DIR])
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
@@ -470,12 +499,16 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         [demo.load],
         fn=configure,
         outputs=[metrics_subset, sidebar, metric_filter_tb, selected_runs_from_url],
+        queue=False,
+        api_name=False,
     )
     gr.on(
         [demo.load],
         fn=get_projects,
         outputs=project_dd,
         show_progress="hidden",
+        queue=False,
+        api_name=False,
     )
     gr.on(
         [timer.tick],
@@ -488,12 +521,14 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         ],
         outputs=[run_cb, run_tb],
         show_progress="hidden",
+        api_name=False,
     )
     gr.on(
         [timer.tick],
         fn=lambda: gr.Dropdown(info=get_project_info()),
         outputs=[project_dd],
         show_progress="hidden",
+        api_name=False,
     )
     gr.on(
         [demo.load, project_dd.change],
@@ -501,37 +536,61 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         inputs=[project_dd, run_tb, gr.State(False), selected_runs_from_url],
         outputs=[run_cb, run_tb],
         show_progress="hidden",
-    )
-    gr.on(
-        [demo.load, project_dd.change, run_cb.change],
+        queue=False,
+        api_name=False,
+    ).then(
         fn=update_x_axis_choices,
         inputs=[project_dd, run_cb],
         outputs=x_axis_dd,
         show_progress="hidden",
+        queue=False,
+        api_name=False,
+    ).then(
+        fn=utils.generate_embed_code,
+        inputs=[project_dd, metric_filter_tb, run_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+
+    gr.on(
+        [run_cb.input],
+        fn=update_x_axis_choices,
+        inputs=[project_dd, run_cb],
+        outputs=x_axis_dd,
+        show_progress="hidden",
+        queue=False,
+        api_name=False,
+    )
+    gr.on(
+        [metric_filter_tb.change, run_cb.change],
+        fn=utils.generate_embed_code,
+        inputs=[project_dd, metric_filter_tb, run_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
     )
 
     realtime_cb.change(
         fn=toggle_timer,
         inputs=realtime_cb,
         outputs=timer,
-        api_name="toggle_timer",
+        api_name=False,
+        queue=False,
     )
     run_cb.input(
         fn=lambda: True,
         outputs=user_interacted_with_run_cb,
+        api_name=False,
+        queue=False,
     )
     run_tb.input(
         fn=filter_runs,
         inputs=[project_dd, run_tb],
         outputs=run_cb,
-    )
-
-    gr.on(
-        [demo.load, project_dd.change, metric_filter_tb.change, run_cb.change],
-        fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, run_cb],
-        outputs=embed_code,
-        show_progress="hidden",
+        api_name=False,
         queue=False,
     )
 
@@ -554,17 +613,18 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     def update_x_lim(select_data: gr.SelectData):
         return select_data.index
 
-    def update_last_steps(project, run_ids):
-        """Update the last step from all runs to detect when new data is available."""
-        if not project or not run_ids:
+    def update_last_steps(project):
+        """Check the last step for each run to detect when new data is available."""
+        if not project:
             return {}
-        return SQLiteStorage.get_max_steps_for_runs(project, run_ids)
+        return SQLiteStorage.get_max_steps_for_runs(project)
 
     timer.tick(
         fn=update_last_steps,
-        inputs=[project_dd, run_cb],
+        inputs=[project_dd],
         outputs=last_steps,
         show_progress="hidden",
+        api_name=False,
     )
 
     @gr.render(
@@ -589,6 +649,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             metric_filter_tb,
         ],
         show_progress="hidden",
+        queue=False,
     )
     def update_dashboard(
         project,
@@ -611,8 +672,26 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             if df is not None:
                 dfs.append(df)
                 images_by_run[run] = images_by_key
+
         if dfs:
-            master_df = pd.concat(dfs, ignore_index=True)
+            if smoothing_granularity > 0:
+                original_dfs = []
+                smoothed_dfs = []
+                for df in dfs:
+                    original_data = df[df["data_type"] == "original"]
+                    smoothed_data = df[df["data_type"] == "smoothed"]
+                    if not original_data.empty:
+                        original_dfs.append(original_data)
+                    if not smoothed_data.empty:
+                        smoothed_dfs.append(smoothed_data)
+
+                all_dfs = original_dfs + smoothed_dfs
+                master_df = (
+                    pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+                )
+
+            else:
+                master_df = pd.concat(dfs, ignore_index=True)
         else:
             master_df = pd.DataFrame()
 
@@ -738,7 +817,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                         )
                                     metric_idx += 1
         if images_by_run and any(any(images) for images in images_by_run.values()):
-            create_image_section(images_by_run)
+            create_media_section(images_by_run)
 
         table_cols = master_df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]

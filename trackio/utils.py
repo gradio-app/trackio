@@ -18,9 +18,24 @@ if TYPE_CHECKING:
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
-TRACKIO_DIR = Path(HF_HOME) / "trackio"
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
+
+
+def persistent_storage_enabled() -> bool:
+    return (
+        os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
+    )  # typo in the name of the environment variable
+
+
+def _get_trackio_dir() -> Path:
+    if persistent_storage_enabled():
+        return Path("/data/trackio")
+    return Path(HF_HOME) / "trackio"
+
+
+TRACKIO_DIR = _get_trackio_dir()
+MEDIA_DIR = TRACKIO_DIR / "media"
 
 
 def generate_readable_name(used_names: list[str], space_id: str | None = None) -> str:
@@ -329,8 +344,8 @@ def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
         base_color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
 
         if smoothing:
+            color_map[run] = base_color + "4D"
             color_map[f"{run}_smoothed"] = base_color
-            color_map[f"{run}_original"] = base_color + "4D"
         else:
             color_map[run] = base_color
 
@@ -418,7 +433,16 @@ def downsample(
     unique_indices = list(set(downsampled_indices))
 
     downsampled_df = df.loc[unique_indices].copy()
-    downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
+
+    if color is not None:
+        downsampled_df = (
+            downsampled_df.groupby(color, sort=False)[downsampled_df.columns]
+            .apply(lambda group: group.sort_values(x))
+            .reset_index(drop=True)
+        )
+    else:
+        downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
+
     downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
 
     return downsampled_df

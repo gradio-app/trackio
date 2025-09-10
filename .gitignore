@@ -7,3 +7,4 @@ trackio.db
 *.pyc
 *.claude/
 .venv/
+**/.DS_Store
