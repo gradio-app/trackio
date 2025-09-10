@@ -851,7 +851,8 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     gr.Warning(
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
-
+with demo.route("Run Info"):
+    pass
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
