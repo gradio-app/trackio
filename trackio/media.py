@@ -186,7 +186,9 @@ class TrackioVideo(TrackioMedia):
     Args:
         value (`str`, `Path`, or `numpy.ndarray`, *optional*, defaults to `None`):
             A path to a video file, or a numpy array.
-            Array is expected to have shape of either (frames, channels, height, width) or (batch, frames, channels, height, width).
+            The array should be of type `np.uint8` with RGB values in the range `[0, 255]`.
+            It is expected to have shape of either (frames, channels, height, width) or (batch, frames, channels, height, width).
+            For the latter, the videos will be tiled into a grid.
         caption (`str`, *optional*, defaults to `None`):
             A string caption for the video.
         fps (`int`, *optional*, defaults to `None`):
