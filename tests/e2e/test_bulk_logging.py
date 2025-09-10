@@ -4,7 +4,7 @@ import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_rapid_bulk_logging():
+def test_rapid_bulk_logging(temp_dir):
     """
     Test that logs sent rapidly across different runs are all successfully logged with correct run names.
     Also tests that trackio.log() is not too slow.
