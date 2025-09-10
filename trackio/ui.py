@@ -299,6 +299,11 @@ def log(
     step: int | None,
     hf_token: str | None,
 ) -> None:
+    """
+    Note: this method is not used in the latest versions of Trackio (replaced by bulk_log) but
+    is kept for backwards compatibility for users who are connecting to a newer version of
+    a Trackio Spaces dashboard with an older version of Trackio installed locally.
+    """
     check_auth(hf_token)
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
