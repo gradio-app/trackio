@@ -61,7 +61,8 @@ class SQLiteStorage:
 
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(db_path))
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -96,7 +97,8 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(db_path, timeout=30.0) as conn:
+                conn.execute("PRAGMA journal_mode = WAL")
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS metrics (
