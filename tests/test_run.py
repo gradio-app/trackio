@@ -12,7 +12,7 @@ class DummyClient:
         self.predict = MagicMock()
 
 
-def test_run_log_calls_client():
+def test_run_log_calls_client(temp_dir):
     client = DummyClient()
     run = Run(url="fake_url", project="proj", client=client, name="run1", space_id=None)
     metrics = {"x": 1}
@@ -83,7 +83,7 @@ def test_init_resume_modes(temp_dir):
 
 @patch("huggingface_hub.whoami")
 @patch("time.time")
-def test_run_name_generation_with_space_id(mock_time, mock_whoami):
+def test_run_name_generation_with_space_id(mock_time, mock_whoami, temp_dir):
     mock_whoami.return_value = {"name": "testuser"}
     mock_time.return_value = 1234567890
 
