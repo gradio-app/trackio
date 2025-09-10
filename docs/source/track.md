@@ -93,12 +93,31 @@ Images can be logged from a path, a numpy array, or a PIL Image.
 You can log videos using the [`Video`] class.
 
 ```python
-trackio.log({"video": trackio.Video(value="path/to/video.mp4", caption="Video caption")})
+import trackio
+import numpy as np
+
+# Create a simple video from numpy array
+frames = np.random.randint(0, 255, (10, 3, 64, 64), dtype=np.uint8)
+video = trackio.Video(frames, caption="Random video", fps=30)
+trackio.log({"my_video": video})
+
+# Create a batch of videos
+batch_frames = np.random.randint(0, 255, (3, 10, 3, 64, 64), dtype=np.uint8)
+batch_video = trackio.Video(batch_frames, caption="Batch of videos", fps=15)
+trackio.log({"batch_videos": batch_video})
+
+# Create video from file path
+video = trackio.Video("path/to/video.mp4", caption="Video from file")
+trackio.log({"file_video": video})
 ```
 
-Videos can be logged from a path or a numpy array.
-Numpy arrays should be of shape (frames, channels, height, width) or (batch, frames, channels, height, width).
-When using a numpy array, you can specify the fps and format (gif, mp4, or webm).
+Videos can be logged from a file path or a numpy array.
+
+**Numpy array requirements:**
+- Must be of type `np.uint8` with RGB values in the range `[0, 255]`
+- Shape should be either:
+  - `(frames, channels, height, width)` for a single video
+  - `(batch, frames, channels, height, width)` for multiple videos (will be tiled into a grid)
 
 ## Finishing a Run
 
