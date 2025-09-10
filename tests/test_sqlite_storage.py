@@ -73,6 +73,7 @@ def _worker_using_sqlite_storage(
     Worker that uses SQLiteStorage methods for database access.
     This will be protected by ProcessLock when available.
     """
+
     def aggressive_get_connection(db_path):
         conn = sqlite3.connect(str(db_path), timeout=0.01)
         conn.row_factory = sqlite3.Row

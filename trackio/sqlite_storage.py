@@ -208,6 +208,10 @@ class SQLiteStorage:
         Safely log metrics to the database. Before logging, this method will ensure the database exists
         and is set up with the correct tables. It also uses a cross-process lock to prevent
         database locking errors when multiple processes access the same database.
+
+        This method is not used in the latest versions of Trackio (replaced by bulk_log) but
+        is kept for backwards compatibility for users who are connecting to a newer version of
+        a Trackio Spaces dashboard with an older version of Trackio installed locally.
         """
         db_path = SQLiteStorage.init_db(project)
 
@@ -254,7 +258,11 @@ class SQLiteStorage:
         steps: list[int] | None = None,
         timestamps: list[str] | None = None,
     ):
-        """Bulk log metrics to the database with specified steps and timestamps."""
+        """
+        Safely log bulk metrics to the database. Before logging, this method will ensure the database exists
+        and is set up with the correct tables. It also uses a cross-process lock to prevent
+        database locking errors when multiple processes access the same database.
+        """
         if not metrics_list:
             return
 
