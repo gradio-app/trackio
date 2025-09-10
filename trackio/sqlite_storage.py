@@ -413,26 +413,23 @@ class SQLiteStorage:
             return [row[0] for row in cursor.fetchall()]
 
     @staticmethod
-    def get_max_steps_for_runs(project: str, runs: list[str]) -> dict[str, int]:
-        """Efficiently get the maximum step for multiple runs in a single query."""
+    def get_max_steps_for_runs(project: str) -> dict[str, int]:
+        """Get the maximum step for each run in a project."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
-            return {run: 0 for run in runs}
+            return {}
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            placeholders = ",".join("?" * len(runs))
             cursor.execute(
-                f"""
+                """
                 SELECT run_name, MAX(step) as max_step
                 FROM metrics
-                WHERE run_name IN ({placeholders})
                 GROUP BY run_name
-                """,
-                runs,
+                """
             )
 
-            results = {run: 0 for run in runs}  # Default to 0 for runs with no data
+            results = {}
             for row in cursor.fetchall():
                 results[row["run_name"]] = row["max_step"]
 

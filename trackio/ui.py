@@ -521,15 +521,39 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         show_progress="hidden",
         queue=False,
         api_name=False,
-    )
-    gr.on(
-        [demo.load, project_dd.change, run_cb.change],
+    ).then(
         fn=update_x_axis_choices,
         inputs=[project_dd, run_cb],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
         api_name=False,
+    ).then(
+        fn=utils.generate_embed_code,
+        inputs=[project_dd, metric_filter_tb, run_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+
+    gr.on(
+        [run_cb.input],
+        fn=update_x_axis_choices,
+        inputs=[project_dd, run_cb],
+        outputs=x_axis_dd,
+        show_progress="hidden",
+        queue=False,
+        api_name=False,
+    )
+    gr.on(
+        [metric_filter_tb.change, run_cb.change],
+        fn=utils.generate_embed_code,
+        inputs=[project_dd, metric_filter_tb, run_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
     )
 
     realtime_cb.change(
@@ -549,16 +573,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         fn=filter_runs,
         inputs=[project_dd, run_tb],
         outputs=run_cb,
-        api_name=False,
-        queue=False,
-    )
-
-    gr.on(
-        [demo.load, project_dd.change, metric_filter_tb.change, run_cb.change],
-        fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, run_cb],
-        outputs=embed_code,
-        show_progress="hidden",
         api_name=False,
         queue=False,
     )
@@ -586,16 +600,15 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     def update_x_lim(select_data: gr.SelectData):
         return select_data.index
 
-    def update_last_steps(project, runs):
-        """Update the last step from all runs to detect when new data is available."""
-        if not project or not runs:
+    def update_last_steps(project):
+        """Check the last step for each run to detect when new data is available."""
+        if not project:
             return {}
-
-        return SQLiteStorage.get_max_steps_for_runs(project, runs)
+        return SQLiteStorage.get_max_steps_for_runs(project)
 
     timer.tick(
         fn=update_last_steps,
-        inputs=[project_dd, run_cb],
+        inputs=[project_dd],
         outputs=last_steps,
         show_progress="hidden",
         api_name=False,
