@@ -1,7 +1,6 @@
 import math
 import os
 import re
-import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -242,9 +241,25 @@ def generate_readable_name(used_names: list[str], space_id: str | None = None) -
     return name
 
 
+def is_in_notebook():
+    """
+    Detect if code is running in a notebook environment (Jupyter, Colab, etc.).
+    """
+    try:
+        from IPython import get_ipython
+
+        if get_ipython() is not None:
+            return get_ipython().__class__.__name__ in [
+                "ZMQInteractiveShell",  # Jupyter notebook/lab
+                "Shell",  # IPython terminal
+            ] or "google.colab" in str(get_ipython())
+    except ImportError:
+        pass
+    return False
+
+
 def block_except_in_notebook():
-    in_notebook = bool(getattr(sys, "ps1", sys.flags.interactive))
-    if in_notebook:
+    if is_in_notebook():
         return
     try:
         while True:
