@@ -70,3 +70,15 @@ trackio.show(theme="soft")
 </hfoptions>
 
 To see the available themes, check out the [themes gallery](https://huggingface.co/spaces/gradio/theme-gallery).
+
+## Launching a Dashboard in Jupyter Notebooks
+
+You can also launch the dashboard directly within a Jupyter Notebook. Just use the same command as above:
+
+```py
+import trackio
+
+trackio.show()
+```
+
+Check the [demo notebook](https://github.com/gradio-app/trackio/blob/main/examples/notebook_integration.ipynb).
