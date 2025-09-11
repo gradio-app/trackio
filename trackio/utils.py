@@ -248,7 +248,6 @@ def is_in_notebook():
     """
     try:
         from IPython import get_ipython
-
         if get_ipython() is not None:
             return get_ipython().__class__.__name__ in [
                 "ZMQInteractiveShell",  # Jupyter notebook/lab
@@ -256,14 +255,6 @@ def is_in_notebook():
             ] or "google.colab" in str(get_ipython())
     except ImportError:
         pass
-
-    try:
-        import google.colab
-
-        return True
-    except ImportError:
-        pass
-
     return False
 
 
