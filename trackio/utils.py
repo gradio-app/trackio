@@ -248,6 +248,7 @@ def is_in_notebook():
     """
     try:
         from IPython import get_ipython
+
         if get_ipython() is not None:
             return get_ipython().__class__.__name__ in [
                 "ZMQInteractiveShell",  # Jupyter notebook/lab
