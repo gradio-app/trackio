@@ -1,7 +1,6 @@
 import time
 from unittest.mock import MagicMock, patch
 
-import huggingface_hub
 import pytest
 
 from trackio import Run, init
