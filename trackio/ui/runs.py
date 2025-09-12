@@ -56,7 +56,9 @@ with gr.Blocks() as run_page:
             columns.insert(2, "Created")
             df = df[columns]
 
-        return gr.DataFrame(df, visible=True, pinned_columns=1, datatype="markdown")
+        return gr.DataFrame(
+            df, visible=True, pinned_columns=1, datatype="markdown", wrap=True
+        )
 
     gr.on(
         [run_page.load],
