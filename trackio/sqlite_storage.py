@@ -292,10 +292,6 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
-                # Store config if provided
-                if config:
-                    SQLiteStorage.store_config(project, run, config)
-
                 if steps is None:
                     steps = list(range(len(metrics_list)))
                 elif any(s is None for s in steps):
@@ -340,6 +336,18 @@ class SQLiteStorage:
                     """,
                     data,
                 )
+
+                if config:
+                    current_timestamp = datetime.now().isoformat()
+                    cursor.execute(
+                        """
+                        INSERT OR REPLACE INTO configs
+                        (run_name, config, created_at)
+                        VALUES (?, ?, ?)
+                        """,
+                        (run, json.dumps(serialize_values(config)), current_timestamp),
+                    )
+
                 conn.commit()
 
     @staticmethod

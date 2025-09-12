@@ -336,7 +336,6 @@ def bulk_log(
             logs_by_run[key] = {"metrics": [], "steps": [], "config": None}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["steps"].append(log_entry.get("step"))
-        # Store config from the first log entry that has it
         if log_entry.get("config") and logs_by_run[key]["config"] is None:
             logs_by_run[key]["config"] = log_entry["config"]
 
@@ -450,6 +449,7 @@ css = """
 """
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
+
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
@@ -728,8 +728,22 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         for group_name in sorted(nested_metric_groups.keys()):
             group_data = nested_metric_groups[group_name]
 
+            total_plot_count = sum(
+                1
+                for m in group_data["direct_metrics"]
+                if not master_df.dropna(subset=[m]).empty
+            ) + sum(
+                sum(1 for m in metrics if not master_df.dropna(subset=[m]).empty)
+                for metrics in group_data["subgroups"].values()
+            )
+            group_label = (
+                f"{group_name} ({total_plot_count})"
+                if total_plot_count > 0
+                else group_name
+            )
+
             with gr.Accordion(
-                label=group_name,
+                label=group_label,
                 open=True,
                 key=f"accordion-{group_name}",
                 preserved_by_key=["value", "open"],
@@ -780,8 +794,19 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                     for subgroup_name in sorted(group_data["subgroups"].keys()):
                         subgroup_metrics = group_data["subgroups"][subgroup_name]
 
+                        subgroup_plot_count = sum(
+                            1
+                            for m in subgroup_metrics
+                            if not master_df.dropna(subset=[m]).empty
+                        )
+                        subgroup_label = (
+                            f"{subgroup_name} ({subgroup_plot_count})"
+                            if subgroup_plot_count > 0
+                            else subgroup_name
+                        )
+
                         with gr.Accordion(
-                            label=subgroup_name,
+                            label=subgroup_label,
                             open=True,
                             key=f"accordion-{group_name}-{subgroup_name}",
                             preserved_by_key=["value", "open"],
@@ -833,8 +858,17 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             table_cols = [c for c in table_cols if c in metrics_subset]
         if metric_filter and metric_filter.strip():
             table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
-        if len(table_cols) > 0:
-            with gr.Accordion("tables", open=True):
+
+        actual_table_count = sum(
+            1
+            for metric_name in table_cols
+            if not (metric_df := master_df.dropna(subset=[metric_name])).empty
+            and isinstance(value := metric_df[metric_name].iloc[-1], dict)
+            and value.get("_type") == Table.TYPE
+        )
+
+        if actual_table_count > 0:
+            with gr.Accordion(f"tables ({actual_table_count})", open=True):
                 with gr.Row(key="row"):
                     for metric_idx, metric_name in enumerate(table_cols):
                         metric_df = master_df.dropna(subset=[metric_name])
