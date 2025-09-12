@@ -1,3 +1,5 @@
+"""Shared functions for the Trackio UI."""
+
 import os
 
 import gradio as gr

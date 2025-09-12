@@ -1,3 +1,5 @@
+"""The Runs page for the Trackio UI."""
+
 import gradio as gr
 import pandas as pd
 
@@ -22,6 +24,11 @@ with gr.Blocks() as run_page:
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
     timer = gr.Timer(value=1)
+    runs_table = gr.DataFrame()
+
+    def get_runs_table(project):
+        configs = SQLiteStorage.get_all_run_configs(project)
+        return pd.DataFrame(configs)
 
     gr.on(
         [run_page.load],
@@ -38,8 +45,12 @@ with gr.Blocks() as run_page:
         show_progress="hidden",
         api_name=False,
     )
-
-    runs_table = gr.Dataframe(
-        value=pd.DataFrame(SQLiteStorage.get_all_run_configs("default")),
-        interactive=False,
+    gr.on(
+        [project_dd.change],
+        fn=get_runs_table,
+        inputs=[project_dd],
+        outputs=[runs_table],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
     )

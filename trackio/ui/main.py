@@ -1,3 +1,5 @@
+"""The main page for the Trackio UI."""
+
 import os
 import re
 import shutil
