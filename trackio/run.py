@@ -133,13 +133,13 @@ class Run:
 
         metrics = self._process_media(metrics, step)
         metrics = serialize_values(metrics)
-        
+
         # Include config in the first log entry only
         config_to_log = None
         if not self._config_logged and self.config:
             config_to_log = self.config
             self._config_logged = True
-        
+
         log_entry: LogEntry = {
             "project": self.project,
             "run": self.name,

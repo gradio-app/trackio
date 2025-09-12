@@ -459,12 +459,12 @@ class SQLiteStorage:
     def store_config(project: str, run: str, config: dict) -> None:
         """Store configuration for a run."""
         db_path = SQLiteStorage.init_db(project)
-        
+
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 current_timestamp = datetime.now().isoformat()
-                
+
                 cursor.execute(
                     """
                     INSERT OR REPLACE INTO configs
@@ -490,7 +490,7 @@ class SQLiteStorage:
                 """,
                 (run,),
             )
-            
+
             row = cursor.fetchone()
             if row:
                 config = json.loads(row["config"])
@@ -511,7 +511,7 @@ class SQLiteStorage:
                 SELECT run_name, config FROM configs
                 """
             )
-            
+
             results = {}
             for row in cursor.fetchall():
                 config = json.loads(row["config"])
