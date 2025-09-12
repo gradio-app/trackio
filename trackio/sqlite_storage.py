@@ -492,18 +492,23 @@ class SQLiteStorage:
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT config FROM configs WHERE run_name = ?
-                """,
-                (run,),
-            )
+            try:
+                cursor.execute(
+                    """
+                    SELECT config FROM configs WHERE run_name = ?
+                    """,
+                    (run,),
+                )
 
-            row = cursor.fetchone()
-            if row:
-                config = json.loads(row["config"])
-                return deserialize_values(config)
-            return None
+                row = cursor.fetchone()
+                if row:
+                    config = json.loads(row["config"])
+                    return deserialize_values(config)
+                return None
+            except sqlite3.OperationalError as e:
+                if "no such table: configs" in str(e):
+                    return None
+                raise
 
     @staticmethod
     def get_all_run_configs(project: str) -> dict[str, dict]:
@@ -514,17 +519,22 @@ class SQLiteStorage:
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT run_name, config FROM configs
-                """
-            )
+            try:
+                cursor.execute(
+                    """
+                    SELECT run_name, config FROM configs
+                    """
+                )
 
-            results = {}
-            for row in cursor.fetchall():
-                config = json.loads(row["config"])
-                results[row["run_name"]] = deserialize_values(config)
-            return results
+                results = {}
+                for row in cursor.fetchall():
+                    config = json.loads(row["config"])
+                    results[row["run_name"]] = deserialize_values(config)
+                return results
+            except sqlite3.OperationalError as e:
+                if "no such table: configs" in str(e):
+                    return {}
+                raise
 
     def finish(self):
         """Cleanup when run is finished."""

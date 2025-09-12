@@ -28,7 +28,35 @@ with gr.Blocks() as run_page:
 
     def get_runs_table(project):
         configs = SQLiteStorage.get_all_run_configs(project)
-        return pd.DataFrame(configs)
+        if not configs:
+            return gr.DataFrame(pd.DataFrame(), visible=False)
+
+        df = pd.DataFrame(configs).T
+        df.index.name = "Name"
+        df.reset_index(inplace=True)
+
+        column_mapping = {"_Username": "Username", "_Created": "Created"}
+        df.rename(columns=column_mapping, inplace=True)
+
+        if "Created" in df.columns:
+            df["Created"] = df["Created"].apply(utils.format_timestamp)
+
+        if "Username" in df.columns:
+            df["Username"] = df["Username"].apply(
+                lambda x: f"[{x}](https://huggingface.co/{x})"
+                if x and x != "None"
+                else x
+            )
+
+        columns = list(df.columns)
+        if "Username" in columns and "Created" in columns:
+            columns.remove("Username")
+            columns.remove("Created")
+            columns.insert(1, "Username")
+            columns.insert(2, "Created")
+            df = df[columns]
+
+        return gr.DataFrame(df, visible=True, pinned_columns=1, datatype="markdown")
 
     gr.on(
         [run_page.load],

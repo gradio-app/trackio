@@ -1,5 +1,6 @@
 import threading
 import time
+from datetime import datetime, timezone
 
 import huggingface_hub
 from gradio_client import Client, handle_file
@@ -38,6 +39,15 @@ class Run:
             SQLiteStorage.get_runs(project), space_id
         )
         self.config = config or {}
+
+        for key in self.config:
+            if key.startswith("_"):
+                raise ValueError(
+                    f"Config key '{key}' is reserved (keys starting with '_' are reserved for internal use)"
+                )
+
+        self.config["_Username"] = self._get_username()
+        self.config["_Created"] = datetime.now(timezone.utc).isoformat()
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._stop_flag = threading.Event()
@@ -46,6 +56,14 @@ class Run:
         self._client_thread = threading.Thread(target=self._init_client_background)
         self._client_thread.daemon = True
         self._client_thread.start()
+
+    def _get_username(self) -> str | None:
+        """Get the current HuggingFace username if logged in, otherwise None."""
+        try:
+            who = huggingface_hub.whoami()
+            return who["name"] if who else None
+        except Exception:
+            return None
 
     def _batch_sender(self):
         """Send batched logs every BATCH_SEND_INTERVAL."""
