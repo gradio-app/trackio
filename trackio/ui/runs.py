@@ -178,7 +178,6 @@ with gr.Blocks(
                 interactive=False,
                 wrap=True,
                 value=pd.DataFrame(),
-                height=600,
                 elem_id="runs-table"
             )
     
