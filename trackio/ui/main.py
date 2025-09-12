@@ -18,10 +18,12 @@ try:
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
+    from trackio.ui.runs import run_page
 except:  # noqa: E722
     import utils
     from file_storage import FileStorage
     from media import TrackioImage, TrackioVideo
+    from runs import run_page
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
@@ -854,7 +856,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
 
 with demo.route("Runs"):
-    pass
+    run_page.render()
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
