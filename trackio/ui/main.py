@@ -333,9 +333,12 @@ def bulk_log(
     for log_entry in logs:
         key = (log_entry["project"], log_entry["run"])
         if key not in logs_by_run:
-            logs_by_run[key] = {"metrics": [], "steps": []}
+            logs_by_run[key] = {"metrics": [], "steps": [], "config": None}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["steps"].append(log_entry.get("step"))
+        # Store config from the first log entry that has it
+        if log_entry.get("config") and logs_by_run[key]["config"] is None:
+            logs_by_run[key]["config"] = log_entry["config"]
 
     for (project, run), data in logs_by_run.items():
         SQLiteStorage.bulk_log(
@@ -343,6 +346,7 @@ def bulk_log(
             run=run,
             metrics_list=data["metrics"],
             steps=data["steps"],
+            config=data["config"],
         )
 
 

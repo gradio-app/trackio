@@ -41,6 +41,7 @@ class Run:
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._stop_flag = threading.Event()
+        self._config_logged = False
 
         self._client_thread = threading.Thread(target=self._init_client_background)
         self._client_thread.daemon = True
@@ -132,11 +133,19 @@ class Run:
 
         metrics = self._process_media(metrics, step)
         metrics = serialize_values(metrics)
+        
+        # Include config in the first log entry only
+        config_to_log = None
+        if not self._config_logged and self.config:
+            config_to_log = self.config
+            self._config_logged = True
+        
         log_entry: LogEntry = {
             "project": self.project,
             "run": self.name,
             "metrics": metrics,
             "step": step,
+            "config": config_to_log,
         }
 
         with self._client_lock:
