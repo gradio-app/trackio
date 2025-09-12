@@ -17,7 +17,7 @@ from trackio.media import TrackioImage, TrackioVideo
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
-from trackio.ui import demo
+from trackio.ui.main import demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()

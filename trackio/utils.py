@@ -2,6 +2,7 @@ import math
 import os
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -335,6 +336,35 @@ def fibo():
         a, b = b, a + b
 
 
+def format_timestamp(timestamp_str):
+    """Convert ISO timestamp to human-readable format like '3 minutes ago'."""
+    if not timestamp_str or pd.isna(timestamp_str):
+        return "Unknown"
+
+    try:
+        created_time = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+        if created_time.tzinfo is None:
+            created_time = created_time.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        diff = now - created_time
+
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return "Just now"
+        elif seconds < 3600:
+            minutes = seconds // 60
+            return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+        elif seconds < 86400:
+            hours = seconds // 3600
+            return f"{hours} hour{'s' if hours != 1 else ''} ago"
+        else:
+            days = seconds // 86400
+            return f"{days} day{'s' if days != 1 else ''} ago"
+    except Exception:
+        return "Unknown"
+
+
 COLOR_PALETTE = [
     "#3B82F6",
     "#EF4444",
@@ -628,6 +658,7 @@ def generate_embed_code(project: str, metrics: str, selected_runs: list = None) 
         params.append(f"runs={runs_param}")
 
     params.append("sidebar=hidden")
+    params.append("navbar=hidden")
 
     query_string = "&".join(params)
     embed_url = f"https://{space_host}?{query_string}"

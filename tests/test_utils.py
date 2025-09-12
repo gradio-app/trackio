@@ -54,3 +54,24 @@ def test_group_metrics_with_subprefixes():
         },
     }
     assert result == expected
+
+
+def test_format_timestamp():
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+
+    two_minutes_ago = (now - timedelta(minutes=2)).isoformat()
+    assert utils.format_timestamp(two_minutes_ago) == "2 minutes ago"
+
+    one_hour_ago = (now - timedelta(hours=1)).isoformat()
+    assert utils.format_timestamp(one_hour_ago) == "1 hour ago"
+
+    two_days_ago = (now - timedelta(days=2)).isoformat()
+    assert utils.format_timestamp(two_days_ago) == "2 days ago"
+
+    thirty_seconds_ago = (now - timedelta(seconds=30)).isoformat()
+    assert utils.format_timestamp(thirty_seconds_ago) == "Just now"
+
+    assert utils.format_timestamp(None) == "Unknown"
+    assert utils.format_timestamp("invalid") == "Unknown"
