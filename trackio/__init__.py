@@ -251,7 +251,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     _, url, share_url = demo.launch(
         show_api=False,
         quiet=True,
-        inline=False,
+        inline=utils.is_in_notebook(),
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
         allowed_paths=[TRACKIO_LOGO_DIR],
@@ -259,6 +259,8 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
 
     base_url = share_url + "/" if share_url else url
     dashboard_url = base_url + f"?project={project}" if project else base_url
-    print(f"* Trackio UI launched at: {dashboard_url}")
-    webbrowser.open(dashboard_url)
-    utils.block_except_in_notebook()
+
+    if not utils.is_in_notebook():
+        print(f"* Trackio UI launched at: {dashboard_url}")
+        webbrowser.open(dashboard_url)
+        utils.block_except_in_notebook()
