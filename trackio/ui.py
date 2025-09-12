@@ -463,7 +463,11 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         )
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
         run_cb = gr.CheckboxGroup(
-            label="Runs", choices=[], interactive=True, elem_id="run-cb"
+            label="Runs",
+            choices=[],
+            interactive=True,
+            elem_id="run-cb",
+            show_select_all=True,
         )
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
