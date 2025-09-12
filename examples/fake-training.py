@@ -53,6 +53,7 @@ for run in range(3):
             epochs=EPOCHS,
             learning_rate=0.001,
             batch_size=32,
+            run_number=run,
         ),
     )
 
