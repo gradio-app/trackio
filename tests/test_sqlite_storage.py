@@ -177,6 +177,7 @@ def test_config_storage_in_database(temp_dir):
 
 
 def test_old_database_without_configs_table(temp_dir):
+    # To make sure that we can continue to work with projects created with older versions of Trackio.
     import json
 
     db_path = SQLiteStorage.get_project_db_path("test")
