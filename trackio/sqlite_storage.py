@@ -100,38 +100,23 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
-            with sqlite3.connect(db_path, timeout=30.0) as conn:
-                conn.execute("PRAGMA journal_mode = WAL")
+            with SQLiteStorage._get_connection(db_path) as conn:
+                current_version = conn.execute("PRAGMA user_version").fetchone()[0]
+                migrations_path = Path(__file__).parent / "migrations"
+                migrations = sorted(migrations_path.glob("*.sql"))
+                new_migrations = migrations[current_version:]
                 cursor = conn.cursor()
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS runs (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL UNIQUE,
-                        group_name TEXT,
-                        created_at TEXT NOT NULL
-                    )
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_runs_name
-                    ON runs(name)
-                """)
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS metrics (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        run_id INTEGER NOT NULL,
-                        timestamp TEXT NOT NULL,
-                        step INTEGER NOT NULL,
-                        metrics TEXT NOT NULL,
-                        FOREIGN KEY (run_id) REFERENCES runs(id)
-                    )
-                """)
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_metrics_run_step
-                    ON metrics(run_id, step)
-                    """
-                )
-                conn.commit()
+                for i, file in enumerate(new_migrations):
+                    print(f"Executing migration {file.name} ({i + current_version + 1}/{len(migrations)})")
+                    script = file.read_text().lower()
+                    try:
+                        cursor.executescript(script)
+                    except sqlite3.Error as e:
+                        raise sqlite3.Error(f"Error executing migration {file}: {e}") from e
+                    conn.execute(f"PRAGMA user_version = {i + current_version + 1}")
+                    conn.commit()
+                if new_migrations:
+                    print(f"All migrations executed successfully")
         return db_path
 
     @staticmethod
@@ -298,7 +283,7 @@ class SQLiteStorage:
         run_id: int,
         metrics_list: list[dict],
         steps: list[int] | None = None,
-        timestamps: list[str] | None = None,
+        timestamps: list[pd.Timestamp] | None = None,
     ):
         """
         Safely log bulk metrics to the database. Before logging, this method will ensure the database exists
@@ -310,6 +295,8 @@ class SQLiteStorage:
 
         if timestamps is None:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
+        else:
+            timestamps = [ts.isoformat() for ts in timestamps]
 
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
@@ -372,10 +359,10 @@ class SQLiteStorage:
                 cursor.execute(
                     """
                     INSERT INTO runs
-                    (name, group_name, created_at)
-                    VALUES (?, ?, ?)
+                    (name, group_name)
+                    VALUES (?, ?)
                     """,
-                    (name, group, datetime.now().isoformat()),
+                    (name, group),
                 )
                 conn.commit()
                 run_id = cursor.lastrowid

@@ -108,9 +108,10 @@ def import_csv(
             steps.append(int(row[step_column]))
 
             if "timestamp" in df.columns and bool(pd.notna(row["timestamp"])):
-                timestamps.append(str(row["timestamp"]))
+                ts = pd.to_datetime(str(row["timestamp"]), infer_datetime_format=True)
+                timestamps.append(ts)
             else:
-                timestamps.append("")
+                timestamps.append(pd.Timestamp.now())
 
     if metrics_list:
         run_id = SQLiteStorage.add_run(project, name)
@@ -242,9 +243,10 @@ def import_tf_events(
                 if "wall_time" in group_df.columns and not bool(
                     pd.isna(row["wall_time"])
                 ):
-                    timestamps.append(str(row["wall_time"]))
+                    ts = pd.to_datetime(str(row["wall_time"]), unit="s")
+                    timestamps.append(ts)
                 else:
-                    timestamps.append("")
+                    timestamps.append(pd.Timestamp.now())
 
             if metrics_list:
                 run_id = SQLiteStorage.add_run(project, run_name)
