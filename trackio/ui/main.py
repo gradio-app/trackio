@@ -18,15 +18,17 @@ try:
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
+    from trackio.ui import fns
     from trackio.ui.runs import run_page
-except:  # noqa: E722
+except ImportError:
     import utils
     from file_storage import FileStorage
     from media import TrackioImage, TrackioVideo
-    from runs import run_page
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
+    from ui import fns
+    from ui.runs import run_page
 
 
 def get_runs(project) -> list[str]:
@@ -487,7 +489,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     )
     gr.on(
         [demo.load],
-        fn=get_projects,
+        fn=fns.get_projects,
         outputs=project_dd,
         show_progress="hidden",
         queue=False,
@@ -508,7 +510,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     )
     gr.on(
         [timer.tick],
-        fn=lambda: gr.Dropdown(info=get_project_info()),
+        fn=lambda: gr.Dropdown(info=fns.get_project_info()),
         outputs=[project_dd],
         show_progress="hidden",
         api_name=False,

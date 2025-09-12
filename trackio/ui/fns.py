@@ -5,7 +5,7 @@ import gradio as gr
 try:
     import trackio.utils as utils
     from trackio.sqlite_storage import SQLiteStorage
-except:  # noqa: E722
+except ImportError:
     import utils
     from sqlite_storage import SQLiteStorage
 
