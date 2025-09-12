@@ -628,6 +628,7 @@ def generate_embed_code(project: str, metrics: str, selected_runs: list = None) 
         params.append(f"runs={runs_param}")
 
     params.append("sidebar=hidden")
+    params.append("navbar=hidden")
 
     query_string = "&".join(params)
     embed_url = f"https://{space_host}?{query_string}"

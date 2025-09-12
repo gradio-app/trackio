@@ -385,8 +385,14 @@ def configure(request: gr.Request):
     metrics_param = request.query_params.get("metrics", "")
     runs_param = request.query_params.get("runs", "")
     selected_runs = runs_param.split(",") if runs_param else []
+    navbar_param = request.query_params.get("navbar")
+    match navbar_param:
+        case "hidden":
+            navbar = gr.Navbar(visible=False)
+        case _:
+            navbar = gr.Navbar(visible=True)
 
-    return [], sidebar, metrics_param, selected_runs
+    return [], sidebar, metrics_param, selected_runs, navbar
 
 
 def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
@@ -494,6 +500,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             info="Filter metrics using regex patterns. Leave empty to show all metrics.",
         )
 
+    navbar = gr.Navbar()
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
@@ -502,7 +509,13 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.on(
         [demo.load],
         fn=configure,
-        outputs=[metrics_subset, sidebar, metric_filter_tb, selected_runs_from_url],
+        outputs=[
+            metrics_subset,
+            sidebar,
+            metric_filter_tb,
+            selected_runs_from_url,
+            navbar,
+        ],
         queue=False,
         api_name=False,
     )
