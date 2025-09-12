@@ -853,7 +853,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     )
 
 
-with demo.route("Run Info"):
+with demo.route("Runs"):
     pass
 
 if __name__ == "__main__":
