@@ -748,7 +748,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                 key=f"accordion-{group_name}",
                 preserved_by_key=["value", "open"],
             ):
-                # Render direct metrics at this level
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
                         key=f"row-{group_name}-direct", orientation="row"
@@ -789,7 +788,6 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                 )
                             metric_idx += 1
 
-                # If there are subgroups, create nested accordions
                 if group_data["subgroups"]:
                     for subgroup_name in sorted(group_data["subgroups"].keys()):
                         subgroup_metrics = group_data["subgroups"][subgroup_name]
