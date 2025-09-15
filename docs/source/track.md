@@ -12,7 +12,7 @@ To start tracking an experiment with Trackio, you first need to initialize a pro
 ```python
 import trackio
 
-trackio.init(project_name="my_project")
+trackio.init(project="my_project")
 ```
 
 * If the project already exists, it will be loaded.
@@ -23,10 +23,10 @@ In both cases, a new run is started automatically, ready for you to log data.
 ### Naming your run
 
 It’s a good idea to give each run a meaningful name for easier organization and later reference.
-You can set a name using the `run_name` parameter:
+You can set a name using the `name` parameter:
 
 ```python
-trackio.init(project_name="my_project", run_name="my_first_run")
+trackio.init(project="my_project", name="my_first_run")
 ```
 
 If no name is provided, Trackio generates a default one.
@@ -133,7 +133,7 @@ trackio.finish()
 If you need to continue a run (for example, after an interruption), you can resume it by calling [`init`] again with the same project and run name, and setting `resume="must"`:
 
 ```python
-trackio.init(project_name="my_project", run_name="my_first_run", resume="must")
+trackio.init(project="my_project", name="my_first_run", resume="must")
 ```
 
 This will load the existing run so you can keep logging data.
@@ -146,8 +146,8 @@ You can also track configuration parameters for your runs. This is useful for ke
 
 ```python
 trackio.init(
-    project_name="my_project",
-    run_name="my_first_run",
+    project="my_project",
+    name="my_first_run",
     config={
         "learning_rate": 0.001,
         "batch_size": 32,
