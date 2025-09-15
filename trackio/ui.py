@@ -233,64 +233,6 @@ def toggle_timer(cb_value):
         return gr.Timer(active=False)
 
 
-def check_auth(hf_token: str | None) -> None:
-    """
-    Raises a PermissionError if the user does not have permissions to access a particular endpoint.
-    """
-    from trackio.ui import demo
-
-    if hasattr(demo, "read_only") and demo.read_only:
-        raise PermissionError("Dashboard is in read-only mode")
-
-    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
-        # check auth token passed in
-        if hf_token is None:
-            raise PermissionError(
-                "Expected a HF_TOKEN to be provided when logging to a Space"
-            )
-        who = HfApi.whoami(hf_token)
-        access_token = who["auth"]["accessToken"]
-        owner_name = os.getenv("SPACE_AUTHOR_NAME")
-        repo_name = os.getenv("SPACE_REPO_NAME")
-        # make sure the token user is either the author of the space,
-        # or is a member of an org that is the author.
-        orgs = [o["name"] for o in who["orgs"]]
-        if owner_name != who["name"] and owner_name not in orgs:
-            raise PermissionError(
-                "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
-            )
-        # reject fine-grained tokens without specific repo access
-        if access_token["role"] == "fineGrained":
-            matched = False
-            for item in access_token["fineGrained"]["scoped"]:
-                if (
-                    item["entity"]["type"] == "space"
-                    and item["entity"]["name"] == f"{owner_name}/{repo_name}"
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-                if (
-                    (
-                        item["entity"]["type"] == "user"
-                        or item["entity"]["type"] == "org"
-                    )
-                    and item["entity"]["name"] == owner_name
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-            if not matched:
-                raise PermissionError(
-                    "Expected the provided hf_token with fine grained permissions to provide write access to the space"
-                )
-        # reject read-only tokens
-        elif access_token["role"] != "write":
-            raise PermissionError(
-                "Expected the provided hf_token to provide write permissions"
-            )
-
-
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
@@ -451,8 +393,62 @@ css = """
 .media-tab { max-height: 500px; overflow-y: scroll; }
 """
 
-gr.set_static_paths(paths=[utils.MEDIA_DIR])
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
+    def check_auth(hf_token: str | None) -> None:
+        """
+        Raises a PermissionError if the user does not have permissions to access a particular endpoint.
+        """
+        if hasattr(demo, "read_only") and demo.read_only:
+            raise PermissionError("Dashboard is in read-only mode")
+
+        if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
+            # check auth token passed in
+            if hf_token is None:
+                raise PermissionError(
+                    "Expected a HF_TOKEN to be provided when logging to a Space"
+                )
+            who = HfApi.whoami(hf_token)
+            access_token = who["auth"]["accessToken"]
+            owner_name = os.getenv("SPACE_AUTHOR_NAME")
+            repo_name = os.getenv("SPACE_REPO_NAME")
+            # make sure the token user is either the author of the space,
+            # or is a member of an org that is the author.
+            orgs = [o["name"] for o in who["orgs"]]
+            if owner_name != who["name"] and owner_name not in orgs:
+                raise PermissionError(
+                    "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
+                )
+            # reject fine-grained tokens without specific repo access
+            if access_token["role"] == "fineGrained":
+                matched = False
+                for item in access_token["fineGrained"]["scoped"]:
+                    if (
+                        item["entity"]["type"] == "space"
+                        and item["entity"]["name"] == f"{owner_name}/{repo_name}"
+                        and "repo.write" in item["permissions"]
+                    ):
+                        matched = True
+                        break
+                    if (
+                        (
+                            item["entity"]["type"] == "user"
+                            or item["entity"]["type"] == "org"
+                        )
+                        and item["entity"]["name"] == owner_name
+                        and "repo.write" in item["permissions"]
+                    ):
+                        matched = True
+                        break
+                if not matched:
+                    raise PermissionError(
+                        "Expected the provided hf_token with fine grained permissions to provide write access to the space"
+                    )
+            # reject read-only tokens
+            elif access_token["role"] != "write":
+                raise PermissionError(
+                    "Expected the provided hf_token to provide write permissions"
+                )
+
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
             f"""
@@ -860,6 +856,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
 
+gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
