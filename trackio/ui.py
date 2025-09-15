@@ -234,6 +234,14 @@ def toggle_timer(cb_value):
 
 
 def check_auth(hf_token: str | None) -> None:
+    """
+    Raises a PermissionError if the user does not have permissions to access a particular endpoint.
+    """
+    from trackio.ui import demo
+
+    if hasattr(demo, "read_only") and demo.read_only:
+        raise PermissionError("Dashboard is in read-only mode")
+
     if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
         # check auth token passed in
         if hf_token is None:

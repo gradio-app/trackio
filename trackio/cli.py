@@ -19,11 +19,16 @@ def main():
         default="citrus",
         help="A Gradio Theme to use for the dashboard instead of the default 'citrus', can be a built-in theme (e.g. 'soft', 'default'), a theme from the Hub (e.g. 'gstaff/xkcd').",
     )
+    ui_parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Launch the dashboard in read-only mode where API endpoints for logging and uploading data are disabled",
+    )
 
     args = parser.parse_args()
 
     if args.command == "show":
-        show(args.project, args.theme)
+        show(args.project, args.theme, args.read_only)
     else:
         parser.print_help()
 
