@@ -212,7 +212,11 @@ def finish():
     run.finish()
 
 
-def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
+def show(
+    project: str | None = None,
+    theme: str | ThemeClass = DEFAULT_THEME,
+    read_only: bool = False,
+):
     """
     Launches the Trackio dashboard.
 
@@ -224,6 +228,9 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
             A Gradio Theme to use for the dashboard instead of the default `"citrus"`,
             can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class.
+        read_only (`bool`, *optional*, defaults to `False`):
+            If `True`, the dashboard will be launched in read-only mode where API endpoints
+            for logging and uploading data are disabled.
     """
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
@@ -247,6 +254,8 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
         theme_hasher = hashlib.sha256()
         theme_hasher.update(demo.theme_css.encode("utf-8"))
         demo.theme_hash = theme_hasher.hexdigest()
+
+    demo.read_only = read_only
 
     _, url, share_url = demo.launch(
         show_api=False,
