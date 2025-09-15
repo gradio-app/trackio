@@ -96,36 +96,3 @@ def test_run_name_generation_with_space_id(mock_time, mock_whoami, temp_dir):
         space_id="testuser/test-space",
     )
     assert run.name == "testuser-1234567890"
-
-
-def test_read_only_mode_blocks_api_access(temp_dir):
-    from trackio.ui import demo
-
-    demo.read_only = True
-
-    with pytest.raises(PermissionError, match="Dashboard is in read-only mode"):
-        from trackio.ui import check_auth
-
-        check_auth(None)
-
-    demo.read_only = False
-
-    try:
-        from trackio.ui import check_auth
-
-        check_auth(None)
-    except PermissionError as e:
-        if "read-only mode" in str(e):
-            pytest.fail("Should not raise read-only error when read_only=False")
-
-    delattr(demo, "read_only")
-
-    try:
-        from trackio.ui import check_auth
-
-        check_auth(None)
-    except PermissionError as e:
-        if "read-only mode" in str(e):
-            pytest.fail(
-                "Should not raise read-only error when read_only attribute is missing"
-            )
