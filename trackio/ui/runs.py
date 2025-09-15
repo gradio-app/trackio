@@ -31,7 +31,8 @@ with gr.Blocks() as run_page:
         if not configs:
             return gr.DataFrame(pd.DataFrame(), visible=False)
 
-        df = pd.DataFrame(configs).T
+        df = pd.DataFrame.from_dict(configs, orient="index")
+        df = df.fillna("")
         df.index.name = "Name"
         df.reset_index(inplace=True)
 
