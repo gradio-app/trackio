@@ -394,6 +394,7 @@ css = """
 """
 
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
+
     def check_auth(hf_token: str | None) -> None:
         """
         Raises a PermissionError if the user does not have permissions to access a particular endpoint.
@@ -855,6 +856,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     gr.Warning(
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
+
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
