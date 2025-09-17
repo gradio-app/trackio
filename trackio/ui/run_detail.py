@@ -13,7 +13,7 @@ except ImportError:
 
 RUN_DETAILS_TEMPLATE = """
 ## Run Details
-* **Run Name:** `{run_dd}`
+* **Run Name:** `{run_name}`
 * **Created:** {created} by {username}
 """
 
@@ -28,7 +28,7 @@ with gr.Blocks() as run_detail_page:
         project_dd = gr.Dropdown(
             label="Project", allow_custom_value=True, interactive=False
         )
-        run_dd = gr.Dropdown(label="Run", allow_custom_value=True, interactive=False)
+        run_dd = gr.Dropdown(label="Run")
 
     navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
 
@@ -39,7 +39,8 @@ with gr.Blocks() as run_detail_page:
     def configure(request: gr.Request):
         project = request.query_params.get("selected_project")
         run = request.query_params.get("selected_run")
-        return project, run
+        runs = SQLiteStorage.get_runs(project)
+        return project, gr.Dropdown(choices=runs, value=run)
 
     def update_run_details(project, run):
         config = SQLiteStorage.get_run_config(project, run)
@@ -55,7 +56,7 @@ with gr.Blocks() as run_detail_page:
             username = f"[{username}](https://huggingface.co/{username})"
 
         details_md = RUN_DETAILS_TEMPLATE.format(
-            run_dd=run, created=created, username=username
+            run_name=run, created=created, username=username
         )
 
         config_display = {k: v for k, v in config.items() if not k.startswith("_")}
@@ -76,7 +77,10 @@ with gr.Blocks() as run_detail_page:
         show_progress="hidden",
         api_name=False,
         queue=False,
-    ).then(
+    )
+
+    gr.on(
+        [run_dd.change],
         update_run_details,
         inputs=[project_dd, run_dd],
         outputs=[run_details, run_config],
