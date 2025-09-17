@@ -72,7 +72,7 @@ def get_runs_table(project):
         pinned_columns=2,
         datatype=datatype,
         wrap=True,
-        column_widths=["40px", "100px"],
+        column_widths=["40px", "150px"],
         interactive=True,
         static_columns=list(range(1, len(df.columns))),
         row_count=(len(df), "fixed"),
