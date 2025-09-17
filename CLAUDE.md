@@ -48,7 +48,7 @@ Trackio is a lightweight experiment tracking library that provides a drop-in rep
 ### Core Flow
 1. **User API** (`trackio/__init__.py`, `run.py`) - Provides wandb-compatible API (`init()`, `log()`, `finish()`)
 2. **Storage Layer** (`sqlite_storage.py`) - Manages SQLite database operations for local persistence
-3. **UI Layer** (`ui.py`) - Gradio-based web dashboard for visualization
+3. **UI Layer** (`ui/`) - Gradio-based web dashboard for visualization
 4. **Background Sync** (`commit_scheduler.py`) - Optional Hugging Face dataset synchronization
 
 ### Key Design Decisions
@@ -68,7 +68,7 @@ Tests are split into unit tests (testing individual modules) and e2e tests (test
 ### Important Files for Common Tasks
 
 - **Adding new logging features**: Modify `run.py` (Run class) and `sqlite_storage.py` (storage operations)
-- **Changing UI/dashboard**: Edit `ui.py` (Gradio interface)
+- **Changing UI/dashboard**: Edit `ui/` (Gradio interface)
 - **Modifying API compatibility**: Update `trackio/__init__.py` and ensure wandb compatibility
 - **Adding import formats**: Extend `imports.py` with new import functions
 - **CLI modifications**: Update `cli.py` and entry points in `pyproject.toml`
