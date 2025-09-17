@@ -1,10 +1,19 @@
 import json
 import os
+import platform
 import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
+
+if platform.system() == "Windows":
+    import msvcrt
+else:
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
 
 import huggingface_hub as hf
 import pandas as pd
@@ -29,42 +38,79 @@ class ProcessLock:
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
         self.lockfile = None
+        self.is_windows = platform.system() == "Windows"
 
     def __enter__(self):
         """Acquire the lock with retry logic."""
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
 
+        if self.is_windows:
+            return self._acquire_windows_lock()
+        else:
+            return self._acquire_unix_lock()
+
+    def _acquire_windows_lock(self):
+        """Windows-specific locking using msvcrt."""
         max_retries = 50
         for attempt in range(max_retries):
             try:
-                self.lockfile = open(self.lockfile_path, "x")
+                self.lockfile = open(self.lockfile_path, "w")
+                msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_NBLCK, 1)
                 return self
-            except FileExistsError:
-                try:
-                    if self.lockfile_path.exists():
-                        lock_age = time.time() - self.lockfile_path.stat().st_mtime
-                        if lock_age > 2:
-                            self.lockfile_path.unlink(missing_ok=True)
-                            continue
-                except (OSError, FileNotFoundError):
-                    pass
+            except (IOError, OSError):
+                if self.lockfile:
+                    self.lockfile.close()
+                    self.lockfile = None
+                if attempt < max_retries - 1:
+                    time.sleep(0.02)
+                else:
+                    return self
+        return self
 
-                if attempt < max_retries - 1:
-                    time.sleep(0.05)
-                else:
+    def _acquire_unix_lock(self):
+        """Unix-specific locking using fcntl or file creation fallback."""
+        max_retries = 50
+
+        if fcntl is not None:
+            for attempt in range(max_retries):
+                try:
+                    self.lockfile = open(self.lockfile_path, "w")
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     return self
-            except Exception:
-                if attempt < max_retries - 1:
-                    time.sleep(0.05)
-                else:
+                except IOError:
+                    if self.lockfile:
+                        self.lockfile.close()
+                        self.lockfile = None
+                    if attempt < max_retries - 1:
+                        time.sleep(0.02)
+                    else:
+                        return self
+        else:
+            for attempt in range(max_retries):
+                try:
+                    self.lockfile = open(self.lockfile_path, "x")
                     return self
+                except FileExistsError:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.02)
+                    else:
+                        return self
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
         if self.lockfile:
-            self.lockfile.close()
-            self.lockfile_path.unlink(missing_ok=True)
+            try:
+                if self.is_windows:
+                    msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_UNLCK, 1)
+                elif fcntl is not None:
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+            except (IOError, OSError):
+                pass
+            finally:
+                self.lockfile.close()
+                if not self.is_windows or fcntl is None:
+                    self.lockfile_path.unlink(missing_ok=True)
 
 
 class SQLiteStorage:
