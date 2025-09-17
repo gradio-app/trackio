@@ -44,6 +44,50 @@ def update_delete_button_interactivity(runs_data, request: gr.Request):
         return gr.Button("Select runs to delete", interactive=False)
 
 
+def delete_selected_runs(runs_data, project, request: gr.Request):
+    """Delete the selected runs and refresh the table."""
+    if not check_write_access_runs(request):
+        gr.Warning("Access denied")
+        return gr.DataFrame(runs_data)
+
+    if runs_data is None or len(runs_data) == 0:
+        return gr.DataFrame(runs_data)
+
+    selected_indices = []
+    first_column_values = runs_data.iloc[:, 0].tolist()
+    for i, selected in enumerate(first_column_values):
+        if selected:
+            selected_indices.append(i)
+
+    if not selected_indices:
+        gr.Warning("No runs selected")
+        return gr.DataFrame(runs_data)
+
+    deleted_count = 0
+    for idx in selected_indices:
+        run_name_raw = runs_data.iloc[idx, 1]
+
+        if isinstance(run_name_raw, str) and run_name_raw.startswith("<a href="):
+            import re
+
+            match = re.search(r">([^<]+)<", run_name_raw)
+            run_name = match.group(1) if match else run_name_raw
+        else:
+            run_name = run_name_raw
+
+        if SQLiteStorage.delete_run(project, run_name):
+            deleted_count += 1
+
+    updated_data = get_runs_data(project)
+
+    if deleted_count > 0:
+        gr.Info(f"Successfully deleted {deleted_count} run(s)")
+    else:
+        gr.Warning("Failed to delete any runs")
+
+    return updated_data
+
+
 with gr.Blocks() as run_page:
 
     def check_write_access_runs(request: gr.Request):
@@ -84,10 +128,11 @@ with gr.Blocks() as run_page:
         )
     runs_table = gr.DataFrame()
 
-    def get_runs_table(project):
+    def get_runs_data(project):
+        """Get the runs data as a pandas DataFrame."""
         configs = SQLiteStorage.get_all_run_configs(project)
         if not configs:
-            return gr.DataFrame(pd.DataFrame(), visible=False)
+            return pd.DataFrame()
 
         df = pd.DataFrame.from_dict(configs, orient="index")
         df = df.fillna("")
@@ -123,6 +168,13 @@ with gr.Blocks() as run_page:
             columns.insert(2, "Username")
             columns.insert(3, "Created")
             df = df[columns]
+
+        return df
+
+    def get_runs_table(project):
+        df = get_runs_data(project)
+        if df.empty:
+            return gr.DataFrame(pd.DataFrame(), visible=False)
 
         datatype = ["bool"] + ["markdown"] * (len(df.columns) - 1)
 
@@ -176,6 +228,16 @@ with gr.Blocks() as run_page:
         fn=update_delete_button_interactivity,
         inputs=[runs_table],
         outputs=[delete_run_btn],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+
+    gr.on(
+        [delete_run_btn.click],
+        fn=delete_selected_runs,
+        inputs=[runs_table, project_dd],
+        outputs=[runs_table],
         show_progress="hidden",
         api_name=False,
         queue=False,

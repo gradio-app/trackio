@@ -428,7 +428,6 @@ css = """
 
 javascript = """
 <script>
-// Cookie management functions
 function setCookie(name, value, days) {
     var expires = "";
     if (days) {
@@ -450,16 +449,13 @@ function getCookie(name) {
     return null;
 }
 
-// Handle write token on page load
 (function() {
     const urlParams = new URLSearchParams(window.location.search);
     const writeToken = urlParams.get('write_token');
     
     if (writeToken) {
-        // Save token to cookie (7 days expiry)
         setCookie('trackio_write_token', writeToken, 7);
         
-        // Remove token from URL for security
         urlParams.delete('write_token');
         const newUrl = window.location.pathname + 
             (urlParams.toString() ? '?' + urlParams.toString() : '') + 

@@ -227,10 +227,8 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
             can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class.
     """
-    # Generate a secure write token
     write_token = secrets.token_urlsafe(32)
 
-    # Store the token on the demo object
     demo.write_token = write_token
     run_page.write_token = write_token
 
@@ -268,7 +266,6 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
 
     base_url = share_url + "/" if share_url else url
 
-    # Build the URL with the write token
     params = []
     params.append(f"write_token={write_token}")
     if project:
