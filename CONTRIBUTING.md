@@ -17,12 +17,12 @@ For non-core functionality or significant feature additions, we encourage you to
 The project is organized as follows:
 
 - `__init__.py` and `run.py`: These files contain the main user-facing API. They handle API calls to the Gradio interface.
-- `ui.py`: Contains the Gradio application that provides the web interface. This can run either locally or on Hugging Face Spaces.
+- `ui/`: Contains the Gradio application that provides the web interface. This can run either locally or on Hugging Face Spaces.
 - `sqlite_storage.py`: Implements the SQLite storage backend that persists tracking data.
 
 The flow of data is:
 
-> User API (`__init__.py` or `run.py`) → Gradio UI (`ui.py`) → SQLite Storage (`sqlite_storage.py`)
+> User API (`__init__.py` or `run.py`) → Gradio UI (`ui/`) → SQLite Storage (`sqlite_storage.py`)
 
 
 ## Development Setup
