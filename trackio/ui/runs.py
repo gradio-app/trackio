@@ -23,6 +23,7 @@ with gr.Blocks() as run_page:
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
+    navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
     runs_table = gr.DataFrame()
 
@@ -81,6 +82,13 @@ with gr.Blocks() as run_page:
         fn=get_runs_table,
         inputs=[project_dd],
         outputs=[runs_table],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    ).then(
+        fns.update_navbar_value,
+        inputs=[project_dd],
+        outputs=[navbar],
         show_progress="hidden",
         api_name=False,
         queue=False,

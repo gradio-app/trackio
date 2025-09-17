@@ -34,7 +34,10 @@ def get_projects(request: gr.Request):
         interactive = False
     else:
         interactive = True
-        project = projects[0] if projects else None
+        if selected_project := request.query_params.get("selected_project"):
+            project = selected_project
+        else:
+            project = projects[0] if projects else None
 
     return gr.Dropdown(
         label="Project",
@@ -43,4 +46,13 @@ def get_projects(request: gr.Request):
         allow_custom_value=True,
         interactive=interactive,
         info=get_project_info(),
+    )
+
+
+def update_navbar_value(project_dd):
+    return gr.Navbar(
+        value=[
+            ("Metrics", f"?selected_project={project_dd}"),
+            ("Runs", f"runs?selected_project={project_dd}"),
+        ]
     )

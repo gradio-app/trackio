@@ -470,7 +470,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             info="Filter metrics using regex patterns. Leave empty to show all metrics.",
         )
 
-    navbar = gr.Navbar()
+    navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
@@ -535,7 +535,14 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     ).then(
         fn=utils.generate_embed_code,
         inputs=[project_dd, metric_filter_tb, run_cb],
-        outputs=embed_code,
+        outputs=[embed_code],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    ).then(
+        fns.update_navbar_value,
+        inputs=[project_dd],
+        outputs=[navbar],
         show_progress="hidden",
         api_name=False,
         queue=False,
@@ -874,7 +881,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                     )
 
 
-with demo.route("Runs"):
+with demo.route("Runs", show_in_navbar=False):
     run_page.render()
 
 if __name__ == "__main__":
