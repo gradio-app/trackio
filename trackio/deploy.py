@@ -58,20 +58,24 @@ def deploy_as_space(
     hf_api = huggingface_hub.HfApi()
 
     try:
-        create_kwargs = {
-            "repo_id": space_id,
-            "space_sdk": "gradio",
-            "repo_type": "space",
-            "exist_ok": True,
-        }
-        if space_storage is not None:
-            create_kwargs["space_storage"] = space_storage
-        huggingface_hub.create_repo(**create_kwargs)
+        huggingface_hub.create_repo(
+            space_id,
+            space_sdk="gradio",
+            space_storage=space_storage,
+            repo_type="space",
+            exist_ok=True,
+        )
     except HTTPError as e:
         if e.response.status_code in [401, 403]:  # unauthorized or forbidden
             print("Need 'write' access token to create a Spaces repo.")
             huggingface_hub.login(add_to_git_credential=False)
-            huggingface_hub.create_repo(**create_kwargs)
+            huggingface_hub.create_repo(
+                space_id,
+                space_sdk="gradio",
+                space_storage=space_storage,
+                repo_type="space",
+                exist_ok=True,
+            )
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
