@@ -80,9 +80,23 @@ def get_runs_table(project):
     )
 
 
+def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
+    """Check if the user has write access based on token validation."""
+    cookies = request.headers.get("cookie", "")
+    if cookies:
+        for cookie in cookies.split(";"):
+            parts = cookie.strip().split("=")
+            if len(parts) == 2 and parts[0] == "trackio_write_token":
+                return parts[1] == write_token
+    if hasattr(request, "query_params") and request.query_params:
+        token = request.query_params.get("write_token")
+        return token == write_token
+    return False
+
+
 def update_delete_button(runs_data, request: gr.Request):
     """Update the delete button value and interactivity based on the runs data and user write access."""
-    if not check_write_access_runs(request):
+    if not check_write_access_runs(request, run_page.write_token):
         return
 
     has_selection = False
@@ -111,21 +125,6 @@ def delete_selected_runs(runs_data, project, request: gr.Request):
 
 
 with gr.Blocks() as run_page:
-
-    def check_write_access_runs(request: gr.Request):
-        """Check if the user has write access based on token validation."""
-        write_token = run_page.write_token
-        cookies = request.headers.get("cookie", "")
-        if cookies:
-            for cookie in cookies.split(";"):
-                parts = cookie.strip().split("=")
-                if len(parts) == 2 and parts[0] == "trackio_write_token":
-                    return parts[1] == write_token
-        if hasattr(request, "query_params") and request.query_params:
-            token = request.query_params.get("write_token")
-            return token == write_token
-        return False
-
     with gr.Sidebar() as sidebar:
         logo = gr.Markdown(
             f"""
