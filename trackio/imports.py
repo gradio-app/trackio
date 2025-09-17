@@ -139,7 +139,9 @@ def import_csv(
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:
-        deploy.create_space_if_not_exists(space_id=space_id, dataset_id=dataset_id, private=private)
+        deploy.create_space_if_not_exists(
+            space_id=space_id, dataset_id=dataset_id, private=private
+        )
         deploy.wait_until_space_exists(space_id=space_id)
         deploy.upload_db_to_space(project=project, space_id=space_id)
         print(
@@ -290,7 +292,9 @@ def import_tf_events(
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:
-        deploy.create_space_if_not_exists(space_id, dataset_id=dataset_id, private=private)
+        deploy.create_space_if_not_exists(
+            space_id, dataset_id=dataset_id, private=private
+        )
         deploy.wait_until_space_exists(space_id)
         deploy.upload_db_to_space(project, space_id)
         print(
