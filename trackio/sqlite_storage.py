@@ -68,49 +68,31 @@ class ProcessLock:
         return self
 
     def _acquire_unix_lock(self):
-        """Unix-specific locking using fcntl or file creation fallback."""
-        max_retries = 50
+        """Unix-specific locking using fcntl (original proven approach)."""
+        self.lockfile = open(self.lockfile_path, "w")
 
-        if fcntl is not None:
-            for attempt in range(max_retries):
-                try:
-                    self.lockfile = open(self.lockfile_path, "w")
-                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    return self
-                except IOError:
-                    if self.lockfile:
-                        self.lockfile.close()
-                        self.lockfile = None
-                    if attempt < max_retries - 1:
-                        time.sleep(0.02)
-                    else:
-                        return self
-        else:
-            for attempt in range(max_retries):
-                try:
-                    self.lockfile = open(self.lockfile_path, "x")
-                    return self
-                except FileExistsError:
-                    if attempt < max_retries - 1:
-                        time.sleep(0.02)
-                    else:
-                        return self
-        return self
+        max_retries = 100
+        for attempt in range(max_retries):
+            try:
+                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return self
+            except IOError:
+                if attempt < max_retries - 1:
+                    time.sleep(0.1)
+                else:
+                    raise IOError("Could not acquire database lock after 10 seconds")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
         if self.lockfile:
-            try:
-                if self.is_windows:
+            if self.is_windows:
+                try:
                     msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_UNLCK, 1)
-                elif not self.is_windows and fcntl is not None:
-                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
-            except (IOError, OSError):
-                pass
-            finally:
-                self.lockfile.close()
-                if not self.is_windows:
-                    self.lockfile_path.unlink(missing_ok=True)
+                except (IOError, OSError):
+                    pass
+            else:
+                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+            self.lockfile.close()
 
 
 class SQLiteStorage:
