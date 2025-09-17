@@ -4,14 +4,16 @@ import gradio as gr
 
 try:
     import trackio.utils as utils
+    from trackio.sqlite_storage import SQLiteStorage
     from trackio.ui import fns
 except ImportError:
     import utils
+    from sqlite_storage import SQLiteStorage
     from ui import fns
 
 RUN_DETAILS_TEMPLATE = """
 ## Run Details
-* **Run Name:** {run_dd}
+* **Run Name:** `{run_dd}`
 * **Created:** {created}
 * **Username:** {username}
 """
@@ -41,10 +43,7 @@ with gr.Blocks() as run_detail_page:
         return project, run
 
     def update_run_details(project, run):
-        from trackio.sqlite_storage import SQLiteStorage
-
         config = SQLiteStorage.get_run_config(project, run)
-
         if not config:
             return gr.Markdown("No run details available"), {}
 
