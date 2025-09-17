@@ -147,6 +147,11 @@ with gr.Blocks() as run_page:
             variant="stop",
             size="sm",
         )
+        confirm_btn = gr.Button(
+            "Confirm delete", variant="stop", size="sm", visible=False
+        )
+        cancel_btn = gr.Button("Cancel", size="sm", visible=False)
+
     runs_table = gr.DataFrame()
 
     gr.on(
@@ -193,6 +198,32 @@ with gr.Blocks() as run_page:
 
     gr.on(
         [delete_run_btn.click],
+        fn=lambda: [
+            gr.update(visible=False),
+            gr.update(visible=True),
+            gr.update(visible=True),
+        ],
+        inputs=None,
+        outputs=[delete_run_btn, confirm_btn, cancel_btn],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+    gr.on(
+        [confirm_btn.click, cancel_btn.click],
+        fn=lambda: [
+            gr.update(visible=True),
+            gr.update(visible=False),
+            gr.update(visible=False),
+        ],
+        inputs=None,
+        outputs=[delete_run_btn, confirm_btn, cancel_btn],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+    gr.on(
+        [confirm_btn.click],
         fn=delete_selected_runs,
         inputs=[runs_table, project_dd],
         outputs=[runs_table],

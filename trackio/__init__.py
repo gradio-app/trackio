@@ -273,12 +273,14 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
 
     base_url = share_url + "/" if share_url else url
 
-    params = [f"write_token={write_token}"]
+    params = []
     if project:
         params.append(f"project={project}")
+    safe_url = base_url + ("?" + "&".join(params) if params else "")
+    params.append(f"write_token={write_token}")
     dashboard_url = base_url + "?" + "&".join(params)
 
     if not utils.is_in_notebook():
-        print(f"* Trackio UI launched at: {dashboard_url}")
+        print(f"* Trackio UI launched at: {safe_url}")
         webbrowser.open(dashboard_url)
         utils.block_except_in_notebook()
