@@ -76,7 +76,7 @@ with gr.Blocks() as run_page:
     navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
     with gr.Row():
-        gr.Markdown("")
+        gr.Markdown("")  # Just here to push the delete button to the right
         delete_run_btn = gr.Button(
             "⚠️ Need write access to delete runs",
             interactive=False,
