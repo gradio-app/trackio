@@ -19,6 +19,7 @@ from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.ui.main import demo
+from trackio.ui.runs import run_page
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
@@ -231,6 +232,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
 
     # Store the token on the demo object
     demo.write_token = write_token
+    run_page.write_token = write_token
 
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
