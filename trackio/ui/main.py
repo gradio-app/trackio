@@ -21,6 +21,7 @@ try:
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
+    from trackio.ui.run_detail import run_detail_page
     from trackio.ui.runs import run_page
 except ImportError:
     import utils
@@ -30,6 +31,7 @@ except ImportError:
     from table import Table
     from typehints import LogEntry, UploadEntry
     from ui import fns
+    from ui.run_detail import run_detail_page
     from ui.runs import run_page
 
 
@@ -426,7 +428,7 @@ css = """
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
+with gr.Blocks(title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
             f"""
@@ -445,7 +447,11 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         )
         run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
         run_cb = gr.CheckboxGroup(
-            label="Runs", choices=[], interactive=True, elem_id="run-cb"
+            label="Runs",
+            choices=[],
+            interactive=True,
+            elem_id="run-cb",
+            show_select_all=True,
         )
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
@@ -883,6 +889,8 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
 
 with demo.route("Runs", show_in_navbar=False):
     run_page.render()
+with demo.route("Run", show_in_navbar=False):
+    run_detail_page.render()
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
