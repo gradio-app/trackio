@@ -32,14 +32,6 @@ Specifies the default project name for logging experiments. This is useful when 
 export TRACKIO_PROJECT_NAME="my-project"
 ```
 
-Or in Python:
-
-```python
-import os
-os.environ["TRACKIO_PROJECT_NAME"] = "my-project"
-```
-
-
 ### TRACKIO_DATASET_ID
 
 Sets the Hugging Face Dataset ID where logs will be stored when running on Hugging Face Spaces. If not provided, the dataset name will be set automatically when deploying to Spaces.
