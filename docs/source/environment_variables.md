@@ -6,7 +6,7 @@ Trackio uses environment variables to configure various aspects of its behavior,
 
 ### TRACKIO_SPACE_ID
 
-Sets the Hugging Face Space ID for deploying your Trackio dashboard. This is useful when you want to automatically deploy to a specific Space without passing it to `trackio.init()`.
+Sets the Hugging Face Space ID for deploying your Trackio dashboard. This is useful when you want to automatically deploy to a specific Space without passing it to `trackio.init()`. The Space will be created if it doesn't exist (requires appropriate HF token permissions).
 
 ```bash
 export TRACKIO_SPACE_ID="username/space_id"
@@ -19,15 +19,14 @@ import os
 os.environ["TRACKIO_SPACE_ID"] = "username/space_id"
 ```
 
-**Usage:** When set, Trackio will automatically deploy dashboards to the specified Hugging Face Space. The Space will be created if it doesn't exist (requires appropriate HF token permissions).
+The username can be a personal Hugging Face account or an org account on Hugging Face.
 
-**Integration with Transformers/TRL:** When using the Transformers `Trainer` or TRL with `TrainingArguments(report_to="trackio")`, this environment variable will be used to determine where to deploy the dashboard. This allows you to set up Space deployment once and have all your training runs automatically use it.
 
-**Note:** This is particularly useful in automated environments like CI/CD pipelines or when using Trackio with the Transformers Trainer.
+**Integration with Transformers/TRL:** When using the Transformers `Trainer` or one of the Trainer classes in TRL with `TrainingArguments(report_to="trackio")`, this environment variable will be used to determine where to deploy the dashboard. This allows you to set up Space deployment once and have all your training runs automatically use it.
 
 ### TRACKIO_PROJECT_NAME
 
-Specifies the default project name for logging experiments.
+Specifies the default project name for logging experiments. This is useful when you want to set a specific project name without passing it to `trackio.init()`.
 
 ```bash
 export TRACKIO_PROJECT_NAME="my-project"
@@ -40,17 +39,15 @@ import os
 os.environ["TRACKIO_PROJECT_NAME"] = "my-project"
 ```
 
-**Usage:** Commonly used with the Transformers Trainer integration to set the project name without modifying training code.
 
 ### TRACKIO_DATASET_ID
 
-Sets the Hugging Face Dataset ID where logs will be stored when running on Hugging Face Spaces.
+Sets the Hugging Face Dataset ID where logs will be stored when running on Hugging Face Spaces. If not provided, the dataset name will be set automatically when deploying to Spaces.
+
 
 ```bash
 export TRACKIO_DATASET_ID="username/dataset_name"
 ```
-
-**Usage:** Trackio automatically uses this to persist logs to a Hugging Face Dataset when deployed on Spaces. This is typically set automatically when deploying to Spaces.
 
 ### HF_TOKEN
 
@@ -60,17 +57,16 @@ Your Hugging Face authentication token.
 export HF_TOKEN="hf_xxxxxxxxxxxxx"
 ```
 
-**Usage:** Required for creating Spaces and Datasets on Hugging Face. Set this locally when deploying to Spaces from your machine.
+**Usage:** Required for creating Spaces and Datasets on Hugging Face. Set this locally when deploying to Spaces from your machine. Must have `write` permissions for the namespace that you are deploying the Trackio dashboard.
 
 ### TRACKIO_DIR
 
-Specifies a custom directory for storing Trackio data (primarily used for testing).
+Specifies a custom directory for storing Trackio data. By default, Trackio stores data in `~/.cache/huggingface/trackio/`.
 
 ```bash
 export TRACKIO_DIR="/path/to/trackio/data"
 ```
 
-**Usage:** Mainly used in testing environments. By default, Trackio stores data in `~/.cache/huggingface/trackio/`.
 
 ## Example Usage
 
@@ -123,15 +119,13 @@ steps:
     run: python experiments.py
 ```
 
-## Best Practices
+## General notes
 
 1. **Security**: Never commit environment variables containing tokens or secrets to version control. Use secret management tools or `.env` files (added to `.gitignore`).
 
 2. **Space IDs**: Use the format `username/space_name` or `organization/space_name` for Space IDs.
 
 3. **Precedence**: Environment variables can be overridden by explicit parameters passed to `trackio.init()`.
-
-4. **Automation**: Use environment variables to configure Trackio in automated environments without modifying code.
 
 ## Troubleshooting
 
@@ -140,4 +134,3 @@ If your dashboard is not deploying to Spaces:
 - Verify `TRACKIO_SPACE_ID` follows the correct format
 - Check that you're logged in with `huggingface-cli login`
 
-For more information, see the [Deploy and Embed Dashboards](deploy_embed.md) guide.
