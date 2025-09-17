@@ -37,18 +37,13 @@ class ProcessLock:
         max_retries = 100
         for attempt in range(max_retries):
             try:
-                # Use exclusive file creation as a cross-platform lock mechanism
-                # This works because file creation is atomic on most filesystems
                 self.lockfile = open(self.lockfile_path, "x")
                 return self
             except FileExistsError:
-                # Lock file already exists, check if it's stale
                 try:
-                    # Check if the lock file is older than 30 seconds (stale lock)
                     if self.lockfile_path.exists():
                         lock_age = time.time() - self.lockfile_path.stat().st_mtime
                         if lock_age > 30:
-                            # Remove stale lock and try again
                             self.lockfile_path.unlink(missing_ok=True)
                             continue
                 except (OSError, FileNotFoundError):
@@ -68,7 +63,6 @@ class ProcessLock:
         """Release the lock."""
         if self.lockfile:
             self.lockfile.close()
-            # Remove the lock file to release the lock
             self.lockfile_path.unlink(missing_ok=True)
 
 
