@@ -54,6 +54,7 @@ def init(
     config: dict | None = None,
     resume: str = "never",
     settings: Any = None,
+    private: bool | None = None,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -91,6 +92,10 @@ def init(
               doesn't exist
             - `"allow"`: Resume the run if it exists, otherwise create a new run
             - `"never"`: Never resume a run, always create a new one
+        private (`bool` or `None`, *optional*, defaults to `None`):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
         settings (`Any`, *optional*, defaults to `None`):
             Not used. Provided for compatibility with `wandb.init()`.
 
@@ -135,7 +140,9 @@ def init(
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             utils.print_dashboard_instructions(project)
         else:
-            deploy.create_space_if_not_exists(space_id, space_storage, dataset_id)
+            deploy.create_space_if_not_exists(
+                space_id, space_storage, dataset_id, private
+            )
             print(
                 f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
             )

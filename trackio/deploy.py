@@ -47,6 +47,7 @@ def deploy_as_space(
     space_id: str,
     space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ):
     if (
         os.getenv("SYSTEM") == "spaces"
@@ -60,6 +61,7 @@ def deploy_as_space(
     try:
         huggingface_hub.create_repo(
             space_id,
+            private=private,
             space_sdk="gradio",
             space_storage=space_storage,
             repo_type="space",
@@ -71,6 +73,7 @@ def deploy_as_space(
             huggingface_hub.login(add_to_git_credential=False)
             huggingface_hub.create_repo(
                 space_id,
+                private=private,
                 space_sdk="gradio",
                 space_storage=space_storage,
                 repo_type="space",
@@ -138,6 +141,7 @@ def create_space_if_not_exists(
     space_id: str,
     space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist. If a dataset_id is provided, it will be added as a space variable.
@@ -145,6 +149,9 @@ def create_space_if_not_exists(
     Args:
         space_id: The ID of the Space to create.
         dataset_id: The ID of the Dataset to add to the Space.
+        private: Whether to make the Space private. If None (default), the repo will be
+          public unless the organization's default is private. This value is ignored if
+          the repo already exists.
     """
     if "/" not in space_id:
         raise ValueError(
@@ -175,7 +182,7 @@ def create_space_if_not_exists(
             raise ValueError(f"Failed to create Space: {e}")
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, space_storage, dataset_id)
+    deploy_as_space(space_id, space_storage, dataset_id, private)
 
 
 def wait_until_space_exists(
