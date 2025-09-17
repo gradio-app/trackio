@@ -15,6 +15,71 @@ except ImportError:
     from ui import fns
 
 
+def get_runs_data(project):
+    """Get the runs data as a pandas DataFrame."""
+    configs = SQLiteStorage.get_all_run_configs(project)
+    if not configs:
+        return pd.DataFrame()
+
+    df = pd.DataFrame.from_dict(configs, orient="index")
+    df = df.fillna("")
+    df.index.name = "Name"
+    df.reset_index(inplace=True)
+
+    column_mapping = {"_Username": "Username", "_Created": "Created"}
+    df.rename(columns=column_mapping, inplace=True)
+
+    if "Created" in df.columns:
+        df["Created"] = df["Created"].apply(utils.format_timestamp)
+
+    if "Username" in df.columns:
+        df["Username"] = df["Username"].apply(
+            lambda x: f"<a href='https://huggingface.co/{x}' style='text-decoration-style: dotted;'>{x}</a>"
+            if x and x != "None"
+            else x
+        )
+
+    if "Name" in df.columns:
+        df["Name"] = df["Name"].apply(
+            lambda x: f"<a href='/run?selected_project={project}&selected_run={x}'>{x}</a>"
+            if x and x != "None"
+            else x
+        )
+
+    df.insert(0, " ", False)
+
+    columns = list(df.columns)
+    if "Username" in columns and "Created" in columns:
+        columns.remove("Username")
+        columns.remove("Created")
+        columns.insert(2, "Username")
+        columns.insert(3, "Created")
+        df = df[columns]
+
+    return df
+
+
+def get_runs_table(project):
+    df = get_runs_data(project)
+    if df.empty:
+        return gr.DataFrame(pd.DataFrame(), visible=False)
+
+    datatype = ["bool"] + ["markdown"] * (len(df.columns) - 1)
+
+    return gr.DataFrame(
+        df,
+        visible=True,
+        pinned_columns=2,
+        datatype=datatype,
+        wrap=True,
+        column_widths=["40px", "100px"],
+        interactive=True,
+        static_columns=list(range(1, len(df.columns))),
+        row_count=(len(df), "fixed"),
+        col_count=(len(df.columns), "fixed"),
+    )
+
+
 def update_delete_button(runs_data, request: gr.Request):
     """Update the delete button value and interactivity based on the runs data and user write access."""
     if not check_write_access_runs(request):
@@ -49,19 +114,16 @@ with gr.Blocks() as run_page:
 
     def check_write_access_runs(request: gr.Request):
         """Check if the user has write access based on token validation."""
+        write_token = run_page.write_token
         cookies = request.headers.get("cookie", "")
         if cookies:
             for cookie in cookies.split(";"):
                 parts = cookie.strip().split("=")
                 if len(parts) == 2 and parts[0] == "trackio_write_token":
-                    if parts[1] == run_page.write_token:
-                        return True
-
+                    return parts[1] == write_token
         if hasattr(request, "query_params") and request.query_params:
             token = request.query_params.get("write_token")
-            if token == run_page.write_token:
-                return True
-
+            return token == write_token
         return False
 
     with gr.Sidebar() as sidebar:
@@ -84,69 +146,6 @@ with gr.Blocks() as run_page:
             size="sm",
         )
     runs_table = gr.DataFrame()
-
-    def get_runs_data(project):
-        """Get the runs data as a pandas DataFrame."""
-        configs = SQLiteStorage.get_all_run_configs(project)
-        if not configs:
-            return pd.DataFrame()
-
-        df = pd.DataFrame.from_dict(configs, orient="index")
-        df = df.fillna("")
-        df.index.name = "Name"
-        df.reset_index(inplace=True)
-
-        column_mapping = {"_Username": "Username", "_Created": "Created"}
-        df.rename(columns=column_mapping, inplace=True)
-
-        if "Created" in df.columns:
-            df["Created"] = df["Created"].apply(utils.format_timestamp)
-
-        if "Username" in df.columns:
-            df["Username"] = df["Username"].apply(
-                lambda x: f"<a href='https://huggingface.co/{x}' style='text-decoration-style: dotted;'>{x}</a>"
-                if x and x != "None"
-                else x
-            )
-
-        if "Name" in df.columns:
-            df["Name"] = df["Name"].apply(
-                lambda x: f"<a href='/run?selected_project={project}&selected_run={x}'>{x}</a>"
-                if x and x != "None"
-                else x
-            )
-
-        df.insert(0, " ", False)
-
-        columns = list(df.columns)
-        if "Username" in columns and "Created" in columns:
-            columns.remove("Username")
-            columns.remove("Created")
-            columns.insert(2, "Username")
-            columns.insert(3, "Created")
-            df = df[columns]
-
-        return df
-
-    def get_runs_table(project):
-        df = get_runs_data(project)
-        if df.empty:
-            return gr.DataFrame(pd.DataFrame(), visible=False)
-
-        datatype = ["bool"] + ["markdown"] * (len(df.columns) - 1)
-
-        return gr.DataFrame(
-            df,
-            visible=True,
-            pinned_columns=2,
-            datatype=datatype,
-            wrap=True,
-            column_widths=["40px", "100px"],
-            interactive=True,
-            static_columns=list(range(1, len(df.columns))),
-            row_count=(len(df), "fixed"),
-            col_count=(len(df.columns), "fixed"),
-        )
 
     gr.on(
         [run_page.load],
