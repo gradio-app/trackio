@@ -13,6 +13,7 @@ def import_csv(
     name: str | None = None,
     space_id: str | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ) -> None:
     """
     Imports a CSV file into a Trackio project. The CSV file must contain a `"step"`
@@ -50,6 +51,10 @@ def import_csv(
             SQLite database, unless a `space_id` is provided, in which case a Dataset
             will be automatically created with the same name as the Space but with the
             `"_dataset"` suffix.
+        private (`bool` or `None`, *optional*, defaults to `None`):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
     """
     if SQLiteStorage.get_runs(project):
         raise ValueError(
@@ -134,7 +139,7 @@ def import_csv(
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:
-        deploy.create_space_if_not_exists(space_id, dataset_id)
+        deploy.create_space_if_not_exists(space_id, dataset_id, private)
         deploy.wait_until_space_exists(space_id)
         deploy.upload_db_to_space(project, space_id)
         print(
@@ -148,6 +153,7 @@ def import_tf_events(
     name: str | None = None,
     space_id: str | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ) -> None:
     """
     Imports TensorFlow Events files from a directory into a Trackio project. Each
@@ -180,6 +186,10 @@ def import_tf_events(
             SQLite database, unless a `space_id` is provided, in which case a Dataset
             will be automatically created with the same name as the Space but with the
             `"_dataset"` suffix.
+        private (`bool` or `None`, *optional*, defaults to `None`):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
     """
     try:
         from tbparse import SummaryReader
@@ -280,7 +290,7 @@ def import_tf_events(
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:
-        deploy.create_space_if_not_exists(space_id, dataset_id)
+        deploy.create_space_if_not_exists(space_id, dataset_id, private)
         deploy.wait_until_space_exists(space_id)
         deploy.upload_db_to_space(project, space_id)
         print(
