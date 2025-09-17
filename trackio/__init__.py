@@ -277,8 +277,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     params.append(f"write_token={write_token}")
     if project:
         params.append(f"project={project}")
-
-    dashboard_url = base_url + "?" + "&".join(params) if params else base_url
+    dashboard_url = base_url + "?" + "&".join(params)
 
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {dashboard_url}")
