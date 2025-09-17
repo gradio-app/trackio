@@ -426,7 +426,7 @@ css = """
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
+with gr.Blocks(title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
             f"""
