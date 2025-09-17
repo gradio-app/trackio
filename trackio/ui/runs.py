@@ -1,5 +1,7 @@
 """The Runs page for the Trackio UI."""
 
+import re
+
 import gradio as gr
 import pandas as pd
 
@@ -11,22 +13,6 @@ except ImportError:
     import utils
     from sqlite_storage import SQLiteStorage
     from ui import fns
-
-
-def update_delete_button_access(request: gr.Request):
-    """Update the delete button text based on write access."""
-    has_access = check_write_access_runs(request)
-    if has_access:
-        return gr.Button(
-            "Select and delete run(s)", interactive=False, variant="stop", size="sm"
-        )
-    else:
-        return gr.Button(
-            "⚠️ Need write access to delete runs",
-            interactive=False,
-            variant="secondary",
-            size="sm",
-        )
 
 
 def update_delete_button_interactivity(runs_data, request: gr.Request):
@@ -68,8 +54,6 @@ def delete_selected_runs(runs_data, project, request: gr.Request):
         run_name_raw = runs_data.iloc[idx, 1]
 
         if isinstance(run_name_raw, str) and run_name_raw.startswith("<a href="):
-            import re
-
             match = re.search(r">([^<]+)<", run_name_raw)
             run_name = match.group(1) if match else run_name_raw
         else:
