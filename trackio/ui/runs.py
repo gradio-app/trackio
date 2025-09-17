@@ -13,6 +13,43 @@ except ImportError:
     from ui import fns
 
 
+def check_write_access_runs(request: gr.Request):
+    """Check if the user has write access based on token validation."""
+    # Import demo from main to access write_token
+    from trackio.ui.main import demo
+
+    if not hasattr(demo, "write_token"):
+        return False
+
+    # Check cookie first
+    cookies = request.headers.get("cookie", "")
+    if cookies:
+        for cookie in cookies.split(";"):
+            parts = cookie.strip().split("=")
+            if len(parts) == 2 and parts[0] == "trackio_write_token":
+                if parts[1] == demo.write_token:
+                    return True
+
+    # Check query parameter as fallback
+    if hasattr(request, "query_params") and request.query_params:
+        token = request.query_params.get("write_token")
+        if token == demo.write_token:
+            return True
+
+    return False
+
+
+def update_write_access_indicator_runs(request: gr.Request):
+    """Update the write access indicator based on token validation."""
+    has_access = check_write_access_runs(request)
+    if has_access:
+        return gr.HTML(
+            '<div style="background-color: #10b981; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; margin-bottom: 10px; display: inline-block;">✅ Write access enabled</div>',
+            visible=True,
+        )
+    return gr.HTML(visible=False)
+
+
 with gr.Blocks() as run_page:
     with gr.Sidebar() as sidebar:
         logo = gr.Markdown(
@@ -21,6 +58,7 @@ with gr.Blocks() as run_page:
                 <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
             """
         )
+        write_access_indicator = gr.HTML(visible=False)
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
     navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
@@ -66,6 +104,14 @@ with gr.Blocks() as run_page:
         [run_page.load],
         fn=fns.get_projects,
         outputs=project_dd,
+        show_progress="hidden",
+        queue=False,
+        api_name=False,
+    )
+    gr.on(
+        [run_page.load],
+        fn=update_write_access_indicator_runs,
+        outputs=write_access_indicator,
         show_progress="hidden",
         queue=False,
         api_name=False,

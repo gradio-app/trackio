@@ -1,5 +1,6 @@
 import hashlib
 import os
+import secrets
 import warnings
 import webbrowser
 from pathlib import Path
@@ -225,6 +226,12 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
             can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class.
     """
+    # Generate a secure write token
+    write_token = secrets.token_urlsafe(32)
+
+    # Store the token on the demo object
+    demo.write_token = write_token
+
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
         # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
@@ -258,7 +265,14 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     )
 
     base_url = share_url + "/" if share_url else url
-    dashboard_url = base_url + f"?project={project}" if project else base_url
+
+    # Build the URL with the write token
+    params = []
+    params.append(f"write_token={write_token}")
+    if project:
+        params.append(f"project={project}")
+
+    dashboard_url = base_url + "?" + "&".join(params) if params else base_url
 
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {dashboard_url}")

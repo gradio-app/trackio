@@ -390,6 +390,16 @@ css = """
 .dark .logo-light { display: none; }
 .dark .logo-dark { display: block; }
 .dark .caption-label { color: white; }
+.write-access-badge {
+    background-color: #10b981;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 10px;
+    display: inline-block;
+}
 
 .info-container {
     position: relative;
@@ -424,9 +434,88 @@ css = """
 .media-tab { max-height: 500px; overflow-y: scroll; }
 """
 
+javascript = """
+<script>
+// Cookie management functions
+function setCookie(name, value, days) {
+    var expires = "";
+    if (days) {
+        var date = new Date();
+        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+        expires = "; expires=" + date.toUTCString();
+    }
+    document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax";
+}
+
+function getCookie(name) {
+    var nameEQ = name + "=";
+    var ca = document.cookie.split(';');
+    for(var i=0;i < ca.length;i++) {
+        var c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1,c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+    }
+    return null;
+}
+
+// Handle write token on page load
+(function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const writeToken = urlParams.get('write_token');
+    
+    if (writeToken) {
+        // Save token to cookie (7 days expiry)
+        setCookie('trackio_write_token', writeToken, 7);
+        
+        // Remove token from URL for security
+        urlParams.delete('write_token');
+        const newUrl = window.location.pathname + 
+            (urlParams.toString() ? '?' + urlParams.toString() : '') + 
+            window.location.hash;
+        window.history.replaceState({}, document.title, newUrl);
+    }
+})();
+</script>
+"""
+
+
+def check_write_access(request: gr.Request):
+    """Check if the user has write access based on token validation."""
+    if not hasattr(demo, "write_token"):
+        return False
+
+    # Check cookie first
+    cookies = request.headers.get("cookie", "")
+    if cookies:
+        for cookie in cookies.split(";"):
+            parts = cookie.strip().split("=")
+            if len(parts) == 2 and parts[0] == "trackio_write_token":
+                if parts[1] == demo.write_token:
+                    return True
+
+    # Check query parameter as fallback
+    if hasattr(request, "query_params") and request.query_params:
+        token = request.query_params.get("write_token")
+        if token == demo.write_token:
+            return True
+
+    return False
+
+
+def update_write_access_indicator(request: gr.Request):
+    """Update the write access indicator based on token validation."""
+    has_access = check_write_access(request)
+    if has_access:
+        return gr.HTML(
+            '<div class="write-access-badge">✅ Write access enabled</div>',
+            visible=True,
+        )
+    return gr.HTML(visible=False)
+
+
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(title="Trackio Dashboard", css=css) as demo:
+with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
             f"""
@@ -434,6 +523,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css) as demo:
                 <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
             """
         )
+        write_access_indicator = gr.HTML(visible=False)
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
         embed_code = gr.Code(
@@ -497,6 +587,14 @@ with gr.Blocks(title="Trackio Dashboard", css=css) as demo:
         [demo.load],
         fn=fns.get_projects,
         outputs=project_dd,
+        show_progress="hidden",
+        queue=False,
+        api_name=False,
+    )
+    gr.on(
+        [demo.load],
+        fn=update_write_access_indicator,
+        outputs=write_access_indicator,
         show_progress="hidden",
         queue=False,
         api_name=False,
