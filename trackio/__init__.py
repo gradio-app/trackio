@@ -273,8 +273,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
 
     base_url = share_url + "/" if share_url else url
 
-    params = []
-    params.append(f"write_token={write_token}")
+    params = [f"write_token={write_token}"]
     if project:
         params.append(f"project={project}")
     dashboard_url = base_url + "?" + "&".join(params)
