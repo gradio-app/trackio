@@ -103,13 +103,13 @@ class ProcessLock:
             try:
                 if self.is_windows:
                     msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_UNLCK, 1)
-                elif fcntl is not None:
+                elif not self.is_windows and fcntl is not None:
                     fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
             except (IOError, OSError):
                 pass
             finally:
                 self.lockfile.close()
-                if not self.is_windows or fcntl is None:
+                if not self.is_windows:
                     self.lockfile_path.unlink(missing_ok=True)
 
 
