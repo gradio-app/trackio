@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from io import SEEK_END, SEEK_SET, BytesIO
 from pathlib import Path
 from threading import Lock, Thread
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Union
 
 from huggingface_hub.hf_api import (
     DEFAULT_IGNORE_PATTERNS,
