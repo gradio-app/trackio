@@ -111,16 +111,16 @@ class CommitScheduler:
         repo_id: str,
         folder_path: Union[str, Path],
         every: Union[int, float] = 5,
-        path_in_repo: Optional[str] = None,
-        repo_type: Optional[str] = None,
-        revision: Optional[str] = None,
-        private: Optional[bool] = None,
-        token: Optional[str] = None,
-        allow_patterns: Optional[Union[List[str], str]] = None,
-        ignore_patterns: Optional[Union[List[str], str]] = None,
+        path_in_repo: str | None = None,
+        repo_type: str | None = None,
+        revision: str | None = None,
+        private: bool | None = None,
+        token: str | None = None,
+        allow_patterns: list[str] | str | None = None,
+        ignore_patterns: list[str] | str | None = None,
         squash_history: bool = False,
-        hf_api: Optional["HfApi"] = None,
-        on_before_commit: Optional[Callable[[], None]] = None,
+        hf_api: HfApi | None = None,
+        on_before_commit: Callable[[], None] | None = None,
     ) -> None:
         self.api = hf_api or HfApi(token=token)
         self.on_before_commit = on_before_commit
@@ -201,7 +201,7 @@ class CommitScheduler:
         """
         return self.api.run_as_future(self._push_to_hub)
 
-    def _push_to_hub(self) -> Optional[CommitInfo]:
+    def _push_to_hub(self) -> CommitInfo | None:
         if self.__stopped:  # If stopped, already scheduled commits are ignored
             return None
 
@@ -220,7 +220,7 @@ class CommitScheduler:
             )  # Depending on the setup, error might be silenced
             raise
 
-    def push_to_hub(self) -> Optional[CommitInfo]:
+    def push_to_hub(self) -> CommitInfo | None:
         """
         Push folder to the Hub and return the commit info.
 
@@ -376,7 +376,7 @@ class PartialFileIO(BytesIO):
             return self._file.seek(self._size_limit)
         return pos
 
-    def read(self, __size: Optional[int] = -1) -> bytes:
+    def read(self, __size: int | None = -1) -> bytes:
         """Read at most `__size` bytes from the file.
 
         Behavior is the same as a regular file, except that it is capped to the size limit.

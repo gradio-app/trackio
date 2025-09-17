@@ -119,9 +119,9 @@ class TrackioImage(TrackioMedia):
         ```
 
     Args:
-        value (`str`, `Path`, `numpy.ndarray`, or `PIL.Image`, *optional*, defaults to `None`):
+        value (`str`, `Path`, `numpy.ndarray`, or `PIL.Image`, *optional*):
             A path to an image, a PIL Image, or a numpy array of shape (height, width, channels).
-        caption (`str`, *optional*, defaults to `None`):
+        caption (`str`, *optional*):
             A string caption for the image.
     """
 
@@ -184,16 +184,16 @@ class TrackioVideo(TrackioMedia):
         ```
 
     Args:
-        value (`str`, `Path`, or `numpy.ndarray`, *optional*, defaults to `None`):
+        value (`str`, `Path`, or `numpy.ndarray`, *optional*):
             A path to a video file, or a numpy array.
             The array should be of type `np.uint8` with RGB values in the range `[0, 255]`.
             It is expected to have shape of either (frames, channels, height, width) or (batch, frames, channels, height, width).
             For the latter, the videos will be tiled into a grid.
-        caption (`str`, *optional*, defaults to `None`):
+        caption (`str`, *optional*):
             A string caption for the video.
-        fps (`int`, *optional*, defaults to `None`):
+        fps (`int`, *optional*):
             Frames per second for the video. Only used when value is an ndarray. Default is `24`.
-        format (`Literal["gif", "mp4", "webm"]`, *optional*, defaults to `None`):
+        format (`Literal["gif", "mp4", "webm"]`, *optional*):
             Video format ("gif", "mp4", or "webm"). Only used when value is an ndarray. Default is "gif".
     """
 
