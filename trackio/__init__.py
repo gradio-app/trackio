@@ -60,8 +60,8 @@ def init(
         project (`str` or `None`, *optional*, defaults to `None`):
             The name of the project (can be an existing project to continue tracking or
             a new project to start tracking from scratch). If not provided, will use
-            the TRACKIO_PROJECT_NAME environment variable if set, otherwise defaults
-            to "default-project".
+            the TRACKIO_PROJECT_NAME environment variable if set. If neither is provided,
+            raises a ValueError.
         name (`str` or `None`, *optional*, defaults to `None`):
             The name of the run (if not provided, a default name will be generated).
         space_id (`str` or `None`, *optional*, defaults to `None`):
@@ -107,9 +107,13 @@ def init(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
-    # Use environment variables as defaults if parameters not provided
     if project is None:
-        project = os.environ.get("TRACKIO_PROJECT_NAME", "default-project")
+        project = os.environ.get("TRACKIO_PROJECT_NAME")
+        if project is None:
+            raise ValueError(
+                "A project name must be provided either through the 'project' parameter "
+                "or by setting the TRACKIO_PROJECT_NAME environment variable."
+            )
     if space_id is None:
         space_id = os.environ.get("TRACKIO_SPACE_ID")
 
