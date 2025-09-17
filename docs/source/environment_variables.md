@@ -73,12 +73,10 @@ export TRACKIO_DIR="/path/to/trackio/data"
 ### Local Development with Space Deployment
 
 ```bash
-# Set up environment for local development with automatic Space deployment
 export HF_TOKEN="hf_xxxxxxxxxxxxx"
 export TRACKIO_SPACE_ID="myusername/my-trackio-dashboard"
 export TRACKIO_PROJECT_NAME="my-ml-project"
 
-# Now run your training script
 python train.py
 ```
 
@@ -88,7 +86,6 @@ python train.py
 import os
 from transformers import Trainer, TrainingArguments
 
-# Configure Trackio for Transformers
 os.environ["TRACKIO_PROJECT_NAME"] = "llm-finetuning"
 os.environ["TRACKIO_SPACE_ID"] = "myorg/llm-experiments"
 
@@ -125,7 +122,7 @@ steps:
 
 2. **Space IDs**: Use the format `username/space_name` or `organization/space_name` for Space IDs.
 
-3. **Precedence**: Environment variables can be overridden by explicit parameters passed to `trackio.init()`.
+3. **Precedence**: Most of the environment variables mentioned above can be overridden by explicit parameters passed to `trackio.init()`.
 
 ## Troubleshooting
 
