@@ -34,11 +34,9 @@ def update_delete_button_interactivity(runs_data, request: gr.Request):
         return
 
     has_selection = False
-    print("runs_data", runs_data)
     if runs_data is not None and len(runs_data) > 0:
-        first_column = [row[0] if len(row) > 0 else False for row in runs_data]
-        print("first_column", first_column)
-        has_selection = any(first_column)
+        first_column_values = runs_data.iloc[:, 0].tolist()
+        has_selection = any(first_column_values)
 
     if has_selection:
         return gr.Button("Delete selected run(s)", interactive=True)
@@ -50,11 +48,6 @@ with gr.Blocks() as run_page:
 
     def check_write_access_runs(request: gr.Request):
         """Check if the user has write access based on token validation."""
-
-        if not hasattr(run_page, "write_token"):
-            return False
-
-        # Check cookie first
         cookies = request.headers.get("cookie", "")
         if cookies:
             for cookie in cookies.split(";"):
@@ -63,7 +56,6 @@ with gr.Blocks() as run_page:
                     if parts[1] == run_page.write_token:
                         return True
 
-        # Check query parameter as fallback
         if hasattr(request, "query_params") and request.query_params:
             token = request.query_params.get("write_token")
             if token == run_page.write_token:
@@ -115,18 +107,16 @@ with gr.Blocks() as run_page:
                 else x
             )
 
-        # Add a column of False values as the first column
         df.insert(0, " ", False)
 
         columns = list(df.columns)
         if "Username" in columns and "Created" in columns:
             columns.remove("Username")
             columns.remove("Created")
-            columns.insert(2, "Username")  # Shift right due to new Select column
-            columns.insert(3, "Created")  # Shift right due to new Select column
+            columns.insert(2, "Username")
+            columns.insert(3, "Created")
             df = df[columns]
 
-        # Create datatype list: first column is bool, rest are markdown
         datatype = ["bool"] + ["markdown"] * (len(df.columns) - 1)
 
         return gr.DataFrame(
@@ -175,7 +165,7 @@ with gr.Blocks() as run_page:
     )
 
     gr.on(
-        [runs_table.change],
+        [run_page.load, runs_table.change],
         fn=update_delete_button_interactivity,
         inputs=[runs_table],
         outputs=[delete_run_btn],
