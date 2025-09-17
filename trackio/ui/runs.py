@@ -97,7 +97,7 @@ def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
 def update_delete_button(runs_data, request: gr.Request):
     """Update the delete button value and interactivity based on the runs data and user write access."""
     if not check_write_access_runs(request, run_page.write_token):
-        return
+        return gr.Button("⚠️ Need write access to delete runs", interactive=False)
 
     has_selection = False
     if runs_data is not None and len(runs_data) > 0:
