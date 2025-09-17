@@ -99,13 +99,13 @@ def update_delete_button(runs_data, request: gr.Request):
     if not check_write_access_runs(request, run_page.write_token):
         return gr.Button("⚠️ Need write access to delete runs", interactive=False)
 
-    has_selection = False
+    num_selected = 0
     if runs_data is not None and len(runs_data) > 0:
         first_column_values = runs_data.iloc[:, 0].tolist()
-        has_selection = any(first_column_values)
+        num_selected = sum(1 for x in first_column_values if x)
 
-    if has_selection:
-        return gr.Button("Delete selected run(s)", interactive=True)
+    if num_selected:
+        return gr.Button(f"Delete {num_selected} selected run(s)", interactive=True)
     else:
         return gr.Button("Select runs to delete", interactive=False)
 
@@ -140,17 +140,20 @@ with gr.Blocks() as run_page:
     navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
     with gr.Row():
-        gr.Markdown("")  # Just here to push the delete button to the right
-        delete_run_btn = gr.Button(
-            "⚠️ Need write access to delete runs",
-            interactive=False,
-            variant="stop",
-            size="sm",
-        )
-        confirm_btn = gr.Button(
-            "Confirm delete", variant="stop", size="sm", visible=False
-        )
-        cancel_btn = gr.Button("Cancel", size="sm", visible=False)
+        with gr.Column():
+            pass
+        with gr.Column():
+            with gr.Row():
+                delete_run_btn = gr.Button(
+                    "⚠️ Need write access to delete runs",
+                    interactive=False,
+                    variant="stop",
+                    size="sm",
+                )
+                confirm_btn = gr.Button(
+                    "Confirm delete", variant="stop", size="sm", visible=False
+                )
+                cancel_btn = gr.Button("Cancel", size="sm", visible=False)
 
     runs_table = gr.DataFrame()
 
@@ -199,9 +202,9 @@ with gr.Blocks() as run_page:
     gr.on(
         [delete_run_btn.click],
         fn=lambda: [
-            gr.update(visible=False),
-            gr.update(visible=True),
-            gr.update(visible=True),
+            gr.Button(visible=False),
+            gr.Button(visible=True),
+            gr.Button(visible=True),
         ],
         inputs=None,
         outputs=[delete_run_btn, confirm_btn, cancel_btn],
@@ -212,9 +215,9 @@ with gr.Blocks() as run_page:
     gr.on(
         [confirm_btn.click, cancel_btn.click],
         fn=lambda: [
-            gr.update(visible=True),
-            gr.update(visible=False),
-            gr.update(visible=False),
+            gr.Button(visible=True),
+            gr.Button(visible=False),
+            gr.Button(visible=False),
         ],
         inputs=None,
         outputs=[delete_run_btn, confirm_btn, cancel_btn],
