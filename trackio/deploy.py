@@ -123,7 +123,7 @@ trackio.show()"""
         app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
         hf_api.upload_file(
             path_or_fileobj=app_file_buffer,
-            path_in_repo="ui.py",
+            path_in_repo="ui/main.py",
             repo_id=space_id,
             repo_type="space",
         )

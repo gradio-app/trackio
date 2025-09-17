@@ -109,10 +109,25 @@ class SQLiteStorage:
                         metrics TEXT NOT NULL
                     )
                 """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS configs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_name TEXT NOT NULL,
+                        config TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        UNIQUE(run_name)
+                    )
+                """)
                 cursor.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_step
                     ON metrics(run_name, step)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_configs_run_name
+                    ON configs(run_name)
                     """
                 )
                 conn.commit()
@@ -259,6 +274,7 @@ class SQLiteStorage:
         metrics_list: list[dict],
         steps: list[int] | None = None,
         timestamps: list[str] | None = None,
+        config: dict | None = None,
     ):
         """
         Safely log bulk metrics to the database. Before logging, this method will ensure the database exists
@@ -320,6 +336,18 @@ class SQLiteStorage:
                     """,
                     data,
                 )
+
+                if config:
+                    current_timestamp = datetime.now().isoformat()
+                    cursor.execute(
+                        """
+                        INSERT OR REPLACE INTO configs
+                        (run_name, config, created_at)
+                        VALUES (?, ?, ?)
+                        """,
+                        (run, json.dumps(serialize_values(config)), current_timestamp),
+                    )
+
                 conn.commit()
 
     @staticmethod
@@ -434,6 +462,79 @@ class SQLiteStorage:
                 results[row["run_name"]] = row["max_step"]
 
             return results
+
+    @staticmethod
+    def store_config(project: str, run: str, config: dict) -> None:
+        """Store configuration for a run."""
+        db_path = SQLiteStorage.init_db(project)
+
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                current_timestamp = datetime.now().isoformat()
+
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO configs
+                    (run_name, config, created_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (run, json.dumps(serialize_values(config)), current_timestamp),
+                )
+                conn.commit()
+
+    @staticmethod
+    def get_run_config(project: str, run: str) -> dict | None:
+        """Get configuration for a specific run."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT config FROM configs WHERE run_name = ?
+                    """,
+                    (run,),
+                )
+
+                row = cursor.fetchone()
+                if row:
+                    config = json.loads(row["config"])
+                    return deserialize_values(config)
+                return None
+            except sqlite3.OperationalError as e:
+                if "no such table: configs" in str(e):
+                    return None
+                raise
+
+    @staticmethod
+    def get_all_run_configs(project: str) -> dict[str, dict]:
+        """Get configurations for all runs in a project."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return {}
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT run_name, config FROM configs
+                    """
+                )
+
+                results = {}
+                for row in cursor.fetchall():
+                    config = json.loads(row["config"])
+                    results[row["run_name"]] = deserialize_values(config)
+                return results
+            except sqlite3.OperationalError as e:
+                if "no such table: configs" in str(e):
+                    return {}
+                raise
 
     def finish(self):
         """Cleanup when run is finished."""
