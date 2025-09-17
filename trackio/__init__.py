@@ -44,7 +44,7 @@ DEFAULT_THEME = "citrus"
 
 
 def init(
-    project: str,
+    project: str | None = None,
     name: str | None = None,
     space_id: str | None = None,
     space_storage: SpaceStorage | None = None,
@@ -57,9 +57,11 @@ def init(
     Creates a new Trackio project and returns a [`Run`] object.
 
     Args:
-        project (`str`):
+        project (`str` or `None`, *optional*, defaults to `None`):
             The name of the project (can be an existing project to continue tracking or
-            a new project to start tracking from scratch).
+            a new project to start tracking from scratch). If not provided, will use
+            the TRACKIO_PROJECT_NAME environment variable if set, otherwise defaults
+            to "default-project".
         name (`str` or `None`, *optional*, defaults to `None`):
             The name of the run (if not provided, a default name will be generated).
         space_id (`str` or `None`, *optional*, defaults to `None`):
@@ -68,7 +70,8 @@ def init(
             `"username/reponame"` or `"orgname/reponame"`, or just `"reponame"` in which
             case the Space will be created in the currently-logged-in Hugging Face
             user's namespace. If the Space does not exist, it will be created. If the
-            Space already exists, the project will be logged to it.
+            Space already exists, the project will be logged to it. If not provided,
+            will use the TRACKIO_SPACE_ID environment variable if set.
         space_storage ([`~huggingface_hub.SpaceStorage`] or `None`, *optional*, defaults to `None`):
             Choice of persistent storage tier.
         dataset_id (`str` or `None`, *optional*, defaults to `None`):
@@ -92,6 +95,10 @@ def init(
         settings (`Any`, *optional*, defaults to `None`):
             Not used. Provided for compatibility with `wandb.init()`.
 
+    Environment Variables:
+        TRACKIO_PROJECT_NAME: Default project name if not specified
+        TRACKIO_SPACE_ID: Default space ID if not specified
+
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
@@ -99,6 +106,12 @@ def init(
         warnings.warn(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
+
+    # Use environment variables as defaults if parameters not provided
+    if project is None:
+        project = os.environ.get("TRACKIO_PROJECT_NAME", "default-project")
+    if space_id is None:
+        space_id = os.environ.get("TRACKIO_SPACE_ID")
 
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
