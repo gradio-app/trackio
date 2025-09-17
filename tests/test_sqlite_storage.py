@@ -154,3 +154,52 @@ def test_concurrent_database_access_without_errors():
             total_logs += len(logs)
 
         assert total_logs > 0, "Should have created some log entries"
+
+
+def test_config_storage_in_database(temp_dir):
+    config = {
+        "epochs": 10,
+        "_Username": "testuser",
+        "_Created": "2024-01-01T00:00:00+00:00",
+    }
+
+    SQLiteStorage.bulk_log(
+        project="test_project",
+        run="test_run",
+        metrics_list=[{"loss": 0.5}],
+        config=config,
+    )
+
+    stored_config = SQLiteStorage.get_run_config("test_project", "test_run")
+    assert stored_config["epochs"] == 10
+    assert stored_config["_Username"] == "testuser"
+    assert stored_config["_Created"] == "2024-01-01T00:00:00+00:00"
+
+
+def test_old_database_without_configs_table(temp_dir):
+    # To make sure that we can continue to work with projects created with older versions of Trackio.
+    import json
+
+    db_path = SQLiteStorage.get_project_db_path("test")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE metrics (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT,
+                run_name TEXT,
+                step INTEGER,
+                metrics TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+            ("2024-01-01", "test_run", 0, json.dumps({"loss": 0.5})),
+        )
+
+    config = SQLiteStorage.get_run_config("test", "test_run")
+    assert config is None
+
+    all_configs = SQLiteStorage.get_all_run_configs("test")
+    assert all_configs == {}

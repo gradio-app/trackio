@@ -1,3 +1,5 @@
+"""The main page for the Trackio UI."""
+
 import os
 import re
 import shutil
@@ -18,47 +20,17 @@ try:
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
-except:  # noqa: E722
+    from trackio.ui import fns
+    from trackio.ui.runs import run_page
+except ImportError:
     import utils
     from file_storage import FileStorage
     from media import TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
-
-
-def get_project_info() -> str | None:
-    dataset_id = os.environ.get("TRACKIO_DATASET_ID")
-    space_id = os.environ.get("SPACE_ID")
-    if utils.persistent_storage_enabled():
-        return "&#10024; Persistent Storage is enabled, logs are stored directly in this Space."
-    if dataset_id:
-        sync_status = utils.get_sync_status(SQLiteStorage.get_scheduler())
-        upgrade_message = f"New changes are synced every 5 min <span class='info-container'><input type='checkbox' class='info-checkbox' id='upgrade-info'><label for='upgrade-info' class='info-icon'>&#9432;</label><span class='info-expandable'> To avoid losing data between syncs, <a href='https://huggingface.co/spaces/{space_id}/settings' class='accent-link'>click here</a> to open this Space's settings and add Persistent Storage. Make sure data is synced prior to enabling.</span></span>"
-        if sync_status is not None:
-            info = f"&#x21bb; Backed up {sync_status} min ago to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank' class='accent-link'>{dataset_id}</a> | {upgrade_message}"
-        else:
-            info = f"&#x21bb; Not backed up yet to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank' class='accent-link'>{dataset_id}</a> | {upgrade_message}"
-        return info
-    return None
-
-
-def get_projects(request: gr.Request):
-    projects = SQLiteStorage.get_projects()
-    if project := request.query_params.get("project"):
-        interactive = False
-    else:
-        interactive = True
-        project = projects[0] if projects else None
-
-    return gr.Dropdown(
-        label="Project",
-        choices=projects,
-        value=project,
-        allow_custom_value=True,
-        interactive=interactive,
-        info=get_project_info(),
-    )
+    from ui import fns
+    from ui.runs import run_page
 
 
 def get_runs(project) -> list[str]:
@@ -331,9 +303,11 @@ def bulk_log(
     for log_entry in logs:
         key = (log_entry["project"], log_entry["run"])
         if key not in logs_by_run:
-            logs_by_run[key] = {"metrics": [], "steps": []}
+            logs_by_run[key] = {"metrics": [], "steps": [], "config": None}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["steps"].append(log_entry.get("step"))
+        if log_entry.get("config") and logs_by_run[key]["config"] is None:
+            logs_by_run[key]["config"] = log_entry["config"]
 
     for (project, run), data in logs_by_run.items():
         SQLiteStorage.bulk_log(
@@ -341,6 +315,7 @@ def bulk_log(
             run=run,
             metrics_list=data["metrics"],
             steps=data["steps"],
+            config=data["config"],
         )
 
 
@@ -380,8 +355,14 @@ def configure(request: gr.Request):
     metrics_param = request.query_params.get("metrics", "")
     runs_param = request.query_params.get("runs", "")
     selected_runs = runs_param.split(",") if runs_param else []
+    navbar_param = request.query_params.get("navbar")
+    match navbar_param:
+        case "hidden":
+            navbar = gr.Navbar(visible=False)
+        case _:
+            navbar = gr.Navbar(visible=True)
 
-    return [], sidebar, metrics_param, selected_runs
+    return [], sidebar, metrics_param, selected_runs, navbar
 
 
 def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
@@ -444,6 +425,7 @@ css = """
 """
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
+
 with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
@@ -492,6 +474,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             info="Filter metrics using regex patterns. Leave empty to show all metrics.",
         )
 
+    navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
@@ -500,13 +483,19 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     gr.on(
         [demo.load],
         fn=configure,
-        outputs=[metrics_subset, sidebar, metric_filter_tb, selected_runs_from_url],
+        outputs=[
+            metrics_subset,
+            sidebar,
+            metric_filter_tb,
+            selected_runs_from_url,
+            navbar,
+        ],
         queue=False,
         api_name=False,
     )
     gr.on(
         [demo.load],
-        fn=get_projects,
+        fn=fns.get_projects,
         outputs=project_dd,
         show_progress="hidden",
         queue=False,
@@ -527,7 +516,7 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     )
     gr.on(
         [timer.tick],
-        fn=lambda: gr.Dropdown(info=get_project_info()),
+        fn=lambda: gr.Dropdown(info=fns.get_project_info()),
         outputs=[project_dd],
         show_progress="hidden",
         api_name=False,
@@ -550,7 +539,14 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
     ).then(
         fn=utils.generate_embed_code,
         inputs=[project_dd, metric_filter_tb, run_cb],
-        outputs=embed_code,
+        outputs=[embed_code],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    ).then(
+        fns.update_navbar_value,
+        inputs=[project_dd],
+        outputs=[navbar],
         show_progress="hidden",
         api_name=False,
         queue=False,
@@ -726,13 +722,26 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
         for group_name in sorted(nested_metric_groups.keys()):
             group_data = nested_metric_groups[group_name]
 
+            total_plot_count = sum(
+                1
+                for m in group_data["direct_metrics"]
+                if not master_df.dropna(subset=[m]).empty
+            ) + sum(
+                sum(1 for m in metrics if not master_df.dropna(subset=[m]).empty)
+                for metrics in group_data["subgroups"].values()
+            )
+            group_label = (
+                f"{group_name} ({total_plot_count})"
+                if total_plot_count > 0
+                else group_name
+            )
+
             with gr.Accordion(
-                label=group_name,
+                label=group_label,
                 open=True,
                 key=f"accordion-{group_name}",
                 preserved_by_key=["value", "open"],
             ):
-                # Render direct metrics at this level
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
                         key=f"row-{group_name}-direct", orientation="row"
@@ -773,13 +782,23 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                 )
                             metric_idx += 1
 
-                # If there are subgroups, create nested accordions
                 if group_data["subgroups"]:
                     for subgroup_name in sorted(group_data["subgroups"].keys()):
                         subgroup_metrics = group_data["subgroups"][subgroup_name]
 
+                        subgroup_plot_count = sum(
+                            1
+                            for m in subgroup_metrics
+                            if not master_df.dropna(subset=[m]).empty
+                        )
+                        subgroup_label = (
+                            f"{subgroup_name} ({subgroup_plot_count})"
+                            if subgroup_plot_count > 0
+                            else subgroup_name
+                        )
+
                         with gr.Accordion(
-                            label=subgroup_name,
+                            label=subgroup_label,
                             open=True,
                             key=f"accordion-{group_name}-{subgroup_name}",
                             preserved_by_key=["value", "open"],
@@ -831,8 +850,17 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
             table_cols = [c for c in table_cols if c in metrics_subset]
         if metric_filter and metric_filter.strip():
             table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
-        if len(table_cols) > 0:
-            with gr.Accordion("tables", open=True):
+
+        actual_table_count = sum(
+            1
+            for metric_name in table_cols
+            if not (metric_df := master_df.dropna(subset=[metric_name])).empty
+            and isinstance(value := metric_df[metric_name].iloc[-1], dict)
+            and value.get("_type") == Table.TYPE
+        )
+
+        if actual_table_count > 0:
+            with gr.Accordion(f"tables ({actual_table_count})", open=True):
                 with gr.Row(key="row"):
                     for metric_idx, metric_name in enumerate(table_cols):
                         metric_df = master_df.dropna(subset=[metric_name])
@@ -856,6 +884,9 @@ with gr.Blocks(theme="citrus", title="Trackio Dashboard", css=css) as demo:
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
 
+
+with demo.route("Runs", show_in_navbar=False):
+    run_page.render()
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
