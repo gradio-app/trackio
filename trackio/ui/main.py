@@ -390,16 +390,6 @@ css = """
 .dark .logo-light { display: none; }
 .dark .logo-dark { display: block; }
 .dark .caption-label { color: white; }
-.write-access-badge {
-    background-color: #10b981;
-    color: white;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 500;
-    margin-bottom: 10px;
-    display: inline-block;
-}
 
 .info-container {
     position: relative;
@@ -502,17 +492,6 @@ def check_write_access(request: gr.Request):
     return False
 
 
-def update_write_access_indicator(request: gr.Request):
-    """Update the write access indicator based on token validation."""
-    has_access = check_write_access(request)
-    if has_access:
-        return gr.HTML(
-            '<div class="write-access-badge">✅ Write access enabled</div>',
-            visible=True,
-        )
-    return gr.HTML(visible=False)
-
-
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
@@ -523,7 +502,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                 <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
             """
         )
-        write_access_indicator = gr.HTML(visible=False)
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
         embed_code = gr.Code(
@@ -587,14 +565,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         [demo.load],
         fn=fns.get_projects,
         outputs=project_dd,
-        show_progress="hidden",
-        queue=False,
-        api_name=False,
-    )
-    gr.on(
-        [demo.load],
-        fn=update_write_access_indicator,
-        outputs=write_access_indicator,
         show_progress="hidden",
         queue=False,
         api_name=False,

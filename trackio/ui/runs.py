@@ -39,15 +39,20 @@ def check_write_access_runs(request: gr.Request):
     return False
 
 
-def update_write_access_indicator_runs(request: gr.Request):
-    """Update the write access indicator based on token validation."""
+def update_delete_button_access(request: gr.Request):
+    """Update the delete button text based on write access."""
     has_access = check_write_access_runs(request)
     if has_access:
-        return gr.HTML(
-            '<div style="background-color: #10b981; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; margin-bottom: 10px; display: inline-block;">✅ Write access enabled</div>',
-            visible=True,
+        return gr.Button(
+            "Select and delete run(s)", interactive=False, variant="stop", size="sm"
         )
-    return gr.HTML(visible=False)
+    else:
+        return gr.Button(
+            "Need write access to delete runs",
+            interactive=False,
+            variant="secondary",
+            size="sm",
+        )
 
 
 with gr.Blocks() as run_page:
@@ -58,11 +63,15 @@ with gr.Blocks() as run_page:
                 <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
             """
         )
-        write_access_indicator = gr.HTML(visible=False)
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
     navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
+    with gr.Row():
+        gr.Markdown("")
+        delete_run_btn = gr.Button(
+            "Select and delete run(s)", interactive=False, variant="stop", size="sm"
+        )
     runs_table = gr.DataFrame()
 
     def get_runs_table(project):
@@ -110,8 +119,8 @@ with gr.Blocks() as run_page:
     )
     gr.on(
         [run_page.load],
-        fn=update_write_access_indicator_runs,
-        outputs=write_access_indicator,
+        fn=update_delete_button_access,
+        outputs=delete_run_btn,
         show_progress="hidden",
         queue=False,
         api_name=False,

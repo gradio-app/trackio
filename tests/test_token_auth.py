@@ -76,24 +76,26 @@ def test_show_function_generates_token():
         assert "project=test" in called_url
 
 
-def test_write_access_indicator():
-    """Test the write access indicator function."""
-    from trackio.ui.main import demo, update_write_access_indicator
+def test_delete_button_access():
+    """Test the delete button access function."""
+    from trackio.ui.main import demo
+    from trackio.ui.runs import update_delete_button_access
 
-    demo.write_token = "test_indicator_token"
+    demo.write_token = "test_delete_token"
 
     # Test with valid access
     mock_request = Mock()
-    mock_request.headers = {"cookie": "trackio_write_token=test_indicator_token"}
+    mock_request.headers = {"cookie": "trackio_write_token=test_delete_token"}
     mock_request.query_params = {}
 
-    result = update_write_access_indicator(mock_request)
-    assert result.visible is True
-    assert "Write access enabled" in result.value
+    result = update_delete_button_access(mock_request)
+    assert "Select and delete run(s)" in result.value
+    assert result.variant == "stop"
 
     # Test without access
     mock_request.headers = {"cookie": ""}
     mock_request.query_params = {}
 
-    result = update_write_access_indicator(mock_request)
-    assert result.visible is False
+    result = update_delete_button_access(mock_request)
+    assert "Need write access to delete runs" in result.value
+    assert result.variant == "secondary"
