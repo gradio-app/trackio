@@ -102,7 +102,14 @@ with gr.Blocks() as run_page:
 
         if "Username" in df.columns:
             df["Username"] = df["Username"].apply(
-                lambda x: f"[{x}](https://huggingface.co/{x})"
+                lambda x: f"<a href='https://huggingface.co/{x}' style='text-decoration-style: dotted;'>{x}</a>"
+                if x and x != "None"
+                else x
+            )
+
+        if "Name" in df.columns:
+            df["Name"] = df["Name"].apply(
+                lambda x: f"<a href='/run?selected_project={project}&selected_run={x}'>{x}</a>"
                 if x and x != "None"
                 else x
             )
