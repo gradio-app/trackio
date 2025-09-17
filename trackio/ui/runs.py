@@ -15,7 +15,8 @@ except ImportError:
     from ui import fns
 
 
-def update_delete_button_interactivity(runs_data, request: gr.Request):
+def update_delete_button(runs_data, request: gr.Request):
+    """Update the delete button value and interactivity based on the runs data and user write access."""
     if not check_write_access_runs(request):
         return
 
@@ -32,43 +33,15 @@ def update_delete_button_interactivity(runs_data, request: gr.Request):
 
 def delete_selected_runs(runs_data, project, request: gr.Request):
     """Delete the selected runs and refresh the table."""
-    if not check_write_access_runs(request):
-        gr.Warning("Access denied")
-        return gr.DataFrame(runs_data)
-
-    if runs_data is None or len(runs_data) == 0:
-        return gr.DataFrame(runs_data)
-
-    selected_indices = []
     first_column_values = runs_data.iloc[:, 0].tolist()
     for i, selected in enumerate(first_column_values):
         if selected:
-            selected_indices.append(i)
-
-    if not selected_indices:
-        gr.Warning("No runs selected")
-        return gr.DataFrame(runs_data)
-
-    deleted_count = 0
-    for idx in selected_indices:
-        run_name_raw = runs_data.iloc[idx, 1]
-
-        if isinstance(run_name_raw, str) and run_name_raw.startswith("<a href="):
+            run_name_raw = runs_data.iloc[i, 1]
             match = re.search(r">([^<]+)<", run_name_raw)
             run_name = match.group(1) if match else run_name_raw
-        else:
-            run_name = run_name_raw
-
-        if SQLiteStorage.delete_run(project, run_name):
-            deleted_count += 1
+            SQLiteStorage.delete_run(project, run_name)
 
     updated_data = get_runs_data(project)
-
-    if deleted_count > 0:
-        gr.Info(f"Successfully deleted {deleted_count} run(s)")
-    else:
-        gr.Warning("Failed to delete any runs")
-
     return updated_data
 
 
@@ -209,7 +182,7 @@ with gr.Blocks() as run_page:
 
     gr.on(
         [run_page.load, runs_table.change],
-        fn=update_delete_button_interactivity,
+        fn=update_delete_button,
         inputs=[runs_table],
         outputs=[delete_run_btn],
         show_progress="hidden",
