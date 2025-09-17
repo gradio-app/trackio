@@ -112,6 +112,9 @@ def update_delete_button(runs_data, request: gr.Request):
 
 def delete_selected_runs(runs_data, project, request: gr.Request):
     """Delete the selected runs and refresh the table."""
+    if not check_write_access_runs(request, run_page.write_token):
+        return runs_data
+
     first_column_values = runs_data.iloc[:, 0].tolist()
     for i, selected in enumerate(first_column_values):
         if selected:
