@@ -8,9 +8,9 @@
 
 
   
-  [![gradio-backend](https://github.com/gradio-app/trackio/actions/workflows/test.yml/badge.svg)](https://github.com/gradio-app/trackio/actions/workflows/test.yml)
-[![PyPI](https://img.shields.io/pypi/v/trackio)](https://pypi.org/project/trackio/)
+[![trackio-backend](https://github.com/gradio-app/trackio/actions/workflows/test.yml/badge.svg)](https://github.com/gradio-app/trackio/actions/workflows/test.yml)
 [![PyPI downloads](https://img.shields.io/pypi/dm/trackio)](https://pypi.org/project/trackio/)
+[![PyPI](https://img.shields.io/pypi/v/trackio)](https://pypi.org/project/trackio/)
 ![Python version](https://img.shields.io/badge/python-3.10+-important)
 [![Twitter follow](https://img.shields.io/twitter/follow/trackioapp?style=social&label=follow)](https://twitter.com/trackioapp)
 
