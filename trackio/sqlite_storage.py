@@ -1,4 +1,3 @@
-import fcntl
 import json
 import os
 import sqlite3
@@ -25,7 +24,7 @@ except Exception:  # relative imports for local execution on Spaces
 
 
 class ProcessLock:
-    """A simple file-based lock that works across processes."""
+    """A cross-platform file-based lock that works across processes."""
 
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
@@ -34,14 +33,32 @@ class ProcessLock:
     def __enter__(self):
         """Acquire the lock with retry logic."""
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
-        self.lockfile = open(self.lockfile_path, "w")
 
         max_retries = 100
         for attempt in range(max_retries):
             try:
-                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Use exclusive file creation as a cross-platform lock mechanism
+                # This works because file creation is atomic on most filesystems
+                self.lockfile = open(self.lockfile_path, "x")
                 return self
-            except IOError:
+            except FileExistsError:
+                # Lock file already exists, check if it's stale
+                try:
+                    # Check if the lock file is older than 30 seconds (stale lock)
+                    if self.lockfile_path.exists():
+                        lock_age = time.time() - self.lockfile_path.stat().st_mtime
+                        if lock_age > 30:
+                            # Remove stale lock and try again
+                            self.lockfile_path.unlink(missing_ok=True)
+                            continue
+                except (OSError, FileNotFoundError):
+                    pass
+
+                if attempt < max_retries - 1:
+                    time.sleep(0.1)
+                else:
+                    raise IOError("Could not acquire database lock after 10 seconds")
+            except Exception:
                 if attempt < max_retries - 1:
                     time.sleep(0.1)
                 else:
@@ -50,8 +67,9 @@ class ProcessLock:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
         if self.lockfile:
-            fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
             self.lockfile.close()
+            # Remove the lock file to release the lock
+            self.lockfile_path.unlink(missing_ok=True)
 
 
 class SQLiteStorage:
