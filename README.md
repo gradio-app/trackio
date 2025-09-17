@@ -1,8 +1,22 @@
 <p align="center">
 <img width="75%" src="https://github.com/user-attachments/assets/6d6a41e7-fbc1-43ec-bda6-15f9ff4bd25c" />
+  
 </p>
 
-`trackio` is a lightweight, free experiment tracking Python library built on top of Hugging Face Datasets and Spaces 🤗.
+
+<div align="center">
+
+
+  
+[![trackio-backend](https://github.com/gradio-app/trackio/actions/workflows/test.yml/badge.svg)](https://github.com/gradio-app/trackio/actions/workflows/test.yml)
+[![PyPI downloads](https://img.shields.io/pypi/dm/trackio)](https://pypi.org/project/trackio/)
+[![PyPI](https://img.shields.io/pypi/v/trackio)](https://pypi.org/project/trackio/)
+![Python version](https://img.shields.io/badge/python-3.10+-important)
+[![Twitter follow](https://img.shields.io/twitter/follow/trackioapp?style=social&label=follow)](https://twitter.com/trackioapp)
+
+</div>
+
+`trackio` is a lightweight, free experiment tracking Python library built by Hugging Face 🤗.
 
 ![Screen Recording 2025-07-28 at 5 26 32 PM](https://github.com/user-attachments/assets/f3eac49e-d8ee-4fc0-b1ca-aedfc6d6fae1)
 
