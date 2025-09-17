@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import random
 import sqlite3
 import time
 from datetime import datetime
@@ -50,8 +51,8 @@ class ProcessLock:
             return self._acquire_unix_lock()
 
     def _acquire_windows_lock(self):
-        """Windows-specific locking using msvcrt."""
-        max_retries = 50
+        """Windows-specific locking with aggressive fallback."""
+        max_retries = 20
         for attempt in range(max_retries):
             try:
                 self.lockfile = open(self.lockfile_path, "w")
@@ -59,12 +60,16 @@ class ProcessLock:
                 return self
             except (IOError, OSError):
                 if self.lockfile:
-                    self.lockfile.close()
+                    try:
+                        self.lockfile.close()
+                    except:
+                        pass
                     self.lockfile = None
                 if attempt < max_retries - 1:
-                    time.sleep(0.02)
+                    time.sleep(random.uniform(0.001, 0.01))
                 else:
-                    return self
+                    break
+
         return self
 
     def _acquire_unix_lock(self):
@@ -85,14 +90,21 @@ class ProcessLock:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
         if self.lockfile:
-            if self.is_windows:
+            try:
+                if self.is_windows:
+                    try:
+                        msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_UNLCK, 1)
+                    except (IOError, OSError):
+                        pass
+                else:
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+            except:
+                pass
+            finally:
                 try:
-                    msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_UNLCK, 1)
-                except (IOError, OSError):
+                    self.lockfile.close()
+                except:
                     pass
-            else:
-                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
-            self.lockfile.close()
 
 
 class SQLiteStorage:
