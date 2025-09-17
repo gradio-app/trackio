@@ -43,19 +43,21 @@ class ProcessLock:
                 try:
                     if self.lockfile_path.exists():
                         lock_age = time.time() - self.lockfile_path.stat().st_mtime
-                        if lock_age > 30:
+                        if lock_age > 5:
                             self.lockfile_path.unlink(missing_ok=True)
                             continue
                 except (OSError, FileNotFoundError):
                     pass
 
                 if attempt < max_retries - 1:
-                    time.sleep(0.1)
+                    sleep_time = 0.01 + (attempt * 0.001)
+                    time.sleep(sleep_time)
                 else:
                     raise IOError("Could not acquire database lock after 10 seconds")
             except Exception:
                 if attempt < max_retries - 1:
-                    time.sleep(0.1)
+                    sleep_time = 0.01 + (attempt * 0.001)
+                    time.sleep(sleep_time)
                 else:
                     raise IOError("Could not acquire database lock after 10 seconds")
 
