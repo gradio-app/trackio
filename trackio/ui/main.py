@@ -469,29 +469,6 @@ function getCookie(name) {
 """
 
 
-def check_write_access(request: gr.Request):
-    """Check if the user has write access based on token validation."""
-    if not hasattr(demo, "write_token"):
-        return False
-
-    # Check cookie first
-    cookies = request.headers.get("cookie", "")
-    if cookies:
-        for cookie in cookies.split(";"):
-            parts = cookie.strip().split("=")
-            if len(parts) == 2 and parts[0] == "trackio_write_token":
-                if parts[1] == demo.write_token:
-                    return True
-
-    # Check query parameter as fallback
-    if hasattr(request, "query_params") and request.query_params:
-        token = request.query_params.get("write_token")
-        if token == demo.write_token:
-            return True
-
-    return False
-
-
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
