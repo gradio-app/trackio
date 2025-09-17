@@ -14,8 +14,7 @@ except ImportError:
 RUN_DETAILS_TEMPLATE = """
 ## Run Details
 * **Run Name:** `{run_dd}`
-* **Created:** {created}
-* **Username:** {username}
+* **Created:** {created} by {username}
 """
 
 with gr.Blocks() as run_detail_page:
@@ -35,7 +34,7 @@ with gr.Blocks() as run_detail_page:
 
     run_details = gr.Markdown(RUN_DETAILS_TEMPLATE)
 
-    run_config = gr.JSON()
+    run_config = gr.JSON(label="Run Config")
 
     def configure(request: gr.Request):
         project = request.query_params.get("selected_project")
