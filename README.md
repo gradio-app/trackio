@@ -32,7 +32,7 @@
   - Visualize experiments with a Gradio dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
 - Everything here, including hosting on Hugging Face, is **free**!
 
-Trackio is designed to be lightweight (the core codebase is <4,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
+Trackio is designed to be lightweight (the core codebase is <5,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
 
 ## Installation
 

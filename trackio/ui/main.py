@@ -426,9 +426,50 @@ css = """
 .media-tab { max-height: 500px; overflow-y: scroll; }
 """
 
+javascript = """
+<script>
+function setCookie(name, value, days) {
+    var expires = "";
+    if (days) {
+        var date = new Date();
+        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+        expires = "; expires=" + date.toUTCString();
+    }
+    document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax";
+}
+
+function getCookie(name) {
+    var nameEQ = name + "=";
+    var ca = document.cookie.split(';');
+    for(var i=0;i < ca.length;i++) {
+        var c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1,c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+    }
+    return null;
+}
+
+(function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const writeToken = urlParams.get('write_token');
+    
+    if (writeToken) {
+        setCookie('trackio_write_token', writeToken, 7);
+        
+        urlParams.delete('write_token');
+        const newUrl = window.location.pathname + 
+            (urlParams.toString() ? '?' + urlParams.toString() : '') + 
+            window.location.hash;
+        window.history.replaceState({}, document.title, newUrl);
+    }
+})();
+</script>
+"""
+
+
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(title="Trackio Dashboard", css=css) as demo:
+with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = gr.Markdown(
             f"""
