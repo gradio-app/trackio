@@ -15,6 +15,8 @@
     title: Deploy and Embed Dashboards
   - local: manage
     title: Manage Projects
+  - local: environment_variables
+    title: Environment Variables
   title: How-to guides
 - sections:
   - local: transformers_integration
