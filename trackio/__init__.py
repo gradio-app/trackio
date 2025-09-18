@@ -118,7 +118,7 @@ def init(
 
     if url is None:
         if space_id is None:
-            share_url, url, _ = demo.launch(
+            _, url, share_url = demo.launch(
                 show_api=False,
                 inline=False,
                 quiet=True,
@@ -145,8 +145,9 @@ def init(
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             if utils.is_in_notebook() and embed:
+                base_url = share_url + "/" if share_url else url
                 full_url = utils.get_full_url(
-                    share_url or url, project=project, write_token=demo.write_token
+                    base_url, project=project, write_token=demo.write_token
                 )
                 utils.embed_url_in_notebook(full_url)
             else:
