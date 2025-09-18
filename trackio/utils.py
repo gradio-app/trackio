@@ -303,7 +303,7 @@ def print_dashboard_instructions(project: str) -> None:
     Args:
         project: The name of the project to show dashboard for.
     """
-    YELLOW = "\033[93m"
+    YELLOW = "\033[38;5;208m"
     BOLD = "\033[1m"
     RESET = "\033[0m"
 
