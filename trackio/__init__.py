@@ -114,7 +114,7 @@ def init(
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
     url = context_vars.current_server.get()
-    share_url = None
+    share_url = context_vars.current_share_server.get()
 
     if url is None:
         if space_id is None:
@@ -129,8 +129,9 @@ def init(
             )
         else:
             url = space_id
+            share_url = None
         context_vars.current_server.set(url)
-
+        context_vars.current_share_server.set(share_url)
     if (
         context_vars.current_project.get() is None
         or context_vars.current_project.get() != project
