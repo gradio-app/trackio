@@ -303,12 +303,12 @@ def print_dashboard_instructions(project: str) -> None:
     Args:
         project: The name of the project to show dashboard for.
     """
-    YELLOW = "\033[38;5;208m"
+    ORANGE = "\033[38;5;208m"
     BOLD = "\033[1m"
     RESET = "\033[0m"
 
     print("* View dashboard by running in your terminal:")
-    print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
+    print(f'{BOLD}{ORANGE}trackio show --project "{project}"{RESET}')
     print(f'* or by running in Python: trackio.show(project="{project}")')
 
 
