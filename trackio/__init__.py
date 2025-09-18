@@ -291,5 +291,4 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
         webbrowser.open(full_url)
         utils.block_main_thread_until_keyboard_interrupt()
     else:
-        pass
-        # TODO: embed the dashboard in the notebook
+        utils.embed_url_in_notebook(full_url)

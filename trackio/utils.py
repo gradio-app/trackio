@@ -749,3 +749,26 @@ def embed_url_in_notebook(url: str) -> None:
         display(embed_code)
     except ImportError:
         pass
+
+
+def to_json_safe(obj):
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [to_json_safe(v) for v in obj]
+    if hasattr(obj, "to_dict") and callable(obj.to_dict):
+        return to_json_safe(obj.to_dict())
+    if hasattr(obj, "__dict__"):
+        return {
+            str(k): to_json_safe(v)
+            for k, v in vars(obj).items()
+            if not k.startswith("_")
+        }
+    try:
+        if isinstance(obj, np.generic):
+            return obj.item()
+    except ImportError:
+        pass
+    return str(obj)
