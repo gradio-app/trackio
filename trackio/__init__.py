@@ -99,7 +99,9 @@ def init(
             if the repo already exists.
         settings (`Any`, *optional*):
             Not used. Provided for compatibility with `wandb.init()`.
-        embed
+        embed (`bool`, *optional*, defaults to `True`):
+            If running inside a jupyter/Colab notebook, whether the dashboard should 
+            automatically be embedded in the cell when trackio.init() is called.
 
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
@@ -140,19 +142,20 @@ def init(
             )
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            if utils.is_in_notebook():
-                utils.print_dashboard_instructions(project)
-            else:
+            if utils.is_in_notebook() and embed:
                 show(project=project)
+            else:
+                utils.print_dashboard_instructions(project)
         else:
             deploy.create_space_if_not_exists(
                 space_id, space_storage, dataset_id, private
             )
+            space_url = deploy.SPACE_URL.format(space_id=space_id)
             print(
-                f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
+                f"* View dashboard by going to: {space_url}"
             )
-            if utils.is_in_notebook():
-                # TODO: embed the Space in the notebook
+            if utils.is_in_notebook() and embed:
+                utils.embed_url_in_notebook(space_url)
     context_vars.current_project.set(project)
 
     client = None
