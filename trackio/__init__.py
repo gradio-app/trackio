@@ -114,10 +114,11 @@ def init(
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
     url = context_vars.current_server.get()
+    share_url = None
 
     if url is None:
         if space_id is None:
-            _, url, _ = demo.launch(
+            share_url, url, _ = demo.launch(
                 show_api=False,
                 inline=False,
                 quiet=True,
@@ -145,7 +146,7 @@ def init(
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             if utils.is_in_notebook() and embed:
                 full_url = utils.get_full_url(
-                    url, project=project, write_token=demo.write_token
+                    share_url or url, project=project, write_token=demo.write_token
                 )
                 utils.embed_url_in_notebook(full_url)
             else:
