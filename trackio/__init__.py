@@ -55,6 +55,7 @@ def init(
     resume: str = "never",
     settings: Any = None,
     private: bool | None = None,
+    embed: bool = True
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -98,6 +99,7 @@ def init(
             if the repo already exists.
         settings (`Any`, *optional*):
             Not used. Provided for compatibility with `wandb.init()`.
+        embed
 
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
