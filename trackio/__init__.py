@@ -281,4 +281,4 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {dashboard_url}")
         webbrowser.open(dashboard_url)
-        utils.block_except_in_notebook()
+        utils.block_main_thread_until_keyboard_interrupt()

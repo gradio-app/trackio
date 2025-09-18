@@ -259,9 +259,7 @@ def is_in_notebook():
     return False
 
 
-def block_except_in_notebook():
-    if is_in_notebook():
-        return
+def block_main_thread_until_keyboard_interrupt():
     try:
         while True:
             time.sleep(0.1)
