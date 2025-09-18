@@ -740,4 +740,11 @@ def get_full_url(base_url: str, project: str | None, write_token: str) -> str:
 
 
 def embed_url_in_notebook(url: str) -> None:
-    pass
+    try:
+        from IPython.display import HTML
+
+        HTML(
+            f'<div><iframe src="{url}" width="100%" height="1000px" allow="autoplay; camera; microphone; clipboard-read; clipboard-write;" frameborder="0" allowfullscreen></iframe></div>'
+        )
+    except ImportError:
+        pass
