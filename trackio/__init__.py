@@ -124,6 +124,8 @@ def init(
                 quiet=True,
                 prevent_thread_lock=True,
                 show_error=True,
+                favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
+                allowed_paths=[TRACKIO_LOGO_DIR],
             )
         else:
             url = space_id
