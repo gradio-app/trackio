@@ -156,7 +156,10 @@ def init(
             deploy.create_space_if_not_exists(
                 space_id, space_storage, dataset_id, private
             )
-            space_url = deploy.SPACE_URL.format(space_id=space_id)
+            user_name, space_name = space_id.split("/")
+            space_url = deploy.SPACE_HOST_URL.format(
+                user_name=user_name, space_name=space_name
+            )
             print(f"* View dashboard by going to: {space_url}")
             if utils.is_in_notebook() and embed:
                 utils.embed_url_in_notebook(space_url)
