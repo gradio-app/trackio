@@ -114,7 +114,10 @@ def test_get_full_url(base_url, project, write_token, expected):
     "obj, expected",
     [
         ("hello", "hello"),
-        ({"key": "value", "num": np.float64(123)}, {"key": "value", "num": 123}),
+        ({"key": "value", "num": 123}, {"key": "value", "num": 123}),
+        ([1, 2, "three"], [1, 2, "three"]),
+        ((4, 5, 6), [4, 5, 6]),
+        ({7, 8, 9}, {7, 8, 9}),
         ({"nested": {"dict": [1, 2]}}, {"nested": {"dict": [1, 2]}}),
     ],
 )

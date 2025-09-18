@@ -754,6 +754,8 @@ def embed_url_in_notebook(url: str) -> None:
 def to_json_safe(obj):
     if isinstance(obj, (str, int, float, bool, type(None))):
         return obj
+    if isinstance(obj, np.generic):
+        return obj.item()
     if isinstance(obj, dict):
         return {str(k): to_json_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple, set)):
@@ -766,9 +768,4 @@ def to_json_safe(obj):
             for k, v in vars(obj).items()
             if not k.startswith("_")
         }
-    try:
-        if isinstance(obj, np.generic):
-            return obj.item()
-    except ImportError:
-        pass
     return str(obj)

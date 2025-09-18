@@ -33,13 +33,14 @@ class Run:
         self.name = name or utils.generate_readable_name(
             SQLiteStorage.get_runs(project), space_id
         )
-        self.config = config or {}
+        self.config = utils.to_json_safe(config or {})
 
-        for key in self.config:
-            if key.startswith("_"):
-                raise ValueError(
-                    f"Config key '{key}' is reserved (keys starting with '_' are reserved for internal use)"
-                )
+        if isinstance(self.config, dict):
+            for key in self.config:
+                if key.startswith("_"):
+                    raise ValueError(
+                        f"Config key '{key}' is reserved (keys starting with '_' are reserved for internal use)"
+                    )
 
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
