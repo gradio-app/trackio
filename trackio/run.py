@@ -177,6 +177,6 @@ class Run:
 
         if self._client_thread is not None:
             print(
-                f"* Run finished. Uploading logs to Trackio Space: {self.url} (please wait...)"
+                "* Run finished. Uploading logs to Trackio (please wait...)"
             )
             self._client_thread.join()
