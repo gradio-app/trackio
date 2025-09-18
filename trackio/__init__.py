@@ -1,6 +1,5 @@
 import hashlib
 import os
-import secrets
 import warnings
 import webbrowser
 from pathlib import Path
@@ -55,7 +54,7 @@ def init(
     resume: str = "never",
     settings: Any = None,
     private: bool | None = None,
-    embed: bool = True
+    embed: bool = True,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -100,7 +99,7 @@ def init(
         settings (`Any`, *optional*):
             Not used. Provided for compatibility with `wandb.init()`.
         embed (`bool`, *optional*, defaults to `True`):
-            If running inside a jupyter/Colab notebook, whether the dashboard should 
+            If running inside a jupyter/Colab notebook, whether the dashboard should
             automatically be embedded in the cell when trackio.init() is called.
 
     Returns:
@@ -145,7 +144,10 @@ def init(
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             if utils.is_in_notebook() and embed:
-                show(project=project)
+                full_url = utils.get_full_url(
+                    url, project=project, write_token=demo.write_token
+                )
+                utils.embed_url_in_notebook(full_url)
             else:
                 utils.print_dashboard_instructions(project)
         else:
@@ -153,9 +155,7 @@ def init(
                 space_id, space_storage, dataset_id, private
             )
             space_url = deploy.SPACE_URL.format(space_id=space_id)
-            print(
-                f"* View dashboard by going to: {space_url}"
-            )
+            print(f"* View dashboard by going to: {space_url}")
             if utils.is_in_notebook() and embed:
                 utils.embed_url_in_notebook(space_url)
     context_vars.current_project.set(project)
@@ -246,11 +246,6 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
             can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class.
     """
-    write_token = secrets.token_urlsafe(32)
-
-    demo.write_token = write_token
-    run_page.write_token = write_token
-
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
         # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
@@ -284,17 +279,14 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     )
 
     base_url = share_url + "/" if share_url else url
-
-    params = [f"write_token={write_token}"]
-    if project:
-        params.append(f"project={project}")
-    dashboard_url = base_url + "?" + "&".join(params)
+    full_url = utils.get_full_url(
+        base_url, project=project, write_token=demo.write_token
+    )
 
     if not utils.is_in_notebook():
-        print(f"* Trackio UI launched at: {dashboard_url}")
-        webbrowser.open(dashboard_url)
+        print(f"* Trackio UI launched at: {full_url}")
+        webbrowser.open(full_url)
         utils.block_main_thread_until_keyboard_interrupt()
     else:
         pass
         # TODO: embed the dashboard in the notebook
-

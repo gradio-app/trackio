@@ -176,7 +176,5 @@ class Run:
         time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
-            print(
-                "* Run finished. Uploading logs to Trackio (please wait...)"
-            )
+            print("* Run finished. Uploading logs to Trackio (please wait...)")
             self._client_thread.join()
