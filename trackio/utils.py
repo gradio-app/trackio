@@ -729,3 +729,6 @@ def deserialize_values(metrics):
         else:
             result[key] = value
     return result
+
+def embed_url_in_notebook(url: str) -> None:
+    pass

@@ -138,7 +138,10 @@ def init(
             )
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            utils.print_dashboard_instructions(project)
+            if utils.is_in_notebook():
+                utils.print_dashboard_instructions(project)
+            else:
+                show(project=project)
         else:
             deploy.create_space_if_not_exists(
                 space_id, space_storage, dataset_id, private
@@ -146,6 +149,8 @@ def init(
             print(
                 f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
             )
+            if utils.is_in_notebook():
+                # TODO: embed the Space in the notebook
     context_vars.current_project.set(project)
 
     client = None
@@ -265,7 +270,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     _, url, share_url = demo.launch(
         show_api=False,
         quiet=True,
-        inline=utils.is_in_notebook(),
+        inline=False,
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
         allowed_paths=[TRACKIO_LOGO_DIR],
@@ -282,3 +287,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
         print(f"* Trackio UI launched at: {dashboard_url}")
         webbrowser.open(dashboard_url)
         utils.block_main_thread_until_keyboard_interrupt()
+    else:
+        pass
+        # TODO: embed the dashboard in the notebook
+
