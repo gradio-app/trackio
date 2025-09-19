@@ -12,11 +12,6 @@ try:
 except ImportError:  # fcntl is not available on Windows
     fcntl = None
 
-try:
-    import msvcrt
-except ImportError:  # msvcrt is not available on Unix
-    msvcrt = None
-
 import huggingface_hub as hf
 import pandas as pd
 
