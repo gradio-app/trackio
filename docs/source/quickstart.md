@@ -1,5 +1,7 @@
 # Quickstart Guide
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gradio-app/trackio/blob/main/examples/notebooks/quickstart.ipynb)
+
 To get started, you can run a simple example that logs some fake training metrics:
 
 ```python
