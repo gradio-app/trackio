@@ -61,3 +61,26 @@ def test_infinity_logging(temp_dir):
     assert math.isinf(log["accuracy"]) and log["accuracy"] < 0
     assert math.isnan(log["f1_score"])
     assert log["normal_value"] == 0.95
+
+
+def test_class_config_storage_in_database(temp_dir):
+    class LoraConfig:
+        def __init__(self):
+            self.r = 8
+            self.lora_alpha = 16
+            self.target_modules = ["q_proj", "v_proj"]
+            self.lora_dropout = 0.1
+            self._private_config = "hidden"
+
+    lora_config = LoraConfig()
+
+    trackio.init(project="test_project", name="test_run", config=lora_config)
+    trackio.log(metrics={"loss": 0.5})
+    trackio.finish()
+
+    stored_config = SQLiteStorage.get_run_config("test_project", "test_run")
+    assert stored_config["r"] == 8
+    assert stored_config["lora_alpha"] == 16
+    assert stored_config["target_modules"] == ["q_proj", "v_proj"]
+    assert stored_config["lora_dropout"] == 0.1
+    assert "_private_config" not in stored_config

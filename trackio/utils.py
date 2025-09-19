@@ -259,9 +259,7 @@ def is_in_notebook():
     return False
 
 
-def block_except_in_notebook():
-    if is_in_notebook():
-        return
+def block_main_thread_until_keyboard_interrupt():
     try:
         while True:
             time.sleep(0.1)
@@ -305,12 +303,12 @@ def print_dashboard_instructions(project: str) -> None:
     Args:
         project: The name of the project to show dashboard for.
     """
-    YELLOW = "\033[93m"
+    ORANGE = "\033[38;5;208m"
     BOLD = "\033[1m"
     RESET = "\033[0m"
 
     print("* View dashboard by running in your terminal:")
-    print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
+    print(f'{BOLD}{ORANGE}trackio show --project "{project}"{RESET}')
     print(f'* or by running in Python: trackio.show(project="{project}")')
 
 
@@ -731,3 +729,43 @@ def deserialize_values(metrics):
         else:
             result[key] = value
     return result
+
+
+def get_full_url(base_url: str, project: str | None, write_token: str) -> str:
+    params = []
+    if project:
+        params.append(f"project={project}")
+    params.append(f"write_token={write_token}")
+    return base_url + "?" + "&".join(params)
+
+
+def embed_url_in_notebook(url: str) -> None:
+    try:
+        from IPython.display import HTML, display
+
+        embed_code = HTML(
+            f'<div><iframe src="{url}" width="100%" height="1000px" allow="autoplay; camera; microphone; clipboard-read; clipboard-write;" frameborder="0" allowfullscreen></iframe></div>'
+        )
+        display(embed_code)
+    except ImportError:
+        pass
+
+
+def to_json_safe(obj):
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, dict):
+        return {str(k): to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [to_json_safe(v) for v in obj]
+    if hasattr(obj, "to_dict") and callable(obj.to_dict):
+        return to_json_safe(obj.to_dict())
+    if hasattr(obj, "__dict__"):
+        return {
+            str(k): to_json_safe(v)
+            for k, v in vars(obj).items()
+            if not k.startswith("_")
+        }
+    return str(obj)

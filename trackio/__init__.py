@@ -1,6 +1,5 @@
 import hashlib
 import os
-import secrets
 import warnings
 import webbrowser
 from pathlib import Path
@@ -19,7 +18,6 @@ from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.ui.main import demo
-from trackio.ui.runs import run_page
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
@@ -55,6 +53,7 @@ def init(
     resume: str = "never",
     settings: Any = None,
     private: bool | None = None,
+    embed: bool = True,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -98,6 +97,9 @@ def init(
             if the repo already exists.
         settings (`Any`, *optional*):
             Not used. Provided for compatibility with `wandb.init()`.
+        embed (`bool`, *optional*, defaults to `True`):
+            If running inside a jupyter/Colab notebook, whether the dashboard should
+            automatically be embedded in the cell when trackio.init() is called.
 
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
@@ -111,20 +113,24 @@ def init(
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
     url = context_vars.current_server.get()
+    share_url = context_vars.current_share_server.get()
 
     if url is None:
         if space_id is None:
-            _, url, _ = demo.launch(
+            _, url, share_url = demo.launch(
                 show_api=False,
                 inline=False,
                 quiet=True,
                 prevent_thread_lock=True,
                 show_error=True,
+                favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
+                allowed_paths=[TRACKIO_LOGO_DIR],
             )
         else:
             url = space_id
+            share_url = None
         context_vars.current_server.set(url)
-
+        context_vars.current_share_server.set(share_url)
     if (
         context_vars.current_project.get() is None
         or context_vars.current_project.get() != project
@@ -138,14 +144,25 @@ def init(
             )
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            utils.print_dashboard_instructions(project)
+            if utils.is_in_notebook() and embed:
+                base_url = share_url + "/" if share_url else url
+                full_url = utils.get_full_url(
+                    base_url, project=project, write_token=demo.write_token
+                )
+                utils.embed_url_in_notebook(full_url)
+            else:
+                utils.print_dashboard_instructions(project)
         else:
             deploy.create_space_if_not_exists(
                 space_id, space_storage, dataset_id, private
             )
-            print(
-                f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
+            user_name, space_name = space_id.split("/")
+            space_url = deploy.SPACE_HOST_URL.format(
+                user_name=user_name, space_name=space_name
             )
+            print(f"* View dashboard by going to: {space_url}")
+            if utils.is_in_notebook() and embed:
+                utils.embed_url_in_notebook(space_url)
     context_vars.current_project.set(project)
 
     client = None
@@ -234,11 +251,6 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
             can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class.
     """
-    write_token = secrets.token_urlsafe(32)
-
-    demo.write_token = write_token
-    run_page.write_token = write_token
-
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
         # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
@@ -265,20 +277,20 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     _, url, share_url = demo.launch(
         show_api=False,
         quiet=True,
-        inline=utils.is_in_notebook(),
+        inline=False,
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
         allowed_paths=[TRACKIO_LOGO_DIR],
     )
 
     base_url = share_url + "/" if share_url else url
-
-    params = [f"write_token={write_token}"]
-    if project:
-        params.append(f"project={project}")
-    dashboard_url = base_url + "?" + "&".join(params)
+    full_url = utils.get_full_url(
+        base_url, project=project, write_token=demo.write_token
+    )
 
     if not utils.is_in_notebook():
-        print(f"* Trackio UI launched at: {dashboard_url}")
-        webbrowser.open(dashboard_url)
-        utils.block_except_in_notebook()
+        print(f"* Trackio UI launched at: {full_url}")
+        webbrowser.open(full_url)
+        utils.block_main_thread_until_keyboard_interrupt()
+    else:
+        utils.embed_url_in_notebook(full_url)

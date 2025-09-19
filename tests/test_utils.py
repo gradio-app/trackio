@@ -1,5 +1,7 @@
 import random
 
+import pytest
+
 from trackio import utils
 
 
@@ -75,3 +77,74 @@ def test_format_timestamp():
 
     assert utils.format_timestamp(None) == "Unknown"
     assert utils.format_timestamp("invalid") == "Unknown"
+
+
+@pytest.mark.parametrize(
+    "base_url, project, write_token, expected",
+    [
+        (
+            "https://example.com",
+            "my_project",
+            "token123",
+            "https://example.com?project=my_project&write_token=token123",
+        ),
+        ("https://api.test.io", None, "abc", "https://api.test.io?write_token=abc"),
+        (
+            "http://localhost:8000",
+            "test",
+            "secret",
+            "http://localhost:8000?project=test&write_token=secret",
+        ),
+        ("https://app.com/api", "", "xyz789", "https://app.com/api?write_token=xyz789"),
+        (
+            "https://trackio.ai",
+            "demo/project",
+            "tok_en",
+            "https://trackio.ai?project=demo/project&write_token=tok_en",
+        ),
+    ],
+)
+def test_get_full_url(base_url, project, write_token, expected):
+    result = utils.get_full_url(base_url, project, write_token)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "obj, expected",
+    [
+        ("hello", "hello"),
+        ({"key": "value", "num": 123}, {"key": "value", "num": 123}),
+        ([1, 2, "three"], [1, 2, "three"]),
+        ((4, 5, 6), [4, 5, 6]),
+        ({7, 8, 9}, {7, 8, 9}),
+        ({"nested": {"dict": [1, 2]}}, {"nested": {"dict": [1, 2]}}),
+    ],
+)
+def test_to_json_safe(obj, expected):
+    result = utils.to_json_safe(obj)
+    if isinstance(obj, set):
+        assert set(result) == expected
+    else:
+        assert result == expected
+
+
+def test_to_json_safe_with_object():
+    class LoraConfig:
+        def __init__(self):
+            self.r = 8
+            self.lora_alpha = 16
+            self.target_modules = ["q_proj", "v_proj"]
+            self.lora_dropout = 0.1
+            self.bias = "none"
+            self.task_type = "CAUSAL_LM"
+            self._private_config = "hidden"
+
+    lora_config = LoraConfig()
+    assert utils.to_json_safe(lora_config) == {
+        "r": 8,
+        "lora_alpha": 16,
+        "target_modules": ["q_proj", "v_proj"],
+        "lora_dropout": 0.1,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+    }
