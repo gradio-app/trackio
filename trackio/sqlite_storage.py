@@ -40,14 +40,11 @@ class ProcessLock:
     def __enter__(self):
         """Acquire the lock with retry logic."""
         if self.is_windows:
-            # On Windows, skip file locking - rely on SQLite's built-in locking
+            # On Windows, no-op - rely entirely on SQLite's locking
             return self
-        else:
-            self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
-            return self._acquire_unix_lock()
 
-    def _acquire_unix_lock(self):
-        """Unix-specific locking using fcntl (original proven approach)."""
+        # Unix: Use file-based locking
+        self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
         self.lockfile = open(self.lockfile_path, "w")
 
         max_retries = 100
@@ -63,7 +60,11 @@ class ProcessLock:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
-        if self.lockfile and not self.is_windows:
+        if self.is_windows:
+            # On Windows, no-op
+            return
+
+        if self.lockfile:
             try:
                 fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
             except:
@@ -82,28 +83,10 @@ class SQLiteStorage:
 
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
-        if platform.system() == "Windows":
-            # Windows: More conservative settings to avoid lock issues
-            max_retries = 10
-            for attempt in range(max_retries):
-                try:
-                    conn = sqlite3.connect(str(db_path), timeout=5.0)
-                    conn.execute("PRAGMA journal_mode = WAL")
-                    conn.execute("PRAGMA busy_timeout = 10000")  # 10 seconds
-                    conn.execute("PRAGMA synchronous = NORMAL")
-                    conn.row_factory = sqlite3.Row
-                    return conn
-                except sqlite3.OperationalError as e:
-                    if "locked" in str(e).lower() and attempt < max_retries - 1:
-                        time.sleep(0.5 * (attempt + 1))  # Exponential backoff
-                    else:
-                        raise
-        else:
-            # Unix: Original settings that work well
-            conn = sqlite3.connect(str(db_path), timeout=30.0)
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.row_factory = sqlite3.Row
-            return conn
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.row_factory = sqlite3.Row
+        return conn
 
     @staticmethod
     def _get_process_lock(project: str) -> ProcessLock:
@@ -271,7 +254,7 @@ class SQLiteStorage:
         """
         db_path = SQLiteStorage.init_db(project)
 
-        def _do_log():
+        with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
@@ -306,23 +289,6 @@ class SQLiteStorage:
                 )
                 conn.commit()
 
-        if platform.system() == "Windows":
-            # Windows: Retry on lock errors
-            max_retries = 10
-            for attempt in range(max_retries):
-                try:
-                    _do_log()
-                    return
-                except sqlite3.OperationalError as e:
-                    if "locked" in str(e).lower() and attempt < max_retries - 1:
-                        time.sleep(0.1 * (attempt + 1))
-                    else:
-                        raise
-        else:
-            # Unix: Use file-based lock
-            with SQLiteStorage._get_process_lock(project):
-                _do_log()
-
     @staticmethod
     def bulk_log(
         project: str,
@@ -344,8 +310,7 @@ class SQLiteStorage:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
 
         db_path = SQLiteStorage.init_db(project)
-
-        def _do_bulk_log():
+        with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
@@ -406,23 +371,6 @@ class SQLiteStorage:
                     )
 
                 conn.commit()
-
-        if platform.system() == "Windows":
-            # Windows: Retry on lock errors
-            max_retries = 10
-            for attempt in range(max_retries):
-                try:
-                    _do_bulk_log()
-                    return
-                except sqlite3.OperationalError as e:
-                    if "locked" in str(e).lower() and attempt < max_retries - 1:
-                        time.sleep(0.1 * (attempt + 1))
-                    else:
-                        raise
-        else:
-            # Unix: Use file-based lock
-            with SQLiteStorage._get_process_lock(project):
-                _do_bulk_log()
 
     @staticmethod
     def get_logs(project: str, run: str) -> list[dict]:
@@ -542,7 +490,7 @@ class SQLiteStorage:
         """Store configuration for a run."""
         db_path = SQLiteStorage.init_db(project)
 
-        def _do_store():
+        with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 current_timestamp = datetime.now().isoformat()
@@ -556,23 +504,6 @@ class SQLiteStorage:
                     (run, json.dumps(serialize_values(config)), current_timestamp),
                 )
                 conn.commit()
-
-        if platform.system() == "Windows":
-            # Windows: Retry on lock errors
-            max_retries = 10
-            for attempt in range(max_retries):
-                try:
-                    _do_store()
-                    return
-                except sqlite3.OperationalError as e:
-                    if "locked" in str(e).lower() and attempt < max_retries - 1:
-                        time.sleep(0.1 * (attempt + 1))
-                    else:
-                        raise
-        else:
-            # Unix: Use file-based lock
-            with SQLiteStorage._get_process_lock(project):
-                _do_store()
 
     @staticmethod
     def get_run_config(project: str, run: str) -> dict | None:
