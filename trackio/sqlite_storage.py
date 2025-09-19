@@ -10,7 +10,7 @@ from threading import Lock
 try:
     import fcntl
 except ImportError:
-    fcntl = None  # Not available on Windows
+    fcntl = None
 
 import huggingface_hub as hf
 import pandas as pd
@@ -40,10 +40,7 @@ class ProcessLock:
     def __enter__(self):
         """Acquire the lock with retry logic."""
         if self.is_windows:
-            # On Windows, no-op - rely entirely on SQLite's locking
             return self
-
-        # Unix: Use file-based locking
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
         self.lockfile = open(self.lockfile_path, "w")
 
@@ -61,7 +58,6 @@ class ProcessLock:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
         if self.is_windows:
-            # On Windows, no-op
             return
 
         if self.lockfile:
