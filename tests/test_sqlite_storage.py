@@ -1,9 +1,12 @@
 import multiprocessing
 import os
+import platform
 import random
 import sqlite3
 import tempfile
 import time
+
+import pytest
 
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -128,6 +131,10 @@ def _worker_using_sqlite_storage(
     return db_locked_errors
 
 
+@pytest.mark.skipif(
+    platform.system() == "Windows",
+    reason="Windows multiprocessing has different behavior",
+)
 def test_concurrent_database_access_without_errors():
     """
     Test that concurrent database access doesn't produce 'database is locked' errors.
