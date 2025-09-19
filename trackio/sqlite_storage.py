@@ -83,20 +83,27 @@ class SQLiteStorage:
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         if platform.system() == "Windows":
-            # Windows: Use SQLite's built-in locking with better concurrency
-            conn = sqlite3.connect(str(db_path), timeout=60.0)
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.execute("PRAGMA busy_timeout = 60000")  # 60 seconds
-            conn.execute(
-                "PRAGMA wal_checkpoint = TRUNCATE"
-            )  # Force checkpoint to avoid WAL growth
-            conn.execute("PRAGMA synchronous = NORMAL")  # Faster writes, still safe
+            # Windows: More conservative settings to avoid lock issues
+            max_retries = 10
+            for attempt in range(max_retries):
+                try:
+                    conn = sqlite3.connect(str(db_path), timeout=5.0)
+                    conn.execute("PRAGMA journal_mode = WAL")
+                    conn.execute("PRAGMA busy_timeout = 10000")  # 10 seconds
+                    conn.execute("PRAGMA synchronous = NORMAL")
+                    conn.row_factory = sqlite3.Row
+                    return conn
+                except sqlite3.OperationalError as e:
+                    if "locked" in str(e).lower() and attempt < max_retries - 1:
+                        time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                    else:
+                        raise
         else:
             # Unix: Original settings that work well
             conn = sqlite3.connect(str(db_path), timeout=30.0)
             conn.execute("PRAGMA journal_mode = WAL")
-        conn.row_factory = sqlite3.Row
-        return conn
+            conn.row_factory = sqlite3.Row
+            return conn
 
     @staticmethod
     def _get_process_lock(project: str) -> ProcessLock:
@@ -264,7 +271,7 @@ class SQLiteStorage:
         """
         db_path = SQLiteStorage.init_db(project)
 
-        with SQLiteStorage._get_process_lock(project):
+        def _do_log():
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
@@ -299,6 +306,23 @@ class SQLiteStorage:
                 )
                 conn.commit()
 
+        if platform.system() == "Windows":
+            # Windows: Retry on lock errors
+            max_retries = 10
+            for attempt in range(max_retries):
+                try:
+                    _do_log()
+                    return
+                except sqlite3.OperationalError as e:
+                    if "locked" in str(e).lower() and attempt < max_retries - 1:
+                        time.sleep(0.1 * (attempt + 1))
+                    else:
+                        raise
+        else:
+            # Unix: Use file-based lock
+            with SQLiteStorage._get_process_lock(project):
+                _do_log()
+
     @staticmethod
     def bulk_log(
         project: str,
@@ -320,7 +344,8 @@ class SQLiteStorage:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
 
         db_path = SQLiteStorage.init_db(project)
-        with SQLiteStorage._get_process_lock(project):
+
+        def _do_bulk_log():
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
@@ -381,6 +406,23 @@ class SQLiteStorage:
                     )
 
                 conn.commit()
+
+        if platform.system() == "Windows":
+            # Windows: Retry on lock errors
+            max_retries = 10
+            for attempt in range(max_retries):
+                try:
+                    _do_bulk_log()
+                    return
+                except sqlite3.OperationalError as e:
+                    if "locked" in str(e).lower() and attempt < max_retries - 1:
+                        time.sleep(0.1 * (attempt + 1))
+                    else:
+                        raise
+        else:
+            # Unix: Use file-based lock
+            with SQLiteStorage._get_process_lock(project):
+                _do_bulk_log()
 
     @staticmethod
     def get_logs(project: str, run: str) -> list[dict]:
@@ -500,7 +542,7 @@ class SQLiteStorage:
         """Store configuration for a run."""
         db_path = SQLiteStorage.init_db(project)
 
-        with SQLiteStorage._get_process_lock(project):
+        def _do_store():
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 current_timestamp = datetime.now().isoformat()
@@ -514,6 +556,23 @@ class SQLiteStorage:
                     (run, json.dumps(serialize_values(config)), current_timestamp),
                 )
                 conn.commit()
+
+        if platform.system() == "Windows":
+            # Windows: Retry on lock errors
+            max_retries = 10
+            for attempt in range(max_retries):
+                try:
+                    _do_store()
+                    return
+                except sqlite3.OperationalError as e:
+                    if "locked" in str(e).lower() and attempt < max_retries - 1:
+                        time.sleep(0.1 * (attempt + 1))
+                    else:
+                        raise
+        else:
+            # Unix: Use file-based lock
+            with SQLiteStorage._get_process_lock(project):
+                _do_store()
 
     @staticmethod
     def get_run_config(project: str, run: str) -> dict | None:
