@@ -2,6 +2,7 @@
 
 import os
 import re
+import secrets
 import shutil
 from dataclasses import dataclass
 from typing import Any
@@ -932,6 +933,11 @@ with demo.route("Runs", show_in_navbar=False):
     run_page.render()
 with demo.route("Run", show_in_navbar=False):
     run_detail_page.render()
+
+write_token = secrets.token_urlsafe(32)
+demo.write_token = write_token
+run_page.write_token = write_token
+run_detail_page.write_token = write_token
 
 if __name__ == "__main__":
     demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)

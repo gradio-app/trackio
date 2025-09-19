@@ -1,16 +1,21 @@
-import fcntl
 import json
 import os
+import platform
 import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
 
+try:
+    import fcntl
+except ImportError:  # fcntl is not available on Windows
+    fcntl = None
+
 import huggingface_hub as hf
 import pandas as pd
 
-try:  # absolute imports when installed
+try:  # absolute imports when installed from PyPI
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import (
@@ -18,21 +23,24 @@ try:  # absolute imports when installed
         deserialize_values,
         serialize_values,
     )
-except Exception:  # relative imports for local execution on Spaces
+except ImportError:  # relative imports when installed from source on Spaces
     from commit_scheduler import CommitScheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR, deserialize_values, serialize_values
 
 
 class ProcessLock:
-    """A simple file-based lock that works across processes."""
+    """A file-based lock that works across processes. Is a no-op on Windows."""
 
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
         self.lockfile = None
+        self.is_windows = platform.system() == "Windows"
 
     def __enter__(self):
         """Acquire the lock with retry logic."""
+        if self.is_windows:
+            return self
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
         self.lockfile = open(self.lockfile_path, "w")
 
@@ -49,6 +57,9 @@ class ProcessLock:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
+        if self.is_windows:
+            return
+
         if self.lockfile:
             fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
             self.lockfile.close()

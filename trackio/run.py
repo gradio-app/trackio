@@ -5,16 +5,11 @@ from datetime import datetime, timezone
 import huggingface_hub
 from gradio_client import Client, handle_file
 
+from trackio import utils
 from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import LogEntry, UploadEntry
-from trackio.utils import (
-    RESERVED_KEYS,
-    fibo,
-    generate_readable_name,
-    serialize_values,
-)
 
 BATCH_SEND_INTERVAL = 0.5
 
@@ -35,16 +30,17 @@ class Run:
         self._client_thread = None
         self._client = client
         self._space_id = space_id
-        self.name = name or generate_readable_name(
+        self.name = name or utils.generate_readable_name(
             SQLiteStorage.get_runs(project), space_id
         )
-        self.config = config or {}
+        self.config = utils.to_json_safe(config or {})
 
-        for key in self.config:
-            if key.startswith("_"):
-                raise ValueError(
-                    f"Config key '{key}' is reserved (keys starting with '_' are reserved for internal use)"
-                )
+        if isinstance(self.config, dict):
+            for key in self.config:
+                if key.startswith("_"):
+                    raise ValueError(
+                        f"Config key '{key}' is reserved (keys starting with '_' are reserved for internal use)"
+                    )
 
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
@@ -95,7 +91,7 @@ class Run:
 
     def _init_client_background(self):
         if self._client is None:
-            fib = fibo()
+            fib = utils.fibo()
             for sleep_coefficient in fib:
                 try:
                     client = Client(self.url, verbose=False)
@@ -143,18 +139,18 @@ class Run:
 
     def log(self, metrics: dict, step: int | None = None):
         for k in metrics.keys():
-            if k in RESERVED_KEYS or k.startswith("__"):
+            if k in utils.RESERVED_KEYS or k.startswith("__"):
                 raise ValueError(
                     f"Please do not use this reserved key as a metric: {k}"
                 )
         Run._replace_tables(metrics)
 
         metrics = self._process_media(metrics, step)
-        metrics = serialize_values(metrics)
+        metrics = utils.serialize_values(metrics)
 
         config_to_log = None
         if not self._config_logged and self.config:
-            config_to_log = self.config
+            config_to_log = utils.to_json_safe(self.config)
             self._config_logged = True
 
         log_entry: LogEntry = {
@@ -176,7 +172,5 @@ class Run:
         time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
-            print(
-                f"* Run finished. Uploading logs to Trackio Space: {self.url} (please wait...)"
-            )
+            print("* Run finished. Uploading logs to Trackio (please wait...)")
             self._client_thread.join()
