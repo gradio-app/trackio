@@ -83,15 +83,14 @@ class SQLiteStorage:
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         if platform.system() == "Windows":
-            # Windows: Use SQLite's built-in locking with aggressive settings
-            conn = sqlite3.connect(
-                str(db_path), timeout=60.0, isolation_level="IMMEDIATE"
-            )
+            # Windows: Use SQLite's built-in locking with better concurrency
+            conn = sqlite3.connect(str(db_path), timeout=60.0)
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA busy_timeout = 60000")  # 60 seconds
             conn.execute(
-                "PRAGMA wal_autocheckpoint = 1000"
-            )  # Checkpoint every 1000 pages
+                "PRAGMA wal_checkpoint = TRUNCATE"
+            )  # Force checkpoint to avoid WAL growth
+            conn.execute("PRAGMA synchronous = NORMAL")  # Faster writes, still safe
         else:
             # Unix: Original settings that work well
             conn = sqlite3.connect(str(db_path), timeout=30.0)
