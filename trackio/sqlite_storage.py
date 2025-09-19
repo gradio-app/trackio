@@ -533,6 +533,24 @@ class SQLiteStorage:
                 raise
 
     @staticmethod
+    def delete_run(project: str, run: str) -> bool:
+        """Delete a run from the database (both metrics and config)."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return False
+
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("DELETE FROM metrics WHERE run_name = ?", (run,))
+                    cursor.execute("DELETE FROM configs WHERE run_name = ?", (run,))
+                    conn.commit()
+                    return True
+                except sqlite3.Error:
+                    return False
+
+    @staticmethod
     def get_all_run_configs(project: str) -> dict[str, dict]:
         """Get configurations for all runs in a project."""
         db_path = SQLiteStorage.get_project_db_path(project)

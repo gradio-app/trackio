@@ -1,5 +1,6 @@
 import hashlib
 import os
+import secrets
 import warnings
 import webbrowser
 from pathlib import Path
@@ -18,6 +19,7 @@ from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.ui.main import demo
+from trackio.ui.runs import run_page
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
@@ -61,18 +63,18 @@ def init(
         project (`str`):
             The name of the project (can be an existing project to continue tracking or
             a new project to start tracking from scratch).
-        name (`str` or `None`, *optional*, defaults to `None`):
+        name (`str`, *optional*):
             The name of the run (if not provided, a default name will be generated).
-        space_id (`str` or `None`, *optional*, defaults to `None`):
+        space_id (`str`, *optional*):
             If provided, the project will be logged to a Hugging Face Space instead of
             a local directory. Should be a complete Space name like
             `"username/reponame"` or `"orgname/reponame"`, or just `"reponame"` in which
             case the Space will be created in the currently-logged-in Hugging Face
             user's namespace. If the Space does not exist, it will be created. If the
             Space already exists, the project will be logged to it.
-        space_storage ([`~huggingface_hub.SpaceStorage`] or `None`, *optional*, defaults to `None`):
+        space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
-        dataset_id (`str` or `None`, *optional*, defaults to `None`):
+        dataset_id (`str`, *optional*):
             If a `space_id` is provided, a persistent Hugging Face Dataset will be
             created and the metrics will be synced to it every 5 minutes. Specify a
             Dataset with name like `"username/datasetname"` or `"orgname/datasetname"`,
@@ -80,7 +82,7 @@ def init(
             or `None` (uses the same name as the Space but with the `"_dataset"`
             suffix). If the Dataset does not exist, it will be created. If the Dataset
             already exists, the project will be appended to it.
-        config (`dict` or `None`, *optional*, defaults to `None`):
+        config (`dict`, *optional*):
             A dictionary of configuration options. Provided for compatibility with
             `wandb.init()`.
         resume (`str`, *optional*, defaults to `"never"`):
@@ -90,11 +92,11 @@ def init(
               doesn't exist
             - `"allow"`: Resume the run if it exists, otherwise create a new run
             - `"never"`: Never resume a run, always create a new one
-        private (`bool` or `None`, *optional*, defaults to `None`):
+        private (`bool`, *optional*):
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored
             if the repo already exists.
-        settings (`Any`, *optional*, defaults to `None`):
+        settings (`Any`, *optional*):
             Not used. Provided for compatibility with `wandb.init()`.
 
     Returns:
@@ -196,7 +198,7 @@ def log(metrics: dict, step: int | None = None) -> None:
     Args:
         metrics (`dict`):
             A dictionary of metrics to log.
-        step (`int` or `None`, *optional*, defaults to `None`):
+        step (`int`, *optional*):
             The step number. If not provided, the step will be incremented
             automatically.
     """
@@ -224,7 +226,7 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     Launches the Trackio dashboard.
 
     Args:
-        project (`str` or `None`, *optional*, defaults to `None`):
+        project (`str`, *optional*):
             The name of the project whose runs to show. If not provided, all projects
             will be shown and the user can select one.
         theme (`str` or `ThemeClass`, *optional*, defaults to `"citrus"`):
@@ -232,6 +234,11 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
             can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class.
     """
+    write_token = secrets.token_urlsafe(32)
+
+    demo.write_token = write_token
+    run_page.write_token = write_token
+
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
         # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
@@ -265,7 +272,11 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
     )
 
     base_url = share_url + "/" if share_url else url
-    dashboard_url = base_url + f"?project={project}" if project else base_url
+
+    params = [f"write_token={write_token}"]
+    if project:
+        params.append(f"project={project}")
+    dashboard_url = base_url + "?" + "&".join(params)
 
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {dashboard_url}")
