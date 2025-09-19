@@ -63,12 +63,12 @@ class ProcessLock:
         if self.lockfile:
             try:
                 fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
-            except:
+            except Exception:
                 pass
             finally:
                 try:
                     self.lockfile.close()
-                except:
+                except Exception:
                     pass
 
 
