@@ -13,6 +13,7 @@ def import_csv(
     name: str | None = None,
     space_id: str | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ) -> None:
     """
     Imports a CSV file into a Trackio project. The CSV file must contain a `"step"`
@@ -27,19 +28,19 @@ def import_csv(
         project (`str`):
             The name of the project to import the CSV file into. Must not be an existing
             project.
-        name (`str` or `None`, *optional*, defaults to `None`):
+        name (`str`, *optional*):
             The name of the Run to import the CSV file into. If not provided, a default
             name will be generated.
-        name (`str` or `None`, *optional*, defaults to `None`):
+        name (`str`, *optional*):
             The name of the run (if not provided, a default name will be generated).
-        space_id (`str` or `None`, *optional*, defaults to `None`):
+        space_id (`str`, *optional*):
             If provided, the project will be logged to a Hugging Face Space instead of a
             local directory. Should be a complete Space name like `"username/reponame"`
             or `"orgname/reponame"`, or just `"reponame"` in which case the Space will
             be created in the currently-logged-in Hugging Face user's namespace. If the
             Space does not exist, it will be created. If the Space already exists, the
             project will be logged to it.
-        dataset_id (`str` or `None`, *optional*, defaults to `None`):
+        dataset_id (`str`, *optional*):
             If provided, a persistent Hugging Face Dataset will be created and the
             metrics will be synced to it every 5 minutes. Should be a complete Dataset
             name like `"username/datasetname"` or `"orgname/datasetname"`, or just
@@ -50,6 +51,10 @@ def import_csv(
             SQLite database, unless a `space_id` is provided, in which case a Dataset
             will be automatically created with the same name as the Space but with the
             `"_dataset"` suffix.
+        private (`bool`, *optional*):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
     """
     if SQLiteStorage.get_runs(project):
         raise ValueError(
@@ -134,7 +139,9 @@ def import_csv(
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:
-        deploy.create_space_if_not_exists(space_id=space_id, dataset_id=dataset_id)
+        deploy.create_space_if_not_exists(
+            space_id=space_id, dataset_id=dataset_id, private=private
+        )
         deploy.wait_until_space_exists(space_id=space_id)
         deploy.upload_db_to_space(project=project, space_id=space_id)
         print(
@@ -148,6 +155,7 @@ def import_tf_events(
     name: str | None = None,
     space_id: str | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ) -> None:
     """
     Imports TensorFlow Events files from a directory into a Trackio project. Each
@@ -159,17 +167,17 @@ def import_tf_events(
         project (`str`):
             The name of the project to import the TensorFlow Events files into. Must not
             be an existing project.
-        name (`str` or `None`, *optional*, defaults to `None`):
+        name (`str`, *optional*):
             The name prefix for runs (if not provided, will use directory names). Each
             subdirectory will create a separate run.
-        space_id (`str` or `None`, *optional*, defaults to `None`):
+        space_id (`str`, *optional*):
             If provided, the project will be logged to a Hugging Face Space instead of a
             local directory. Should be a complete Space name like `"username/reponame"`
             or `"orgname/reponame"`, or just `"reponame"` in which case the Space will
             be created in the currently-logged-in Hugging Face user's namespace. If the
             Space does not exist, it will be created. If the Space already exists, the
             project will be logged to it.
-        dataset_id (`str` or `None`, *optional*, defaults to `None`):
+        dataset_id (`str`, *optional*):
             If provided, a persistent Hugging Face Dataset will be created and the
             metrics will be synced to it every 5 minutes. Should be a complete Dataset
             name like `"username/datasetname"` or `"orgname/datasetname"`, or just
@@ -180,6 +188,10 @@ def import_tf_events(
             SQLite database, unless a `space_id` is provided, in which case a Dataset
             will be automatically created with the same name as the Space but with the
             `"_dataset"` suffix.
+        private (`bool`, *optional*):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
     """
     try:
         from tbparse import SummaryReader
@@ -280,7 +292,9 @@ def import_tf_events(
     if space_id is None:
         utils.print_dashboard_instructions(project)
     else:
-        deploy.create_space_if_not_exists(space_id, dataset_id=dataset_id)
+        deploy.create_space_if_not_exists(
+            space_id, dataset_id=dataset_id, private=private
+        )
         deploy.wait_until_space_exists(space_id)
         deploy.upload_db_to_space(project, space_id)
         print(
