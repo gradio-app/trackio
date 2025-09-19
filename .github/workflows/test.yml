@@ -25,7 +25,14 @@ jobs:
       uses: astral-sh/setup-uv@v3
       with:
         version: "latest"
-        enable-cache: true
+        
+    - name: Cache uv packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
         
     - name: Install system dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
