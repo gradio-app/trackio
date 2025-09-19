@@ -44,12 +44,6 @@ jobs:
         uv pip install --system -e .[dev,tensorboard]
         uv pip install --system pytest
         
-    - name: Run tests (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
+    - name: Run tests
       run: |
-        pytest
-        
-    - name: Run tests (Windows - skip concurrent test)
-      if: matrix.os == 'windows-latest'
-      run: |
-        pytest -k "not test_concurrent_database_access_without_errors" 
+        pytest 
