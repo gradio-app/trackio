@@ -9,7 +9,7 @@ from threading import Lock
 
 try:
     import fcntl
-except ImportError:
+except ImportError:  # fcntl is not available on Windows
     fcntl = None
 
 import huggingface_hub as hf
