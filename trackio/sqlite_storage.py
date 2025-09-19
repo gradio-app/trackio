@@ -1,20 +1,16 @@
 import json
 import os
 import platform
-import random
 import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
 
-if platform.system() == "Windows":
-    import msvcrt
-else:
-    try:
-        import fcntl
-    except ImportError:
-        fcntl = None
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # Not available on Windows
 
 import huggingface_hub as hf
 import pandas as pd
@@ -43,34 +39,12 @@ class ProcessLock:
 
     def __enter__(self):
         """Acquire the lock with retry logic."""
-        self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
-
         if self.is_windows:
-            return self._acquire_windows_lock()
+            # On Windows, skip file locking - rely on SQLite's built-in locking
+            return self
         else:
+            self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
             return self._acquire_unix_lock()
-
-    def _acquire_windows_lock(self):
-        """Windows-specific locking with aggressive fallback."""
-        max_retries = 20
-        for attempt in range(max_retries):
-            try:
-                self.lockfile = open(self.lockfile_path, "w")
-                msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_NBLCK, 1)
-                return self
-            except (IOError, OSError):
-                if self.lockfile:
-                    try:
-                        self.lockfile.close()
-                    except:
-                        pass
-                    self.lockfile = None
-                if attempt < max_retries - 1:
-                    time.sleep(random.uniform(0.001, 0.01))
-                else:
-                    break
-
-        return self
 
     def _acquire_unix_lock(self):
         """Unix-specific locking using fcntl (original proven approach)."""
@@ -89,15 +63,9 @@ class ProcessLock:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
-        if self.lockfile:
+        if self.lockfile and not self.is_windows:
             try:
-                if self.is_windows:
-                    try:
-                        msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_UNLCK, 1)
-                    except (IOError, OSError):
-                        pass
-                else:
-                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
             except:
                 pass
             finally:
@@ -114,8 +82,20 @@ class SQLiteStorage:
 
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(db_path), timeout=30.0)
-        conn.execute("PRAGMA journal_mode = WAL")
+        if platform.system() == "Windows":
+            # Windows: Use SQLite's built-in locking with aggressive settings
+            conn = sqlite3.connect(
+                str(db_path), timeout=60.0, isolation_level="IMMEDIATE"
+            )
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA busy_timeout = 60000")  # 60 seconds
+            conn.execute(
+                "PRAGMA wal_autocheckpoint = 1000"
+            )  # Checkpoint every 1000 pages
+        else:
+            # Unix: Original settings that work well
+            conn = sqlite3.connect(str(db_path), timeout=30.0)
+            conn.execute("PRAGMA journal_mode = WAL")
         conn.row_factory = sqlite3.Row
         return conn
 
