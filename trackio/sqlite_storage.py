@@ -12,6 +12,11 @@ try:
 except ImportError:  # fcntl is not available on Windows
     fcntl = None
 
+try:
+    import msvcrt
+except ImportError:  # msvcrt is not available on Unix
+    msvcrt = None
+
 import huggingface_hub as hf
 import pandas as pd
 
@@ -39,29 +44,53 @@ class ProcessLock:
 
     def __enter__(self):
         """Acquire the lock with retry logic."""
-        if self.is_windows:
-            return self
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
-        self.lockfile = open(self.lockfile_path, "w")
 
-        max_retries = 100
-        for attempt in range(max_retries):
-            try:
-                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return self
-            except IOError:
-                if attempt < max_retries - 1:
-                    time.sleep(0.1)
-                else:
-                    raise IOError("Could not acquire database lock after 10 seconds")
+        if self.is_windows:
+            if msvcrt is None:
+                raise RuntimeError("msvcrt module not available on this Windows system")
+
+            self.lockfile = open(self.lockfile_path, "r+b")
+            max_retries = 100
+            for attempt in range(max_retries):
+                try:
+                    msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_NBLCK, 1)
+                    return self
+                except IOError:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.1)
+                    else:
+                        raise IOError(
+                            "Could not acquire database lock after 10 seconds"
+                        )
+        else:
+            if fcntl is None:
+                raise RuntimeError("fcntl module not available on this Unix system")
+
+            self.lockfile = open(self.lockfile_path, "w")
+            max_retries = 100
+            for attempt in range(max_retries):
+                try:
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return self
+                except IOError:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.1)
+                    else:
+                        raise IOError(
+                            "Could not acquire database lock after 10 seconds"
+                        )
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
-        if self.is_windows:
-            return
-
         if self.lockfile:
-            fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+            if self.is_windows:
+                if msvcrt is not None:
+                    msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                if fcntl is not None:
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+
             self.lockfile.close()
 
 
