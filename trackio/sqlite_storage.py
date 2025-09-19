@@ -15,7 +15,7 @@ except ImportError:  # fcntl is not available on Windows
 import huggingface_hub as hf
 import pandas as pd
 
-try:  # absolute imports when installed
+try:  # absolute imports when installed from PyPI
     from trackio.commit_scheduler import CommitScheduler
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
     from trackio.utils import (
@@ -23,7 +23,7 @@ try:  # absolute imports when installed
         deserialize_values,
         serialize_values,
     )
-except Exception:  # relative imports for local execution on Spaces
+except ImportError:  # relative imports when installed from source on Spaces
     from commit_scheduler import CommitScheduler
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR, deserialize_values, serialize_values
