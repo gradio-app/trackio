@@ -61,15 +61,8 @@ class ProcessLock:
             return
 
         if self.lockfile:
-            try:
-                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
-            except Exception:
-                pass
-            finally:
-                try:
-                    self.lockfile.close()
-                except Exception:
-                    pass
+            fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+            self.lockfile.close()
 
 
 class SQLiteStorage:
