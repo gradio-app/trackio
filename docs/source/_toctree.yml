@@ -11,6 +11,8 @@
     title: Track
   - local: launch
     title: Launch the Dashboard
+  - local: cli_trackio_view
+    title: CLI trackio-view
   - local: deploy_embed
     title: Deploy and Embed Dashboards
   - local: manage

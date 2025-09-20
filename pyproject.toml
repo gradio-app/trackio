@@ -42,6 +42,7 @@ tensorboard = [
 
 [project.scripts]
 trackio = "trackio.cli:main"
+trackio-view = "trackio.view:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["trackio"]
