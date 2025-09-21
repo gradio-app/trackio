@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
+import orjson as json  # faster JSON parsing
 
 try:
     import fcntl
