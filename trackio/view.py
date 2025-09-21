@@ -335,6 +335,19 @@ class MultiLineGraph:
         return colored_lines
 
 
+# Import the dedicated GPU dashboard
+try:
+    from trackio.gpu_dashboard_gputop import GPUTop as GPUDashboard
+except ImportError:
+    # Fallback for when running directly
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from gpu_dashboard_gputop import GPUTop as GPUDashboard
+
+# The GPUDashboard class is now imported from gpu_dashboard.py
+# It provides the full gputop-like experience with graphs and colors
+
+
 class TrackIOViewer:
     """Console viewer for TrackIO metrics."""
 
@@ -720,6 +733,103 @@ class TrackIOViewer:
         lines.append("        +" + "-" * len(sampled_values))
 
         return "\n".join(lines)
+
+    def display_gpu_metrics_from_db(self, metrics: Dict[str, Any]):
+        """Display GPU metrics that were logged to the database."""
+        if not metrics or "data" not in metrics:
+            print(f"No GPU metrics found for project: {self.project}")
+            return
+
+        data = metrics["data"]
+        if not data:
+            print(f"No GPU metrics found for project: {self.project}")
+            return
+
+        # Extract GPU metrics from database
+        gpu_data = {}
+        for entry in data:
+            # Look for GPU-related keys
+            for key, value in entry.items():
+                if key.startswith('gpu/') or key.startswith('gpu_'):
+                    if key not in gpu_data:
+                        gpu_data[key] = []
+                    gpu_data[key].append({
+                        'step': entry.get('step', 0),
+                        'timestamp': entry.get('timestamp', ''),
+                        'value': value
+                    })
+
+        if not gpu_data:
+            print(f"No GPU metrics found in database for project: {self.project}")
+            return
+
+        print("="*80)
+        print(f"GPU Metrics from Database - Project: {self.project}")
+        print("="*80)
+
+        # Group metrics by type
+        utilization_data = gpu_data.get('gpu/utilization', [])
+        memory_used_data = gpu_data.get('gpu/memory_used_gb', [])
+        memory_percent_data = gpu_data.get('gpu/memory_percent', [])
+        temperature_data = gpu_data.get('gpu/temperature_c', [])
+        power_data = gpu_data.get('gpu/power_w', [])
+
+        # Show current (latest) values
+        if utilization_data:
+            latest = utilization_data[-1]
+            print(f"\nLatest GPU Status (Step {latest['step']}):")
+            print(f"  GPU Utilization: {latest['value']:.1f}%")
+
+        if memory_used_data and memory_percent_data:
+            mem_used = memory_used_data[-1]['value']
+            mem_percent = memory_percent_data[-1]['value']
+            print(f"  Memory Usage: {mem_used:.1f} GB ({mem_percent:.1f}%)")
+
+        if temperature_data:
+            temp = temperature_data[-1]['value']
+            print(f"  Temperature: {temp:.0f}°C")
+
+        if power_data:
+            power = power_data[-1]['value']
+            print(f"  Power: {power:.0f}W")
+
+        # Show clock frequencies if available
+        clock_keys = [k for k in gpu_data.keys() if 'clock_' in k]
+        if clock_keys:
+            print(f"  Clock Frequencies:")
+            for clock_key in sorted(clock_keys):
+                clock_name = clock_key.replace('gpu/', '').replace('_mhz', '').replace('clock_', '')
+                latest_clock = gpu_data[clock_key][-1]['value']
+                print(f"    {clock_name.title()}: {latest_clock:.0f} MHz")
+
+        # Show historical trends if we have multiple data points
+        print(f"\nHistorical Data ({len(data)} logged entries):")
+
+        if utilization_data and len(utilization_data) > 1:
+            utils = [d['value'] for d in utilization_data]
+            print(f"  GPU Utilization: {min(utils):.1f}% - {max(utils):.1f}% (avg: {sum(utils)/len(utils):.1f}%)")
+
+        if temperature_data and len(temperature_data) > 1:
+            temps = [d['value'] for d in temperature_data]
+            print(f"  Temperature: {min(temps):.0f}°C - {max(temps):.0f}°C (avg: {sum(temps)/len(temps):.0f}°C)")
+
+        if power_data and len(power_data) > 1:
+            powers = [d['value'] for d in power_data]
+            print(f"  Power: {min(powers):.0f}W - {max(powers):.0f}W (avg: {sum(powers)/len(powers):.0f}W)")
+
+        # Show step range
+        all_steps = []
+        for metric_data in gpu_data.values():
+            all_steps.extend([d['step'] for d in metric_data])
+
+        if all_steps:
+            print(f"\nData Range: Steps {min(all_steps)} - {max(all_steps)}")
+
+        # Show available metrics summary
+        print(f"\nAvailable GPU Metrics:")
+        for key in sorted(gpu_data.keys()):
+            metric_name = key.replace('gpu/', '').replace('gpu_', '')
+            print(f"  - {metric_name} ({len(gpu_data[key])} data points)")
 
     def display_rich(self, metrics: Dict[str, Any]):
         """Display metrics with rich formatting."""
@@ -1177,6 +1287,249 @@ class TrackIOViewer:
                     f"\033[{time_y};{stats_x}f{Theme.text}Est. remaining: {Theme.warning}{remaining:.1f} min{Term.normal}"
                 )
 
+    def monitor_gpu_db_live(self, interval: int = 2):
+        """Monitor GPU metrics from database with live updates."""
+        # Set up terminal
+        print(f"{Term.alt_screen}{Term.hide_cursor}")
+
+        # Handle Ctrl+C gracefully
+        def signal_handler(sig, frame):
+            print(f"{Term.normal_screen}{Term.show_cursor}")
+            print("\n\nGPU database monitoring closed.")
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+
+        # Handle terminal resize (if supported)
+        try:
+            def resize_handler(sig, frame):
+                Term.resized = True
+
+            signal.signal(signal.SIGWINCH, resize_handler)
+        except (AttributeError, ValueError):
+            # SIGWINCH not available on this platform
+            pass
+
+        # Set terminal to raw mode for immediate keyboard input
+        old_settings = None
+        if TERMIOS_AVAILABLE and sys.stdin.isatty():
+            old_settings = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
+
+        try:
+            # Try to import select for keyboard input (Unix/Linux)
+            try:
+                import select
+                has_select = True
+            except ImportError:
+                has_select = False
+
+            iteration = 0
+            last_update = time.time()
+            last_data_count = 0
+
+            while True:
+                Term.refresh()
+
+                # Get latest GPU metrics from database
+                metrics = self.find_latest_metrics()
+
+                # Check for keyboard input (non-blocking) if select is available
+                if has_select and sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+                    key = sys.stdin.read(1)
+                    if key == '+':
+                        self.zoom_level = min(4, self.zoom_level + 1)
+                        last_update = 0  # Force immediate redraw
+                    elif key == '-':
+                        self.zoom_level = max(0, self.zoom_level - 1)
+                        last_update = 0  # Force immediate redraw
+                    elif key.lower() == 'q':
+                        raise KeyboardInterrupt
+
+                # Only update display if interval has passed or data changed
+                current_time = time.time()
+                current_data_count = len(metrics.get('data', [])) if metrics else 0
+
+                if (current_time - last_update >= interval or
+                    current_data_count != last_data_count):
+
+                    self.display_gpu_db_live(metrics, iteration)
+                    last_update = current_time
+                    last_data_count = current_data_count
+                    iteration += 1
+
+                time.sleep(0.1 if has_select else interval)  # Adjust sleep based on keyboard support
+
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Always restore terminal settings
+            if old_settings:
+                termios.tcsetattr(sys.stdin, termios.TCSANOW, old_settings)
+            print(f"{Term.normal_screen}{Term.show_cursor}")
+            print("\n\nGPU database monitoring closed.")
+
+    def display_gpu_db_live(self, metrics: Dict[str, Any], iteration: int):
+        """Display GPU database metrics with live terminal UI."""
+        print(Term.clear)
+
+        # Draw border box
+        self._draw_box(
+            1, 1, Term.width - 2, Term.height - 2, f"GPU Database Monitor - {self.project}"
+        )
+
+        if not metrics or "data" not in metrics or not metrics["data"]:
+            self._center_text(
+                Term.height // 2,
+                "No GPU metrics found in database. Start training with log_gpu=True",
+                Theme.warning,
+            )
+            return
+
+        data = metrics["data"]
+
+        # Extract latest GPU data for display
+        latest_entry = data[0]  # Most recent entry
+        gpu_data = {}
+
+        # Collect all GPU metrics from the latest entry
+        for key, value in latest_entry.items():
+            if key.startswith('gpu/') or key.startswith('gpu_'):
+                gpu_data[key] = value
+
+        if not gpu_data:
+            self._center_text(
+                Term.height // 2,
+                "No GPU metrics in database entries",
+                Theme.warning,
+            )
+            return
+
+        # Stats panel on the left
+        stats_y = 3
+        stats_x = 3
+
+        print(f"\033[{stats_y};{stats_x}f{Theme.text}GPU Database Status:{Term.normal}")
+        stats_y += 2
+
+        # Data info
+        print(f"\033[{stats_y};{stats_x}f{Theme.text}Total Entries: {Theme.success}{len(data)}{Term.normal}")
+        stats_y += 1
+
+        if latest_entry.get('step') is not None:
+            print(f"\033[{stats_y};{stats_x}f{Theme.text}Latest Step: {Theme.success}{latest_entry['step']}{Term.normal}")
+            stats_y += 1
+
+        # GPU utilization
+        if 'gpu/utilization' in gpu_data:
+            util = gpu_data['gpu/utilization']
+            util_color = Theme.success if util > 80 else Theme.warning if util > 50 else Theme.error
+            print(f"\033[{stats_y};{stats_x}f{Theme.text}GPU Util: {util_color}{util:.1f}%{Term.normal}")
+            stats_y += 1
+
+        # Memory usage
+        if 'gpu/memory_used_gb' in gpu_data and 'gpu/memory_percent' in gpu_data:
+            mem_gb = gpu_data['gpu/memory_used_gb']
+            mem_pct = gpu_data['gpu/memory_percent']
+            mem_color = Theme.error if mem_pct > 90 else Theme.warning if mem_pct > 70 else Theme.success
+            print(f"\033[{stats_y};{stats_x}f{Theme.text}Memory: {mem_color}{mem_gb:.1f}GB ({mem_pct:.1f}%){Term.normal}")
+            stats_y += 1
+
+        # Temperature
+        if 'gpu/temperature_c' in gpu_data:
+            temp = gpu_data['gpu/temperature_c']
+            temp_color = Theme.error if temp > 80 else Theme.warning if temp > 70 else Theme.success
+            print(f"\033[{stats_y};{stats_x}f{Theme.text}Temp: {temp_color}{temp:.0f}°C{Term.normal}")
+            stats_y += 1
+
+        # Power
+        if 'gpu/power_w' in gpu_data:
+            power = gpu_data['gpu/power_w']
+            power_color = Theme.warning
+            power_text = f"{power:.0f}W"
+            if 'gpu/power_limit_w' in gpu_data:
+                power_limit = gpu_data['gpu/power_limit_w']
+                power_text = f"{power:.0f}/{power_limit:.0f}W"
+            print(f"\033[{stats_y};{stats_x}f{Theme.text}Power: {power_color}{power_text}{Term.normal}")
+            stats_y += 1
+
+        # Clock frequencies
+        stats_y += 1
+        print(f"\033[{stats_y};{stats_x}f{Theme.text}Clock Frequencies:{Term.normal}")
+        stats_y += 1
+
+        clock_keys = [k for k in gpu_data.keys() if 'clock_' in k]
+        for clock_key in sorted(clock_keys):
+            clock_name = clock_key.replace('gpu/', '').replace('_mhz', '').replace('clock_', '')
+            freq = gpu_data[clock_key]
+            print(f"\033[{stats_y};{stats_x}f{Theme.text}  {clock_name.title()}: {Theme.warning}{freq:.0f} MHz{Term.normal}")
+            stats_y += 1
+
+        # Right side - trends/graphs
+        graph_x = 35
+        graph_y = 3
+
+        # Show historical trends for key metrics
+        utilization_history = []
+        temp_history = []
+        power_history = []
+
+        # Extract historical data (last 50 entries for trend)
+        for entry in reversed(data[-50:]):  # Get last 50, reverse to chronological order
+            if 'gpu/utilization' in entry:
+                utilization_history.append(entry['gpu/utilization'])
+            if 'gpu/temperature_c' in entry:
+                temp_history.append(entry['gpu/temperature_c'])
+            if 'gpu/power_w' in entry:
+                power_history.append(entry['gpu/power_w'])
+
+        # GPU Utilization trend
+        if len(utilization_history) > 1:
+            print(f"\033[{graph_y};{graph_x}f{Theme.text}GPU Utilization Trend (Last {len(utilization_history)} entries):{Term.normal}")
+            graph_y += 1
+
+            # Simple ASCII trend
+            trend_width = min(40, Term.width - graph_x - 5)
+            trend_height = 8
+            util_graph = Graph(trend_width, trend_height, 0, 100)
+
+            for util in utilization_history:
+                util_graph.add_value(util)
+
+            trend_lines = util_graph.draw(Theme.loss_gradient, show_values=False)
+            for i, line in enumerate(trend_lines):
+                print(f"\033[{graph_y + i};{graph_x}f{line}")
+
+            graph_y += len(trend_lines) + 2
+
+        # Temperature trend
+        if len(temp_history) > 1 and graph_y < Term.height - 8:
+            print(f"\033[{graph_y};{graph_x}f{Theme.text}Temperature Trend:{Term.normal}")
+            graph_y += 1
+
+            trend_width = min(40, Term.width - graph_x - 5)
+            trend_height = 6
+            temp_min = max(0, min(temp_history) - 5)
+            temp_max = max(temp_history) + 5
+            temp_graph = Graph(trend_width, trend_height, temp_min, temp_max)
+
+            for temp in temp_history:
+                temp_graph.add_value(temp)
+
+            trend_lines = temp_graph.draw([(255, 0, 0), (255, 255, 0), (0, 255, 0)], show_values=False)
+            for i, line in enumerate(trend_lines):
+                print(f"\033[{graph_y + i};{graph_x}f{line}")
+
+        # Footer with instructions
+        footer_y = Term.height - 3
+        footer_text = "Press +/- to zoom, 'q' to quit, Ctrl+C to exit"
+        print(f"\033[{footer_y};{3}f{Theme.text}{footer_text}{Term.normal}")
+
+        # Update indicator
+        update_text = f"Updates: {iteration} | Last: {datetime.now().strftime('%H:%M:%S')}"
+        update_x = Term.width - len(update_text) - 3
+        print(f"\033[{footer_y};{update_x}f{Theme.text}{update_text}{Term.normal}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="TrackIO Console Dashboard")
@@ -1201,6 +1554,16 @@ def main():
         default=0,
         choices=[0, 1, 2, 3, 4],
         help="Initial zoom level: 0=all data (default), 1=last 500, 2=last 200, 3=last 100, 4=last 50",
+    )
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        help="Show live GPU hardware metrics instead of training metrics"
+    )
+    parser.add_argument(
+        "--gpu-db",
+        action="store_true",
+        help="Show GPU metrics from logged database instead of live hardware (requires --project)"
     )
 
     args = parser.parse_args()
@@ -1257,8 +1620,80 @@ def main():
             print("  trackio-view --log path/to/output.log")
             args.project = "demo"
 
-    # Create dashboard
-    if args.log:
+    # Handle GPU database option first
+    if args.gpu_db:
+        if not args.project:
+            print("Error: --gpu-db requires --project to be specified")
+            sys.exit(1)
+
+        dashboard = TrackIOViewer(args.project)
+        dashboard.zoom_level = args.zoom
+        if args.once:
+            metrics = dashboard.find_latest_metrics()
+            dashboard.display_gpu_metrics_from_db(metrics)
+        else:
+            dashboard.monitor_gpu_db_live(args.interval)
+    # If GPU monitoring requested, show GPU stats instead
+    elif args.gpu:
+        # Import GPU monitor with proper path handling
+        try:
+            from trackio.gpu_monitor import GPUMonitor
+        except ImportError:
+            # Fallback for when running directly
+            sys.path.insert(0, str(Path(__file__).parent))
+            from gpu_monitor import GPUMonitor
+        monitor = GPUMonitor()
+
+        if args.once:
+            # Display GPU stats once and exit
+            stats = monitor.get_all_gpu_stats()
+            print("="*60)
+            print("GPU Status")
+            print("="*60)
+
+            if not stats:
+                print("No GPUs detected")
+            else:
+                for i, gpu_stats in enumerate(stats):
+                    if not gpu_stats.get('available', False):
+                        continue
+
+                    prefix = f"GPU {i}: " if len(stats) > 1 else ""
+                    print(f"\n{prefix}{gpu_stats['name']}")
+                    print(f"  Utilization: {gpu_stats['utilization']:.1f}%")
+                    print(f"  Memory: {gpu_stats['memory_used']:.1f}/{gpu_stats['memory_total']:.1f} GB ({gpu_stats['memory_percent']:.1f}%)")
+                    print(f"  Temperature: {gpu_stats['temperature']:.0f}°C")
+
+                    # Power
+                    if gpu_stats.get('power', 0) > 0:
+                        if gpu_stats.get('power_limit', 0) > 0:
+                            print(f"  Power: {gpu_stats['power']:.0f}/{gpu_stats['power_limit']:.0f}W")
+                        else:
+                            print(f"  Power: {gpu_stats['power']:.0f}W")
+
+                    # Fan
+                    if gpu_stats.get('fan_speed', 0) > 0:
+                        fan_text = f"  Fan: {gpu_stats['fan_speed']:.1f}%"
+                        if gpu_stats.get('fan_rpm', 0) > 0:
+                            fan_text += f" ({gpu_stats['fan_rpm']:.0f} RPM)"
+                        print(fan_text)
+
+                    # Clocks
+                    if gpu_stats.get('clocks'):
+                        if 'graphics' in gpu_stats['clocks']:
+                            print(f"  GPU Clock: {gpu_stats['clocks']['graphics']:.0f} MHz")
+                        if 'memory' in gpu_stats['clocks']:
+                            print(f"  Mem Clock: {gpu_stats['clocks']['memory']:.0f} MHz")
+
+                    # Performance state
+                    if gpu_stats.get('performance_state'):
+                        print(f"  Perf State: {gpu_stats['performance_state']}")
+        else:
+            # Live GPU monitoring
+            dashboard = GPUDashboard()
+            dashboard.monitor_live(args.interval)
+    # Regular training metrics display
+    elif args.log:
         log_path = Path(args.log)
         if not log_path.exists():
             print(f"Error: Log file not found: {log_path}")

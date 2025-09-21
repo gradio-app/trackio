@@ -68,6 +68,12 @@ trackio-view --once --zoom 3
 trackio-view --interval 5  # Update every 5 seconds
 ```
 
+### View GPU metrics from training database
+
+```bash
+trackio-view --gpu-db --project my-experiment --once
+```
+
 ## Features
 
 ### Real-time Metrics Display
@@ -251,6 +257,178 @@ trackio-view --project my-training
 # You can now disconnect and reconnect to check progress anytime
 ```
 
+## GPU Hardware Monitoring
+
+TrackIO View includes comprehensive GPU monitoring capabilities, providing real-time hardware metrics alongside your training metrics. This feature is inspired by [gputop](https://github.com/mcgrof/gputop) and supports all major GPU vendors.
+
+![TrackIO GPU Dashboard](../../trackio/assets/trackio-view-gpu.png)
+
+### GPU Monitoring Features
+
+- **Real-time GPU metrics**: Utilization, memory usage, temperature, power consumption
+- **Multi-clock frequency tracking**: Graphics, memory, fabric, and SoC clocks
+- **Visual graphs**: Dot-and-line style performance graphs with color gradients
+- **Multi-GPU support**: Automatic detection and monitoring of multiple GPUs
+- **Cross-vendor support**: NVIDIA (desktop & Jetson), AMD, and Intel GPUs
+- **Direct hardware access**: Uses GPU driver interfaces (sysfs, NVML) for accurate data
+
+### Basic GPU Monitoring
+
+```bash
+# Monitor GPU hardware in real-time
+trackio-view --gpu
+
+# Display current GPU status once
+trackio-view --gpu --once
+
+# Monitor with custom update interval
+trackio-view --gpu --interval 1
+```
+
+### GPU Status Output
+
+The `--once` flag provides a clean snapshot of current GPU status:
+
+```console
+$ trackio-view --gpu --once
+============================================================
+GPU Status
+============================================================
+
+AMD Radeon Pro W7900
+  Utilization: 100.0%
+  Memory: 29.2/48.0 GB (60.8%)
+  Temperature: 70°C
+  Power: 240/241W
+  Fan: 48.9% (1938 RPM)
+  GPU Clock: 2162 MHz
+  Mem Clock: 1124 MHz
+  Perf State: auto
+```
+
+### Live GPU Dashboard
+
+The live GPU dashboard (`trackio-view --gpu`) provides:
+
+#### Current Status Panel
+- GPU name and vendor detection
+- Real-time utilization percentage
+- Memory usage (used/total GB and percentage)
+- Multiple temperature sensors (GPU, memory, hotspot)
+- Power consumption with limits
+- Fan speed (percentage and RPM)
+- Clock frequencies (graphics, memory, fabric, SoC)
+- Performance state information
+
+#### Visual Performance Graphs
+- **GPU Utilization**: Real-time usage percentage with color gradients
+- **Memory Usage**: VRAM consumption over time
+- **Temperature**: Multi-sensor temperature tracking
+- **Clock Frequencies**: Graphics, memory, fabric, and SoC clock speeds
+- **Power Consumption**: Real-time power draw monitoring
+- **Fan Speed**: Cooling system performance
+
+#### Interactive Controls
+- **Press 'q'**: Quit immediately
+- **Press Ctrl+C**: Exit gracefully
+- **Number keys (0-9)**: Switch between multiple GPUs
+- **Real-time updates**: Configurable refresh interval
+
+### GPU Logging Integration
+
+GPU metrics can be automatically logged to your TrackIO database during training:
+
+```python
+import trackio
+
+# Enable automatic GPU logging
+trackio.init(project="my-training", log_gpu=True)
+
+for epoch in range(num_epochs):
+    for batch in dataloader:
+        loss = train_step(batch)
+        # GPU metrics automatically logged with each call
+        trackio.log({"loss": loss, "epoch": epoch})
+
+trackio.finish()
+```
+
+This automatically captures GPU metrics with each log call:
+- `gpu/utilization`: GPU usage percentage
+- `gpu/memory_used_gb`: VRAM usage in GB
+- `gpu/memory_percent`: VRAM usage percentage
+- `gpu/temperature_c`: GPU temperature in Celsius
+- `gpu/power_w`: Power consumption in watts
+- `gpu/clock_graphics_mhz`: Graphics clock frequency
+- `gpu/clock_memory_mhz`: Memory clock frequency
+- `gpu/clock_fclk_mhz`: Fabric clock frequency (AMD)
+- `gpu/clock_socclk_mhz`: SoC clock frequency (AMD)
+
+### Supported GPU Models
+
+TrackIO GPU monitoring has been tested on:
+
+#### NVIDIA GPUs
+- **Desktop**: RTX 30/40 series, GTX 10/16 series, Quadro series
+- **Datacenter**: A100, V100, A10G, T4
+- **Embedded**: Jetson TX2, Xavier, Orin, Nano
+
+#### AMD GPUs
+- **Workstation**: Radeon Pro W7900, W6800, W5700
+- **Consumer**: RX 6000/7000 series, RX 500/Vega series
+- **Datacenter**: MI100, MI250, MI300 series
+
+#### Intel GPUs
+- **Arc**: A-series discrete GPUs
+- **Integrated**: Iris Xe, UHD Graphics
+
+### GPU Hardware Detection
+
+TrackIO automatically detects GPUs using:
+
+#### NVIDIA Detection
+- **NVML library**: Primary method for desktop GPUs
+- **Tegrastats**: Jetson embedded systems
+- **Sysfs interfaces**: Fallback monitoring
+
+#### AMD Detection
+- **Sysfs hwmon**: `/sys/class/drm/card*/device/hwmon/`
+- **DRM interfaces**: `/sys/class/drm/card*/device/`
+- **Performance states**: `/sys/class/drm/card*/device/pp_dpm_*`
+
+#### Multi-GPU Support
+- **Automatic discovery**: Detects any number of GPUs
+- **Dynamic switching**: Use number keys to switch between GPUs
+- **Vendor mixing**: Supports mixed NVIDIA/AMD/Intel systems
+- **Independent monitoring**: Each GPU tracked separately
+
+### Remote GPU Monitoring
+
+Perfect for monitoring training on remote servers:
+
+```bash
+# SSH into remote GPU server
+ssh user@gpu-cluster
+
+# Quick GPU status check
+trackio-view --gpu --once
+
+# Monitor GPU during training
+trackio-view --gpu
+
+# In tmux/screen for persistent monitoring
+screen -S gpu-monitor
+trackio-view --gpu --interval 1
+```
+
+### Performance Impact
+
+GPU monitoring is designed to be lightweight:
+- **Minimal overhead**: Uses efficient hardware interfaces
+- **Configurable updates**: Adjust refresh rate as needed
+- **Non-invasive**: Does not affect training performance
+- **Background collection**: Optional automatic logging during training
+
 ## Command Line Options
 
 ```
@@ -260,6 +438,8 @@ Options:
   -p, --project TEXT     Project name to monitor (shows all if not specified)
   -i, --interval INT     Update interval in seconds (default: 2)
   --once                 Display once and exit (no live monitoring)
+  --gpu                  Show live GPU hardware metrics instead of training metrics
+  --gpu-db               Show GPU metrics from logged database instead of live hardware (requires --project)
   -z, --zoom {0,1,2,3,4} Initial zoom level (default: 0)
                          0 = All data
                          1 = Last 500 iterations
@@ -343,6 +523,204 @@ loss=$(echo "$metrics" | grep "Latest Loss:" | awk '{print $3}')
 curl -X POST https://metrics.example.com/api/v1/datapoints \
   -d "series=training.loss&value=$loss&tags=iteration:$iter"
 ```
+
+## GPU Database Analysis
+
+TrackIO View also supports analyzing GPU metrics that were automatically logged during training sessions. This allows you to review GPU performance patterns from completed experiments.
+
+### Automatic GPU Logging During Training
+
+When training with GPU logging enabled, all GPU metrics are automatically stored in the SQLite database:
+
+```python
+import trackio
+
+# Enable automatic GPU logging
+trackio.init(project="my-training", log_gpu=True)
+
+for epoch in range(num_epochs):
+    for batch in dataloader:
+        loss = train_step(batch)
+        # GPU metrics automatically logged with each call
+        trackio.log({"loss": loss, "epoch": epoch})
+
+trackio.finish()
+```
+
+This captures comprehensive GPU metrics alongside your training metrics:
+- GPU utilization percentage
+- Memory usage (GB and percentage)
+- Temperature readings (°C)
+- Power consumption (watts)
+- Clock frequencies (graphics, memory, fabric, SoC)
+- Fan speed and RPM
+- Performance state information
+
+### Viewing Stored GPU Metrics
+
+#### Basic GPU Database Analysis
+
+```bash
+# View GPU metrics from a specific training run
+trackio-view --gpu-db --project my-training --once
+```
+
+This displays a comprehensive summary of GPU performance during training:
+
+```console
+$ trackio-view --gpu-db --project my-training --once
+================================================================================
+GPU Metrics from Database - Project: my-training
+================================================================================
+
+Latest GPU Status (Step 1000):
+  GPU Utilization: 95.2%
+  Memory Usage: 22.1 GB (46.0%)
+  Temperature: 75°C
+  Power: 285W
+  Clock Frequencies:
+    Graphics: 2100 MHz
+    Memory: 1124 MHz
+    Fclk: 1600 MHz
+    Socclk: 1058 MHz
+
+Historical Data (1001 logged entries):
+  GPU Utilization: 85.0% - 100.0% (avg: 94.8%)
+  Temperature: 65°C - 82°C (avg: 74°C)
+  Power: 200W - 295W (avg: 268W)
+
+Data Range: Steps 0 - 1000
+
+Available GPU Metrics:
+  - utilization (1001 data points)
+  - memory_used_gb (1001 data points)
+  - memory_percent (1001 data points)
+  - temperature_c (1001 data points)
+  - power_w (1001 data points)
+  - clock_graphics_mhz (1001 data points)
+  - clock_memory_mhz (1001 data points)
+  - clock_fclk_mhz (1001 data points)
+  - clock_socclk_mhz (1001 data points)
+  - fan_speed (1001 data points)
+  - fan_rpm (1001 data points)
+  - perf_state (1001 data points)
+```
+
+#### Comparing Live vs Stored GPU Data
+
+```bash
+# View current live GPU hardware status
+trackio-view --gpu --once
+
+# View historical GPU data from training
+trackio-view --gpu-db --project my-training --once
+```
+
+The key differences:
+- **`--gpu`**: Shows real-time hardware status directly from GPU drivers
+- **`--gpu-db`**: Shows historical data logged during training sessions
+
+### Use Cases for GPU Database Analysis
+
+#### Performance Optimization
+
+Analyze GPU utilization patterns to optimize training efficiency:
+
+```bash
+# Check if GPU was fully utilized during training
+trackio-view --gpu-db --project model-v1 --once | grep "GPU Utilization"
+```
+
+#### Thermal Analysis
+
+Review temperature trends to ensure thermal stability:
+
+```bash
+# Examine temperature ranges across training
+trackio-view --gpu-db --project long-training --once | grep "Temperature"
+```
+
+#### Power Efficiency Studies
+
+Compare power consumption across different model architectures:
+
+```bash
+# Compare power usage between experiments
+trackio-view --gpu-db --project efficient-model --once > efficient_gpu.txt
+trackio-view --gpu-db --project baseline-model --once > baseline_gpu.txt
+diff efficient_gpu.txt baseline_gpu.txt
+```
+
+#### Memory Usage Optimization
+
+Track memory consumption patterns:
+
+```bash
+# Review memory usage throughout training
+trackio-view --gpu-db --project memory-intensive --once | grep "Memory"
+```
+
+### Integration with Regular Metrics
+
+GPU database analysis complements regular training metrics analysis:
+
+```bash
+# View training progress
+trackio-view --project my-training --once
+
+# View GPU performance for the same training run
+trackio-view --gpu-db --project my-training --once
+```
+
+This dual view allows you to correlate training performance with hardware utilization, helping identify:
+- Whether slow training is due to underutilized GPU
+- Memory bottlenecks affecting batch sizes
+- Thermal throttling impacting performance
+- Power limitations during intensive training phases
+
+### Automation and Scripting
+
+The `--once` flag outputs clean text suitable for automated analysis:
+
+```bash
+# Extract GPU utilization for automated monitoring
+gpu_util=$(trackio-view --gpu-db --project production --once | grep "GPU Utilization:" | awk '{print $3}' | sed 's/%//')
+
+if (( $(echo "$gpu_util < 80" | bc -l) )); then
+    echo "Warning: GPU underutilized at ${gpu_util}%"
+fi
+
+# Generate GPU performance report
+trackio-view --gpu-db --project experiment-batch --once > gpu_report_$(date +%Y%m%d).txt
+```
+
+### Live GPU Database Monitoring
+
+For real-time monitoring of GPU metrics during training:
+
+```bash
+# Monitor GPU database metrics in real-time
+trackio-view --gpu-db --project my-training
+```
+
+This provides a live terminal dashboard that updates as new GPU metrics are logged to the database. Features include:
+
+- **Real-time stats**: Latest GPU utilization, memory, temperature, power
+- **Historical trends**: Visual graphs showing performance over time
+- **Interactive controls**: Press `+`/`-` to zoom, `q` to quit
+- **Auto-refresh**: Updates when new data is written to the database
+- **Color-coded warnings**: Highlights potential issues (high temps, low utilization)
+
+The live monitoring is particularly useful for:
+- Monitoring training progress on remote servers
+- Detecting GPU performance issues in real-time
+- Correlating GPU metrics with training dynamics
+- Ensuring optimal hardware utilization during long training runs
+
+### Limitations
+
+- **Project requirement**: GPU database analysis requires specifying a `--project`
+- **Data availability**: Only shows data from training runs that had `log_gpu=True`
 
 ## See Also
 

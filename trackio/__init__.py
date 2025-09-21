@@ -54,6 +54,7 @@ def init(
     settings: Any = None,
     private: bool | None = None,
     embed: bool = True,
+    log_gpu: bool = False,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -100,6 +101,9 @@ def init(
         embed (`bool`, *optional*, defaults to `True`):
             If running inside a jupyter/Colab notebook, whether the dashboard should
             automatically be embedded in the cell when trackio.init() is called.
+        log_gpu (`bool`, *optional*, defaults to `False`):
+            If `True`, automatically log GPU metrics (utilization, memory, temperature, power) with each log() call.
+            Supports NVIDIA (desktop & Jetson), AMD, and Intel GPUs.
 
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
@@ -197,6 +201,7 @@ def init(
         config=config,
         space_id=space_id,
     )
+    run.log_gpu = log_gpu  # Store GPU logging preference
 
     if resumed:
         print(f"* Resumed existing run: {run.name}")
@@ -208,7 +213,7 @@ def init(
     return run
 
 
-def log(metrics: dict, step: int | None = None) -> None:
+def log(metrics: dict, step: int | None = None, log_gpu: bool | None = None) -> None:
     """
     Logs metrics to the current run.
 
@@ -218,14 +223,78 @@ def log(metrics: dict, step: int | None = None) -> None:
         step (`int`, *optional*):
             The step number. If not provided, the step will be incremented
             automatically.
+        log_gpu (`bool`, *optional*):
+            If True, log GPU metrics. If None, uses the default from init().
     """
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.log().")
+
+    # Add GPU metrics if requested
+    if log_gpu or (log_gpu is None and getattr(run, 'log_gpu', False)):
+        gpu_metrics = _get_gpu_metrics()
+        if gpu_metrics:
+            # Create a copy to avoid modifying the original metrics dict
+            metrics = {**metrics, **gpu_metrics}
+
     run.log(
         metrics=metrics,
         step=step,
     )
+
+
+def _get_gpu_metrics() -> dict:
+    """Get GPU metrics for all available GPUs"""
+    try:
+        from trackio.gpu_monitor import GPUMonitor
+
+        # Use cached monitor if available
+        if not hasattr(_get_gpu_metrics, '_monitor'):
+            _get_gpu_metrics._monitor = GPUMonitor()
+
+        monitor = _get_gpu_metrics._monitor
+        if not monitor.initialized:
+            return {}
+
+        gpu_stats = monitor.get_all_gpu_stats()
+        metrics = {}
+
+        for i, stats in enumerate(gpu_stats):
+            if not stats.get('available', False):
+                continue
+
+            # Add GPU metrics with gpu_N prefix for multiple GPUs
+            prefix = f"gpu_{i}/" if len(gpu_stats) > 1 else "gpu/"
+
+            metrics[f"{prefix}utilization"] = stats['utilization']
+            metrics[f"{prefix}memory_used_gb"] = stats['memory_used']
+            metrics[f"{prefix}memory_percent"] = stats['memory_percent']
+            metrics[f"{prefix}temperature_c"] = stats['temperature']
+
+            if stats.get('power', 0) > 0:
+                metrics[f"{prefix}power_w"] = stats['power']
+                if stats.get('power_limit', 0) > 0:
+                    metrics[f"{prefix}power_limit_w"] = stats['power_limit']
+
+            if stats.get('fan_speed', 0) > 0:
+                metrics[f"{prefix}fan_speed"] = stats['fan_speed']
+                if stats.get('fan_rpm', 0) > 0:
+                    metrics[f"{prefix}fan_rpm"] = stats['fan_rpm']
+
+            # Clock speeds - log all available clocks
+            clocks = stats.get('clocks', {})
+            for clock_type, freq in clocks.items():
+                # Convert clock type to a clean metric name
+                metric_name = f"{prefix}clock_{clock_type}_mhz"
+                metrics[metric_name] = freq
+
+            if stats.get('performance_state'):
+                metrics[f"{prefix}perf_state"] = stats['performance_state']
+
+        return metrics
+    except Exception:
+        # Silently fail if GPU monitoring is not available
+        return {}
 
 
 def finish():
