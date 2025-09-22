@@ -45,21 +45,21 @@ To start logging to this Trackio dashboard, first make sure you have the Trackio
 pip install trackio
 ```
 
-Then, you can start logging to this Trackio dashboard by passing in the `space_id` to `trackio.init()`:
+Then, start logging to this Trackio dashboard by passing in the `space_id` to `trackio.init()`:
 
 ```python
 import trackio
 trackio.init(project="my-project", space_id="{}")
 ```
 
-and then calling `trackio.log()` to log metrics.
+Then call `trackio.log()` to log metrics.
 
 ```python
 for i in range(10):
     trackio.log({{"loss": 1/(i+1)}})
 ```
 
-and then calling `trackio.finish()` to finish the run.
+Finally, call `trackio.finish()` to finish the run.
 
 ```python
 trackio.finish()
@@ -76,14 +76,14 @@ import trackio
 trackio.init(project="my-project")
  ```
 
-and then calling `trackio.log()` to log metrics.
+Then call `trackio.log()` to log metrics.
 
 ```python
 for i in range(10):
     trackio.log({"loss": 1/(i+1)})
 ```
 
-and then calling `trackio.finish()` to finish the run.
+Finally, call `trackio.finish()` to finish the run.
 
 ```python
 trackio.finish()
@@ -799,7 +799,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             master_df = pd.DataFrame()
 
         if master_df.empty:
-            if space_id := os.environ.get("SPACE_ID", "abidlabs/trackio-1234"):
+            if space_id := os.environ.get("SPACE_ID"):
                 gr.Markdown(INSTRUCTIONS_SPACES.format(space_id))
             else:
                 gr.Markdown(INSTRUCTIONS_LOCAL)
