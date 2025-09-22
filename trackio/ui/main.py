@@ -36,16 +36,12 @@ except ImportError:
 
 
 INSTRUCTIONS_SPACES = """
+## Start logging with Trackio 🤗
+
 To start logging to this Trackio dashboard, first make sure you have the Trackio library installed. You can do this by running:
 
 ```bash
 pip install trackio
-```
-
-or
-
-```bash
-uv pip install trackio
 ```
 
 Then, you can start logging to this Trackio dashboard by passing in the `space_id` to `trackio.init()`:
@@ -59,7 +55,7 @@ and then calling `trackio.log()` to log metrics.
 
 ```python
 for i in range(10):
-    trackio.log({"loss": 1/(i+1)})
+    trackio.log({{"loss": 1/(i+1)}})
 ```
 
 and then calling `trackio.finish()` to finish the run.
@@ -70,7 +66,9 @@ trackio.finish()
 """
 
 INSTRUCTIONS_LOCAL = """
-No projects found. You can create a new project by calling `trackio.init()`:
+## Start logging with Trackio 🤗
+ 
+You can create a new project by calling `trackio.init()`:
 
 ```python
 import trackio
@@ -89,7 +87,10 @@ and then calling `trackio.finish()` to finish the run.
 ```python
 trackio.finish()
 ```
+
+Read the [Trackio documentation](https://huggingface.co/docs/trackio/en/index) for more examples.
 """
+
 
 def get_runs(project) -> list[str]:
     if not project:
@@ -791,8 +792,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             master_df = pd.DataFrame()
 
         if master_df.empty:
-            if os.environ.get("SPACE_HOST"):
-                gr.Markdown(INSTRUCTIONS_SPACES.format(os.environ.get("SPACE_HOST")))
+            if space_id := os.environ.get("SPACE_ID", "abidlabs/trackio-1234"):
+                gr.Markdown(INSTRUCTIONS_SPACES.format(space_id))
             else:
                 gr.Markdown(INSTRUCTIONS_LOCAL)
             return
