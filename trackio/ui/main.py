@@ -36,6 +36,63 @@ except ImportError:
     from ui.runs import run_page
 
 
+INSTRUCTIONS_SPACES = """
+## Start logging with Trackio 🤗
+
+To start logging to this Trackio dashboard, first make sure you have the Trackio library installed. You can do this by running:
+
+```bash
+pip install trackio
+```
+
+Then, start logging to this Trackio dashboard by passing in the `space_id` to `trackio.init()`:
+
+```python
+import trackio
+trackio.init(project="my-project", space_id="{}")
+```
+
+Then call `trackio.log()` to log metrics.
+
+```python
+for i in range(10):
+    trackio.log({{"loss": 1/(i+1)}})
+```
+
+Finally, call `trackio.finish()` to finish the run.
+
+```python
+trackio.finish()
+```
+"""
+
+INSTRUCTIONS_LOCAL = """
+## Start logging with Trackio 🤗
+ 
+You can create a new project by calling `trackio.init()`:
+
+```python
+import trackio
+trackio.init(project="my-project")
+ ```
+
+Then call `trackio.log()` to log metrics.
+
+```python
+for i in range(10):
+    trackio.log({"loss": 1/(i+1)})
+```
+
+Finally, call `trackio.finish()` to finish the run.
+
+```python
+trackio.finish()
+```
+
+Read the [Trackio documentation](https://huggingface.co/docs/trackio/en/index) for more examples.
+"""
+
+
 def get_runs(project) -> list[str]:
     if not project:
         return []
@@ -742,6 +799,10 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             master_df = pd.DataFrame()
 
         if master_df.empty:
+            if space_id := os.environ.get("SPACE_ID"):
+                gr.Markdown(INSTRUCTIONS_SPACES.format(space_id))
+            else:
+                gr.Markdown(INSTRUCTIONS_LOCAL)
             return
 
         x_column = "step"
