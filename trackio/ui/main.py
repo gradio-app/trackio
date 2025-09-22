@@ -4,6 +4,7 @@ import os
 import re
 import secrets
 import shutil
+from dataclasses import dataclass
 from typing import Any
 
 import gradio as gr
@@ -19,7 +20,7 @@ try:
     from trackio.media import TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
-    from trackio.typehints import LogEntry, MediaData, UploadEntry
+    from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
     from trackio.ui.run_detail import run_detail_page
     from trackio.ui.runs import run_page
@@ -29,7 +30,7 @@ except ImportError:
     from media import TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
-    from typehints import LogEntry, MediaData, UploadEntry
+    from typehints import LogEntry, UploadEntry
     from ui import fns
     from ui.run_detail import run_detail_page
     from ui.runs import run_page
@@ -123,6 +124,12 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
             result.append(metric)
 
     return result
+
+
+@dataclass
+class MediaData:
+    caption: str | None
+    file_path: str
 
 
 def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
@@ -532,8 +539,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
 
         embed_code = gr.Code(
             label="Embed this view",
-            max_lines=5,
-            lines=5,
+            max_lines=2,
+            lines=2,
             language="html",
             visible=bool(os.environ.get("SPACE_HOST")),
         )
