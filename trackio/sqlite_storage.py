@@ -141,6 +141,12 @@ class SQLiteStorage:
                     ON configs(run_name)
                     """
                 )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
+                    ON metrics(run_name, timestamp)
+                    """
+                )
                 conn.commit()
         return db_path
 
