@@ -1,4 +1,3 @@
-import json
 import os
 import platform
 import sqlite3
@@ -13,6 +12,7 @@ except ImportError:  # fcntl is not available on Windows
     fcntl = None
 
 import huggingface_hub as hf
+import orjson
 import pandas as pd
 
 try:  # absolute imports when installed from PyPI
@@ -172,7 +172,7 @@ class SQLiteStorage:
                 metrics = df["metrics"].copy()
                 metrics = pd.DataFrame(
                     metrics.apply(
-                        lambda x: deserialize_values(json.loads(x))
+                        lambda x: deserialize_values(orjson.loads(x))
                     ).values.tolist(),
                     index=df.index,
                 )
@@ -202,9 +202,9 @@ class SQLiteStorage:
                     for col in other_cols:
                         del metrics[col]
                     # combine them all into a single metrics col
-                    metrics = json.loads(metrics.to_json(orient="records"))
+                    metrics = orjson.loads(metrics.to_json(orient="records"))
                     df["metrics"] = [
-                        json.dumps(serialize_values(row)) for row in metrics
+                        orjson.dumps(serialize_values(row)) for row in metrics
                     ]
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
 
@@ -279,7 +279,7 @@ class SQLiteStorage:
                         current_timestamp,
                         run,
                         current_step,
-                        json.dumps(serialize_values(metrics)),
+                        orjson.dumps(serialize_values(metrics)),
                     ),
                 )
                 conn.commit()
@@ -341,7 +341,7 @@ class SQLiteStorage:
                             timestamps[i],
                             run,
                             steps[i],
-                            json.dumps(serialize_values(metrics)),
+                            orjson.dumps(serialize_values(metrics)),
                         )
                     )
 
@@ -362,7 +362,11 @@ class SQLiteStorage:
                         (run_name, config, created_at)
                         VALUES (?, ?, ?)
                         """,
-                        (run, json.dumps(serialize_values(config)), current_timestamp),
+                        (
+                            run,
+                            orjson.dumps(serialize_values(config)),
+                            current_timestamp,
+                        ),
                     )
 
                 conn.commit()
@@ -389,7 +393,7 @@ class SQLiteStorage:
             rows = cursor.fetchall()
             results = []
             for row in rows:
-                metrics = json.loads(row["metrics"])
+                metrics = orjson.loads(row["metrics"])
                 metrics = deserialize_values(metrics)
                 metrics["timestamp"] = row["timestamp"]
                 metrics["step"] = row["step"]
@@ -496,7 +500,7 @@ class SQLiteStorage:
                     (run_name, config, created_at)
                     VALUES (?, ?, ?)
                     """,
-                    (run, json.dumps(serialize_values(config)), current_timestamp),
+                    (run, orjson.dumps(serialize_values(config)), current_timestamp),
                 )
                 conn.commit()
 
@@ -519,7 +523,7 @@ class SQLiteStorage:
 
                 row = cursor.fetchone()
                 if row:
-                    config = json.loads(row["config"])
+                    config = orjson.loads(row["config"])
                     return deserialize_values(config)
                 return None
             except sqlite3.OperationalError as e:
@@ -563,7 +567,7 @@ class SQLiteStorage:
 
                 results = {}
                 for row in cursor.fetchall():
-                    config = json.loads(row["config"])
+                    config = orjson.loads(row["config"])
                     results[row["run_name"]] = deserialize_values(config)
                 return results
             except sqlite3.OperationalError as e:
