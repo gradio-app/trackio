@@ -636,10 +636,9 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
     else:
         return None
 
-
 def generate_embed_code(project: str, metrics: str, selected_runs: list = None) -> str:
     """Generate the embed iframe code based on current settings."""
-    space_host = os.environ.get("SPACE_HOST", "")
+    space_host = os.environ.get("SPACE_HOST")
     if not space_host:
         return ""
 
@@ -661,7 +660,7 @@ def generate_embed_code(project: str, metrics: str, selected_runs: list = None) 
     query_string = "&".join(params)
     embed_url = f"https://{space_host}?{query_string}"
 
-    return f'<iframe src="{embed_url}" style="width:1600px; height:500px; border:0;"></iframe>'
+    return f'<iframe\n  src="{embed_url}"\n  style="width:1600px; height:500px; border:0;"\n>\n</iframe>'
 
 
 def serialize_values(metrics):
