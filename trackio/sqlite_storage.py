@@ -356,7 +356,11 @@ class SQLiteStorage:
                         (run_name, config, created_at)
                         VALUES (?, ?, ?)
                         """,
-                        (run, orjson.dumps(serialize_values(config)), current_timestamp),
+                        (
+                            run,
+                            orjson.dumps(serialize_values(config)),
+                            current_timestamp,
+                        ),
                     )
 
                 conn.commit()
