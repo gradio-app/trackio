@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import time
 
+import orjson
 import pytest
 
 from trackio.sqlite_storage import SQLiteStorage
@@ -203,8 +204,6 @@ def test_config_storage_in_database(temp_dir):
 
 def test_old_database_without_configs_table(temp_dir):
     # To make sure that we can continue to work with projects created with older versions of Trackio.
-    import json
-
     db_path = SQLiteStorage.get_project_db_path("test")
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -220,7 +219,7 @@ def test_old_database_without_configs_table(temp_dir):
         """)
         conn.execute(
             "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
-            ("2024-01-01", "test_run", 0, json.dumps({"loss": 0.5})),
+            ("2024-01-01", "test_run", 0, orjson.dumps({"loss": 0.5})),
         )
 
     config = SQLiteStorage.get_run_config("test", "test_run")
