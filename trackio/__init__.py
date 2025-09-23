@@ -254,6 +254,9 @@ def show(
             A Gradio Theme to use for the dashboard instead of the default `"citrus"`,
             can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class.
+        mcp_server (`bool`, *optional*, defaults to `False`):
+            If True, the Trackio dashboard will be set up as an MCP server and certain 
+            functions will be added as MCP tools. If None (default behavior), then the GRADIO_MCP_SERVER environment variable will be used to determine if the MCP server should be enabled (which is "True" on Hugging Face Spaces).
     """
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,

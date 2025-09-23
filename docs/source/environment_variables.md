@@ -51,6 +51,6 @@ Defines the host name for the Trackio dashboard server. To make the dasbhoard ac
 export GRADIO_SERVER_NAME="0.0.0.0"
 ```
 
-See [this more comprehensive list]() of environment variables used by Gradio.
+See [this more comprehensive list](https://www.gradio.app/guides/environment-variables) of environment variables used by Gradio.
 
 
