@@ -318,6 +318,9 @@ def check_auth(hf_token: str | None) -> None:
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
+    """
+    Uploads the database of a local Trackio project to a Hugging Face Space.
+    """
     check_auth(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     if os.path.exists(db_project_path):
@@ -329,6 +332,9 @@ def upload_db_to_space(
 
 
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
+    """
+    Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
+    """
     check_auth(hf_token)
     for upload in uploads:
         media_path = FileStorage.init_project_media_path(
@@ -357,6 +363,9 @@ def bulk_log(
     logs: list[LogEntry],
     hf_token: str | None,
 ) -> None:
+    """
+    Logs a list of metrics to a Trackio dashboard. Each entry in the list is a dictionary of the project, run, a dictionary of metrics, and optionally, a step and config.
+    """
     check_auth(hf_token)
 
     logs_by_run = {}
