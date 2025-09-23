@@ -16,6 +16,7 @@ CONFIG_COLUMN_MAPPINGS = {
     "_Created": "Created",
     "_Group": "Group",
 }
+CONFIG_COLUMN_MAPPINGS_REVERSE = {v: k for k, v in CONFIG_COLUMN_MAPPINGS.items()}
 
 def get_project_info() -> str | None:
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
@@ -80,13 +81,15 @@ def get_group_by_fields(project: str):
 def group_runs_by_config(project: str, config_key: str, filter_text: str | None = None) -> dict[str, list[str]]:
     if not project or not config_key:
         return {}
+    display_key = config_key
+    config_key = CONFIG_COLUMN_MAPPINGS_REVERSE.get(config_key, config_key)
     configs = SQLiteStorage.get_all_run_configs(project)
     groups: dict[str, list[str]] = {}
     for run_name, config in configs.items():
         if filter_text and filter_text not in run_name:
             continue
         group_name = config.get(config_key, "null")
-        label = f"{config_key}: {group_name}"
+        label = f"{display_key}: {group_name}"
         groups.setdefault(label, []).append(run_name)
     # sort within each group
     for label in groups:
