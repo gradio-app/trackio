@@ -704,7 +704,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         api_name=False,
         queue=False,
     )
-    run_cb.input(
+    run_cb.change(
         fn=lambda: True,
         outputs=user_interacted_with_run_cb,
         api_name=False,
@@ -1024,19 +1024,18 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         def render_grouped_runs(project, group_key, filter_text, selected_runs):
             if not group_key:
                 return
-
-            def update_run_cb_from_group_change(group_selected: list[str], prev_all_selected: list[str], group_all_runs: list[str]):
-                prev_set = set(prev_all_selected or [])
-                prev_set.difference_update(group_all_runs or [])
-                prev_set.update(group_selected or [])
-                return gr.CheckboxGroup(value=sorted(prev_set))
-
             groups = fns.group_runs_by_config(project, group_key, filter_text)
             for label, runs in groups.items():
                 preselected = [r for r in runs if selected_runs and r in selected_runs]
                 with gr.Group():
+                    show_group_cb = gr.Checkbox(
+                        label="Show/Hide",
+                        value=len(preselected) == len(runs),
+                        key=f"show-cb-{group_key}-{label}",
+                        preserved_by_key=["value"],
+                    )
                     with gr.Accordion(
-                        label,
+                        f"{label} ({len(runs)})",
                         open=False,
                         key=f"accordion-{group_key}-{label}",
                         preserved_by_key=["open", "value"]
@@ -1048,11 +1047,35 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             key=f"group-cb-{group_key}-{label}",
                             preserved_by_key=["value"],
                         )
+
+                        def update_run_cb_from_group_change(group_selected: list[str], prev_all_selected: list[str], group_all_runs: list[str]):
+                            prev_set = set(prev_all_selected or [])
+                            prev_set.difference_update(group_all_runs or [])
+                            prev_set.update(group_selected or [])
+                            return gr.CheckboxGroup(value=sorted(prev_set))
+
                         gr.on(
                             [group_cb.change],
                             fn=update_run_cb_from_group_change,
                             inputs=[group_cb, run_cb, gr.State(runs)],
                             outputs=[run_cb],
+                            show_progress="hidden",
+                            api_name=False,
+                            queue=False,
+                        )
+
+                        def set_group_selection(select_all, prev_all_selected, group_all_runs):
+                            target = group_all_runs if select_all else []
+                            new_selected = set(prev_all_selected or [])
+                            new_selected.difference_update(target)
+                            new_selected.update(target)
+                            return gr.CheckboxGroup(value=target), gr.CheckboxGroup(value=sorted(new_selected))
+
+                        gr.on(
+                            [show_group_cb.change],
+                            fn=set_group_selection,
+                            inputs=[show_group_cb, run_cb, gr.State(runs)],
+                            outputs=[group_cb, run_cb],
                             show_progress="hidden",
                             api_name=False,
                             queue=False,
