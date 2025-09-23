@@ -26,8 +26,7 @@ def get_runs_data(project):
     df.index.name = "Name"
     df.reset_index(inplace=True)
 
-    column_mapping = {"_Username": "Username", "_Created": "Created", "_Group": "Group"}
-    df.rename(columns=column_mapping, inplace=True)
+    df.rename(columns=fns.CONFIG_COLUMN_MAPPINGS, inplace=True)
 
     if "Created" in df.columns:
         df["Created"] = df["Created"].apply(utils.format_timestamp)

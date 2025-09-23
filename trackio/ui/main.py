@@ -544,14 +544,19 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             language="html",
             visible=bool(os.environ.get("SPACE_HOST")),
         )
-        run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
-        run_cb = gr.CheckboxGroup(
-            label="Runs",
-            choices=[],
-            interactive=True,
-            elem_id="run-cb",
-            show_select_all=True,
-        )
+        with gr.Group():
+            run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
+            group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
+            grouped_runs_panel = gr.Group(visible=False)
+            run_cb = gr.CheckboxGroup(
+                label="Runs",
+                choices=[],
+                interactive=True,
+                elem_id="run-cb",
+                show_select_all=True,
+            )
+
+
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
         smoothing_slider = gr.Slider(
@@ -651,6 +656,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         show_progress="hidden",
         api_name=False,
         queue=False,
+    ).then(
+        fn=fns.get_group_by_fields,
+        inputs=[project_dd],
+        outputs=[group_by_dd],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
     )
 
     gr.on(
@@ -667,6 +679,19 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         fn=utils.generate_embed_code,
         inputs=[project_dd, metric_filter_tb, run_cb],
         outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+
+    def toggle_group_view(group_by_dd):
+        return gr.CheckboxGroup(visible=not bool(group_by_dd)), gr.Group(visible=bool(group_by_dd))
+
+    gr.on(
+        [group_by_dd.change],
+        fn=toggle_group_view,
+        inputs=[group_by_dd],
+        outputs=[run_cb, grouped_runs_panel],
         show_progress="hidden",
         api_name=False,
         queue=False,
@@ -989,6 +1014,49 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
 
+    with grouped_runs_panel:
+        @gr.render(
+            triggers=[demo.load, project_dd.change, group_by_dd.change, run_tb.input],
+            inputs=[project_dd, group_by_dd, run_tb, run_cb],
+            show_progress="hidden",
+            queue=False
+        )
+        def render_grouped_runs(project, group_key, filter_text, selected_runs):
+            if not group_key:
+                return
+
+            def update_run_cb_from_group_change(group_selected: list[str], prev_all_selected: list[str], group_all_runs: list[str]):
+                prev_set = set(prev_all_selected or [])
+                prev_set.difference_update(group_all_runs or [])
+                prev_set.update(group_selected or [])
+                return gr.CheckboxGroup(value=sorted(prev_set))
+
+            groups = fns.group_runs_by_config(project, group_key, filter_text)
+            for label, runs in groups.items():
+                preselected = [r for r in runs if selected_runs and r in selected_runs]
+                with gr.Group():
+                    with gr.Accordion(
+                        label,
+                        open=False,
+                        key=f"accordion-{group_key}-{label}",
+                        preserved_by_key=["open", "value"]
+                    ):
+                        group_cb = gr.CheckboxGroup(
+                            choices=runs,
+                            value=preselected,
+                            show_label=False,
+                            key=f"group-cb-{group_key}-{label}",
+                            preserved_by_key=["value"],
+                        )
+                        gr.on(
+                            [group_cb.change],
+                            fn=update_run_cb_from_group_change,
+                            inputs=[group_cb, run_cb, gr.State(runs)],
+                            outputs=[run_cb],
+                            show_progress="hidden",
+                            api_name=False,
+                            queue=False,
+                        )
 
 with demo.route("Runs", show_in_navbar=False):
     run_page.render()

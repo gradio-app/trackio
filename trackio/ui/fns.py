@@ -11,6 +11,11 @@ except ImportError:
     import utils
     from sqlite_storage import SQLiteStorage
 
+CONFIG_COLUMN_MAPPINGS = {
+    "_Username": "Username",
+    "_Created": "Created",
+    "_Group": "Group",
+}
 
 def get_project_info() -> str | None:
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
@@ -56,3 +61,36 @@ def update_navbar_value(project_dd):
             ("Runs", f"runs?selected_project={project_dd}"),
         ]
     )
+
+
+def get_group_by_fields(project: str):
+    configs = SQLiteStorage.get_all_run_configs(project) if project else {}
+    keys = set()
+    for config in configs.values():
+        keys.update(config.keys())
+    keys.discard("_Created")
+    keys = [CONFIG_COLUMN_MAPPINGS.get(key, key) for key in keys]
+    choices = [None] + sorted(keys)
+    return gr.Dropdown(
+        choices=choices,
+        value=None,
+        interactive=True,
+    )
+
+def group_runs_by_config(project: str, config_key: str, filter_text: str | None = None) -> dict[str, list[str]]:
+    if not project or not config_key:
+        return {}
+    configs = SQLiteStorage.get_all_run_configs(project)
+    groups: dict[str, list[str]] = {}
+    for run_name, config in configs.items():
+        if filter_text and filter_text not in run_name:
+            continue
+        group_name = config.get(config_key, "null")
+        label = f"{config_key}: {group_name}"
+        groups.setdefault(label, []).append(run_name)
+    # sort within each group
+    for label in groups:
+        groups[label].sort()
+    # sort groups by label
+    sorted_groups = dict(sorted(groups.items(), key=lambda kv: kv[0].lower()))
+    return sorted_groups
