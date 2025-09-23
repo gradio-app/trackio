@@ -92,7 +92,7 @@ def group_runs_by_config(
     for run_name, config in configs.items():
         if filter_text and filter_text not in run_name:
             continue
-        group_name = config.get(config_key, "null")
+        group_name = config.get(config_key, "None")
         label = f"{display_key}: {group_name}"
         groups.setdefault(label, []).append(run_name)
     # sort within each group

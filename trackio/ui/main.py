@@ -584,6 +584,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     metrics_subset = gr.State([])
     user_interacted_with_run_cb = gr.State(False)
     selected_runs_from_url = gr.State([])
+    selected_runs_state = gr.State([])
 
     gr.on(
         [demo.load],
@@ -636,14 +637,14 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         api_name=False,
     ).then(
         fn=update_x_axis_choices,
-        inputs=[project_dd, run_cb],
+        inputs=[project_dd, selected_runs_state],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
         api_name=False,
     ).then(
         fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, run_cb],
+        inputs=[project_dd, metric_filter_tb, selected_runs_state],
         outputs=[embed_code],
         show_progress="hidden",
         api_name=False,
@@ -667,7 +668,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.on(
         [run_cb.input],
         fn=update_x_axis_choices,
-        inputs=[project_dd, run_cb],
+        inputs=[project_dd, selected_runs_state],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
@@ -676,7 +677,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.on(
         [metric_filter_tb.change, run_cb.change],
         fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, run_cb],
+        inputs=[project_dd, metric_filter_tb, selected_runs_state],
         outputs=embed_code,
         show_progress="hidden",
         api_name=False,
@@ -706,8 +707,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         queue=False,
     )
     run_cb.change(
-        fn=lambda: True,
-        outputs=user_interacted_with_run_cb,
+        fn=lambda v: (v, True),
+        inputs=run_cb,
+        outputs=[selected_runs_state, user_interacted_with_run_cb],
         api_name=False,
         queue=False,
     )
@@ -1019,7 +1021,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
 
         @gr.render(
             triggers=[demo.load, project_dd.change, group_by_dd.change, run_tb.input],
-            inputs=[project_dd, group_by_dd, run_tb, run_cb],
+            inputs=[project_dd, group_by_dd, run_tb, selected_runs_state],
             show_progress="hidden",
             queue=False,
         )
@@ -1032,7 +1034,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                 with gr.Group():
                     show_group_cb = gr.Checkbox(
                         label="Show/Hide",
-                        value=len(preselected) == len(runs),
+                        value=(len(preselected) > 0),
                         key=f"show-cb-{group_key}-{label}",
                         preserved_by_key=["value"],
                     )
@@ -1040,14 +1042,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                         f"{label} ({len(runs)})",
                         open=False,
                         key=f"accordion-{group_key}-{label}",
-                        preserved_by_key=["open", "value"],
+                        preserved_by_key=["open"],
                     ):
                         group_cb = gr.CheckboxGroup(
                             choices=runs,
                             value=preselected,
                             show_label=False,
                             key=f"group-cb-{group_key}-{label}",
-                            preserved_by_key=["value"],
                         )
 
                         def update_run_cb_from_group_change(
@@ -1058,25 +1059,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             prev_set = set(prev_all_selected or [])
                             prev_set.difference_update(group_all_runs or [])
                             prev_set.update(group_selected or [])
-                            # Determine whether to update the group's Show/Hide checkbox:
-                            # - If all selected: check it
-                            # - If none selected: uncheck it
-                            # - If partial: do not update (keep existing state)
-                            selected_count = len(group_selected or [])
-                            total_count = len(group_all_runs or [])
-                            if total_count > 0 and selected_count == total_count:
-                                show_update = gr.Checkbox(value=True)
-                            elif selected_count == 0:
-                                show_update = gr.Checkbox(value=False)
-                            else:
-                                show_update = gr.update()  # no change to Show/Hide
-                            return gr.CheckboxGroup(value=sorted(prev_set)), show_update
+                            return gr.CheckboxGroup(value=sorted(prev_set))
 
                         gr.on(
                             [group_cb.change],
                             fn=update_run_cb_from_group_change,
-                            inputs=[group_cb, run_cb, gr.State(runs)],
-                            outputs=[run_cb, show_group_cb],
+                            inputs=[group_cb, selected_runs_state, gr.State(runs)],
+                            outputs=[run_cb],
                             show_progress="hidden",
                             api_name=False,
                             queue=False,
@@ -1091,7 +1080,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             current_all_selected = len(
                                 current_selected_in_group
                             ) == len(group_set)
-                            # If programmatic sync sets the checkbox to match current state, do nothing
                             if bool(select_all) == bool(current_all_selected):
                                 return (
                                     gr.CheckboxGroup(value=current_selected_in_group),
@@ -1108,7 +1096,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                         gr.on(
                             [show_group_cb.change],
                             fn=set_group_selection,
-                            inputs=[show_group_cb, run_cb, gr.State(runs)],
+                            inputs=[show_group_cb, selected_runs_state, gr.State(runs)],
                             outputs=[group_cb, run_cb],
                             show_progress="hidden",
                             api_name=False,

@@ -46,8 +46,7 @@ class Run:
 
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
-        if self.group is not None:
-            self.config["_Group"] = self.group
+        self.config["_Group"] = self.group
 
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
