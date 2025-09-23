@@ -1052,22 +1052,44 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             prev_set = set(prev_all_selected or [])
                             prev_set.difference_update(group_all_runs or [])
                             prev_set.update(group_selected or [])
-                            return gr.CheckboxGroup(value=sorted(prev_set))
+                            # Determine whether to update the group's Show/Hide checkbox:
+                            # - If all selected: check it
+                            # - If none selected: uncheck it
+                            # - If partial: do not update (keep existing state)
+                            selected_count = len(group_selected or [])
+                            total_count = len(group_all_runs or [])
+                            if total_count > 0 and selected_count == total_count:
+                                show_update = gr.Checkbox(value=True)
+                            elif selected_count == 0:
+                                show_update = gr.Checkbox(value=False)
+                            else:
+                                show_update = gr.update()  # no change to Show/Hide
+                            return gr.CheckboxGroup(value=sorted(prev_set)), show_update
 
                         gr.on(
                             [group_cb.change],
                             fn=update_run_cb_from_group_change,
                             inputs=[group_cb, run_cb, gr.State(runs)],
-                            outputs=[run_cb],
+                            outputs=[run_cb, show_group_cb],
                             show_progress="hidden",
                             api_name=False,
                             queue=False,
                         )
 
                         def set_group_selection(select_all, prev_all_selected, group_all_runs):
-                            target = group_all_runs if select_all else []
-                            new_selected = set(prev_all_selected or [])
-                            new_selected.difference_update(target)
+                            prev_all_set = set(prev_all_selected or [])
+                            group_set = set(group_all_runs or [])
+                            current_selected_in_group = sorted(prev_all_set & group_set)
+                            current_all_selected = len(current_selected_in_group) == len(group_set)
+                            # If programmatic sync sets the checkbox to match current state, do nothing
+                            if bool(select_all) == bool(current_all_selected):
+                                return (
+                                    gr.CheckboxGroup(value=current_selected_in_group),
+                                    gr.CheckboxGroup(value=sorted(prev_all_set)),
+                                )
+
+                            target = list(group_all_runs) if select_all else []
+                            new_selected = prev_all_set - group_set
                             new_selected.update(target)
                             return gr.CheckboxGroup(value=target), gr.CheckboxGroup(value=sorted(new_selected))
 
