@@ -388,6 +388,45 @@ def bulk_log(
         )
 
 
+def get_metric_values(
+    project: str,
+    run: str,
+    metric_name: str,
+    hf_token: str | None,
+) -> list[dict]:
+    """
+    Get all values for a specific metric in a project/run.
+    Returns a list of dictionaries with timestamp, step, and value.
+    """
+    check_auth(hf_token)
+    return SQLiteStorage.get_metric_values(project, run, metric_name)
+
+
+def get_runs_for_project(
+    project: str,
+    hf_token: str | None,
+) -> list[str]:
+    """
+    Get all runs for a given project.
+    Returns a list of run names.
+    """
+    check_auth(hf_token)
+    return SQLiteStorage.get_runs(project)
+
+
+def get_metrics_for_run(
+    project: str,
+    run: str,
+    hf_token: str | None,
+) -> list[str]:
+    """
+    Get all metrics for a given project and run.
+    Returns a list of metric names.
+    """
+    check_auth(hf_token)
+    return SQLiteStorage.get_all_metrics_for_run(project, run)
+
+
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
     """
     Filter metrics using regex pattern.
@@ -717,6 +756,18 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.api(
         fn=bulk_log,
         api_name="bulk_log",
+    )
+    gr.api(
+        fn=get_metric_values,
+        api_name="get_metric_values",
+    )
+    gr.api(
+        fn=get_runs_for_project,
+        api_name="get_runs_for_project",
+    )
+    gr.api(
+        fn=get_metrics_for_run,
+        api_name="get_metrics_for_run",
     )
 
     x_lim = gr.State(None)
