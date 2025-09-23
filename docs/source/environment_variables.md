@@ -51,6 +51,16 @@ Defines the host name for the Trackio dashboard server. To make the dasbhoard ac
 export GRADIO_SERVER_NAME="0.0.0.0"
 ```
 
+### `GRADIO_MCP_SERVER`
+
+Enables the MCP (Model Context Protocol) server functionality in Trackio. When enabled, the Trackio dashboard will be set up as an MCP server and certain functions will be exposed as MCP tools that can be used by LLMs (e.g. to read the logged metrics).
+
+```bash
+export GRADIO_MCP_SERVER="True"
+```
+
+
+
 See [this more comprehensive list](https://www.gradio.app/guides/environment-variables) of environment variables used by Gradio.
 
 
