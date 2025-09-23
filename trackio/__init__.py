@@ -238,7 +238,11 @@ def finish():
     run.finish()
 
 
-def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
+def show(
+    project: str | None = None,
+    theme: str | ThemeClass = DEFAULT_THEME,
+    mcp_server: bool = False,
+):
     """
     Launches the Trackio dashboard.
 
