@@ -26,7 +26,7 @@ def get_runs_data(project):
     df.index.name = "Name"
     df.reset_index(inplace=True)
 
-    column_mapping = {"_Username": "Username", "_Created": "Created"}
+    column_mapping = {"_Username": "Username", "_Created": "Created", "_Group": "Group"}
     df.rename(columns=column_mapping, inplace=True)
 
     if "Created" in df.columns:
@@ -49,12 +49,18 @@ def get_runs_data(project):
     df.insert(0, " ", False)
 
     columns = list(df.columns)
-    if "Username" in columns and "Created" in columns:
-        columns.remove("Username")
-        columns.remove("Created")
-        columns.insert(2, "Username")
-        columns.insert(3, "Created")
-        df = df[columns]
+    # Ensure columns appear immediately after Name in this order: Group, Username, Created
+    if "Name" in columns:
+        order = [col for col in ["Group", "Username", "Created"] if col in columns]
+        if order:
+            for col in order:
+                columns.remove(col)
+            name_idx = columns.index("Name")
+            insert_pos = name_idx + 1
+            for col in order:
+                columns.insert(insert_pos, col)
+                insert_pos += 1
+            df = df[columns]
 
     return df
 

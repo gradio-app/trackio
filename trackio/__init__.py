@@ -46,6 +46,7 @@ DEFAULT_THEME = "citrus"
 def init(
     project: str,
     name: str | None = None,
+    group: str | None = None,
     space_id: str | None = None,
     space_storage: SpaceStorage | None = None,
     dataset_id: str | None = None,
@@ -194,6 +195,7 @@ def init(
         project=project,
         client=client,
         name=name,
+        group=group,
         config=config,
         space_id=space_id,
     )
