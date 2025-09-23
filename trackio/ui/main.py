@@ -318,6 +318,9 @@ def check_auth(hf_token: str | None) -> None:
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
+    """
+    Uploads the database of a local Trackio project to a Hugging Face Space.
+    """
     check_auth(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     if os.path.exists(db_project_path):
@@ -329,6 +332,9 @@ def upload_db_to_space(
 
 
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
+    """
+    Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
+    """
     check_auth(hf_token)
     for upload in uploads:
         media_path = FileStorage.init_project_media_path(
@@ -357,6 +363,9 @@ def bulk_log(
     logs: list[LogEntry],
     hf_token: str | None,
 ) -> None:
+    """
+    Logs a list of metrics to a Trackio dashboard. Each entry in the list is a dictionary of the project, run, a dictionary of metrics, and optionally, a step and config.
+    """
     check_auth(hf_token)
 
     logs_by_run = {}
@@ -377,6 +386,39 @@ def bulk_log(
             steps=data["steps"],
             config=data["config"],
         )
+
+
+def get_metric_values(
+    project: str,
+    run: str,
+    metric_name: str,
+) -> list[dict]:
+    """
+    Get all values for a specific metric in a project/run.
+    Returns a list of dictionaries with timestamp, step, and value.
+    """
+    return SQLiteStorage.get_metric_values(project, run, metric_name)
+
+
+def get_runs_for_project(
+    project: str,
+) -> list[str]:
+    """
+    Get all runs for a given project.
+    Returns a list of run names.
+    """
+    return SQLiteStorage.get_runs(project)
+
+
+def get_metrics_for_run(
+    project: str,
+    run: str,
+) -> list[str]:
+    """
+    Get all metrics for a given project and run.
+    Returns a list of metric names.
+    """
+    return SQLiteStorage.get_all_metrics_for_run(project, run)
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
@@ -708,6 +750,18 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.api(
         fn=bulk_log,
         api_name="bulk_log",
+    )
+    gr.api(
+        fn=get_metric_values,
+        api_name="get_metric_values",
+    )
+    gr.api(
+        fn=get_runs_for_project,
+        api_name="get_runs_for_project",
+    )
+    gr.api(
+        fn=get_metrics_for_run,
+        api_name="get_metrics_for_run",
     )
 
     x_lim = gr.State(None)
