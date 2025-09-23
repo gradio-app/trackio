@@ -38,8 +38,10 @@ def main():
                 loss = base_loss * (1.0 - 0.85 * progress) + random.uniform(-0.03, 0.03)
                 loss = max(min_loss, loss)
 
-                accuracy = 0.5 + 0.45 * progress * performance_factor + random.uniform(
-                    -0.02, 0.02
+                accuracy = (
+                    0.5
+                    + 0.45 * progress * performance_factor
+                    + random.uniform(-0.02, 0.02)
                 )
                 accuracy = max(0.0, min(0.99, accuracy))
 
@@ -58,5 +60,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

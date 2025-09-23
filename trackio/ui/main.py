@@ -556,7 +556,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                 show_select_all=True,
             )
 
-
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
         smoothing_slider = gr.Slider(
@@ -685,7 +684,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
 
     def toggle_group_view(group_by_dd):
-        return gr.CheckboxGroup(visible=not bool(group_by_dd)), gr.Group(visible=bool(group_by_dd))
+        return gr.CheckboxGroup(visible=not bool(group_by_dd)), gr.Group(
+            visible=bool(group_by_dd)
+        )
 
     gr.on(
         [group_by_dd.change],
@@ -1015,11 +1016,12 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     )
 
     with grouped_runs_panel:
+
         @gr.render(
             triggers=[demo.load, project_dd.change, group_by_dd.change, run_tb.input],
             inputs=[project_dd, group_by_dd, run_tb, run_cb],
             show_progress="hidden",
-            queue=False
+            queue=False,
         )
         def render_grouped_runs(project, group_key, filter_text, selected_runs):
             if not group_key:
@@ -1038,7 +1040,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                         f"{label} ({len(runs)})",
                         open=False,
                         key=f"accordion-{group_key}-{label}",
-                        preserved_by_key=["open", "value"]
+                        preserved_by_key=["open", "value"],
                     ):
                         group_cb = gr.CheckboxGroup(
                             choices=runs,
@@ -1048,7 +1050,11 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             preserved_by_key=["value"],
                         )
 
-                        def update_run_cb_from_group_change(group_selected: list[str], prev_all_selected: list[str], group_all_runs: list[str]):
+                        def update_run_cb_from_group_change(
+                            group_selected: list[str],
+                            prev_all_selected: list[str],
+                            group_all_runs: list[str],
+                        ):
                             prev_set = set(prev_all_selected or [])
                             prev_set.difference_update(group_all_runs or [])
                             prev_set.update(group_selected or [])
@@ -1076,11 +1082,15 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             queue=False,
                         )
 
-                        def set_group_selection(select_all, prev_all_selected, group_all_runs):
+                        def set_group_selection(
+                            select_all, prev_all_selected, group_all_runs
+                        ):
                             prev_all_set = set(prev_all_selected or [])
                             group_set = set(group_all_runs or [])
                             current_selected_in_group = sorted(prev_all_set & group_set)
-                            current_all_selected = len(current_selected_in_group) == len(group_set)
+                            current_all_selected = len(
+                                current_selected_in_group
+                            ) == len(group_set)
                             # If programmatic sync sets the checkbox to match current state, do nothing
                             if bool(select_all) == bool(current_all_selected):
                                 return (
@@ -1091,7 +1101,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             target = list(group_all_runs) if select_all else []
                             new_selected = prev_all_set - group_set
                             new_selected.update(target)
-                            return gr.CheckboxGroup(value=target), gr.CheckboxGroup(value=sorted(new_selected))
+                            return gr.CheckboxGroup(value=target), gr.CheckboxGroup(
+                                value=sorted(new_selected)
+                            )
 
                         gr.on(
                             [show_group_cb.change],
@@ -1102,6 +1114,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             api_name=False,
                             queue=False,
                         )
+
 
 with demo.route("Runs", show_in_navbar=False):
     run_page.render()

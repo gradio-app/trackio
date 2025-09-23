@@ -18,6 +18,7 @@ CONFIG_COLUMN_MAPPINGS = {
 }
 CONFIG_COLUMN_MAPPINGS_REVERSE = {v: k for k, v in CONFIG_COLUMN_MAPPINGS.items()}
 
+
 def get_project_info() -> str | None:
     dataset_id = os.environ.get("TRACKIO_DATASET_ID")
     space_id = os.environ.get("SPACE_ID")
@@ -78,7 +79,10 @@ def get_group_by_fields(project: str):
         interactive=True,
     )
 
-def group_runs_by_config(project: str, config_key: str, filter_text: str | None = None) -> dict[str, list[str]]:
+
+def group_runs_by_config(
+    project: str, config_key: str, filter_text: str | None = None
+) -> dict[str, list[str]]:
     if not project or not config_key:
         return {}
     display_key = config_key

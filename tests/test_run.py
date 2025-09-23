@@ -130,6 +130,7 @@ def test_automatic_username_and_timestamp_added(mock_whoami, temp_dir):
     created_time = datetime.fromisoformat(run.config["_Created"])
     assert created_time.tzinfo is not None
 
+
 def test_run_group_added(temp_dir):
     run = Run(
         url="http://test",
