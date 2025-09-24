@@ -58,19 +58,17 @@ def run_checkbox_update(selection: RunSelection, **kwargs) -> gr.CheckboxGroup:
 
 
 def handle_run_checkbox_change(
-    selected_runs: list[str] | None, selection: RunSelection | None
+    selected_runs: list[str] | None, selection: RunSelection
 ) -> RunSelection:
-    selection = selection or RunSelection()
     selection.select(selected_runs or [])
     return selection
 
 
 def handle_group_checkbox_change(
     group_selected: list[str] | None,
-    selection: RunSelection | None,
+    selection: RunSelection,
     group_runs: list[str] | None,
 ):
-    selection = selection or RunSelection()
     subset, _ = selection.replace_group(group_runs or [], group_selected or [])
     return (
         selection,
@@ -81,10 +79,9 @@ def handle_group_checkbox_change(
 
 def handle_group_toggle(
     select_all: bool,
-    selection: RunSelection | None,
+    selection: RunSelection,
     group_runs: list[str] | None,
 ):
-    selection = selection or RunSelection()
     target = list(group_runs or []) if select_all else []
     subset, _ = selection.replace_group(group_runs or [], target)
     return (

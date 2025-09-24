@@ -223,11 +223,9 @@ def load_run_data(
 def refresh_runs(
     project: str | None,
     filter_text: str | None,
-    selection: rs.RunSelection | None,
+    selection: rs.RunSelection,
     selected_runs_from_url: list[str] | None = None,
 ):
-    selection = selection or rs.RunSelection()
-
     if project is None:
         runs: list[str] = []
     else:
@@ -248,9 +246,7 @@ def refresh_runs(
     )
 
 
-def generate_embed(
-    project: str, metrics: str, selection: rs.RunSelection | None
-) -> str:
+def generate_embed(project: str, metrics: str, selection: rs.RunSelection) -> str:
     return utils.generate_embed_code(project, metrics, rs.get_selected_runs(selection))
 
 
