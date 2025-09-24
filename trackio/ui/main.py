@@ -4,7 +4,7 @@ import os
 import re
 import secrets
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import gradio as gr
@@ -132,6 +132,60 @@ class MediaData:
     file_path: str
 
 
+@dataclass
+class RunSelection:
+    choices: list[str] = field(default_factory=list)
+    selected: list[str] = field(default_factory=list)
+    locked: bool = False
+
+    def update_choices(
+        self, runs: list[str], preferred: list[str] | None = None
+    ) -> list[str]:
+        self.choices = list(runs)
+        if self.locked:
+            base = set(self.selected)
+        else:
+            base = set(preferred or runs)
+        self.selected = [run for run in self.choices if run in base]
+        return self.selected
+
+    def select(self, runs: list[str]) -> list[str]:
+        choice_set = set(self.choices)
+        self.selected = [run for run in runs if run in choice_set]
+        self.locked = True
+        return self.selected
+
+    def replace_group(
+        self, group_runs: list[str], new_subset: list[str] | None
+    ) -> tuple[list[str], list[str]]:
+        new_subset = ordered_subset(group_runs, new_subset)
+        selection_set = set(self.selected)
+        selection_set.difference_update(group_runs)
+        selection_set.update(new_subset)
+        self.selected = [run for run in self.choices if run in selection_set]
+        self.locked = True
+        return new_subset, self.selected
+
+
+def ordered_subset(items: list[str], subset: list[str] | None) -> list[str]:
+    subset_set = set(subset or [])
+    return [item for item in items if item in subset_set]
+
+
+def get_selected_runs(selection: "RunSelection | list[str] | None") -> list[str]:
+    if isinstance(selection, RunSelection):
+        return list(selection.selected)
+    return list(selection or [])
+
+
+def run_checkbox_update(selection: RunSelection, **kwargs) -> gr.CheckboxGroup:
+    return gr.CheckboxGroup(
+        choices=selection.choices,
+        value=selection.selected,
+        **kwargs,
+    )
+
+
 def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
     media_by_key: dict[str, list[MediaData]] = {}
     logs = sorted(logs, key=lambda x: x.get("step", 0))
@@ -218,38 +272,78 @@ def load_run_data(
         return df, media
 
 
-def update_runs(
-    project, filter_text, user_interacted_with_runs=False, selected_runs_from_url=None
+def refresh_runs(
+    project: str | None,
+    filter_text: str | None,
+    selection: RunSelection | None,
+    selected_runs_from_url: list[str] | None = None,
 ):
+    selection = selection or RunSelection()
+
     if project is None:
-        runs = []
-        num_runs = 0
+        runs: list[str] = []
     else:
         runs = get_runs(project)
-        num_runs = len(runs)
         if filter_text:
             runs = [r for r in runs if filter_text in r]
 
-    if not user_interacted_with_runs:
-        if selected_runs_from_url:
-            value = [r for r in runs if r in selected_runs_from_url]
-        else:
-            value = runs
-        return gr.CheckboxGroup(choices=runs, value=value), gr.Textbox(
-            label=f"Runs ({num_runs})"
-        )
-    else:
-        return gr.CheckboxGroup(choices=runs), gr.Textbox(label=f"Runs ({num_runs})")
+    preferred = None
+    if selected_runs_from_url:
+        preferred = [r for r in runs if r in selected_runs_from_url]
+
+    selection.update_choices(runs, preferred)
+
+    return (
+        run_checkbox_update(selection),
+        gr.Textbox(label=f"Runs ({len(runs)})"),
+        selection,
+    )
 
 
-def filter_runs(project, filter_text):
-    runs = get_runs(project)
-    runs = [r for r in runs if filter_text in r]
-    return gr.CheckboxGroup(choices=runs, value=runs)
+def handle_run_checkbox_change(
+    selected_runs: list[str] | None, selection: RunSelection | None
+) -> RunSelection:
+    selection = selection or RunSelection()
+    selection.select(selected_runs or [])
+    return selection
 
 
-def update_x_axis_choices(project, runs):
+def handle_group_checkbox_change(
+    group_selected: list[str] | None,
+    selection: RunSelection | None,
+    group_runs: list[str] | None,
+):
+    selection = selection or RunSelection()
+    subset, _ = selection.replace_group(group_runs or [], group_selected or [])
+    return (
+        selection,
+        gr.CheckboxGroup(value=subset),
+        run_checkbox_update(selection),
+    )
+
+
+def handle_group_toggle(
+    select_all: bool,
+    selection: RunSelection | None,
+    group_runs: list[str] | None,
+):
+    selection = selection or RunSelection()
+    target = list(group_runs or []) if select_all else []
+    subset, _ = selection.replace_group(group_runs or [], target)
+    return (
+        selection,
+        gr.CheckboxGroup(value=subset),
+        run_checkbox_update(selection),
+    )
+
+
+def generate_embed(project: str, metrics: str, selection: RunSelection | None) -> str:
+    return utils.generate_embed_code(project, metrics, get_selected_runs(selection))
+
+
+def update_x_axis_choices(project, selection):
     """Update x-axis dropdown choices based on available metrics."""
+    runs = get_selected_runs(selection)
     available_metrics = get_available_metrics(project, runs)
     return gr.Dropdown(
         label="X-axis",
@@ -582,9 +676,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
-    user_interacted_with_run_cb = gr.State(False)
     selected_runs_from_url = gr.State([])
-    selected_runs_state = gr.State([])
+    run_selection_state = gr.State(RunSelection())
 
     gr.on(
         [demo.load],
@@ -609,14 +702,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
     gr.on(
         [timer.tick],
-        fn=update_runs,
-        inputs=[
-            project_dd,
-            run_tb,
-            user_interacted_with_run_cb,
-            selected_runs_from_url,
-        ],
-        outputs=[run_cb, run_tb],
+        fn=refresh_runs,
+        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
+        outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         api_name=False,
     )
@@ -629,22 +717,22 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
     gr.on(
         [demo.load, project_dd.change],
-        fn=update_runs,
-        inputs=[project_dd, run_tb, gr.State(False), selected_runs_from_url],
-        outputs=[run_cb, run_tb],
+        fn=refresh_runs,
+        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
+        outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         queue=False,
         api_name=False,
     ).then(
         fn=update_x_axis_choices,
-        inputs=[project_dd, selected_runs_state],
+        inputs=[project_dd, run_selection_state],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
         api_name=False,
     ).then(
-        fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, selected_runs_state],
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=[embed_code],
         show_progress="hidden",
         api_name=False,
@@ -668,7 +756,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.on(
         [run_cb.input],
         fn=update_x_axis_choices,
-        inputs=[project_dd, selected_runs_state],
+        inputs=[project_dd, run_selection_state],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
@@ -676,8 +764,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
     gr.on(
         [metric_filter_tb.change, run_cb.change],
-        fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, selected_runs_state],
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=embed_code,
         show_progress="hidden",
         api_name=False,
@@ -685,8 +773,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
 
     def toggle_group_view(group_by_dd):
-        return gr.CheckboxGroup(visible=not bool(group_by_dd)), gr.Group(
-            visible=bool(group_by_dd)
+        return (
+            gr.CheckboxGroup(visible=not bool(group_by_dd)),
+            gr.Group(visible=bool(group_by_dd)),
         )
 
     gr.on(
@@ -707,16 +796,18 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         queue=False,
     )
     run_cb.change(
-        fn=lambda v: (v, True),
-        inputs=run_cb,
-        outputs=[selected_runs_state, user_interacted_with_run_cb],
+        fn=handle_run_checkbox_change,
+        inputs=[run_cb, run_selection_state],
+        outputs=run_selection_state,
         api_name=False,
         queue=False,
     )
     run_tb.input(
-        fn=filter_runs,
-        inputs=[project_dd, run_tb],
-        outputs=run_cb,
+        fn=lambda project, text, selection: refresh_runs(
+            project, text, selection
+        ),
+        inputs=[project_dd, run_tb, run_selection_state],
+        outputs=[run_cb, run_tb, run_selection_state],
         api_name=False,
         queue=False,
     )
@@ -1021,23 +1112,27 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
 
         @gr.render(
             triggers=[demo.load, project_dd.change, group_by_dd.change, run_tb.input],
-            inputs=[project_dd, group_by_dd, run_tb, selected_runs_state],
+            inputs=[project_dd, group_by_dd, run_tb, run_selection_state],
             show_progress="hidden",
             queue=False,
         )
-        def render_grouped_runs(project, group_key, filter_text, selected_runs):
+        def render_grouped_runs(project, group_key, filter_text, selection):
             if not group_key:
                 return
+            selection = selection or RunSelection()
             groups = fns.group_runs_by_config(project, group_key, filter_text)
+
             for label, runs in groups.items():
-                preselected = [r for r in runs if selected_runs and r in selected_runs]
+                ordered_current = ordered_subset(runs, selection.selected)
+
                 with gr.Group():
                     show_group_cb = gr.Checkbox(
                         label="Show/Hide",
-                        value=(len(preselected) > 0),
+                        value=bool(ordered_current),
                         key=f"show-cb-{group_key}-{label}",
                         preserved_by_key=["value"],
                     )
+
                     with gr.Accordion(
                         f"{label} ({len(runs)})",
                         open=False,
@@ -1046,58 +1141,38 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                     ):
                         group_cb = gr.CheckboxGroup(
                             choices=runs,
-                            value=preselected,
+                            value=ordered_current,
                             show_label=False,
                             key=f"group-cb-{group_key}-{label}",
                         )
 
-                        def update_run_cb_from_group_change(
-                            group_selected: list[str],
-                            prev_all_selected: list[str],
-                            group_all_runs: list[str],
-                        ):
-                            prev_set = set(prev_all_selected or [])
-                            prev_set.difference_update(group_all_runs or [])
-                            prev_set.update(group_selected or [])
-                            return gr.CheckboxGroup(value=sorted(prev_set))
-
                         gr.on(
                             [group_cb.change],
-                            fn=update_run_cb_from_group_change,
-                            inputs=[group_cb, selected_runs_state, gr.State(runs)],
-                            outputs=[run_cb],
+                            fn=handle_group_checkbox_change,
+                            inputs=[
+                                group_cb,
+                                run_selection_state,
+                                gr.State(runs),
+                            ],
+                            outputs=[
+                                run_selection_state,
+                                group_cb,
+                                run_cb,
+                            ],
                             show_progress="hidden",
                             api_name=False,
                             queue=False,
                         )
 
-                        def set_group_selection(
-                            select_all, prev_all_selected, group_all_runs
-                        ):
-                            prev_all_set = set(prev_all_selected or [])
-                            group_set = set(group_all_runs or [])
-                            current_selected_in_group = sorted(prev_all_set & group_set)
-                            current_all_selected = len(
-                                current_selected_in_group
-                            ) == len(group_set)
-                            if bool(select_all) == bool(current_all_selected):
-                                return (
-                                    gr.CheckboxGroup(value=current_selected_in_group),
-                                    gr.CheckboxGroup(value=sorted(prev_all_set)),
-                                )
-
-                            target = list(group_all_runs) if select_all else []
-                            new_selected = prev_all_set - group_set
-                            new_selected.update(target)
-                            return gr.CheckboxGroup(value=target), gr.CheckboxGroup(
-                                value=sorted(new_selected)
-                            )
-
                         gr.on(
                             [show_group_cb.change],
-                            fn=set_group_selection,
-                            inputs=[show_group_cb, selected_runs_state, gr.State(runs)],
-                            outputs=[group_cb, run_cb],
+                            fn=handle_group_toggle,
+                            inputs=[
+                                show_group_cb,
+                                run_selection_state,
+                                gr.State(runs),
+                            ],
+                            outputs=[run_selection_state, group_cb, run_cb],
                             show_progress="hidden",
                             api_name=False,
                             queue=False,
