@@ -709,6 +709,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         outputs=run_selection_state,
         api_name=False,
         queue=False,
+    ).then(
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
     )
     run_tb.input(
         fn=refresh_runs,
