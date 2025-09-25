@@ -237,10 +237,9 @@ def refresh_runs(
     if selected_runs_from_url:
         preferred = [r for r in runs if r in selected_runs_from_url]
 
-    selection.update_choices(runs, preferred)
-
+    did_change = selection.update_choices(runs, preferred)
     return (
-        rs.run_checkbox_update(selection),
+        rs.run_checkbox_update(selection) if did_change else gr.CheckboxGroup(),
         gr.Textbox(label=f"Runs ({len(runs)})"),
         selection,
     )
@@ -704,7 +703,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         api_name=False,
         queue=False,
     )
-    run_cb.change(
+    run_cb.input(
         fn=rs.handle_run_checkbox_change,
         inputs=[run_cb, run_selection_state],
         outputs=run_selection_state,
