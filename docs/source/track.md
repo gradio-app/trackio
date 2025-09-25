@@ -22,7 +22,7 @@ In both cases, a new run is started automatically, ready for you to log data.
 
 ### Naming your run
 
-It’s a good idea to give each run a meaningful name for easier organization and later reference.
+It's a good idea to give each run a meaningful name for easier organization and later reference.
 You can set a name using the `name` parameter:
 
 ```python
@@ -30,6 +30,19 @@ trackio.init(project="my_project", name="my_first_run")
 ```
 
 If no name is provided, Trackio generates a default one.
+
+### Grouping runs
+
+You can organize related runs into groups using the `group` parameter. This is particularly useful when you're running multiple experiments with different configurations but want to compare them together:
+
+```python
+# Group runs by experiment type
+trackio.init(project="my_project", name="baseline_run_1", group="baseline")
+trackio.init(project="my_project", name="augmented_run_1", group="augmented")
+trackio.init(project="my_project", name="tuned_run_1", group="tuned")
+```
+
+Runs with the same group name can be grouped together in sidebar, making it easier to compare related experiments. You can also group runs by any other configuration parameter (see [Tracking Configuration](#tracking-configuration) below).
 
 ## Logging Data
 
@@ -145,12 +158,18 @@ For more flexibility, use `resume="allow"`. This will resume the run if it exist
 You can also track configuration parameters for your runs. This is useful for keeping track of hyperparameters or other settings used in your experiments. You can log configuration data using the `config` parameter in the [`init`] function:
 
 ```python
-trackio.init(
-    project="my_project",
-    name="my_first_run",
-    config={
-        "learning_rate": 0.001,
-        "batch_size": 32,
-    }
-)
+for batch_size in [16, 32, 64]:
+    for lr in [0.001, 0.01, 0.1]:
+        trackio.init(
+            project="hyperparameter_tuning",
+            name=f"lr_{lr}_batch_{batch_size}_run",
+            config={
+                "learning_rate": lr,
+                "batch_size": batch_size,
+            }
+        )
+        # ... your training code ...
+        trackio.finish()
 ```
+
+In the dashboard, you can then group by "learning_rate" or "batch_size" to more easily compare runs with different hyperparameters.
