@@ -711,7 +711,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         queue=False,
     )
     run_tb.input(
-        fn=lambda project, text, selection: refresh_runs(project, text, selection),
+        fn=refresh_runs,
         inputs=[project_dd, run_tb, run_selection_state],
         outputs=[run_cb, run_tb, run_selection_state],
         api_name=False,
@@ -1017,7 +1017,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     with grouped_runs_panel:
 
         @gr.render(
-            triggers=[demo.load, project_dd.change, run_group_by_dd.change, run_tb.input, run_selection_state.change],
+            triggers=[
+                demo.load,
+                project_dd.change,
+                run_group_by_dd.change,
+                run_tb.input,
+                run_selection_state.change,
+            ],
             inputs=[project_dd, run_group_by_dd, run_tb, run_selection_state],
             show_progress="hidden",
             queue=False,

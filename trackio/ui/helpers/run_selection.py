@@ -21,7 +21,7 @@ class RunSelection:
         elif preferred:
             base = set(preferred)
         else:
-            base = set(runs) 
+            base = set(runs)
         self.selected = [run for run in self.choices if run in base]
         return True
 
