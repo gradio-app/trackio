@@ -4,7 +4,7 @@ import os
 import re
 import secrets
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import gradio as gr
@@ -241,7 +241,7 @@ def refresh_runs(
     return (
         rs.run_checkbox_update(selection) if did_change else gr.CheckboxGroup(),
         gr.Textbox(label=f"Runs ({len(runs)})"),
-        selection,
+        replace(selection) if did_change else selection,
     )
 
 
@@ -1017,7 +1017,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     with grouped_runs_panel:
 
         @gr.render(
-            triggers=[demo.load, project_dd.change, group_by_dd.change, run_tb.input],
+            triggers=[demo.load, project_dd.change, group_by_dd.change, run_tb.input, run_selection_state.change],
             inputs=[project_dd, group_by_dd, run_tb, run_selection_state],
             show_progress="hidden",
             queue=False,
