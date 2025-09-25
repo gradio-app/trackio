@@ -723,6 +723,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         outputs=[run_cb, run_tb, run_selection_state],
         api_name=False,
         queue=False,
+        show_progress="hidden",
     )
 
     gr.api(
