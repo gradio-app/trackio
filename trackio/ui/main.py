@@ -548,7 +548,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         )
         with gr.Group():
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
-            group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
+            run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
             grouped_runs_panel = gr.Group(visible=False)
             run_cb = gr.CheckboxGroup(
                 label="Runs",
@@ -655,7 +655,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     ).then(
         fn=fns.get_group_by_fields,
         inputs=[project_dd],
-        outputs=[group_by_dd],
+        outputs=[run_group_by_dd],
         show_progress="hidden",
         api_name=False,
         queue=False,
@@ -687,9 +687,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         )
 
     gr.on(
-        [group_by_dd.change],
+        [run_group_by_dd.change],
         fn=toggle_group_view,
-        inputs=[group_by_dd],
+        inputs=[run_group_by_dd],
         outputs=[run_cb, grouped_runs_panel],
         show_progress="hidden",
         api_name=False,
@@ -1017,8 +1017,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     with grouped_runs_panel:
 
         @gr.render(
-            triggers=[demo.load, project_dd.change, group_by_dd.change, run_tb.input, run_selection_state.change],
-            inputs=[project_dd, group_by_dd, run_tb, run_selection_state],
+            triggers=[demo.load, project_dd.change, run_group_by_dd.change, run_tb.input, run_selection_state.change],
+            inputs=[project_dd, run_group_by_dd, run_tb, run_selection_state],
             show_progress="hidden",
             queue=False,
         )

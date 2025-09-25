@@ -19,7 +19,6 @@ class RunSelection:
         if self.locked:
             base = set(self.selected) | new_choices
         elif preferred:
-            print("preferred", preferred)
             base = set(preferred)
         else:
             base = set(runs) 
@@ -27,7 +26,6 @@ class RunSelection:
         return True
 
     def select(self, runs: list[str]) -> list[str]:
-        print("select", runs)
         choice_set = set(self.choices)
         self.selected = [run for run in runs if run in choice_set]
         self.locked = True
@@ -36,7 +34,6 @@ class RunSelection:
     def replace_group(
         self, group_runs: list[str], new_subset: list[str] | None
     ) -> tuple[list[str], list[str]]:
-        print("replace_group", group_runs, new_subset)
         new_subset = ordered_subset(group_runs, new_subset)
         selection_set = set(self.selected)
         selection_set.difference_update(group_runs)
