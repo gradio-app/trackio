@@ -9,13 +9,15 @@ import numpy as np
 from PIL import Image as PILImage
 
 try:  # absolute imports when installed
-    from trackio.file_storage import FileStorage
+    from trackio.media.audio_writer import write_audio, AudioFormatType
+    from trackio.media.file_storage import FileStorage
+    from trackio.media.video_writer import write_video
     from trackio.utils import MEDIA_DIR
-    from trackio.video_writer import write_video
 except ImportError:  # relative imports for local execution on Spaces
-    from file_storage import FileStorage
+    from media.audio_writer import write_audio, AudioFormatType
+    from media.file_storage import FileStorage
+    from media.video_writer import write_video
     from utils import MEDIA_DIR
-    from video_writer import write_video
 
 
 class TrackioMedia(ABC):
@@ -284,3 +286,52 @@ class TrackioVideo(TrackioMedia):
         video = video.transpose(2, 0, 4, 1, 5, 3)
         video = video.reshape(frames, n_rows * height, n_cols * width, channels)
         return video
+
+
+TrackioAudioSourceType = str | Path | np.ndarray
+
+class TrackioAudio(TrackioMedia):
+    """
+    Initializes an Audio object.
+
+    Example:
+        ```python
+        import trackio
+        import numpy as np
+
+        # Create an audio instance from numpy array
+        audio = trackio.Audio(np.random.rand(1000), caption="Random audio")
+        trackio.log({"my_audio": audio})
+    """
+
+    TYPE = "trackio.audio"
+
+    def __init__(
+        self,
+        value: TrackioAudioSourceType,
+        caption: str | None = None,
+        sample_rate: int | None = None,
+        format: AudioFormatType | None = None,
+    ):
+        super().__init__(value, caption)
+        if isinstance(value, np.ndarray):
+            if sample_rate is None:
+                raise ValueError("Sample rate is required when value is an ndarray")
+            if format is None:
+                format = "wav"
+        self._format = format
+        self._sample_rate = sample_rate
+
+    def _save_media(self, file_path: Path):
+        if isinstance(self._value, np.ndarray):
+            write_audio(
+                data=self._value,
+                sample_rate=self._sample_rate,
+                filename=file_path,
+                format=self._format,
+            )
+        elif isinstance(self._value, str | Path):
+            if os.path.isfile(self._value):
+                shutil.copy(self._value, file_path)
+            else:
+                raise ValueError(f"File not found: {self._value}")
