@@ -300,9 +300,34 @@ class TrackioAudio(TrackioMedia):
         import trackio
         import numpy as np
 
-        # Create an audio instance from numpy array
-        audio = trackio.Audio(np.random.rand(1000), caption="Random audio")
-        trackio.log({"my_audio": audio})
+        # Generate a 1-second 440 Hz sine wave (mono)
+        sr = 16000
+        t = np.linspace(0, 1, sr, endpoint=False)
+        wave = 0.2 * np.sin(2 * np.pi * 440 * t)
+        audio = trackio.Audio(wave, caption="A4 sine", sample_rate=sr, format="wav")
+        trackio.log({"tone": audio})
+
+        # Stereo from numpy array (shape: samples, 2)
+        stereo = np.stack([wave, wave], axis=1)
+        audio = trackio.Audio(stereo, caption="Stereo", sample_rate=sr, format="mp3")
+        trackio.log({"stereo": audio})
+
+        # From an existing file
+        audio = trackio.Audio("path/to/audio.wav", caption="From file")
+        trackio.log({"file_audio": audio})
+        ```
+
+    Args:
+        value (`str`, `Path`, or `numpy.ndarray`, *optional*):
+            A path to an audio file, or a numpy array.
+            The array should be shaped `(samples,)` for mono or `(samples, 2)` for stereo.
+            Float arrays will be peak-normalized and converted to 16-bit PCM; integer arrays will be converted to 16-bit PCM as needed.
+        caption (`str`, *optional*):
+            A string caption for the audio.
+        sample_rate (`int`, *optional*):
+            Sample rate in Hz. Required when `value` is a numpy array.
+        format (`Literal["wav", "mp3"]`, *optional*):
+            Audio format used when `value` is a numpy array. Default is "wav".
     """
 
     TYPE = "trackio.audio"

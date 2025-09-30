@@ -119,6 +119,39 @@ Videos can be logged from a file path or a numpy array.
   - `(frames, channels, height, width)` for a single video
   - `(batch, frames, channels, height, width)` for multiple videos (will be tiled into a grid)
 
+### Logging audio
+
+You can log audio using the [`Audio`] class.
+
+```python
+import trackio
+import numpy as np
+
+# Generate a 1-second 440 Hz sine wave (mono)
+sr = 16000
+t = np.linspace(0, 1, sr, endpoint=False)
+wave = 0.2 * np.sin(2 * np.pi * 440 * t)
+audio = trackio.Audio(wave, caption="A4 sine", sample_rate=sr, format="wav")
+trackio.log({"tone": audio})
+
+# Stereo from numpy array (shape: samples, 2)
+stereo = np.stack([wave, wave], axis=1)
+audio = trackio.Audio(stereo, caption="Stereo", sample_rate=sr, format="mp3")
+trackio.log({"stereo": audio})
+
+# From an existing file
+audio = trackio.Audio("path/to/audio.wav", caption="From file")
+trackio.log({"file_audio": audio})
+```
+
+Audio can be logged from a file path or a numpy array.
+
+**Numpy array requirements:**
+- Shape should be either `(samples,)` for mono or `(samples, 2)` for stereo
+- `sample_rate` must be provided when logging from a numpy array
+- Values may be float or integer; floats are peak-normalized and converted to 16-bit PCM
+- `format` can be `"wav"` or `"mp3"` when logging from a numpy array (default `"wav"`)
+
 ## Finishing a Run
 
 When your run is complete, finalize it with [`finish`].
