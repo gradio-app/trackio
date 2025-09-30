@@ -16,7 +16,7 @@ HfApi = hf.HfApi()
 
 try:
     import trackio.utils as utils
-    from trackio.media import FileStorage, TrackioImage, TrackioVideo, TrackioAudio
+    from trackio.media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
@@ -25,7 +25,7 @@ try:
     from trackio.ui.runs import run_page
 except ImportError:
     import utils
-    from media import FileStorage, TrackioImage, TrackioVideo, TrackioAudio
+    from media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
@@ -138,7 +138,11 @@ def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
         for key, value in log.items():
             if isinstance(value, dict):
                 type = value.get("_type")
-                if type == TrackioImage.TYPE or type == TrackioVideo.TYPE or type == TrackioAudio.TYPE:
+                if (
+                    type == TrackioImage.TYPE
+                    or type == TrackioVideo.TYPE
+                    or type == TrackioAudio.TYPE
+                ):
                     if key not in media_by_key:
                         media_by_key[key] = []
                     try:
@@ -431,19 +435,38 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
             for run, media_by_key in media_by_run.items():
                 with gr.Tab(label=run, elem_classes=("media-tab")):
                     for key, media_items in media_by_key.items():
-                        image_and_video = [item for item in media_items if item.type in [TrackioImage.TYPE, TrackioVideo.TYPE]]
-                        audio = [item for item in media_items if item.type == TrackioAudio.TYPE]
+                        image_and_video = [
+                            item
+                            for item in media_items
+                            if item.type in [TrackioImage.TYPE, TrackioVideo.TYPE]
+                        ]
+                        audio = [
+                            item
+                            for item in media_items
+                            if item.type == TrackioAudio.TYPE
+                        ]
                         if image_and_video:
                             gr.Gallery(
-                                [(item.file_path, item.caption) for item in image_and_video],
+                                [
+                                    (item.file_path, item.caption)
+                                    for item in image_and_video
+                                ],
                                 label=key,
                                 columns=6,
                                 elem_classes=("media-gallery"),
                             )
                         if audio:
-                            with gr.Group(elem_classes=("media-group")):
-                                for item in audio:
-                                    gr.Audio(value=item.file_path, label=item.caption)
+                            with gr.Accordion(
+                                label=key, elem_classes=("media-audio-accordion")
+                            ):
+                                for i in range(0, len(audio), 3):
+                                    with gr.Row(elem_classes=("media-audio-row")):
+                                        for item in audio[i : i + 3]:
+                                            gr.Audio(
+                                                value=item.file_path,
+                                                label=item.caption,
+                                                elem_classes=("media-audio-item"),
+                                            )
 
 
 css = """
@@ -489,6 +512,18 @@ css = """
 .media-group, .media-group > div { background: none; }
 .media-group .tabs { padding: 0.5em; }
 .media-tab { max-height: 500px; overflow-y: scroll; }
+.media-audio-accordion > button { 
+    border-bottom-width: 1px;
+    padding-bottom: 3px;
+}
+.media-audio-item {
+    border-width: 1px !important;
+    border-radius: 0.5em;
+}
+.media-audio-row {
+    gap: 0.25em;
+    margin-bottom: 0.25em;
+}
 """
 
 javascript = """

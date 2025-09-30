@@ -9,12 +9,12 @@ import numpy as np
 from PIL import Image as PILImage
 
 try:  # absolute imports when installed
-    from trackio.media.audio_writer import write_audio, AudioFormatType
+    from trackio.media.audio_writer import AudioFormatType, write_audio
     from trackio.media.file_storage import FileStorage
     from trackio.media.video_writer import write_video
     from trackio.utils import MEDIA_DIR
 except ImportError:  # relative imports for local execution on Spaces
-    from media.audio_writer import write_audio, AudioFormatType
+    from media.audio_writer import AudioFormatType, write_audio
     from media.file_storage import FileStorage
     from media.video_writer import write_video
     from utils import MEDIA_DIR
@@ -289,6 +289,7 @@ class TrackioVideo(TrackioMedia):
 
 
 TrackioAudioSourceType = str | Path | np.ndarray
+
 
 class TrackioAudio(TrackioMedia):
     """

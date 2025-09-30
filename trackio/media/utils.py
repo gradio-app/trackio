@@ -1,5 +1,5 @@
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 
 def check_path(file_path: str | Path) -> None:
@@ -21,4 +21,3 @@ def check_ffmpeg_installed() -> None:
             "ffmpeg is required to write video but was not found on your system. "
             "Please install ffmpeg and ensure it is available on your PATH."
         )
-

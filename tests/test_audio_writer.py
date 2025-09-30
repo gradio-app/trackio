@@ -6,14 +6,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-
-from trackio.media.audio_writer import write_audio, ensure_int16_pcm, PYDUB_AVAILABLE
-
+from trackio.media.audio_writer import PYDUB_AVAILABLE, ensure_int16_pcm, write_audio
 
 SAMPLE_RATE = 44100
 
 
-def _tone(duration_s: float, freq_hz: float, sr: int = SAMPLE_RATE, amp: float = 0.5) -> np.ndarray:
+def _tone(
+    duration_s: float, freq_hz: float, sr: int = SAMPLE_RATE, amp: float = 0.5
+) -> np.ndarray:
     t = np.linspace(0.0, duration_s, int(sr * duration_s), endpoint=False)
     return (amp * np.sin(2 * math.pi * freq_hz * t)).astype(np.float32)
 
@@ -35,7 +35,9 @@ def _has_ffmpeg() -> bool:
 
 
 @pytest.mark.parametrize("channels", [1, 2])
-def test_write_wav_mono_and_stereo_with_float_normalization(tmp_path: Path, channels: int) -> None:
+def test_write_wav_mono_and_stereo_with_float_normalization(
+    tmp_path: Path, channels: int
+) -> None:
     mono = _tone(0.1, 440.0, SAMPLE_RATE, amp=0.5)
     data = mono if channels == 1 else np.stack([mono, mono], axis=1)
 
@@ -69,12 +71,15 @@ def test_write_mp3_mono_and_stereo(tmp_path: Path, channels: int) -> None:
     assert seg.channels == channels
 
 
-@pytest.mark.parametrize("dtype, generator", [
-    (np.int32, lambda n: (np.arange(n, dtype=np.int32) % 10000) - 5000),
-    (np.uint16, lambda n: (np.arange(n, dtype=np.uint16) % 65535)),
-    (np.uint8, lambda n: (np.arange(n, dtype=np.uint8) % 255)),
-    (np.int8, lambda n: (np.arange(n, dtype=np.int8) % 127) - 63),
-])
+@pytest.mark.parametrize(
+    "dtype, generator",
+    [
+        (np.int32, lambda n: (np.arange(n, dtype=np.int32) % 10000) - 5000),
+        (np.uint16, lambda n: (np.arange(n, dtype=np.uint16) % 65535)),
+        (np.uint8, lambda n: (np.arange(n, dtype=np.uint8) % 255)),
+        (np.int8, lambda n: (np.arange(n, dtype=np.int8) % 127) - 63),
+    ],
+)
 def test_write_wav_with_non_int16_inputs(tmp_path: Path, dtype, generator) -> None:
     n = SAMPLE_RATE // 10
     mono = generator(n).astype(dtype)
@@ -88,12 +93,15 @@ def test_write_wav_with_non_int16_inputs(tmp_path: Path, dtype, generator) -> No
     assert pcm.size > 0
 
 
-def test_wav_fallback_without_pydub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_wav_fallback_without_pydub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mono = _tone(0.05, 220.0, SAMPLE_RATE, amp=0.25)
     out = tmp_path / "fallback.wav"
 
     # Force fallback path
     import trackio.media.audio_writer as aw  # type: ignore
+
     monkeypatch.setattr(aw, "PYDUB_AVAILABLE", False, raising=False)
 
     write_audio(data=mono, sample_rate=SAMPLE_RATE, filename=out, format="wav")
@@ -102,11 +110,14 @@ def test_wav_fallback_without_pydub(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert np.max(np.abs(pcm)) >= 100  # not silent
 
 
-def test_mp3_raises_without_pydub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_mp3_raises_without_pydub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mono = _tone(0.05, 220.0)
     out = tmp_path / "no_pydub.mp3"
 
     import trackio.media.audio_writer as aw  # type: ignore
+
     monkeypatch.setattr(aw, "PYDUB_AVAILABLE", False, raising=False)
     with pytest.raises(ImportError):
         write_audio(data=mono, sample_rate=SAMPLE_RATE, filename=out, format="mp3")
@@ -131,5 +142,3 @@ def test_invalid_sample_rate_raises(tmp_path: Path) -> None:
     out = tmp_path / "bad_sr.wav"
     with pytest.raises(ValueError):
         write_audio(data=mono, sample_rate=0, filename=out, format="wav")
-
-

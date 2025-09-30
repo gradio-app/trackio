@@ -3,6 +3,7 @@ Audio conversion utilities extracted from Gradio for Trackio.
 Provides numpy array to audio file conversion without full Gradio dependency.
 """
 
+import warnings
 from pathlib import Path
 from typing import Literal
 
@@ -30,14 +31,17 @@ AudioFormatType = Literal["wav", "mp3"]
 def ensure_int16_pcm(data: np.ndarray) -> np.ndarray:
     """
     Convert input audio array to contiguous int16 PCM.
-
-    - Accepts 1D mono or 2D shape [samples, channels]
-    - For floating inputs, optionally peak-normalizes and scales to int16 range
-    - Safely handles NaN/Inf and silent inputs (no division by zero)
+    Peak normalization is applied to floating inputs.
     """
     arr = np.asarray(data)
     if arr.ndim not in (1, 2):
         raise ValueError("Audio data must be 1D (mono) or 2D ([samples, channels])")
+
+    if arr.dtype != np.int16:
+        warnings.warn(
+            f"Converting {arr.dtype} audio to int16 PCM; pass int16 to avoid conversion.",
+            stacklevel=2,
+        )
 
     # Replace NaN/Inf with finite numbers
     arr = np.nan_to_num(arr, copy=False)
