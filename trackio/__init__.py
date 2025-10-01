@@ -241,7 +241,11 @@ def finish():
     run.finish()
 
 
-def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
+def show(
+    project: str | None = None,
+    theme: str | ThemeClass = DEFAULT_THEME,
+    mcp_server: bool | None = None,
+):
     """
     Launches the Trackio dashboard.
 
@@ -253,6 +257,11 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
             A Gradio Theme to use for the dashboard instead of the default `"citrus"`,
             can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class.
+        mcp_server (`bool`, *optional*):
+            If `True`, the Trackio dashboard will be set up as an MCP server and certain
+            functions will be added as MCP tools. If `None` (default behavior), then the
+            `GRADIO_MCP_SERVER` environment variable will be used to determine if the
+            MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
     """
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
@@ -277,13 +286,20 @@ def show(project: str | None = None, theme: str | ThemeClass = DEFAULT_THEME):
         theme_hasher.update(demo.theme_css.encode("utf-8"))
         demo.theme_hash = theme_hasher.hexdigest()
 
+    _mcp_server = (
+        mcp_server
+        if mcp_server is not None
+        else os.environ.get("GRADIO_MCP_SERVER", "False") == "True"
+    )
+
     _, url, share_url = demo.launch(
-        show_api=False,
+        show_api=_mcp_server,
         quiet=True,
         inline=False,
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
         allowed_paths=[TRACKIO_LOGO_DIR],
+        mcp_server=_mcp_server,
     )
 
     base_url = share_url + "/" if share_url else url

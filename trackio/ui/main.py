@@ -318,6 +318,9 @@ def check_auth(hf_token: str | None) -> None:
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
+    """
+    Uploads the database of a local Trackio project to a Hugging Face Space.
+    """
     check_auth(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     if os.path.exists(db_project_path):
@@ -329,6 +332,9 @@ def upload_db_to_space(
 
 
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
+    """
+    Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
+    """
     check_auth(hf_token)
     for upload in uploads:
         media_path = FileStorage.init_project_media_path(
@@ -357,6 +363,9 @@ def bulk_log(
     logs: list[LogEntry],
     hf_token: str | None,
 ) -> None:
+    """
+    Logs a list of metrics to a Trackio dashboard. Each entry in the list is a dictionary of the project, run, a dictionary of metrics, and optionally, a step and config.
+    """
     check_auth(hf_token)
 
     logs_by_run = {}
@@ -377,6 +386,39 @@ def bulk_log(
             steps=data["steps"],
             config=data["config"],
         )
+
+
+def get_metric_values(
+    project: str,
+    run: str,
+    metric_name: str,
+) -> list[dict]:
+    """
+    Get all values for a specific metric in a project/run.
+    Returns a list of dictionaries with timestamp, step, and value.
+    """
+    return SQLiteStorage.get_metric_values(project, run, metric_name)
+
+
+def get_runs_for_project(
+    project: str,
+) -> list[str]:
+    """
+    Get all runs for a given project.
+    Returns a list of run names.
+    """
+    return SQLiteStorage.get_runs(project)
+
+
+def get_metrics_for_run(
+    project: str,
+    run: str,
+) -> list[str]:
+    """
+    Get all metrics for a given project and run.
+    Returns a list of metric names.
+    """
+    return SQLiteStorage.get_all_metrics_for_run(project, run)
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
@@ -400,6 +442,76 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
         return [
             metric for metric in metrics if filter_pattern.lower() in metric.lower()
         ]
+
+
+def get_all_projects() -> list[str]:
+    """
+    Get all project names.
+    Returns a list of project names.
+    """
+    return SQLiteStorage.get_projects()
+
+
+def get_project_summary(project: str) -> dict:
+    """
+    Get a summary of a project including number of runs and recent activity.
+
+    Args:
+        project: Project name
+
+    Returns:
+        Dictionary with project summary information
+    """
+    runs = SQLiteStorage.get_runs(project)
+    if not runs:
+        return {"project": project, "num_runs": 0, "runs": [], "last_activity": None}
+
+    last_steps = SQLiteStorage.get_max_steps_for_runs(project)
+
+    return {
+        "project": project,
+        "num_runs": len(runs),
+        "runs": runs,
+        "last_activity": max(last_steps.values()) if last_steps else None,
+    }
+
+
+def get_run_summary(project: str, run: str) -> dict:
+    """
+    Get a summary of a specific run including metrics and configuration.
+
+    Args:
+        project: Project name
+        run: Run name
+
+    Returns:
+        Dictionary with run summary information
+    """
+    logs = SQLiteStorage.get_logs(project, run)
+    metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
+
+    if not logs:
+        return {
+            "project": project,
+            "run": run,
+            "num_logs": 0,
+            "metrics": [],
+            "config": None,
+            "last_step": None,
+        }
+
+    df = pd.DataFrame(logs)
+    config = logs[0].get("config") if logs else None
+    last_step = df["step"].max() if "step" in df.columns else len(logs) - 1
+
+    return {
+        "project": project,
+        "run": run,
+        "num_logs": len(logs),
+        "metrics": metrics,
+        "config": config,
+        "last_step": last_step,
+    }
 
 
 def configure(request: gr.Request):
@@ -708,6 +820,30 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.api(
         fn=bulk_log,
         api_name="bulk_log",
+    )
+    gr.api(
+        fn=get_metric_values,
+        api_name="get_metric_values",
+    )
+    gr.api(
+        fn=get_runs_for_project,
+        api_name="get_runs_for_project",
+    )
+    gr.api(
+        fn=get_metrics_for_run,
+        api_name="get_metrics_for_run",
+    )
+    gr.api(
+        fn=get_all_projects,
+        api_name="get_all_projects",
+    )
+    gr.api(
+        fn=get_project_summary,
+        api_name="get_project_summary",
+    )
+    gr.api(
+        fn=get_run_summary,
+        api_name="get_run_summary",
     )
 
     x_lim = gr.State(None)
