@@ -769,3 +769,10 @@ def to_json_safe(obj):
             if not k.startswith("_")
         }
     return str(obj)
+
+
+def get_space() -> str | None:
+    """
+    Get the space ID ("user/space") if Trackio is running in a Space, or None if not.
+    """
+    return os.environ.get("SPACE_ID")
