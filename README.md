@@ -170,7 +170,7 @@ To get started and see basic examples of usage, see these files:
 - [Deploying the dashboard to Spaces](https://github.com/gradio-app/trackio/blob/main/examples/deploy-on-spaces.py)
 
 ## Note: Trackio is in Beta (DB Schema May Change)
-
+e
 Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio sqlite database may change, which may require migrating or deleting existing database files (located by default at: `~/.cache/huggingface/trackio`).  
 
 Since Trackio is in beta, your feedback is welcome! Please create issues with bug reports or feature requests.
@@ -182,6 +182,17 @@ MIT License
 ## Documentation
 
 The complete documentation and API reference for each version fo Trackio can be found at: https://huggingface.co/docs/trackio/index
+
+## Contribute
+
+We welcome contributions to Trackio! Whether you're fixing bugs, adding features, or improving documentation, your contributions help make Trackio btter for the entire machine learning community.
+
+<p align="center">
+  <img src="https://contrib.rocks/image?repo=gradio-app/trackio" />
+</p>
+
+To start contributing, see our [Contributing Guide](CONTRIBUTING.md).
+
 
 ## Pronunciation
 
