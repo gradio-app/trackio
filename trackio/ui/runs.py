@@ -116,7 +116,9 @@ def update_delete_button(
         num_selected = sum(1 for x in first_column_values if x)
 
     if num_selected:
-        return gr.Button(f"Delete {num_selected} selected run(s)", interactive=True, visible=True)
+        return gr.Button(
+            f"Delete {num_selected} selected run(s)", interactive=True, visible=True
+        )
     else:
         return gr.Button("Select runs to delete", interactive=False, visible=True)
 

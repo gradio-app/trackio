@@ -116,6 +116,7 @@ def check_token_has_write_access(hf_token: str | None) -> None:
                 "Expected the provided hf_token to provide write permissions"
             )
 
+
 def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
     """
     Checks to see if the provided oauth_token is valid and has write access to the Space
@@ -128,4 +129,3 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
             raise PermissionError(
                 "Expected an oauth to be provided when logging to a Space"
             )
-        
