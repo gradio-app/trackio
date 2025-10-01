@@ -444,6 +444,76 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
         ]
 
 
+def get_all_projects() -> list[str]:
+    """
+    Get all project names.
+    Returns a list of project names.
+    """
+    return SQLiteStorage.get_projects()
+
+
+def get_project_summary(project: str) -> dict:
+    """
+    Get a summary of a project including number of runs and recent activity.
+
+    Args:
+        project: Project name
+
+    Returns:
+        Dictionary with project summary information
+    """
+    runs = SQLiteStorage.get_runs(project)
+    if not runs:
+        return {"project": project, "num_runs": 0, "runs": [], "last_activity": None}
+
+    last_steps = SQLiteStorage.get_max_steps_for_runs(project)
+
+    return {
+        "project": project,
+        "num_runs": len(runs),
+        "runs": runs,
+        "last_activity": max(last_steps.values()) if last_steps else None,
+    }
+
+
+def get_run_summary(project: str, run: str) -> dict:
+    """
+    Get a summary of a specific run including metrics and configuration.
+
+    Args:
+        project: Project name
+        run: Run name
+
+    Returns:
+        Dictionary with run summary information
+    """
+    logs = SQLiteStorage.get_logs(project, run)
+    metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
+
+    if not logs:
+        return {
+            "project": project,
+            "run": run,
+            "num_logs": 0,
+            "metrics": [],
+            "config": None,
+            "last_step": None,
+        }
+
+    df = pd.DataFrame(logs)
+    config = logs[0].get("config") if logs else None
+    last_step = df["step"].max() if "step" in df.columns else len(logs) - 1
+
+    return {
+        "project": project,
+        "run": run,
+        "num_logs": len(logs),
+        "metrics": metrics,
+        "config": config,
+        "last_step": last_step,
+    }
+
+
 def configure(request: gr.Request):
     sidebar_param = request.query_params.get("sidebar")
     match sidebar_param:
@@ -762,6 +832,18 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.api(
         fn=get_metrics_for_run,
         api_name="get_metrics_for_run",
+    )
+    gr.api(
+        fn=get_all_projects,
+        api_name="get_all_projects",
+    )
+    gr.api(
+        fn=get_project_summary,
+        api_name="get_project_summary",
+    )
+    gr.api(
+        fn=get_run_summary,
+        api_name="get_run_summary",
     )
 
     x_lim = gr.State(None)

@@ -600,11 +600,13 @@ class SQLiteStorage:
                 metrics = orjson.loads(row["metrics"])
                 metrics = deserialize_values(metrics)
                 if metric_name in metrics:
-                    results.append({
-                        "timestamp": row["timestamp"],
-                        "step": row["step"],
-                        "value": metrics[metric_name]
-                    })
+                    results.append(
+                        {
+                            "timestamp": row["timestamp"],
+                            "step": row["step"],
+                            "value": metrics[metric_name],
+                        }
+                    )
             return results
 
     @staticmethod
