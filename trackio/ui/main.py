@@ -268,7 +268,7 @@ def upload_db_to_space(
     """
     Uploads the database of a local Trackio project to a Hugging Face Space.
     """
-    fns.check_auth(hf_token)
+    fns.check_token_has_write_access(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     if os.path.exists(db_project_path):
         raise gr.Error(
@@ -282,7 +282,7 @@ def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     """
     Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
     """
-    fns.check_auth(hf_token)
+    fns.check_token_has_write_access(hf_token)
     for upload in uploads:
         media_path = FileStorage.init_project_media_path(
             upload["project"], upload["run"], upload["step"]
@@ -302,7 +302,7 @@ def log(
     is kept for backwards compatibility for users who are connecting to a newer version of
     a Trackio Spaces dashboard with an older version of Trackio installed locally.
     """
-    fns.check_auth(hf_token)
+    fns.check_token_has_write_access(hf_token)
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
 
@@ -313,7 +313,7 @@ def bulk_log(
     """
     Logs a list of metrics to a Trackio dashboard. Each entry in the list is a dictionary of the project, run, a dictionary of metrics, and optionally, a step and config.
     """
-    fns.check_auth(hf_token)
+    fns.check_token_has_write_access(hf_token)
 
     logs_by_run = {}
     for log_entry in logs:

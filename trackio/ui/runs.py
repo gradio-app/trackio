@@ -106,7 +106,7 @@ def update_delete_button(
         try:
             fns.check_auth(oauth_token.token)
         except PermissionError:
-            return gr.Button("⚠️ Need write access to delete runs", interactive=False)
+            return gr.Button(visible=False)
     elif not check_write_access_runs(request, run_page.write_token):
         return gr.Button("⚠️ Need write access to delete runs", interactive=False)
 
@@ -116,9 +116,9 @@ def update_delete_button(
         num_selected = sum(1 for x in first_column_values if x)
 
     if num_selected:
-        return gr.Button(f"Delete {num_selected} selected run(s)", interactive=True)
+        return gr.Button(f"Delete {num_selected} selected run(s)", interactive=True, visible=True)
     else:
-        return gr.Button("Select runs to delete", interactive=False)
+        return gr.Button("Select runs to delete", interactive=False, visible=True)
 
 
 def delete_selected_runs(runs_data, project, request: gr.Request):
@@ -156,17 +156,17 @@ with gr.Blocks() as run_page:
         with gr.Column():
             with gr.Row():
                 if utils.get_space():
-                    gr.LoginButton("Login to delete runs", size="sm")
+                    gr.LoginButton("Login to delete runs", size="md")
                 delete_run_btn = gr.Button(
                     "⚠️ Need write access to delete runs",
                     interactive=False,
                     variant="stop",
-                    size="sm",
+                    size="md",
                 )
                 confirm_btn = gr.Button(
-                    "Confirm delete", variant="stop", size="sm", visible=False
+                    "Confirm delete", variant="stop", size="md", visible=False
                 )
-                cancel_btn = gr.Button("Cancel", size="sm", visible=False)
+                cancel_btn = gr.Button("Cancel", size="md", visible=False)
 
     runs_table = gr.DataFrame()
 

@@ -62,7 +62,7 @@ def update_navbar_value(project_dd):
     )
 
 
-def check_auth(hf_token: str | None) -> None:
+def check_token_has_write_access(hf_token: str | None) -> None:
     """
     Checks to see if the provided hf_token is valid and has write access to the Space
     that Trackio is running in. If the hf_token is valid or if Trackio is not running
@@ -115,3 +115,17 @@ def check_auth(hf_token: str | None) -> None:
             raise PermissionError(
                 "Expected the provided hf_token to provide write permissions"
             )
+
+def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
+    """
+    Checks to see if the provided oauth_token is valid and has write access to the Space
+    that Trackio is running in. If the oauth_token is valid or if Trackio is not running
+    on a Space, this function does nothing. Otherwise, it raises a PermissionError.
+    """
+    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
+        # check auth token passed in
+        if oauth_token is None:
+            raise PermissionError(
+                "Expected an oauth to be provided when logging to a Space"
+            )
+        
