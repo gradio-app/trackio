@@ -48,4 +48,8 @@ The flow of data is:
 3. Update documentation if necessary
 4. Submit a pull request with a clear description of your changes
 
-Thank you for contributing to Trackio! 
+Thank you to all contributors to Trackio! 
+
+<p align="center">
+  <img src="https://contrib.rocks/image?repo=gradio-app/trackio" />
+</p>
