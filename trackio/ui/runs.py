@@ -83,7 +83,7 @@ def get_runs_table(project):
 def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
     """
     Check if the user has write access to the Trackio dashboard based on token validation.
-    The token is retrieved from the cookie in the request headers or, as fallback, from the 
+    The token is retrieved from the cookie in the request headers or, as fallback, from the
     `write_token` query parameter.
     """
     cookies = request.headers.get("cookie", "")
@@ -98,7 +98,9 @@ def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
     return False
 
 
-def update_delete_button(runs_data, request: gr.Request, oauth_token: gr.OAuthToken | None):
+def update_delete_button(
+    runs_data, request: gr.Request, oauth_token: gr.OAuthToken | None
+):
     """Update the delete button value and interactivity based on the runs data and user write access."""
     if oauth_token:
         try:

@@ -115,4 +115,3 @@ def check_auth(hf_token: str | None) -> None:
             raise PermissionError(
                 "Expected the provided hf_token to provide write permissions"
             )
-
