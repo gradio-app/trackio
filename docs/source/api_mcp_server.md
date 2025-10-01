@@ -34,7 +34,11 @@ Once your Trackio server is running in MCP mode, click on the **"Use via API or 
 
 Here is example usage in Python, JS, Bash, and via MCP.
 
-### Python (via the [Gradio Python Client](https://www.gradio.app/guides/getting-started-with-the-python-client))
+<hfoptions id="api-mcp-server">
+<hfoption id="Python">
+
+Using the [Gradio Python Client](https://www.gradio.app/guides/getting-started-with-the-python-client).
+
 ```python
 from gradio_client import Client
 
@@ -85,7 +89,11 @@ result = client.predict(
 print("Run summary:", result)
 ```
 
-### JavaScript (via the [Gradio JS Client](https://www.gradio.app/guides/getting-started-with-the-js-client))
+</hfoption>
+<hfoption id="JavaScript">
+
+Using the [Gradio JS Client](https://www.gradio.app/guides/getting-started-with-the-js-client).
+
 ```javascript
 import { Client } from "@gradio/client";
 
@@ -130,7 +138,11 @@ const result = await client.predict("/get_run_summary", {
 console.log("Run summary:", result.data);
 ```
 
-### Bash (curl)
+</hfoption>
+<hfoption id="Bash">
+
+Using standard `curl` commands.
+
 ```bash
 # Get all projects
 curl -X POST http://127.0.0.1:7860/gradio_api/call/get_all_projects -s -H "Content-Type: application/json" -d '{
@@ -174,6 +186,9 @@ curl -X POST http://127.0.0.1:7860/gradio_api/call/get_run_summary -s -H "Conten
 | awk -F'"' '{ print $4}' \
 | read EVENT_ID; curl -N http://127.0.0.1:7860/gradio_api/call/get_run_summary/$EVENT_ID
 ```
+
+</hfoption>
+</hfoptions>
 
 ## MCP Usage
 
