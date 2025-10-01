@@ -182,7 +182,7 @@ When running as an MCP server, Trackio exposes its API endpoints as MCP tools th
 ### MCP Server URL
 
 The MCP server, using Streamble HTTP, is available (by default) at:
-```
+```txt
 http://127.0.0.1:7860/gradio_api/mcp/
 ```
 
