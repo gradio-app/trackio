@@ -183,6 +183,17 @@ MIT License
 
 The complete documentation and API reference for each version fo Trackio can be found at: https://huggingface.co/docs/trackio/index
 
+## Contribute
+
+We welcome contributions to Trackio! Whether you're fixing bugs, adding features, or improving documentation, your contributions help make Trackio btter for the entire machine learning community.
+
+<p align="center">
+  <img src="https://contrib.rocks/image?repo=gradio-app/trackio" />
+</p>
+
+To start contributing, see our [Contributing Guide](CONTRIBUTING.md).
+
+
 ## Pronunciation
 
 Trackio is pronounced TRACK-yo, as in "track yo' experiments"
