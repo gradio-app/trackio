@@ -22,13 +22,13 @@ The project is organized as follows:
 
 The flow of data is:
 
-> User API (`__init__.py` or `run.py`) → Gradio UI (`ui/`) → SQLite Storage (`sqlite_storage.py`)
+> User API (`__init__.py` or `run.py`) → calls the Gradio Client to make changes in the Gradio UI (`ui/`) → logs the data in the SQLite Storage (`sqlite_storage.py`)
 
 
 ## Development Setup
 
 1. Fork and clone the repository
-2. Install development dependencies
+2. Install Trackio with development dependencies
    ```bash
    pip install -e .[dev,tensorboard]
    ```
