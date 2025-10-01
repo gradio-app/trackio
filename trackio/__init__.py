@@ -12,8 +12,6 @@ from gradio.themes import ThemeClass
 from gradio_client import Client
 from huggingface_hub import SpaceStorage
 
-logging.getLogger("httpx").setLevel(logging.WARNING)
-
 from trackio import context_vars, deploy, utils
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioImage, TrackioVideo
@@ -22,6 +20,8 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.ui.main import demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
