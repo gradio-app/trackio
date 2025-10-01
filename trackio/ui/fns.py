@@ -3,7 +3,6 @@
 import os
 
 import gradio as gr
-import huggingface_hub as hf
 
 try:
     import trackio.utils as utils
@@ -11,9 +10,6 @@ try:
 except ImportError:
     import utils
     from sqlite_storage import SQLiteStorage
-
-
-HfApi = hf.HfApi()
 
 
 def get_project_info() -> str | None:
@@ -60,54 +56,3 @@ def update_navbar_value(project_dd):
             ("Runs", f"runs?selected_project={project_dd}"),
         ]
     )
-
-
-def check_auth(hf_token: str | None) -> None:
-    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
-        # check auth token passed in
-        if hf_token is None:
-            raise PermissionError(
-                "Expected a HF_TOKEN to be provided when logging to a Space"
-            )
-        who = HfApi.whoami(hf_token)
-        access_token = who["auth"]["accessToken"]
-        owner_name = os.getenv("SPACE_AUTHOR_NAME")
-        repo_name = os.getenv("SPACE_REPO_NAME")
-        # make sure the token user is either the author of the space,
-        # or is a member of an org that is the author.
-        orgs = [o["name"] for o in who["orgs"]]
-        if owner_name != who["name"] and owner_name not in orgs:
-            raise PermissionError(
-                "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
-            )
-        # reject fine-grained tokens without specific repo access
-        if access_token["role"] == "fineGrained":
-            matched = False
-            for item in access_token["fineGrained"]["scoped"]:
-                if (
-                    item["entity"]["type"] == "space"
-                    and item["entity"]["name"] == f"{owner_name}/{repo_name}"
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-                if (
-                    (
-                        item["entity"]["type"] == "user"
-                        or item["entity"]["type"] == "org"
-                    )
-                    and item["entity"]["name"] == owner_name
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-            if not matched:
-                raise PermissionError(
-                    "Expected the provided hf_token with fine grained permissions to provide write access to the space"
-                )
-        # reject read-only tokens
-        elif access_token["role"] != "write":
-            raise PermissionError(
-                "Expected the provided hf_token to provide write permissions"
-            )
-
