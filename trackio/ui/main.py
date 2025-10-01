@@ -882,7 +882,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             master_df = pd.DataFrame()
 
         if master_df.empty:
-            if space_id := os.environ.get("SPACE_ID"):
+            if space_id := utils.get_space():
                 gr.Markdown(INSTRUCTIONS_SPACES.format(space_id))
             else:
                 gr.Markdown(INSTRUCTIONS_LOCAL)

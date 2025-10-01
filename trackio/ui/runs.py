@@ -81,7 +81,11 @@ def get_runs_table(project):
 
 
 def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
-    """Check if the user has write access based on token validation."""
+    """
+    Check if the user has write access to the Trackio dashboard based on token validation.
+    The token is retrieved from the cookie in the request headers or, as fallback, from the 
+    `write_token` query parameter.
+    """
     cookies = request.headers.get("cookie", "")
     if cookies:
         for cookie in cookies.split(";"):
@@ -94,9 +98,14 @@ def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
     return False
 
 
-def update_delete_button(runs_data, request: gr.Request):
+def update_delete_button(runs_data, request: gr.Request, oauth_token: gr.OAuthToken | None):
     """Update the delete button value and interactivity based on the runs data and user write access."""
-    if not check_write_access_runs(request, run_page.write_token):
+    if oauth_token:
+        try:
+            fns.check_auth(oauth_token.token)
+        except PermissionError:
+            return gr.Button("⚠️ Need write access to delete runs", interactive=False)
+    elif not check_write_access_runs(request, run_page.write_token):
         return gr.Button("⚠️ Need write access to delete runs", interactive=False)
 
     num_selected = 0
@@ -144,6 +153,8 @@ with gr.Blocks() as run_page:
             pass
         with gr.Column():
             with gr.Row():
+                if utils.get_space():
+                    gr.LoginButton("Login to delete runs", size="sm")
                 delete_run_btn = gr.Button(
                     "⚠️ Need write access to delete runs",
                     interactive=False,
