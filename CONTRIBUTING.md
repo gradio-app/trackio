@@ -30,8 +30,7 @@ The flow of data is:
 1. Fork and clone the repository
 2. Install development dependencies
    ```bash
-   pip install -r requirements.txt 
-   pip install pytest ruff
+   pip install -e .[dev,tensorboard]
    ```
 3. Run tests before submitting changes:
    ```bash
