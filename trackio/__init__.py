@@ -306,6 +306,7 @@ def show(
     full_url = utils.get_full_url(
         base_url, project=project, write_token=demo.write_token
     )
+    print("full_url", full_url)
 
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {full_url}")
