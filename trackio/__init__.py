@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 import warnings
 import webbrowser
@@ -10,6 +11,8 @@ from gradio.themes import Default as DefaultTheme
 from gradio.themes import ThemeClass
 from gradio_client import Client
 from huggingface_hub import SpaceStorage
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 from trackio import context_vars, deploy, utils
 from trackio.imports import import_csv, import_tf_events
