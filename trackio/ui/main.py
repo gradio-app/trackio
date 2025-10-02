@@ -1043,6 +1043,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     x_lim=x_lim_value,
                                     show_fullscreen_button=True,
                                     min_width=400,
+                                    show_export_button=True,
                                 )
                                 plot.select(
                                     update_x_lim,
@@ -1103,6 +1104,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                             x_lim=x_lim_value,
                                             show_fullscreen_button=True,
                                             min_width=400,
+                                            show_export_button=True,
                                         )
                                         plot.select(
                                             update_x_lim,
