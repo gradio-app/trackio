@@ -8,11 +8,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import gradio as gr
-import huggingface_hub as hf
 import numpy as np
 import pandas as pd
-
-HfApi = hf.HfApi()
 
 try:
     import trackio.utils as utils
@@ -267,63 +264,13 @@ def toggle_timer(cb_value):
         return gr.Timer(active=False)
 
 
-def check_auth(hf_token: str | None) -> None:
-    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
-        # check auth token passed in
-        if hf_token is None:
-            raise PermissionError(
-                "Expected a HF_TOKEN to be provided when logging to a Space"
-            )
-        who = HfApi.whoami(hf_token)
-        access_token = who["auth"]["accessToken"]
-        owner_name = os.getenv("SPACE_AUTHOR_NAME")
-        repo_name = os.getenv("SPACE_REPO_NAME")
-        # make sure the token user is either the author of the space,
-        # or is a member of an org that is the author.
-        orgs = [o["name"] for o in who["orgs"]]
-        if owner_name != who["name"] and owner_name not in orgs:
-            raise PermissionError(
-                "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
-            )
-        # reject fine-grained tokens without specific repo access
-        if access_token["role"] == "fineGrained":
-            matched = False
-            for item in access_token["fineGrained"]["scoped"]:
-                if (
-                    item["entity"]["type"] == "space"
-                    and item["entity"]["name"] == f"{owner_name}/{repo_name}"
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-                if (
-                    (
-                        item["entity"]["type"] == "user"
-                        or item["entity"]["type"] == "org"
-                    )
-                    and item["entity"]["name"] == owner_name
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-            if not matched:
-                raise PermissionError(
-                    "Expected the provided hf_token with fine grained permissions to provide write access to the space"
-                )
-        # reject read-only tokens
-        elif access_token["role"] != "write":
-            raise PermissionError(
-                "Expected the provided hf_token to provide write permissions"
-            )
-
-
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
     """
     Uploads the database of a local Trackio project to a Hugging Face Space.
     """
-    check_auth(hf_token)
+    fns.check_hf_token_has_write_access(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     if os.path.exists(db_project_path):
         raise gr.Error(
@@ -337,7 +284,7 @@ def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     """
     Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
     """
-    check_auth(hf_token)
+    fns.check_hf_token_has_write_access(hf_token)
     for upload in uploads:
         media_path = FileStorage.init_project_media_path(
             upload["project"], upload["run"], upload["step"]
@@ -357,7 +304,7 @@ def log(
     is kept for backwards compatibility for users who are connecting to a newer version of
     a Trackio Spaces dashboard with an older version of Trackio installed locally.
     """
-    check_auth(hf_token)
+    fns.check_hf_token_has_write_access(hf_token)
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
 
@@ -368,7 +315,7 @@ def bulk_log(
     """
     Logs a list of metrics to a Trackio dashboard. Each entry in the list is a dictionary of the project, run, a dictionary of metrics, and optionally, a step and config.
     """
-    check_auth(hf_token)
+    fns.check_hf_token_has_write_access(hf_token)
 
     logs_by_run = {}
     for log_entry in logs:
@@ -627,12 +574,17 @@ function getCookie(name) {
     
     if (writeToken) {
         setCookie('trackio_write_token', writeToken, 7);
-        
-        urlParams.delete('write_token');
-        const newUrl = window.location.pathname + 
-            (urlParams.toString() ? '?' + urlParams.toString() : '') + 
-            window.location.hash;
-        window.history.replaceState({}, document.title, newUrl);
+                
+        // Only remove write_token from URL if not in iframe
+        // In iframes, keep it in URL as cookies may be blocked
+        const inIframe = window.self !== window.top;
+        if (!inIframe) {
+            urlParams.delete('write_token');
+            const newUrl = window.location.pathname + 
+                (urlParams.toString() ? '?' + urlParams.toString() : '') + 
+                window.location.hash;
+            window.history.replaceState({}, document.title, newUrl);
+        }
     }
 })();
 </script>
@@ -968,7 +920,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             master_df = pd.DataFrame()
 
         if master_df.empty:
-            if space_id := os.environ.get("SPACE_ID"):
+            if space_id := utils.get_space():
                 gr.Markdown(INSTRUCTIONS_SPACES.format(space_id))
             else:
                 gr.Markdown(INSTRUCTIONS_LOCAL)
