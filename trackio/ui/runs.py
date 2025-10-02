@@ -98,17 +98,34 @@ def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
     return False
 
 
-def update_delete_button(
-    runs_data, request: gr.Request, oauth_token: gr.OAuthToken | None
-):
+def set_deletion_allowed(request: gr.Request, oauth_token: gr.OAuthToken | None):
     """Update the delete button value and interactivity based on the runs data and user write access."""
     if oauth_token:
         try:
             fns.check_oauth_token_has_write_access(oauth_token.token)
         except PermissionError:
-            return gr.Button(visible=False)
+            return (
+                gr.Button("⚠️ Need write access to delete runs", interactive=False),
+                gr.Dataframe(interactive=False),
+                False,
+            )
     elif not check_write_access_runs(request, run_page.write_token):
-        return gr.Button("⚠️ Need write access to delete runs", interactive=False)
+        return (
+            gr.Button("⚠️ Need write access to delete runs", interactive=False),
+            gr.Dataframe(interactive=False),
+            False,
+        )
+    return (
+        gr.Button("Select runs to delete", interactive=False, visible=True),
+        gr.Dataframe(interactive=True),
+        True,
+    )
+
+
+def update_delete_button(deletion_allowed, runs_data):
+    """Update the delete button value and interactivity based on the selected runs."""
+    if not deletion_allowed:
+        return
 
     num_selected = 0
     if runs_data is not None and len(runs_data) > 0:
@@ -152,6 +169,8 @@ with gr.Blocks() as run_page:
 
     navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
+    allow_deleting_runs = gr.State(False)
+
     with gr.Row():
         with gr.Column():
             if utils.get_space():
@@ -204,17 +223,23 @@ with gr.Blocks() as run_page:
     )
 
     gr.on(
-        [run_page.load, runs_table.change],
+        [run_page.load],
+        fn=set_deletion_allowed,
+        inputs=[],
+        outputs=[delete_run_btn, runs_table, allow_deleting_runs],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+    gr.on(
+        [runs_table.change],
         fn=update_delete_button,
-        inputs=[runs_table],
+        inputs=[allow_deleting_runs, runs_table],
         outputs=[delete_run_btn],
         show_progress="hidden",
         api_name=False,
         queue=False,
     )
-    if utils.get_space():
-        gr.on
-
     gr.on(
         [delete_run_btn.click],
         fn=lambda: [
