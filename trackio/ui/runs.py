@@ -116,7 +116,7 @@ def set_deletion_allowed(request: gr.Request, oauth_token: gr.OAuthToken | None)
             False,
         )
     return (
-        gr.Button("Select runs to delete", interactive=False, visible=True),
+        gr.Button("Select runs to delete", interactive=False),
         gr.Dataframe(interactive=True),
         True,
     )
@@ -133,11 +133,9 @@ def update_delete_button(deletion_allowed, runs_data):
         num_selected = sum(1 for x in first_column_values if x)
 
     if num_selected:
-        return gr.Button(
-            f"Delete {num_selected} selected run(s)", interactive=True, visible=True
-        )
+        return gr.Button(f"Delete {num_selected} selected run(s)", interactive=True)
     else:
-        return gr.Button("Select runs to delete", interactive=False, visible=True)
+        return gr.Button("Select runs to delete", interactive=False)
 
 
 def delete_selected_runs(deletion_allowed, runs_data, project, request: gr.Request):
