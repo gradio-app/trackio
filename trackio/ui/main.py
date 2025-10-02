@@ -4,7 +4,7 @@ import os
 import re
 import secrets
 import shutil
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 import gradio as gr
@@ -241,7 +241,7 @@ def refresh_runs(
     return (
         fns.run_checkbox_update(selection) if did_change else gr.CheckboxGroup(),
         gr.Textbox(label=f"Runs ({len(runs)})"),
-        replace(selection) if did_change else selection,
+        selection,
     )
 
 
