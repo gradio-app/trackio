@@ -93,7 +93,7 @@ jobs:
       gh_token: ${{ secrets.GRADIO_PAT }}
     with:
       pr_number: ${{ needs.get-pr.outputs.pr_number }}
-      message: changes~warning~https://github.com/gradio-app/gradio/actions/runs/${{github.run_id}}/
+      message: changes~warning~https://github.com/gradio-app/trackio/actions/runs/${{github.run_id}}/
   comment-changes-success:
     uses: "./.github/workflows/comment-queue.yml"
     needs: [get-pr, version]
@@ -111,4 +111,4 @@ jobs:
       gh_token: ${{ secrets.GRADIO_PAT }}
     with:
       pr_number: ${{ needs.get-pr.outputs.pr_number }}
-      message: changes~failure~https://github.com/gradio-app/gradio/actions/runs/${{github.run_id}}/
+      message: changes~failure~https://github.com/gradio-app/trackio/actions/runs/${{github.run_id}}/
