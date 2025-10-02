@@ -95,7 +95,6 @@ def group_runs_by_config(
         group_name = config.get(config_key, "None")
         label = f"{display_key}: {group_name}"
         groups.setdefault(label, []).append(run_name)
-    # sort within each group
     for label in groups:
         groups[label].sort()
     # sort groups by label
