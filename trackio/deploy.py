@@ -17,6 +17,7 @@ from trackio.sqlite_storage import SQLiteStorage
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
+TEST = "constant"
 
 
 def _is_trackio_installed_from_source() -> bool:
