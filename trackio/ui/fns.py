@@ -53,11 +53,22 @@ def get_projects(request: gr.Request):
     )
 
 
-def update_navbar_value(project_dd):
+def update_navbar_value(project_dd, request: gr.Request):
+    write_token = None
+    if hasattr(request, "query_params") and request.query_params:
+        write_token = request.query_params.get("write_token")
+
+    metrics_url = f"?selected_project={project_dd}"
+    runs_url = f"runs?selected_project={project_dd}"
+
+    if write_token:
+        metrics_url += f"&write_token={write_token}"
+        runs_url += f"&write_token={write_token}"
+
     return gr.Navbar(
         value=[
-            ("Metrics", f"?selected_project={project_dd}"),
-            ("Runs", f"runs?selected_project={project_dd}"),
+            ("Metrics", metrics_url),
+            ("Runs", runs_url),
         ]
     )
 
@@ -129,7 +140,7 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
         raise PermissionError(
             "Expected an oauth to be provided when logging to a Space"
         )
-    who = HfApi.whoami(oauth_token.token)
+    who = HfApi.whoami(oauth_token)
     user_name = who["name"]
     owner_name = os.getenv("SPACE_AUTHOR_NAME")
     if user_name == owner_name:
