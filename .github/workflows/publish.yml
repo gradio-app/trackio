@@ -1,42 +1,47 @@
-name: Publish to PyPI
+# safe runs from main
 
+name: publish
 on:
   push:
     branches:
       - main
-    paths:
-      - 'trackio/version.txt'
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  version_or_publish:
+    runs-on: ubuntu-22.04
+    environment: publish
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Read version
-        id: get_version
-        run: echo "version=$(cat trackio/version.txt)" >> $GITHUB_OUTPUT
-        
-      - name: Debug - Show version.txt content
-        run: echo "Version is ${{ steps.get_version.outputs.version }}"
-        
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: checkout repo
+        uses: actions/checkout@v4
         with:
-          python-version: '3.x'
-          
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine
-          
-      - name: Build package
-        run: python -m build
-        
-      - name: Publish to PyPI
-        if: ${{ !contains(steps.get_version.outputs.version, 'dev') }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # @v4
+        with:
+          version: 9.1.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install changesets
+        run: pnpm i --lockfile-only
+      - name: create and publish versions
+        id: changesets
+        uses: changesets/action@aba318e9165b45b7948c60273e0b72fce0a64eb9 # @v1
+        with:
+          version: pnpm changeset version && node ./.changeset/fix_changelogs.cjs"
+          commit: "chore: update versions"
+          title: "chore: update versions"
+          publish: pnpm changeset tag && git push origin --tags
         env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: |
-          python -m twine upload dist/* 
+          GITHUB_TOKEN: ${{ secrets.GRADIO_PAT }}
+      - name: publish to pypi
+        if: steps.changesets.outputs.hasChangesets != 'true'
+        uses: "gradio-app/github/actions/publish-pypi@main"
+        with:
+          use-oidc: true

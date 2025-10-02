@@ -8,3 +8,4 @@ trackio.db
 *.claude/
 .venv/
 **/.DS_Store
+node_modules/
