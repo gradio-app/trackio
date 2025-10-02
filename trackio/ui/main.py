@@ -572,12 +572,10 @@ function getCookie(name) {
     
     if (writeToken) {
         setCookie('trackio_write_token', writeToken, 7);
-        
-        // Check if we're in an iframe
-        const inIframe = window.self !== window.top;
-        
+                
         // Only remove write_token from URL if not in iframe
         // In iframes, keep it in URL as cookies may be blocked
+        const inIframe = window.self !== window.top;
         if (!inIframe) {
             urlParams.delete('write_token');
             const newUrl = window.location.pathname + 
