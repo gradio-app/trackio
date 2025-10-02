@@ -65,7 +65,7 @@ jobs:
         uses: "gradio-app/github/actions/generate-changeset@main"
         with:
           github_token: ${{ secrets.CHANGESETS }}
-          main_pkg: gradio
+          main_pkg: trackio
           pr_number: ${{ needs.get-pr.outputs.pr_number }}
           branch_name: ${{ needs.get-pr.outputs.source_branch }}
           actor: ${{ needs.get-pr.outputs.actor }}
