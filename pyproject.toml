@@ -48,8 +48,8 @@ trackio = "trackio.cli:main"
 packages = ["trackio"]
 
 [tool.hatch.version]
-path = "trackio/version.txt"
-pattern = "^(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+(?:\\.dev0)?)$"
+path = "trackio/package.json"
+pattern = ".*\"version\":\\s*\"(?P<version>[^\"]+)\""
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
