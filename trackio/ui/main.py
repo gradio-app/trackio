@@ -21,6 +21,7 @@ try:
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
+    from trackio.ui.helpers.run_selection import RunSelection
     from trackio.ui.run_detail import run_detail_page
     from trackio.ui.runs import run_page
 except ImportError:
@@ -30,6 +31,7 @@ except ImportError:
     from table import Table
     from typehints import LogEntry, UploadEntry
     from ui import fns
+    from ui.helpers.run_selection import RunSelection
     from ui.run_detail import run_detail_page
     from ui.runs import run_page
 
@@ -222,38 +224,38 @@ def load_run_data(
         return df, media
 
 
-def update_runs(
-    project, filter_text, user_interacted_with_runs=False, selected_runs_from_url=None
+def refresh_runs(
+    project: str | None,
+    filter_text: str | None,
+    selection: RunSelection,
+    selected_runs_from_url: list[str] | None = None,
 ):
     if project is None:
-        runs = []
-        num_runs = 0
+        runs: list[str] = []
     else:
         runs = get_runs(project)
-        num_runs = len(runs)
         if filter_text:
             runs = [r for r in runs if filter_text in r]
 
-    if not user_interacted_with_runs:
-        if selected_runs_from_url:
-            value = [r for r in runs if r in selected_runs_from_url]
-        else:
-            value = runs
-        return gr.CheckboxGroup(choices=runs, value=value), gr.Textbox(
-            label=f"Runs ({num_runs})"
-        )
-    else:
-        return gr.CheckboxGroup(choices=runs), gr.Textbox(label=f"Runs ({num_runs})")
+    preferred = None
+    if selected_runs_from_url:
+        preferred = [r for r in runs if r in selected_runs_from_url]
+
+    did_change = selection.update_choices(runs, preferred)
+    return (
+        fns.run_checkbox_update(selection) if did_change else gr.CheckboxGroup(),
+        gr.Textbox(label=f"Runs ({len(runs)})"),
+        selection,
+    )
 
 
-def filter_runs(project, filter_text):
-    runs = get_runs(project)
-    runs = [r for r in runs if filter_text in r]
-    return gr.CheckboxGroup(choices=runs, value=runs)
+def generate_embed(project: str, metrics: str, selection: RunSelection) -> str:
+    return utils.generate_embed_code(project, metrics, selection.selected)
 
 
-def update_x_axis_choices(project, runs):
+def update_x_axis_choices(project, selection):
     """Update x-axis dropdown choices based on available metrics."""
+    runs = selection.selected
     available_metrics = get_available_metrics(project, runs)
     return gr.Dropdown(
         label="X-axis",
@@ -322,6 +324,9 @@ def check_auth(hf_token: str | None) -> None:
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
+    """
+    Uploads the database of a local Trackio project to a Hugging Face Space.
+    """
     check_auth(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     if os.path.exists(db_project_path):
@@ -333,6 +338,9 @@ def upload_db_to_space(
 
 
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
+    """
+    Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
+    """
     check_auth(hf_token)
     for upload in uploads:
         media_path = FileStorage.init_project_media_path(
@@ -361,6 +369,9 @@ def bulk_log(
     logs: list[LogEntry],
     hf_token: str | None,
 ) -> None:
+    """
+    Logs a list of metrics to a Trackio dashboard. Each entry in the list is a dictionary of the project, run, a dictionary of metrics, and optionally, a step and config.
+    """
     check_auth(hf_token)
 
     logs_by_run = {}
@@ -381,6 +392,39 @@ def bulk_log(
             steps=data["steps"],
             config=data["config"],
         )
+
+
+def get_metric_values(
+    project: str,
+    run: str,
+    metric_name: str,
+) -> list[dict]:
+    """
+    Get all values for a specific metric in a project/run.
+    Returns a list of dictionaries with timestamp, step, and value.
+    """
+    return SQLiteStorage.get_metric_values(project, run, metric_name)
+
+
+def get_runs_for_project(
+    project: str,
+) -> list[str]:
+    """
+    Get all runs for a given project.
+    Returns a list of run names.
+    """
+    return SQLiteStorage.get_runs(project)
+
+
+def get_metrics_for_run(
+    project: str,
+    run: str,
+) -> list[str]:
+    """
+    Get all metrics for a given project and run.
+    Returns a list of metric names.
+    """
+    return SQLiteStorage.get_all_metrics_for_run(project, run)
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
@@ -404,6 +448,76 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
         return [
             metric for metric in metrics if filter_pattern.lower() in metric.lower()
         ]
+
+
+def get_all_projects() -> list[str]:
+    """
+    Get all project names.
+    Returns a list of project names.
+    """
+    return SQLiteStorage.get_projects()
+
+
+def get_project_summary(project: str) -> dict:
+    """
+    Get a summary of a project including number of runs and recent activity.
+
+    Args:
+        project: Project name
+
+    Returns:
+        Dictionary with project summary information
+    """
+    runs = SQLiteStorage.get_runs(project)
+    if not runs:
+        return {"project": project, "num_runs": 0, "runs": [], "last_activity": None}
+
+    last_steps = SQLiteStorage.get_max_steps_for_runs(project)
+
+    return {
+        "project": project,
+        "num_runs": len(runs),
+        "runs": runs,
+        "last_activity": max(last_steps.values()) if last_steps else None,
+    }
+
+
+def get_run_summary(project: str, run: str) -> dict:
+    """
+    Get a summary of a specific run including metrics and configuration.
+
+    Args:
+        project: Project name
+        run: Run name
+
+    Returns:
+        Dictionary with run summary information
+    """
+    logs = SQLiteStorage.get_logs(project, run)
+    metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
+
+    if not logs:
+        return {
+            "project": project,
+            "run": run,
+            "num_logs": 0,
+            "metrics": [],
+            "config": None,
+            "last_step": None,
+        }
+
+    df = pd.DataFrame(logs)
+    config = logs[0].get("config") if logs else None
+    last_step = df["step"].max() if "step" in df.columns else len(logs) - 1
+
+    return {
+        "project": project,
+        "run": run,
+        "num_logs": len(logs),
+        "metrics": metrics,
+        "config": config,
+        "last_step": last_step,
+    }
 
 
 def configure(request: gr.Request):
@@ -586,14 +700,18 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             language="html",
             visible=bool(os.environ.get("SPACE_HOST")),
         )
-        run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
-        run_cb = gr.CheckboxGroup(
-            label="Runs",
-            choices=[],
-            interactive=True,
-            elem_id="run-cb",
-            show_select_all=True,
-        )
+        with gr.Group():
+            run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
+            run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
+            grouped_runs_panel = gr.Group(visible=False)
+            run_cb = gr.CheckboxGroup(
+                label="Runs",
+                choices=[],
+                interactive=True,
+                elem_id="run-cb",
+                show_select_all=True,
+            )
+
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
         smoothing_slider = gr.Slider(
@@ -620,8 +738,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
-    user_interacted_with_run_cb = gr.State(False)
     selected_runs_from_url = gr.State([])
+    run_selection_state = gr.State(RunSelection())
 
     gr.on(
         [demo.load],
@@ -646,14 +764,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
     gr.on(
         [timer.tick],
-        fn=update_runs,
-        inputs=[
-            project_dd,
-            run_tb,
-            user_interacted_with_run_cb,
-            selected_runs_from_url,
-        ],
-        outputs=[run_cb, run_tb],
+        fn=refresh_runs,
+        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
+        outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         api_name=False,
     )
@@ -666,22 +779,22 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
     gr.on(
         [demo.load, project_dd.change],
-        fn=update_runs,
-        inputs=[project_dd, run_tb, gr.State(False), selected_runs_from_url],
-        outputs=[run_cb, run_tb],
+        fn=refresh_runs,
+        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
+        outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         queue=False,
         api_name=False,
     ).then(
         fn=update_x_axis_choices,
-        inputs=[project_dd, run_cb],
+        inputs=[project_dd, run_selection_state],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
         api_name=False,
     ).then(
-        fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, run_cb],
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=[embed_code],
         show_progress="hidden",
         api_name=False,
@@ -693,12 +806,19 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         show_progress="hidden",
         api_name=False,
         queue=False,
+    ).then(
+        fn=fns.get_group_by_fields,
+        inputs=[project_dd],
+        outputs=[run_group_by_dd],
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
     )
 
     gr.on(
         [run_cb.input],
         fn=update_x_axis_choices,
-        inputs=[project_dd, run_cb],
+        inputs=[project_dd, run_selection_state],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
@@ -706,9 +826,25 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
     gr.on(
         [metric_filter_tb.change, run_cb.change],
-        fn=utils.generate_embed_code,
-        inputs=[project_dd, metric_filter_tb, run_cb],
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=embed_code,
+        show_progress="hidden",
+        api_name=False,
+        queue=False,
+    )
+
+    def toggle_group_view(group_by_dd):
+        return (
+            gr.CheckboxGroup(visible=not bool(group_by_dd)),
+            gr.Group(visible=bool(group_by_dd)),
+        )
+
+    gr.on(
+        [run_group_by_dd.change],
+        fn=toggle_group_view,
+        inputs=[run_group_by_dd],
+        outputs=[run_cb, grouped_runs_panel],
         show_progress="hidden",
         api_name=False,
         queue=False,
@@ -722,17 +858,26 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         queue=False,
     )
     run_cb.input(
-        fn=lambda: True,
-        outputs=user_interacted_with_run_cb,
+        fn=fns.handle_run_checkbox_change,
+        inputs=[run_cb, run_selection_state],
+        outputs=run_selection_state,
+        api_name=False,
+        queue=False,
+    ).then(
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state],
+        outputs=embed_code,
+        show_progress="hidden",
         api_name=False,
         queue=False,
     )
     run_tb.input(
-        fn=filter_runs,
-        inputs=[project_dd, run_tb],
-        outputs=run_cb,
+        fn=refresh_runs,
+        inputs=[project_dd, run_tb, run_selection_state],
+        outputs=[run_cb, run_tb, run_selection_state],
         api_name=False,
         queue=False,
+        show_progress="hidden",
     )
 
     gr.api(
@@ -750,6 +895,30 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.api(
         fn=bulk_log,
         api_name="bulk_log",
+    )
+    gr.api(
+        fn=get_metric_values,
+        api_name="get_metric_values",
+    )
+    gr.api(
+        fn=get_runs_for_project,
+        api_name="get_runs_for_project",
+    )
+    gr.api(
+        fn=get_metrics_for_run,
+        api_name="get_metrics_for_run",
+    )
+    gr.api(
+        fn=get_all_projects,
+        api_name="get_all_projects",
+    )
+    gr.api(
+        fn=get_project_summary,
+        api_name="get_project_summary",
+    )
+    gr.api(
+        fn=get_run_summary,
+        api_name="get_run_summary",
     )
 
     x_lim = gr.State(None)
@@ -1030,6 +1199,82 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     gr.Warning(
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
+
+    with grouped_runs_panel:
+
+        @gr.render(
+            triggers=[
+                demo.load,
+                project_dd.change,
+                run_group_by_dd.change,
+                run_tb.input,
+                run_selection_state.change,
+            ],
+            inputs=[project_dd, run_group_by_dd, run_tb, run_selection_state],
+            show_progress="hidden",
+            queue=False,
+        )
+        def render_grouped_runs(project, group_key, filter_text, selection):
+            if not group_key:
+                return
+            selection = selection or RunSelection()
+            groups = fns.group_runs_by_config(project, group_key, filter_text)
+
+            for label, runs in groups.items():
+                ordered_current = utils.ordered_subset(runs, selection.selected)
+
+                with gr.Group():
+                    show_group_cb = gr.Checkbox(
+                        label="Show/Hide",
+                        value=bool(ordered_current),
+                        key=f"show-cb-{group_key}-{label}",
+                        preserved_by_key=["value"],
+                    )
+
+                    with gr.Accordion(
+                        f"{label} ({len(runs)})",
+                        open=False,
+                        key=f"accordion-{group_key}-{label}",
+                        preserved_by_key=["open"],
+                    ):
+                        group_cb = gr.CheckboxGroup(
+                            choices=runs,
+                            value=ordered_current,
+                            show_label=False,
+                            key=f"group-cb-{group_key}-{label}",
+                        )
+
+                        gr.on(
+                            [group_cb.change],
+                            fn=fns.handle_group_checkbox_change,
+                            inputs=[
+                                group_cb,
+                                run_selection_state,
+                                gr.State(runs),
+                            ],
+                            outputs=[
+                                run_selection_state,
+                                group_cb,
+                                run_cb,
+                            ],
+                            show_progress="hidden",
+                            api_name=False,
+                            queue=False,
+                        )
+
+                        gr.on(
+                            [show_group_cb.change],
+                            fn=fns.handle_group_toggle,
+                            inputs=[
+                                show_group_cb,
+                                run_selection_state,
+                                gr.State(runs),
+                            ],
+                            outputs=[run_selection_state, group_cb, run_cb],
+                            show_progress="hidden",
+                            api_name=False,
+                            queue=False,
+                        )
 
 
 with demo.route("Runs", show_in_navbar=False):

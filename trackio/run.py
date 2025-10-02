@@ -21,6 +21,7 @@ class Run:
         project: str,
         client: Client | None,
         name: str | None = None,
+        group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
     ):
@@ -33,6 +34,7 @@ class Run:
         self.name = name or utils.generate_readable_name(
             SQLiteStorage.get_runs(project), space_id
         )
+        self.group = group
         self.config = utils.to_json_safe(config or {})
 
         if isinstance(self.config, dict):
@@ -44,6 +46,8 @@ class Run:
 
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
+        self.config["_Group"] = self.group
+
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._stop_flag = threading.Event()
