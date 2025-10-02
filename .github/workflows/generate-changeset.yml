@@ -80,7 +80,7 @@ jobs:
         uses: gradio-app/github/actions/commit-status@main
         with:
           sha: ${{ needs.get-pr.outputs.sha }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.COMMIT_STATUS }}
           name: "Changeset Results"
           pr: ${{ needs.get-pr.outputs.pr_number }}
           result: ${{ needs.version.outputs.approved == 'true' && 'success' || 'failure' }}
