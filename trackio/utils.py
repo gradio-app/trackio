@@ -769,3 +769,8 @@ def to_json_safe(obj):
             if not k.startswith("_")
         }
     return str(obj)
+
+
+def ordered_subset(items: list[str], subset: list[str] | None) -> list[str]:
+    subset_set = set(subset or [])
+    return [item for item in items if item in subset_set]

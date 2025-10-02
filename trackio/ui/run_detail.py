@@ -14,6 +14,7 @@ except ImportError:
 RUN_DETAILS_TEMPLATE = """
 ## Run Details
 * **Run Name:** `{run_name}`
+* **Group:** `{group}`
 * **Created:** {created} by {username}
 """
 
@@ -47,6 +48,8 @@ with gr.Blocks() as run_detail_page:
         if not config:
             return gr.Markdown("No run details available"), {}
 
+        group = config.get("_Group", "None")
+
         created = config.get("_Created", "Unknown")
         if created != "Unknown":
             created = utils.format_timestamp(created)
@@ -56,7 +59,7 @@ with gr.Blocks() as run_detail_page:
             username = f"[{username}](https://huggingface.co/{username})"
 
         details_md = RUN_DETAILS_TEMPLATE.format(
-            run_name=run, created=created, username=username
+            run_name=run, group=group, created=created, username=username
         )
 
         config_display = {k: v for k, v in config.items() if not k.startswith("_")}
