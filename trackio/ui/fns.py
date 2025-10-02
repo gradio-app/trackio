@@ -97,6 +97,5 @@ def group_runs_by_config(
         groups.setdefault(label, []).append(run_name)
     for label in groups:
         groups[label].sort()
-    # sort groups by label
     sorted_groups = dict(sorted(groups.items(), key=lambda kv: kv[0].lower()))
     return sorted_groups
