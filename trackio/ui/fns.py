@@ -160,6 +160,9 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
             return
     raise PermissionError(
         "Expected the oauth token to be the user owner of the space, or be a member of the org owner of the space"
+    )
+
+
 def get_group_by_fields(project: str):
     configs = SQLiteStorage.get_all_run_configs(project) if project else {}
     keys = set()
