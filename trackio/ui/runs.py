@@ -125,7 +125,7 @@ def set_deletion_allowed(request: gr.Request, oauth_token: gr.OAuthToken | None)
 def update_delete_button(deletion_allowed, runs_data):
     """Update the delete button value and interactivity based on the selected runs."""
     if not deletion_allowed:
-        return
+        return gr.Button(interactive=False)
 
     num_selected = 0
     if runs_data is not None and len(runs_data) > 0:
@@ -140,9 +140,9 @@ def update_delete_button(deletion_allowed, runs_data):
         return gr.Button("Select runs to delete", interactive=False, visible=True)
 
 
-def delete_selected_runs(runs_data, project, request: gr.Request):
+def delete_selected_runs(deletion_allowed, runs_data, project, request: gr.Request):
     """Delete the selected runs and refresh the table."""
-    if not check_write_access_runs(request, run_page.write_token):
+    if not deletion_allowed:
         return runs_data
 
     first_column_values = runs_data.iloc[:, 0].tolist()
@@ -269,7 +269,7 @@ with gr.Blocks() as run_page:
     gr.on(
         [confirm_btn.click],
         fn=delete_selected_runs,
-        inputs=[runs_table, project_dd],
+        inputs=[allow_deleting_runs, runs_table, project_dd],
         outputs=[runs_table],
         show_progress="hidden",
         api_name=False,
