@@ -39,6 +39,7 @@ for run in range(3):
             learning_rate=0.001,
             batch_size=32,
         ),
+        space_id=f"trackio-test-space-{PROJECT_ID}",
         dataset_id=f"trackio-test-dataset-{PROJECT_ID}",
     )
 

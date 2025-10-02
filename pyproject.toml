@@ -2,16 +2,23 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build]
-include = ["README.md", "LICENSE"]
-
 [project]
 name = "trackio"
-description = "A small Python library created to help developers protect their applications from Server Side Request Forgery (SSRF) attacks."
-authors = [{ name = "Abubakar Abid", email = "abubakar@hf.co" }]
+description = "A lightweight, local-first, and free experiment tracking library built on top of Hugging Face Datasets and Spaces."
+authors = [
+    { name = "Abubakar Abid", email = "abubakar@huggingface.co" },
+    { name = "Zach Nation", email = "zach@huggingface.co" },
+]
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["pandas", "huggingface-hub", "gradio>=5.35.0"]
+dependencies = [
+    "pandas<3.0.0",
+    "huggingface-hub<1.0.0",
+    "gradio>=5.46.0,<6.0.0",
+    "numpy<3.0.0",
+    "pillow<12.0.0",
+    "orjson>=3.0,<4.0.0",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -24,7 +31,8 @@ homepage = "https://github.com/gradio-app/trackio"
 repository = "https://github.com/gradio-app/trackio"
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff==0.9.3"]
+dev = ["pytest", "ruff==0.9.3", "pyarrow>=21.0"]
+tensorboard = ["tbparse==0.0.9", "tensorboardX>=2.0.0,<3.0.0"]
 
 [project.scripts]
 trackio = "trackio.cli:main"

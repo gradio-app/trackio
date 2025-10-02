@@ -1,3 +1,4 @@
+import importlib.metadata
 import io
 import os
 import time
@@ -11,14 +12,43 @@ from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 from requests import HTTPError
 
+import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
+SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
+
+
+def _is_trackio_installed_from_source() -> bool:
+    """Check if trackio is installed from source/editable install vs PyPI."""
+    try:
+        trackio_file = trackio.__file__
+        if "site-packages" not in trackio_file:
+            return True
+
+        dist = importlib.metadata.distribution("trackio")
+        if dist.files:
+            files = list(dist.files)
+            has_pth = any(".pth" in str(f) for f in files)
+            if has_pth:
+                return True
+
+        return False
+    except (
+        AttributeError,
+        importlib.metadata.PackageNotFoundError,
+        importlib.metadata.MetadataError,
+        ValueError,
+        TypeError,
+    ):
+        return True
 
 
 def deploy_as_space(
     space_id: str,
+    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ):
     if (
         os.getenv("SYSTEM") == "spaces"
@@ -32,7 +62,9 @@ def deploy_as_space(
     try:
         huggingface_hub.create_repo(
             space_id,
+            private=private,
             space_sdk="gradio",
+            space_storage=space_storage,
             repo_type="space",
             exist_ok=True,
         )
@@ -42,7 +74,9 @@ def deploy_as_space(
             huggingface_hub.login(add_to_git_credential=False)
             huggingface_hub.create_repo(
                 space_id,
+                private=private,
                 space_sdk="gradio",
+                space_storage=space_storage,
                 repo_type="space",
                 exist_ok=True,
             )
@@ -60,16 +94,45 @@ def deploy_as_space(
             repo_type="space",
         )
 
-    huggingface_hub.utils.disable_progress_bars()
-    hf_api.upload_folder(
+    # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
+    # Make sure necessary dependencies are installed by creating a requirements.txt.
+    is_source_install = _is_trackio_installed_from_source()
+
+    if is_source_install:
+        requirements_content = """pyarrow>=21.0"""
+    else:
+        requirements_content = f"""pyarrow>=21.0
+trackio=={trackio.__version__}"""
+
+    requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
+    hf_api.upload_file(
+        path_or_fileobj=requirements_buffer,
+        path_in_repo="requirements.txt",
         repo_id=space_id,
         repo_type="space",
-        folder_path=trackio_path,
-        ignore_patterns=["README.md"],
     )
 
-    hf_token = huggingface_hub.utils.get_token()
-    if hf_token is not None:
+    huggingface_hub.utils.disable_progress_bars()
+
+    if is_source_install:
+        hf_api.upload_folder(
+            repo_id=space_id,
+            repo_type="space",
+            folder_path=trackio_path,
+            ignore_patterns=["README.md"],
+        )
+    else:
+        app_file_content = """import trackio
+trackio.show()"""
+        app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
+        hf_api.upload_file(
+            path_or_fileobj=app_file_buffer,
+            path_in_repo="ui/main.py",
+            repo_id=space_id,
+            repo_type="space",
+        )
+
+    if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
@@ -77,7 +140,9 @@ def deploy_as_space(
 
 def create_space_if_not_exists(
     space_id: str,
+    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist. If a dataset_id is provided, it will be added as a space variable.
@@ -85,6 +150,9 @@ def create_space_if_not_exists(
     Args:
         space_id: The ID of the Space to create.
         dataset_id: The ID of the Dataset to add to the Space.
+        private: Whether to make the Space private. If None (default), the repo will be
+          public unless the organization's default is private. This value is ignored if
+          the repo already exists.
     """
     if "/" not in space_id:
         raise ValueError(
@@ -115,7 +183,7 @@ def create_space_if_not_exists(
             raise ValueError(f"Failed to create Space: {e}")
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, dataset_id)
+    deploy_as_space(space_id, space_storage, dataset_id, private)
 
 
 def wait_until_space_exists(
