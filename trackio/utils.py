@@ -776,3 +776,8 @@ def get_space() -> str | None:
     Get the space ID ("user/space") if Trackio is running in a Space, or None if not.
     """
     return os.environ.get("SPACE_ID")
+
+
+def ordered_subset(items: list[str], subset: list[str] | None) -> list[str]:
+    subset_set = set(subset or [])
+    return [item for item in items if item in subset_set]

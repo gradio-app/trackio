@@ -8,9 +8,18 @@ import huggingface_hub as hf
 try:
     import trackio.utils as utils
     from trackio.sqlite_storage import SQLiteStorage
+    from trackio.ui.helpers.run_selection import RunSelection
 except ImportError:
     import utils
     from sqlite_storage import SQLiteStorage
+    from ui.helpers.run_selection import RunSelection
+
+CONFIG_COLUMN_MAPPINGS = {
+    "_Username": "Username",
+    "_Created": "Created",
+    "_Group": "Group",
+}
+CONFIG_COLUMN_MAPPINGS_REVERSE = {v: k for k, v in CONFIG_COLUMN_MAPPINGS.items()}
 
 
 HfApi = hf.HfApi()
@@ -151,4 +160,79 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
             return
     raise PermissionError(
         "Expected the oauth token to be the user owner of the space, or be a member of the org owner of the space"
+def get_group_by_fields(project: str):
+    configs = SQLiteStorage.get_all_run_configs(project) if project else {}
+    keys = set()
+    for config in configs.values():
+        keys.update(config.keys())
+    keys.discard("_Created")
+    keys = [CONFIG_COLUMN_MAPPINGS.get(key, key) for key in keys]
+    choices = [None] + sorted(keys)
+    return gr.Dropdown(
+        choices=choices,
+        value=None,
+        interactive=True,
+    )
+
+
+def group_runs_by_config(
+    project: str, config_key: str, filter_text: str | None = None
+) -> dict[str, list[str]]:
+    if not project or not config_key:
+        return {}
+    display_key = config_key
+    config_key = CONFIG_COLUMN_MAPPINGS_REVERSE.get(config_key, config_key)
+    configs = SQLiteStorage.get_all_run_configs(project)
+    groups: dict[str, list[str]] = {}
+    for run_name, config in configs.items():
+        if filter_text and filter_text not in run_name:
+            continue
+        group_name = config.get(config_key, "None")
+        label = f"{display_key}: {group_name}"
+        groups.setdefault(label, []).append(run_name)
+    for label in groups:
+        groups[label].sort()
+    sorted_groups = dict(sorted(groups.items(), key=lambda kv: kv[0].lower()))
+    return sorted_groups
+
+
+def run_checkbox_update(selection: RunSelection, **kwargs) -> gr.CheckboxGroup:
+    return gr.CheckboxGroup(
+        choices=selection.choices,
+        value=selection.selected,
+        **kwargs,
+    )
+
+
+def handle_run_checkbox_change(
+    selected_runs: list[str] | None, selection: RunSelection
+) -> RunSelection:
+    selection.select(selected_runs or [])
+    return selection
+
+
+def handle_group_checkbox_change(
+    group_selected: list[str] | None,
+    selection: RunSelection,
+    group_runs: list[str] | None,
+):
+    subset, _ = selection.replace_group(group_runs or [], group_selected or [])
+    return (
+        selection,
+        gr.CheckboxGroup(value=subset),
+        run_checkbox_update(selection),
+    )
+
+
+def handle_group_toggle(
+    select_all: bool,
+    selection: RunSelection,
+    group_runs: list[str] | None,
+):
+    target = list(group_runs or []) if select_all else []
+    subset, _ = selection.replace_group(group_runs or [], target)
+    return (
+        selection,
+        gr.CheckboxGroup(value=subset),
+        run_checkbox_update(selection),
     )

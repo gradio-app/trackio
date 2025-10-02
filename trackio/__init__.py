@@ -56,6 +56,7 @@ DEFAULT_THEME = "citrus"
 def init(
     project: str,
     name: str | None = None,
+    group: str | None = None,
     space_id: str | None = None,
     space_storage: SpaceStorage | None = None,
     dataset_id: str | None = None,
@@ -74,6 +75,10 @@ def init(
             a new project to start tracking from scratch).
         name (`str`, *optional*):
             The name of the run (if not provided, a default name will be generated).
+        group (`str`, *optional*):
+            The name of the group which this run belongs to in order to help organize
+            related runs together. You can toggle the entire group's visibilitiy in the
+            dashboard.
         space_id (`str`, *optional*):
             If provided, the project will be logged to a Hugging Face Space instead of
             a local directory. Should be a complete Space name like
@@ -204,6 +209,7 @@ def init(
         project=project,
         client=client,
         name=name,
+        group=group,
         config=config,
         space_id=space_id,
     )
