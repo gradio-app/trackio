@@ -15,6 +15,8 @@
     title: Deploy and Embed Dashboards
   - local: manage
     title: Manage Projects
+  - local: api_mcp_server
+    title: API and MCP Server
   - local: environment_variables
     title: Environment Variables
   title: How-to guides

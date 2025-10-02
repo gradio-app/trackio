@@ -575,6 +575,69 @@ class SQLiteStorage:
                     return {}
                 raise
 
+    @staticmethod
+    def get_metric_values(project: str, run: str, metric_name: str) -> list[dict]:
+        """Get all values for a specific metric in a project/run."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT timestamp, step, metrics
+                FROM metrics
+                WHERE run_name = ?
+                ORDER BY timestamp
+                """,
+                (run,),
+            )
+
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
+                metrics = orjson.loads(row["metrics"])
+                metrics = deserialize_values(metrics)
+                if metric_name in metrics:
+                    results.append(
+                        {
+                            "timestamp": row["timestamp"],
+                            "step": row["step"],
+                            "value": metrics[metric_name],
+                        }
+                    )
+            return results
+
+    @staticmethod
+    def get_all_metrics_for_run(project: str, run: str) -> list[str]:
+        """Get all metric names for a specific project/run."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT metrics
+                FROM metrics
+                WHERE run_name = ?
+                ORDER BY timestamp
+                """,
+                (run,),
+            )
+
+            rows = cursor.fetchall()
+            all_metrics = set()
+            for row in rows:
+                metrics = orjson.loads(row["metrics"])
+                metrics = deserialize_values(metrics)
+                for key in metrics.keys():
+                    if key not in ["timestamp", "step"]:
+                        all_metrics.add(key)
+            return sorted(list(all_metrics))
+
     def finish(self):
         """Cleanup when run is finished."""
         pass
