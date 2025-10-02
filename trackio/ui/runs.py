@@ -104,7 +104,7 @@ def update_delete_button(
     """Update the delete button value and interactivity based on the runs data and user write access."""
     if oauth_token:
         try:
-            fns.check_token_has_write_access(oauth_token.token)
+            fns.check_oauth_token_has_write_access(oauth_token.token)
         except PermissionError:
             return gr.Button(visible=False)
     elif not check_write_access_runs(request, run_page.write_token):

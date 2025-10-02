@@ -62,7 +62,7 @@ def update_navbar_value(project_dd):
     )
 
 
-def check_token_has_write_access(hf_token: str | None) -> None:
+def check_hf_token_has_write_access(hf_token: str | None) -> None:
     """
     Checks to see if the provided hf_token is valid and has write access to the Space
     that Trackio is running in. If the hf_token is valid or if Trackio is not running
@@ -75,7 +75,6 @@ def check_token_has_write_access(hf_token: str | None) -> None:
                 "Expected a HF_TOKEN to be provided when logging to a Space"
             )
         who = HfApi.whoami(hf_token)
-        access_token = who["auth"]["accessToken"]
         owner_name = os.getenv("SPACE_AUTHOR_NAME")
         repo_name = os.getenv("SPACE_REPO_NAME")
         # make sure the token user is either the author of the space,
@@ -86,6 +85,7 @@ def check_token_has_write_access(hf_token: str | None) -> None:
                 "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
             )
         # reject fine-grained tokens without specific repo access
+        access_token = who["auth"]["accessToken"]
         if access_token["role"] == "fineGrained":
             matched = False
             for item in access_token["fineGrained"]["scoped"]:
@@ -119,13 +119,25 @@ def check_token_has_write_access(hf_token: str | None) -> None:
 
 def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
     """
-    Checks to see if the provided oauth_token is valid and has write access to the Space
-    that Trackio is running in. If the oauth_token is valid or if Trackio is not running
+    Checks to see if the oauth token provided via Gradio's OAuth is valid and has write access
+    to the Space that Trackio is running in. If the oauth token is valid or if Trackio is not running
     on a Space, this function does nothing. Otherwise, it raises a PermissionError.
     """
-    if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
-        # check auth token passed in
-        if oauth_token is None:
-            raise PermissionError(
-                "Expected an oauth to be provided when logging to a Space"
-            )
+    if not os.getenv("SYSTEM") == "spaces":
+        return
+    if oauth_token is None:
+        raise PermissionError(
+            "Expected an oauth to be provided when logging to a Space"
+        )
+    who = HfApi.whoami(oauth_token.token)
+    user_name = who["name"]
+    owner_name = os.getenv("SPACE_AUTHOR_NAME")
+    if user_name == owner_name:
+        return
+    # check if user is a member of an org that owns the space with write permissions
+    for org in who["orgs"]:
+        if org["name"] == owner_name and org["roleInOrg"] == "write":
+            return
+    raise PermissionError(
+        "Expected the oauth token to be the user owner of the space, or be a member of the org owner of the space"
+    )
