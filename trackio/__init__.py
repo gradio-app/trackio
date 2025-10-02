@@ -23,6 +23,14 @@ from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+# Suppress Gradio OAuth warning when running locally
+warnings.filterwarnings(
+    "ignore",
+    message="Empty session being created. Install gradio\\[oauth\\]",
+    category=UserWarning,
+    module="gradio.helpers",
+)
+
 __version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
 
 __all__ = [

@@ -154,7 +154,8 @@ with gr.Blocks() as run_page:
     timer = gr.Timer(value=1)
     with gr.Row():
         with gr.Column():
-            gr.LoginButton("Login to delete runs", size="md", visible=utils.get_space())
+            if utils.get_space():
+                gr.LoginButton("Login to delete runs", size="md")
         with gr.Column():
             with gr.Row():
                 delete_run_btn = gr.Button(
