@@ -740,7 +740,6 @@ def get_full_url(base_url: str, project: str | None, write_token: str) -> str:
 
 
 def embed_url_in_notebook(url: str) -> None:
-    print("embed_url_in_notebook", url)
     try:
         from IPython.display import HTML, display
 
