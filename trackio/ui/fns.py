@@ -7,9 +7,11 @@ import gradio as gr
 try:
     import trackio.utils as utils
     from trackio.sqlite_storage import SQLiteStorage
+    from trackio.ui.helpers.run_selection import RunSelection
 except ImportError:
     import utils
     from sqlite_storage import SQLiteStorage
+    from ui.helpers.run_selection import RunSelection
 
 CONFIG_COLUMN_MAPPINGS = {
     "_Username": "Username",
@@ -99,3 +101,45 @@ def group_runs_by_config(
         groups[label].sort()
     sorted_groups = dict(sorted(groups.items(), key=lambda kv: kv[0].lower()))
     return sorted_groups
+
+
+def run_checkbox_update(selection: RunSelection, **kwargs) -> gr.CheckboxGroup:
+    return gr.CheckboxGroup(
+        choices=selection.choices,
+        value=selection.selected,
+        **kwargs,
+    )
+
+
+def handle_run_checkbox_change(
+    selected_runs: list[str] | None, selection: RunSelection
+) -> RunSelection:
+    selection.select(selected_runs or [])
+    return selection
+
+
+def handle_group_checkbox_change(
+    group_selected: list[str] | None,
+    selection: RunSelection,
+    group_runs: list[str] | None,
+):
+    subset, _ = selection.replace_group(group_runs or [], group_selected or [])
+    return (
+        selection,
+        gr.CheckboxGroup(value=subset),
+        run_checkbox_update(selection),
+    )
+
+
+def handle_group_toggle(
+    select_all: bool,
+    selection: RunSelection,
+    group_runs: list[str] | None,
+):
+    target = list(group_runs or []) if select_all else []
+    subset, _ = selection.replace_group(group_runs or [], target)
+    return (
+        selection,
+        gr.CheckboxGroup(value=subset),
+        run_checkbox_update(selection),
+    )
