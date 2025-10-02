@@ -29,3 +29,15 @@ If this PR closes an issue, please link it below:
 
 Closes: 
 
+## Testing and linting
+
+Please run tests before submitting changes:
+   ```bash
+   python -m pytest
+   ```
+
+and format your code using Ruff:
+
+   ```bash
+   ruff check --fix --select I && ruff format
+   ```
