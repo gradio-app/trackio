@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image as PILImage
 
-from trackio.video_writer import write_video
+from trackio.media import write_video
 
 
 @pytest.fixture
@@ -14,7 +14,7 @@ def temp_dir(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         for name in ["trackio.sqlite_storage"]:
             monkeypatch.setattr(f"{name}.TRACKIO_DIR", Path(tmpdir))
-        for name in ["trackio.media", "trackio.file_storage"]:
+        for name in ["trackio.media.media", "trackio.media.file_storage"]:
             monkeypatch.setattr(f"{name}.MEDIA_DIR", Path(tmpdir) / "media")
         yield tmpdir
 
