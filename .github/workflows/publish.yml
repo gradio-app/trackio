@@ -29,7 +29,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: Install changesets
-        run: pnpm i --lockfile-only
+        run: pnpm i --frozen-lockfile
       - name: create and publish versions
         id: changesets
         uses: changesets/action@aba318e9165b45b7948c60273e0b72fce0a64eb9 # @v1
