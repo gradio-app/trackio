@@ -34,10 +34,10 @@ jobs:
         id: changesets
         uses: changesets/action@aba318e9165b45b7948c60273e0b72fce0a64eb9 # @v1
         with:
-          version: pnpm version
+          version: pnpm ci:version
           commit: "chore: update versions"
           title: "chore: update versions"
-          publish: pnpm tag
+          publish: pnpm ci:tag
         env:
           GITHUB_TOKEN: ${{ secrets.GRADIO_PAT }}
       - name: publish to pypi
