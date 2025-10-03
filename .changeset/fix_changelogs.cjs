@@ -105,6 +105,8 @@ ${current_changelog.replace(`# ${pkg_name}`, "").trim()}
 			if (!python) continue;
 
 			const requirements_path = join(dir, "..", "requirements.txt");
+
+			if (!existsSync(requirements_path)) continue;
 			const requirements = readFileSync(requirements_path, "utf-8").split("\n");
 
 			const pkg_index = requirements.findIndex((line) => {
