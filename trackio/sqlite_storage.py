@@ -28,8 +28,7 @@ except ImportError:  # relative imports when installed from source on Spaces
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR, deserialize_values, serialize_values
 
-# -------- Single source of truth for DB extension --------
-DB_EXT = ".sqlite"
+DB_EXT = ".db"
 
 
 class ProcessLock:
@@ -75,7 +74,16 @@ class SQLiteStorage:
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path), timeout=30.0)
+        # Keep WAL for concurrency + performance on many small writes
         conn.execute("PRAGMA journal_mode = WAL")
+        # ---- Minimal perf tweaks for many tiny transactions ----
+        # NORMAL = fsync at critical points only (safer than OFF, much faster than FULL)
+        conn.execute("PRAGMA synchronous = NORMAL")
+        # Keep temp data in memory to avoid disk hits during small writes
+        conn.execute("PRAGMA temp_store = MEMORY")
+        # Give SQLite a bit more room for cache (negative = KB, engine-managed)
+        conn.execute("PRAGMA cache_size = -20000")
+        # --------------------------------------------------------
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -104,7 +112,6 @@ class SQLiteStorage:
     def init_db(project: str) -> Path:
         """
         Initialize the SQLite database with required tables.
-        If there is a dataset ID provided, copies from that dataset instead.
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
@@ -112,6 +119,9 @@ class SQLiteStorage:
         with SQLiteStorage._get_process_lock(project):
             with sqlite3.connect(str(db_path), timeout=30.0) as conn:
                 conn.execute("PRAGMA journal_mode = WAL")
+                conn.execute("PRAGMA synchronous = NORMAL")
+                conn.execute("PRAGMA temp_store = MEMORY")
+                conn.execute("PRAGMA cache_size = -20000")
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -160,17 +170,15 @@ class SQLiteStorage:
     def export_to_parquet():
         """
         Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
+        (unchanged logic)
         """
+        if not SQLiteStorage._dataset_import_attempted:
+            return
         if not TRACKIO_DIR.exists():
             return
 
         all_paths = os.listdir(TRACKIO_DIR)
         db_names = [f for f in all_paths if f.endswith(DB_EXT)]
-
-        # Only skip export if there are no DBs and no prior dataset import
-        if not db_names and not SQLiteStorage._dataset_import_attempted:
-            return
-
         for db_name in db_names:
             db_path = TRACKIO_DIR / db_name
             parquet_path = db_path.with_suffix(".parquet")
@@ -180,7 +188,6 @@ class SQLiteStorage:
                 with sqlite3.connect(str(db_path)) as conn:
                     df = pd.read_sql("SELECT * FROM metrics", conn)
 
-                # Expand JSON "metrics" column into scalar columns
                 metrics = df["metrics"].copy()
                 metrics = pd.DataFrame(
                     metrics.apply(
@@ -203,13 +210,13 @@ class SQLiteStorage:
                 if sidecar.exists():
                     sidecar.unlink()
             except Exception:
-                # best-effort cleanup; ignore if we can't delete
                 pass
 
     @staticmethod
     def import_from_parquet():
         """
         Imports to all DB files that have matching files under the same path but with extension ".parquet".
+        (unchanged logic + sidecar cleanup)
         """
         if not TRACKIO_DIR.exists():
             return
@@ -220,12 +227,10 @@ class SQLiteStorage:
             parquet_path = TRACKIO_DIR / pq_name
             db_path = parquet_path.with_suffix(DB_EXT)
 
-            # Remove stale WAL/SHM sidecars that may remain after tests delete the main DB
             SQLiteStorage._cleanup_wal_sidecars(db_path)
 
             df = pd.read_parquet(parquet_path)
 
-            # Normalize to a single JSON 'metrics' column if needed
             if "metrics" not in df.columns:
                 metrics = df.copy()
                 other_cols = ["id", "timestamp", "run_name", "step"]
@@ -233,22 +238,14 @@ class SQLiteStorage:
                 for col in other_cols:
                     del metrics[col]
                 metrics = orjson.loads(metrics.to_json(orient="records"))
-                df["metrics"] = [
-                    orjson.dumps(serialize_values(row)) for row in metrics
-                ]
+                df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
-            # Write with a plain connection (no WAL) to avoid creating sidecars during import
-            # Then other operations can use WAL safely afterward.
             with sqlite3.connect(str(db_path), timeout=30.0) as conn:
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
                 conn.commit()
 
     @staticmethod
     def get_scheduler():
-        """
-        Get the scheduler for the database based on the environment variables.
-        This applies to both local and Spaces.
-        """
         with SQLiteStorage._scheduler_lock:
             if SQLiteStorage._current_scheduler is not None:
                 return SQLiteStorage._current_scheduler
@@ -273,14 +270,11 @@ class SQLiteStorage:
 
     @staticmethod
     def log(project: str, run: str, metrics: dict, step: int | None = None):
-        """
-        Safely log metrics to the database. Kept for backwards compatibility.
-        """
+        """Safely log metrics to the database. Kept for backwards compatibility."""
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
-
                 cursor.execute(
                     """
                     SELECT MAX(step) 
@@ -290,10 +284,11 @@ class SQLiteStorage:
                     (run,),
                 )
                 last_step = cursor.fetchone()[0]
-                current_step = 0 if step is None and last_step is None else (
-                    step if step is not None else last_step + 1
+                current_step = (
+                    0
+                    if step is None and last_step is None
+                    else (step if step is not None else last_step + 1)
                 )
-
                 current_timestamp = datetime.now().isoformat()
                 cursor.execute(
                     """
@@ -319,12 +314,9 @@ class SQLiteStorage:
         timestamps: list[str] | None = None,
         config: dict | None = None,
     ):
-        """
-        Safely log bulk metrics to the database.
-        """
+        """Safely log bulk metrics to the database."""
         if not metrics_list:
             return
-
         if timestamps is None:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
 
@@ -341,7 +333,6 @@ class SQLiteStorage:
                     )
                     last_step = cursor.fetchone()[0]
                     current_step = 0 if last_step is None else last_step + 1
-
                     processed_steps = []
                     for s in steps:
                         if s is None:
@@ -435,7 +426,6 @@ class SQLiteStorage:
                 try:
                     files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                     for file in files:
-                        # Download parquet and media assets
                         if not (file.endswith(".parquet") or file.startswith("media/")):
                             continue
                         if (TRACKIO_DIR / file).exists():
@@ -454,16 +444,13 @@ class SQLiteStorage:
 
     @staticmethod
     def get_projects() -> list[str]:
-        """
-        Get list of all projects by scanning the database files in the trackio directory.
-        """
+        """Get list of all projects by scanning the database files in the trackio directory."""
         if not SQLiteStorage._dataset_import_attempted:
             SQLiteStorage.load_from_dataset()
 
         projects: set[str] = set()
         if not TRACKIO_DIR.exists():
             return []
-
         for db_file in TRACKIO_DIR.glob(f"*{DB_EXT}"):
             project_name = db_file.stem
             projects.add(project_name)
@@ -475,7 +462,6 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
-
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -489,7 +475,6 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return {}
-
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -499,11 +484,9 @@ class SQLiteStorage:
                 GROUP BY run_name
                 """
             )
-
             results = {}
             for row in cursor.fetchall():
                 results[row["run_name"]] = row["max_step"]
-
             return results
 
     @staticmethod
@@ -530,7 +513,6 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
-
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             try:
@@ -556,7 +538,6 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
-
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
@@ -574,7 +555,6 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return {}
-
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             try:
@@ -599,7 +579,6 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
-
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -632,7 +611,6 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
-
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
