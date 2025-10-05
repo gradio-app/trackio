@@ -78,8 +78,8 @@ def test_import_export(temp_dir):
     gc.collect()
     [conn.close() for conn in gc.get_objects() if isinstance(conn, sqlite3.Connection)]
     # clear existing SQLite data
-    os.remove(db_path_1)
-    os.remove(db_path_2)
+    os.unlink(db_path_1)
+    os.unlink(db_path_2)
 
     # import from parquet, compare copies
     SQLiteStorage.import_from_parquet()
