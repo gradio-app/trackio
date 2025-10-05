@@ -1,3 +1,4 @@
+import gc
 import multiprocessing
 import os
 import platform
@@ -65,16 +66,20 @@ def test_import_export(temp_dir):
     SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
     SQLiteStorage.log(project="proj2", run="run2", metrics={"b": 2})
     SQLiteStorage.export_to_parquet()
+
     metrics_before = {}
     for proj in SQLiteStorage.get_projects():
         if proj not in metrics_before:
             metrics_before[proj] = {}
         for run in SQLiteStorage.get_runs(proj):
             metrics_before[proj][run] = SQLiteStorage.get_logs(proj, run)
-
+    
+    ## there might be open connections from previous test, hence closing them
+    gc.collect()
+    [conn.close() for conn in gc.get_objects() if isinstance(conn, sqlite3.Connection)]
     # clear existing SQLite data
-    os.unlink(db_path_1)
-    os.unlink(db_path_2)
+    os.remove(db_path_1)
+    os.remove(db_path_2)
 
     # import from parquet, compare copies
     SQLiteStorage.import_from_parquet()
