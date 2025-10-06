@@ -216,7 +216,6 @@ class SQLiteStorage:
     def import_from_parquet():
         """
         Imports to all DB files that have matching files under the same path but with extension ".parquet".
-        (unchanged logic + sidecar cleanup)
         """
         if not TRACKIO_DIR.exists():
             return
