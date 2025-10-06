@@ -61,6 +61,7 @@ class ProcessLock:
         """Release the lock."""
         if self.is_windows:
             return
+
         if self.lockfile:
             fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
             self.lockfile.close()
@@ -171,6 +172,7 @@ class SQLiteStorage:
         """
         Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
         """
+        # don't attempt to export (potentially wrong/blank) data before importing for the first time
         if not SQLiteStorage._dataset_import_attempted:
             return
         if not TRACKIO_DIR.exists():
@@ -186,7 +188,7 @@ class SQLiteStorage:
             ):
                 with sqlite3.connect(str(db_path)) as conn:
                     df = pd.read_sql("SELECT * FROM metrics", conn)
-
+                # break out the single JSON metrics column into individual columns
                 metrics = df["metrics"].copy()
                 metrics = pd.DataFrame(
                     metrics.apply(
@@ -228,13 +230,15 @@ class SQLiteStorage:
             SQLiteStorage._cleanup_wal_sidecars(db_path)
 
             df = pd.read_parquet(parquet_path)
-
+            # fix up df to have a single JSON metrics column
             if "metrics" not in df.columns:
+                # separate other columns from metrics
                 metrics = df.copy()
                 other_cols = ["id", "timestamp", "run_name", "step"]
                 df = df[other_cols]
                 for col in other_cols:
                     del metrics[col]
+                # combine them all into a single metrics col
                 metrics = orjson.loads(metrics.to_json(orient="records"))
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
@@ -244,6 +248,10 @@ class SQLiteStorage:
 
     @staticmethod
     def get_scheduler():
+        """
+        Get the scheduler for the database based on the environment variables.
+        This applies to both local and Spaces.
+        """
         with SQLiteStorage._scheduler_lock:
             if SQLiteStorage._current_scheduler is not None:
                 return SQLiteStorage._current_scheduler
@@ -268,7 +276,15 @@ class SQLiteStorage:
 
     @staticmethod
     def log(project: str, run: str, metrics: dict, step: int | None = None):
-        """Safely log metrics to the database. Kept for backwards compatibility."""
+        """
+        Safely log metrics to the database. Before logging, this method will ensure the database exists
+        and is set up with the correct tables. It also uses a cross-process lock to prevent
+        database locking errors when multiple processes access the same database.
+
+        This method is not used in the latest versions of Trackio (replaced by bulk_log) but
+        is kept for backwards compatibility for users who are connecting to a newer version of
+        a Trackio Spaces dashboard with an older version of Trackio installed locally.
+        """
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
@@ -312,9 +328,14 @@ class SQLiteStorage:
         timestamps: list[str] | None = None,
         config: dict | None = None,
     ):
-        """Safely log bulk metrics to the database."""
+        """
+        Safely log bulk metrics to the database. Before logging, this method will ensure the database exists
+        and is set up with the correct tables. It also uses a cross-process lock to prevent
+        database locking errors when multiple processes access the same database.
+        """
         if not metrics_list:
             return
+
         if timestamps is None:
             timestamps = [datetime.now().isoformat()] * len(metrics_list)
 
@@ -386,10 +407,11 @@ class SQLiteStorage:
 
     @staticmethod
     def get_logs(project: str, run: str) -> list[dict]:
-        """Retrieve logs for a specific run."""
+        """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
+
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -401,6 +423,7 @@ class SQLiteStorage:
                 """,
                 (run,),
             )
+
             rows = cursor.fetchall()
             results = []
             for row in rows:
@@ -424,6 +447,7 @@ class SQLiteStorage:
                 try:
                     files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                     for file in files:
+                        # Download parquet and media assets
                         if not (file.endswith(".parquet") or file.startswith("media/")):
                             continue
                         if (TRACKIO_DIR / file).exists():
@@ -442,13 +466,16 @@ class SQLiteStorage:
 
     @staticmethod
     def get_projects() -> list[str]:
-        """Get list of all projects by scanning the database files in the trackio directory."""
+        """
+        Get list of all projects by scanning the database files in the trackio directory.
+        """
         if not SQLiteStorage._dataset_import_attempted:
             SQLiteStorage.load_from_dataset()
 
         projects: set[str] = set()
         if not TRACKIO_DIR.exists():
             return []
+
         for db_file in TRACKIO_DIR.glob(f"*{DB_EXT}"):
             project_name = db_file.stem
             projects.add(project_name)
@@ -460,6 +487,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
+
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -473,6 +501,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return {}
+
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -482,19 +511,23 @@ class SQLiteStorage:
                 GROUP BY run_name
                 """
             )
+
             results = {}
             for row in cursor.fetchall():
                 results[row["run_name"]] = row["max_step"]
+
             return results
 
     @staticmethod
     def store_config(project: str, run: str, config: dict) -> None:
         """Store configuration for a run."""
         db_path = SQLiteStorage.init_db(project)
+
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 current_timestamp = datetime.now().isoformat()
+
                 cursor.execute(
                     """
                     INSERT OR REPLACE INTO configs
@@ -511,6 +544,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
+
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             try:
@@ -520,6 +554,7 @@ class SQLiteStorage:
                     """,
                     (run,),
                 )
+
                 row = cursor.fetchone()
                 if row:
                     config = orjson.loads(row["config"])
@@ -536,6 +571,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
+
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
@@ -553,6 +589,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return {}
+
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             try:
@@ -561,6 +598,7 @@ class SQLiteStorage:
                     SELECT run_name, config FROM configs
                     """
                 )
+
                 results = {}
                 for row in cursor.fetchall():
                     config = orjson.loads(row["config"])
@@ -577,6 +615,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
+
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -588,6 +627,7 @@ class SQLiteStorage:
                 """,
                 (run,),
             )
+
             rows = cursor.fetchall()
             results = []
             for row in rows:
@@ -609,6 +649,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
+
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -620,6 +661,7 @@ class SQLiteStorage:
                 """,
                 (run,),
             )
+
             rows = cursor.fetchall()
             all_metrics = set()
             for row in rows:
