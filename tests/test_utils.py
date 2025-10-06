@@ -180,6 +180,4 @@ def test_trackio_dir_env_var(monkeypatch):
         monkeypatch.setenv("TRACKIO_DIR", test_path)
         monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
         result_dir = utils._get_trackio_dir()
-        assert (
-            str(result_dir) == "/data/trackio"
-        )  # persistent storage has higher priority
+        assert str(result_dir) == "/data/trackio"
