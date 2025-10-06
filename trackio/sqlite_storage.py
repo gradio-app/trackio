@@ -353,12 +353,12 @@ class SQLiteStorage:
                     last_step = cursor.fetchone()[0]
                     current_step = 0 if last_step is None else last_step + 1
                     processed_steps = []
-                    for s in steps:
-                        if s is None:
+                    for step in steps:
+                        if step is None:
                             processed_steps.append(current_step)
                             current_step += 1
                         else:
-                            processed_steps.append(s)
+                            processed_steps.append(step)
                     steps = processed_steps
 
                 if len(metrics_list) != len(steps) or len(metrics_list) != len(
