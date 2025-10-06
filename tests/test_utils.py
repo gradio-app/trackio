@@ -170,9 +170,9 @@ def test_trackio_dir_env_var(monkeypatch):
         monkeypatch.delenv("TRACKIO_DIR", raising=False)
         monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
         result_dir = utils._get_trackio_dir()
-        assert str(result_dir) == Path("/data/trackio").as_posix()
+        assert Path(result_dir).as_posix() == "/data/trackio"
 
         monkeypatch.setenv("TRACKIO_DIR", test_path)
         monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
         result_dir = utils._get_trackio_dir()
-        assert str(result_dir) == Path("/data/trackio").as_posix()
+        assert Path(result_dir).as_posix() == "/data/trackio"
