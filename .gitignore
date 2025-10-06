@@ -1,7 +1,5 @@
-notebooks/
 trackio/__pycache__/
 tests/__pycache__/
-tf_test_run/
 .trackio/
 trackio.db
 *.pyc
@@ -9,3 +7,5 @@ trackio.db
 .venv/
 **/.DS_Store
 node_modules/
+dist/
+build/
