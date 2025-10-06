@@ -164,7 +164,7 @@ def test_trackio_dir_env_var(monkeypatch):
         monkeypatch.delenv("TRACKIO_DIR", raising=False)
         monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
         result_dir = utils._get_trackio_dir()
-        assert "huggingface/trackio" in str(result_dir)
+        assert "huggingface/trackio" in Path(result_dir).as_posix()
 
         monkeypatch.delenv("TRACKIO_DIR", raising=False)
         monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
