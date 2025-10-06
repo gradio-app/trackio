@@ -6,11 +6,14 @@ Trackio uses environment variables to configure various aspects of its behavior,
 
 ### `TRACKIO_DIR`
 
-Specifies a custom directory for storing Trackio data. By default, Trackio stores data in `~/.cache/huggingface/trackio/`.
+Specifies a custom directory for storing Trackio data. By default, Trackio stores data in `~/.cache/huggingface/trackio/`. 
 
 ```bash
 export TRACKIO_DIR="/path/to/trackio/data"
 ```
+
+Note: This environment variable applies as long as Trackio is not running in a Space with persistent storage enabled. If Trackio is running in a Space with persistent storage enabled (which is detected with the `PERSISTANT_STORAGE_ENABLED` env variable), then the Trackio data will be stored in `/data/trackio`.
+
 
 ### `TRACKIO_DATASET_ID`
 
