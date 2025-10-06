@@ -170,7 +170,6 @@ class SQLiteStorage:
     def export_to_parquet():
         """
         Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
-        (unchanged logic)
         """
         if not SQLiteStorage._dataset_import_attempted:
             return
