@@ -2,4 +2,4 @@
 "trackio": patch
 ---
 
-Fix the wheel build
+fix: Fix the wheel build
