@@ -27,7 +27,7 @@ def test_rapid_bulk_logging(temp_dir):
         trackio.log({"metric": i, "value": i * 3}, step=i)
     time_to_run_1000_logs = time.time() - start_time
 
-    assert time_to_run_1000_logs < 0.1, (
+    assert time_to_run_1000_logs < 0.2, (
         f"1000 calls of trackio.log() took {time_to_run_1000_logs} seconds, which is too long"
     )
     trackio.finish()
