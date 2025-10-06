@@ -153,33 +153,33 @@ def test_to_json_safe_with_object():
     }
 
 
-def test_trackio_dir_env_var():
-    """Test that TRACKIO_DIR environment variable is respected when set before import."""
-    import subprocess
-    import sys
-
+def test_trackio_dir_env_var(monkeypatch):
+    """Test that TRACKIO_DIR environment variable is respected."""
     with tempfile.TemporaryDirectory() as tmpdir:
         test_path = str(tmpdir)
 
-        # Create a test script that sets env var and imports trackio
-        test_script = f"""
-import os
-import sys
-os.environ["TRACKIO_DIR"] = "{test_path}"
+        # Test with TRACKIO_DIR set
+        monkeypatch.setenv("TRACKIO_DIR", test_path)
+        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
+        result_dir = utils._get_trackio_dir()
+        assert str(result_dir) == test_path
 
-# Import trackio.utils after setting env var
-from trackio import utils
+        # Test without TRACKIO_DIR set (should use default)
+        monkeypatch.delenv("TRACKIO_DIR", raising=False)
+        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
+        result_dir = utils._get_trackio_dir()
+        assert "huggingface/trackio" in str(result_dir)
 
-# Check if TRACKIO_DIR is set correctly
-assert str(utils.TRACKIO_DIR) == "{test_path}", f"Expected {{repr('{test_path}')}}, got {{repr(str(utils.TRACKIO_DIR))}}"
-assert str(utils.MEDIA_DIR) == "{Path(test_path) / "media"}", f"Expected media dir to be under custom TRACKIO_DIR"
-print("SUCCESS")
-"""
+        # Test with persistent storage enabled (should use /data/trackio)
+        monkeypatch.delenv("TRACKIO_DIR", raising=False)
+        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
+        result_dir = utils._get_trackio_dir()
+        assert str(result_dir) == "/data/trackio"
 
-        # Run the test script in a subprocess to ensure clean import
-        result = subprocess.run(
-            [sys.executable, "-c", test_script], capture_output=True, text=True
-        )
-
-        assert result.returncode == 0, f"Test failed: {result.stderr}"
-        assert "SUCCESS" in result.stdout
+        # Test that persistent storage takes priority over TRACKIO_DIR
+        monkeypatch.setenv("TRACKIO_DIR", test_path)
+        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
+        result_dir = utils._get_trackio_dir()
+        assert (
+            str(result_dir) == "/data/trackio"
+        )  # persistent storage has higher priority
