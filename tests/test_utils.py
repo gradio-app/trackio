@@ -1,4 +1,7 @@
+import os
 import random
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -148,3 +151,35 @@ def test_to_json_safe_with_object():
         "bias": "none",
         "task_type": "CAUSAL_LM",
     }
+
+
+def test_trackio_dir_env_var():
+    """Test that TRACKIO_DIR environment variable is respected when set before import."""
+    import subprocess
+    import sys
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_path = str(tmpdir)
+
+        # Create a test script that sets env var and imports trackio
+        test_script = f"""
+import os
+import sys
+os.environ["TRACKIO_DIR"] = "{test_path}"
+
+# Import trackio.utils after setting env var
+from trackio import utils
+
+# Check if TRACKIO_DIR is set correctly
+assert str(utils.TRACKIO_DIR) == "{test_path}", f"Expected {{repr('{test_path}')}}, got {{repr(str(utils.TRACKIO_DIR))}}"
+assert str(utils.MEDIA_DIR) == "{Path(test_path) / "media"}", f"Expected media dir to be under custom TRACKIO_DIR"
+print("SUCCESS")
+"""
+
+        # Run the test script in a subprocess to ensure clean import
+        result = subprocess.run(
+            [sys.executable, "-c", test_script], capture_output=True, text=True
+        )
+
+        assert result.returncode == 0, f"Test failed: {result.stderr}"
+        assert "SUCCESS" in result.stdout

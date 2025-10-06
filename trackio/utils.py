@@ -32,7 +32,7 @@ def _get_trackio_dir() -> Path:
     return Path(HF_HOME) / "trackio"
 
 
-TRACKIO_DIR = _get_trackio_dir()
+TRACKIO_DIR = Path(os.environ.get("TRACKIO_DIR", _get_trackio_dir()))
 MEDIA_DIR = TRACKIO_DIR / "media"
 
 
