@@ -73,7 +73,7 @@ def test_import_export(temp_dir):
             metrics_before[proj] = {}
         for run in SQLiteStorage.get_runs(proj):
             metrics_before[proj][run] = SQLiteStorage.get_logs(proj, run)
-    
+
     ## there might be open connections from previous test, hence closing them
     gc.collect()
     [conn.close() for conn in gc.get_objects() if isinstance(conn, sqlite3.Connection)]
