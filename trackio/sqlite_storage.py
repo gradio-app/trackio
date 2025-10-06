@@ -369,13 +369,13 @@ class SQLiteStorage:
                     )
 
                 data = []
-                for i, mt in enumerate(metrics_list):
+                for i, metrics in enumerate(metrics_list):
                     data.append(
                         (
                             timestamps[i],
                             run,
                             steps[i],
-                            orjson.dumps(serialize_values(mt)),
+                            orjson.dumps(serialize_values(metrics)),
                         )
                     )
 
