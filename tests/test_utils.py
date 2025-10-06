@@ -158,25 +158,21 @@ def test_trackio_dir_env_var(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         test_path = str(tmpdir)
 
-        # Test with TRACKIO_DIR set
         monkeypatch.setenv("TRACKIO_DIR", test_path)
         monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
         result_dir = utils._get_trackio_dir()
         assert str(result_dir) == test_path
 
-        # Test without TRACKIO_DIR set (should use default)
         monkeypatch.delenv("TRACKIO_DIR", raising=False)
         monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
         result_dir = utils._get_trackio_dir()
         assert "huggingface/trackio" in str(result_dir)
 
-        # Test with persistent storage enabled (should use /data/trackio)
         monkeypatch.delenv("TRACKIO_DIR", raising=False)
         monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
         result_dir = utils._get_trackio_dir()
         assert str(result_dir) == "/data/trackio"
 
-        # Test that persistent storage takes priority over TRACKIO_DIR
         monkeypatch.setenv("TRACKIO_DIR", test_path)
         monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
         result_dir = utils._get_trackio_dir()
