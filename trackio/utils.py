@@ -709,7 +709,13 @@ from trackio.media import TrackioMedia
 def serialize_values(metrics):
     """
     Serialize infinity and NaN values in metrics dict to make it JSON-compliant.
-    Only handles top-level values.
+    Only handles top-level float values.
+    Converts:
+    - float('inf') -> "Infinity"
+    - float('-inf') -> "-Infinity"
+    - float('nan') -> "NaN"
+    Example:
+        {"loss": float('inf'), "accuracy": 0.95} -> {"loss": "Infinity", "accuracy": 0.95}
     """
     if not isinstance(metrics, dict):
         return metrics
@@ -718,7 +724,7 @@ def serialize_values(metrics):
     for key, value in metrics.items():
         if TrackioMedia is not None and isinstance(value, TrackioMedia):
             # At this point bulk_log() should have called v._save(...).
-            # If not saved, _to_dict() will raise, which is correct.
+            # If not saved, _to_dict() will raise an error.
             result[key] = value._to_dict()
             continue
 
@@ -749,7 +755,13 @@ def serialize_values(metrics):
 def deserialize_values(metrics):
     """
     Deserialize infinity and NaN string values back to their numeric forms.
-    Only handles top-level string values. Media payloads are passed through.
+    Only handles top-level string values.
+    Converts:
+    - "Infinity" -> float('inf')
+    - "-Infinity" -> float('-inf')
+    - "NaN" -> float('nan')
+    Example:
+        {"loss": "Infinity", "accuracy": 0.95} -> {"loss": float('inf'), "accuracy": 0.95}
     """
     if not isinstance(metrics, dict):
         return metrics

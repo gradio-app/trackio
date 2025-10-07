@@ -356,7 +356,7 @@ class SQLiteStorage:
                         "metrics_list, steps, and timestamps must have the same length"
                     )
 
-                # ---- MEDIA CONVERSION (duck-typed) ----
+                # ---- MEDIA CONVERSION ----
                 for i, row in enumerate(metrics_list):
                     for key, val in list(row.items()):
                         # treat any object with _save() and _to_dict() as Trackio media
