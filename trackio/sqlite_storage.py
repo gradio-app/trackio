@@ -86,7 +86,16 @@ class SQLiteStorage:
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path), timeout=30.0)
+        # Keep WAL for concurrency + performance on many small writes
         conn.execute("PRAGMA journal_mode = WAL")
+        # ---- Minimal perf tweaks for many tiny transactions ----
+        # NORMAL = fsync at critical points only (safer than OFF, much faster than FULL)
+        conn.execute("PRAGMA synchronous = NORMAL")
+        # Keep temp data in memory to avoid disk hits during small writes
+        conn.execute("PRAGMA temp_store = MEMORY")
+        # Give SQLite a bit more room for cache (negative = KB, engine-managed)
+        conn.execute("PRAGMA cache_size = -20000")
+        # --------------------------------------------------------
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -96,14 +105,14 @@ class SQLiteStorage:
         return ProcessLock(lockfile_path)
 
     @staticmethod
-    def get_project_db_filename(project: str) -> Path:
+    def get_project_db_filename(project: str) -> str:
         """Get the database filename for a specific project."""
         safe_project_name = "".join(
             c for c in project if c.isalnum() or c in ("-", "_")
         ).rstrip()
         if not safe_project_name:
             safe_project_name = "default"
-        return f"{safe_project_name}.db"
+        return f"{safe_project_name}{DB_EXT}"
 
     @staticmethod
     def get_project_db_path(project: str) -> Path:
@@ -115,16 +124,19 @@ class SQLiteStorage:
     def init_db(project: str) -> Path:
         """
         Initialize the SQLite database with required tables.
-        If there is a dataset ID provided, copies from that dataset instead.
         Returns the database path.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
-            with sqlite3.connect(db_path, timeout=30.0) as conn:
+            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
                 conn.execute("PRAGMA journal_mode = WAL")
+                conn.execute("PRAGMA synchronous = NORMAL")
+                conn.execute("PRAGMA temp_store = MEMORY")
+                conn.execute("PRAGMA cache_size = -20000")
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
@@ -132,8 +144,10 @@ class SQLiteStorage:
                         step INTEGER NOT NULL,
                         metrics TEXT NOT NULL
                     )
-                """)
-                cursor.execute("""
+                    """
+                )
+                cursor.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS configs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_name TEXT NOT NULL,
@@ -141,7 +155,8 @@ class SQLiteStorage:
                         created_at TEXT NOT NULL,
                         UNIQUE(run_name)
                     )
-                """)
+                    """
+                )
                 cursor.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_step
@@ -198,7 +213,19 @@ class SQLiteStorage:
                 del df["metrics"]
                 for col in metrics.columns:
                     df[col] = metrics[col]
+
                 df.to_parquet(parquet_path)
+
+    @staticmethod
+    def _cleanup_wal_sidecars(db_path: Path) -> None:
+        """Remove leftover -wal/-shm files for a DB basename (prevents disk I/O errors)."""
+        for suffix in ("-wal", "-shm"):
+            sidecar = Path(str(db_path) + suffix)
+            try:
+                if sidecar.exists():
+                    sidecar.unlink()
+            except Exception:
+                pass
 
     @staticmethod
     def import_from_parquet():
@@ -276,11 +303,9 @@ class SQLiteStorage:
         a Trackio Spaces dashboard with an older version of Trackio installed locally.
         """
         db_path = SQLiteStorage.init_db(project)
-
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
-
                 cursor.execute(
                     """
                     SELECT MAX(step) 
@@ -290,13 +315,12 @@ class SQLiteStorage:
                     (run,),
                 )
                 last_step = cursor.fetchone()[0]
-                if step is None:
-                    current_step = 0 if last_step is None else last_step + 1
-                else:
-                    current_step = step
-
+                current_step = (
+                    0
+                    if step is None and last_step is None
+                    else (step if step is not None else last_step + 1)
+                )
                 current_timestamp = datetime.now().isoformat()
-
                 cursor.execute(
                     """
                     INSERT INTO metrics
@@ -340,10 +364,10 @@ class SQLiteStorage:
                     )
                     last_step = cursor.fetchone()[0]
                     current_step = 0 if last_step is None else last_step + 1
-                    fixed = []
-                    for s in steps:
-                        if s is None:
-                            fixed.append(current_step)
+                    processed_steps = []
+                    for step in steps:
+                        if step is None:
+                            processed_steps.append(current_step)
                             current_step += 1
                         else:
                             fixed.append(s)
@@ -499,7 +523,7 @@ class SQLiteStorage:
         if not TRACKIO_DIR.exists():
             return []
 
-        for db_file in TRACKIO_DIR.glob("*.db"):
+        for db_file in TRACKIO_DIR.glob(f"*{DB_EXT}"):
             project_name = db_file.stem
             projects.add(project_name)
         return sorted(projects)

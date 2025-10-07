@@ -1030,7 +1030,10 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             key=f"accordion-{group_name}-{subgroup_name}",
                             preserved_by_key=["value", "open"],
                         ):
-                            with gr.Draggable(key=f"row-{group_name}-{subgroup_name}"):
+                            with gr.Draggable(
+                                key=f"row-{group_name}-{subgroup_name}",
+                                orientation="row",
+                            ):
                                 for metric_name in subgroup_metrics:
                                     metric_df = master_df.dropna(subset=[metric_name])
                                     color = (

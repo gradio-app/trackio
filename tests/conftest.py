@@ -11,7 +11,7 @@ from trackio.video_writer import write_video
 @pytest.fixture
 def temp_dir(monkeypatch):
     """Fixture that creates a temporary TRACKIO_DIR."""
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         for name in ["trackio.sqlite_storage"]:
             monkeypatch.setattr(f"{name}.TRACKIO_DIR", Path(tmpdir))
         for name in ["trackio.media", "trackio.file_storage"]:

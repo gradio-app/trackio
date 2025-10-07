@@ -1,4 +1,6 @@
 import random
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -148,3 +150,29 @@ def test_to_json_safe_with_object():
         "bias": "none",
         "task_type": "CAUSAL_LM",
     }
+
+
+def test_trackio_dir_env_var(monkeypatch):
+    """Test that TRACKIO_DIR environment variable is respected."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_path = str(tmpdir)
+
+        monkeypatch.setenv("TRACKIO_DIR", test_path)
+        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
+        result_dir = utils._get_trackio_dir()
+        assert str(result_dir) == test_path
+
+        monkeypatch.delenv("TRACKIO_DIR", raising=False)
+        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
+        result_dir = utils._get_trackio_dir()
+        assert "huggingface/trackio" in Path(result_dir).as_posix()
+
+        monkeypatch.delenv("TRACKIO_DIR", raising=False)
+        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
+        result_dir = utils._get_trackio_dir()
+        assert Path(result_dir).as_posix() == "/data/trackio"
+
+        monkeypatch.setenv("TRACKIO_DIR", test_path)
+        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
+        result_dir = utils._get_trackio_dir()
+        assert Path(result_dir).as_posix() == "/data/trackio"

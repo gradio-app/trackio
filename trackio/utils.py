@@ -47,6 +47,8 @@ def persistent_storage_enabled() -> bool:
 def _get_trackio_dir() -> Path:
     if persistent_storage_enabled():
         return Path("/data/trackio")
+    elif os.environ.get("TRACKIO_DIR"):
+        return Path(os.environ.get("TRACKIO_DIR"))
     return Path(HF_HOME) / "trackio"
 
 
