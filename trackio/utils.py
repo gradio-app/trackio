@@ -19,6 +19,24 @@ RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
+import threading as _threading
+
+_current_logging_context: tuple[str, str, int] | None = None
+
+
+def set_logging_context(project: str, run: str, step: int) -> None:
+    global _current_logging_context
+    _current_logging_context = (project, run, step)
+
+
+def clear_logging_context() -> None:
+    global _current_logging_context
+    _current_logging_context = None
+
+
+def _get_logging_context() -> tuple[str, str, int] | None:
+    return _current_logging_context
+
 
 def persistent_storage_enabled() -> bool:
     return (
@@ -664,24 +682,46 @@ def generate_embed_code(project: str, metrics: str, selected_runs: list = None) 
     return f'<iframe src="{embed_url}" style="width:1600px; height:500px; border:0;"></iframe>'
 
 
+# ---------------------
+# Logging context (thread-local) for media serialization
+# ---------------------
+import threading as _threading
+
+_LOG_CTX = _threading.local()
+
+
+def set_logging_context(project: str, run: str, step: int) -> None:
+    """Set per-record logging context so media can be saved correctly."""
+    _LOG_CTX.project = project
+    _LOG_CTX.run = run
+    _LOG_CTX.step = step
+
+
+def clear_logging_context() -> None:
+    _LOG_CTX.project = None
+    _LOG_CTX.run = None
+    _LOG_CTX.step = None
+
+
+from trackio.media import TrackioMedia
+
+
 def serialize_values(metrics):
     """
     Serialize infinity and NaN values in metrics dict to make it JSON-compliant.
-    Only handles top-level float values.
-
-    Converts:
-    - float('inf') -> "Infinity"
-    - float('-inf') -> "-Infinity"
-    - float('nan') -> "NaN"
-
-    Example:
-        {"loss": float('inf'), "accuracy": 0.95} -> {"loss": "Infinity", "accuracy": 0.95}
+    Only handles top-level values.
     """
     if not isinstance(metrics, dict):
         return metrics
 
     result = {}
     for key, value in metrics.items():
+        if TrackioMedia is not None and isinstance(value, TrackioMedia):
+            # At this point bulk_log() should have called v._save(...).
+            # If not saved, _to_dict() will raise, which is correct.
+            result[key] = value._to_dict()
+            continue
+
         if isinstance(value, float):
             if math.isinf(value):
                 result[key] = "Infinity" if value > 0 else "-Infinity"
@@ -689,7 +729,9 @@ def serialize_values(metrics):
                 result[key] = "NaN"
             else:
                 result[key] = value
-        elif isinstance(value, np.floating):
+            continue
+
+        if isinstance(value, np.floating):
             float_val = float(value)
             if math.isinf(float_val):
                 result[key] = "Infinity" if float_val > 0 else "-Infinity"
@@ -697,27 +739,24 @@ def serialize_values(metrics):
                 result[key] = "NaN"
             else:
                 result[key] = float_val
-        else:
-            result[key] = value
+            continue
+
+        result[key] = value
+
     return result
 
 
 def deserialize_values(metrics):
     """
     Deserialize infinity and NaN string values back to their numeric forms.
-    Only handles top-level string values.
-
-    Converts:
-    - "Infinity" -> float('inf')
-    - "-Infinity" -> float('-inf')
-    - "NaN" -> float('nan')
-
-    Example:
-        {"loss": "Infinity", "accuracy": 0.95} -> {"loss": float('inf'), "accuracy": 0.95}
+    Only handles top-level string values. Media payloads are passed through.
     """
     if not isinstance(metrics, dict):
         return metrics
 
+    # If this looks like a Trackio media payload, just return as-is
+    if metrics.get("_type", "").startswith("trackio."):
+        return metrics
     result = {}
     for key, value in metrics.items():
         if value == "Infinity":

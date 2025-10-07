@@ -1,12 +1,21 @@
+import contextlib
 import os
 import shutil
 import uuid
+
+# NEW: import wave for writing WAV files
+import wave
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 from PIL import Image as PILImage
+
+try:
+    import soundfile as sf  # optional; use if available
+except Exception:
+    sf = None
 
 try:  # absolute imports when installed
     from trackio.file_storage import FileStorage
@@ -284,3 +293,99 @@ class TrackioVideo(TrackioMedia):
         video = video.transpose(2, 0, 4, 1, 5, 3)
         video = video.reshape(frames, n_rows * height, n_cols * width, channels)
         return video
+
+
+# ----------------------------
+# TrackioAudio
+# ----------------------------
+
+
+class TrackioAudio(TrackioMedia):
+    """
+    Initializes an Audio object.
+
+    Example:
+        ```python
+        import numpy as np
+        audio = trackio.Audio(np.zeros(16000), sample_rate=16000, caption="Silence")
+        trackio.log({"clip": audio})
+        ```
+
+    Args:
+        value (`str`, `Path`, or `numpy.ndarray`, *optional*):
+            A path to a WAV file, or a 1D/2D numpy array of PCM samples.
+            If 2D, shape should be (num_samples, num_channels).
+        sample_rate (`int`, *optional*):
+            Sample rate (Hz). Required if `value` is a numpy array.
+        caption (`str`, *optional*):
+            A string caption for the audio.
+        format (`str`, *optional*):
+            File format for saving arrays. Only "wav" is supported for now.
+    """
+
+    TYPE = "trackio.audio"
+
+    def __init__(
+        self,
+        value,
+        sample_rate: int | None = None,
+        caption: str | None = None,
+        format: str | None = "wav",
+    ):
+        super().__init__(value, caption)
+        self._sr = sample_rate
+        self._format = (format or "wav").lower()
+        if isinstance(self._value, np.ndarray):
+            if self._sr is None:
+                raise ValueError(
+                    "sample_rate must be provided when value is a numpy array"
+                )
+            if self._value.ndim == 1:
+                self._value = self._value.reshape(-1, 1)
+            elif self._value.ndim != 2:
+                raise ValueError(
+                    "Audio ndarray must be 1D or 2D (num_samples[, num_channels])"
+                )
+            self._value = np.asarray(self._value, dtype=np.float32)
+        elif isinstance(self._value, (str, Path)):
+            if Path(self._value).suffix.lower() != ".wav":
+                raise ValueError(
+                    "Only .wav files are supported for file inputs at the moment"
+                )
+        else:
+            raise ValueError(
+                "Audio value must be a numpy array or a path to a .wav file"
+            )
+        if self._format not in ("wav",):
+            raise ValueError(f"Unsupported audio format: {self._format}")
+
+    def _save_media(self, file_path: Path):
+        # always store as .wav on disk
+        wav_path = file_path.with_suffix(".wav")
+        if isinstance(self._value, (str, Path)):
+            shutil.copy(self._value, wav_path)
+        else:
+            if sf is not None:
+                sf.write(str(wav_path), self._value, self._sr, subtype="PCM_16")
+            else:
+                x = np.clip(self._value, -1.0, 1.0)
+                x = (x * 32767.0).astype(np.int16)
+                if x.ndim == 1:
+                    x = x.reshape(-1, 1)
+                num_channels = x.shape[1]
+                with wave.open(str(wav_path), "wb") as w:
+                    w.setnchannels(num_channels)
+                    w.setsampwidth(2)
+                    w.setframerate(int(self._sr))
+                    w.writeframes(x.tobytes())
+        self._file_path = wav_path.relative_to(MEDIA_DIR)
+
+    def _to_dict(self) -> dict:
+        if not self._file_path:
+            raise ValueError("Media must be saved to file before serialization")
+        return {
+            "_type": self.TYPE,
+            "file_path": str(self._get_relative_file_path()),
+            "caption": self.caption,
+            "format": "wav",
+        }

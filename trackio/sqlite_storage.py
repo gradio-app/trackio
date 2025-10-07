@@ -28,6 +28,8 @@ except ImportError:  # relative imports when installed from source on Spaces
     from dummy_commit_scheduler import DummyCommitScheduler
     from utils import TRACKIO_DIR, deserialize_values, serialize_values
 
+DB_EXT = ".db"
+
 
 class ProcessLock:
     """A file-based lock that works across processes. Is a no-op on Windows."""
@@ -63,6 +65,17 @@ class ProcessLock:
         if self.lockfile:
             fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
             self.lockfile.close()
+
+
+def _cleanup_wal_sidecars(db_path: Path) -> None:
+    """Best-effort delete leftover SQLite sidecars to avoid 'disk I/O error'."""
+    for suffix in ("-wal", "-shm"):
+        side = Path(str(db_path) + suffix)
+        try:
+            if side.exists():
+                side.unlink()
+        except Exception:
+            pass
 
 
 class SQLiteStorage:
@@ -155,20 +168,26 @@ class SQLiteStorage:
         """
         Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
         """
-        # don't attempt to export (potentially wrong/blank) data before importing for the first time
-        if not SQLiteStorage._dataset_import_attempted:
+        if not TRACKIO_DIR.exists():
             return
+
         all_paths = os.listdir(TRACKIO_DIR)
-        db_paths = [f for f in all_paths if f.endswith(".db")]
-        for db_path in db_paths:
-            db_path = TRACKIO_DIR / db_path
+        db_names = [f for f in all_paths if f.endswith(DB_EXT)]
+
+        # Only skip if there are no DBs and no prior dataset import
+        if not db_names and not SQLiteStorage._dataset_import_attempted:
+            return
+
+        for db_name in db_names:
+            db_path = TRACKIO_DIR / db_name
             parquet_path = db_path.with_suffix(".parquet")
             if (not parquet_path.exists()) or (
                 db_path.stat().st_mtime > parquet_path.stat().st_mtime
             ):
-                with sqlite3.connect(db_path) as conn:
-                    df = pd.read_sql("SELECT * from metrics", conn)
-                # break out the single JSON metrics column into individual columns
+                with sqlite3.connect(str(db_path)) as conn:
+                    df = pd.read_sql("SELECT * FROM metrics", conn)
+
+                # Expand JSON "metrics" column into scalar columns
                 metrics = df["metrics"].copy()
                 metrics = pd.DataFrame(
                     metrics.apply(
@@ -186,27 +205,36 @@ class SQLiteStorage:
         """
         Imports to all DB files that have matching files under the same path but with extension ".parquet".
         """
+        if not TRACKIO_DIR.exists():
+            return
+
         all_paths = os.listdir(TRACKIO_DIR)
-        parquet_paths = [f for f in all_paths if f.endswith(".parquet")]
-        for parquet_path in parquet_paths:
-            parquet_path = TRACKIO_DIR / parquet_path
-            db_path = parquet_path.with_suffix(".db")
+        parquet_names = [f for f in all_paths if f.endswith(".parquet")]
+        for pq_name in parquet_names:
+            parquet_path = TRACKIO_DIR / pq_name
+            db_path = parquet_path.with_suffix(DB_EXT)
+
+            # Remove stale WAL/SHM sidecars that may remain after tests delete the main DB
+            _cleanup_wal_sidecars(db_path)
+
             df = pd.read_parquet(parquet_path)
-            with sqlite3.connect(db_path) as conn:
-                # fix up df to have a single JSON metrics column
-                if "metrics" not in df.columns:
-                    # separate other columns from metrics
-                    metrics = df.copy()
-                    other_cols = ["id", "timestamp", "run_name", "step"]
-                    df = df[other_cols]
-                    for col in other_cols:
+
+            # Normalize to a single JSON 'metrics' column if needed
+            if "metrics" not in df.columns:
+                metrics = df.copy()
+                other_cols = ["id", "timestamp", "run_name", "step"]
+                df = df[other_cols]
+                for col in other_cols:
+                    if col in metrics:
                         del metrics[col]
-                    # combine them all into a single metrics col
-                    metrics = orjson.loads(metrics.to_json(orient="records"))
-                    df["metrics"] = [
-                        orjson.dumps(serialize_values(row)) for row in metrics
-                    ]
+                records = orjson.loads(metrics.to_json(orient="records"))
+                df["metrics"] = [orjson.dumps(serialize_values(row)) for row in records]
+
+            # Write using default journal mode (no WAL) so we don't create sidecars during import
+            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+                conn.execute("PRAGMA journal_mode=DELETE")
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
+                conn.commit()
 
     @staticmethod
     def get_scheduler():
@@ -293,11 +321,6 @@ class SQLiteStorage:
         timestamps: list[str] | None = None,
         config: dict | None = None,
     ):
-        """
-        Safely log bulk metrics to the database. Before logging, this method will ensure the database exists
-        and is set up with the correct tables. It also uses a cross-process lock to prevent
-        database locking errors when multiple processes access the same database.
-        """
         if not metrics_list:
             return
 
@@ -317,15 +340,14 @@ class SQLiteStorage:
                     )
                     last_step = cursor.fetchone()[0]
                     current_step = 0 if last_step is None else last_step + 1
-
-                    processed_steps = []
-                    for step in steps:
-                        if step is None:
-                            processed_steps.append(current_step)
+                    fixed = []
+                    for s in steps:
+                        if s is None:
+                            fixed.append(current_step)
                             current_step += 1
                         else:
-                            processed_steps.append(step)
-                    steps = processed_steps
+                            fixed.append(s)
+                    steps = fixed
 
                 if len(metrics_list) != len(steps) or len(metrics_list) != len(
                     timestamps
@@ -334,14 +356,49 @@ class SQLiteStorage:
                         "metrics_list, steps, and timestamps must have the same length"
                     )
 
+                # ---- MEDIA CONVERSION (duck-typed) ----
+                for i, row in enumerate(metrics_list):
+                    for key, val in list(row.items()):
+                        # treat any object with _save() and _to_dict() as Trackio media
+                        if hasattr(val, "_save") and hasattr(val, "_to_dict"):
+                            try:
+                                # save with the correct step so file path is stable
+                                val._save(project=project, run=run, step=int(steps[i]))
+                                payload = (
+                                    val._to_dict()
+                                )  # expected to include "_type" and "file_path"
+                                # sanity check for trackio.* types
+                                if isinstance(payload, dict) and payload.get(
+                                    "_type", ""
+                                ).startswith("trackio."):
+                                    if "file_path" not in payload:
+                                        raise RuntimeError(
+                                            f"Serialized media for '{key}' missing file_path (type={payload.get('_type')})"
+                                        )
+                                row[key] = payload
+                            except Exception as e:
+                                raise RuntimeError(
+                                    f"Failed to serialize media metric '{key}': {e}"
+                                ) from e
+
+                # write rows
                 data = []
                 for i, metrics in enumerate(metrics_list):
+                    # Save any media to disk before serializing
+                    saved_metrics = {}
+                    for k, v in metrics.items():
+                        if hasattr(v, "_save") and hasattr(v, "_to_dict"):
+                            v._save(project, run, steps[i] if steps is not None else i)
+                            saved_metrics[k] = v._to_dict()
+                        else:
+                            saved_metrics[k] = v
+                    payload = orjson.dumps(serialize_values(saved_metrics))
                     data.append(
                         (
                             timestamps[i],
                             run,
                             steps[i],
-                            orjson.dumps(serialize_values(metrics)),
+                            payload,
                         )
                     )
 
