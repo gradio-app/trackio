@@ -364,7 +364,9 @@ class SQLiteStorage:
                 if steps is None:
                     steps = list(range(len(metrics_list)))
                 elif any(s is None for s in steps):
-                    cursor.execute("SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,))
+                    cursor.execute(
+                        "SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,)
+                    )
                     last_step = cursor.fetchone()[0]
                     next_step = 0 if last_step is None else last_step + 1
                     processed_steps: list[int] = []
@@ -377,7 +379,9 @@ class SQLiteStorage:
                     steps = processed_steps
 
                 # Validate lengths
-                if len(metrics_list) != len(steps) or len(metrics_list) != len(timestamps):
+                if len(metrics_list) != len(steps) or len(metrics_list) != len(
+                    timestamps
+                ):
                     raise ValueError(
                         "metrics_list, steps, and timestamps must have the same length"
                     )
