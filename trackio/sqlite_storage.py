@@ -345,6 +345,10 @@ class SQLiteStorage:
         timestamps: list[str] | None = None,
         config: dict | None = None,
     ):
+        """
+        Safely log bulk metrics to the database. Ensures the DB exists and uses a
+        cross-process lock to avoid SQLite locking errors.
+        """
         if not metrics_list:
             return
 
@@ -356,98 +360,65 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
 
+                # Normalize steps (support None = auto-increment)
                 if steps is None:
                     steps = list(range(len(metrics_list)))
                 elif any(s is None for s in steps):
-                    cursor.execute(
-                        "SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,)
-                    )
+                    cursor.execute("SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,))
                     last_step = cursor.fetchone()[0]
-                    current_step = 0 if last_step is None else last_step + 1
-                    processed_steps = []
-                    for step in steps:
-                        if step is None:
-                            processed_steps.append(current_step)
-                            current_step += 1
+                    next_step = 0 if last_step is None else last_step + 1
+                    processed_steps: list[int] = []
+                    for s in steps:
+                        if s is None:
+                            processed_steps.append(next_step)
+                            next_step += 1
                         else:
-                            fixed.append(s)
-                    steps = fixed
+                            processed_steps.append(int(s))
+                    steps = processed_steps
 
-                if len(metrics_list) != len(steps) or len(metrics_list) != len(
-                    timestamps
-                ):
+                # Validate lengths
+                if len(metrics_list) != len(steps) or len(metrics_list) != len(timestamps):
                     raise ValueError(
                         "metrics_list, steps, and timestamps must have the same length"
                     )
 
-                # ---- MEDIA CONVERSION ----
-                for i, row in enumerate(metrics_list):
-                    for key, val in list(row.items()):
-                        # treat any object with _save() and _to_dict() as Trackio media
+                # Serialize rows
+                rows = []
+                for i, metrics in enumerate(metrics_list):
+                    # 1) Ensure any Trackio media gets saved to disk so _to_dict works
+                    for key, val in list(metrics.items()):
                         if hasattr(val, "_save") and hasattr(val, "_to_dict"):
                             try:
-                                # save with the correct step so file path is stable
-                                val._save(project=project, run=run, step=int(steps[i]))
-                                payload = (
-                                    val._to_dict()
-                                )  # expected to include "_type" and "file_path"
-                                # sanity check for trackio.* types
-                                if isinstance(payload, dict) and payload.get(
-                                    "_type", ""
-                                ).startswith("trackio."):
-                                    if "file_path" not in payload:
-                                        raise RuntimeError(
-                                            f"Serialized media for '{key}' missing file_path (type={payload.get('_type')})"
-                                        )
-                                row[key] = payload
+                                # steps is already normalized above; use the i-th step
+                                val._save(project, run, steps[i])
                             except Exception as e:
-                                raise RuntimeError(
-                                    f"Failed to serialize media metric '{key}': {e}"
-                                ) from e
+                                # Fall back to a small error payload so the log still inserts
+                                metrics[key] = {
+                                    "_type": getattr(val, "TYPE", "trackio.media"),
+                                    "error": str(e),
+                                }
 
-                # write rows
-                data = []
-                for i, metrics in enumerate(metrics_list):
-                    # Save any media to disk before serializing
-                    saved_metrics = {}
-                    for k, v in metrics.items():
-                        if hasattr(v, "_save") and hasattr(v, "_to_dict"):
-                            v._save(project, run, steps[i] if steps is not None else i)
-                            saved_metrics[k] = v._to_dict()
-                        else:
-                            saved_metrics[k] = v
-                    payload = orjson.dumps(serialize_values(saved_metrics))
-                    data.append(
-                        (
-                            timestamps[i],
-                            run,
-                            steps[i],
-                            payload,
-                        )
-                    )
+                    # 2) Now it's safe to serialize (serialize_values will call _to_dict)
+                    payload = orjson.dumps(serialize_values(metrics))
+                    rows.append((timestamps[i], run, steps[i], payload))
 
                 cursor.executemany(
                     """
-                    INSERT INTO metrics
-                    (timestamp, run_name, step, metrics)
+                    INSERT INTO metrics (timestamp, run_name, step, metrics)
                     VALUES (?, ?, ?, ?)
                     """,
-                    data,
+                    rows,
                 )
 
+                # Optional config upsert
                 if config:
-                    current_timestamp = datetime.now().isoformat()
+                    current_ts = datetime.now().isoformat()
                     cursor.execute(
                         """
-                        INSERT OR REPLACE INTO configs
-                        (run_name, config, created_at)
+                        INSERT OR REPLACE INTO configs (run_name, config, created_at)
                         VALUES (?, ?, ?)
                         """,
-                        (
-                            run,
-                            orjson.dumps(serialize_values(config)),
-                            current_timestamp,
-                        ),
+                        (run, orjson.dumps(serialize_values(config)), current_ts),
                     )
 
                 conn.commit()
