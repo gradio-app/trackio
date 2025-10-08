@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image as PILImage
 
-from trackio.media import write_video
+from trackio.media import write_video, write_audio
 
 
 @pytest.fixture
@@ -58,4 +58,21 @@ def video_path(video_ndarray, tmp_path):
     file_path = Path(tmp_path, "foo.mp4")
     video_ndarray = video_ndarray.transpose(0, 2, 3, 1)
     write_video(file_path, video_ndarray, codec="h264", fps=30)
+    return file_path
+
+
+@pytest.fixture
+def audio_ndarray():
+    sr = 16000
+    t = np.linspace(0.0, 1.0, sr, endpoint=False)
+    wave = 0.12 * np.sin(2 * np.pi * 440.0 * t)
+    wave = np.clip(wave, -0.9999, 0.9999)
+    pcm_i16 = (wave * 32767.0).astype(np.int16)
+    return pcm_i16
+
+
+@pytest.fixture
+def audio_path(audio_ndarray, tmp_path):
+    file_path = Path(tmp_path, "tone.wav")
+    write_audio(data=audio_ndarray, sample_rate=16000, filename=file_path, format="wav")
     return file_path
