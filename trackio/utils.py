@@ -29,6 +29,8 @@ def persistent_storage_enabled() -> bool:
 def _get_trackio_dir() -> Path:
     if persistent_storage_enabled():
         return Path("/data/trackio")
+    elif os.environ.get("TRACKIO_DIR"):
+        return Path(os.environ.get("TRACKIO_DIR"))
     return Path(HF_HOME) / "trackio"
 
 
@@ -769,6 +771,13 @@ def to_json_safe(obj):
             if not k.startswith("_")
         }
     return str(obj)
+
+
+def get_space() -> str | None:
+    """
+    Get the space ID ("user/space") if Trackio is running in a Space, or None if not.
+    """
+    return os.environ.get("SPACE_ID")
 
 
 def ordered_subset(items: list[str], subset: list[str] | None) -> list[str]:

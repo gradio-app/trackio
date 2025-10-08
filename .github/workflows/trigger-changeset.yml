@@ -1,0 +1,17 @@
+name: trigger-changeset
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+    branches:
+      - main
+  issue_comment:
+    types: [edited]
+
+permissions: {}
+
+jobs:
+  changeset:
+    runs-on: ubuntu-22.04
+    if: github.event.sender.login != 'gradio-pr-bot'
+    steps:
+      - run: echo "Requesting changeset"
