@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from trackio.media import TrackioImage, TrackioVideo, TrackioAudio
+from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
 
 PROJECT_NAME = "test_project"
 
@@ -57,6 +57,7 @@ def test_video_serialization(video_ndarray_batch, temp_dir):
     assert value.get("file_path") == str(video._get_relative_file_path())
     assert value.get("caption") == "test_caption"
 
+
 @pytest.mark.parametrize("audio", ["audio_ndarray", "audio_path"])
 def test_audio_save(audio, temp_dir, request):
     audio_value = request.getfixturevalue(audio)
@@ -68,8 +69,11 @@ def test_audio_save(audio, temp_dir, request):
     assert str(audio._get_absolute_file_path()).endswith(".wav")
     assert audio._get_absolute_file_path().is_file()
 
+
 def test_audio_serialization(audio_ndarray, temp_dir):
-    audio = TrackioAudio(audio_ndarray, format="wav", sample_rate=16000, caption="test_caption")
+    audio = TrackioAudio(
+        audio_ndarray, format="wav", sample_rate=16000, caption="test_caption"
+    )
     audio._save(PROJECT_NAME, "test_run", 0)
     value = audio._to_dict()
 

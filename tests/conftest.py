@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image as PILImage
 
-from trackio.media import write_video, write_audio
+from trackio.media import write_audio, write_video
 
 
 @pytest.fixture
