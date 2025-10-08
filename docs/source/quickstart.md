@@ -41,7 +41,7 @@ trackio.finish()
 
 Running the above will print to the terminal instructions on launching the dashboard.
 
-The usage of `trackio` is designed to be a identical to `wandb` in most cases, so you can easily switch between the two libraries.
+The usage of `trackio` is designed to be identical to `wandb` in most cases, so you can easily switch between the two libraries.
 
 ```py
 import trackio as wandb
