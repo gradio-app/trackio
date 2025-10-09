@@ -77,7 +77,6 @@ def order_metrics_by_plot_preference(metrics: list[str]) -> tuple[list[str], dic
 
         return (group_priority, within_group_priority, metric)
 
-    # Group metrics by prefix and subprefixes
     result = {}
     for metric in metrics:
         if "/" not in metric:
@@ -97,17 +96,14 @@ def order_metrics_by_plot_preference(metrics: list[str]) -> tuple[list[str], dic
                     result[main_prefix]["subgroups"][subprefix] = []
                 result[main_prefix]["subgroups"][subprefix].append(metric)
 
-    # Sort metrics within each group using plot order
     for group_data in result.values():
         group_data["direct_metrics"].sort(key=get_metric_priority)
         for subgroup_name in group_data["subgroups"]:
             group_data["subgroups"][subgroup_name].sort(key=get_metric_priority)
 
-    # Remove empty charts group
     if "charts" in result and not result["charts"]["direct_metrics"]:
         del result["charts"]
 
-    # Sort group names by plot order
     def get_group_priority(group_name: str) -> tuple[int, str]:
         if not plot_order:
             return (float("inf"), group_name)
@@ -670,33 +666,6 @@ def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
         groups[prefix] = prefix_groups[prefix]
 
     return groups
-
-
-def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
-    """
-    Group metrics with simple 2-level nested structure detection.
-
-    This is a backward compatibility wrapper around order_metrics_by_plot_preference.
-    """
-    _, grouped_metrics = order_metrics_by_plot_preference(metrics)
-    return grouped_metrics
-
-
-def sort_metric_groups(groups: dict, plot_order: list[str] = None) -> list[str]:
-    """
-    Sort metric groups based on plot order preferences.
-
-    This is a backward compatibility wrapper around order_metrics_by_plot_preference.
-    """
-    # Extract metric names from the groups dict
-    metrics = []
-    for group_data in groups.values():
-        metrics.extend(group_data["direct_metrics"])
-        for subgroup_metrics in group_data["subgroups"].values():
-            metrics.extend(subgroup_metrics)
-
-    ordered_groups, _ = order_metrics_by_plot_preference(metrics)
-    return ordered_groups
 
 
 def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int | None:

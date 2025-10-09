@@ -47,7 +47,7 @@ def test_group_metrics_with_subprefixes():
         "test/f1/micro",
         "test/f1/macro",
     ]
-    result = utils.group_metrics_with_subprefixes(metrics)
+    _, result = utils.order_metrics_by_plot_preference(metrics)
     expected = {
         "charts": {"direct_metrics": ["loss"], "subgroups": {}},
         "train": {
