@@ -2,4 +2,4 @@
 "trackio": patch
 ---
 
-feat:More env varialbes
+feat:Adds more environment variables to allow customization of Trackio dashboard.
