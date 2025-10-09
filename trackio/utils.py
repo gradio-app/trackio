@@ -33,14 +33,6 @@ def get_logo_urls() -> dict[str, str]:
     return {"light": light_url, "dark": dark_url}
 
 
-def parse_plot_order() -> list[str]:
-    """Parse the TRACKIO_PLOT_ORDER environment variable."""
-    plot_order = os.environ.get("TRACKIO_PLOT_ORDER", "")
-    if not plot_order.strip():
-        return []
-    return [item.strip() for item in plot_order.split(",") if item.strip()]
-
-
 def get_metric_sort_key(metric: str, plot_order: list[str]) -> tuple[int, int, str]:
     """
     Generate sort key for a metric based on plot order preferences.
@@ -89,7 +81,13 @@ def sort_metric_groups(groups: dict, plot_order: list[str] = None) -> list[str]:
         List of group names in sorted order
     """
     if plot_order is None:
-        plot_order = parse_plot_order()
+        plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
+        if not plot_order_env.strip():
+            plot_order = []
+        else:
+            plot_order = [
+                item.strip() for item in plot_order_env.split(",") if item.strip()
+            ]
 
     if not plot_order:
         return sorted(groups.keys())
@@ -122,7 +120,13 @@ def sort_metrics_within_group(
         List of metrics in sorted order
     """
     if plot_order is None:
-        plot_order = parse_plot_order()
+        plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
+        if not plot_order_env.strip():
+            plot_order = []
+        else:
+            plot_order = [
+                item.strip() for item in plot_order_env.split(",") if item.strip()
+            ]
 
     if not plot_order:
         return sorted(metrics)
@@ -727,7 +731,14 @@ def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
                     result[main_prefix]["subgroups"][subprefix] = []
                 result[main_prefix]["subgroups"][subprefix].append(metric)
 
-    plot_order = parse_plot_order()
+    plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
+    if not plot_order_env.strip():
+        plot_order = []
+    else:
+        plot_order = [
+            item.strip() for item in plot_order_env.split(",") if item.strip()
+        ]
+
     for group_data in result.values():
         group_data["direct_metrics"] = sort_metrics_within_group(
             group_data["direct_metrics"], plot_order
