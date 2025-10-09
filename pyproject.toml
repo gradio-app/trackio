@@ -17,7 +17,8 @@ dependencies = [
     "gradio[oauth]>=5.48.0,<6.0.0",
     "numpy<3.0.0",
     "pillow<12.0.0",
-    "orjson>=3.0,<4.0.0"
+    "orjson>=3.0,<4.0.0",
+    "pydub<1.0.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
