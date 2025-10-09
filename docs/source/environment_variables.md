@@ -30,18 +30,8 @@ Controls the ordering of plots and metric groups in the Trackio dashboard. The v
 If a pattern doesn't match any metrics, it's simply ignored without causing errors.
 
 ```bash
-# Prioritize loss metrics first, then accuracy metrics
-export TRACKIO_PLOT_ORDER="train/loss,val/loss,train/accuracy,val/accuracy"
+export TRACKIO_PLOT_ORDER="train/loss,val/loss"
 
-# Put train metrics before validation metrics, with specific ordering within groups
-export TRACKIO_PLOT_ORDER="train/loss,train/f1,train/*,val/loss,val/f1,val/*"
-
-# Show system metrics last using wildcards
-export TRACKIO_PLOT_ORDER="train/*,val/*,*gpu*,*memory*,*power*"
-
-# Focus on specific metrics first, then use wildcards for groups
-export TRACKIO_PLOT_ORDER="*/loss,*/accuracy,train/*,val/*,test/*"
-```
 
 **Pattern Matching:**
 - **Exact matches**: `train/loss` matches exactly `train/loss`
