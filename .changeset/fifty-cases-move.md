@@ -1,5 +1,5 @@
 ---
-"trackio": minor
+"trackio": patch
 ---
 
 feat:More env varialbes
