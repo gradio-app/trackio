@@ -182,7 +182,6 @@ def test_parse_plot_order():
     import os
     from unittest.mock import patch
 
-    # Test empty/unset
     with patch.dict(os.environ, {}, clear=True):
         assert utils.parse_plot_order() == []
 
@@ -192,13 +191,11 @@ def test_parse_plot_order():
     with patch.dict(os.environ, {"TRACKIO_PLOT_ORDER": "   "}, clear=True):
         assert utils.parse_plot_order() == []
 
-    # Test normal parsing
     with patch.dict(
         os.environ, {"TRACKIO_PLOT_ORDER": "train/loss,val/loss,train/*"}, clear=True
     ):
         assert utils.parse_plot_order() == ["train/loss", "val/loss", "train/*"]
 
-    # Test with spaces
     with patch.dict(
         os.environ,
         {"TRACKIO_PLOT_ORDER": " train/loss , val/loss , train/* "},
@@ -210,11 +207,9 @@ def test_parse_plot_order():
 def test_get_metric_sort_key():
     plot_order = ["train/loss", "val/loss", "train/*", "val/*"]
 
-    # Test exact matches
     assert utils.get_metric_sort_key("train/loss", plot_order) == (0, 0, "train/loss")
     assert utils.get_metric_sort_key("val/loss", plot_order) == (1, 1, "val/loss")
 
-    # Test wildcard matches
     assert utils.get_metric_sort_key("train/accuracy", plot_order) == (
         0,
         1002,
@@ -226,10 +221,8 @@ def test_get_metric_sort_key():
         "val/accuracy",
     )
 
-    # Test no match
     assert utils.get_metric_sort_key("test/loss", plot_order) == (999, 999, "test/loss")
 
-    # Test empty plot order
     assert utils.get_metric_sort_key("train/loss", []) == (999, 999, "train/loss")
 
 
@@ -241,16 +234,13 @@ def test_sort_metric_groups():
         "charts": {"direct_metrics": ["loss"], "subgroups": {}},
     }
 
-    # Test with empty plot order (should be alphabetical)
     result = utils.sort_metric_groups(groups, [])
     assert result == ["charts", "test", "train", "val"]
 
-    # Test with plot order
     plot_order = ["train/loss", "val/loss", "test/loss"]
     result = utils.sort_metric_groups(groups, plot_order)
     assert result == ["train", "val", "test", "charts"]
 
-    # Test with partial plot order
     plot_order = ["val/loss"]
     result = utils.sort_metric_groups(groups, plot_order)
     assert result == ["val", "charts", "test", "train"]
@@ -259,16 +249,13 @@ def test_sort_metric_groups():
 def test_sort_metrics_within_group():
     metrics = ["train/accuracy", "train/loss", "train/f1", "train/precision"]
 
-    # Test with empty plot order (should be alphabetical)
     result = utils.sort_metrics_within_group(metrics, [])
     assert result == ["train/accuracy", "train/f1", "train/loss", "train/precision"]
 
-    # Test with specific ordering
     plot_order = ["train/loss", "train/f1", "train/*"]
     result = utils.sort_metrics_within_group(metrics, plot_order)
     assert result == ["train/loss", "train/f1", "train/accuracy", "train/precision"]
 
-    # Test with exact matches taking priority over wildcards
     plot_order = ["train/*", "train/loss"]
     result = utils.sort_metrics_within_group(metrics, plot_order)
     assert result == ["train/loss", "train/accuracy", "train/f1", "train/precision"]
@@ -289,7 +276,6 @@ def test_group_metrics_with_subprefixes_with_plot_order():
         "test/f1/micro",
     ]
 
-    # Test with plot order
     with patch.dict(
         os.environ,
         {"TRACKIO_PLOT_ORDER": "train/loss,val/loss,train/*,val/*"},
@@ -297,6 +283,5 @@ def test_group_metrics_with_subprefixes_with_plot_order():
     ):
         result = utils.group_metrics_with_subprefixes(metrics)
 
-        # Check that metrics within each group are sorted according to plot order
         assert result["train"]["direct_metrics"] == ["train/loss", "train/accuracy"]
         assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]

@@ -276,7 +276,6 @@ def show(
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
     """
-    # Check for TRACKIO_THEME environment variable if no theme is explicitly provided
     if theme == DEFAULT_THEME and (env_theme := os.environ.get("TRACKIO_THEME")):
         theme = env_theme
 

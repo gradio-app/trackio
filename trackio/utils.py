@@ -53,10 +53,8 @@ def get_metric_sort_key(metric: str, plot_order: list[str]) -> tuple[int, int, s
     if not plot_order:
         return (999, 999, metric)
 
-    # Extract group prefix (everything before the first '/')
     group_prefix = metric.split("/")[0] if "/" in metric else "charts"
 
-    # Find group priority based on first occurrence in plot_order
     group_priority = 999
     for i, pattern in enumerate(plot_order):
         pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
@@ -64,18 +62,15 @@ def get_metric_sort_key(metric: str, plot_order: list[str]) -> tuple[int, int, s
             group_priority = i
             break
 
-    # Find within-group priority
     within_group_priority = 999
     for i, pattern in enumerate(plot_order):
-        # Exact match gets highest priority
         if pattern == metric:
             within_group_priority = i
             break
-        # Wildcard match (group/*) - only if no exact match found yet
         elif pattern.endswith("/*") and within_group_priority == 999:
             pattern_prefix = pattern[:-2]
             if metric.startswith(pattern_prefix + "/"):
-                within_group_priority = i + 1000  # Lower priority than exact matches
+                within_group_priority = i + 1000
 
     return (group_priority, within_group_priority, metric)
 
@@ -99,7 +94,6 @@ def sort_metric_groups(groups: dict, plot_order: list[str] = None) -> list[str]:
 
     def group_sort_key(group_name: str) -> tuple[int, str]:
         """Generate sort key for a group based on plot order."""
-        # Find the earliest priority for any metric in this group
         min_priority = 999
 
         for i, pattern in enumerate(plot_order):
