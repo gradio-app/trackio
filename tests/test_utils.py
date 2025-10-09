@@ -1,6 +1,9 @@
+import os
 import random
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -61,8 +64,6 @@ def test_group_metrics_with_subprefixes():
 
 
 def test_format_timestamp():
-    from datetime import datetime, timedelta, timezone
-
     now = datetime.now(timezone.utc)
 
     two_minutes_ago = (now - timedelta(minutes=2)).isoformat()
@@ -179,9 +180,6 @@ def test_trackio_dir_env_var(monkeypatch):
 
 
 def test_parse_plot_order():
-    import os
-    from unittest.mock import patch
-
     with patch.dict(os.environ, {}, clear=True):
         assert utils.parse_plot_order() == []
 
@@ -267,9 +265,6 @@ def test_sort_metrics_within_group():
 
 def test_group_metrics_with_subprefixes_with_plot_order():
     """Test that group_metrics_with_subprefixes uses plot ordering internally."""
-    import os
-    from unittest.mock import patch
-
     metrics = [
         "train/accuracy",
         "train/loss",
