@@ -33,105 +33,95 @@ def get_logo_urls() -> dict[str, str]:
     return {"light": light_url, "dark": dark_url}
 
 
-def get_metric_sort_key(metric: str, plot_order: list[str]) -> tuple[int, int, str]:
+def order_metrics_by_plot_preference(metrics: list[str]) -> tuple[list[str], dict]:
     """
-    Generate sort key for a metric based on plot order preferences.
-
-    Returns tuple: (group_priority, within_group_priority, metric_name)
-    - group_priority: Priority of the group (lower = earlier)
-    - within_group_priority: Priority within the group (lower = earlier)
-    - metric_name: For stable alphabetical sorting as tiebreaker
-    """
-    if not plot_order:
-        default_priority = float("inf")
-        return (default_priority, default_priority, metric)
-
-    group_prefix = metric.split("/")[0] if "/" in metric else "charts"
-    no_match_priority = len(plot_order)
-
-    group_priority = no_match_priority
-    for i, pattern in enumerate(plot_order):
-        pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
-        if pattern_group == group_prefix:
-            group_priority = i
-            break
-
-    within_group_priority = no_match_priority
-    for i, pattern in enumerate(plot_order):
-        if pattern == metric:
-            within_group_priority = i
-            break
-        elif pattern.endswith("/*") and within_group_priority == no_match_priority:
-            pattern_prefix = pattern[:-2]
-            if metric.startswith(pattern_prefix + "/"):
-                within_group_priority = i + len(plot_order)
-
-    return (group_priority, within_group_priority, metric)
-
-
-def sort_metric_groups(groups: dict, plot_order: list[str] = None) -> list[str]:
-    """
-    Sort metric groups based on plot order preferences while preserving group integrity.
+    Order metrics based on TRACKIO_PLOT_ORDER environment variable and group them.
 
     Args:
-        groups: Dictionary of metric groups from group_metrics_with_subprefixes
-        plot_order: List of plot order patterns, if None reads from environment
+        metrics: List of metric names to order and group
 
     Returns:
-        List of group names in sorted order
+        Tuple of (ordered_group_names, grouped_metrics_dict)
     """
-    if plot_order is None:
-        plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
-        if not plot_order_env.strip():
-            plot_order = []
+    plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
+    if not plot_order_env.strip():
+        plot_order = []
+    else:
+        plot_order = [
+            item.strip() for item in plot_order_env.split(",") if item.strip()
+        ]
+
+    def get_metric_priority(metric: str) -> tuple[int, int, str]:
+        if not plot_order:
+            return (float("inf"), float("inf"), metric)
+
+        group_prefix = metric.split("/")[0] if "/" in metric else "charts"
+        no_match_priority = len(plot_order)
+
+        group_priority = no_match_priority
+        for i, pattern in enumerate(plot_order):
+            pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
+            if pattern_group == group_prefix:
+                group_priority = i
+                break
+
+        within_group_priority = no_match_priority
+        for i, pattern in enumerate(plot_order):
+            if pattern == metric:
+                within_group_priority = i
+                break
+            elif pattern.endswith("/*") and within_group_priority == no_match_priority:
+                pattern_prefix = pattern[:-2]
+                if metric.startswith(pattern_prefix + "/"):
+                    within_group_priority = i + len(plot_order)
+
+        return (group_priority, within_group_priority, metric)
+
+    # Group metrics by prefix and subprefixes
+    result = {}
+    for metric in metrics:
+        if "/" not in metric:
+            if "charts" not in result:
+                result["charts"] = {"direct_metrics": [], "subgroups": {}}
+            result["charts"]["direct_metrics"].append(metric)
         else:
-            plot_order = [
-                item.strip() for item in plot_order_env.split(",") if item.strip()
-            ]
+            parts = metric.split("/")
+            main_prefix = parts[0]
+            if main_prefix not in result:
+                result[main_prefix] = {"direct_metrics": [], "subgroups": {}}
+            if len(parts) == 2:
+                result[main_prefix]["direct_metrics"].append(metric)
+            else:
+                subprefix = parts[1]
+                if subprefix not in result[main_prefix]["subgroups"]:
+                    result[main_prefix]["subgroups"][subprefix] = []
+                result[main_prefix]["subgroups"][subprefix].append(metric)
 
-    if not plot_order:
-        return sorted(groups.keys())
+    # Sort metrics within each group using plot order
+    for group_data in result.values():
+        group_data["direct_metrics"].sort(key=get_metric_priority)
+        for subgroup_name in group_data["subgroups"]:
+            group_data["subgroups"][subgroup_name].sort(key=get_metric_priority)
 
-    def group_sort_key(group_name: str) -> tuple[int, str]:
-        """Generate sort key for a group based on plot order."""
+    # Remove empty charts group
+    if "charts" in result and not result["charts"]["direct_metrics"]:
+        del result["charts"]
+
+    # Sort group names by plot order
+    def get_group_priority(group_name: str) -> tuple[int, str]:
+        if not plot_order:
+            return (float("inf"), group_name)
+
         min_priority = len(plot_order)
-
         for i, pattern in enumerate(plot_order):
             pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
             if pattern_group == group_name:
                 min_priority = min(min_priority, i)
-
         return (min_priority, group_name)
 
-    return sorted(groups.keys(), key=group_sort_key)
+    ordered_groups = sorted(result.keys(), key=get_group_priority)
 
-
-def sort_metrics_within_group(
-    metrics: list[str], plot_order: list[str] = None
-) -> list[str]:
-    """
-    Sort metrics within a group based on plot order preferences.
-
-    Args:
-        metrics: List of metric names within a group
-        plot_order: List of plot order patterns, if None reads from environment
-
-    Returns:
-        List of metrics in sorted order
-    """
-    if plot_order is None:
-        plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
-        if not plot_order_env.strip():
-            plot_order = []
-        else:
-            plot_order = [
-                item.strip() for item in plot_order_env.split(",") if item.strip()
-            ]
-
-    if not plot_order:
-        return sorted(metrics)
-
-    return sorted(metrics, key=lambda m: get_metric_sort_key(m, plot_order))
+    return ordered_groups, result
 
 
 def persistent_storage_enabled() -> bool:
@@ -686,72 +676,27 @@ def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
     """
     Group metrics with simple 2-level nested structure detection.
 
-    Returns a dictionary where each prefix group can have:
-    - direct_metrics: list of metrics at this level (e.g., "train/acc")
-    - subgroups: dict of subgroup name -> list of metrics (e.g., "loss" -> ["train/loss/norm", "train/loss/unnorm"])
-
-    Example:
-        Input: ["loss", "train/acc", "train/loss/normalized", "train/loss/unnormalized", "val/loss"]
-        Output: {
-            "charts": {
-                "direct_metrics": ["loss"],
-                "subgroups": {}
-            },
-            "train": {
-                "direct_metrics": ["train/acc"],
-                "subgroups": {
-                    "loss": ["train/loss/normalized", "train/loss/unnormalized"]
-                }
-            },
-            "val": {
-                "direct_metrics": ["val/loss"],
-                "subgroups": {}
-            }
-        }
+    This is a backward compatibility wrapper around order_metrics_by_plot_preference.
     """
-    result = {}
+    _, grouped_metrics = order_metrics_by_plot_preference(metrics)
+    return grouped_metrics
 
-    for metric in metrics:
-        if "/" not in metric:
-            if "charts" not in result:
-                result["charts"] = {"direct_metrics": [], "subgroups": {}}
-            result["charts"]["direct_metrics"].append(metric)
-        else:
-            parts = metric.split("/")
-            main_prefix = parts[0]
 
-            if main_prefix not in result:
-                result[main_prefix] = {"direct_metrics": [], "subgroups": {}}
+def sort_metric_groups(groups: dict, plot_order: list[str] = None) -> list[str]:
+    """
+    Sort metric groups based on plot order preferences.
 
-            if len(parts) == 2:
-                result[main_prefix]["direct_metrics"].append(metric)
-            else:
-                subprefix = parts[1]
-                if subprefix not in result[main_prefix]["subgroups"]:
-                    result[main_prefix]["subgroups"][subprefix] = []
-                result[main_prefix]["subgroups"][subprefix].append(metric)
+    This is a backward compatibility wrapper around order_metrics_by_plot_preference.
+    """
+    # Extract metric names from the groups dict
+    metrics = []
+    for group_data in groups.values():
+        metrics.extend(group_data["direct_metrics"])
+        for subgroup_metrics in group_data["subgroups"].values():
+            metrics.extend(subgroup_metrics)
 
-    plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
-    if not plot_order_env.strip():
-        plot_order = []
-    else:
-        plot_order = [
-            item.strip() for item in plot_order_env.split(",") if item.strip()
-        ]
-
-    for group_data in result.values():
-        group_data["direct_metrics"] = sort_metrics_within_group(
-            group_data["direct_metrics"], plot_order
-        )
-        for subgroup_name in group_data["subgroups"]:
-            group_data["subgroups"][subgroup_name] = sort_metrics_within_group(
-                group_data["subgroups"][subgroup_name], plot_order
-            )
-
-    if "charts" in result and not result["charts"]["direct_metrics"]:
-        del result["charts"]
-
-    return result
+    ordered_groups, _ = order_metrics_by_plot_preference(metrics)
+    return ordered_groups
 
 
 def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int | None:

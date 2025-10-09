@@ -194,8 +194,7 @@ def test_plot_ordering():
 
     # Test 1: No environment variable set - should be alphabetical by group
     with patch.dict(os.environ, {}, clear=True):
-        result = utils.group_metrics_with_subprefixes(metrics)
-        group_order = utils.sort_metric_groups(result)
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
         assert group_order == ["charts", "eval", "test", "train", "val"]
         assert result["train"]["direct_metrics"] == ["train/accuracy", "train/loss"]
         assert result["val"]["direct_metrics"] == ["val/accuracy", "val/loss"]
@@ -204,8 +203,7 @@ def test_plot_ordering():
     with patch.dict(
         os.environ, {"TRACKIO_PLOT_ORDER": "train/loss,val/loss"}, clear=True
     ):
-        result = utils.group_metrics_with_subprefixes(metrics)
-        group_order = utils.sort_metric_groups(result)
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
         assert group_order == ["train", "val", "charts", "eval", "test"]
         assert result["train"]["direct_metrics"] == ["train/loss", "train/accuracy"]
         assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
@@ -214,8 +212,7 @@ def test_plot_ordering():
     with patch.dict(
         os.environ, {"TRACKIO_PLOT_ORDER": "val/loss,train/*,val/*"}, clear=True
     ):
-        result = utils.group_metrics_with_subprefixes(metrics)
-        group_order = utils.sort_metric_groups(result)
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
         assert group_order == ["val", "train", "charts", "eval", "test"]
         assert result["train"]["direct_metrics"] == ["train/accuracy", "train/loss"]
         assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
@@ -224,8 +221,7 @@ def test_plot_ordering():
     with patch.dict(
         os.environ, {"TRACKIO_PLOT_ORDER": "test/*,train/loss,val/*"}, clear=True
     ):
-        result = utils.group_metrics_with_subprefixes(metrics)
-        group_order = utils.sort_metric_groups(result)
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
         assert group_order == ["test", "train", "val", "charts", "eval"]
         assert result["train"]["direct_metrics"] == ["train/loss", "train/accuracy"]
         assert result["test"]["direct_metrics"] == ["test/f1", "test/precision"]
@@ -234,8 +230,7 @@ def test_plot_ordering():
     with patch.dict(
         os.environ, {"TRACKIO_PLOT_ORDER": " val/loss , train/* , test/f1 "}, clear=True
     ):
-        result = utils.group_metrics_with_subprefixes(metrics)
-        group_order = utils.sort_metric_groups(result)
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
         assert group_order == ["val", "train", "test", "charts", "eval"]
         assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
         assert result["test"]["direct_metrics"] == ["test/f1", "test/precision"]

@@ -942,11 +942,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
-        nested_metric_groups = utils.group_metrics_with_subprefixes(list(numeric_cols))
+        ordered_groups, nested_metric_groups = utils.order_metrics_by_plot_preference(
+            list(numeric_cols)
+        )
         color_map = utils.get_color_mapping(original_runs, smoothing_granularity > 0)
 
         metric_idx = 0
-        for group_name in utils.sort_metric_groups(nested_metric_groups):
+        for group_name in ordered_groups:
             group_data = nested_metric_groups[group_name]
 
             total_plot_count = sum(
