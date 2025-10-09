@@ -147,6 +147,14 @@ trackio.show()"""
             space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
         )
 
+    # Pass plot order environment variable to the space if it's set
+    if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_PLOT_ORDER", plot_order)
+
+    # Pass theme environment variable to the space if it's set
+    if theme := os.environ.get("TRACKIO_THEME"):
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
+
 
 def create_space_if_not_exists(
     space_id: str,
@@ -188,6 +196,16 @@ def create_space_if_not_exists(
             huggingface_hub.add_space_variable(
                 space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
             )
+
+        # Pass plot order environment variable to the space if it's set
+        if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_PLOT_ORDER", plot_order
+            )
+
+        # Pass theme environment variable to the space if it's set
+        if theme := os.environ.get("TRACKIO_THEME"):
+            huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
         return
     except RepositoryNotFoundError:
         pass

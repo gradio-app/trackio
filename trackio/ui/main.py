@@ -946,7 +946,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         color_map = utils.get_color_mapping(original_runs, smoothing_granularity > 0)
 
         metric_idx = 0
-        for group_name in sorted(nested_metric_groups.keys()):
+        for group_name in utils.sort_metric_groups(nested_metric_groups):
             group_data = nested_metric_groups[group_name]
 
             total_plot_count = sum(

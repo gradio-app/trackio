@@ -33,6 +33,107 @@ def get_logo_urls() -> dict[str, str]:
     return {"light": light_url, "dark": dark_url}
 
 
+def parse_plot_order() -> list[str]:
+    """Parse the TRACKIO_PLOT_ORDER environment variable."""
+    plot_order = os.environ.get("TRACKIO_PLOT_ORDER", "")
+    if not plot_order.strip():
+        return []
+    return [item.strip() for item in plot_order.split(",") if item.strip()]
+
+
+def get_metric_sort_key(metric: str, plot_order: list[str]) -> tuple[int, int, str]:
+    """
+    Generate sort key for a metric based on plot order preferences.
+
+    Returns tuple: (group_priority, within_group_priority, metric_name)
+    - group_priority: Priority of the group (lower = earlier)
+    - within_group_priority: Priority within the group (lower = earlier)
+    - metric_name: For stable alphabetical sorting as tiebreaker
+    """
+    if not plot_order:
+        return (999, 999, metric)
+
+    # Extract group prefix (everything before the first '/')
+    group_prefix = metric.split("/")[0] if "/" in metric else "charts"
+
+    # Find group priority based on first occurrence in plot_order
+    group_priority = 999
+    for i, pattern in enumerate(plot_order):
+        pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
+        if pattern_group == group_prefix:
+            group_priority = i
+            break
+
+    # Find within-group priority
+    within_group_priority = 999
+    for i, pattern in enumerate(plot_order):
+        # Exact match gets highest priority
+        if pattern == metric:
+            within_group_priority = i
+            break
+        # Wildcard match (group/*) - only if no exact match found yet
+        elif pattern.endswith("/*") and within_group_priority == 999:
+            pattern_prefix = pattern[:-2]
+            if metric.startswith(pattern_prefix + "/"):
+                within_group_priority = i + 1000  # Lower priority than exact matches
+
+    return (group_priority, within_group_priority, metric)
+
+
+def sort_metric_groups(groups: dict, plot_order: list[str] = None) -> list[str]:
+    """
+    Sort metric groups based on plot order preferences while preserving group integrity.
+
+    Args:
+        groups: Dictionary of metric groups from group_metrics_with_subprefixes
+        plot_order: List of plot order patterns, if None reads from environment
+
+    Returns:
+        List of group names in sorted order
+    """
+    if plot_order is None:
+        plot_order = parse_plot_order()
+
+    if not plot_order:
+        return sorted(groups.keys())
+
+    def group_sort_key(group_name: str) -> tuple[int, str]:
+        """Generate sort key for a group based on plot order."""
+        # Find the earliest priority for any metric in this group
+        min_priority = 999
+
+        for i, pattern in enumerate(plot_order):
+            pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
+            if pattern_group == group_name:
+                min_priority = min(min_priority, i)
+
+        return (min_priority, group_name)
+
+    return sorted(groups.keys(), key=group_sort_key)
+
+
+def sort_metrics_within_group(
+    metrics: list[str], plot_order: list[str] = None
+) -> list[str]:
+    """
+    Sort metrics within a group based on plot order preferences.
+
+    Args:
+        metrics: List of metric names within a group
+        plot_order: List of plot order patterns, if None reads from environment
+
+    Returns:
+        List of metrics in sorted order
+    """
+    if plot_order is None:
+        plot_order = parse_plot_order()
+
+    if not plot_order:
+        return sorted(metrics)
+
+    return sorted(metrics, key=lambda m: get_metric_sort_key(m, plot_order))
+
+
 def persistent_storage_enabled() -> bool:
     return (
         os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
@@ -630,10 +731,15 @@ def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
                     result[main_prefix]["subgroups"][subprefix] = []
                 result[main_prefix]["subgroups"][subprefix].append(metric)
 
+    plot_order = parse_plot_order()
     for group_data in result.values():
-        group_data["direct_metrics"].sort()
-        for subgroup_metrics in group_data["subgroups"].values():
-            subgroup_metrics.sort()
+        group_data["direct_metrics"] = sort_metrics_within_group(
+            group_data["direct_metrics"], plot_order
+        )
+        for subgroup_name in group_data["subgroups"]:
+            group_data["subgroups"][subgroup_name] = sort_metrics_within_group(
+                group_data["subgroups"][subgroup_name], plot_order
+            )
 
     if "charts" in result and not result["charts"]["direct_metrics"]:
         del result["charts"]
