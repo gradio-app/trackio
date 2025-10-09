@@ -137,6 +137,16 @@ trackio.show()"""
     if dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
 
+    # Pass logo environment variables to the space if they are set
+    if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
+        huggingface_hub.add_space_variable(
+            space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
+        )
+    if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
+        huggingface_hub.add_space_variable(
+            space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
+        )
+
 
 def create_space_if_not_exists(
     space_id: str,
@@ -168,6 +178,15 @@ def create_space_if_not_exists(
         if dataset_id is not None:
             huggingface_hub.add_space_variable(
                 space_id, "TRACKIO_DATASET_ID", dataset_id
+            )
+        # Pass logo environment variables to the space if they are set
+        if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
+            )
+        if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
             )
         return
     except RepositoryNotFoundError:

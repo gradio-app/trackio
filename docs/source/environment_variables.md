@@ -14,6 +14,15 @@ export TRACKIO_DIR="/path/to/trackio/data"
 
 Note: This environment variable applies as long as Trackio is not running in a Space with persistent storage enabled. If Trackio is running in a Space with persistent storage enabled (which is detected with the `PERSISTANT_STORAGE_ENABLED` env variable), then the Trackio data will be stored in `/data/trackio`.
 
+### `TRACKIO_LOGO_LIGHT_URL` and `TRACKIO_LOGO_DARK_URL`
+
+Customize the logos displayed in the Trackio dashboard for light and dark themes. You can provide URLs to custom logos. Note that both environment variables should be supplied; otherwise, the Trackio default will be used for any variable that is not provided.
+
+```bash
+export TRACKIO_LOGO_LIGHT_URL="https://example.com/logo-light.png"
+export TRACKIO_LOGO_DARK_URL="https://example.com/logo-dark.png"
+```
+
 
 ### `TRACKIO_DATASET_ID`
 

@@ -20,6 +20,19 @@ RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
 
+def get_logo_urls() -> dict[str, str]:
+    """Get logo URLs from environment variables or use defaults."""
+    light_url = os.environ.get(
+        "TRACKIO_LOGO_LIGHT_URL",
+        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png",
+    )
+    dark_url = os.environ.get(
+        "TRACKIO_LOGO_DARK_URL",
+        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png",
+    )
+    return {"light": light_url, "dark": dark_url}
+
+
 def persistent_storage_enabled() -> bool:
     return (
         os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
