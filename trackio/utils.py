@@ -51,26 +51,28 @@ def get_metric_sort_key(metric: str, plot_order: list[str]) -> tuple[int, int, s
     - metric_name: For stable alphabetical sorting as tiebreaker
     """
     if not plot_order:
-        return (999, 999, metric)
+        default_priority = float("inf")
+        return (default_priority, default_priority, metric)
 
     group_prefix = metric.split("/")[0] if "/" in metric else "charts"
+    no_match_priority = len(plot_order)
 
-    group_priority = 999
+    group_priority = no_match_priority
     for i, pattern in enumerate(plot_order):
         pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
         if pattern_group == group_prefix:
             group_priority = i
             break
 
-    within_group_priority = 999
+    within_group_priority = no_match_priority
     for i, pattern in enumerate(plot_order):
         if pattern == metric:
             within_group_priority = i
             break
-        elif pattern.endswith("/*") and within_group_priority == 999:
+        elif pattern.endswith("/*") and within_group_priority == no_match_priority:
             pattern_prefix = pattern[:-2]
             if metric.startswith(pattern_prefix + "/"):
-                within_group_priority = i + 1000
+                within_group_priority = i + len(plot_order)
 
     return (group_priority, within_group_priority, metric)
 
@@ -94,7 +96,7 @@ def sort_metric_groups(groups: dict, plot_order: list[str] = None) -> list[str]:
 
     def group_sort_key(group_name: str) -> tuple[int, str]:
         """Generate sort key for a group based on plot order."""
-        min_priority = 999
+        min_priority = len(plot_order)
 
         for i, pattern in enumerate(plot_order):
             pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"

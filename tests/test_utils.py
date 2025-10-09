@@ -212,18 +212,22 @@ def test_get_metric_sort_key():
 
     assert utils.get_metric_sort_key("train/accuracy", plot_order) == (
         0,
-        1002,
+        6,
         "train/accuracy",
     )
     assert utils.get_metric_sort_key("val/accuracy", plot_order) == (
         1,
-        1003,
+        7,
         "val/accuracy",
     )
 
-    assert utils.get_metric_sort_key("test/loss", plot_order) == (999, 999, "test/loss")
+    assert utils.get_metric_sort_key("test/loss", plot_order) == (4, 4, "test/loss")
 
-    assert utils.get_metric_sort_key("train/loss", []) == (999, 999, "train/loss")
+    assert utils.get_metric_sort_key("train/loss", []) == (
+        float("inf"),
+        float("inf"),
+        "train/loss",
+    )
 
 
 def test_sort_metric_groups():
