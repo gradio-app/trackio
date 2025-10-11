@@ -162,10 +162,11 @@ def delete_selected_runs(deletion_allowed, runs_data, project, request: gr.Reque
 
 with gr.Blocks() as run_page:
     with gr.Sidebar() as sidebar:
+        logo_urls = utils.get_logo_urls()
         logo = gr.Markdown(
             f"""
-                <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%' class='logo-light'>
-                <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
+                <img src='{logo_urls["light"]}' width='80%' class='logo-light'>
+                <img src='{logo_urls["dark"]}' width='80%' class='logo-dark'>            
             """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)

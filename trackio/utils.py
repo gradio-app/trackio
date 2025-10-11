@@ -20,6 +20,106 @@ RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
 
+def get_logo_urls() -> dict[str, str]:
+    """Get logo URLs from environment variables or use defaults."""
+    light_url = os.environ.get(
+        "TRACKIO_LOGO_LIGHT_URL",
+        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png",
+    )
+    dark_url = os.environ.get(
+        "TRACKIO_LOGO_DARK_URL",
+        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png",
+    )
+    return {"light": light_url, "dark": dark_url}
+
+
+def order_metrics_by_plot_preference(metrics: list[str]) -> tuple[list[str], dict]:
+    """
+    Order metrics based on TRACKIO_PLOT_ORDER environment variable and group them.
+
+    Args:
+        metrics: List of metric names to order and group
+
+    Returns:
+        Tuple of (ordered_group_names, grouped_metrics_dict)
+    """
+    plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
+    if not plot_order_env.strip():
+        plot_order = []
+    else:
+        plot_order = [
+            item.strip() for item in plot_order_env.split(",") if item.strip()
+        ]
+
+    def get_metric_priority(metric: str) -> tuple[int, int, str]:
+        if not plot_order:
+            return (float("inf"), float("inf"), metric)
+
+        group_prefix = metric.split("/")[0] if "/" in metric else "charts"
+        no_match_priority = len(plot_order)
+
+        group_priority = no_match_priority
+        for i, pattern in enumerate(plot_order):
+            pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
+            if pattern_group == group_prefix:
+                group_priority = i
+                break
+
+        within_group_priority = no_match_priority
+        for i, pattern in enumerate(plot_order):
+            if pattern == metric:
+                within_group_priority = i
+                break
+            elif pattern.endswith("/*") and within_group_priority == no_match_priority:
+                pattern_prefix = pattern[:-2]
+                if metric.startswith(pattern_prefix + "/"):
+                    within_group_priority = i + len(plot_order)
+
+        return (group_priority, within_group_priority, metric)
+
+    result = {}
+    for metric in metrics:
+        if "/" not in metric:
+            if "charts" not in result:
+                result["charts"] = {"direct_metrics": [], "subgroups": {}}
+            result["charts"]["direct_metrics"].append(metric)
+        else:
+            parts = metric.split("/")
+            main_prefix = parts[0]
+            if main_prefix not in result:
+                result[main_prefix] = {"direct_metrics": [], "subgroups": {}}
+            if len(parts) == 2:
+                result[main_prefix]["direct_metrics"].append(metric)
+            else:
+                subprefix = parts[1]
+                if subprefix not in result[main_prefix]["subgroups"]:
+                    result[main_prefix]["subgroups"][subprefix] = []
+                result[main_prefix]["subgroups"][subprefix].append(metric)
+
+    for group_data in result.values():
+        group_data["direct_metrics"].sort(key=get_metric_priority)
+        for subgroup_name in group_data["subgroups"]:
+            group_data["subgroups"][subgroup_name].sort(key=get_metric_priority)
+
+    if "charts" in result and not result["charts"]["direct_metrics"]:
+        del result["charts"]
+
+    def get_group_priority(group_name: str) -> tuple[int, str]:
+        if not plot_order:
+            return (float("inf"), group_name)
+
+        min_priority = len(plot_order)
+        for i, pattern in enumerate(plot_order):
+            pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
+            if pattern_group == group_name:
+                min_priority = min(min_priority, i)
+        return (min_priority, group_name)
+
+    ordered_groups = sorted(result.keys(), key=get_group_priority)
+
+    return ordered_groups, result
+
+
 def persistent_storage_enabled() -> bool:
     return (
         os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
@@ -566,66 +666,6 @@ def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
         groups[prefix] = prefix_groups[prefix]
 
     return groups
-
-
-def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
-    """
-    Group metrics with simple 2-level nested structure detection.
-
-    Returns a dictionary where each prefix group can have:
-    - direct_metrics: list of metrics at this level (e.g., "train/acc")
-    - subgroups: dict of subgroup name -> list of metrics (e.g., "loss" -> ["train/loss/norm", "train/loss/unnorm"])
-
-    Example:
-        Input: ["loss", "train/acc", "train/loss/normalized", "train/loss/unnormalized", "val/loss"]
-        Output: {
-            "charts": {
-                "direct_metrics": ["loss"],
-                "subgroups": {}
-            },
-            "train": {
-                "direct_metrics": ["train/acc"],
-                "subgroups": {
-                    "loss": ["train/loss/normalized", "train/loss/unnormalized"]
-                }
-            },
-            "val": {
-                "direct_metrics": ["val/loss"],
-                "subgroups": {}
-            }
-        }
-    """
-    result = {}
-
-    for metric in metrics:
-        if "/" not in metric:
-            if "charts" not in result:
-                result["charts"] = {"direct_metrics": [], "subgroups": {}}
-            result["charts"]["direct_metrics"].append(metric)
-        else:
-            parts = metric.split("/")
-            main_prefix = parts[0]
-
-            if main_prefix not in result:
-                result[main_prefix] = {"direct_metrics": [], "subgroups": {}}
-
-            if len(parts) == 2:
-                result[main_prefix]["direct_metrics"].append(metric)
-            else:
-                subprefix = parts[1]
-                if subprefix not in result[main_prefix]["subgroups"]:
-                    result[main_prefix]["subgroups"][subprefix] = []
-                result[main_prefix]["subgroups"][subprefix].append(metric)
-
-    for group_data in result.values():
-        group_data["direct_metrics"].sort()
-        for subgroup_metrics in group_data["subgroups"].values():
-            subgroup_metrics.sort()
-
-    if "charts" in result and not result["charts"]["direct_metrics"]:
-        del result["charts"]
-
-    return result
 
 
 def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int | None:
