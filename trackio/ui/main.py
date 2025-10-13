@@ -92,6 +92,20 @@ Read the [Trackio documentation](https://huggingface.co/docs/trackio/en/index) f
 """
 
 
+def safe_dropna(df: pd.DataFrame, column_name: str) -> pd.DataFrame:
+    """
+    Safely drop NA values for a specific column, handling special characters in column names.
+
+    Pandas can have issues with column names containing special characters like brackets
+    when using dropna(subset=[column_name]). This function provides a safe alternative.
+    """
+    if column_name not in df.columns:
+        return df.iloc[0:0]  # Return empty dataframe with same structure
+
+    # Use boolean indexing which is more robust with special characters in column names
+    return df[df[column_name].notna()].copy()
+
+
 def get_runs(project) -> list[str]:
     if not project:
         return []
@@ -951,9 +965,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             total_plot_count = sum(
                 1
                 for m in group_data["direct_metrics"]
-                if not master_df.dropna(subset=[m]).empty
+                if not safe_dropna(master_df, m).empty
             ) + sum(
-                sum(1 for m in metrics if not master_df.dropna(subset=[m]).empty)
+                sum(1 for m in metrics if not safe_dropna(master_df, m).empty)
                 for metrics in group_data["subgroups"].values()
             )
             group_label = (
@@ -973,7 +987,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                         key=f"row-{group_name}-direct", orientation="row"
                     ):
                         for metric_name in group_data["direct_metrics"]:
-                            metric_df = master_df.dropna(subset=[metric_name])
+                            metric_df = safe_dropna(master_df, metric_name)
                             color = "run" if "run" in metric_df.columns else None
                             if not metric_df.empty:
                                 plot = gr.LinePlot(
@@ -1016,7 +1030,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                         subgroup_plot_count = sum(
                             1
                             for m in subgroup_metrics
-                            if not master_df.dropna(subset=[m]).empty
+                            if not safe_dropna(master_df, m).empty
                         )
                         subgroup_label = (
                             f"{subgroup_name} ({subgroup_plot_count})"
@@ -1035,7 +1049,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 orientation="row",
                             ):
                                 for metric_name in subgroup_metrics:
-                                    metric_df = master_df.dropna(subset=[metric_name])
+                                    metric_df = safe_dropna(master_df, metric_name)
                                     color = (
                                         "run" if "run" in metric_df.columns else None
                                     )
@@ -1085,7 +1099,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         actual_table_count = sum(
             1
             for metric_name in table_cols
-            if not (metric_df := master_df.dropna(subset=[metric_name])).empty
+            if not (metric_df := safe_dropna(master_df, metric_name)).empty
             and isinstance(value := metric_df[metric_name].iloc[-1], dict)
             and value.get("_type") == Table.TYPE
         )
@@ -1094,7 +1108,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             with gr.Accordion(f"tables ({actual_table_count})", open=True):
                 with gr.Row(key="row"):
                     for metric_idx, metric_name in enumerate(table_cols):
-                        metric_df = master_df.dropna(subset=[metric_name])
+                        metric_df = safe_dropna(master_df, metric_name)
                         if not metric_df.empty:
                             value = metric_df[metric_name].iloc[-1]
                             if (
