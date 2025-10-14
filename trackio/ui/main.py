@@ -1156,8 +1156,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     values = value.get("values", [])
 
                                     if len(bins) > 0 and len(values) > 0:
-                                        # Create bar chart data
-                                        # Use bin centers for x-axis
                                         bin_centers = [
                                             (bins[i] + bins[i + 1]) / 2
                                             for i in range(len(bins) - 1)

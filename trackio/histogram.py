@@ -45,16 +45,14 @@ class Histogram:
         if sequence is not None and np_histogram is not None:
             raise ValueError("Cannot provide both sequence and np_histogram")
 
-        num_bins = min(num_bins, 512)  # Cap at 512 bins like wandb
+        num_bins = min(num_bins, 512)
 
         if np_histogram is not None:
             self.histogram, self.bins = np_histogram
             self.histogram = np.asarray(self.histogram)
             self.bins = np.asarray(self.bins)
         else:
-            # Convert sequence to numpy array
             data = np.asarray(sequence).flatten()
-            # Remove NaN and inf values
             data = data[np.isfinite(data)]
             if len(data) == 0:
                 self.histogram = np.array([])
