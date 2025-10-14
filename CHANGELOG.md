@@ -1,5 +1,11 @@
 # trackio
 
+## 0.5.3
+
+### Features
+
+- [#300](https://github.com/gradio-app/trackio/pull/300) [`5e4cacf`](https://github.com/gradio-app/trackio/commit/5e4cacf2e7ce527b4ce60de3a5bc05d2c02c77fb) - Adds more environment variables to allow customization of Trackio dashboard.  Thanks @abidlabs!
+
 ## 0.5.2
 
 ### Features
