@@ -35,4 +35,3 @@ gradients = np.random.laplace(0, 0.1, 5000)
 trackio.log({"final_gradients": trackio.Histogram(gradients, num_bins=30)})
 
 trackio.finish()
-print("Training complete! View results with: trackio show --project histogram-training")
