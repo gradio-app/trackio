@@ -13,6 +13,7 @@ from gradio_client import Client
 from huggingface_hub import SpaceStorage
 
 from trackio import context_vars, deploy, utils
+from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioImage, TrackioVideo
 from trackio.run import Run
@@ -42,6 +43,7 @@ __all__ = [
     "Image",
     "Video",
     "Table",
+    "Histogram",
 ]
 
 Image = TrackioImage
