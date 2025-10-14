@@ -31,7 +31,9 @@ warnings.filterwarnings(
     module="gradio.helpers",
 )
 
-__version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
+import json
+
+__version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())["version"]
 
 __all__ = [
     "init",
