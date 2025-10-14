@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import os
 import warnings
@@ -30,8 +31,6 @@ warnings.filterwarnings(
     category=UserWarning,
     module="gradio.helpers",
 )
-
-import json
 
 __version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())[
     "version"
