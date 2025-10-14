@@ -33,7 +33,9 @@ warnings.filterwarnings(
 
 import json
 
-__version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())["version"]
+__version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())[
+    "version"
+]
 
 __all__ = [
     "init",
