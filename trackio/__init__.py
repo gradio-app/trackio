@@ -139,7 +139,7 @@ def init(
                 prevent_thread_lock=True,
                 show_error=True,
                 favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
-                allowed_paths=[TRACKIO_LOGO_DIR],
+                allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
             )
         else:
             url = space_id
@@ -315,7 +315,7 @@ def show(
         inline=False,
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
-        allowed_paths=[TRACKIO_LOGO_DIR],
+        allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
         mcp_server=_mcp_server,
     )
 
