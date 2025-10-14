@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Fix version handling in deploy method
+feat:Fix video logging by adding TRACKIO_DIR to allowed_paths
