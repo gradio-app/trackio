@@ -1,6 +1,9 @@
+import os
 import random
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -44,7 +47,7 @@ def test_group_metrics_with_subprefixes():
         "test/f1/micro",
         "test/f1/macro",
     ]
-    result = utils.group_metrics_with_subprefixes(metrics)
+    _, result = utils.order_metrics_by_plot_preference(metrics)
     expected = {
         "charts": {"direct_metrics": ["loss"], "subgroups": {}},
         "train": {
@@ -61,8 +64,6 @@ def test_group_metrics_with_subprefixes():
 
 
 def test_format_timestamp():
-    from datetime import datetime, timedelta, timezone
-
     now = datetime.now(timezone.utc)
 
     two_minutes_ago = (now - timedelta(minutes=2)).isoformat()
@@ -176,3 +177,60 @@ def test_trackio_dir_env_var(monkeypatch):
         monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
         result_dir = utils._get_trackio_dir()
         assert Path(result_dir).as_posix() == "/data/trackio"
+
+
+def test_plot_ordering():
+    """Test that TRACKIO_PLOT_ORDER environment variable correctly orders metrics."""
+    metrics = [
+        "test/f1",
+        "train/accuracy",
+        "val/loss",
+        "train/loss",
+        "val/accuracy",
+        "charts_metric",
+        "test/precision",
+        "eval/metric",
+    ]
+
+    # Test 1: No environment variable set - should be alphabetical by group
+    with patch.dict(os.environ, {}, clear=True):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["charts", "eval", "test", "train", "val"]
+        assert result["train"]["direct_metrics"] == ["train/accuracy", "train/loss"]
+        assert result["val"]["direct_metrics"] == ["val/accuracy", "val/loss"]
+
+    # Test 2: Specific metric order
+    with patch.dict(
+        os.environ, {"TRACKIO_PLOT_ORDER": "train/loss,val/loss"}, clear=True
+    ):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["train", "val", "charts", "eval", "test"]
+        assert result["train"]["direct_metrics"] == ["train/loss", "train/accuracy"]
+        assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
+
+    # Test 3: Group wildcards with specific metrics first
+    with patch.dict(
+        os.environ, {"TRACKIO_PLOT_ORDER": "val/loss,train/*,val/*"}, clear=True
+    ):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["val", "train", "charts", "eval", "test"]
+        assert result["train"]["direct_metrics"] == ["train/accuracy", "train/loss"]
+        assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
+
+    # Test 4: Mixed priorities
+    with patch.dict(
+        os.environ, {"TRACKIO_PLOT_ORDER": "test/*,train/loss,val/*"}, clear=True
+    ):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["test", "train", "val", "charts", "eval"]
+        assert result["train"]["direct_metrics"] == ["train/loss", "train/accuracy"]
+        assert result["test"]["direct_metrics"] == ["test/f1", "test/precision"]
+
+    # Test 5: With spaces in environment variable
+    with patch.dict(
+        os.environ, {"TRACKIO_PLOT_ORDER": " val/loss , train/* , test/f1 "}, clear=True
+    ):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["val", "train", "test", "charts", "eval"]
+        assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
+        assert result["test"]["direct_metrics"] == ["test/f1", "test/precision"]

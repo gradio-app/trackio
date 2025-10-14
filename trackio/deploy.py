@@ -137,6 +137,21 @@ trackio.show()"""
     if dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
 
+    if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
+        huggingface_hub.add_space_variable(
+            space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
+        )
+    if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
+        huggingface_hub.add_space_variable(
+            space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
+        )
+
+    if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_PLOT_ORDER", plot_order)
+
+    if theme := os.environ.get("TRACKIO_THEME"):
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
+
 
 def create_space_if_not_exists(
     space_id: str,
@@ -169,6 +184,22 @@ def create_space_if_not_exists(
             huggingface_hub.add_space_variable(
                 space_id, "TRACKIO_DATASET_ID", dataset_id
             )
+        if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
+            )
+        if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
+            )
+
+        if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_PLOT_ORDER", plot_order
+            )
+
+        if theme := os.environ.get("TRACKIO_THEME"):
+            huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
         return
     except RepositoryNotFoundError:
         pass
