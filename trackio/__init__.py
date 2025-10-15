@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import os
 import warnings
@@ -13,6 +14,7 @@ from gradio_client import Client
 from huggingface_hub import SpaceStorage
 
 from trackio import context_vars, deploy, utils
+from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioImage, TrackioVideo
 from trackio.run import Run
@@ -30,7 +32,9 @@ warnings.filterwarnings(
     module="gradio.helpers",
 )
 
-__version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
+__version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())[
+    "version"
+]
 
 __all__ = [
     "init",
@@ -42,6 +46,7 @@ __all__ = [
     "Image",
     "Video",
     "Table",
+    "Histogram",
 ]
 
 Image = TrackioImage
