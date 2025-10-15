@@ -14,6 +14,7 @@ import pandas as pd
 try:
     import trackio.utils as utils
     from trackio.file_storage import FileStorage
+    from trackio.histogram import Histogram
     from trackio.media import TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
@@ -25,6 +26,7 @@ try:
 except ImportError:
     import utils
     from file_storage import FileStorage
+    from histogram import Histogram
     from media import TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
@@ -1119,6 +1121,71 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 except Exception as e:
                                     gr.Warning(
                                         f"Column {metric_name} failed to render as a table: {e}"
+                                    )
+
+        # Display histograms
+        histogram_cols = set(master_df.columns) - {
+            "run",
+            "step",
+            "timestamp",
+            "data_type",
+        }
+        if metrics_subset:
+            histogram_cols = [c for c in histogram_cols if c in metrics_subset]
+        if metric_filter and metric_filter.strip():
+            histogram_cols = filter_metrics_by_regex(
+                list(histogram_cols), metric_filter
+            )
+
+        actual_histogram_count = sum(
+            1
+            for metric_name in histogram_cols
+            if not (metric_df := master_df.dropna(subset=[metric_name])).empty
+            and isinstance(value := metric_df[metric_name].iloc[-1], dict)
+            and value.get("_type") == Histogram.TYPE
+        )
+
+        if actual_histogram_count > 0:
+            with gr.Accordion(f"histograms ({actual_histogram_count})", open=True):
+                with gr.Row(key="histogram-row"):
+                    for metric_idx, metric_name in enumerate(histogram_cols):
+                        metric_df = master_df.dropna(subset=[metric_name])
+                        if not metric_df.empty:
+                            value = metric_df[metric_name].iloc[-1]
+                            if (
+                                isinstance(value, dict)
+                                and "_type" in value
+                                and value["_type"] == Histogram.TYPE
+                            ):
+                                try:
+                                    bins = value.get("bins", [])
+                                    values = value.get("values", [])
+
+                                    if len(bins) > 0 and len(values) > 0:
+                                        bin_centers = [
+                                            (bins[i] + bins[i + 1]) / 2
+                                            for i in range(len(bins) - 1)
+                                        ]
+
+                                        df = pd.DataFrame(
+                                            {"bin_center": bin_centers, "count": values}
+                                        )
+
+                                        gr.BarPlot(
+                                            df,
+                                            x="bin_center",
+                                            y="count",
+                                            title=f"{metric_name} (latest)",
+                                            x_title="Value",
+                                            y_title="Count",
+                                            key=f"histogram-{metric_idx}",
+                                            show_fullscreen_button=True,
+                                            min_width=400,
+                                            show_export_button=True,
+                                        )
+                                except Exception as e:
+                                    gr.Warning(
+                                        f"Column {metric_name} failed to render as a histogram: {e}"
                                     )
 
     with grouped_runs_panel:

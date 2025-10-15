@@ -7,6 +7,7 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio import utils
+from trackio.histogram import Histogram
 from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -139,7 +140,7 @@ class Run:
     @staticmethod
     def _replace_tables(metrics):
         for k, v in metrics.items():
-            if isinstance(v, Table):
+            if isinstance(v, (Table, Histogram)):
                 metrics[k] = v._to_dict()
 
     def log(self, metrics: dict, step: int | None = None):
