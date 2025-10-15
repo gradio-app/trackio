@@ -1209,4 +1209,8 @@ run_page.write_token = write_token
 run_detail_page.write_token = write_token
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
+    demo.launch(
+        allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
+        show_api=False,
+        show_error=True,
+    )
