@@ -14,6 +14,7 @@ import pandas as pd
 try:
     import trackio.utils as utils
     from trackio.file_storage import FileStorage
+    from trackio.histogram import Histogram
     from trackio.media import TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
@@ -25,6 +26,7 @@ try:
 except ImportError:
     import utils
     from file_storage import FileStorage
+    from histogram import Histogram
     from media import TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
@@ -595,10 +597,11 @@ gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     with gr.Sidebar(open=False) as sidebar:
+        logo_urls = utils.get_logo_urls()
         logo = gr.Markdown(
             f"""
-                <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png' width='80%' class='logo-light'>
-                <img src='/gradio_api/file={utils.TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png' width='80%' class='logo-dark'>            
+                <img src='{logo_urls["light"]}' width='80%' class='logo-light'>
+                <img src='{logo_urls["dark"]}' width='80%' class='logo-dark'>            
             """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
@@ -920,10 +923,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             master_df = pd.DataFrame()
 
         if master_df.empty:
-            if space_id := utils.get_space():
-                gr.Markdown(INSTRUCTIONS_SPACES.format(space_id))
+            if not SQLiteStorage.get_projects():
+                if space_id := utils.get_space():
+                    gr.Markdown(INSTRUCTIONS_SPACES.format(space_id))
+                else:
+                    gr.Markdown(INSTRUCTIONS_LOCAL)
             else:
-                gr.Markdown(INSTRUCTIONS_LOCAL)
+                gr.Markdown("*Waiting for runs to appear...*")
             return
 
         x_column = "step"
@@ -941,11 +947,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         if metric_filter and metric_filter.strip():
             numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
 
-        nested_metric_groups = utils.group_metrics_with_subprefixes(list(numeric_cols))
+        ordered_groups, nested_metric_groups = utils.order_metrics_by_plot_preference(
+            list(numeric_cols)
+        )
         color_map = utils.get_color_mapping(original_runs, smoothing_granularity > 0)
 
         metric_idx = 0
-        for group_name in sorted(nested_metric_groups.keys()):
+        for group_name in ordered_groups:
             group_data = nested_metric_groups[group_name]
 
             total_plot_count = sum(
@@ -1113,6 +1121,71 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
 
+        # Display histograms
+        histogram_cols = set(master_df.columns) - {
+            "run",
+            "step",
+            "timestamp",
+            "data_type",
+        }
+        if metrics_subset:
+            histogram_cols = [c for c in histogram_cols if c in metrics_subset]
+        if metric_filter and metric_filter.strip():
+            histogram_cols = filter_metrics_by_regex(
+                list(histogram_cols), metric_filter
+            )
+
+        actual_histogram_count = sum(
+            1
+            for metric_name in histogram_cols
+            if not (metric_df := master_df.dropna(subset=[metric_name])).empty
+            and isinstance(value := metric_df[metric_name].iloc[-1], dict)
+            and value.get("_type") == Histogram.TYPE
+        )
+
+        if actual_histogram_count > 0:
+            with gr.Accordion(f"histograms ({actual_histogram_count})", open=True):
+                with gr.Row(key="histogram-row"):
+                    for metric_idx, metric_name in enumerate(histogram_cols):
+                        metric_df = master_df.dropna(subset=[metric_name])
+                        if not metric_df.empty:
+                            value = metric_df[metric_name].iloc[-1]
+                            if (
+                                isinstance(value, dict)
+                                and "_type" in value
+                                and value["_type"] == Histogram.TYPE
+                            ):
+                                try:
+                                    bins = value.get("bins", [])
+                                    values = value.get("values", [])
+
+                                    if len(bins) > 0 and len(values) > 0:
+                                        bin_centers = [
+                                            (bins[i] + bins[i + 1]) / 2
+                                            for i in range(len(bins) - 1)
+                                        ]
+
+                                        df = pd.DataFrame(
+                                            {"bin_center": bin_centers, "count": values}
+                                        )
+
+                                        gr.BarPlot(
+                                            df,
+                                            x="bin_center",
+                                            y="count",
+                                            title=f"{metric_name} (latest)",
+                                            x_title="Value",
+                                            y_title="Count",
+                                            key=f"histogram-{metric_idx}",
+                                            show_fullscreen_button=True,
+                                            min_width=400,
+                                            show_export_button=True,
+                                        )
+                                except Exception as e:
+                                    gr.Warning(
+                                        f"Column {metric_name} failed to render as a histogram: {e}"
+                                    )
+
     with grouped_runs_panel:
 
         @gr.render(
@@ -1201,4 +1274,8 @@ run_page.write_token = write_token
 run_detail_page.write_token = write_token
 
 if __name__ == "__main__":
-    demo.launch(allowed_paths=[utils.TRACKIO_LOGO_DIR], show_api=False, show_error=True)
+    demo.launch(
+        allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
+        show_api=False,
+        show_error=True,
+    )

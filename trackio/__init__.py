@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import os
 import warnings
@@ -13,6 +14,7 @@ from gradio_client import Client
 from huggingface_hub import SpaceStorage
 
 from trackio import context_vars, deploy, utils
+from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioImage, TrackioVideo
 from trackio.run import Run
@@ -30,7 +32,9 @@ warnings.filterwarnings(
     module="gradio.helpers",
 )
 
-__version__ = Path(__file__).parent.joinpath("version.txt").read_text().strip()
+__version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())[
+    "version"
+]
 
 __all__ = [
     "init",
@@ -42,6 +46,7 @@ __all__ = [
     "Image",
     "Video",
     "Table",
+    "Histogram",
 ]
 
 Image = TrackioImage
@@ -50,7 +55,7 @@ Video = TrackioVideo
 
 config = {}
 
-DEFAULT_THEME = "citrus"
+DEFAULT_THEME = "default"
 
 
 def init(
@@ -139,7 +144,7 @@ def init(
                 prevent_thread_lock=True,
                 show_error=True,
                 favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
-                allowed_paths=[TRACKIO_LOGO_DIR],
+                allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
             )
         else:
             url = space_id
@@ -256,7 +261,7 @@ def finish():
 
 def show(
     project: str | None = None,
-    theme: str | ThemeClass = DEFAULT_THEME,
+    theme: str | ThemeClass | None = None,
     mcp_server: bool | None = None,
 ):
     """
@@ -266,16 +271,20 @@ def show(
         project (`str`, *optional*):
             The name of the project whose runs to show. If not provided, all projects
             will be shown and the user can select one.
-        theme (`str` or `ThemeClass`, *optional*, defaults to `"citrus"`):
-            A Gradio Theme to use for the dashboard instead of the default `"citrus"`,
-            can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
-            (e.g. `"gstaff/xkcd"`), or a custom Theme class.
+        theme (`str` or `ThemeClass`, *optional*):
+            A Gradio Theme to use for the dashboard instead of the default Gradio theme,
+            can be a built-in theme (e.g. `'soft'`, `'citrus'`), a theme from the Hub
+            (e.g. `"gstaff/xkcd"`), or a custom Theme class. If not provided, the
+            `TRACKIO_THEME` environment variable will be used, or if that is not set, the
+            default Gradio theme will be used.
         mcp_server (`bool`, *optional*):
             If `True`, the Trackio dashboard will be set up as an MCP server and certain
             functions will be added as MCP tools. If `None` (default behavior), then the
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
     """
+    theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
+
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
         # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
@@ -311,7 +320,7 @@ def show(
         inline=False,
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
-        allowed_paths=[TRACKIO_LOGO_DIR],
+        allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
         mcp_server=_mcp_server,
     )
 
