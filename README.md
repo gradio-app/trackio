@@ -1,5 +1,9 @@
 <p align="center">
-<img width="75%" src="https://github.com/user-attachments/assets/6d6a41e7-fbc1-43ec-bda6-15f9ff4bd25c" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="trackio/assets/trackio_logo_type_dark_transparent.png">
+  <source media="(prefers-color-scheme: light)" srcset="trackio/assets/trackio_logo_type_light_transparent.png">
+  <img width="75%" alt="Trackio Logo" src="trackio/assets/trackio_logo_type_light_transparent.png">
+</picture>
   
 </p>
 
