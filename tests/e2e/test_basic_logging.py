@@ -1,4 +1,5 @@
 import math
+import warnings
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
@@ -84,3 +85,32 @@ def test_class_config_storage_in_database(temp_dir):
     assert stored_config["target_modules"] == ["q_proj", "v_proj"]
     assert stored_config["lora_dropout"] == 0.1
     assert "_private_config" not in stored_config
+
+
+def test_reserved_keys_are_renamed(temp_dir):
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        run = trackio.init(project="test_reserved", name="test_run")
+
+        run.log({"step": 100, "time": 200, "project": "test", "normal_key": 42})
+
+        reserved_warnings = [
+            warning for warning in w if "Reserved keys renamed" in str(warning.message)
+        ]
+        assert len(reserved_warnings) == 1
+        assert "['step', 'time', 'project']" in str(reserved_warnings[0].message)
+
+        run.finish()
+
+    results = SQLiteStorage.get_logs(project="test_reserved", run="test_run")
+    assert len(results) == 1
+    log = results[0]
+
+    assert "__step" in log
+    assert "__time" in log
+    assert "__project" in log
+    assert "normal_key" in log
+    assert log["__step"] == 100
+    assert log["__time"] == 200
+    assert log["__project"] == "test"
+    assert log["normal_key"] == 42
