@@ -37,10 +37,14 @@ class TrackioMedia(ABC):
         self._value = value
         self._file_path: Path | None = None
 
-        # Validate file existence for string/Path inputs
+        # Validate file existence for string/Path inputs and dtype for numpy.ndarray inputs
         if isinstance(self._value, str | Path):
             if not os.path.isfile(self._value):
                 raise ValueError(f"File not found: {self._value}")
+        elif isinstance(self._value, np.ndarray) and self._value.dtype != np.uint8:
+            raise ValueError(
+                f"Invalid value dtype, expected np.uint8, got {self._value.dtype}"
+            )
 
     def _file_extension(self) -> str:
         if self._file_path:
@@ -131,6 +135,11 @@ class TrackioImage(TrackioMedia):
         super().__init__(value, caption)
         self._format: str | None = None
 
+        if not isinstance(self._value, TrackioImageSourceType):
+            raise ValueError(
+                f"Invalid value type, expected {TrackioImageSourceType}, got {type(self._value)}"
+            )
+
         if (
             isinstance(self._value, np.ndarray | PILImage.Image)
             and self._format is None
@@ -207,6 +216,12 @@ class TrackioVideo(TrackioMedia):
         format: TrackioVideoFormatType | None = None,
     ):
         super().__init__(value, caption)
+
+        if not isinstance(self._value, TrackioVideoSourceType):
+            raise ValueError(
+                f"Invalid value type, expected {TrackioVideoSourceType}, got {type(self._value)}"
+            )
+
         if isinstance(value, np.ndarray):
             if format is None:
                 format = "gif"
