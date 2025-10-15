@@ -37,7 +37,6 @@ class TrackioMedia(ABC):
         self._value = value
         self._file_path: Path | None = None
 
-        # Validate file existence for string/Path inputs and dtype for numpy.ndarray inputs
         if isinstance(self._value, str | Path):
             if not os.path.isfile(self._value):
                 raise ValueError(f"File not found: {self._value}")
@@ -72,9 +71,7 @@ class TrackioMedia(ABC):
         filename = f"{uuid.uuid4()}.{self._file_extension()}"
         file_path = media_dir / filename
 
-        # Delegate to subclass-specific save logic
         self._save_media(file_path)
-
         self._file_path = file_path.relative_to(MEDIA_DIR)
 
     @abstractmethod
@@ -125,6 +122,7 @@ class TrackioImage(TrackioMedia):
     Args:
         value (`str`, `Path`, `numpy.ndarray`, or `PIL.Image`, *optional*):
             A path to an image, a PIL Image, or a numpy array of shape (height, width, channels).
+            If numpy array, should be of type `np.uint8` with RGB values in the range `[0, 255]`.
         caption (`str`, *optional*):
             A string caption for the image.
     """
@@ -195,7 +193,7 @@ class TrackioVideo(TrackioMedia):
     Args:
         value (`str`, `Path`, or `numpy.ndarray`, *optional*):
             A path to a video file, or a numpy array.
-            The array should be of type `np.uint8` with RGB values in the range `[0, 255]`.
+            If numpy array, should be of type `np.uint8` with RGB values in the range `[0, 255]`.
             It is expected to have shape of either (frames, channels, height, width) or (batch, frames, channels, height, width).
             For the latter, the videos will be tiled into a grid.
         caption (`str`, *optional*):
