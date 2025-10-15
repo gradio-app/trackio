@@ -19,6 +19,7 @@ def train_model(run_id):
             "learning_rate": 0.001 * (run_id + 1),
             "batch_size": 32 * (run_id + 1),
         },
+        space_id=f"histogram-test-{PROJECT_ID}",
     )
 
     for step in range(NUM_STEPS):
