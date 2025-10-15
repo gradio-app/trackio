@@ -1,5 +1,6 @@
 import threading
 import time
+import warnings
 from datetime import datetime, timezone
 
 import huggingface_hub
@@ -142,11 +143,21 @@ class Run:
                 metrics[k] = v._to_dict()
 
     def log(self, metrics: dict, step: int | None = None):
-        for k in metrics.keys():
+        renamed_keys = []
+        new_metrics = {}
+
+        for k, v in metrics.items():
             if k in utils.RESERVED_KEYS or k.startswith("__"):
-                raise ValueError(
-                    f"Please do not use this reserved key as a metric: {k}"
-                )
+                new_key = f"__{k}"
+                renamed_keys.append(k)
+                new_metrics[new_key] = v
+            else:
+                new_metrics[k] = v
+
+        if renamed_keys:
+            warnings.warn(f"Reserved keys renamed: {renamed_keys} → '__{{key}}'")
+
+        metrics = new_metrics
         Run._replace_tables(metrics)
 
         metrics = self._process_media(metrics, step)
