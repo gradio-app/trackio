@@ -99,10 +99,12 @@ def deploy_as_space(
     is_source_install = _is_trackio_installed_from_source()
 
     if is_source_install:
-        requirements_content = """pyarrow>=21.0"""
+        requirements_content = """pyarrow>=21.0
+plotly>=6.0.0,<7.0.0"""
     else:
         requirements_content = f"""pyarrow>=21.0
-trackio=={trackio.__version__}"""
+trackio=={trackio.__version__}
+plotly>=6.0.0,<7.0.0"""
 
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(

@@ -10,6 +10,7 @@ from typing import Any
 import gradio as gr
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 
 try:
     import trackio.utils as utils
@@ -1149,37 +1150,65 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                     for metric_idx, metric_name in enumerate(histogram_cols):
                         metric_df = master_df.dropna(subset=[metric_name])
                         if not metric_df.empty:
-                            value = metric_df[metric_name].iloc[-1]
+                            first_value = metric_df[metric_name].iloc[0]
                             if (
-                                isinstance(value, dict)
-                                and "_type" in value
-                                and value["_type"] == Histogram.TYPE
+                                isinstance(first_value, dict)
+                                and "_type" in first_value
+                                and first_value["_type"] == Histogram.TYPE
                             ):
                                 try:
-                                    bins = value.get("bins", [])
-                                    values = value.get("values", [])
+                                    steps = []
+                                    all_bins = None
+                                    heatmap_data = []
 
-                                    if len(bins) > 0 and len(values) > 0:
+                                    for _, row in metric_df.iterrows():
+                                        step = row.get("step", len(steps))
+                                        hist_data = row[metric_name]
+
+                                        if (
+                                            isinstance(hist_data, dict)
+                                            and hist_data.get("_type") == Histogram.TYPE
+                                        ):
+                                            bins = hist_data.get("bins", [])
+                                            values = hist_data.get("values", [])
+
+                                            if len(bins) > 0 and len(values) > 0:
+                                                steps.append(step)
+
+                                                if all_bins is None:
+                                                    all_bins = bins
+
+                                                heatmap_data.append(values)
+
+                                    if len(steps) > 0 and all_bins is not None:
                                         bin_centers = [
-                                            (bins[i] + bins[i + 1]) / 2
-                                            for i in range(len(bins) - 1)
+                                            (all_bins[i] + all_bins[i + 1]) / 2
+                                            for i in range(len(all_bins) - 1)
                                         ]
 
-                                        df = pd.DataFrame(
-                                            {"bin_center": bin_centers, "count": values}
+                                        fig = go.Figure(
+                                            data=go.Heatmap(
+                                                z=np.array(heatmap_data).T,
+                                                x=steps,
+                                                y=bin_centers,
+                                                colorscale="Blues",
+                                                colorbar=dict(title="Count"),
+                                                hovertemplate="Step: %{x}<br>Value: %{y:.3f}<br>Count: %{z}<extra></extra>",
+                                            )
                                         )
 
-                                        gr.BarPlot(
-                                            df,
-                                            x="bin_center",
-                                            y="count",
-                                            title=f"{metric_name} (latest)",
-                                            x_title="Value",
-                                            y_title="Count",
+                                        fig.update_layout(
+                                            title=metric_name,
+                                            xaxis_title="Step",
+                                            yaxis_title="Value",
+                                            height=400,
+                                            showlegend=False,
+                                        )
+
+                                        gr.Plot(
+                                            fig,
                                             key=f"histogram-{metric_idx}",
-                                            show_fullscreen_button=True,
-                                            min_width=400,
-                                            show_export_button=True,
+                                            preserved_by_key=None,
                                         )
                                 except Exception as e:
                                     gr.Warning(
