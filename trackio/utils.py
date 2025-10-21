@@ -528,7 +528,7 @@ def downsample(
 
     data_x_min = df[x].min()
     data_x_max = df[x].max()
-    
+
     if x_lim is not None:
         x_min, x_max = x_lim
         if x_min is None:
