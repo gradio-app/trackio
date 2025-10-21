@@ -239,30 +239,30 @@ def test_plot_ordering():
 def test_downsample_with_none_x_lim():
     """Test downsample function handles None values in x_lim correctly."""
     import pandas as pd
-    
+
     data = {
-        'x': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        'y': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        "x": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "y": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     }
     df = pd.DataFrame(data)
-    
-    result_df, result_x_lim = utils.downsample(df, 'x', 'y', None, None)
+
+    result_df, result_x_lim = utils.downsample(df, "x", "y", None, None)
     assert result_x_lim is None
     assert len(result_df) <= len(df)
-    
-    result_df, result_x_lim = utils.downsample(df, 'x', 'y', None, (None, 5))
+
+    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (None, 5))
     assert result_x_lim == (0, 5)
     assert len(result_df) <= len(df)
-    
-    result_df, result_x_lim = utils.downsample(df, 'x', 'y', None, (2, None))
+
+    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (2, None))
     assert result_x_lim == (2, 10)
     assert len(result_df) <= len(df)
-    
-    result_df, result_x_lim = utils.downsample(df, 'x', 'y', None, (None, None))
+
+    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (None, None))
     assert result_x_lim == (0, 10)
     assert len(result_df) <= len(df)
-    
-    empty_df = pd.DataFrame({'x': [], 'y': []})
-    result_df, result_x_lim = utils.downsample(empty_df, 'x', 'y', None, (2, None))
+
+    empty_df = pd.DataFrame({"x": [], "y": []})
+    result_df, result_x_lim = utils.downsample(empty_df, "x", "y", None, (2, None))
     assert result_x_lim == (2, 0)
     assert len(result_df) == 0
