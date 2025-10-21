@@ -263,6 +263,9 @@ def show(
     project: str | None = None,
     theme: str | ThemeClass | None = None,
     mcp_server: bool | None = None,
+    xmin: float | None = None,
+    xmax: float | None = None,
+    smoothing: int | None = None,
 ):
     """
     Launches the Trackio dashboard.
@@ -282,6 +285,12 @@ def show(
             functions will be added as MCP tools. If `None` (default behavior), then the
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
+        xmin (`float`, *optional*):
+            Minimum x-axis value for all plots in the dashboard.
+        xmax (`float`, *optional*):
+            Maximum x-axis value for all plots in the dashboard.
+        smoothing (`int`, *optional*):
+            Smoothing factor for plots (0-20, where 0 = no smoothing).
     """
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
@@ -326,7 +335,12 @@ def show(
 
     base_url = share_url + "/" if share_url else url
     full_url = utils.get_full_url(
-        base_url, project=project, write_token=demo.write_token
+        base_url,
+        project=project,
+        write_token=demo.write_token,
+        xmin=xmin,
+        xmax=xmax,
+        smoothing=smoothing,
     )
 
     if not utils.is_in_notebook():

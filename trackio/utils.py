@@ -773,11 +773,24 @@ def deserialize_values(metrics):
     return result
 
 
-def get_full_url(base_url: str, project: str | None, write_token: str) -> str:
+def get_full_url(
+    base_url: str,
+    project: str | None,
+    write_token: str,
+    xmin: float | None = None,
+    xmax: float | None = None,
+    smoothing: int | None = None,
+) -> str:
     params = []
     if project:
         params.append(f"project={project}")
     params.append(f"write_token={write_token}")
+    if xmin is not None:
+        params.append(f"xmin={xmin}")
+    if xmax is not None:
+        params.append(f"xmax={xmax}")
+    if smoothing is not None:
+        params.append(f"smoothing={smoothing}")
     return base_url + "?" + "&".join(params)
 
 

@@ -24,11 +24,36 @@ def main():
         action="store_true",
         help="Enable MCP server functionality. The Trackio dashboard will be set up as an MCP server and certain functions will be exposed as MCP tools.",
     )
+    ui_parser.add_argument(
+        "--xmin",
+        type=float,
+        required=False,
+        help="Minimum x-axis value for all plots",
+    )
+    ui_parser.add_argument(
+        "--xmax",
+        type=float,
+        required=False,
+        help="Maximum x-axis value for all plots",
+    )
+    ui_parser.add_argument(
+        "--smoothing",
+        type=int,
+        required=False,
+        help="Smoothing factor for plots (0-20, 0 = no smoothing)",
+    )
 
     args = parser.parse_args()
 
     if args.command == "show":
-        show(args.project, args.theme, args.mcp_server)
+        show(
+            args.project,
+            args.theme,
+            args.mcp_server,
+            args.xmin,
+            args.xmax,
+            args.smoothing,
+        )
     else:
         parser.print_help()
 

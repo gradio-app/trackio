@@ -486,7 +486,28 @@ def configure(request: gr.Request):
         case _:
             navbar = gr.Navbar(visible=True)
 
-    return [], sidebar, metrics_param, selected_runs, navbar
+    xmin_param = request.query_params.get("xmin")
+    xmax_param = request.query_params.get("xmax")
+    x_lim_from_params = None
+    if xmin_param is not None or xmax_param is not None:
+        xmin = float(xmin_param) if xmin_param is not None else None
+        xmax = float(xmax_param) if xmax_param is not None else None
+        x_lim_from_params = [xmin, xmax]
+
+    smoothing_param = request.query_params.get("smoothing")
+    smoothing_from_params = (
+        int(smoothing_param) if smoothing_param is not None else gr.Slider()
+    )
+
+    return (
+        [],
+        sidebar,
+        metrics_param,
+        selected_runs,
+        navbar,
+        x_lim_from_params,
+        smoothing_from_params,
+    )
 
 
 def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
@@ -654,6 +675,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
     run_selection_state = gr.State(RunSelection())
+    x_lim = gr.State(None)
 
     gr.on(
         [demo.load],
@@ -664,6 +686,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             metric_filter_tb,
             selected_runs_from_url,
             navbar,
+            x_lim,
+            smoothing_slider,
         ],
         queue=False,
         api_name=False,
@@ -835,7 +859,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         api_name="get_run_summary",
     )
 
-    x_lim = gr.State(None)
     last_steps = gr.State({})
 
     def update_x_lim(select_data: gr.SelectData):
