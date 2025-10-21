@@ -40,6 +40,7 @@ You can also filter the dashboard to display only specific projects or metrics u
   * `"collapsed"` keeps the sidebar initially collapsed, but the user can expand it. By default, the sidebar is visible and open.
 * `xmin` (number): Set the initial minimum value for the x-axis limits across all metrics plots.
 * `xmax` (number): Set the initial maximum value for the x-axis limits across all metrics plots.
+* `smoothing` (number): Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
 
 You can customize your `<iframe>` using standard attributes such as `width`, `height`, and `style`. For more details, see [MDN Web Docs: `<iframe>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe). For example:
 

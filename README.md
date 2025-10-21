@@ -166,6 +166,7 @@ Supported query parameters:
 - `sidebar`: (string: one of "hidden" or "collapsed"). If "hidden", then the sidebar will not be visible. If "collapsed", the sidebar will be in a collapsed state initially but the user will be able to open it. Otherwise, by default, the sidebar is shown in an open and visible state.
 - `xmin`: (number) Set the initial minimum value for the x-axis limits across all metric plots.
 - `xmax`: (number) Set the initial maximum value for the x-axis limits across all metric plots.
+- `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
 
 ## Examples
 

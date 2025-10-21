@@ -484,13 +484,16 @@ def configure(request: gr.Request):
     x_max_param = request.query_params.get("xmax")
     x_min = float(x_min_param) if x_min_param is not None else None
     x_max = float(x_max_param) if x_max_param is not None else None
+    smoothing_param = request.query_params.get("smoothing")
+    smoothing_value = int(smoothing_param) if smoothing_param is not None else 10
+    
     match navbar_param:
         case "hidden":
             navbar = gr.Navbar(visible=False)
         case _:
             navbar = gr.Navbar(visible=True)
 
-    return [], sidebar, metrics_param, selected_runs, navbar, [x_min, x_max]
+    return [], sidebar, metrics_param, selected_runs, navbar, [x_min, x_max], smoothing_value
 
 
 def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
@@ -670,6 +673,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             selected_runs_from_url,
             navbar,
             x_lim,
+            smoothing_slider,
         ],
         queue=False,
         api_name=False,
