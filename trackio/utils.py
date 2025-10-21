@@ -500,15 +500,44 @@ def downsample(
     x: str,
     y: str,
     color: str | None,
-    x_lim: tuple[float, float] | None = None,
-) -> pd.DataFrame:
+    x_lim: tuple[float | None, float | None] | None = None,
+) -> tuple[pd.DataFrame, tuple[float, float] | None]:
+    """
+    Downsample the dataframe to reduce the number of points plotted.
+    Also updates the x-axis limits to the data min/max if either of the x-axis limits are None.
+
+    Args:
+        df: The dataframe to downsample.
+        x: The column name to use for the x-axis.
+        y: The column name to use for the y-axis.
+        color: The column name to use for the color.
+        x_lim: The x-axis limits to use.
+
+    Returns:
+        A tuple containing the downsampled dataframe and the updated x-axis limits.
+    """
     if df.empty:
-        return df
+        if x_lim is not None:
+            x_lim = (x_lim[0] or 0, x_lim[1] or 0)
+        return df, x_lim
 
     columns_to_keep = [x, y]
     if color is not None and color in df.columns:
         columns_to_keep.append(color)
     df = df[columns_to_keep].copy()
+
+    data_x_min = df[x].min()
+    data_x_max = df[x].max()
+    
+    if x_lim is not None:
+        x_min, x_max = x_lim
+        if x_min is None:
+            x_min = data_x_min
+        if x_max is None:
+            x_max = data_x_max
+        updated_x_lim = (x_min, x_max)
+    else:
+        updated_x_lim = None
 
     n_bins = 100
 
@@ -525,8 +554,8 @@ def downsample(
 
         group_df = group_df.sort_values(x)
 
-        if x_lim is not None:
-            x_min, x_max = x_lim
+        if updated_x_lim is not None:
+            x_min, x_max = updated_x_lim
             before_point = group_df[group_df[x] < x_min].tail(1)
             after_point = group_df[group_df[x] > x_max].head(1)
             group_df = group_df[(group_df[x] >= x_min) & (group_df[x] <= x_max)]
@@ -588,7 +617,7 @@ def downsample(
 
     downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
 
-    return downsampled_df
+    return downsampled_df, updated_x_lim
 
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
