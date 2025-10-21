@@ -45,7 +45,7 @@ You can customize your `<iframe>` using standard attributes such as `width`, `he
 
 ```html
 <iframe 
-    src="https://trackio-documentation.hf.space/?project=my-project&metrics=train_loss,train_accuracy&sidebar=hidden&xmin=0&xmax=100" 
+    src="https://trackio-documentation.hf.space/?project=my-project&metrics=train_loss,train_accuracy&sidebar=hidden" 
     width="600" 
     height="630" 
     style="border:0;">
