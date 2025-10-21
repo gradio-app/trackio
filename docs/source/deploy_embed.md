@@ -51,3 +51,10 @@ You can customize your `<iframe>` using standard attributes such as `width`, `he
     style="border:0;">
 </iframe>
 ```
+
+<iframe 
+    src="https://trackio-documentation.hf.space/?project=my-project&metrics=train_loss,train_accuracy&sidebar=hidden" 
+    width="600" 
+    height="630" 
+    style="border:0;">
+</iframe>
