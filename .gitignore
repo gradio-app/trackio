@@ -9,3 +9,5 @@ trackio.db
 node_modules/
 dist/
 build/
+tf_test_run/
+*_test_run/
