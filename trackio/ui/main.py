@@ -499,6 +499,9 @@ def configure(request: gr.Request):
         int(smoothing_param) if smoothing_param is not None else gr.Slider()
     )
 
+    x_axis_param = request.query_params.get("x_axis")
+    x_axis_from_params = x_axis_param if x_axis_param is not None else gr.Dropdown()
+
     return (
         [],
         sidebar,
@@ -507,6 +510,7 @@ def configure(request: gr.Request):
         navbar,
         x_lim_from_params,
         smoothing_from_params,
+        x_axis_from_params,
     )
 
 
@@ -688,6 +692,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             navbar,
             x_lim,
             smoothing_slider,
+            x_axis_dd,
         ],
         queue=False,
         api_name=False,

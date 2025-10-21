@@ -780,6 +780,7 @@ def get_full_url(
     xmin: float | None = None,
     xmax: float | None = None,
     smoothing: int | None = None,
+    x_axis: str | None = None,
 ) -> str:
     params = []
     if project:
@@ -791,6 +792,8 @@ def get_full_url(
         params.append(f"xmax={xmax}")
     if smoothing is not None:
         params.append(f"smoothing={smoothing}")
+    if x_axis is not None:
+        params.append(f"x_axis={x_axis}")
     return base_url + "?" + "&".join(params)
 
 

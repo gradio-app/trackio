@@ -266,6 +266,7 @@ def show(
     xmin: float | None = None,
     xmax: float | None = None,
     smoothing: int | None = None,
+    x_axis: str | None = None,
 ):
     """
     Launches the Trackio dashboard.
@@ -291,6 +292,8 @@ def show(
             Maximum x-axis value for all plots in the dashboard.
         smoothing (`int`, *optional*):
             Smoothing factor for plots (0-20, where 0 = no smoothing).
+        x_axis (`str`, *optional*):
+            X-axis metric to use for plots (e.g., 'step', 'time', or any logged metric).
     """
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
@@ -341,6 +344,7 @@ def show(
         xmin=xmin,
         xmax=xmax,
         smoothing=smoothing,
+        x_axis=x_axis,
     )
 
     if not utils.is_in_notebook():

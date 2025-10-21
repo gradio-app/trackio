@@ -42,6 +42,12 @@ def main():
         required=False,
         help="Smoothing factor for plots (0-20, 0 = no smoothing)",
     )
+    ui_parser.add_argument(
+        "--x-axis",
+        type=str,
+        required=False,
+        help="X-axis metric to use for plots (e.g., 'step', 'time', or any logged metric)",
+    )
 
     args = parser.parse_args()
 
@@ -53,6 +59,7 @@ def main():
             args.xmin,
             args.xmax,
             args.smoothing,
+            args.x_axis,
         )
     else:
         parser.print_help()
