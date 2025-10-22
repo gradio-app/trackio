@@ -14,7 +14,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pandas<3.0.0",
     "huggingface-hub<1.0.0",
-    "gradio[oauth]>=5.48.0,<6.0.0",
+    "gradio[oauth]@git+https://github.com/gradio-app/gradio.git@plot-legend",
     "numpy<3.0.0",
     "pillow<12.0.0",
     "orjson>=3.0,<4.0.0",
@@ -51,6 +51,9 @@ packages = ["trackio"]
 [tool.hatch.version]
 path = "trackio/package.json"
 pattern = ".*\"version\":\\s*\"(?P<version>[^\"]+)\""
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
