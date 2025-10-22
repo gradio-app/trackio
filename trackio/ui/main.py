@@ -480,13 +480,28 @@ def configure(request: gr.Request):
     runs_param = request.query_params.get("runs", "")
     selected_runs = runs_param.split(",") if runs_param else []
     navbar_param = request.query_params.get("navbar")
+    x_min_param = request.query_params.get("xmin")
+    x_max_param = request.query_params.get("xmax")
+    x_min = float(x_min_param) if x_min_param is not None else None
+    x_max = float(x_max_param) if x_max_param is not None else None
+    smoothing_param = request.query_params.get("smoothing")
+    smoothing_value = int(smoothing_param) if smoothing_param is not None else 10
+
     match navbar_param:
         case "hidden":
             navbar = gr.Navbar(visible=False)
         case _:
             navbar = gr.Navbar(visible=True)
 
-    return [], sidebar, metrics_param, selected_runs, navbar
+    return (
+        [],
+        sidebar,
+        metrics_param,
+        selected_runs,
+        navbar,
+        [x_min, x_max],
+        smoothing_value,
+    )
 
 
 def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
@@ -654,6 +669,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
     run_selection_state = gr.State(RunSelection())
+    x_lim = gr.State(None)
 
     gr.on(
         [demo.load],
@@ -664,6 +680,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             metric_filter_tb,
             selected_runs_from_url,
             navbar,
+            x_lim,
+            smoothing_slider,
         ],
         queue=False,
         api_name=False,
@@ -835,7 +853,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         api_name="get_run_summary",
     )
 
-    x_lim = gr.State(None)
     last_steps = gr.State({})
 
     def update_x_lim(select_data: gr.SelectData):
@@ -984,15 +1001,16 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                         for metric_name in group_data["direct_metrics"]:
                             metric_df = master_df.dropna(subset=[metric_name])
                             color = "run" if "run" in metric_df.columns else None
+                            downsampled_df, updated_x_lim = utils.downsample(
+                                metric_df,
+                                x_column,
+                                metric_name,
+                                color,
+                                x_lim_value,
+                            )
                             if not metric_df.empty:
                                 plot = gr.LinePlot(
-                                    utils.downsample(
-                                        metric_df,
-                                        x_column,
-                                        metric_name,
-                                        color,
-                                        x_lim_value,
-                                    ),
+                                    downsampled_df,
                                     x=x_column,
                                     y=metric_name,
                                     y_title=metric_name.split("/")[-1],
@@ -1001,8 +1019,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     title=metric_name,
                                     key=f"plot-{metric_idx}",
                                     preserved_by_key=None,
-                                    x_lim=x_lim_value,
                                     buttons=["fullscreen", "export"],
+                                    x_lim=updated_x_lim,
                                     min_width=400,
                                 )
                                 plot.select(
@@ -1047,15 +1065,16 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     color = (
                                         "run" if "run" in metric_df.columns else None
                                     )
+                                    downsampled_df, updated_x_lim = utils.downsample(
+                                        metric_df,
+                                        x_column,
+                                        metric_name,
+                                        color,
+                                        x_lim_value,
+                                    )
                                     if not metric_df.empty:
                                         plot = gr.LinePlot(
-                                            utils.downsample(
-                                                metric_df,
-                                                x_column,
-                                                metric_name,
-                                                color,
-                                                x_lim_value,
-                                            ),
+                                            downsampled_df,
                                             x=x_column,
                                             y=metric_name,
                                             y_title=metric_name.split("/")[-1],
@@ -1064,8 +1083,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                             title=metric_name,
                                             key=f"plot-{metric_idx}",
                                             preserved_by_key=None,
-                                            x_lim=x_lim_value,
                                             buttons=["fullscreen", "export"],
+                                            x_lim=updated_x_lim,
                                             min_width=400,
                                         )
                                         plot.select(
