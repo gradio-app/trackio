@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
@@ -81,3 +82,21 @@ def test_audio_serialization(audio_ndarray, temp_dir):
     assert value.get("_type") == TrackioAudio.TYPE
     assert value.get("file_path") == str(audio._get_relative_file_path())
     assert value.get("caption") == "test_caption"
+@pytest.mark.parametrize(
+    "media_cls, invalid_array",
+    [
+        (TrackioImage, lambda: np.random.rand(64, 64, 3)),
+        (TrackioVideo, lambda: np.random.rand(10, 3, 64, 64)),
+    ],
+)
+def test_invalid_dtype_raises(media_cls, invalid_array):
+    arr = invalid_array()
+    with pytest.raises(ValueError):
+        media_cls(arr)
+
+
+@pytest.mark.parametrize("media_cls", [TrackioImage, TrackioVideo])
+def test_invalid_type_raises(media_cls):
+    invalid_input = [[[0, 1, 2]]]
+    with pytest.raises(ValueError):
+        media_cls(invalid_input)
