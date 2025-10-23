@@ -14,8 +14,8 @@ import plotly.graph_objects as go
 
 try:
     import trackio.utils as utils
-    from trackio.media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
     from trackio.histogram import Histogram
+    from trackio.media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
@@ -25,8 +25,8 @@ try:
     from trackio.ui.runs import run_page
 except ImportError:
     import utils
-    from media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
     from histogram import Histogram
+    from media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry

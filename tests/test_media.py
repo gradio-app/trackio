@@ -82,6 +82,8 @@ def test_audio_serialization(audio_ndarray, temp_dir):
     assert value.get("_type") == TrackioAudio.TYPE
     assert value.get("file_path") == str(audio._get_relative_file_path())
     assert value.get("caption") == "test_caption"
+
+
 @pytest.mark.parametrize(
     "media_cls, invalid_array",
     [
