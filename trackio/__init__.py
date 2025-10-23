@@ -138,7 +138,7 @@ def init(
     if url is None:
         if space_id is None:
             _, url, share_url = demo.launch(
-                show_api=False,
+                footer_links=["gradio", "settings"],
                 inline=False,
                 quiet=True,
                 prevent_thread_lock=True,
@@ -315,7 +315,7 @@ def show(
     )
 
     _, url, share_url = demo.launch(
-        show_api=_mcp_server,
+        footer_links=["gradio", "settings"],
         quiet=True,
         inline=False,
         prevent_thread_lock=True,
