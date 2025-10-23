@@ -96,7 +96,6 @@ def write_audio(
             "pydub is required for non-WAV formats. Install with: pip install pydub"
         )
 
-    # Non-WAV formats require ffmpeg
     if format != "wav":
         check_ffmpeg_installed()
 
