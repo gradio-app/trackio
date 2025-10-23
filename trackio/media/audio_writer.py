@@ -1,8 +1,3 @@
-"""
-Audio conversion utilities extracted from Gradio for Trackio.
-Provides numpy array to audio file conversion without full Gradio dependency.
-"""
-
 import warnings
 from pathlib import Path
 from typing import Literal
@@ -23,7 +18,6 @@ except ImportError:
     PYDUB_AVAILABLE = False
     AudioSegment = None
 
-# Audio format support
 SUPPORTED_FORMATS = ["wav", "mp3"]
 AudioFormatType = Literal["wav", "mp3"]
 
@@ -43,7 +37,6 @@ def ensure_int16_pcm(data: np.ndarray) -> np.ndarray:
             stacklevel=2,
         )
 
-    # Replace NaN/Inf with finite numbers
     arr = np.nan_to_num(arr, copy=False)
 
     # Floating types: normalize to peak 1.0, then scale to int16
@@ -54,7 +47,6 @@ def ensure_int16_pcm(data: np.ndarray) -> np.ndarray:
         out = (arr * 32767.0).clip(-32768, 32767).astype(np.int16, copy=False)
         return np.ascontiguousarray(out)
 
-    # Integer conversions
     converters: dict[np.dtype, callable] = {
         np.dtype(np.int16): lambda a: a,
         np.dtype(np.int32): lambda a: (
@@ -84,16 +76,6 @@ def write_audio(
     filename: str | Path,
     format: AudioFormatType = "wav",
 ) -> None:
-    """
-    Convert numpy array to audio file using pydub.
-
-    Args:
-        sample_rate: Sample rate in Hz
-        data: Audio data as numpy array
-        filename: Output file path
-        format: Audio format (wav, mp3, etc.)
-    """
-    # Validate inputs
     if not isinstance(sample_rate, int) or sample_rate <= 0:
         raise ValueError(f"Invalid sample_rate: {sample_rate}")
     if format not in SUPPORTED_FORMATS:
@@ -118,7 +100,6 @@ def write_audio(
     if format != "wav":
         check_ffmpeg_installed()
 
-    # Create AudioSegment from numpy array
     channels = 1 if pcm.ndim == 1 else pcm.shape[1]
     audio = AudioSegment(
         pcm.tobytes(),
@@ -127,7 +108,6 @@ def write_audio(
         channels=channels,
     )
 
-    # Export to file
     file = audio.export(str(filename), format=format)
     file.close()
 
@@ -135,10 +115,7 @@ def write_audio(
 def write_wav_simple(
     file_path: str | Path, data: np.ndarray, sample_rate: int = 44100
 ) -> None:
-    """
-    Fallback for basic WAV export when pydub is not available.
-    Only supports 16-bit WAV format.
-    """
+    """Fallback for basic WAV export when pydub is not available."""
     import wave
 
     pcm = ensure_int16_pcm(data)

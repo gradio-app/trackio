@@ -42,10 +42,6 @@ class TrackioMedia(ABC):
         if isinstance(self._value, str | Path):
             if not os.path.isfile(self._value):
                 raise ValueError(f"File not found: {self._value}")
-        elif isinstance(self._value, np.ndarray) and self._value.dtype != np.uint8:
-            raise ValueError(
-                f"Invalid value dtype, expected np.uint8, got {self._value.dtype}"
-            )
 
     def _file_extension(self) -> str:
         if self._file_path:
@@ -145,6 +141,10 @@ class TrackioImage(TrackioMedia):
             and self._format is None
         ):
             self._format = "png"
+        if isinstance(self._value, np.ndarray) and self._value.dtype != np.uint8:
+            raise ValueError(
+                f"Invalid value dtype, expected np.uint8, got {self._value.dtype}"
+            )
 
     def _as_pil(self) -> PILImage.Image | None:
         try:
@@ -222,7 +222,11 @@ class TrackioVideo(TrackioMedia):
                 f"Invalid value type, expected {TrackioVideoSourceType}, got {type(self._value)}"
             )
 
-        if isinstance(value, np.ndarray):
+        if isinstance(self._value, np.ndarray) and self._value.dtype != np.uint8:
+            raise ValueError(
+                f"Invalid value dtype, expected np.uint8, got {self._value.dtype}"
+            )
+        if isinstance(self._value, np.ndarray):
             if format is None:
                 format = "gif"
             if fps is None:
