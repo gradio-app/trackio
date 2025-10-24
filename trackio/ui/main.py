@@ -1245,6 +1245,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                 run_group_by_dd.change,
                 run_tb.input,
                 run_selection_state.change,
+                last_steps.change,
             ],
             inputs=[project_dd, run_group_by_dd, run_tb, run_selection_state],
             show_progress="hidden",
@@ -1278,6 +1279,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             value=ordered_current,
                             show_label=False,
                             key=f"group-cb-{group_key}-{label}",
+                            preserved_by_key=None,
                         )
 
                         gr.on(
