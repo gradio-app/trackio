@@ -6,10 +6,57 @@ Trackio uses environment variables to configure various aspects of its behavior,
 
 ### `TRACKIO_DIR`
 
-Specifies a custom directory for storing Trackio data. By default, Trackio stores data in `~/.cache/huggingface/trackio/`.
+Specifies a custom directory for storing Trackio data. By default, Trackio stores data in `~/.cache/huggingface/trackio/`. 
 
 ```bash
 export TRACKIO_DIR="/path/to/trackio/data"
+```
+
+Note: This environment variable applies as long as Trackio is not running in a Space with persistent storage enabled. If Trackio is running in a Space with persistent storage enabled (which is detected with the `PERSISTANT_STORAGE_ENABLED` env variable), then the Trackio data will be stored in `/data/trackio`.
+
+### `TRACKIO_LOGO_LIGHT_URL` and `TRACKIO_LOGO_DARK_URL`
+
+Customize the logos displayed in the Trackio dashboard for light and dark themes. You can provide URLs to custom logos. Note that both environment variables should be supplied; otherwise, the Trackio default will be used for any variable that is not provided.
+
+```bash
+export TRACKIO_LOGO_LIGHT_URL="https://example.com/logo-light.png"
+export TRACKIO_LOGO_DARK_URL="https://example.com/logo-dark.png"
+```
+
+### `TRACKIO_PLOT_ORDER`
+
+Controls the ordering of plots and metric groups in the Trackio dashboard. The value should be a comma-separated list of metric patterns that specify the desired order. Groups are preserved - if `train/loss` is specified first, all other `train/*` metrics will appear together in the train group, with `train/loss` appearing first within that group.
+
+If a pattern doesn't match any metrics, it's simply ignored without causing errors.
+
+```bash
+export TRACKIO_PLOT_ORDER="train/loss,val/loss"
+
+
+**Pattern Matching:**
+- **Exact matches**: `train/loss` matches exactly `train/loss`
+- **Group wildcards**: `train/*` matches all metrics starting with `train/`
+- **Partial wildcards**: `*gpu*` matches any metric containing "gpu"
+
+**Behavior:**
+- Metrics are grouped first (e.g., all `train/*` metrics stay together)
+- Within each group, metrics are ordered according to the specified patterns
+- Groups appear in the order of their first matching pattern
+- Unspecified metrics appear in alphabetical order after specified ones
+
+### `TRACKIO_THEME`
+
+Sets the theme for the Trackio dashboard. Can be a built-in Gradio theme name or a theme from the Hugging Face Hub.
+
+```bash
+# Built-in themes
+export TRACKIO_THEME="soft"
+export TRACKIO_THEME="citrus"
+export TRACKIO_THEME="monochrome"
+
+# Themes from the Hub
+export TRACKIO_THEME="gstaff/xkcd"
+export TRACKIO_THEME="ParityError/Anime"
 ```
 
 ### `TRACKIO_DATASET_ID`

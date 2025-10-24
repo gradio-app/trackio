@@ -1,5 +1,9 @@
 <p align="center">
-<img width="75%" src="https://github.com/user-attachments/assets/6d6a41e7-fbc1-43ec-bda6-15f9ff4bd25c" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="trackio/assets/trackio_logo_type_dark_transparent.png">
+  <source media="(prefers-color-scheme: light)" srcset="trackio/assets/trackio_logo_type_light_transparent.png">
+  <img width="75%" alt="Trackio Logo" src="trackio/assets/trackio_logo_type_light_transparent.png">
+</picture>
   
 </p>
 
@@ -44,7 +48,7 @@ pip install trackio
 
 or with `uv`:
 
-```py
+```bash
 uv pip install trackio
 ```
 
@@ -89,7 +93,7 @@ trackio.finish()
 
 Running the above will print to the terminal instructions on launching the dashboard.
 
-The usage of `trackio` is designed to be a identical to `wandb` in most cases, so you can easily switch between the two libraries.
+The usage of `trackio` is designed to be identical to `wandb` in most cases, so you can easily switch between the two libraries.
 
 ```py
 import trackio as wandb
@@ -159,7 +163,10 @@ Supported query parameters:
 
 - `project`: (string) Filter the dashboard to show only a specific project
 - `metrics`: (comma-separated list) Filter the dashboard to show only specific metrics, e.g. `train_loss,train_accuracy`
-- `sidebar`: (string: one of "hidden" or "collapsed"). If "hidden", then the sidebar will not be visible. If "collapsed", the sidebar will be in a collpased state initially but the user will be able to open it. Otherwise, by default, the sidebar is shown in an open and visible state.
+- `sidebar`: (string: one of "hidden" or "collapsed"). If "hidden", then the sidebar will not be visible. If "collapsed", the sidebar will be in a collapsed state initially but the user will be able to open it. Otherwise, by default, the sidebar is shown in an open and visible state.
+- `xmin`: (number) Set the initial minimum value for the x-axis limits across all metric plots.
+- `xmax`: (number) Set the initial maximum value for the x-axis limits across all metric plots.
+- `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
 
 ## Examples
 
@@ -181,11 +188,11 @@ MIT License
 
 ## Documentation
 
-The complete documentation and API reference for each version fo Trackio can be found at: https://huggingface.co/docs/trackio/index
+The complete documentation and API reference for each version of Trackio can be found at: https://huggingface.co/docs/trackio/index
 
 ## Contribute
 
-We welcome contributions to Trackio! Whether you're fixing bugs, adding features, or improving documentation, your contributions help make Trackio btter for the entire machine learning community.
+We welcome contributions to Trackio! Whether you're fixing bugs, adding features, or improving documentation, your contributions help make Trackio better for the entire machine learning community.
 
 <p align="center">
   <img src="https://contrib.rocks/image?repo=gradio-app/trackio" />

@@ -16,7 +16,7 @@ def main():
     ui_parser.add_argument(
         "--theme",
         required=False,
-        default="citrus",
+        default="default",
         help="A Gradio Theme to use for the dashboard instead of the default, can be a built-in theme (e.g. 'soft', 'citrus'), or a theme from the Hub (e.g. 'gstaff/xkcd').",
     )
     ui_parser.add_argument(

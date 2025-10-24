@@ -99,10 +99,12 @@ def deploy_as_space(
     is_source_install = _is_trackio_installed_from_source()
 
     if is_source_install:
-        requirements_content = """pyarrow>=21.0"""
+        requirements_content = """pyarrow>=21.0
+plotly>=6.0.0,<7.0.0"""
     else:
         requirements_content = f"""pyarrow>=21.0
-trackio=={trackio.__version__}"""
+trackio=={trackio.__version__}
+plotly>=6.0.0,<7.0.0"""
 
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(
@@ -137,6 +139,21 @@ trackio.show()"""
     if dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
 
+    if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
+        huggingface_hub.add_space_variable(
+            space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
+        )
+    if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
+        huggingface_hub.add_space_variable(
+            space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
+        )
+
+    if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_PLOT_ORDER", plot_order)
+
+    if theme := os.environ.get("TRACKIO_THEME"):
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
+
 
 def create_space_if_not_exists(
     space_id: str,
@@ -169,6 +186,22 @@ def create_space_if_not_exists(
             huggingface_hub.add_space_variable(
                 space_id, "TRACKIO_DATASET_ID", dataset_id
             )
+        if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
+            )
+        if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
+            )
+
+        if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_PLOT_ORDER", plot_order
+            )
+
+        if theme := os.environ.get("TRACKIO_THEME"):
+            huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
         return
     except RepositoryNotFoundError:
         pass
