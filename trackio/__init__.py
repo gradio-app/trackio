@@ -47,7 +47,6 @@ __all__ = [
 Image = TrackioImage
 Video = TrackioVideo
 
-
 config = {}
 
 DEFAULT_THEME = "citrus"
@@ -68,56 +67,6 @@ def init(
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
-
-    Args:
-        project (`str`):
-            The name of the project (can be an existing project to continue tracking or
-            a new project to start tracking from scratch).
-        name (`str`, *optional*):
-            The name of the run (if not provided, a default name will be generated).
-        group (`str`, *optional*):
-            The name of the group which this run belongs to in order to help organize
-            related runs together. You can toggle the entire group's visibilitiy in the
-            dashboard.
-        space_id (`str`, *optional*):
-            If provided, the project will be logged to a Hugging Face Space instead of
-            a local directory. Should be a complete Space name like
-            `"username/reponame"` or `"orgname/reponame"`, or just `"reponame"` in which
-            case the Space will be created in the currently-logged-in Hugging Face
-            user's namespace. If the Space does not exist, it will be created. If the
-            Space already exists, the project will be logged to it.
-        space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
-            Choice of persistent storage tier.
-        dataset_id (`str`, *optional*):
-            If a `space_id` is provided, a persistent Hugging Face Dataset will be
-            created and the metrics will be synced to it every 5 minutes. Specify a
-            Dataset with name like `"username/datasetname"` or `"orgname/datasetname"`,
-            or `"datasetname"` (uses currently-logged-in Hugging Face user's namespace),
-            or `None` (uses the same name as the Space but with the `"_dataset"`
-            suffix). If the Dataset does not exist, it will be created. If the Dataset
-            already exists, the project will be appended to it.
-        config (`dict`, *optional*):
-            A dictionary of configuration options. Provided for compatibility with
-            `wandb.init()`.
-        resume (`str`, *optional*, defaults to `"never"`):
-            Controls how to handle resuming a run. Can be one of:
-
-            - `"must"`: Must resume the run with the given name, raises error if run
-              doesn't exist
-            - `"allow"`: Resume the run if it exists, otherwise create a new run
-            - `"never"`: Never resume a run, always create a new one
-        private (`bool`, *optional*):
-            Whether to make the Space private. If None (default), the repo will be
-            public unless the organization's default is private. This value is ignored
-            if the repo already exists.
-        settings (`Any`, *optional*):
-            Not used. Provided for compatibility with `wandb.init()`.
-        embed (`bool`, *optional*, defaults to `True`):
-            If running inside a jupyter/Colab notebook, whether the dashboard should
-            automatically be embedded in the cell when trackio.init() is called.
-
-    Returns:
-        `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
     if settings is not None:
         warnings.warn(
@@ -130,10 +79,12 @@ def init(
     url = context_vars.current_server.get()
     share_url = context_vars.current_share_server.get()
 
+    show_api_flag = os.getenv("TRACKIO_SHOW_API", "").lower() in ("1", "true", "yes", "on")
+
     if url is None:
         if space_id is None:
             _, url, share_url = demo.launch(
-                show_api=False,
+                show_api=show_api_flag,
                 inline=False,
                 quiet=True,
                 prevent_thread_lock=True,
@@ -141,11 +92,22 @@ def init(
                 favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
                 allowed_paths=[TRACKIO_LOGO_DIR],
             )
+
+            # --- Mount explicit /api/* aliases after Gradio has launched ---
+            if show_api_flag:
+                try:
+                    from trackio.ui.main import _mount_rest_api
+                    _mount_rest_api(demo)
+                    print("* Trackio REST API mounted at /api/*")
+                except Exception as e:
+                    print(f"* Warning: could not mount /api/* routes: {e}")
+
         else:
             url = space_id
             share_url = None
         context_vars.current_server.set(url)
         context_vars.current_share_server.set(share_url)
+
     if (
         context_vars.current_project.get() is None
         or context_vars.current_project.get() != project
@@ -227,21 +189,11 @@ def init(
 def log(metrics: dict, step: int | None = None) -> None:
     """
     Logs metrics to the current run.
-
-    Args:
-        metrics (`dict`):
-            A dictionary of metrics to log.
-        step (`int`, *optional*):
-            The step number. If not provided, the step will be incremented
-            automatically.
     """
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.log().")
-    run.log(
-        metrics=metrics,
-        step=step,
-    )
+    run.log(metrics=metrics, step=step)
 
 
 def finish():
@@ -261,25 +213,9 @@ def show(
 ):
     """
     Launches the Trackio dashboard.
-
-    Args:
-        project (`str`, *optional*):
-            The name of the project whose runs to show. If not provided, all projects
-            will be shown and the user can select one.
-        theme (`str` or `ThemeClass`, *optional*, defaults to `"citrus"`):
-            A Gradio Theme to use for the dashboard instead of the default `"citrus"`,
-            can be a built-in theme (e.g. `'soft'`, `'default'`), a theme from the Hub
-            (e.g. `"gstaff/xkcd"`), or a custom Theme class.
-        mcp_server (`bool`, *optional*):
-            If `True`, the Trackio dashboard will be set up as an MCP server and certain
-            functions will be added as MCP tools. If `None` (default behavior), then the
-            `GRADIO_MCP_SERVER` environment variable will be used to determine if the
-            MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
     """
     if theme != DEFAULT_THEME:
-        # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
-        # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
-        # will be able to remove this code.
+        # Theme handling (as before)
         if isinstance(theme, str):
             if theme.lower() in BUILT_IN_THEMES:
                 theme = BUILT_IN_THEMES[theme.lower()]

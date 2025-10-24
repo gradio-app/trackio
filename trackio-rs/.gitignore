@@ -1,0 +1,41 @@
+# Rust build
+/target/
+
+# Cargo package metadata
+Cargo.lock
+
+# Logs and backups
+*.log
+*.bak
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage/
+*.profraw
+*.profdata
+
+# Examples or scratch builds
+/examples/target/
+/examples/**/target/
+
+# Build outputs for docs/tests
+/doc/
+/dist/
+/build/
+
+# Environment files
+.env
+.env.*
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
