@@ -79,7 +79,12 @@ def init(
     url = context_vars.current_server.get()
     share_url = context_vars.current_share_server.get()
 
-    show_api_flag = os.getenv("TRACKIO_SHOW_API", "").lower() in ("1", "true", "yes", "on")
+    show_api_flag = os.getenv("TRACKIO_SHOW_API", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
     if url is None:
         if space_id is None:
@@ -97,6 +102,7 @@ def init(
             if show_api_flag:
                 try:
                     from trackio.ui.main import _mount_rest_api
+
                     _mount_rest_api(demo)
                     print("* Trackio REST API mounted at /api/*")
                 except Exception as e:

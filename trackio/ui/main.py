@@ -5,12 +5,11 @@ import re
 import secrets
 import shutil
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import gradio as gr
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 try:
@@ -93,6 +92,7 @@ trackio.finish()
 Read the [Trackio documentation](https://huggingface.co/docs/trackio/en/index) for more examples.
 """
 
+
 class BulkLogBody(BaseModel):
     project: str
     run: str
@@ -109,9 +109,13 @@ def _mount_rest_api(app_blocks):
     demo.launch(show_api=False).
     """
     # Gradio exposes the underlying FastAPI app as .server_app (newer) or .app (older)
-    fastapi_app = getattr(app_blocks, "server_app", None) or getattr(app_blocks, "app", None)
+    fastapi_app = getattr(app_blocks, "server_app", None) or getattr(
+        app_blocks, "app", None
+    )
     if fastapi_app is None:
-        print("* Warning: Could not access FastAPI app from Gradio Blocks; REST API not mounted.")
+        print(
+            "* Warning: Could not access FastAPI app from Gradio Blocks; REST API not mounted."
+        )
         return
 
     from trackio.sqlite_storage import SQLiteStorage  # local import to avoid cycles
@@ -139,6 +143,7 @@ def _mount_rest_api(app_blocks):
     @fastapi_app.get("/api/logs/{project}/{run}")
     def api_logs(project: str, run: str):
         return SQLiteStorage.get_logs(project, run)
+
 
 def get_runs(project) -> list[str]:
     if not project:

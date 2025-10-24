@@ -70,6 +70,28 @@ class SQLiteStorage:
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
+    # --- helpers to deal with connection cache & atomic writes on macOS ---
+
+    @staticmethod
+    def _close_cached_connection(db_path: "Path") -> None:
+        try:
+            cache = getattr(SQLiteStorage, "_connections", None)
+            if not cache:
+                return
+            conn = cache.pop(db_path, None)
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    @staticmethod
+    def _atomic_replace(src_path: "Path", dst_path: "Path") -> None:
+        # os.replace is atomic on POSIX; avoids readers seeing a half-written DB.
+        os.replace(src_path, dst_path)
+
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path), timeout=30.0)
@@ -184,29 +206,61 @@ class SQLiteStorage:
     @staticmethod
     def import_from_parquet():
         """
-        Imports to all DB files that have matching files under the same path but with extension ".parquet".
+        Import all *.parquet files in TRACKIO_DIR into matching SQLite DBs (atomic).
+        Handles cases where a previous connection might still be cached by closing
+        it and replacing the DB atomically to avoid 'disk I/O error' on macOS.
         """
         all_paths = os.listdir(TRACKIO_DIR)
         parquet_paths = [f for f in all_paths if f.endswith(".parquet")]
-        for parquet_path in parquet_paths:
-            parquet_path = TRACKIO_DIR / parquet_path
+
+        for parquet_name in parquet_paths:
+            parquet_path = TRACKIO_DIR / parquet_name
             db_path = parquet_path.with_suffix(".db")
+            tmp_path = db_path.with_suffix(".db.tmp")
+
+            # Ensure parent exists
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Close any cached connection before we touch this DB path
+            SQLiteStorage._close_cached_connection(db_path)
+
+            # Read parquet → normalize schema → write to temp DB first
             df = pd.read_parquet(parquet_path)
-            with sqlite3.connect(db_path) as conn:
-                # fix up df to have a single JSON metrics column
-                if "metrics" not in df.columns:
-                    # separate other columns from metrics
-                    metrics = df.copy()
-                    other_cols = ["id", "timestamp", "run_name", "step"]
-                    df = df[other_cols]
-                    for col in other_cols:
-                        del metrics[col]
-                    # combine them all into a single metrics col
-                    metrics = orjson.loads(metrics.to_json(orient="records"))
-                    df["metrics"] = [
-                        orjson.dumps(serialize_values(row)) for row in metrics
-                    ]
+
+            # If the parquet is "wide" (metrics split into columns), re-pack into one JSON "metrics" column
+            if "metrics" not in df.columns:
+                metrics = df.copy()
+                other_cols = ["id", "timestamp", "run_name", "step"]
+                # The parquet may or may not have all these columns; keep those that exist
+                existing_other = [c for c in other_cols if c in df.columns]
+                # (Re)build df with just the core columns (missing ones will be created later if needed)
+                core = df[existing_other].copy()
+                for c in existing_other:
+                    del metrics[c]
+
+                # JSON-pack metrics payload row-wise
+                metrics_json = orjson.loads(metrics.to_json(orient="records"))
+                core["metrics"] = [
+                    orjson.dumps(serialize_values(row)) for row in metrics_json
+                ]
+                df = core
+
+            # Write to a temporary database first, then atomically replace
+            with sqlite3.connect(tmp_path) as conn:
+                # Create table and insert in one go
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
+                # Make sure content is on disk before we replace
+                conn.commit()
+                try:
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+                except Exception:
+                    pass
+
+            # Atomic replace to avoid readers seeing a partially-written DB
+            SQLiteStorage._atomic_replace(tmp_path, db_path)
+
+            # Make sure any stale cached connection is gone; next read will reopen
+            SQLiteStorage._close_cached_connection(db_path)
 
     @staticmethod
     def get_scheduler():
