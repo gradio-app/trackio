@@ -14,9 +14,8 @@ import plotly.graph_objects as go
 
 try:
     import trackio.utils as utils
-    from trackio.file_storage import FileStorage
     from trackio.histogram import Histogram
-    from trackio.media import TrackioImage, TrackioVideo
+    from trackio.media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
@@ -26,9 +25,8 @@ try:
     from trackio.ui.runs import run_page
 except ImportError:
     import utils
-    from file_storage import FileStorage
     from histogram import Histogram
-    from media import TrackioImage, TrackioVideo
+    from media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
@@ -132,6 +130,7 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
 class MediaData:
     caption: str | None
     file_path: str
+    type: str
 
 
 def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
@@ -141,12 +140,17 @@ def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
         for key, value in log.items():
             if isinstance(value, dict):
                 type = value.get("_type")
-                if type == TrackioImage.TYPE or type == TrackioVideo.TYPE:
+                if (
+                    type == TrackioImage.TYPE
+                    or type == TrackioVideo.TYPE
+                    or type == TrackioAudio.TYPE
+                ):
                     if key not in media_by_key:
                         media_by_key[key] = []
                     try:
                         media_data = MediaData(
                             file_path=utils.MEDIA_DIR / value.get("file_path"),
+                            type=type,
                             caption=value.get("caption"),
                         )
                         media_by_key[key].append(media_data)
@@ -509,13 +513,39 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
         with gr.Group(elem_classes=("media-group")):
             for run, media_by_key in media_by_run.items():
                 with gr.Tab(label=run, elem_classes=("media-tab")):
-                    for key, media_item in media_by_key.items():
-                        gr.Gallery(
-                            [(item.file_path, item.caption) for item in media_item],
-                            label=key,
-                            columns=6,
-                            elem_classes=("media-gallery"),
-                        )
+                    for key, media_items in media_by_key.items():
+                        image_and_video = [
+                            item
+                            for item in media_items
+                            if item.type in [TrackioImage.TYPE, TrackioVideo.TYPE]
+                        ]
+                        audio = [
+                            item
+                            for item in media_items
+                            if item.type == TrackioAudio.TYPE
+                        ]
+                        if image_and_video:
+                            gr.Gallery(
+                                [
+                                    (item.file_path, item.caption)
+                                    for item in image_and_video
+                                ],
+                                label=key,
+                                columns=6,
+                                elem_classes=("media-gallery"),
+                            )
+                        if audio:
+                            with gr.Accordion(
+                                label=key, elem_classes=("media-audio-accordion")
+                            ):
+                                for i in range(0, len(audio), 3):
+                                    with gr.Row(elem_classes=("media-audio-row")):
+                                        for item in audio[i : i + 3]:
+                                            gr.Audio(
+                                                value=item.file_path,
+                                                label=item.caption,
+                                                elem_classes=("media-audio-item"),
+                                            )
 
 
 css = """
@@ -561,6 +591,18 @@ css = """
 .media-group, .media-group > div { background: none; }
 .media-group .tabs { padding: 0.5em; }
 .media-tab { max-height: 500px; overflow-y: scroll; }
+.media-audio-accordion > button { 
+    border-bottom-width: 1px;
+    padding-bottom: 3px;
+}
+.media-audio-item {
+    border-width: 1px !important;
+    border-radius: 0.5em;
+}
+.media-audio-row {
+    gap: 0.25em;
+    margin-bottom: 0.25em;
+}
 """
 
 javascript = """
@@ -907,16 +949,16 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         metric_filter,
     ):
         dfs = []
-        images_by_run = {}
+        media_by_run = {}
         original_runs = runs.copy()
 
         for run in runs:
-            df, images_by_key = load_run_data(
+            df, media_by_key = load_run_data(
                 project, run, smoothing_granularity, x_axis, log_scale
             )
             if df is not None:
                 dfs.append(df)
-                images_by_run[run] = images_by_key
+                media_by_run[run] = media_by_key
 
         if dfs:
             if smoothing_granularity > 0:
@@ -1098,8 +1140,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                             key=f"double-{metric_idx}",
                                         )
                                     metric_idx += 1
-        if images_by_run and any(any(images) for images in images_by_run.values()):
-            create_media_section(images_by_run)
+        if media_by_run and any(any(media) for media in media_by_run.values()):
+            create_media_section(media_by_run)
 
         table_cols = master_df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
@@ -1243,6 +1285,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                 run_group_by_dd.change,
                 run_tb.input,
                 run_selection_state.change,
+                last_steps.change,
             ],
             inputs=[project_dd, run_group_by_dd, run_tb, run_selection_state],
             show_progress="hidden",
@@ -1276,6 +1319,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             value=ordered_current,
                             show_label=False,
                             key=f"group-cb-{group_key}-{label}",
+                            preserved_by_key=None,
                         )
 
                         gr.on(
