@@ -1,5 +1,11 @@
 # trackio
 
+## 0.8.0
+
+### Features
+
+- [#324](https://github.com/gradio-app/trackio/pull/324) [`50b2122`](https://github.com/gradio-app/trackio/commit/50b2122e7965ac82a72e6cb3b7d048bc10a2a6b1) - Add log y-axis functionality to UI.  Thanks @abidlabs!
+
 ## 0.7.0
 
 ### Features
