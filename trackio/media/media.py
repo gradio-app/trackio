@@ -9,13 +9,15 @@ import numpy as np
 from PIL import Image as PILImage
 
 try:  # absolute imports when installed
-    from trackio.file_storage import FileStorage
+    from trackio.media.audio_writer import AudioFormatType, write_audio
+    from trackio.media.file_storage import FileStorage
+    from trackio.media.video_writer import write_video
     from trackio.utils import MEDIA_DIR
-    from trackio.video_writer import write_video
 except ImportError:  # relative imports for local execution on Spaces
-    from file_storage import FileStorage
+    from media.audio_writer import AudioFormatType, write_audio
+    from media.file_storage import FileStorage
+    from media.video_writer import write_video
     from utils import MEDIA_DIR
-    from video_writer import write_video
 
 
 class TrackioMedia(ABC):
@@ -40,10 +42,6 @@ class TrackioMedia(ABC):
         if isinstance(self._value, str | Path):
             if not os.path.isfile(self._value):
                 raise ValueError(f"File not found: {self._value}")
-        elif isinstance(self._value, np.ndarray) and self._value.dtype != np.uint8:
-            raise ValueError(
-                f"Invalid value dtype, expected np.uint8, got {self._value.dtype}"
-            )
 
     def _file_extension(self) -> str:
         if self._file_path:
@@ -137,7 +135,10 @@ class TrackioImage(TrackioMedia):
             raise ValueError(
                 f"Invalid value type, expected {TrackioImageSourceType}, got {type(self._value)}"
             )
-
+        if isinstance(self._value, np.ndarray) and self._value.dtype != np.uint8:
+            raise ValueError(
+                f"Invalid value dtype, expected np.uint8, got {self._value.dtype}"
+            )
         if (
             isinstance(self._value, np.ndarray | PILImage.Image)
             and self._format is None
@@ -219,8 +220,11 @@ class TrackioVideo(TrackioMedia):
             raise ValueError(
                 f"Invalid value type, expected {TrackioVideoSourceType}, got {type(self._value)}"
             )
-
-        if isinstance(value, np.ndarray):
+        if isinstance(self._value, np.ndarray):
+            if self._value.dtype != np.uint8:
+                raise ValueError(
+                    f"Invalid value dtype, expected np.uint8, got {self._value.dtype}"
+                )
             if format is None:
                 format = "gif"
             if fps is None:
@@ -297,3 +301,78 @@ class TrackioVideo(TrackioMedia):
         video = video.transpose(2, 0, 4, 1, 5, 3)
         video = video.reshape(frames, n_rows * height, n_cols * width, channels)
         return video
+
+
+TrackioAudioSourceType = str | Path | np.ndarray
+
+
+class TrackioAudio(TrackioMedia):
+    """
+    Initializes an Audio object.
+
+    Example:
+        ```python
+        import trackio
+        import numpy as np
+
+        # Generate a 1-second 440 Hz sine wave (mono)
+        sr = 16000
+        t = np.linspace(0, 1, sr, endpoint=False)
+        wave = 0.2 * np.sin(2 * np.pi * 440 * t)
+        audio = trackio.Audio(wave, caption="A4 sine", sample_rate=sr, format="wav")
+        trackio.log({"tone": audio})
+
+        # Stereo from numpy array (shape: samples, 2)
+        stereo = np.stack([wave, wave], axis=1)
+        audio = trackio.Audio(stereo, caption="Stereo", sample_rate=sr, format="mp3")
+        trackio.log({"stereo": audio})
+
+        # From an existing file
+        audio = trackio.Audio("path/to/audio.wav", caption="From file")
+        trackio.log({"file_audio": audio})
+        ```
+
+    Args:
+        value (`str`, `Path`, or `numpy.ndarray`, *optional*):
+            A path to an audio file, or a numpy array.
+            The array should be shaped `(samples,)` for mono or `(samples, 2)` for stereo.
+            Float arrays will be peak-normalized and converted to 16-bit PCM; integer arrays will be converted to 16-bit PCM as needed.
+        caption (`str`, *optional*):
+            A string caption for the audio.
+        sample_rate (`int`, *optional*):
+            Sample rate in Hz. Required when `value` is a numpy array.
+        format (`Literal["wav", "mp3"]`, *optional*):
+            Audio format used when `value` is a numpy array. Default is "wav".
+    """
+
+    TYPE = "trackio.audio"
+
+    def __init__(
+        self,
+        value: TrackioAudioSourceType,
+        caption: str | None = None,
+        sample_rate: int | None = None,
+        format: AudioFormatType | None = None,
+    ):
+        super().__init__(value, caption)
+        if isinstance(value, np.ndarray):
+            if sample_rate is None:
+                raise ValueError("Sample rate is required when value is an ndarray")
+            if format is None:
+                format = "wav"
+        self._format = format
+        self._sample_rate = sample_rate
+
+    def _save_media(self, file_path: Path):
+        if isinstance(self._value, np.ndarray):
+            write_audio(
+                data=self._value,
+                sample_rate=self._sample_rate,
+                filename=file_path,
+                format=self._format,
+            )
+        elif isinstance(self._value, str | Path):
+            if os.path.isfile(self._value):
+                shutil.copy(self._value, file_path)
+            else:
+                raise ValueError(f"File not found: {self._value}")
