@@ -294,7 +294,9 @@ def show(
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
     if theme != DEFAULT_THEME:
-        # Theme handling (as before)
+        # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
+        # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we	
+        # will be able to remove this code.
         if isinstance(theme, str):
             if theme.lower() in BUILT_IN_THEMES:
                 theme = BUILT_IN_THEMES[theme.lower()]
