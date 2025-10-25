@@ -250,6 +250,13 @@ def init(
 def log(metrics: dict, step: int | None = None) -> None:
     """
     Logs metrics to the current run.
+
+    Args:	
+        metrics (`dict`):	
+            A dictionary of metrics to log.	
+        step (`int`, *optional*):	
+            The step number. If not provided, the step will be incremented	
+            automatically.
     """
     run = context_vars.current_run.get()
     if run is None:
@@ -295,7 +302,7 @@ def show(
 
     if theme != DEFAULT_THEME:
         # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
-        # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we	
+        # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
         # will be able to remove this code.
         if isinstance(theme, str):
             if theme.lower() in BUILT_IN_THEMES:
