@@ -74,6 +74,54 @@ def init(
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
+
+    Args:
+        project (`str`):
+            The name of the project (can be an existing project to continue tracking or
+            a new project to start tracking from scratch).
+        name (`str`, *optional*):
+            The name of the run (if not provided, a default name will be generated).
+        group (`str`, *optional*):
+            The name of the group which this run belongs to in order to help organize
+            related runs together. You can toggle the entire group's visibilitiy in the
+            dashboard.
+        space_id (`str`, *optional*):
+            If provided, the project will be logged to a Hugging Face Space instead of
+            a local directory. Should be a complete Space name like
+            `"username/reponame"` or `"orgname/reponame"`, or just `"reponame"` in which
+            case the Space will be created in the currently-logged-in Hugging Face
+            user's namespace. If the Space does not exist, it will be created. If the
+            Space already exists, the project will be logged to it.
+        space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
+            Choice of persistent storage tier.
+        dataset_id (`str`, *optional*):
+            If a `space_id` is provided, a persistent Hugging Face Dataset will be
+            created and the metrics will be synced to it every 5 minutes. Specify a
+            Dataset with name like `"username/datasetname"` or `"orgname/datasetname"`,
+            or `"datasetname"` (uses currently-logged-in Hugging Face user's namespace),
+            or `None` (uses the same name as the Space but with the `"_dataset"`
+            suffix). If the Dataset does not exist, it will be created. If the Dataset
+            already exists, the project will be appended to it.
+        config (`dict`, *optional*):
+            A dictionary of configuration options. Provided for compatibility with
+            `wandb.init()`.
+        resume (`str`, *optional*, defaults to `"never"`):
+            Controls how to handle resuming a run. Can be one of:
+            - `"must"`: Must resume the run with the given name, raises error if run
+              doesn't exist
+            - `"allow"`: Resume the run if it exists, otherwise create a new run
+            - `"never"`: Never resume a run, always create a new one
+        private (`bool`, *optional*):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
+        settings (`Any`, *optional*):
+            Not used. Provided for compatibility with `wandb.init()`.
+        embed (`bool`, *optional*, defaults to `True`):
+            If running inside a jupyter/Colab notebook, whether the dashboard should
+            automatically be embedded in the cell when trackio.init() is called.
+    Returns:
+        `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
     if settings is not None:
         warnings.warn(
