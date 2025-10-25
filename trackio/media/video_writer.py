@@ -1,20 +1,15 @@
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 
+try:  # absolute imports when installed
+    from trackio.media.utils import check_ffmpeg_installed, check_path
+except ImportError:  # relative imports for local execution on Spaces
+    from media.utils import check_ffmpeg_installed, check_path
+
 VideoCodec = Literal["h264", "vp9", "gif"]
-
-
-def _check_ffmpeg_installed() -> None:
-    """Raise an error if ffmpeg is not available on the system PATH."""
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError(
-            "ffmpeg is required to write video but was not found on your system. "
-            "Please install ffmpeg and ensure it is available on your PATH."
-        )
 
 
 def _check_array_format(video: np.ndarray) -> None:
@@ -31,24 +26,12 @@ def _check_array_format(video: np.ndarray) -> None:
         )
 
 
-def _check_path(file_path: str | Path) -> None:
-    """Raise an error if the parent directory does not exist."""
-    file_path = Path(file_path)
-    if not file_path.parent.exists():
-        try:
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            raise ValueError(
-                f"Failed to create parent directory {file_path.parent}: {e}"
-            )
-
-
 def write_video(
     file_path: str | Path, video: np.ndarray, fps: float, codec: VideoCodec
 ) -> None:
     """RGB uint8 only, shape (F, H, W, 3)."""
-    _check_ffmpeg_installed()
-    _check_path(file_path)
+    check_ffmpeg_installed()
+    check_path(file_path)
 
     if codec not in {"h264", "vp9", "gif"}:
         raise ValueError("Unsupported codec. Use h264, vp9, or gif.")
