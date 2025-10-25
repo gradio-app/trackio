@@ -1079,10 +1079,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     title=metric_name,
                                     key=f"plot-{metric_idx}",
                                     preserved_by_key=None,
+                                    buttons=["fullscreen", "export"],
                                     x_lim=updated_x_lim,
-                                    show_fullscreen_button=True,
                                     min_width=400,
-                                    show_export_button=True,
                                 )
                                 plot.select(
                                     update_x_lim,
@@ -1144,10 +1143,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                             title=metric_name,
                                             key=f"plot-{metric_idx}",
                                             preserved_by_key=None,
+                                            buttons=["fullscreen", "export"],
                                             x_lim=updated_x_lim,
-                                            show_fullscreen_button=True,
                                             min_width=400,
-                                            show_export_button=True,
                                         )
                                         plot.select(
                                             update_x_lim,
