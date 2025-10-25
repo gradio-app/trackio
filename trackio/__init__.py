@@ -251,11 +251,11 @@ def log(metrics: dict, step: int | None = None) -> None:
     """
     Logs metrics to the current run.
 
-    Args:	
-        metrics (`dict`):	
-            A dictionary of metrics to log.	
-        step (`int`, *optional*):	
-            The step number. If not provided, the step will be incremented	
+    Args:
+        metrics (`dict`):
+            A dictionary of metrics to log.
+        step (`int`, *optional*):
+            The step number. If not provided, the step will be incremented
             automatically.
     """
     run = context_vars.current_run.get()
