@@ -1184,24 +1184,27 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                     for metric_idx, metric_name in enumerate(table_cols):
                         metric_df = master_df.dropna(subset=[metric_name])
                         if not metric_df.empty:
-                            value = metric_df[metric_name].iloc[-1]
-                            if (
-                                isinstance(value, dict)
-                                and "_type" in value
-                                and value["_type"] == Table.TYPE
-                            ):
-                                try:
-                                    df = pd.DataFrame(value["_value"])
-                                    gr.DataFrame(
-                                        df,
-                                        label=f"{metric_name} (latest)",
-                                        key=f"table-{metric_idx}",
-                                        wrap=True,
-                                    )
-                                except Exception as e:
-                                    gr.Warning(
-                                        f"Column {metric_name} failed to render as a table: {e}"
-                                    )
+                            table_dfs = []
+                            for value in metric_df[metric_name]:
+                                if (
+                                    isinstance(value, dict)
+                                    and value.get("_type") == Table.TYPE
+                                ):
+                                    try:
+                                        table_dfs.append(pd.DataFrame(value["_value"]))
+                                    except Exception as e:
+                                        gr.Warning(
+                                            f"Column {metric_name} table load failed: {e}"
+                                        )
+
+                            if table_dfs:
+                                combined_df = pd.concat(table_dfs, ignore_index=True)
+                                gr.DataFrame(
+                                    combined_df,
+                                    label=f"{metric_name}",
+                                    key=f"table-{metric_idx}",
+                                    wrap=True,
+                                )
 
         # Display histograms
         histogram_cols = set(master_df.columns) - {
