@@ -54,7 +54,6 @@ Image = TrackioImage
 Video = TrackioVideo
 Audio = TrackioAudio
 
-
 config = {}
 
 DEFAULT_THEME = "default"
@@ -108,7 +107,6 @@ def init(
             `wandb.init()`.
         resume (`str`, *optional*, defaults to `"never"`):
             Controls how to handle resuming a run. Can be one of:
-
             - `"must"`: Must resume the run with the given name, raises error if run
               doesn't exist
             - `"allow"`: Resume the run if it exists, otherwise create a new run
@@ -122,7 +120,6 @@ def init(
         embed (`bool`, *optional*, defaults to `True`):
             If running inside a jupyter/Colab notebook, whether the dashboard should
             automatically be embedded in the cell when trackio.init() is called.
-
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
@@ -137,10 +134,17 @@ def init(
     url = context_vars.current_server.get()
     share_url = context_vars.current_share_server.get()
 
+    show_api_flag = os.getenv("TRACKIO_SHOW_API", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
     if url is None:
         if space_id is None:
             _, url, share_url = demo.launch(
-                show_api=False,
+                show_api=show_api_flag,
                 inline=False,
                 quiet=True,
                 prevent_thread_lock=True,
@@ -148,11 +152,23 @@ def init(
                 favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
                 allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
             )
+
+            # --- Mount explicit /api/* aliases after Gradio has launched ---
+            if show_api_flag:
+                try:
+                    from trackio.ui.main import _mount_rest_api
+
+                    _mount_rest_api(demo)
+                    print("* Trackio REST API mounted at /api/*")
+                except Exception as e:
+                    print(f"* Warning: could not mount /api/* routes: {e}")
+
         else:
             url = space_id
             share_url = None
         context_vars.current_server.set(url)
         context_vars.current_share_server.set(share_url)
+
     if (
         context_vars.current_project.get() is None
         or context_vars.current_project.get() != project
@@ -245,10 +261,7 @@ def log(metrics: dict, step: int | None = None) -> None:
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.log().")
-    run.log(
-        metrics=metrics,
-        step=step,
-    )
+    run.log(metrics=metrics, step=step)
 
 
 def finish():
