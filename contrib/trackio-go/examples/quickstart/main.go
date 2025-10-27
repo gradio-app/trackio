@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	trackio "github.com/gradio-app/trackio/trackio-go"
+	trackio "github.com/gradio-app/trackio/contrib/trackio-go"
 )
 
 func waitForAPI(base string, deadline time.Duration) (string, error) {

@@ -5,7 +5,7 @@ A minimal Go client for [Trackio](https://github.com/gradio-app/trackio), the op
 ## Install
 
 ```bash
-go get github.com/gradio-app/trackio/trackio-go
+go get github.com/gradio-app/trackio/contrib/trackio-go
 ```
 
 ## Quickstart
