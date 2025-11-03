@@ -33,22 +33,18 @@ def test_table_with_images(image_ndarray, temp_dir):
 
     table = Table(dataframe=df)
 
-    # Verify that the table has stored the dataframe
     assert isinstance(table.data, pd.DataFrame)
 
-    # Test serialization
     result = table._to_dict(project=PROJECT_NAME, run=RUN_NAME, step=0)
 
     assert result["_type"] == Table.TYPE
     assert "_value" in result
     assert len(result["_value"]) == 2
 
-    # Check that images were serialized correctly
     for i, row in enumerate(result["_value"]):
         assert row["step"] == i + 1
         assert row["value"] == (i + 1) * 10
 
-        # Check that image was serialized
         assert isinstance(row["image"], dict)
         assert row["image"]["_type"] == TrackioImage.TYPE
         assert "file_path" in row["image"]
@@ -74,7 +70,6 @@ def test_table_mixed_content(image_ndarray, temp_dir):
     assert result["_type"] == Table.TYPE
     assert len(result["_value"]) == 3
 
-    # Check first row (with image)
     row1 = result["_value"][0]
     assert row1["step"] == 1
     assert row1["text"] == "hello"
@@ -82,14 +77,12 @@ def test_table_mixed_content(image_ndarray, temp_dir):
     assert isinstance(row1["image"], dict)
     assert row1["image"]["_type"] == TrackioImage.TYPE
 
-    # Check second row (without image)
     row2 = result["_value"][1]
     assert row2["step"] == 2
     assert row2["text"] == "world"
     assert row2["number"] == 2.5
     assert row2["image"] is None
 
-    # Check third row (with image)
     row3 = result["_value"][2]
     assert row3["step"] == 3
     assert row3["text"] == "test"
@@ -107,7 +100,7 @@ def test_table_backwards_compatibility():
 
     assert result["_type"] == Table.TYPE
     assert result["_value"] == data
-    assert isinstance(table.data, pd.DataFrame)  # Should be converted to DataFrame
+    assert isinstance(table.data, pd.DataFrame)
 
 
 def test_table_to_dict_without_project_info(image_ndarray, temp_dir):
@@ -115,7 +108,6 @@ def test_table_to_dict_without_project_info(image_ndarray, temp_dir):
     df = pd.DataFrame({"step": [1, 2], "value": [10, 20]})
     table = Table(dataframe=df)
 
-    # Should work fine without project/run/step
     result = table._to_dict(project="test_project", run="test_run")
     assert result["_type"] == Table.TYPE
     assert len(result["_value"]) == 2
@@ -127,18 +119,16 @@ def test_table_to_dict_with_images_with_project_info(image_ndarray, temp_dir):
     df = pd.DataFrame({"step": [1], "image": [img]})
     table = Table(dataframe=df)
 
-    # With project context, should process TrackioImage objects and serialize them
     result = table._to_dict(project="test_project", run="test_run")
     assert result["_type"] == Table.TYPE
     assert len(result["_value"]) == 1
     assert result["_value"][0]["step"] == 1
-    assert isinstance(result["_value"][0]["image"], dict)  # Should be serialized dict
+    assert isinstance(result["_value"][0]["image"], dict)
     assert result["_value"][0]["image"]["_type"] == "trackio.image"
 
 
 def test_table_to_display_format():
     """Test the new to_display_format static method."""
-    # Test data as it would be stored (serialized format)
     table_data = [
         {
             "step": 1,
@@ -152,7 +142,7 @@ def test_table_to_display_format():
         },
         {
             "step": 2,
-            "image": None,  # No image in this row
+            "image": None,
             "value": 84,
             "text": "more text",
         },
@@ -162,7 +152,6 @@ def test_table_to_display_format():
 
     assert len(processed_data) == 2
 
-    # Check first row (with image)
     row1 = processed_data[0]
     assert row1["step"] == 1
     assert row1["value"] == 42
@@ -170,7 +159,6 @@ def test_table_to_display_format():
     assert "![Test Caption](/gradio_api/file=" in row1["image"]
     assert "test/path/image.png)" in row1["image"]
 
-    # Check second row (without image)
     row2 = processed_data[1]
     assert row2["step"] == 2
     assert row2["value"] == 84
@@ -188,4 +176,4 @@ def test_table_to_display_format_no_images():
     processed_data = Table.to_display_format(table_data)
 
     assert len(processed_data) == 2
-    assert processed_data == table_data  # Should be unchanged
+    assert processed_data == table_data

@@ -45,8 +45,6 @@ class Table:
         allow_mixed_types: bool = False,
         log_mode: Literal["IMMUTABLE", "MUTABLE", "INCREMENTAL"] | None = "IMMUTABLE",
     ):
-        # TODO: implement support for columns, dtype, optional, allow_mixed_types, and log_mode.
-        # for now (like `rows`) they are included for API compat but don't do anything.
         if dataframe is None:
             self.data = DataFrame(data) if data is not None else DataFrame()
         else:

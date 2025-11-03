@@ -13,10 +13,8 @@ PROJECT_NAME = "test_table_images"
 
 def test_table_with_images_e2e(image_ndarray, temp_dir):
     """Test complete workflow of logging a table with images."""
-    # Initialize trackio
     run = trackio.init(project=PROJECT_NAME, name="test_run")
 
-    # Create a table with images
     img1 = TrackioImage(image_ndarray, caption="Sample Image 1")
     img2 = TrackioImage(image_ndarray, caption="Sample Image 2")
 
@@ -31,18 +29,14 @@ def test_table_with_images_e2e(image_ndarray, temp_dir):
 
     table = Table(dataframe=df)
 
-    # Log the table
     trackio.log({"experiment_results": table})
 
-    # Finish the run
     trackio.finish()
 
-    # Verify the data was stored correctly
     stored_data = SQLiteStorage.get_all_metrics(PROJECT_NAME, "test_run")
 
     assert "experiment_results" in stored_data
 
-    # Get the stored table data
     table_entry = None
     for entry in stored_data["experiment_results"]:
         if (
@@ -58,13 +52,11 @@ def test_table_with_images_e2e(image_ndarray, temp_dir):
     assert stored_table["_type"] == Table.TYPE
     assert len(stored_table["_value"]) == 2
 
-    # Verify the table data structure
     for i, row in enumerate(stored_table["_value"]):
         assert row["step"] == i + 1
         assert row["accuracy"] == [0.85, 0.92][i]
         assert row["description"] == ["first test", "second test"][i]
 
-        # Verify image was serialized correctly
         assert isinstance(row["image"], dict)
         assert row["image"]["_type"] == TrackioImage.TYPE
         assert "file_path" in row["image"]
@@ -80,7 +72,7 @@ def test_table_mixed_media_and_regular_data(image_ndarray, temp_dir):
     df = pd.DataFrame(
         {
             "experiment": ["exp1", "exp2", "exp3"],
-            "result_image": [img, None, img],  # Some rows have images, some don't
+            "result_image": [img, None, img],
             "score": [0.75, 0.80, 0.85],
         }
     )
@@ -89,7 +81,6 @@ def test_table_mixed_media_and_regular_data(image_ndarray, temp_dir):
     trackio.log({"mixed_results": table})
     trackio.finish()
 
-    # Verify storage
     stored_data = SQLiteStorage.get_all_metrics(PROJECT_NAME, "mixed_test")
     table_data = None
 
@@ -104,10 +95,9 @@ def test_table_mixed_media_and_regular_data(image_ndarray, temp_dir):
     assert table_data is not None
     assert len(table_data) == 3
 
-    # Check rows with and without images
-    assert isinstance(table_data[0]["result_image"], dict)  # Has image
-    assert table_data[1]["result_image"] is None  # No image
-    assert isinstance(table_data[2]["result_image"], dict)  # Has image
+    assert isinstance(table_data[0]["result_image"], dict)
+    assert table_data[1]["result_image"] is None
+    assert isinstance(table_data[2]["result_image"], dict)
 
 
 def test_original_issue_reproduction(image_ndarray, temp_dir):
@@ -116,19 +106,15 @@ def test_original_issue_reproduction(image_ndarray, temp_dir):
 
     trackio.init(project="test_project")
 
-    # Recreate the exact scenario from the issue
     df = pd.DataFrame({"step": [1], "image": [TrackioImage(image_ndarray)]})
 
-    # This should not raise a "TypeError: Object of type TrackioImage is not JSON serializable"
     try:
         trackio.log({"table": Table(dataframe=df)})
-        # If we get here, the fix worked
         success = True
     except TypeError as e:
         if "TrackioImage is not JSON serializable" in str(e):
             success = False
         else:
-            # Re-raise if it's a different error
             raise
 
     trackio.finish()

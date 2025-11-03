@@ -1208,7 +1208,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
 
-        # Display histograms
         histogram_cols = set(master_df.columns) - {
             "run",
             "step",

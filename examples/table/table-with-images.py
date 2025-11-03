@@ -34,7 +34,7 @@ def create_sample_images():
 
     gradient = np.zeros((100, 100, 3), dtype=np.uint8)
     for i in range(100):
-        gradient[i, :, 1] = int(255 * i / 100)  # Green gradient
+        gradient[i, :, 1] = int(255 * i / 100)
     images.append(trackio.Image(gradient, caption="Green Gradient"))
 
     checkerboard = np.zeros((100, 100, 3), dtype=np.uint8)

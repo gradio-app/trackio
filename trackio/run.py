@@ -70,8 +70,6 @@ class Run:
     def _batch_sender(self):
         """Send batched logs every BATCH_SEND_INTERVAL."""
         while not self._stop_flag.is_set() or len(self._queued_logs) > 0:
-            # If the stop flag has been set, then just quickly send all
-            # the logs and exit.
             if not self._stop_flag.is_set():
                 time.sleep(BATCH_SEND_INTERVAL)
 
@@ -175,7 +173,6 @@ class Run:
         """Cleanup when run is finished."""
         self._stop_flag.set()
 
-        # Wait for the batch sender to finish before joining the client thread.
         time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
