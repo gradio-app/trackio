@@ -1223,12 +1223,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     )
                                     df = pd.DataFrame(processed_data)
 
-                                    # Set datatype to markdown for all columns if any contain images
-                                    datatype = (
-                                        ["markdown"] * len(df.columns)
-                                        if has_images
-                                        else None
-                                    )
+                                    # Set datatype to markdown for entire table if any contain images
+                                    datatype = "markdown" if has_images else None
 
                                     gr.DataFrame(
                                         df,
