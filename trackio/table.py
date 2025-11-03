@@ -77,7 +77,9 @@ class Table:
 
     @staticmethod
     def to_display_format(table_data: list[dict]) -> list[dict]:
-        """Convert stored table data to display format for UI rendering.
+        """Convert stored table data to display format for UI rendering. Note
+        that this does not use the self.data attribute, but instead uses the
+        table_data parameter, which is is what the UI receives.
 
         Args:
             table_data: List of dictionaries representing table rows (from stored _value)
@@ -85,17 +87,6 @@ class Table:
         Returns:
             Table data with images converted to markdown syntax
         """
-        # Fast path: check if any row contains trackio.image objects
-        has_images = any(
-            isinstance(value, dict) and value.get("_type") == "trackio.image"
-            for row in table_data
-            for value in row.values()
-        )
-
-        if not has_images:
-            return table_data  # Return as-is if no images to process
-
-        # Slow path: process images
         processed_data = []
         for row in table_data:
             processed_row = {}
@@ -110,7 +101,6 @@ class Table:
                 else:
                     processed_row[key] = value
             processed_data.append(processed_row)
-
         return processed_data
 
     def _to_dict(self, project: str, run: str, step: int = 0):
