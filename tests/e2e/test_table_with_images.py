@@ -28,16 +28,15 @@ def test_table_mixed_images_and_regular_data(image_ndarray, temp_dir):
     trackio.log({"mixed_results": table})
     trackio.finish()
 
-    stored_data = SQLiteStorage.get_all_metrics(PROJECT_NAME, "mixed_test")
+    logs = SQLiteStorage.get_logs(PROJECT_NAME, "mixed_test")
     table_data = None
 
-    for entry in stored_data["mixed_results"]:
-        if (
-            isinstance(entry["value"], dict)
-            and entry["value"].get("_type") == Table.TYPE
-        ):
-            table_data = entry["value"]["_value"]
-            break
+    for log in logs:
+        if "mixed_results" in log:
+            value = log["mixed_results"]
+            if isinstance(value, dict) and value.get("_type") == Table.TYPE:
+                table_data = value["_value"]
+                break
 
     assert table_data is not None
     assert len(table_data) == 3
