@@ -14,7 +14,6 @@ The most basic migration requires just changing your import:
 - import wandb
 + import trackio as wandb
 
-# The rest of your code stays exactly the same!
 wandb.init(project="my-project")
 wandb.log({"loss": 0.5, "accuracy": 0.8})
 wandb.finish()
@@ -22,14 +21,14 @@ wandb.finish()
 
 ### Complete Example
 
-Here's a more comprehensive example showing that all wandb functionality works with Trackio:
+Here's a more complete example showing how the rest of your code stays exactly the same!
+
 
 ```diff
 - import wandb
 + import trackio as wandb
 import numpy as np
 
-# Initialize run - same API
 wandb.init(
     project="image-classification",
     name="experiment-1",
@@ -40,7 +39,6 @@ wandb.init(
     }
 )
 
-# Log metrics - same API
 for epoch in range(10):
     loss = np.random.random()
     accuracy = np.random.random()
@@ -52,16 +50,12 @@ for epoch in range(10):
         "learning_rate": wandb.config.learning_rate
     })
 
-# Log images - same API
-wandb.log({"sample_image": wandb.Image("path/to/image.jpg")})
-
-# Finish run - same API
 wandb.finish()
 ```
 
 ### Advanced Features
 
-Trackio supports rich data logging with Tables and Images - same API as wandb:
+Trackio supports logging Tables, Images, Audio, etc. - same API as wandb:
 
 ```diff
 - import wandb
@@ -70,14 +64,12 @@ import numpy as np
 
 wandb.init(project="data-analysis")
 
-# Log images - same API
 image_array = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
 wandb.log({
     "sample_image": wandb.Image(image_array, caption="Generated sample"),
     "model_diagram": wandb.Image("architecture.png")
 })
 
-# Log tables - same API
 columns = ["epoch", "train_loss", "val_loss", "accuracy"]
 data = [
     [1, 0.8, 0.6, 0.75],
@@ -102,28 +94,22 @@ Migrating from Neptune requires a few more changes since Neptune has a different
 
 + import trackio
 
-# Neptune initialization
 - run = neptune.init_run(
 -     project="my-workspace/my-project",
 -     api_token="your-token"
 - )
 
-# Trackio initialization
 + trackio.init(project="my-project")
 
-# Neptune logging
 - run["parameters"] = {"learning_rate": 0.01, "batch_size": 32}
 - run["metrics/loss"].log(0.5)
 - run["metrics/accuracy"].log(0.8)
 
-# Trackio logging
 + trackio.config.update({"learning_rate": 0.01, "batch_size": 32})
 + trackio.log({"loss": 0.5, "accuracy": 0.8})
 
-# Neptune finish
 - run.stop()
 
-# Trackio finish
 + trackio.finish()
 ```
 
@@ -134,27 +120,23 @@ Migrating from Neptune requires a few more changes since Neptune has a different
 + import trackio
 import numpy as np
 
-# Neptune setup
 - run = neptune.init_run(
 -     project="my-workspace/classification-project",
 -     name="experiment-1",
 -     tags=["pytorch", "cnn"]
 - )
 
-# Trackio setup
 + trackio.init(
 +     project="classification-project",
 +     name="experiment-1",
 +     tags=["pytorch", "cnn"]
 + )
 
-# Configuration
 config = {"learning_rate": 0.01, "epochs": 10, "batch_size": 32}
 
 - run["parameters"] = config
 + trackio.config.update(config)
 
-# Training loop
 for epoch in range(config["epochs"]):
     # Simulate training
     train_loss = np.random.random()
@@ -172,11 +154,9 @@ for epoch in range(config["epochs"]):
 +         "epoch": epoch
 +     })
 
-# File uploads
 - run["model/weights"].upload("model.pth")
 + trackio.save("model.pth")
 
-# Cleanup
 - run.stop()
 + trackio.finish()
 ```
