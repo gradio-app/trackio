@@ -146,14 +146,13 @@ class Run:
         metrics = new_metrics
         for key, value in metrics.items():
             if isinstance(value, Table):
-                metrics[k] = value._to_dict(
+                metrics[key] = value._to_dict(
                     project=self.project, run=self.name, step=step
                 )
             elif isinstance(value, Histogram):
-                metrics[k] = value._to_dict()
+                metrics[key] = value._to_dict()
             elif isinstance(value, TrackioMedia):
-                metrics[k] = self._process_media(value, step)
-        metrics = self._process_media(metrics, step)
+                metrics[key] = self._process_media(value, step)
         metrics = utils.serialize_values(metrics)
 
         config_to_log = None
