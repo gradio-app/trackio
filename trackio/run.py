@@ -137,11 +137,15 @@ class Run:
                 serializable_metrics[key] = value
         return serializable_metrics
 
-    @staticmethod
-    def _replace_tables(metrics):
+    def _replace_tables(self, metrics, step: int = 0):
         for k, v in metrics.items():
             if isinstance(v, (Table, Histogram)):
-                metrics[k] = v._to_dict()
+                if isinstance(v, Table):
+                    metrics[k] = v._to_dict(
+                        project=self.project, run=self.name, step=step
+                    )
+                else:
+                    metrics[k] = v._to_dict()
 
     def log(self, metrics: dict, step: int | None = None):
         renamed_keys = []
@@ -159,7 +163,7 @@ class Run:
             warnings.warn(f"Reserved keys renamed: {renamed_keys} → '__{{key}}'")
 
         metrics = new_metrics
-        Run._replace_tables(metrics)
+        self._replace_tables(metrics, step or 0)
 
         metrics = self._process_media(metrics, step)
         metrics = utils.serialize_values(metrics)
