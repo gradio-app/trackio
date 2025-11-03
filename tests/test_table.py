@@ -33,9 +33,8 @@ def test_table_with_images(image_ndarray, temp_dir):
 
     table = Table(dataframe=df)
 
-    # Verify that the table has stored the original dataframe
-    assert table._original_dataframe is not None
-    assert table.data is None  # Should be None until _to_dict is called
+    # Verify that the table has stored the dataframe
+    assert isinstance(table.data, pd.DataFrame)
 
     # Test serialization
     result = table._to_dict(project=PROJECT_NAME, run=RUN_NAME, step=0)
@@ -108,9 +107,7 @@ def test_table_backwards_compatibility():
 
     assert result["_type"] == Table.TYPE
     assert result["_value"] == data
-    assert (
-        not hasattr(table, "_original_dataframe") or table._original_dataframe is None
-    )
+    assert table.data == data  # Should store the data directly
 
 
 def test_table_to_dict_without_project_info(image_ndarray, temp_dir):
@@ -125,16 +122,17 @@ def test_table_to_dict_without_project_info(image_ndarray, temp_dir):
 
 
 def test_table_to_dict_with_images_no_project_info(image_ndarray, temp_dir):
-    """Test that _to_dict falls back gracefully when images present but no project info."""
+    """Test that _to_dict works but includes raw TrackioImage objects when no project info."""
     img = TrackioImage(image_ndarray, caption="Test")
     df = pd.DataFrame({"step": [1], "image": [img]})
     table = Table(dataframe=df)
 
-    # Should fall back to original behavior
+    # Without project context, should convert to dict but leave TrackioImage objects unserialized
     result = table._to_dict()
     assert result["_type"] == Table.TYPE
-    # Should use the original stored data (None in this case since it has media)
-    assert result["_value"] is None
+    assert len(result["_value"]) == 1
+    assert result["_value"][0]["step"] == 1
+    assert isinstance(result["_value"][0]["image"], TrackioImage)  # Still raw object
 
 
 def test_table_to_display_format():

@@ -50,17 +50,9 @@ class Table:
 
         if dataframe is None:
             self.data = data
-            self._original_dataframe = None
         else:
-            if self._has_media_objects(dataframe):
-                # Store original dataframe for later media processing
-                self._original_dataframe = dataframe.copy()
-                # For now, store a placeholder that will be replaced during _to_dict
-                self.data = None
-            else:
-                # No media objects, convert normally
-                self.data = dataframe.to_dict(orient="records")
-                self._original_dataframe = None
+            # Always store the dataframe - let _serialize_media handle the conversion
+            self.data = dataframe
 
     def _has_media_objects(self, dataframe: DataFrame) -> bool:
         """Check if dataframe contains any TrackioMedia objects."""
@@ -69,10 +61,14 @@ class Table:
                 return True
         return False
 
-    def _serialize_media(self, df: DataFrame, project: str, run: str, step: int = 0):
-        """Process TrackioMedia objects in dataframe by saving them and converting to dict representation."""
-        processed_df = df.copy()
+    def _process_data(self, df: DataFrame, project: str, run: str, step: int = 0):
+        """Convert dataframe to dict format, processing any TrackioMedia objects if present."""
+        # Fast path: if no media objects, just convert to dict
+        if not self._has_media_objects(df):
+            return df.to_dict(orient="records")
 
+        # Slow path: process media objects then convert to dict
+        processed_df = df.copy()
         for col in processed_df.columns:
             for idx in processed_df.index:
                 value = processed_df.at[idx, col]
@@ -80,7 +76,7 @@ class Table:
                     value._save(project, run, step)
                     processed_df.at[idx, col] = value._to_dict()
 
-        return processed_df
+        return processed_df.to_dict(orient="records")
 
     @staticmethod
     def to_display_format(table_data: list[dict]) -> list[dict]:
@@ -120,14 +116,17 @@ class Table:
             run: Run name for saving media files
             step: Step number for saving media files
         """
-        data = self.data
-
-        # If we have a dataframe with media objects and the necessary context, process them
-        if hasattr(self, "_original_dataframe") and project and run:
-            processed_df = self._serialize_media(
-                self._original_dataframe, project, run, step
-            )
-            data = processed_df.to_dict(orient="records")
+        # Handle different data types
+        if isinstance(self.data, DataFrame):
+            # Process dataframe (handles both media and non-media cases)
+            if project and run:
+                data = self._process_data(self.data, project, run, step)
+            else:
+                # No project/run context - try to convert anyway (will fail if media objects present)
+                data = self.data.to_dict(orient="records")
+        else:
+            # Already processed data (list of dicts from data parameter)
+            data = self.data
 
         return {
             "_type": self.TYPE,
