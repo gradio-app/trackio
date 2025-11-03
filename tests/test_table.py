@@ -159,9 +159,8 @@ def test_table_to_display_format():
         },
     ]
 
-    processed_data, has_images = Table.to_display_format(table_data)
+    processed_data = Table.to_display_format(table_data)
 
-    assert has_images is True
     assert len(processed_data) == 2
 
     # Check first row (with image)
@@ -187,8 +186,7 @@ def test_table_to_display_format_no_images():
         {"step": 2, "value": 20, "text": "world"},
     ]
 
-    processed_data, has_images = Table.to_display_format(table_data)
+    processed_data = Table.to_display_format(table_data)
 
-    assert has_images is False
     assert len(processed_data) == 2
     assert processed_data == table_data  # Should be unchanged

@@ -1192,20 +1192,17 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             ):
                                 try:
                                     # Use Table class method for display formatting
-                                    processed_data, has_images = (
-                                        Table.to_display_format(value["_value"])
+                                    processed_data = Table.to_display_format(
+                                        value["_value"]
                                     )
                                     df = pd.DataFrame(processed_data)
-
-                                    # Set datatype to markdown for entire table if any contain images
-                                    datatype = "markdown" if has_images else None
 
                                     gr.DataFrame(
                                         df,
                                         label=f"{metric_name} (latest)",
                                         key=f"table-{metric_idx}",
                                         wrap=True,
-                                        datatype=datatype,
+                                        datatype="markdown",
                                     )
                                 except Exception as e:
                                     gr.Warning(

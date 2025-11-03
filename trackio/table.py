@@ -83,19 +83,16 @@ class Table:
         return processed_df
 
     @staticmethod
-    def to_display_format(table_data: list[dict]) -> tuple[list[dict], bool]:
+    def to_display_format(table_data: list[dict]) -> list[dict]:
         """Convert stored table data to display format for UI rendering.
 
         Args:
             table_data: List of dictionaries representing table rows (from stored _value)
 
         Returns:
-            Tuple of (processed_data, has_images) where:
-            - processed_data: Table data with images converted to markdown
-            - has_images: Boolean indicating if any images were found
+            Table data with images converted to markdown syntax
         """
         processed_data = []
-        has_images = False
 
         for row in table_data:
             processed_row = {}
@@ -109,12 +106,11 @@ class Table:
                     processed_row[key] = (
                         f"![{caption}](/gradio_api/file={absolute_path})"
                     )
-                    has_images = True
                 else:
                     processed_row[key] = value
             processed_data.append(processed_row)
 
-        return processed_data, has_images
+        return processed_data
 
     def _to_dict(self, project: str = None, run: str = None, step: int = 0):
         """Convert table to dictionary representation.
