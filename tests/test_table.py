@@ -13,7 +13,7 @@ def test_table_without_images():
     df = pd.DataFrame({"step": [1, 2, 3], "value": [10, 20, 30]})
     table = Table(dataframe=df)
 
-    result = table._to_dict()
+    result = table._to_dict(project="test_project", run="test_run")
     expected_data = [
         {"step": 1, "value": 10},
         {"step": 2, "value": 20},
@@ -103,11 +103,11 @@ def test_table_backwards_compatibility():
     data = [{"step": 1, "value": 10}, {"step": 2, "value": 20}]
 
     table = Table(data=data)
-    result = table._to_dict()
+    result = table._to_dict(project="test_project", run="test_run")
 
     assert result["_type"] == Table.TYPE
     assert result["_value"] == data
-    assert table.data == data  # Should store the data directly
+    assert isinstance(table.data, pd.DataFrame)  # Should be converted to DataFrame
 
 
 def test_table_to_dict_without_project_info(image_ndarray, temp_dir):
@@ -116,23 +116,24 @@ def test_table_to_dict_without_project_info(image_ndarray, temp_dir):
     table = Table(dataframe=df)
 
     # Should work fine without project/run/step
-    result = table._to_dict()
+    result = table._to_dict(project="test_project", run="test_run")
     assert result["_type"] == Table.TYPE
     assert len(result["_value"]) == 2
 
 
-def test_table_to_dict_with_images_no_project_info(image_ndarray, temp_dir):
-    """Test that _to_dict works but includes raw TrackioImage objects when no project info."""
+def test_table_to_dict_with_images_with_project_info(image_ndarray, temp_dir):
+    """Test that _to_dict properly processes TrackioImage objects when project info is provided."""
     img = TrackioImage(image_ndarray, caption="Test")
     df = pd.DataFrame({"step": [1], "image": [img]})
     table = Table(dataframe=df)
 
-    # Without project context, should convert to dict but leave TrackioImage objects unserialized
-    result = table._to_dict()
+    # With project context, should process TrackioImage objects and serialize them
+    result = table._to_dict(project="test_project", run="test_run")
     assert result["_type"] == Table.TYPE
     assert len(result["_value"]) == 1
     assert result["_value"][0]["step"] == 1
-    assert isinstance(result["_value"][0]["image"], TrackioImage)  # Still raw object
+    assert isinstance(result["_value"][0]["image"], dict)  # Should be serialized dict
+    assert result["_value"][0]["image"]["_type"] == "trackio.image"
 
 
 def test_table_to_display_format():

@@ -85,8 +85,18 @@ class Table:
         Returns:
             Table data with images converted to markdown syntax
         """
-        processed_data = []
+        # Fast path: check if any row contains trackio.image objects
+        has_images = any(
+            isinstance(value, dict) and value.get("_type") == "trackio.image"
+            for row in table_data
+            for value in row.values()
+        )
 
+        if not has_images:
+            return table_data  # Return as-is if no images to process
+
+        # Slow path: process images
+        processed_data = []
         for row in table_data:
             processed_row = {}
             for key, value in row.items():
