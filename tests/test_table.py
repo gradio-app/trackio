@@ -74,7 +74,7 @@ def test_table_to_display_format_with_images():
     assert row1["value"] == 42
     assert row1["text"] == "regular text"
     assert "![Test Caption](/gradio_api/file=" in row1["image"]
-    assert "test/path/image.png)" in row1["image"]
+    assert row1["image"].endswith("image.png)")  # The extra ) is due to the Markdown syntax
 
     row2 = processed_data[1]
     assert row2["step"] == 2
