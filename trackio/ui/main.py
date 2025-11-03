@@ -1191,7 +1191,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 and value["_type"] == Table.TYPE
                             ):
                                 try:
-                                    # Use Table class method for display formatting
                                     processed_data = Table.to_display_format(
                                         value["_value"]
                                     )
