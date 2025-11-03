@@ -83,7 +83,7 @@ wandb.finish()
 ```
 
 
-## Neptune
+## Neptune (`neptune`)
 
 Migrating from Neptune requires a few more changes since Neptune has a different API structure, but the migration is still straightforward.
 
