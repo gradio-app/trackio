@@ -1175,10 +1175,14 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                         isinstance(value, dict)
                         and value.get("_type") == "trackio.image"
                     ):
-                        # Convert TrackioImage to markdown syntax
-                        file_path = value.get("file_path", "")
+                        # Convert TrackioImage to markdown syntax with absolute path
+                        relative_path = value.get("file_path", "")
                         caption = value.get("caption", "")
-                        processed_row[key] = f"![{caption}]({file_path})"
+                        absolute_path = utils.MEDIA_DIR / relative_path
+                        # Use Gradio API format for markdown images in DataFrame
+                        processed_row[key] = (
+                            f"![{caption}](/gradio_api/file={absolute_path})"
+                        )
                         has_images = True
                     else:
                         processed_row[key] = value
