@@ -135,3 +135,60 @@ def test_table_to_dict_with_images_no_project_info(image_ndarray, temp_dir):
     assert result["_type"] == Table.TYPE
     # Should use the original stored data (None in this case since it has media)
     assert result["_value"] is None
+
+
+def test_table_to_display_format():
+    """Test the new to_display_format static method."""
+    # Test data as it would be stored (serialized format)
+    table_data = [
+        {
+            "step": 1,
+            "image": {
+                "_type": "trackio.image",
+                "file_path": "test/path/image.png",
+                "caption": "Test Caption",
+            },
+            "value": 42,
+            "text": "regular text",
+        },
+        {
+            "step": 2,
+            "image": None,  # No image in this row
+            "value": 84,
+            "text": "more text",
+        },
+    ]
+
+    processed_data, has_images = Table.to_display_format(table_data)
+
+    assert has_images is True
+    assert len(processed_data) == 2
+
+    # Check first row (with image)
+    row1 = processed_data[0]
+    assert row1["step"] == 1
+    assert row1["value"] == 42
+    assert row1["text"] == "regular text"
+    assert "![Test Caption](/gradio_api/file=" in row1["image"]
+    assert "test/path/image.png)" in row1["image"]
+
+    # Check second row (without image)
+    row2 = processed_data[1]
+    assert row2["step"] == 2
+    assert row2["value"] == 84
+    assert row2["text"] == "more text"
+    assert row2["image"] is None
+
+
+def test_table_to_display_format_no_images():
+    """Test to_display_format with table containing no images."""
+    table_data = [
+        {"step": 1, "value": 10, "text": "hello"},
+        {"step": 2, "value": 20, "text": "world"},
+    ]
+
+    processed_data, has_images = Table.to_display_format(table_data)
+
+    assert has_images is False
+    assert len(processed_data) == 2
+    assert processed_data == table_data  # Should be unchanged

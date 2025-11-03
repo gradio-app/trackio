@@ -1163,33 +1163,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         if media_by_run and any(any(media) for media in media_by_run.values()):
             create_media_section(media_by_run)
 
-        def process_table_with_images(df_data):
-            """Process table data to convert TrackioImage objects to markdown syntax."""
-            processed_data = []
-            has_images = False
-
-            for row in df_data:
-                processed_row = {}
-                for key, value in row.items():
-                    if (
-                        isinstance(value, dict)
-                        and value.get("_type") == "trackio.image"
-                    ):
-                        # Convert TrackioImage to markdown syntax with absolute path
-                        relative_path = value.get("file_path", "")
-                        caption = value.get("caption", "")
-                        absolute_path = utils.MEDIA_DIR / relative_path
-                        # Use Gradio API format for markdown images in DataFrame
-                        processed_row[key] = (
-                            f"![{caption}](/gradio_api/file={absolute_path})"
-                        )
-                        has_images = True
-                    else:
-                        processed_row[key] = value
-                processed_data.append(processed_row)
-
-            return processed_data, has_images
-
         table_cols = master_df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
         if metrics_subset:
@@ -1218,8 +1191,9 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 and value["_type"] == Table.TYPE
                             ):
                                 try:
+                                    # Use Table class method for display formatting
                                     processed_data, has_images = (
-                                        process_table_with_images(value["_value"])
+                                        Table.to_display_format(value["_value"])
                                     )
                                     df = pd.DataFrame(processed_data)
 
