@@ -631,6 +631,7 @@ function getCookie(name) {
 (function() {
     const urlParams = new URLSearchParams(window.location.search);
     const writeToken = urlParams.get('write_token');
+    const footerParam = urlParams.get('footer');
     
     if (writeToken) {
         setCookie('trackio_write_token', writeToken, 7);
@@ -645,6 +646,12 @@ function getCookie(name) {
                 window.location.hash;
             window.history.replaceState({}, document.title, newUrl);
         }
+    }
+    
+    if (footerParam === 'false') {
+        const style = document.createElement('style');
+        style.textContent = 'footer { display: none !important; }';
+        document.head.appendChild(style);
     }
 })();
 </script>

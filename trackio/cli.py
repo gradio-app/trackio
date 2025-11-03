@@ -24,11 +24,23 @@ def main():
         action="store_true",
         help="Enable MCP server functionality. The Trackio dashboard will be set up as an MCP server and certain functions will be exposed as MCP tools.",
     )
+    ui_parser.add_argument(
+        "--footer",
+        action="store_true",
+        default=True,
+        help="Show the Gradio footer. Use --no-footer to hide it.",
+    )
+    ui_parser.add_argument(
+        "--no-footer",
+        dest="footer",
+        action="store_false",
+        help="Hide the Gradio footer.",
+    )
 
     args = parser.parse_args()
 
     if args.command == "show":
-        show(args.project, args.theme, args.mcp_server)
+        show(args.project, args.theme, args.mcp_server, args.footer)
     else:
         parser.print_help()
 

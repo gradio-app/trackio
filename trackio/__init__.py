@@ -169,7 +169,7 @@ def init(
             if utils.is_in_notebook() and embed:
                 base_url = share_url + "/" if share_url else url
                 full_url = utils.get_full_url(
-                    base_url, project=project, write_token=demo.write_token
+                    base_url, project=project, write_token=demo.write_token, footer=True
                 )
                 utils.embed_url_in_notebook(full_url)
             else:
@@ -265,6 +265,7 @@ def show(
     project: str | None = None,
     theme: str | ThemeClass | None = None,
     mcp_server: bool | None = None,
+    footer: bool = True,
 ):
     """
     Launches the Trackio dashboard.
@@ -284,6 +285,9 @@ def show(
             functions will be added as MCP tools. If `None` (default behavior), then the
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
+        footer (`bool`, *optional*, defaults to `True`):
+            Whether to show the Gradio footer. When `False`, the footer will be hidden.
+            This can also be controlled via the `footer` query parameter in the URL.
     """
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
@@ -328,7 +332,7 @@ def show(
 
     base_url = share_url + "/" if share_url else url
     full_url = utils.get_full_url(
-        base_url, project=project, write_token=demo.write_token
+        base_url, project=project, write_token=demo.write_token, footer=footer
     )
 
     if not utils.is_in_notebook():

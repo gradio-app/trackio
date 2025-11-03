@@ -802,11 +802,13 @@ def deserialize_values(metrics):
     return result
 
 
-def get_full_url(base_url: str, project: str | None, write_token: str) -> str:
+def get_full_url(base_url: str, project: str | None, write_token: str, footer: bool = True) -> str:
     params = []
     if project:
         params.append(f"project={project}")
     params.append(f"write_token={write_token}")
+    if not footer:
+        params.append("footer=false")
     return base_url + "?" + "&".join(params)
 
 
