@@ -70,8 +70,6 @@ class Run:
     def _batch_sender(self):
         """Send batched logs every BATCH_SEND_INTERVAL."""
         while not self._stop_flag.is_set() or len(self._queued_logs) > 0:
-            # If the stop flag has been set, then just quickly send all
-            # the logs and exit.
             if not self._stop_flag.is_set():
                 time.sleep(BATCH_SEND_INTERVAL)
 
@@ -112,36 +110,21 @@ class Run:
 
         self._batch_sender()
 
-    def _process_media(self, metrics, step: int | None) -> dict:
+    def _process_media(self, value: TrackioMedia, step: int | None) -> dict:
         """
         Serialize media in metrics and upload to space if needed.
         """
-        serializable_metrics = {}
-        if not step:
-            step = 0
-        for key, value in metrics.items():
-            if isinstance(value, TrackioMedia):
-                value._save(self.project, self.name, step)
-                serializable_metrics[key] = value._to_dict()
-                if self._space_id:
-                    # Upload local media when deploying to space
-                    upload_entry: UploadEntry = {
-                        "project": self.project,
-                        "run": self.name,
-                        "step": step,
-                        "uploaded_file": handle_file(value._get_absolute_file_path()),
-                    }
-                    with self._client_lock:
-                        self._queued_uploads.append(upload_entry)
-            else:
-                serializable_metrics[key] = value
-        return serializable_metrics
-
-    @staticmethod
-    def _replace_tables(metrics):
-        for k, v in metrics.items():
-            if isinstance(v, (Table, Histogram)):
-                metrics[k] = v._to_dict()
+        value._save(self.project, self.name, step)
+        if self._space_id:
+            upload_entry: UploadEntry = {
+                "project": self.project,
+                "run": self.name,
+                "step": step,
+                "uploaded_file": handle_file(value._get_absolute_file_path()),
+            }
+            with self._client_lock:
+                self._queued_uploads.append(upload_entry)
+        return value._to_dict()
 
     def log(self, metrics: dict, step: int | None = None):
         renamed_keys = []
@@ -159,9 +142,15 @@ class Run:
             warnings.warn(f"Reserved keys renamed: {renamed_keys} → '__{{key}}'")
 
         metrics = new_metrics
-        Run._replace_tables(metrics)
-
-        metrics = self._process_media(metrics, step)
+        for key, value in metrics.items():
+            if isinstance(value, Table):
+                metrics[key] = value._to_dict(
+                    project=self.project, run=self.name, step=step
+                )
+            elif isinstance(value, Histogram):
+                metrics[key] = value._to_dict()
+            elif isinstance(value, TrackioMedia):
+                metrics[key] = self._process_media(value, step)
         metrics = utils.serialize_values(metrics)
 
         config_to_log = None
@@ -184,7 +173,6 @@ class Run:
         """Cleanup when run is finished."""
         self._stop_flag.set()
 
-        # Wait for the batch sender to finish before joining the client thread.
         time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
