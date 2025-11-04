@@ -20,7 +20,9 @@ import trackio
 def create_long_text(num_sentences: int = 100):
     text = ""
     for i in range(num_sentences):
-        text += f"This is a long text that will be displayed in the table (sentence {i}). "
+        text += (
+            f"This is a long text that will be displayed in the table (sentence {i}). "
+        )
     return text
 
 
@@ -35,7 +37,12 @@ def main():
         "model_type": ["CNN", "ResNet", "VGG", "Custom"],
         "accuracy": [0.85, 0.92, 0.88, 0.95],
         "loss": [0.15, 0.08, 0.12, 0.05],
-        "notes": [create_long_text(1), create_long_text(5), create_long_text(10), create_long_text(20)],
+        "notes": [
+            create_long_text(1),
+            create_long_text(5),
+            create_long_text(10),
+            create_long_text(20),
+        ],
     }
 
     df = pd.DataFrame(data)
