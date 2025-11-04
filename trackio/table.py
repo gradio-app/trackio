@@ -12,7 +12,7 @@ except ImportError:
 
 class Table:
     """
-    Initializes a Table object.
+    Initializes a Table object. Tables can include image columns using the Image class.
 
     Args:
         columns (`list[str]`, *optional*):
