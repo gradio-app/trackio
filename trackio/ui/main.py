@@ -1206,7 +1206,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     wrap=True,
                                 )
 
-        # Display histograms
         histogram_cols = set(master_df.columns) - {
             "run",
             "step",
