@@ -164,7 +164,8 @@ def load_run_data(
     run: str | None,
     smoothing_granularity: int,
     x_axis: str,
-    log_scale: bool = False,
+    log_scale_x: bool = False,
+    log_scale_y: bool = False,
 ) -> tuple[pd.DataFrame, dict]:
     if not project or not run:
         return None, None
@@ -189,12 +190,25 @@ def load_run_data(
     else:
         x_column = x_axis
 
-    if log_scale and x_column in df.columns:
+    if log_scale_x and x_column in df.columns:
         x_vals = df[x_column]
         if (x_vals <= 0).any():
             df[x_column] = np.log10(np.maximum(x_vals, 0) + 1)
         else:
             df[x_column] = np.log10(x_vals)
+
+    if log_scale_y:
+        numeric_cols = df.select_dtypes(include="number").columns
+        y_cols = [
+            c for c in numeric_cols if c not in utils.RESERVED_KEYS and c != x_column
+        ]
+        for y_col in y_cols:
+            if y_col in df.columns:
+                y_vals = df[y_col]
+                if (y_vals <= 0).any():
+                    df[y_col] = np.log10(np.maximum(y_vals, 0) + 1)
+                else:
+                    df[y_col] = np.log10(y_vals)
 
     if smoothing_granularity > 0:
         numeric_cols = df.select_dtypes(include="number").columns
@@ -705,7 +719,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             choices=["step", "time"],
             value="step",
         )
-        log_scale_cb = gr.Checkbox(label="Log scale X-axis", value=False)
+        log_scale_x_cb = gr.Checkbox(label="Log scale X-axis", value=False)
+        log_scale_y_cb = gr.Checkbox(label="Log scale Y-axis", value=False)
         metric_filter_tb = gr.Textbox(
             label="Metric Filter (regex)",
             placeholder="e.g., loss|ndcg@10|gpu",
@@ -929,7 +944,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             smoothing_slider.change,
             x_lim.change,
             x_axis_dd.change,
-            log_scale_cb.change,
+            log_scale_x_cb.change,
+            log_scale_y_cb.change,
             metric_filter_tb.change,
         ],
         inputs=[
@@ -939,7 +955,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             metrics_subset,
             x_lim,
             x_axis_dd,
-            log_scale_cb,
+            log_scale_x_cb,
+            log_scale_y_cb,
             metric_filter_tb,
         ],
         show_progress="hidden",
@@ -952,7 +969,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         metrics_subset,
         x_lim_value,
         x_axis,
-        log_scale,
+        log_scale_x,
+        log_scale_y,
         metric_filter,
     ):
         dfs = []
@@ -961,7 +979,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
 
         for run in runs:
             df, media_by_key = load_run_data(
-                project, run, smoothing_granularity, x_axis, log_scale
+                project, run, smoothing_granularity, x_axis, log_scale_x, log_scale_y
             )
             if df is not None:
                 dfs.append(df)
@@ -1178,19 +1196,23 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 and value["_type"] == Table.TYPE
                             ):
                                 try:
-                                    df = pd.DataFrame(value["_value"])
+                                    processed_data = Table.to_display_format(
+                                        value["_value"]
+                                    )
+                                    df = pd.DataFrame(processed_data)
+
                                     gr.DataFrame(
                                         df,
                                         label=f"{metric_name} (latest)",
                                         key=f"table-{metric_idx}",
                                         wrap=True,
+                                        datatype="markdown",
                                     )
                                 except Exception as e:
                                     gr.Warning(
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
 
-        # Display histograms
         histogram_cols = set(master_df.columns) - {
             "run",
             "step",
