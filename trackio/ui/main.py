@@ -1148,6 +1148,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                             y_title=metric_name.split("/")[-1],
                                             color=color,
                                             color_map=color_map,
+                                            colors_in_legend=original_runs,
                                             title=metric_name,
                                             key=f"plot-{metric_idx}",
                                             preserved_by_key=None,
