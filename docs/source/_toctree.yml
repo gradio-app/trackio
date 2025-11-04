@@ -5,6 +5,8 @@
     title: Installation
   - local: quickstart
     title: Quickstart
+  - local: migration
+    title: Migrating to Trackio
   title: Getting started
 - sections:
   - local: track
