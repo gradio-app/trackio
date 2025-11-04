@@ -1,3 +1,4 @@
+import os
 from typing import Any, Literal
 
 from pandas import DataFrame
@@ -87,6 +88,7 @@ class Table:
         Returns:
             Table data with images converted to markdown syntax
         """
+        truncate_length = int(os.getenv("TRACKIO_TABLE_TRUNCATE_LENGTH", "250"))
         processed_data = []
         for row in table_data:
             processed_row = {}
@@ -98,8 +100,8 @@ class Table:
                     processed_row[key] = (
                         f"![{caption}](/gradio_api/file={absolute_path})"
                     )
-                elif isinstance(value, str) and len(value) > 250:
-                    truncated = value[:250]
+                elif isinstance(value, str) and len(value) > truncate_length:
+                    truncated = value[:truncate_length]
                     full_text = value.replace('<', '&lt;').replace('>', '&gt;')
                     processed_row[key] = (
                         f'<details style="display: inline;">'
