@@ -64,7 +64,7 @@ trackio.log({
 
 ### Logging tables
 
-You can log tabular data using the [`Table`] class. This is useful for tracking results like predictions, or any structured data.
+You can log tabular data using the [`Table`] class. This is useful for tracking results like predictions, or any structured data. Tables can include image columns using the [`Image`] class.
 
 ```python
 import pandas as pd

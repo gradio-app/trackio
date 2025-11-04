@@ -1191,19 +1191,23 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 and value["_type"] == Table.TYPE
                             ):
                                 try:
-                                    df = pd.DataFrame(value["_value"])
+                                    processed_data = Table.to_display_format(
+                                        value["_value"]
+                                    )
+                                    df = pd.DataFrame(processed_data)
+
                                     gr.DataFrame(
                                         df,
                                         label=f"{metric_name} (latest)",
                                         key=f"table-{metric_idx}",
                                         wrap=True,
+                                        datatype="markdown",
                                     )
                                 except Exception as e:
                                     gr.Warning(
                                         f"Column {metric_name} failed to render as a table: {e}"
                                     )
 
-        # Display histograms
         histogram_cols = set(master_df.columns) - {
             "run",
             "step",
