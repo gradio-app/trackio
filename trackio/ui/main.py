@@ -1199,12 +1199,50 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
 
                             if table_dfs:
                                 combined_df = pd.concat(table_dfs, ignore_index=True)
-                                gr.DataFrame(
-                                    combined_df,
-                                    label=f"{metric_name}",
-                                    key=f"table-{metric_idx}",
-                                    wrap=True,
-                                )
+                                combined_df = combined_df.reset_index(drop=True)
+                                total_samples = len(combined_df)
+                                default_idx = 0
+
+                                with gr.Column(key=f"table-column-{metric_idx}"):
+                                    table_state = gr.State(combined_df)
+                                    sample_slider = gr.Slider(
+                                        minimum=0,
+                                        maximum=max(total_samples - 1, 0),
+                                        value=default_idx,
+                                        step=1,
+                                        label=f"{metric_name} sample",
+                                        key=f"table-slider-{metric_idx}-{total_samples}",
+                                        interactive=total_samples > 1,
+                                    )
+                                    table_display = gr.DataFrame(
+                                        combined_df.iloc[[default_idx]]
+                                        if total_samples
+                                        else pd.DataFrame(),
+                                        label=f"{metric_name}",
+                                        key=f"table-{metric_idx}",
+                                        wrap=True,
+                                    )
+                                    sample_slider.change(
+                                        lambda idx, df: (
+                                            df.iloc[
+                                                [
+                                                    max(
+                                                        0,
+                                                        min(
+                                                            len(df) - 1,
+                                                            int(idx or 0),
+                                                        ),
+                                                    )
+                                                ]
+                                            ].reset_index(drop=True)
+                                            if isinstance(df, pd.DataFrame) and len(df)
+                                            else pd.DataFrame()
+                                        ),
+                                        inputs=[sample_slider, table_state],
+                                        outputs=table_display,
+                                        queue=False,
+                                        api_name=False,
+                                    )
 
         histogram_cols = set(master_df.columns) - {
             "run",
