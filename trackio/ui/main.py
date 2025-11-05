@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Optional
 import gradio as gr
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel
 import plotly.graph_objects as go
+from pydantic import BaseModel
 
 try:
     import trackio.utils as utils

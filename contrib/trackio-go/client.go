@@ -68,28 +68,59 @@ func (c *Client) Close() error {
 }
 
 // postJSON sends JSON to baseURL+path and returns a verbose error on non-2xx.
-func (c *Client) postJSON(ctx context.Context, path string, payload any) error {
+func (c *Client) tryPost(ctx context.Context, path string, payload any) error {
+	url := c.baseURL + path
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	// If you later secure the API with a cookie or header:
-	// if c.writeToken != "" { req.AddCookie(&http.Cookie{Name:"trackio_write_token", Value:c.writeToken}) }
 
-	resp, err := c.http.Do(req)
+	do := func(u string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(b))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if c.writeToken != "" {
+			req.Header.Set("X-Trackio-Write-Token", c.writeToken)
+		}
+		return c.http.Do(req)
+	}
+
+	// first attempt
+	resp, err := do(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
+	// handle redirect-on-POST (preserve method & body)
+	if resp.StatusCode == http.StatusMovedPermanently || // 301
+		resp.StatusCode == http.StatusFound || // 302
+		resp.StatusCode == http.StatusSeeOther || // 303
+		resp.StatusCode == http.StatusTemporaryRedirect || // 307
+		resp.StatusCode == http.StatusPermanentRedirect { // 308
+
+		loc := resp.Header.Get("Location")
+		if loc != "" {
+			// one re-post to the redirected location
+			resp.Body.Close()
+			resp2, err2 := do(loc)
+			if err2 != nil {
+				return err2
+			}
+			defer resp2.Body.Close()
+			if resp2.StatusCode >= 300 {
+				body, _ := io.ReadAll(resp2.Body)
+				return fmt.Errorf("POST %s -> %s; body: %s", loc, resp2.Status, string(body))
+			}
+			return nil
+		}
+	}
+
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST %s -> %s; body: %s", path, resp.Status, string(body))
+		return fmt.Errorf("POST %s -> %s; body: %s", url, resp.Status, string(body))
 	}
 	return nil
 }

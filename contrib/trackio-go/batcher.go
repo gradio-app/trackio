@@ -96,10 +96,10 @@ func (b *batcher) flush(ctx context.Context) error {
 	}
 
 	// Try modern REST route first, then legacy gradio route
-	if err := b.c.postJSON(ctx, "/api/bulk_log", payload); err == nil {
+	if err := b.c.tryPost(ctx, "/api/bulk_log", payload); err == nil {
 		return nil
 	}
-	if err := b.c.postJSON(ctx, "/gradio_api/bulk_log", payload); err == nil {
+	if err := b.c.tryPost(ctx, "/gradio_api/bulk_log", payload); err == nil {
 		return nil
 	}
 	return fmt.Errorf("trackio: unable to POST to either /api/bulk_log or /gradio_api/bulk_log")
