@@ -105,7 +105,7 @@ class Table:
                     full_text = value.replace("<", "&lt;").replace(">", "&gt;")
                     processed_row[key] = (
                         f'<details style="display: inline;">'
-                        f'<summary style="display: inline; cursor: pointer;">{truncated}... <span><em>(truncated, click to expand)</em></span></summary>'
+                        f'<summary style="display: inline; cursor: pointer;">{truncated}…<span><em>(truncated, click to expand)</em></span></summary>'
                         f'<div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px; max-height: 400px; overflow: auto;">'
                         f'<pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0;">{full_text}</pre>'
                         f"</div>"
