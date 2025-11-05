@@ -1231,6 +1231,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                             maximum=len(value),
                                             step=1,
                                             container=False,
+                                            visible=len(value) > 1,
                                         )
                                         processed_data = Table.to_display_format(
                                             value.iloc[-1]["_value"]
