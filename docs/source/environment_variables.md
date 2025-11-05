@@ -59,6 +59,14 @@ export TRACKIO_THEME="gstaff/xkcd"
 export TRACKIO_THEME="ParityError/Anime"
 ```
 
+### `TRACKIO_TABLE_TRUNCATE_LENGTH`
+
+Controls the maximum length of string values displayed in table cells before they are truncated. When a cell value exceeds this length, it will be truncated with an expandable element that allows viewing the full text. Defaults to `250` characters.
+
+```bash
+export TRACKIO_TABLE_TRUNCATE_LENGTH="500"
+```
+
 ### `TRACKIO_DATASET_ID`
 
 Sets the Hugging Face Dataset ID where logs will be stored when running on Hugging Face Spaces. If not provided, the dataset name will be set automatically when deploying to Spaces.
