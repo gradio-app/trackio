@@ -166,5 +166,5 @@ Once deployed, all clients log to the same Trackio dashboard in real time.
 
 ---
 
-**Maintainer:** [@vaibhav-research](https://huggingface.co/vaibhav2507)
+**Maintainer:** [@vaibhav2507](https://huggingface.co/vaibhav2507)
 License: Apache-2.0
