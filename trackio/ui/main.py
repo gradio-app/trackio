@@ -1172,10 +1172,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             demo.load,
             run_cb.change,
             last_steps.change,
+            metric_filter_tb.change,
         ],
         inputs=[
             project_dd,
             run_cb,
+            metrics_subset,
+            metric_filter_tb,
         ],
         show_progress="hidden",
         queue=False,
@@ -1183,6 +1186,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     def update_tables(
         project,
         runs,
+        metrics_subset_value,
+        metric_filter,
     ):
         dfs = []
         for run in runs:
@@ -1193,6 +1198,10 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
 
         table_cols = master_df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
+        if metrics_subset_value:
+            table_cols = [c for c in table_cols if c in metrics_subset_value]
+        if metric_filter and metric_filter.strip():
+            table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
         table_cols = [
             c
             for c in table_cols
@@ -1215,24 +1224,43 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 and first_value["_type"] == Table.TYPE
                             ):
                                 try:
-                                    processed_data = Table.to_display_format(
-                                        first_value["_value"]
-                                    )
-                                    df = pd.DataFrame(processed_data)
                                     with gr.Column():
-                                        gr.Slider(
+                                        s = gr.Slider(
+                                            value=len(value),
                                             minimum=1,
                                             maximum=len(value),
                                             step=1,
                                             container=False,
                                         )
-                                        gr.DataFrame(
+                                        processed_data = Table.to_display_format(
+                                            value.iloc[-1]["_value"]
+                                        )
+                                        df = pd.DataFrame(processed_data)
+                                        table = gr.DataFrame(
                                             df,
-                                            label=f"{metric_name} (latest)",
+                                            label=f"{metric_name} (index {len(value)})",
                                             key=f"table-{metric_idx}",
                                             wrap=True,
                                             datatype="markdown",
                                             preserved_by_key=None,
+                                        )
+
+                                        def get_table_at_index(index: int):
+                                            value = metric_df[metric_name]
+                                            processed_data = Table.to_display_format(
+                                                value.iloc[index - 1]["_value"]
+                                            )
+                                            df_ = pd.DataFrame(processed_data)
+                                            return gr.Dataframe(
+                                                df_,
+                                                label=f"{metric_name} (index {index})",
+                                            )
+
+                                        s.input(
+                                            get_table_at_index,
+                                            inputs=s,
+                                            outputs=table,
+                                            show_progress="hidden",
                                         )
                                 except Exception as e:
                                     gr.Warning(
