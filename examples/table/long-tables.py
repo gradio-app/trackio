@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Example: Logging Tables with Images
+Example: Logging Tables with Long Text
 
-This example demonstrates the capability to include trackio.Image objects
-in trackio.Table columns. The images will be displayed as thumbnails in the
-dashboard with captions as alt text.
+This example demonstrates how to include long string values in
+trackio.Table columns (e.g., notes or summaries). In the dashboard,
+very long values may be truncated for readability depending on your
+Trackio version and configuration.
 
-Run with: python examples/table/table-with-images.py
+Run with: python examples/table/long-tables.py
 """
 
 import random
