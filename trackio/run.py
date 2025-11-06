@@ -143,7 +143,9 @@ class Run:
 
         metrics = new_metrics
         for key, value in metrics.items():
+            print(">M<<<<<<<<", "value: ", value)
             if isinstance(value, Table):
+                print(">T<<<<<<<<", "value: ", value)
                 metrics[key] = value._to_dict(
                     project=self.project, run=self.name, step=step
                 )
@@ -165,6 +167,8 @@ class Run:
             "step": step,
             "config": config_to_log,
         }
+
+        print(f"log_entry: {log_entry}")
 
         with self._client_lock:
             self._queued_logs.append(log_entry)
