@@ -166,8 +166,6 @@ class Run:
             "config": config_to_log,
         }
 
-        print(f"log_entry: {log_entry}")
-
         with self._client_lock:
             self._queued_logs.append(log_entry)
 
