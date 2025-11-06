@@ -13,14 +13,15 @@ except ImportError:
 
 class Table:
     """
-    Initializes a Table object. Tables can include image columns using the Image class.
+    Initializes a Table object. Tables can be used to log tabular data including images, numbers, and text.
 
     Args:
         columns (`list[str]`, *optional*):
             Names of the columns in the table. Optional if `data` is provided. Not
             expected if `dataframe` is provided. Currently ignored.
         data (`list[list[Any]]`, *optional*):
-            2D row-oriented array of values.
+            2D row-oriented array of values. Each value can be: a number, a string (treated as Markdown and truncated if too long),
+             or a `Trackio.Image` or list of `Trackio.Image` objects.
         dataframe (`pandas.`DataFrame``, *optional*):
             DataFrame object used to create the table. When set, `data` and `columns`
             arguments are ignored.
@@ -54,9 +55,19 @@ class Table:
             self.data = dataframe
 
     def _has_media_objects(self, dataframe: DataFrame) -> bool:
-        """Check if dataframe contains any TrackioMedia objects."""
+        """Check if dataframe contains any TrackioMedia objects or lists of TrackioMedia objects."""
         for col in dataframe.columns:
             if dataframe[col].apply(lambda x: isinstance(x, TrackioMedia)).any():
+                return True
+            if (
+                dataframe[col]
+                .apply(
+                    lambda x: isinstance(x, list)
+                    and len(x) > 0
+                    and isinstance(x[0], TrackioMedia)
+                )
+                .any()
+            ):
                 return True
         return False
 
@@ -73,6 +84,13 @@ class Table:
                 if isinstance(value, TrackioMedia):
                     value._save(project, run, step)
                     processed_df.at[idx, col] = value._to_dict()
+                if (
+                    isinstance(value, list)
+                    and len(value) > 0
+                    and isinstance(value[0], TrackioMedia)
+                ):
+                    [v._save(project, run, step) for v in value]
+                    processed_df.at[idx, col] = [v._to_dict() for v in value]
 
         return processed_df.to_dict(orient="records")
 
@@ -86,19 +104,33 @@ class Table:
             table_data: List of dictionaries representing table rows (from stored _value)
 
         Returns:
-            Table data with images converted to markdown syntax
+            Table data with images converted to markdown syntax and long text truncated.
         """
         truncate_length = int(os.getenv("TRACKIO_TABLE_TRUNCATE_LENGTH", "250"))
+
+        def convert_image_to_markdown(image_data: dict) -> str:
+            relative_path = image_data.get("file_path", "")
+            caption = image_data.get("caption", "")
+            absolute_path = MEDIA_DIR / relative_path
+            return f'<img src="/gradio_api/file={absolute_path}" alt="{caption}" />'
+
         processed_data = []
         for row in table_data:
             processed_row = {}
             for key, value in row.items():
                 if isinstance(value, dict) and value.get("_type") == "trackio.image":
-                    relative_path = value.get("file_path", "")
-                    caption = value.get("caption", "")
-                    absolute_path = MEDIA_DIR / relative_path
+                    processed_row[key] = convert_image_to_markdown(value)
+                elif (
+                    isinstance(value, list)
+                    and len(value) > 0
+                    and isinstance(value[0], dict)
+                    and value[0].get("_type") == "trackio.image"
+                ):
+                    # This assumes that if the first item is an image, all items are images. Ok for now since we don't support mixed types in a single cell.
                     processed_row[key] = (
-                        f"![{caption}](/gradio_api/file={absolute_path})"
+                        '<div style="display: flex; gap: 10px;">'
+                        + "".join([convert_image_to_markdown(item) for item in value])
+                        + "</div>"
                     )
                 elif isinstance(value, str) and len(value) > truncate_length:
                     truncated = value[:truncate_length]
