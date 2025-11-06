@@ -265,6 +265,7 @@ def show(
     project: str | None = None,
     theme: str | ThemeClass | None = None,
     mcp_server: bool | None = None,
+    color_palette: list[str] | None = None,
 ):
     """
     Launches the Trackio dashboard.
@@ -284,7 +285,15 @@ def show(
             functions will be added as MCP tools. If `None` (default behavior), then the
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
+        color_palette (`list[str]`, *optional*):
+            A list of hex color codes to use for plot lines. If not provided, the
+            `TRACKIO_COLOR_PALETTE` environment variable will be used (comma-separated
+            hex codes), or if that is not set, the default color palette will be used.
+            Example: `['#FF0000', '#00FF00', '#0000FF']`
     """
+    if color_palette is not None:
+        os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
+    
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
     if theme != DEFAULT_THEME:
