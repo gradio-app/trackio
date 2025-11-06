@@ -73,13 +73,66 @@ def test_table_to_display_format_with_images():
     assert row1["step"] == 1
     assert row1["value"] == 42
     assert row1["text"] == "regular text"
-    assert "![Test Caption](/gradio_api/file=" in row1["image"]
-    assert row1["image"].endswith(
-        "image.png)"
-    )  # The extra ) is due to the Markdown syntax
+    assert '<img src="/gradio_api/file=' in row1["image"]
+    assert 'test/path/image.png"' in row1["image"]
+    assert 'alt="Test Caption"' in row1["image"]
+    assert row1["image"].endswith(" />")
 
     row2 = processed_data[1]
     assert row2["step"] == 2
     assert row2["value"] == 84
     assert row2["text"] == "more text"
     assert row2["image"] is None
+
+
+def test_table_to_display_format_with_multiple_images():
+    table_data = [
+        {
+            "step": 1,
+            "images": [
+                {
+                    "_type": "trackio.image",
+                    "file_path": "test/path/image1.png",
+                    "caption": "First Image",
+                },
+                {
+                    "_type": "trackio.image",
+                    "file_path": "test/path/image2.png",
+                    "caption": "Second Image",
+                },
+                {
+                    "_type": "trackio.image",
+                    "file_path": "test/path/image3.png",
+                    "caption": "Third Image",
+                },
+            ],
+            "value": 42,
+        },
+        {
+            "step": 2,
+            "images": [],
+            "value": 84,
+        },
+    ]
+
+    processed_data = Table.to_display_format(table_data)
+
+    assert len(processed_data) == 2
+
+    row1 = processed_data[0]
+    assert row1["step"] == 1
+    assert row1["value"] == 42
+    assert '<div style="display: flex; gap: 10px;">' in row1["images"]
+    assert '<img src="/gradio_api/file=' in row1["images"]
+    assert 'alt="First Image"' in row1["images"]
+    assert 'image1.png"' in row1["images"]
+    assert 'alt="Second Image"' in row1["images"]
+    assert 'image2.png"' in row1["images"]
+    assert 'alt="Third Image"' in row1["images"]
+    assert 'image3.png"' in row1["images"]
+    assert row1["images"].endswith("</div>")
+
+    row2 = processed_data[1]
+    assert row2["step"] == 2
+    assert row2["value"] == 84
+    assert row2["images"] == []
