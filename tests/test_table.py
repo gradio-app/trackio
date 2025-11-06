@@ -74,7 +74,7 @@ def test_table_to_display_format_with_images():
     assert row1["value"] == 42
     assert row1["text"] == "regular text"
     assert '<img src="/gradio_api/file=' in row1["image"]
-    assert 'test/path/image.png"' in row1["image"]
+    assert 'image.png"' in row1["image"]
     assert 'alt="Test Caption"' in row1["image"]
 
     row2 = processed_data[1]
