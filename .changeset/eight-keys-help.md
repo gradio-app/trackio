@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:support images in a line
+feat:Support a list of `Trackio.Image` in a `trackio.Table` cell
