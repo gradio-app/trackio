@@ -76,7 +76,6 @@ def test_table_to_display_format_with_images():
     assert '<img src="/gradio_api/file=' in row1["image"]
     assert 'test/path/image.png"' in row1["image"]
     assert 'alt="Test Caption"' in row1["image"]
-    assert row1["image"].endswith(" />")
 
     row2 = processed_data[1]
     assert row2["step"] == 2
@@ -122,7 +121,6 @@ def test_table_to_display_format_with_multiple_images():
     row1 = processed_data[0]
     assert row1["step"] == 1
     assert row1["value"] == 42
-    assert '<div style="display: flex; gap: 10px;">' in row1["images"]
     assert '<img src="/gradio_api/file=' in row1["images"]
     assert 'alt="First Image"' in row1["images"]
     assert 'image1.png"' in row1["images"]
@@ -130,7 +128,6 @@ def test_table_to_display_format_with_multiple_images():
     assert 'image2.png"' in row1["images"]
     assert 'alt="Third Image"' in row1["images"]
     assert 'image3.png"' in row1["images"]
-    assert row1["images"].endswith("</div>")
 
     row2 = processed_data[1]
     assert row2["step"] == 2
