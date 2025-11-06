@@ -22,8 +22,8 @@ pytest
 # Run specific test file
 pytest tests/test_run.py
 
-# Run e2e tests
-pytest tests/e2e/
+# Run client-to-db tests
+pytest tests/client-to-db/
 ```
 
 ### Code Formatting and Linting
