@@ -143,9 +143,7 @@ class Run:
 
         metrics = new_metrics
         for key, value in metrics.items():
-            print(">M<<<<<<<<", "value: ", value)
             if isinstance(value, Table):
-                print(">T<<<<<<<<", "value: ", value)
                 metrics[key] = value._to_dict(
                     project=self.project, run=self.name, step=step
                 )
