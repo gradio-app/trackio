@@ -293,7 +293,7 @@ def show(
     """
     if color_palette is not None:
         os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
-    
+
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
     if theme != DEFAULT_THEME:

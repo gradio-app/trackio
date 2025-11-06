@@ -465,7 +465,18 @@ def format_timestamp(timestamp_str):
         return "Unknown"
 
 
-DEFAULT_COLOR_PALETTE = ['#A8769B', '#E89957', '#3B82F6', '#10B981', '#EF4444', '#8B5CF6', '#14B8A6', '#F59E0B', '#EC4899', '#06B6D4']
+DEFAULT_COLOR_PALETTE = [
+    "#A8769B",
+    "#E89957",
+    "#3B82F6",
+    "#10B981",
+    "#EF4444",
+    "#8B5CF6",
+    "#14B8A6",
+    "#F59E0B",
+    "#EC4899",
+    "#06B6D4",
+]
 
 
 def get_color_palette() -> list[str]:
@@ -476,11 +487,13 @@ def get_color_palette() -> list[str]:
     return DEFAULT_COLOR_PALETTE
 
 
-def get_color_mapping(runs: list[str], smoothing: bool, color_palette: list[str] | None = None) -> dict[str, str]:
+def get_color_mapping(
+    runs: list[str], smoothing: bool, color_palette: list[str] | None = None
+) -> dict[str, str]:
     """Generate color mapping for runs, with transparency for original data when smoothing is enabled."""
     if color_palette is None:
         color_palette = get_color_palette()
-    
+
     color_map = {}
 
     for i, run in enumerate(runs):
