@@ -10,6 +10,7 @@ from typing import Any
 from gradio.blocks import BUILT_IN_THEMES
 from gradio.themes import Default as DefaultTheme
 from gradio.themes import ThemeClass
+from gradio.utils import TupleNoPrint
 from gradio_client import Client
 from huggingface_hub import SpaceStorage
 
@@ -265,6 +266,7 @@ def show(
     project: str | None = None,
     theme: str | ThemeClass | None = None,
     mcp_server: bool | None = None,
+    block_thread: bool | None = None,
 ):
     """
     Launches the Trackio dashboard.
@@ -284,6 +286,10 @@ def show(
             functions will be added as MCP tools. If `None` (default behavior), then the
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
+        block_thread (`bool`, *optional*):
+            If `True`, the main thread will be blocked until the dashboard is closed.
+            If `None` (default behavior), then the main thread will not be blocked if the
+            dashboard is launched in a notebook, otherwise the main thread will be blocked.
     """
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
@@ -316,7 +322,7 @@ def show(
         else os.environ.get("GRADIO_MCP_SERVER", "False") == "True"
     )
 
-    _, url, share_url = demo.launch(
+    app, url, share_url = demo.launch(
         show_api=_mcp_server,
         quiet=True,
         inline=False,
@@ -334,6 +340,11 @@ def show(
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {full_url}")
         webbrowser.open(full_url)
-        utils.block_main_thread_until_keyboard_interrupt()
+        block_thread = block_thread if block_thread is not None else True
     else:
         utils.embed_url_in_notebook(full_url)
+        block_thread = block_thread if block_thread is not None else False
+
+    if block_thread:
+        utils.block_main_thread_until_keyboard_interrupt()
+    return TupleNoPrint((app, base_url, full_url))
