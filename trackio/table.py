@@ -59,7 +59,15 @@ class Table:
         for col in dataframe.columns:
             if dataframe[col].apply(lambda x: isinstance(x, TrackioMedia)).any():
                 return True
-            if dataframe[col].apply(lambda x: isinstance(x, list) and len(x) > 0 and isinstance(x[0], TrackioMedia)).any():
+            if (
+                dataframe[col]
+                .apply(
+                    lambda x: isinstance(x, list)
+                    and len(x) > 0
+                    and isinstance(x[0], TrackioMedia)
+                )
+                .any()
+            ):
                 return True
         return False
 
@@ -73,11 +81,14 @@ class Table:
         for col in processed_df.columns:
             for idx in processed_df.index:
                 value = processed_df.at[idx, col]
-                print(f"value: {value}")
                 if isinstance(value, TrackioMedia):
                     value._save(project, run, step)
                     processed_df.at[idx, col] = value._to_dict()
-                if isinstance(value, list) and len(value) > 0 and isinstance(value[0], TrackioMedia):
+                if (
+                    isinstance(value, list)
+                    and len(value) > 0
+                    and isinstance(value[0], TrackioMedia)
+                ):
                     [v._save(project, run, step) for v in value]
                     processed_df.at[idx, col] = [v._to_dict() for v in value]
 
@@ -102,16 +113,25 @@ class Table:
             caption = image_data.get("caption", "")
             absolute_path = MEDIA_DIR / relative_path
             return f'<img src="/gradio_api/file={absolute_path}" alt="{caption}" />'
-        
+
         processed_data = []
         for row in table_data:
             processed_row = {}
             for key, value in row.items():
                 if isinstance(value, dict) and value.get("_type") == "trackio.image":
                     processed_row[key] = convert_image_to_markdown(value)
-                elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], dict) and value[0].get("_type") == "trackio.image":
+                elif (
+                    isinstance(value, list)
+                    and len(value) > 0
+                    and isinstance(value[0], dict)
+                    and value[0].get("_type") == "trackio.image"
+                ):
                     # This assumes that if the first item is an image, all items are images. Ok for now since we don't support mixed types in a single cell.
-                    processed_row[key] = '<div style="display: flex; gap: 10px;">' + "".join([convert_image_to_markdown(item) for item in value]) + '</div>'
+                    processed_row[key] = (
+                        '<div style="display: flex; gap: 10px;">'
+                        + "".join([convert_image_to_markdown(item) for item in value])
+                        + "</div>"
+                    )
                 elif isinstance(value, str) and len(value) > truncate_length:
                     truncated = value[:truncate_length]
                     full_text = value.replace("<", "&lt;").replace(">", "&gt;")
