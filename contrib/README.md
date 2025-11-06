@@ -1,10 +1,13 @@
-# Trackio Dashboard – Multi-Language Quickstart
+# Contributed Clients
 
-Trackio provides a **lightweight, open-source experiment tracker** for any language — Go, JavaScript, or Rust — using a simple REST API and a Gradio-powered dashboard hosted on [🤗 Hugging Face Spaces](https://huggingface.co/spaces).
+This folder contains **lightweight, open-source experiment tracking** clients for several languages: currently, Go, JavaScript, and Rust. These clients let you log experimental data to a Trackio dashboard hosted on [🤗 Hugging Face Spaces](https://huggingface.co/spaces) or running locally.
 
-This example shows how to spin up a brand new **Trackio Dashboard Space**, and log metrics from multiple languages using the provided SDKs.
+**Note:** These Clients are contributed by the open-source community are not maintained at the same level as the rest of the Python-based repo.
 
----
+# Usage
+
+The steps below show how to spin up a brand new **Trackio Dashboard Space**, and log metrics from multiple languages using the provided SDKs.
+
 
 ## 1. Create a Trackio Dashboard Space
 
@@ -105,7 +108,7 @@ You’ll see your metrics plotted live, backed by JSONL logs stored in the Space
 
 ---
 
-## 4. API Reference (minimal REST)
+## 4. CuRL Reference 
 
 ```bash
 curl -sS "$TRACKIO_SERVER_URL/api/healthz"
@@ -166,5 +169,5 @@ Once deployed, all clients log to the same Trackio dashboard in real time.
 
 ---
 
-**Maintainer:** [@vaibhav2507](https://huggingface.co/vaibhav2507)
-License: Apache-2.0
+**Credit:** [@vaibhav2507](https://huggingface.co/vaibhav2507)
+
