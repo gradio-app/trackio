@@ -1,5 +1,11 @@
 # trackio
 
+## 0.8.1
+
+### Features
+
+- [#336](https://github.com/gradio-app/trackio/pull/336) [`5f9f51d`](https://github.com/gradio-app/trackio/commit/5f9f51dac8677f240d7c42c3e3b2660a22aee138) - Support a list of `Trackio.Image` in a `trackio.Table` cell.  Thanks @abidlabs!
+
 ## 0.8.0
 
 ### Features
