@@ -50,6 +50,10 @@ jobs:
       run: |
         uv pip install --system -e .[dev,tensorboard]
         uv pip install --system pytest
+
+    - name: Install Playwright
+      run: |
+        playwright install
         
     - name: Run tests
       run: |

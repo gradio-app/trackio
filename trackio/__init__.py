@@ -278,11 +278,11 @@ def delete_project(project: str, force: bool = False) -> bool:
         `bool`: `True` if the project was deleted, `False` otherwise.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
-    
+
     if not db_path.exists():
         print(f"* Project '{project}' does not exist.")
         return False
-    
+
     if not force:
         response = input(
             f"Are you sure you want to delete project '{project}'? "
@@ -291,15 +291,15 @@ def delete_project(project: str, force: bool = False) -> bool:
         if response.lower() not in ["y", "yes"]:
             print("* Deletion cancelled.")
             return False
-    
+
     try:
         db_path.unlink()
-        
+
         for suffix in ("-wal", "-shm"):
             sidecar = Path(str(db_path) + suffix)
             if sidecar.exists():
                 sidecar.unlink()
-        
+
         print(f"* Project '{project}' has been deleted.")
         return True
     except Exception as e:
@@ -311,6 +311,8 @@ def show(
     project: str | None = None,
     theme: str | ThemeClass | None = None,
     mcp_server: bool | None = None,
+    *,
+    open_browser: bool = True,
     block_thread: bool | None = None,
 ):
     """
@@ -331,6 +333,9 @@ def show(
             functions will be added as MCP tools. If `None` (default behavior), then the
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
+        open_browser (`bool`, *optional*, defaults to `True`):
+            If `True` and not in a notebook, a new browser tab will be opened with the dashboard.
+            If `False`, the browser will not be opened.
         block_thread (`bool`, *optional*):
             If `True`, the main thread will be blocked until the dashboard is closed.
             If `None` (default behavior), then the main thread will not be blocked if the
@@ -390,7 +395,8 @@ def show(
 
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {full_url}")
-        webbrowser.open(full_url)
+        if open_browser:
+            webbrowser.open(full_url)
         block_thread = block_thread if block_thread is not None else True
     else:
         utils.embed_url_in_notebook(full_url)
