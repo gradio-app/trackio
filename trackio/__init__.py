@@ -311,6 +311,7 @@ def show(
     project: str | None = None,
     theme: str | ThemeClass | None = None,
     mcp_server: bool | None = None,
+    color_palette: list[str] | None = None,
     *,
     open_browser: bool = True,
     block_thread: bool | None = None,
@@ -333,6 +334,11 @@ def show(
             functions will be added as MCP tools. If `None` (default behavior), then the
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
+        color_palette (`list[str]`, *optional*):
+            A list of hex color codes to use for plot lines. If not provided, the
+            `TRACKIO_COLOR_PALETTE` environment variable will be used (comma-separated
+            hex codes), or if that is not set, the default color palette will be used.
+            Example: `['#FF0000', '#00FF00', '#0000FF']`
         open_browser (`bool`, *optional*, defaults to `True`):
             If `True` and not in a notebook, a new browser tab will be opened with the dashboard.
             If `False`, the browser will not be opened.
@@ -347,6 +353,9 @@ def show(
             `share_url`: The public share URL of the dashboard.
             `full_url`: The full URL of the dashboard including the write token (will use the public share URL if launched publicly, otherwise the local URL).
     """
+    if color_palette is not None:
+        os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
+
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
     if theme != DEFAULT_THEME:

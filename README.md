@@ -22,7 +22,8 @@
 
 `trackio` is a lightweight, free experiment tracking Python library built by Hugging Face 🤗.
 
-![Screen Recording 2025-07-28 at 5 26 32 PM](https://github.com/user-attachments/assets/f3eac49e-d8ee-4fc0-b1ca-aedfc6d6fae1)
+![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
+
 
 - **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish`. Drop-in replacement: just 
 
