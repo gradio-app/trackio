@@ -50,7 +50,18 @@ jobs:
       run: |
         uv pip install --system -e .[dev,tensorboard]
         uv pip install --system pytest
-        
-    - name: Run tests
+
+    - name: Install Playwright
       run: |
-        pytest 
+        playwright install
+        
+    - name: Run backend unit tests
+      run: |
+        pytest --deselect=tests/ui 
+
+    - name: Run ui/ux interaction tests
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        pytest tests/ui 
+
+    
