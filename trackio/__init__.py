@@ -42,6 +42,7 @@ __all__ = [
     "log",
     "finish",
     "show",
+    "delete_project",
     "import_csv",
     "import_tf_events",
     "Image",
@@ -262,6 +263,50 @@ def finish():
     run.finish()
 
 
+def delete_project(project: str, force: bool = False) -> bool:
+    """
+    Deletes a project by removing its local SQLite database.
+
+    Args:
+        project (`str`):
+            The name of the project to delete.
+        force (`bool`, *optional*, defaults to `False`):
+            If `True`, deletes the project without prompting for confirmation.
+            If `False`, prompts the user to confirm before deleting.
+
+    Returns:
+        `bool`: `True` if the project was deleted, `False` otherwise.
+    """
+    db_path = SQLiteStorage.get_project_db_path(project)
+    
+    if not db_path.exists():
+        print(f"* Project '{project}' does not exist.")
+        return False
+    
+    if not force:
+        response = input(
+            f"Are you sure you want to delete project '{project}'? "
+            f"This will permanently delete all runs and metrics. (y/N): "
+        )
+        if response.lower() not in ["y", "yes"]:
+            print("* Deletion cancelled.")
+            return False
+    
+    try:
+        db_path.unlink()
+        
+        for suffix in ("-wal", "-shm"):
+            sidecar = Path(str(db_path) + suffix)
+            if sidecar.exists():
+                sidecar.unlink()
+        
+        print(f"* Project '{project}' has been deleted.")
+        return True
+    except Exception as e:
+        print(f"* Error deleting project '{project}': {e}")
+        return False
+
+
 def show(
     project: str | None = None,
     theme: str | ThemeClass | None = None,
@@ -292,10 +337,10 @@ def show(
             dashboard is launched in a notebook, otherwise the main thread will be blocked.
 
         Returns:
-            app: The Gradio app object corresponding to the dashboard launched by Trackio.
-            url: The local URL of the dashboard.
-            share_url: The public share URL of the dashboard.
-            full_url: The full URL of the dashboard including the write token (will use the public share URL if launched publicly, otherwise the local URL).
+            `app`: The Gradio app object corresponding to the dashboard launched by Trackio.
+            `url`: The local URL of the dashboard.
+            `share_url`: The public share URL of the dashboard.
+            `full_url`: The full URL of the dashboard including the write token (will use the public share URL if launched publicly, otherwise the local URL).
     """
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
@@ -353,4 +398,4 @@ def show(
 
     if block_thread:
         utils.block_main_thread_until_keyboard_interrupt()
-    return TupleNoPrint((app, url, share_url, full_url))
+    return TupleNoPrint((demo, url, share_url, full_url))
