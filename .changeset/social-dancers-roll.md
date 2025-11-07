@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Tests
+feat:Adds a basic UI test to `trackio`
