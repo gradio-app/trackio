@@ -55,6 +55,13 @@ jobs:
       run: |
         playwright install
         
-    - name: Run tests
+    - name: Run backend unit tests
       run: |
-        pytest 
+        pytest --deselect=tests/ui 
+
+    - name: Run ui/ux interaction tests
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        pytest tests/ui 
+
+    
