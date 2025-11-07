@@ -290,7 +290,7 @@ def show(
             If `True`, the main thread will be blocked until the dashboard is closed.
             If `None` (default behavior), then the main thread will not be blocked if the
             dashboard is launched in a notebook, otherwise the main thread will be blocked.
-        
+
         Returns:
             app: The Gradio app object corresponding to the dashboard launched by Trackio.
             url: The local URL of the dashboard.
