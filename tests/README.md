@@ -4,7 +4,7 @@ This directory contains Python unit tests which can be run by running `pytest te
 
 Each of the `test_` files in this folder contain unit tests for the corresponding module (e.g. `test_run.py` contains unit tests for `run.py`)
 
-This directory also includes the `client-to-db` subdirectory, which are also pytests, but test behaviors that include the end-to-end user workflow:
+This directory also includes the `e2e` subdirectory, which are also pytests, but test behaviors that include the end-to-end user workflow:
 
 > User API  → Gradio UI → SQLite Storage
 
