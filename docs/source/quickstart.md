@@ -108,3 +108,24 @@ trackio.init(project="my-project", space_id="username/space_id")
 ```
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
+
+Alternatively, you can push an existing local project to a Hugging Face Space by running:
+
+<hfoptions id="language">
+<hfoption id="Shell">
+
+```sh
+trackio push --project "my-project" --space-id "username/space_id"
+```
+
+</hfoption>
+<hfoption id="Python">
+
+```py
+trackio.push(project="my-project", space_id="username/space_id")
+```
+
+</hfoption>
+</hfoptions>
+
+This will create the Space if it does not already exist, and upload all runs and associated data to the Space.
