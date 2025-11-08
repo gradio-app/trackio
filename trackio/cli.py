@@ -1,6 +1,6 @@
 import argparse
 
-from trackio import show
+from trackio import push, show
 
 
 def main():
@@ -30,6 +30,23 @@ def main():
         help="Comma-separated list of hex color codes for plot lines (e.g. '#FF0000,#00FF00,#0000FF'). If not provided, the TRACKIO_COLOR_PALETTE environment variable will be used, or the default palette if not set.",
     )
 
+    push_parser = subparsers.add_parser(
+        "push", help="Push a local project's database to a Hugging Face Space."
+    )
+    push_parser.add_argument(
+        "--project", required=True, help="The name of the local project."
+    )
+    push_parser.add_argument(
+        "--space-id",
+        required=True,
+        help="The Hugging Face Space ID where the project will be pushed (e.g. username/space_id).",
+    )
+    push_parser.add_argument(
+        "--private",
+        action="store_true",
+        help="Make the Hugging Face Space private. By default, the repo will be public unless the organization's default is private. This value is ignored if the repo already exists.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "show":
@@ -37,6 +54,8 @@ def main():
         if args.color_palette:
             color_palette = [color.strip() for color in args.color_palette.split(",")]
         show(args.project, args.theme, args.mcp_server, color_palette)
+    elif args.command == "push":
+        push(project=args.project, space_id=args.space_id, private=args.private)
     else:
         parser.print_help()
 

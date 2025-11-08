@@ -14,6 +14,7 @@ from requests import HTTPError
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.utils import preprocess_space_and_dataset_ids
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
@@ -154,6 +155,8 @@ trackio.show()"""
     if theme := os.environ.get("TRACKIO_THEME"):
         huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
 
+    huggingface_hub.add_space_variable(space_id, "GRADIO_MCP_SERVER", "True")
+
 
 def create_space_if_not_exists(
     space_id: str,
@@ -256,3 +259,26 @@ def upload_db_to_space(project: str, space_id: str) -> None:
         uploaded_db=handle_file(db_path),
         hf_token=huggingface_hub.utils.get_token(),
     )
+
+
+def push(project: str, space_id: str, private: bool | None = None) -> None:
+    """
+    Pushes a local Trackio project's database to a Hugging Face Space.
+    If the Space does not exist, it will be created.
+
+    Args:
+        project (`str`): The name of the project to upload.
+        space_id (`str`): The ID of the Space to upload to (e.g., `"username/space_id"`).
+        private (`bool`, *optional*):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
+    """
+    space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
+    try:
+        create_space_if_not_exists(space_id, private=private)
+        wait_until_space_exists(space_id)
+        upload_db_to_space(project, space_id)
+        print(f"Pushed successfully to space: {SPACE_URL.format(space_id=space_id)}")
+    except Exception as e:
+        print(f"Failed to push to space: {e}")

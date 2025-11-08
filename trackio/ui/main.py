@@ -293,10 +293,6 @@ def upload_db_to_space(
     """
     fns.check_hf_token_has_write_access(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
-    if os.path.exists(db_project_path):
-        raise gr.Error(
-            f"Trackio database file already exists for project {project}, cannot overwrite."
-        )
     os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
     shutil.copy(uploaded_db["path"], db_project_path)
 
