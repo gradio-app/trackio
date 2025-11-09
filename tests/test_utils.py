@@ -83,7 +83,7 @@ def test_format_timestamp():
 
 
 @pytest.mark.parametrize(
-    "base_url, project, write_token, expected",
+    "api_url, project, write_token, expected",
     [
         (
             "https://example.com",
@@ -107,8 +107,8 @@ def test_format_timestamp():
         ),
     ],
 )
-def test_get_full_url(base_url, project, write_token, expected):
-    result = utils.get_full_url(base_url, project, write_token)
+def test_get_full_url(api_url, project, write_token, expected):
+    result = utils.get_full_url(api_url, project, write_token)
     assert result == expected
 
 

@@ -59,6 +59,17 @@ export TRACKIO_THEME="gstaff/xkcd"
 export TRACKIO_THEME="ParityError/Anime"
 ```
 
+### `TRACKIO_COLOR_PALETTE`
+
+Customizes the color palette used for plot lines in the Trackio dashboard. The value should be a comma-separated list of hex color codes. These colors will be cycled through when plotting multiple runs.
+
+```bash
+export TRACKIO_COLOR_PALETTE="#FF0000,#00FF00,#0000FF,#FFFF00,#FF00FF,#00FFFF"
+```
+
+**Default palette:**
+`#A8769B, #E89957, #3B82F6, #10B981, #EF4444, #8B5CF6, #14B8A6, #F59E0B, #EC4899, #06B6D4`
+
 ### `TRACKIO_TABLE_TRUNCATE_LENGTH`
 
 Controls the maximum length of string values displayed in table cells before they are truncated. When a cell value exceeds this length, it will be truncated with an expandable element that allows viewing the full text. Defaults to `250` characters.

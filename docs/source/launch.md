@@ -71,6 +71,31 @@ trackio.show(theme="soft")
 
 To see the available themes, check out the [themes gallery](https://huggingface.co/spaces/gradio/theme-gallery).
 
+## Customizing Plot Colors
+
+You can customize the color palette used for plot lines by providing a `color_palette` argument. This is useful if you want to match your organization's branding or have specific color preferences.
+
+<hfoptions id="language">
+<hfoption id="Shell">
+
+```sh
+trackio show --color-palette "#FF0000,#00FF00,#0000FF"
+```
+
+</hfoption>
+<hfoption id="Python">
+
+```py
+import trackio 
+
+trackio.show(color_palette=["#FF0000", "#00FF00", "#0000FF"])
+```
+
+</hfoption>
+</hfoptions>
+
+The colors will be cycled through when displaying multiple runs. You can provide as many or as few colors as you like.
+
 ## Launching a Dashboard in Jupyter Notebooks
 
 You can also launch the dashboard directly within a Jupyter Notebook. Just use the same command as above:

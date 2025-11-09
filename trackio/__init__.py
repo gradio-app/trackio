@@ -10,6 +10,7 @@ from typing import Any
 from gradio.blocks import BUILT_IN_THEMES
 from gradio.themes import Default as DefaultTheme
 from gradio.themes import ThemeClass
+from gradio.utils import TupleNoPrint
 from gradio_client import Client
 from huggingface_hub import SpaceStorage
 
@@ -41,6 +42,7 @@ __all__ = [
     "log",
     "finish",
     "show",
+    "delete_project",
     "import_csv",
     "import_tf_events",
     "Image",
@@ -274,10 +276,58 @@ def finish():
     run.finish()
 
 
+def delete_project(project: str, force: bool = False) -> bool:
+    """
+    Deletes a project by removing its local SQLite database.
+
+    Args:
+        project (`str`):
+            The name of the project to delete.
+        force (`bool`, *optional*, defaults to `False`):
+            If `True`, deletes the project without prompting for confirmation.
+            If `False`, prompts the user to confirm before deleting.
+
+    Returns:
+        `bool`: `True` if the project was deleted, `False` otherwise.
+    """
+    db_path = SQLiteStorage.get_project_db_path(project)
+
+    if not db_path.exists():
+        print(f"* Project '{project}' does not exist.")
+        return False
+
+    if not force:
+        response = input(
+            f"Are you sure you want to delete project '{project}'? "
+            f"This will permanently delete all runs and metrics. (y/N): "
+        )
+        if response.lower() not in ["y", "yes"]:
+            print("* Deletion cancelled.")
+            return False
+
+    try:
+        db_path.unlink()
+
+        for suffix in ("-wal", "-shm"):
+            sidecar = Path(str(db_path) + suffix)
+            if sidecar.exists():
+                sidecar.unlink()
+
+        print(f"* Project '{project}' has been deleted.")
+        return True
+    except Exception as e:
+        print(f"* Error deleting project '{project}': {e}")
+        return False
+
+
 def show(
     project: str | None = None,
     theme: str | ThemeClass | None = None,
     mcp_server: bool | None = None,
+    color_palette: list[str] | None = None,
+    *,
+    open_browser: bool = True,
+    block_thread: bool | None = None,
 ):
     """
     Launches the Trackio dashboard.
@@ -297,7 +347,28 @@ def show(
             functions will be added as MCP tools. If `None` (default behavior), then the
             `GRADIO_MCP_SERVER` environment variable will be used to determine if the
             MCP server should be enabled (which is `"True"` on Hugging Face Spaces).
+        color_palette (`list[str]`, *optional*):
+            A list of hex color codes to use for plot lines. If not provided, the
+            `TRACKIO_COLOR_PALETTE` environment variable will be used (comma-separated
+            hex codes), or if that is not set, the default color palette will be used.
+            Example: `['#FF0000', '#00FF00', '#0000FF']`
+        open_browser (`bool`, *optional*, defaults to `True`):
+            If `True` and not in a notebook, a new browser tab will be opened with the dashboard.
+            If `False`, the browser will not be opened.
+        block_thread (`bool`, *optional*):
+            If `True`, the main thread will be blocked until the dashboard is closed.
+            If `None` (default behavior), then the main thread will not be blocked if the
+            dashboard is launched in a notebook, otherwise the main thread will be blocked.
+
+        Returns:
+            `app`: The Gradio app object corresponding to the dashboard launched by Trackio.
+            `url`: The local URL of the dashboard.
+            `share_url`: The public share URL of the dashboard.
+            `full_url`: The full URL of the dashboard including the write token (will use the public share URL if launched publicly, otherwise the local URL).
     """
+    if color_palette is not None:
+        os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
+
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
     if theme != DEFAULT_THEME:
@@ -329,7 +400,7 @@ def show(
         else os.environ.get("GRADIO_MCP_SERVER", "False") == "True"
     )
 
-    _, url, share_url = demo.launch(
+    app, url, share_url = demo.launch(
         show_api=_mcp_server,
         quiet=True,
         inline=False,
@@ -346,7 +417,13 @@ def show(
 
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {full_url}")
-        webbrowser.open(full_url)
-        utils.block_main_thread_until_keyboard_interrupt()
+        if open_browser:
+            webbrowser.open(full_url)
+        block_thread = block_thread if block_thread is not None else True
     else:
         utils.embed_url_in_notebook(full_url)
+        block_thread = block_thread if block_thread is not None else False
+
+    if block_thread:
+        utils.block_main_thread_until_keyboard_interrupt()
+    return TupleNoPrint((demo, url, share_url, full_url))
