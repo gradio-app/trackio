@@ -562,7 +562,7 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
                                             )
 
 
-css = """
+CSS = """
 #run-cb .wrap { gap: 2px; }
 #run-cb .wrap label {
     line-height: 1;
@@ -623,7 +623,7 @@ css = """
 }
 """
 
-javascript = """
+HEAD = """
 <script>
 function setCookie(name, value, days) {
     var expires = "";
@@ -649,6 +649,7 @@ function getCookie(name) {
 (function() {
     const urlParams = new URLSearchParams(window.location.search);
     const writeToken = urlParams.get('write_token');
+    const footerParam = urlParams.get('footer');
     
     if (writeToken) {
         setCookie('trackio_write_token', writeToken, 7);
@@ -664,6 +665,12 @@ function getCookie(name) {
             window.history.replaceState({}, document.title, newUrl);
         }
     }
+    
+    if (footerParam === 'false') {
+        const style = document.createElement('style');
+        style.textContent = 'footer { display: none !important; }';
+        document.head.appendChild(style);
+    }
 })();
 </script>
 """
@@ -671,7 +678,7 @@ function getCookie(name) {
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
+with gr.Blocks(title="Trackio Dashboard") as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo_urls = utils.get_logo_urls()
         logo = gr.Markdown(
@@ -957,7 +964,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             metric_filter_tb,
         ],
         show_progress="hidden",
-        queue=False,
     )
     def update_dashboard(
         project,
@@ -1073,6 +1079,8 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 x_lim_value,
                             )
                             if not metric_df.empty:
+                                from vega_datasets import data
+
                                 plot = gr.LinePlot(
                                     downsampled_df,
                                     x=x_column,
@@ -1080,13 +1088,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     y_title=metric_name.split("/")[-1],
                                     color=color,
                                     color_map=color_map,
+                                    # colors_in_legend=original_runs,
                                     title=metric_name,
                                     key=f"plot-{metric_idx}",
                                     preserved_by_key=None,
+                                    buttons=["fullscreen", "export"],
                                     x_lim=updated_x_lim,
-                                    show_fullscreen_button=True,
                                     min_width=400,
-                                    show_export_button=True,
                                 )
                                 plot.select(
                                     update_x_lim,
@@ -1145,13 +1153,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                             y_title=metric_name.split("/")[-1],
                                             color=color,
                                             color_map=color_map,
+                                            colors_in_legend=original_runs,
                                             title=metric_name,
                                             key=f"plot-{metric_idx}",
                                             preserved_by_key=None,
+                                            buttons=["fullscreen", "export"],
                                             x_lim=updated_x_lim,
-                                            show_fullscreen_button=True,
                                             min_width=400,
-                                            show_export_button=True,
                                         )
                                         plot.select(
                                             update_x_lim,
@@ -1181,7 +1189,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             metric_filter_tb,
         ],
         show_progress="hidden",
-        queue=False,
     )
     def update_tables(
         project,
@@ -1367,7 +1374,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             ],
             inputs=[project_dd, run_group_by_dd, run_tb, run_selection_state],
             show_progress="hidden",
-            queue=False,
         )
         def render_grouped_runs(project, group_key, filter_text, selection):
             if not group_key:
