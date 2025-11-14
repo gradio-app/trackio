@@ -246,8 +246,8 @@ def wait_until_space_exists(
 
 def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None:
     """
-    Uploads the database of a local Trackio project to a Hugging Face Space. It 
-    uses the Gradio Client to upload since we do not want to trigger a new build 
+    Uploads the database of a local Trackio project to a Hugging Face Space. It
+    uses the Gradio Client to upload since we do not want to trigger a new build
     of the Space, which would happen if we used `huggingface_hub.upload_file`.
 
     Args:
@@ -257,7 +257,7 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
     """
     db_path = SQLiteStorage.get_project_db_path(project)
     client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
-    
+
     if not force:
         try:
             existing_projects = client.predict(api_name="/get_all_projects")
@@ -272,7 +272,7 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
         except Exception as e:
             print(f"* Warning: Could not check if project exists on Space: {e}")
             print("* Proceeding with upload...")
-    
+
     client.predict(
         api_name="/upload_db_to_space",
         project=project,
