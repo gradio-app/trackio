@@ -1,4 +1,3 @@
-import hashlib
 import json
 import logging
 import os
@@ -7,8 +6,6 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-from gradio.blocks import BUILT_IN_THEMES
-from gradio.themes import Default as DefaultTheme
 from gradio.themes import ThemeClass
 from gradio.utils import TupleNoPrint
 from gradio_client import Client
@@ -21,7 +18,7 @@ from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
-from trackio.ui.main import demo
+from trackio.ui.main import CSS, HEAD, demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -142,6 +139,8 @@ def init(
     if url is None:
         if space_id is None:
             _, url, share_url = demo.launch(
+                css=CSS,
+                head=HEAD,
                 footer_links=["gradio", "settings"],
                 inline=False,
                 quiet=True,
@@ -362,29 +361,6 @@ def show(
 
     theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
 
-    if theme != DEFAULT_THEME:
-        # TODO: It's a little hacky to reproduce this theme-setting logic from Gradio Blocks,
-        # but in Gradio 6.0, the theme will be set in `launch()` instead, which means that we
-        # will be able to remove this code.
-        if isinstance(theme, str):
-            if theme.lower() in BUILT_IN_THEMES:
-                theme = BUILT_IN_THEMES[theme.lower()]
-            else:
-                try:
-                    theme = ThemeClass.from_hub(theme)
-                except Exception as e:
-                    warnings.warn(f"Cannot load {theme}. Caught Exception: {str(e)}")
-                    theme = DefaultTheme()
-        if not isinstance(theme, ThemeClass):
-            warnings.warn("Theme should be a class loaded from gradio.themes")
-            theme = DefaultTheme()
-        demo.theme: ThemeClass = theme
-        demo.theme_css = theme._get_theme_css()
-        demo.stylesheets = theme._stylesheets
-        theme_hasher = hashlib.sha256()
-        theme_hasher.update(demo.theme_css.encode("utf-8"))
-        demo.theme_hash = theme_hasher.hexdigest()
-
     _mcp_server = (
         mcp_server
         if mcp_server is not None
@@ -392,14 +368,16 @@ def show(
     )
 
     app, url, share_url = demo.launch(
-        show_api=_mcp_server,
-        footer_links=["gradio", "settings"],
+        css=CSS,
+        head=HEAD,
+        footer_links=["gradio", "settings"] + (["api"] if _mcp_server else []),
         quiet=True,
         inline=False,
         prevent_thread_lock=True,
         favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
         allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
         mcp_server=_mcp_server,
+        theme=theme,
     )
 
     base_url = share_url + "/" if share_url else url

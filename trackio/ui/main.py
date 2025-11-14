@@ -562,7 +562,7 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
                                             )
 
 
-css = """
+CSS = """
 #run-cb .wrap { gap: 2px; }
 #run-cb .wrap label {
     line-height: 1;
@@ -623,7 +623,7 @@ css = """
 }
 """
 
-javascript = """
+HEAD = """
 <script>
 function setCookie(name, value, days) {
     var expires = "";
@@ -678,7 +678,7 @@ function getCookie(name) {
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
+with gr.Blocks(title="Trackio Dashboard") as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo_urls = utils.get_logo_urls()
         logo = gr.Markdown(
