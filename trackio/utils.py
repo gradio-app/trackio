@@ -465,26 +465,39 @@ def format_timestamp(timestamp_str):
         return "Unknown"
 
 
-COLOR_PALETTE = [
+DEFAULT_COLOR_PALETTE = [
+    "#A8769B",
+    "#E89957",
     "#3B82F6",
-    "#EF4444",
     "#10B981",
-    "#F59E0B",
+    "#EF4444",
     "#8B5CF6",
+    "#14B8A6",
+    "#F59E0B",
     "#EC4899",
     "#06B6D4",
-    "#84CC16",
-    "#F97316",
-    "#6366F1",
 ]
 
 
-def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
+def get_color_palette() -> list[str]:
+    """Get the color palette from environment variable or use default."""
+    env_palette = os.environ.get("TRACKIO_COLOR_PALETTE")
+    if env_palette:
+        return [color.strip() for color in env_palette.split(",")]
+    return DEFAULT_COLOR_PALETTE
+
+
+def get_color_mapping(
+    runs: list[str], smoothing: bool, color_palette: list[str] | None = None
+) -> dict[str, str]:
     """Generate color mapping for runs, with transparency for original data when smoothing is enabled."""
+    if color_palette is None:
+        color_palette = get_color_palette()
+
     color_map = {}
 
     for i, run in enumerate(runs):
-        base_color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
+        base_color = color_palette[i % len(color_palette)]
 
         if smoothing:
             color_map[run] = base_color + "4D"

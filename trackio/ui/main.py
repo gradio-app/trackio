@@ -162,8 +162,8 @@ def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
 def load_run_data(
     project: str | None,
     run: str | None,
-    smoothing_granularity: int,
-    x_axis: str,
+    smoothing_granularity: int = 0,
+    x_axis: str = "step",
     log_scale_x: bool = False,
     log_scale_y: bool = False,
 ) -> tuple[pd.DataFrame, dict]:
@@ -616,6 +616,10 @@ css = """
 .media-audio-row {
     gap: 0.25em;
     margin-bottom: 0.25em;
+}
+
+.tab-like-container {
+    visibility: hidden;
 }
 """
 
@@ -1170,46 +1174,102 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         if media_by_run and any(any(media) for media in media_by_run.values()):
             create_media_section(media_by_run)
 
+    @gr.render(
+        triggers=[
+            demo.load,
+            run_cb.change,
+            last_steps.change,
+            metric_filter_tb.change,
+        ],
+        inputs=[
+            project_dd,
+            run_cb,
+            metrics_subset,
+            metric_filter_tb,
+        ],
+        show_progress="hidden",
+        queue=False,
+    )
+    def update_tables(
+        project,
+        runs,
+        metrics_subset_value,
+        metric_filter,
+    ):
+        dfs = []
+        for run in runs:
+            df, _ = load_run_data(project, run)
+            if df is not None:
+                dfs.append(df)
+        master_df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
         table_cols = master_df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
-        if metrics_subset:
-            table_cols = [c for c in table_cols if c in metrics_subset]
+        if metrics_subset_value:
+            table_cols = [c for c in table_cols if c in metrics_subset_value]
         if metric_filter and metric_filter.strip():
             table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
+        table_cols = [
+            c
+            for c in table_cols
+            if not (metric_df := master_df.dropna(subset=[c])).empty
+            and isinstance(first_value := metric_df[c].iloc[0], dict)
+            and first_value.get("_type") == Table.TYPE
+        ]
 
-        actual_table_count = sum(
-            1
-            for metric_name in table_cols
-            if not (metric_df := master_df.dropna(subset=[metric_name])).empty
-            and isinstance(value := metric_df[metric_name].iloc[-1], dict)
-            and value.get("_type") == Table.TYPE
-        )
-
-        if actual_table_count > 0:
-            with gr.Accordion(f"tables ({actual_table_count})", open=True):
+        if len(table_cols) > 0:
+            with gr.Accordion(f"tables ({len(table_cols)})", open=True):
                 with gr.Row(key="row"):
                     for metric_idx, metric_name in enumerate(table_cols):
                         metric_df = master_df.dropna(subset=[metric_name])
                         if not metric_df.empty:
-                            value = metric_df[metric_name].iloc[-1]
+                            value = metric_df[metric_name]
+                            first_value = value.iloc[0]
                             if (
-                                isinstance(value, dict)
-                                and "_type" in value
-                                and value["_type"] == Table.TYPE
+                                isinstance(first_value, dict)
+                                and "_type" in first_value
+                                and first_value["_type"] == Table.TYPE
                             ):
                                 try:
-                                    processed_data = Table.to_display_format(
-                                        value["_value"]
-                                    )
-                                    df = pd.DataFrame(processed_data)
+                                    with gr.Column():
+                                        s = gr.Slider(
+                                            value=len(value),
+                                            minimum=1,
+                                            maximum=len(value),
+                                            step=1,
+                                            container=False,
+                                            visible=len(value) > 1,
+                                        )
+                                        processed_data = Table.to_display_format(
+                                            value.iloc[-1]["_value"]
+                                        )
+                                        df = pd.DataFrame(processed_data)
+                                        table = gr.DataFrame(
+                                            df,
+                                            label=f"{metric_name} (index {len(value)})",
+                                            key=f"table-{metric_idx}",
+                                            wrap=True,
+                                            datatype="markdown",
+                                            preserved_by_key=None,
+                                        )
 
-                                    gr.DataFrame(
-                                        df,
-                                        label=f"{metric_name} (latest)",
-                                        key=f"table-{metric_idx}",
-                                        wrap=True,
-                                        datatype="markdown",
-                                    )
+                                        def get_table_at_index(index: int):
+                                            value = metric_df[metric_name]
+                                            processed_data = Table.to_display_format(
+                                                value.iloc[index - 1]["_value"]
+                                            )
+                                            df_ = pd.DataFrame(processed_data)
+                                            return gr.Dataframe(
+                                                df_,
+                                                label=f"{metric_name} (index {index})",
+                                            )
+
+                                        s.input(
+                                            get_table_at_index,
+                                            inputs=s,
+                                            outputs=table,
+                                            show_progress="hidden",
+                                        )
                                 except Exception as e:
                                     gr.Warning(
                                         f"Column {metric_name} failed to render as a table: {e}"
@@ -1221,12 +1281,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             "timestamp",
             "data_type",
         }
-        if metrics_subset:
-            histogram_cols = [c for c in histogram_cols if c in metrics_subset]
-        if metric_filter and metric_filter.strip():
-            histogram_cols = filter_metrics_by_regex(
-                list(histogram_cols), metric_filter
-            )
 
         actual_histogram_count = sum(
             1

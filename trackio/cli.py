@@ -36,11 +36,19 @@ def main():
         action="store_false",
         help="Hide the Gradio footer.",
     )
+    ui_parser.add_argument(      
+        "--color-palette",
+        required=False,
+        help="Comma-separated list of hex color codes for plot lines (e.g. '#FF0000,#00FF00,#0000FF'). If not provided, the TRACKIO_COLOR_PALETTE environment variable will be used, or the default palette if not set.",
+    )
 
     args = parser.parse_args()
 
     if args.command == "show":
-        show(args.project, args.theme, args.mcp_server, args.footer)
+        color_palette = None
+        if args.color_palette:
+            color_palette = [color.strip() for color in args.color_palette.split(",")]
+        show(args.project, args.theme, args.mcp_server, args.footer, color_palette)
     else:
         parser.print_help()
 
