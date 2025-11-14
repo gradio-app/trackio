@@ -14,7 +14,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pandas<3.0.0",
     "huggingface-hub<1.0.0",
-    "gradio[oauth]@https://gradio-pypi-previews.s3.amazonaws.com/ae0077d128ff2ffa44fd46cdebff04e3d1624abe/gradio-5.49.1-py3-none-any.whl",
+    "gradio[oauth]==6.0.0.dev3",
     "numpy<3.0.0",
     "pillow<12.0.0",
     "orjson>=3.0,<4.0.0",
