@@ -7,7 +7,7 @@ from pathlib import Path
 
 import gradio
 import huggingface_hub
-from gradio_client import Client
+from gradio_client import Client, handle_file
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 from requests import HTTPError
@@ -234,13 +234,13 @@ def wait_until_space_exists(
     """
     hf_api = huggingface_hub.HfApi()
     delay = 1
-    for _ in range(10):
+    for _ in range(30):
         try:
             hf_api.space_info(space_id)
             return
         except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
             time.sleep(delay)
-            delay = min(delay * 2, 30)
+            delay = min(delay * 2, 60)
     raise TimeoutError("Waiting for space to exist took longer than expected")
 
 
@@ -254,32 +254,28 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
         force: If True, overwrite existing database without prompting. If False, prompt for confirmation.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
-    hf_api = huggingface_hub.HfApi()
-
     client = Client(space_id, verbose=False)
-    repo_files_path = client.predict(
-        api_name="/get_db_path",
+    
+    if not force:
+        try:
+            existing_projects = client.predict(api_name="/get_all_projects")
+            if project in existing_projects:
+                response = input(
+                    f"Database for project '{project}' already exists on Space '{space_id}'. "
+                    f"Overwrite it? (y/N): "
+                )
+                if response.lower() not in ["y", "yes"]:
+                    print("* Upload cancelled.")
+                    return
+        except Exception as e:
+            print(f"* Warning: Could not check if project exists on Space: {e}")
+            print("* Proceeding with upload...")
+    
+    client.predict(
+        api_name="/upload_db_to_space",
         project=project,
-    )
-
-    if not force and hf_api.file_exists(
-        repo_id=space_id,
-        filename=repo_files_path,
-        repo_type="space",
-    ):
-        response = input(
-            f"Database for project '{project}' already exists on Space '{space_id}'. "
-            f"Overwrite it? (y/N): "
-        )
-        if response.lower() not in ["y", "yes"]:
-            print("* Upload cancelled.")
-            return
-
-    hf_api.upload_file(
-        path_or_fileobj=str(db_path),
-        path_in_repo=repo_files_path,
-        repo_id=space_id,
-        repo_type="space",
+        uploaded_db=handle_file(db_path),
+        hf_token=huggingface_hub.utils.get_token(),
     )
 
 
@@ -302,10 +298,7 @@ def sync(
             If `False`, prompt the user before overwriting an existing database.
     """
     space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
-    try:
-        create_space_if_not_exists(space_id, private=private)
-        wait_until_space_exists(space_id)
-        upload_db_to_space(project, space_id, force=force)
-        print(f"Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
-    except Exception as e:
-        print(f"Failed to sync to space: {e}")
+    create_space_if_not_exists(space_id, private=private)
+    wait_until_space_exists(space_id)
+    upload_db_to_space(project, space_id, force=force)
+    print(f"Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")

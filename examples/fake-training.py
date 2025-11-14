@@ -104,3 +104,9 @@ for run in range(3):
         time.sleep(0.2)
 
 wandb.finish()
+
+wandb.sync(
+    project=f"fake-training-{PROJECT_ID}",
+    space_id=f"trackio-sync-space-{PROJECT_ID}",
+    force=True,
+)

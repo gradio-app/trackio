@@ -99,18 +99,16 @@ def get_runs(project) -> list[str]:
     return SQLiteStorage.get_runs(project)
 
 
-def get_db_path(project: str) -> str:
+def upload_db_to_space(
+    project: str, uploaded_db: gr.FileData, hf_token: str | None
+) -> None:
     """
-    Returns the repository-relative path where the database should be stored for a project.
-
-    Args:
-        project: The name of the project.
-
-    Returns:
-        The repository-relative path where the database should be stored (e.g., "trackio_data/project.db").
+    Uploads the database of a local Trackio project to a Hugging Face Space.
     """
-    filename = SQLiteStorage.get_project_db_filename(project)
-    return f"trackio_data/{filename}"
+    fns.check_hf_token_has_write_access(hf_token)
+    db_project_path = SQLiteStorage.get_project_db_path(project)
+    os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
+    shutil.copy(uploaded_db["path"], db_project_path)
 
 
 def get_available_metrics(project: str, runs: list[str]) -> list[str]:
@@ -872,6 +870,10 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     )
 
     gr.api(
+        fn=upload_db_to_space,
+        api_name="upload_db_to_space",
+    )
+    gr.api(
         fn=bulk_upload_media,
         api_name="bulk_upload_media",
     )
@@ -906,10 +908,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.api(
         fn=get_run_summary,
         api_name="get_run_summary",
-    )
-    gr.api(
-        fn=get_db_path,
-        api_name="get_db_path",
     )
 
     last_steps = gr.State({})
