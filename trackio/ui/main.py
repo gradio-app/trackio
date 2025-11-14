@@ -99,6 +99,18 @@ def get_runs(project) -> list[str]:
     return SQLiteStorage.get_runs(project)
 
 
+def upload_db_to_space(
+    project: str, uploaded_db: gr.FileData, hf_token: str | None
+) -> None:
+    """
+    Uploads the database of a local Trackio project to a Hugging Face Space.
+    """
+    fns.check_hf_token_has_write_access(hf_token)
+    db_project_path = SQLiteStorage.get_project_db_path(project)
+    os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
+    shutil.copy(uploaded_db["path"], db_project_path)
+
+
 def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     """Get all available metrics across all runs for x-axis selection."""
     if not project or not runs:
@@ -283,22 +295,6 @@ def toggle_timer(cb_value):
         return gr.Timer(active=True)
     else:
         return gr.Timer(active=False)
-
-
-def upload_db_to_space(
-    project: str, uploaded_db: gr.FileData, hf_token: str | None
-) -> None:
-    """
-    Uploads the database of a local Trackio project to a Hugging Face Space.
-    """
-    fns.check_hf_token_has_write_access(hf_token)
-    db_project_path = SQLiteStorage.get_project_db_path(project)
-    if os.path.exists(db_project_path):
-        raise gr.Error(
-            f"Trackio database file already exists for project {project}, cannot overwrite."
-        )
-    os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
-    shutil.copy(uploaded_db["path"], db_project_path)
 
 
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:

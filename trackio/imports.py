@@ -14,6 +14,7 @@ def import_csv(
     space_id: str | None = None,
     dataset_id: str | None = None,
     private: bool | None = None,
+    force: bool = False,
 ) -> None:
     """
     Imports a CSV file into a Trackio project. The CSV file must contain a `"step"`
@@ -143,7 +144,7 @@ def import_csv(
             space_id=space_id, dataset_id=dataset_id, private=private
         )
         deploy.wait_until_space_exists(space_id=space_id)
-        deploy.upload_db_to_space(project=project, space_id=space_id)
+        deploy.upload_db_to_space(project=project, space_id=space_id, force=force)
         print(
             f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
         )
@@ -156,6 +157,7 @@ def import_tf_events(
     space_id: str | None = None,
     dataset_id: str | None = None,
     private: bool | None = None,
+    force: bool = False,
 ) -> None:
     """
     Imports TensorFlow Events files from a directory into a Trackio project. Each
@@ -296,7 +298,7 @@ def import_tf_events(
             space_id, dataset_id=dataset_id, private=private
         )
         deploy.wait_until_space_exists(space_id)
-        deploy.upload_db_to_space(project, space_id)
+        deploy.upload_db_to_space(project, space_id, force=force)
         print(
             f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
         )

@@ -14,6 +14,7 @@ from requests import HTTPError
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.utils import preprocess_space_and_dataset_ids
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
@@ -154,6 +155,8 @@ trackio.show()"""
     if theme := os.environ.get("TRACKIO_THEME"):
         huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
 
+    huggingface_hub.add_space_variable(space_id, "GRADIO_MCP_SERVER", "True")
+
 
 def create_space_if_not_exists(
     space_id: str,
@@ -229,30 +232,75 @@ def wait_until_space_exists(
     Args:
         space_id: The ID of the Space to wait for.
     """
+    hf_api = huggingface_hub.HfApi()
     delay = 1
-    for _ in range(10):
+    for _ in range(30):
         try:
-            Client(space_id, verbose=False)
+            hf_api.space_info(space_id)
             return
-        except (ReadTimeout, ValueError):
+        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
             time.sleep(delay)
-            delay = min(delay * 2, 30)
+            delay = min(delay * 2, 60)
     raise TimeoutError("Waiting for space to exist took longer than expected")
 
 
-def upload_db_to_space(project: str, space_id: str) -> None:
+def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None:
     """
-    Uploads the database of a local Trackio project to a Hugging Face Space.
+    Uploads the database of a local Trackio project to a Hugging Face Space. It
+    uses the Gradio Client to upload since we do not want to trigger a new build
+    of the Space, which would happen if we used `huggingface_hub.upload_file`.
 
     Args:
         project: The name of the project to upload.
         space_id: The ID of the Space to upload to.
+        force: If True, overwrite existing database without prompting. If False, prompt for confirmation.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
-    client = Client(space_id, verbose=False)
+    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
+
+    if not force:
+        try:
+            existing_projects = client.predict(api_name="/get_all_projects")
+            if project in existing_projects:
+                response = input(
+                    f"Database for project '{project}' already exists on Space '{space_id}'. "
+                    f"Overwrite it? (y/N): "
+                )
+                if response.lower() not in ["y", "yes"]:
+                    print("* Upload cancelled.")
+                    return
+        except Exception as e:
+            print(f"* Warning: Could not check if project exists on Space: {e}")
+            print("* Proceeding with upload...")
+
     client.predict(
         api_name="/upload_db_to_space",
         project=project,
         uploaded_db=handle_file(db_path),
         hf_token=huggingface_hub.utils.get_token(),
     )
+
+
+def sync(
+    project: str, space_id: str, private: bool | None = None, force: bool = False
+) -> None:
+    """
+    Syncs a local Trackio project's database to a Hugging Face Space.
+    If the Space does not exist, it will be created.
+
+    Args:
+        project (`str`): The name of the project to upload.
+        space_id (`str`): The ID of the Space to upload to (e.g., `"username/space_id"`).
+        private (`bool`, *optional*):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
+        force (`bool`, *optional*, defaults to `False`):
+            If `True`, overwrite the existing database without prompting for confirmation.
+            If `False`, prompt the user before overwriting an existing database.
+    """
+    space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
+    create_space_if_not_exists(space_id, private=private)
+    wait_until_space_exists(space_id)
+    upload_db_to_space(project, space_id, force=force)
+    print(f"Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
