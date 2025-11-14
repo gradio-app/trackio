@@ -1,61 +1,66 @@
 // quickstart.rs
-use serde_json::json;
+use serde_json::{json, Value};
 use std::{env, thread, time::{Duration, Instant}};
 
-// Trackio Rust client
-use trackio::Client;
-
-// Small helpers
 fn env_or(name: &str, default: &str) -> String {
     env::var(name).unwrap_or_else(|_| default.to_string())
 }
 
-fn wait_for_api(base: &str, ms: u64) -> bool {
-    // best-effort ping to /api/projects
-    let url = format!("{}/api/projects", base.trim_end_matches('/'));
-    let deadline = Instant::now() + Duration::from_millis(ms);
-    while Instant::now() < deadline {
-        if let Ok(resp) = reqwest::blocking::get(&url) {
-            if resp.status().is_success() {
-                return true;
-            }
-        }
-        thread::sleep(Duration::from_millis(120));
-    }
-    false
+fn post_json(url: &str, body: &Value) -> Result<(u16, String), reqwest::Error> {
+    let client = reqwest::blocking::Client::new();
+    let r = client.post(url).json(body).send()?;
+    let status = r.status().as_u16();
+    let text = r.text().unwrap_or_default();
+    Ok((status, text))
 }
 
 fn main() {
     let base = env_or("TRACKIO_SERVER_URL", "http://127.0.0.1:7860");
     let base = base.trim_end_matches('/').to_string();
-    let project = env_or("TRACKIO_PROJECT", "rs-quickstart");
-    let run = env_or("TRACKIO_RUN", "rs-run-1");
 
-    println!("* Waiting for Trackio server at: {}", base);
-    if !wait_for_api(&base, 5_000) {
-        eprintln!("! Trackio API not reachable at {}", base);
-        std::process::exit(1);
-    }
-    println!("* Trackio REST detected at: {}/api/projects", base);
+    let hf_token = env::var("HF_TOKEN")
+        .expect("HF_TOKEN is required (write token for your HF Space)");
 
-    let client = Client::new()
-        .with_base_url(&base)
-        .with_project(&project)
-        .with_run(&run);
+    // Trackio bulk_log schema: project, run, metrics, step, config
+    let logs = json!([
+        {
+            "project": "rs-quickstart",
+            "run": "rs-run-1",
+            "metrics": { "loss": 0.90, "acc": 0.60 },
+            "step": 0,
+            "config": Value::Null
+        },
+        {
+            "project": "rs-quickstart",
+            "run": "rs-run-1",
+            "metrics": { "loss": 0.75, "acc": 0.68 },
+            "step": 1,
+            "config": Value::Null
+        },
+        {
+            "project": "rs-quickstart",
+            "run": "rs-run-1",
+            "metrics": { "loss": 0.62, "acc": 0.73 },
+            "step": 2,
+            "config": Value::Null
+        }
+    ]);
 
-    // Sample points (omit timestamp)
-    client.log(json!({"loss": 0.90, "acc": 0.60}), Some(0), None);
-    client.log(json!({"loss": 0.75, "acc": 0.68}), Some(1), None);
-    client.log(json!({"loss": 0.62, "acc": 0.73}), Some(2), None);
+    // Body format: { "data": [ logs, HF_TOKEN ] }
+    let body = json!({
+        "data": [ logs, hf_token ]
+    });
 
-    println!("* Flushing logs...");
-    client.flush().expect("flush ok");
+    let url = format!("{}/gradio_api/call/bulk_log", base);
+    println!("* POST {}", url);
 
-    println!("* Done. Open the dashboard:");
+    let (status, text) = post_json(&url, &body).expect("POST request failed");
+
+    println!("status: {}", status);
+    println!("{}", text);
+
     println!(
-        "  {}/?selected_project={}&selected_run={}",
-        base,
-        urlencoding::encode(&project),
-        urlencoding::encode(&run)
+        "Open dashboard:\n  {}/?selected_project=rs-quickstart&selected_run=rs-run-1",
+        base
     );
 }

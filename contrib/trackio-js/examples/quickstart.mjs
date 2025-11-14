@@ -1,67 +1,71 @@
 // quickstart.mjs
-import { TrackioClient } from "../src/client.js";
-
-// Best-effort wait for API to be up
-async function waitForAPI(base, ms = 5000) {
-  const start = Date.now();
-  const url = base.replace(/\/+$/, "") + "/api/projects";
-  while (Date.now() - start < ms) {
-    try {
-      const r = await fetch(url);
-      if (r.ok) return true;
-    } catch {}
-    await new Promise(r => setTimeout(r, 120));
-  }
-  return false;
-}
+// No imports needed — Node 18+ has global fetch
 
 function env(name, fallback) {
-  return process.env[name] && process.env[name].length ? process.env[name] : fallback;
+  return process.env[name] && process.env[name].length
+    ? process.env[name]
+    : fallback;
 }
 
 async function main() {
   const base = env("TRACKIO_SERVER_URL", "http://127.0.0.1:7860").replace(/\/+$/, "");
-  const project = env("TRACKIO_PROJECT", "js-quickstart");
-  const run = env("TRACKIO_RUN", "js-run-1");
-
-  console.log("* Waiting for Trackio server at:", base);
-  const up = await waitForAPI(base, 5000);
-  if (!up) {
-    console.error("! Trackio API not reachable at", base);
+  const hfToken = env("HF_TOKEN", "");
+  if (!hfToken) {
+    console.error("HF_TOKEN is required (write token for your Space)");
     process.exit(1);
   }
-  console.log("* Trackio REST detected at:", `${base}/api/projects`);
 
-  // Configure client
-  const c = new TrackioClient()
-    .withBaseURL(base)
-    .withProject(project)
-    .withRun(run);
+  console.log("* Using Trackio server:", base);
 
-  // Log a few sample points (omit timestamp arg; client will not send it)
-  c.log({ loss: 0.90, acc: 0.60 }, 0);
-  c.log({ loss: 0.75, acc: 0.68 }, 1);
-  c.log({ loss: 0.62, acc: 0.73 }, 2);
+  // Trackio schema for bulk_log
+  const logs = [
+    {
+      project: "js-quickstart",
+      run: "js-run-1",
+      metrics: { loss: 0.90, acc: 0.60 },
+      step: 0,
+      config: null,
+    },
+    {
+      project: "js-quickstart",
+      run: "js-run-1",
+      metrics: { loss: 0.75, acc: 0.68 },
+      step: 1,
+      config: null,
+    },
+    {
+      project: "js-quickstart",
+      run: "js-run-1",
+      metrics: { loss: 0.62, acc: 0.73 },
+      step: 2,
+      config: null,
+    },
+  ];
 
-  console.log("* Flushing logs...");
-  await c.flush();
+  const payload = {
+    data: [logs, hfToken],
+  };
 
-  // Verify: list runs and fetch logs
-  const runsRes = await fetch(`${base}/api/runs/${encodeURIComponent(project)}`);
-  const runs = await runsRes.json();
-  console.log("* Runs for project:", project, runs);
+  const url = `${base}/gradio_api/call/bulk_log`;
 
-  const logsRes = await fetch(
-    `${base}/api/logs/${encodeURIComponent(project)}/${encodeURIComponent(run)}`
+  console.log("* POST", url);
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  console.log("status:", resp.status, resp.statusText);
+  const text = await resp.text();
+  console.log(text);
+
+  console.log("\nOpen your dashboard:");
+  console.log(
+    `  ${base}/?selected_project=js-quickstart&selected_run=js-run-1`
   );
-  const logs = await logsRes.json();
-  console.log(`* Retrieved ${logs.length} log rows. First row:`, logs[0]);
-
-  console.log("* Done. Open the dashboard:");
-  console.log("  ", `${base}/?selected_project=${encodeURIComponent(project)}&selected_run=${encodeURIComponent(run)}`);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error(err);
   process.exit(1);
 });

@@ -1,82 +1,79 @@
-// examples/quickstart/main.go
 package main
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"time"
-
-	trackio "github.com/gradio-app/trackio/contrib/trackio-go"
+	"strings"
 )
-
-func waitForAPI(base string, deadline time.Duration) (string, error) {
-	fmt.Println("* Waiting for Trackio server at:", base)
-	dead := time.Now().Add(deadline)
-
-	// Probe a few candidates (in order of preference)
-	candidates := []string{
-		"/api/projects",                // FastAPI shim (when TRACKIO_SHOW_API=1)
-		"/gradio_api/get_all_projects", // Gradio auto route (registered via gr.api)
-		"/",                            // UI root: indicates app is up (last resort)
-	}
-
-	for time.Now().Before(dead) {
-		for _, ep := range candidates {
-			u := base + ep
-			resp, err := http.Get(u)
-			if err == nil && resp != nil {
-				code := resp.StatusCode
-				resp.Body.Close()
-				// Treat any non-5xx as "up"
-				if code >= 200 && code < 500 {
-					return ep, nil
-				}
-			}
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	return "", fmt.Errorf("no Trackio API found at %s", base)
-}
 
 func main() {
 	base := os.Getenv("TRACKIO_SERVER_URL")
 	if base == "" {
-		base = "http://127.0.0.1:7860"
+		base = "https://vaibhav2507-trackio-dashboard.hf.space"
+	}
+	base = strings.TrimRight(base, "/")
+
+	hfToken := os.Getenv("HF_TOKEN")
+	if hfToken == "" {
+		log.Fatal("HF_TOKEN env var is required (write token for your Space)")
 	}
 
-	path, err := waitForAPI(base, 8*time.Second)
+	// This matches the Trackio bulk_log schema in your /config:
+	// items: { project, run, metrics, step, config }
+	logs := []map[string]interface{}{
+		{
+			"project": "go-quickstart",
+			"run":     "go-run-1",
+			"metrics": map[string]float64{"loss": 0.5, "acc": 0.80},
+			"step":    0,
+			"config":  nil,
+		},
+		{
+			"project": "go-quickstart",
+			"run":     "go-run-1",
+			"metrics": map[string]float64{"loss": 0.4, "acc": 0.82},
+			"step":    1,
+			"config":  nil,
+		},
+	}
+
+	// SimplePredictBody: { "data": [ logs, hf_token ] }
+	body := map[string]interface{}{
+		"data": []interface{}{logs, hfToken},
+	}
+
+	buf, err := json.Marshal(body)
 	if err != nil {
-		log.Fatalf(`Trackio API not reachable at %s: %v
-Start Trackio locally with:
-  export TRACKIO_SHOW_API=1
-  python -c "import trackio; trackio.init(project='go-quickstart', embed=False); import time; time.sleep(9999)"
-`, base, err)
+		log.Fatalf("marshal body: %v", err)
 	}
-	fmt.Println("* Trackio REST detected at:", base+path)
 
-	// Build client (envs can also be used: TRACKIO_PROJECT / TRACKIO_RUN)
-	c := trackio.New(
-		trackio.WithBaseURL(base),
-		trackio.WithProject("go-quickstart"),
-		trackio.WithRun("go-run-1"),
-	)
+	url := base + "/gradio_api/call/bulk_log"
+	fmt.Println("* POST", url)
 
-	// Log a couple of points (matches curl example)
-	fmt.Println("* Logging sample metrics to:", base)
-	s0 := 0
-	c.Log(map[string]any{"loss": 0.5, "acc": 0.80}, &s0, "")
-	s1 := 1
-	c.Log(map[string]any{"loss": 0.4, "acc": 0.82}, &s1, "")
-
-	// Flush
-	fmt.Println("* Flushing logs...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := c.Flush(ctx); err != nil {
-		log.Fatalf("flush error: %v", err)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(buf))
+	if err != nil {
+		log.Fatalf("new request: %v", err)
 	}
-	fmt.Println("* Done. Check the Trackio dashboard.")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	fmt.Println("status:", resp.Status)
+	var respBody map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
+		fmt.Println("could not decode response JSON (maybe empty):", err)
+	} else {
+		b, _ := json.MarshalIndent(respBody, "", "  ")
+		fmt.Println(string(b))
+	}
+
+	fmt.Printf("* If status is 200, open %s/?selected_project=go-quickstart in your browser.\n", base)
 }
