@@ -261,9 +261,9 @@ def upload_db_to_space(project: str, space_id: str) -> None:
     )
 
 
-def push(project: str, space_id: str, private: bool | None = None) -> None:
+def sync(project: str, space_id: str, private: bool | None = None) -> None:
     """
-    Pushes a local Trackio project's database to a Hugging Face Space.
+    Syncs a local Trackio project's database to a Hugging Face Space.
     If the Space does not exist, it will be created.
 
     Args:
@@ -279,6 +279,6 @@ def push(project: str, space_id: str, private: bool | None = None) -> None:
         create_space_if_not_exists(space_id, private=private)
         wait_until_space_exists(space_id)
         upload_db_to_space(project, space_id)
-        print(f"Pushed successfully to space: {SPACE_URL.format(space_id=space_id)}")
+        print(f"Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
     except Exception as e:
-        print(f"Failed to push to space: {e}")
+        print(f"Failed to sync to space: {e}")
