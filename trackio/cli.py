@@ -1,6 +1,6 @@
 import argparse
 
-from trackio import sync, show
+from trackio import show, sync
 
 
 def main():
@@ -46,6 +46,11 @@ def main():
         action="store_true",
         help="Make the Hugging Face Space private. By default, the repo will be public unless the organization's default is private. This value is ignored if the repo already exists.",
     )
+    sync_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the existing database without prompting for confirmation.",
+    )
 
     args = parser.parse_args()
 
@@ -55,7 +60,12 @@ def main():
             color_palette = [color.strip() for color in args.color_palette.split(",")]
         show(args.project, args.theme, args.mcp_server, color_palette)
     elif args.command == "sync":
-        sync(project=args.project, space_id=args.space_id, private=args.private)
+        sync(
+            project=args.project,
+            space_id=args.space_id,
+            private=args.private,
+            force=args.force,
+        )
     else:
         parser.print_help()
 

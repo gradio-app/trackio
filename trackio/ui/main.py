@@ -99,6 +99,20 @@ def get_runs(project) -> list[str]:
     return SQLiteStorage.get_runs(project)
 
 
+def get_db_path(project: str) -> str:
+    """
+    Returns the repository-relative path where the database should be stored for a project.
+
+    Args:
+        project: The name of the project.
+
+    Returns:
+        The repository-relative path where the database should be stored (e.g., "trackio_data/project.db").
+    """
+    filename = SQLiteStorage.get_project_db_filename(project)
+    return f"trackio_data/{filename}"
+
+
 def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     """Get all available metrics across all runs for x-axis selection."""
     if not project or not runs:
@@ -892,6 +906,10 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
     gr.api(
         fn=get_run_summary,
         api_name="get_run_summary",
+    )
+    gr.api(
+        fn=get_db_path,
+        api_name="get_db_path",
     )
 
     last_steps = gr.State({})

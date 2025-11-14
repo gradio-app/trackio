@@ -7,6 +7,7 @@ from pathlib import Path
 
 import gradio
 import huggingface_hub
+from gradio_client import Client
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 from requests import HTTPError
@@ -243,19 +244,37 @@ def wait_until_space_exists(
     raise TimeoutError("Waiting for space to exist took longer than expected")
 
 
-def upload_db_to_space(project: str, space_id: str) -> None:
+def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None:
     """
     Uploads the database of a local Trackio project to a Hugging Face Space.
 
     Args:
         project: The name of the project to upload.
         space_id: The ID of the Space to upload to.
+        force: If True, overwrite existing database without prompting. If False, prompt for confirmation.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
     hf_api = huggingface_hub.HfApi()
-    
-    repo_files_path = f"trackio_data/{project}.db"
-    
+
+    client = Client(space_id, verbose=False)
+    repo_files_path = client.predict(
+        api_name="/get_db_path",
+        project=project,
+    )
+
+    if not force and hf_api.file_exists(
+        repo_id=space_id,
+        filename=repo_files_path,
+        repo_type="space",
+    ):
+        response = input(
+            f"Database for project '{project}' already exists on Space '{space_id}'. "
+            f"Overwrite it? (y/N): "
+        )
+        if response.lower() not in ["y", "yes"]:
+            print("* Upload cancelled.")
+            return
+
     hf_api.upload_file(
         path_or_fileobj=str(db_path),
         path_in_repo=repo_files_path,
@@ -264,7 +283,9 @@ def upload_db_to_space(project: str, space_id: str) -> None:
     )
 
 
-def sync(project: str, space_id: str, private: bool | None = None) -> None:
+def sync(
+    project: str, space_id: str, private: bool | None = None, force: bool = False
+) -> None:
     """
     Syncs a local Trackio project's database to a Hugging Face Space.
     If the Space does not exist, it will be created.
@@ -276,12 +297,15 @@ def sync(project: str, space_id: str, private: bool | None = None) -> None:
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored
             if the repo already exists.
+        force (`bool`, *optional*, defaults to `False`):
+            If `True`, overwrite the existing database without prompting for confirmation.
+            If `False`, prompt the user before overwriting an existing database.
     """
     space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
     try:
         create_space_if_not_exists(space_id, private=private)
         wait_until_space_exists(space_id)
-        upload_db_to_space(project, space_id)
+        upload_db_to_space(project, space_id, force=force)
         print(f"Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
     except Exception as e:
         print(f"Failed to sync to space: {e}")
