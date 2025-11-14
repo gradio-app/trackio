@@ -1,5 +1,13 @@
 # trackio
 
+## 0.9.0
+
+### Features
+
+- [#343](https://github.com/gradio-app/trackio/pull/343) [`51bea30`](https://github.com/gradio-app/trackio/commit/51bea30f2877adff8e6497466d3a799400a0a049) - Sync offline projects to Hugging Face spaces.  Thanks @candemircan!
+- [#341](https://github.com/gradio-app/trackio/pull/341) [`4fd841f`](https://github.com/gradio-app/trackio/commit/4fd841fa190e15071b02f6fba7683ef4f393a654) - Adds a basic UI test to `trackio`.  Thanks @abidlabs!
+- [#339](https://github.com/gradio-app/trackio/pull/339) [`011d91b`](https://github.com/gradio-app/trackio/commit/011d91bb6ae266516fd250a349285670a8049d05) - Allow customzing the trackio color palette.  Thanks @abidlabs!
+
 ## 0.8.1
 
 ### Features
