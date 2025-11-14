@@ -213,6 +213,7 @@ The main tools that are available when Trackio is running in MCP server mode are
 6. **get_run_summary** - Get a summary of a specific run including metrics and configuration. Returns: Dictionary with run summary information.
 7. **bulk_log** - Log metrics data to Trackio. Each entry is a dictionary with project, run, metrics, and optionally step and config.
 8. **bulk_upload_media** - Upload media files for experiments. Requires file upload capability.
+9. **get_db_path** - Get the repository-relative path where the database should be stored for a project. Returns: String path (e.g., "trackio_data/project.db").
 
 ### MCP Client Configuration
 

@@ -31,7 +31,8 @@ def main():
     )
 
     sync_parser = subparsers.add_parser(
-        "sync", help="Sync a local project's database to a Hugging Face Space."
+        "sync",
+        help="Sync a local project's database to a Hugging Face Space. If the Space does not exist, it will be created.",
     )
     sync_parser.add_argument(
         "--project", required=True, help="The name of the local project."
@@ -44,7 +45,7 @@ def main():
     sync_parser.add_argument(
         "--private",
         action="store_true",
-        help="Make the Hugging Face Space private. By default, the repo will be public unless the organization's default is private. This value is ignored if the repo already exists.",
+        help="Make the Hugging Face Space private if creating a new Space. By default, the repo will be public unless the organization's default is private. This value is ignored if the repo already exists.",
     )
     sync_parser.add_argument(
         "--force",
