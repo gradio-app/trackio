@@ -7,7 +7,6 @@ from pathlib import Path
 
 import gradio
 import huggingface_hub
-from gradio_client import Client, handle_file
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 from requests import HTTPError
@@ -232,12 +231,13 @@ def wait_until_space_exists(
     Args:
         space_id: The ID of the Space to wait for.
     """
+    hf_api = huggingface_hub.HfApi()
     delay = 1
     for _ in range(10):
         try:
-            Client(space_id, verbose=False)
+            hf_api.space_info(space_id)
             return
-        except (ReadTimeout, ValueError):
+        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
             time.sleep(delay)
             delay = min(delay * 2, 30)
     raise TimeoutError("Waiting for space to exist took longer than expected")
@@ -252,12 +252,15 @@ def upload_db_to_space(project: str, space_id: str) -> None:
         space_id: The ID of the Space to upload to.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
-    client = Client(space_id, verbose=False)
-    client.predict(
-        api_name="/upload_db_to_space",
-        project=project,
-        uploaded_db=handle_file(db_path),
-        hf_token=huggingface_hub.utils.get_token(),
+    hf_api = huggingface_hub.HfApi()
+    
+    repo_files_path = f"trackio_data/{project}.db"
+    
+    hf_api.upload_file(
+        path_or_fileobj=str(db_path),
+        path_in_repo=repo_files_path,
+        repo_id=space_id,
+        repo_type="space",
     )
 
 

@@ -212,8 +212,7 @@ The main tools that are available when Trackio is running in MCP server mode are
 5. **get_project_summary** - Get a summary of a project including number of runs and recent activity. Returns: Dictionary with project summary information.
 6. **get_run_summary** - Get a summary of a specific run including metrics and configuration. Returns: Dictionary with run summary information.
 7. **bulk_log** - Log metrics data to Trackio. Each entry is a dictionary with project, run, metrics, and optionally step and config.
-8. **upload_db_to_space** - Upload database file to Hugging Face Space. Requires file upload capability.
-9. **bulk_upload_media** - Upload media files for experiments. Requires file upload capability.
+8. **bulk_upload_media** - Upload media files for experiments. Requires file upload capability.
 
 ### MCP Client Configuration
 

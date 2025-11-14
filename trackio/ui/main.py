@@ -285,18 +285,6 @@ def toggle_timer(cb_value):
         return gr.Timer(active=False)
 
 
-def upload_db_to_space(
-    project: str, uploaded_db: gr.FileData, hf_token: str | None
-) -> None:
-    """
-    Uploads the database of a local Trackio project to a Hugging Face Space.
-    """
-    fns.check_hf_token_has_write_access(hf_token)
-    db_project_path = SQLiteStorage.get_project_db_path(project)
-    os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
-    shutil.copy(uploaded_db["path"], db_project_path)
-
-
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     """
     Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
@@ -869,10 +857,6 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         show_progress="hidden",
     )
 
-    gr.api(
-        fn=upload_db_to_space,
-        api_name="upload_db_to_space",
-    )
     gr.api(
         fn=bulk_upload_media,
         api_name="bulk_upload_media",
