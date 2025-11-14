@@ -246,7 +246,9 @@ def wait_until_space_exists(
 
 def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None:
     """
-    Uploads the database of a local Trackio project to a Hugging Face Space.
+    Uploads the database of a local Trackio project to a Hugging Face Space. It 
+    uses the Gradio Client to upload since we do not want to trigger a new build 
+    of the Space, which would happen if we used `huggingface_hub.upload_file`.
 
     Args:
         project: The name of the project to upload.
@@ -254,7 +256,7 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
         force: If True, overwrite existing database without prompting. If False, prompt for confirmation.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
-    client = Client(space_id, verbose=False)
+    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
     
     if not force:
         try:
