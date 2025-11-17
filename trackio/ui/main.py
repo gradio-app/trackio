@@ -964,6 +964,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             metric_filter_tb,
         ],
         show_progress="hidden",
+        queue=False,
     )
     def update_dashboard(
         project,
@@ -1189,6 +1190,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             metric_filter_tb,
         ],
         show_progress="hidden",
+        queue=False,
     )
     def update_tables(
         project,
@@ -1374,6 +1376,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             ],
             inputs=[project_dd, run_group_by_dd, run_tb, run_selection_state],
             show_progress="hidden",
+            queue=False,
         )
         def render_grouped_runs(project, group_key, filter_text, selection):
             if not group_key:
