@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from trackio import Run, init
+from trackio.utils import _cached_whoami
 
 
 class DummyClient:
@@ -99,6 +100,8 @@ def test_run_name_generation_with_space_id(mock_time, mock_whoami, temp_dir):
     )
     assert run.name == "testuser-1234567890"
 
+    _cached_whoami.cache_clear()
+
 
 def test_reserved_config_keys_rejected(temp_dir):
     with pytest.raises(ValueError, match="Config key '_test' is reserved"):
@@ -129,6 +132,8 @@ def test_automatic_username_and_timestamp_added(mock_whoami, temp_dir):
 
     created_time = datetime.fromisoformat(run.config["_Created"])
     assert created_time.tzinfo is not None
+
+    _cached_whoami.cache_clear()
 
 
 def test_run_group_added(temp_dir):

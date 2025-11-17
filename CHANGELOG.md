@@ -1,5 +1,11 @@
 # trackio
 
+## 0.9.1
+
+### Features
+
+- [#344](https://github.com/gradio-app/trackio/pull/344) [`7e01024`](https://github.com/gradio-app/trackio/commit/7e010241d9a34794e0ce0dc19c1a6f0cf94ba856) - Avoid redundant calls to /whoami-v2.  Thanks @Wauplin!
+
 ## 0.9.0
 
 ### Features
