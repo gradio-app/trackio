@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from functools import lru_cache
 from typing import Any
 
 import gradio as gr
@@ -214,6 +215,7 @@ def toggle_timer(cb_value):
         return gr.Timer(active=False)
 
 
+@lru_cache(maxsize=32)
 def check_auth(hf_token: str | None) -> None:
     if os.getenv("SYSTEM") == "spaces":  # if we are running in Spaces
         # check auth token passed in
