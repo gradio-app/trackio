@@ -1,6 +1,7 @@
 """Shared functions for the Trackio UI."""
 
 import os
+from functools import lru_cache
 
 import gradio as gr
 import huggingface_hub as hf
@@ -82,6 +83,7 @@ def update_navbar_value(project_dd, request: gr.Request):
     )
 
 
+@lru_cache(maxsize=32)
 def check_hf_token_has_write_access(hf_token: str | None) -> None:
     """
     Checks to see if the provided hf_token is valid and has write access to the Space
@@ -137,6 +139,7 @@ def check_hf_token_has_write_access(hf_token: str | None) -> None:
             )
 
 
+@lru_cache(maxsize=32)
 def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
     """
     Checks to see if the oauth token provided via Gradio's OAuth is valid and has write access

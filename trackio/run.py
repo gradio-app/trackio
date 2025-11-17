@@ -12,6 +12,7 @@ from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import LogEntry, UploadEntry
+from trackio.utils import _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
 
@@ -62,8 +63,7 @@ class Run:
     def _get_username(self) -> str | None:
         """Get the current HuggingFace username if logged in, otherwise None."""
         try:
-            who = huggingface_hub.whoami()
-            return who["name"] if who else None
+            return _get_default_namespace()
         except Exception:
             return None
 
