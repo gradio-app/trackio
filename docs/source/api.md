@@ -27,3 +27,15 @@
 ## import_tf_events
 
 [[autodoc]] import_tf_events
+
+## Table
+
+[[autodoc]] Table
+
+## Image
+
+[[autodoc]] Image
+
+## Video
+
+[[autodoc]] Video

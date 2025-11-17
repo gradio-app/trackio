@@ -1,3 +1,4 @@
+import importlib.metadata
 import io
 import os
 import time
@@ -11,15 +12,44 @@ from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
 from requests import HTTPError
 
+import trackio
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.utils import preprocess_space_and_dataset_ids
 
+SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
-PERSISTENT_STORAGE_DIR = "/data/.huggingface/trackio"
+
+
+def _is_trackio_installed_from_source() -> bool:
+    """Check if trackio is installed from source/editable install vs PyPI."""
+    try:
+        trackio_file = trackio.__file__
+        if "site-packages" not in trackio_file:
+            return True
+
+        dist = importlib.metadata.distribution("trackio")
+        if dist.files:
+            files = list(dist.files)
+            has_pth = any(".pth" in str(f) for f in files)
+            if has_pth:
+                return True
+
+        return False
+    except (
+        AttributeError,
+        importlib.metadata.PackageNotFoundError,
+        importlib.metadata.MetadataError,
+        ValueError,
+        TypeError,
+    ):
+        return True
 
 
 def deploy_as_space(
     space_id: str,
+    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ):
     if (
         os.getenv("SYSTEM") == "spaces"
@@ -33,7 +63,9 @@ def deploy_as_space(
     try:
         huggingface_hub.create_repo(
             space_id,
+            private=private,
             space_sdk="gradio",
+            space_storage=space_storage,
             repo_type="space",
             exist_ok=True,
         )
@@ -43,7 +75,9 @@ def deploy_as_space(
             huggingface_hub.login(add_to_git_credential=False)
             huggingface_hub.create_repo(
                 space_id,
+                private=private,
                 space_sdk="gradio",
+                space_storage=space_storage,
                 repo_type="space",
                 exist_ok=True,
             )
@@ -63,9 +97,16 @@ def deploy_as_space(
 
     # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
     # Make sure necessary dependencies are installed by creating a requirements.txt.
-    requirements_content = """
-pyarrow>=21.0
-    """
+    is_source_install = _is_trackio_installed_from_source()
+
+    if is_source_install:
+        requirements_content = """pyarrow>=21.0
+plotly>=6.0.0,<7.0.0"""
+    else:
+        requirements_content = f"""pyarrow>=21.0
+trackio=={trackio.__version__}
+plotly>=6.0.0,<7.0.0"""
+
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(
         path_or_fileobj=requirements_buffer,
@@ -75,23 +116,53 @@ pyarrow>=21.0
     )
 
     huggingface_hub.utils.disable_progress_bars()
-    hf_api.upload_folder(
-        repo_id=space_id,
-        repo_type="space",
-        folder_path=trackio_path,
-        ignore_patterns=["README.md"],
-    )
 
-    huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", PERSISTENT_STORAGE_DIR)
+    if is_source_install:
+        hf_api.upload_folder(
+            repo_id=space_id,
+            repo_type="space",
+            folder_path=trackio_path,
+            ignore_patterns=["README.md"],
+        )
+    else:
+        app_file_content = """import trackio
+trackio.show()"""
+        app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
+        hf_api.upload_file(
+            path_or_fileobj=app_file_buffer,
+            path_in_repo="ui/main.py",
+            repo_id=space_id,
+            repo_type="space",
+        )
+
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
 
+    if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
+        huggingface_hub.add_space_variable(
+            space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
+        )
+    if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
+        huggingface_hub.add_space_variable(
+            space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
+        )
+
+    if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_PLOT_ORDER", plot_order)
+
+    if theme := os.environ.get("TRACKIO_THEME"):
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
+
+    huggingface_hub.add_space_variable(space_id, "GRADIO_MCP_SERVER", "True")
+
 
 def create_space_if_not_exists(
     space_id: str,
+    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
+    private: bool | None = None,
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist. If a dataset_id is provided, it will be added as a space variable.
@@ -99,6 +170,9 @@ def create_space_if_not_exists(
     Args:
         space_id: The ID of the Space to create.
         dataset_id: The ID of the Dataset to add to the Space.
+        private: Whether to make the Space private. If None (default), the repo will be
+          public unless the organization's default is private. This value is ignored if
+          the repo already exists.
     """
     if "/" not in space_id:
         raise ValueError(
@@ -115,6 +189,22 @@ def create_space_if_not_exists(
             huggingface_hub.add_space_variable(
                 space_id, "TRACKIO_DATASET_ID", dataset_id
             )
+        if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
+            )
+        if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
+            )
+
+        if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_PLOT_ORDER", plot_order
+            )
+
+        if theme := os.environ.get("TRACKIO_THEME"):
+            huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
         return
     except RepositoryNotFoundError:
         pass
@@ -129,7 +219,7 @@ def create_space_if_not_exists(
             raise ValueError(f"Failed to create Space: {e}")
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, dataset_id)
+    deploy_as_space(space_id, space_storage, dataset_id, private)
 
 
 def wait_until_space_exists(
@@ -142,30 +232,75 @@ def wait_until_space_exists(
     Args:
         space_id: The ID of the Space to wait for.
     """
+    hf_api = huggingface_hub.HfApi()
     delay = 1
-    for _ in range(10):
+    for _ in range(30):
         try:
-            Client(space_id, verbose=False)
+            hf_api.space_info(space_id)
             return
-        except (ReadTimeout, ValueError):
+        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
             time.sleep(delay)
-            delay = min(delay * 2, 30)
+            delay = min(delay * 2, 60)
     raise TimeoutError("Waiting for space to exist took longer than expected")
 
 
-def upload_db_to_space(project: str, space_id: str) -> None:
+def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None:
     """
-    Uploads the database of a local Trackio project to a Hugging Face Space.
+    Uploads the database of a local Trackio project to a Hugging Face Space. It
+    uses the Gradio Client to upload since we do not want to trigger a new build
+    of the Space, which would happen if we used `huggingface_hub.upload_file`.
 
     Args:
         project: The name of the project to upload.
         space_id: The ID of the Space to upload to.
+        force: If True, overwrite existing database without prompting. If False, prompt for confirmation.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
-    client = Client(space_id, verbose=False)
+    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
+
+    if not force:
+        try:
+            existing_projects = client.predict(api_name="/get_all_projects")
+            if project in existing_projects:
+                response = input(
+                    f"Database for project '{project}' already exists on Space '{space_id}'. "
+                    f"Overwrite it? (y/N): "
+                )
+                if response.lower() not in ["y", "yes"]:
+                    print("* Upload cancelled.")
+                    return
+        except Exception as e:
+            print(f"* Warning: Could not check if project exists on Space: {e}")
+            print("* Proceeding with upload...")
+
     client.predict(
         api_name="/upload_db_to_space",
         project=project,
         uploaded_db=handle_file(db_path),
         hf_token=huggingface_hub.utils.get_token(),
     )
+
+
+def sync(
+    project: str, space_id: str, private: bool | None = None, force: bool = False
+) -> None:
+    """
+    Syncs a local Trackio project's database to a Hugging Face Space.
+    If the Space does not exist, it will be created.
+
+    Args:
+        project (`str`): The name of the project to upload.
+        space_id (`str`): The ID of the Space to upload to (e.g., `"username/space_id"`).
+        private (`bool`, *optional*):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
+        force (`bool`, *optional*, defaults to `False`):
+            If `True`, overwrite the existing database without prompting for confirmation.
+            If `False`, prompt the user before overwriting an existing database.
+    """
+    space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
+    create_space_if_not_exists(space_id, private=private)
+    wait_until_space_exists(space_id)
+    upload_db_to_space(project, space_id, force=force)
+    print(f"Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")

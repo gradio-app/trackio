@@ -8,7 +8,10 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     
     steps:
     - uses: actions/checkout@v3
@@ -18,12 +21,47 @@ jobs:
       with:
         python-version: '3.10'
         
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .[dev,tensorboard]
-        pip install pytest
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
         
-    - name: Run tests
+    - name: Cache uv packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/uv
+        key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-
+        
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
       run: |
-        pytest 
+        sudo apt-get update -qy
+        sudo apt-get install -qy ffmpeg
+        
+    - name: Install system dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # FFmpeg installation for Windows (using chocolatey)
+        choco install ffmpeg -y
+        
+    - name: Install Python dependencies
+      run: |
+        uv pip install --system -e .[dev,tensorboard]
+        uv pip install --system pytest
+
+    - name: Install Playwright
+      run: |
+        playwright install
+        
+    - name: Run backend unit tests
+      run: |
+        pytest --deselect=tests/ui 
+
+    - name: Run ui/ux interaction tests
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        pytest tests/ui 
+
+    

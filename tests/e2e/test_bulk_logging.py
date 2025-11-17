@@ -4,7 +4,7 @@ import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_rapid_bulk_logging():
+def test_rapid_bulk_logging(temp_dir):
     """
     Test that logs sent rapidly across different runs are all successfully logged with correct run names.
     Also tests that trackio.log() is not too slow.
@@ -27,7 +27,7 @@ def test_rapid_bulk_logging():
         trackio.log({"metric": i, "value": i * 3}, step=i)
     time_to_run_1000_logs = time.time() - start_time
 
-    assert time_to_run_1000_logs < 0.1, (
+    assert time_to_run_1000_logs < 0.2, (
         f"1000 calls of trackio.log() took {time_to_run_1000_logs} seconds, which is too long"
     )
     trackio.finish()

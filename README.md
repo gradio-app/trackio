@@ -1,23 +1,43 @@
 <p align="center">
-<img width="75%" src="https://github.com/user-attachments/assets/6d6a41e7-fbc1-43ec-bda6-15f9ff4bd25c" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="trackio/assets/trackio_logo_type_dark_transparent.png">
+  <source media="(prefers-color-scheme: light)" srcset="trackio/assets/trackio_logo_type_light_transparent.png">
+  <img width="75%" alt="Trackio Logo" src="trackio/assets/trackio_logo_type_light_transparent.png">
+</picture>
+  
 </p>
 
-`trackio` is a lightweight, free experiment tracking Python library built on top of Hugging Face Datasets and Spaces 🤗.
 
-![Screen Recording 2025-07-28 at 5 26 32 PM](https://github.com/user-attachments/assets/f3eac49e-d8ee-4fc0-b1ca-aedfc6d6fae1)
+<div align="center">
+
+
+  
+[![trackio-backend](https://github.com/gradio-app/trackio/actions/workflows/test.yml/badge.svg)](https://github.com/gradio-app/trackio/actions/workflows/test.yml)
+[![PyPI downloads](https://img.shields.io/pypi/dm/trackio)](https://pypi.org/project/trackio/)
+[![PyPI](https://img.shields.io/pypi/v/trackio)](https://pypi.org/project/trackio/)
+![Python version](https://img.shields.io/badge/python-3.10+-important)
+[![Twitter follow](https://img.shields.io/twitter/follow/trackioapp?style=social&label=follow)](https://twitter.com/trackioapp)
+
+</div>
+
+`trackio` is a lightweight, free experiment tracking Python library built by Hugging Face 🤗.
+
+![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
+
 
 - **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish`. Drop-in replacement: just 
 
   ```python
   import trackio as wandb
   ```
+  and keep your existing logging code.
 
-- **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id`.
-- Persists logs locally (or in a private Hugging Face Dataset)
-- Visualize experiments with a Gradio dashboard locally (or on Hugging Face Spaces)
+- **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id` in `trackio.init()`.
+  - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
+  - Visualize experiments with a Gradio dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
 - Everything here, including hosting on Hugging Face, is **free**!
 
-Trackio is designed to be lightweight (the core codebase is <3,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
+Trackio is designed to be lightweight (the core codebase is <5,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
 
 ## Installation
 
@@ -29,7 +49,7 @@ pip install trackio
 
 or with `uv`:
 
-```py
+```bash
 uv pip install trackio
 ```
 
@@ -74,7 +94,7 @@ trackio.finish()
 
 Running the above will print to the terminal instructions on launching the dashboard.
 
-The usage of `trackio` is designed to be a identical to `wandb` in most cases, so you can easily switch between the two libraries.
+The usage of `trackio` is designed to be identical to `wandb` in most cases, so you can easily switch between the two libraries.
 
 ```py
 import trackio as wandb
@@ -137,14 +157,17 @@ One of the reasons we created `trackio` was to make it easy to embed live dashbo
 If you are hosting your Trackio dashboard on Spaces, then you can embed the url of that Space as an IFrame. You can even use query parameters to only specific projects and/or metrics, e.g.
 
 ```html
-<iframe src="https://abidlabs-trackio-1234.hf.space/?project=my-project&metrics=train_loss,train_accuracy&sidebar=hidden" width=1600 height=500 frameBorder="0">
+<iframe src="https://abidlabs-trackio-1234.hf.space/?project=my-project&metrics=train_loss,train_accuracy&sidebar=hidden" style="width:1600px; height:500px; border:0;">
 ```
 
 Supported query parameters:
 
 - `project`: (string) Filter the dashboard to show only a specific project
 - `metrics`: (comma-separated list) Filter the dashboard to show only specific metrics, e.g. `train_loss,train_accuracy`
-- `sidebar`: (string: one of "hidden" or "collapsed"). If "hidden", then the sidebar will not be visible. If "collapsed", the sidebar will be in a collpased state initially but the user will be able to open it. Otherwise, by default, the sidebar is shown in an open and visible state.
+- `sidebar`: (string: one of "hidden" or "collapsed"). If "hidden", then the sidebar will not be visible. If "collapsed", the sidebar will be in a collapsed state initially but the user will be able to open it. Otherwise, by default, the sidebar is shown in an open and visible state.
+- `xmin`: (number) Set the initial minimum value for the x-axis limits across all metric plots.
+- `xmax`: (number) Set the initial maximum value for the x-axis limits across all metric plots.
+- `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
 
 ## Examples
 
@@ -163,6 +186,21 @@ Since Trackio is in beta, your feedback is welcome! Please create issues with bu
 ## License
 
 MIT License
+
+## Documentation
+
+The complete documentation and API reference for each version of Trackio can be found at: https://huggingface.co/docs/trackio/index
+
+## Contribute
+
+We welcome contributions to Trackio! Whether you're fixing bugs, adding features, or improving documentation, your contributions help make Trackio better for the entire machine learning community.
+
+<p align="center">
+  <img src="https://contrib.rocks/image?repo=gradio-app/trackio" />
+</p>
+
+To start contributing, see our [Contributing Guide](CONTRIBUTING.md).
+
 
 ## Pronunciation
 

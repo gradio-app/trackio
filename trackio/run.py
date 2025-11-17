@@ -1,13 +1,18 @@
 import threading
 import time
+import warnings
+from datetime import datetime, timezone
 
 import huggingface_hub
 from gradio_client import Client, handle_file
 
-from trackio.media import TrackioImage
+from trackio import utils
+from trackio.histogram import Histogram
+from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.table import Table
 from trackio.typehints import LogEntry, UploadEntry
-from trackio.utils import RESERVED_KEYS, fibo, generate_readable_name
+from trackio.utils import _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
 
@@ -19,6 +24,7 @@ class Run:
         project: str,
         client: Client | None,
         name: str | None = None,
+        group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
     ):
@@ -28,28 +34,49 @@ class Run:
         self._client_thread = None
         self._client = client
         self._space_id = space_id
-        self.name = name or generate_readable_name(
+        self.name = name or utils.generate_readable_name(
             SQLiteStorage.get_runs(project), space_id
         )
-        self.config = config or {}
+        self.group = group
+        self.config = utils.to_json_safe(config or {})
+
+        if isinstance(self.config, dict):
+            for key in self.config:
+                if key.startswith("_"):
+                    raise ValueError(
+                        f"Config key '{key}' is reserved (keys starting with '_' are reserved for internal use)"
+                    )
+
+        self.config["_Username"] = self._get_username()
+        self.config["_Created"] = datetime.now(timezone.utc).isoformat()
+        self.config["_Group"] = self.group
+
         self._queued_logs: list[LogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._stop_flag = threading.Event()
+        self._config_logged = False
 
         self._client_thread = threading.Thread(target=self._init_client_background)
         self._client_thread.daemon = True
         self._client_thread.start()
 
+    def _get_username(self) -> str | None:
+        """Get the current HuggingFace username if logged in, otherwise None."""
+        try:
+            return _get_default_namespace()
+        except Exception:
+            return None
+
     def _batch_sender(self):
         """Send batched logs every BATCH_SEND_INTERVAL."""
         while not self._stop_flag.is_set() or len(self._queued_logs) > 0:
-            # If the stop flag has been set, then just quickly send all
-            # the logs and exit.
             if not self._stop_flag.is_set():
                 time.sleep(BATCH_SEND_INTERVAL)
 
             with self._client_lock:
-                if self._queued_logs and self._client is not None:
+                if self._client is None:
+                    return
+                if self._queued_logs:
                     logs_to_send = self._queued_logs.copy()
                     self._queued_logs.clear()
                     self._client.predict(
@@ -57,7 +84,7 @@ class Run:
                         logs=logs_to_send,
                         hf_token=huggingface_hub.utils.get_token(),
                     )
-                if self._queued_uploads and self._client is not None:
+                if self._queued_uploads:
                     uploads_to_send = self._queued_uploads.copy()
                     self._queued_uploads.clear()
                     self._client.predict(
@@ -68,7 +95,7 @@ class Run:
 
     def _init_client_background(self):
         if self._client is None:
-            fib = fibo()
+            fib = utils.fibo()
             for sleep_coefficient in fib:
                 try:
                     client = Client(self.url, verbose=False)
@@ -83,44 +110,100 @@ class Run:
 
         self._batch_sender()
 
-    def _process_media(self, metrics, step: int | None) -> dict:
+    def _queue_upload(self, file_path, step: int | None):
+        """Queue a media file for upload to space."""
+        upload_entry: UploadEntry = {
+            "project": self.project,
+            "run": self.name,
+            "step": step,
+            "uploaded_file": handle_file(file_path),
+        }
+        with self._client_lock:
+            self._queued_uploads.append(upload_entry)
+
+    def _process_media(self, value: TrackioMedia, step: int | None) -> dict:
         """
         Serialize media in metrics and upload to space if needed.
         """
-        serializable_metrics = {}
-        if not step:
-            step = 0
-        for key, value in metrics.items():
-            if isinstance(value, TrackioImage):
-                value._save(self.project, self.name, step)
-                serializable_metrics[key] = value._to_dict()
-                if self._space_id:
-                    # Upload local media when deploying to space
-                    upload_entry: UploadEntry = {
-                        "project": self.project,
-                        "run": self.name,
-                        "step": step,
-                        "uploaded_file": handle_file(value._get_absolute_file_path()),
-                    }
-                    with self._client_lock:
-                        self._queued_uploads.append(upload_entry)
-            else:
-                serializable_metrics[key] = value
-        return serializable_metrics
+        value._save(self.project, self.name, step)
+        if self._space_id:
+            self._queue_upload(value._get_absolute_file_path(), step)
+        return value._to_dict()
+
+    def _scan_and_queue_media_uploads(self, table_dict: dict, step: int | None):
+        """
+        Scan a serialized table for media objects and queue them for upload to space.
+        """
+        if not self._space_id:
+            return
+
+        table_data = table_dict.get("_value", [])
+        for row in table_data:
+            for value in row.values():
+                if isinstance(value, dict) and value.get("_type") in [
+                    "trackio.image",
+                    "trackio.video",
+                    "trackio.audio",
+                ]:
+                    file_path = value.get("file_path")
+                    if file_path:
+                        from trackio.utils import MEDIA_DIR
+
+                        absolute_path = MEDIA_DIR / file_path
+                        self._queue_upload(absolute_path, step)
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, dict) and item.get("_type") in [
+                            "trackio.image",
+                            "trackio.video",
+                            "trackio.audio",
+                        ]:
+                            file_path = item.get("file_path")
+                            if file_path:
+                                from trackio.utils import MEDIA_DIR
+
+                                absolute_path = MEDIA_DIR / file_path
+                                self._queue_upload(absolute_path, step)
 
     def log(self, metrics: dict, step: int | None = None):
-        for k in metrics.keys():
-            if k in RESERVED_KEYS or k.startswith("__"):
-                raise ValueError(
-                    f"Please do not use this reserved key as a metric: {k}"
-                )
+        renamed_keys = []
+        new_metrics = {}
 
-        metrics = self._process_media(metrics, step)
+        for k, v in metrics.items():
+            if k in utils.RESERVED_KEYS or k.startswith("__"):
+                new_key = f"__{k}"
+                renamed_keys.append(k)
+                new_metrics[new_key] = v
+            else:
+                new_metrics[k] = v
+
+        if renamed_keys:
+            warnings.warn(f"Reserved keys renamed: {renamed_keys} → '__{{key}}'")
+
+        metrics = new_metrics
+        for key, value in metrics.items():
+            if isinstance(value, Table):
+                metrics[key] = value._to_dict(
+                    project=self.project, run=self.name, step=step
+                )
+                self._scan_and_queue_media_uploads(metrics[key], step)
+            elif isinstance(value, Histogram):
+                metrics[key] = value._to_dict()
+            elif isinstance(value, TrackioMedia):
+                metrics[key] = self._process_media(value, step)
+        metrics = utils.serialize_values(metrics)
+
+        config_to_log = None
+        if not self._config_logged and self.config:
+            config_to_log = utils.to_json_safe(self.config)
+            self._config_logged = True
+
         log_entry: LogEntry = {
             "project": self.project,
             "run": self.name,
             "metrics": metrics,
             "step": step,
+            "config": config_to_log,
         }
 
         with self._client_lock:
@@ -130,11 +213,8 @@ class Run:
         """Cleanup when run is finished."""
         self._stop_flag.set()
 
-        # Wait for the batch sender to finish before joining the client thread.
         time.sleep(2 * BATCH_SEND_INTERVAL)
 
         if self._client_thread is not None:
-            print(
-                f"* Run finished. Uploading logs to Trackio Space: {self.url} (please wait...)"
-            )
+            print("* Run finished. Uploading logs to Trackio (please wait...)")
             self._client_thread.join()

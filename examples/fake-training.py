@@ -30,6 +30,21 @@ def generate_accuracy_curve(epoch, max_epochs, max_acc=0.95, min_acc=0.1):
     return max(0, min(max_acc, base_curve + noise))
 
 
+def generate_grad_norm_curve(epoch, max_epochs):
+    """Generate a gradient norm that starts at infinity and decreases to reasonable values"""
+    if epoch == 0:
+        return float("inf")
+    elif epoch == 1:
+        return 1000.0
+    elif epoch == 2:
+        return 100.0
+    else:
+        progress = (epoch - 2) / (max_epochs - 2)
+        base_value = 50 * math.exp(-4 * progress) + 1.0
+        noise = random.gauss(0, 0.5)
+        return max(0.1, base_value + noise)
+
+
 for run in range(3):
     wandb.init(
         project=f"fake-training-{PROJECT_ID}",
@@ -68,6 +83,8 @@ for run in range(3):
             min_acc=random.uniform(0.1, 0.3),
         )
 
+        grad_norm = generate_grad_norm_curve(epoch, EPOCHS)
+
         if epoch > 2 and random.random() < 0.3:
             val_loss *= 1.1
             val_accuracy *= 0.95
@@ -80,6 +97,7 @@ for run in range(3):
                 "train/rewards/reward2": random.random(),
                 "val/loss": round(val_loss, 4),
                 "val/accuracy": round(val_accuracy, 4),
+                "grad_norm": grad_norm,
             }
         )
 

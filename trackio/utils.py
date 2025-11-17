@@ -1,6 +1,8 @@
+import math
+import os
 import re
-import sys
 import time
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,9 +17,126 @@ if TYPE_CHECKING:
     from trackio.dummy_commit_scheduler import DummyCommitScheduler
 
 RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
-TRACKIO_DIR = Path(HF_HOME) / "trackio"
 
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
+
+
+def get_logo_urls() -> dict[str, str]:
+    """Get logo URLs from environment variables or use defaults."""
+    light_url = os.environ.get(
+        "TRACKIO_LOGO_LIGHT_URL",
+        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png",
+    )
+    dark_url = os.environ.get(
+        "TRACKIO_LOGO_DARK_URL",
+        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png",
+    )
+    return {"light": light_url, "dark": dark_url}
+
+
+def order_metrics_by_plot_preference(metrics: list[str]) -> tuple[list[str], dict]:
+    """
+    Order metrics based on TRACKIO_PLOT_ORDER environment variable and group them.
+
+    Args:
+        metrics: List of metric names to order and group
+
+    Returns:
+        Tuple of (ordered_group_names, grouped_metrics_dict)
+    """
+    plot_order_env = os.environ.get("TRACKIO_PLOT_ORDER", "")
+    if not plot_order_env.strip():
+        plot_order = []
+    else:
+        plot_order = [
+            item.strip() for item in plot_order_env.split(",") if item.strip()
+        ]
+
+    def get_metric_priority(metric: str) -> tuple[int, int, str]:
+        if not plot_order:
+            return (float("inf"), float("inf"), metric)
+
+        group_prefix = metric.split("/")[0] if "/" in metric else "charts"
+        no_match_priority = len(plot_order)
+
+        group_priority = no_match_priority
+        for i, pattern in enumerate(plot_order):
+            pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
+            if pattern_group == group_prefix:
+                group_priority = i
+                break
+
+        within_group_priority = no_match_priority
+        for i, pattern in enumerate(plot_order):
+            if pattern == metric:
+                within_group_priority = i
+                break
+            elif pattern.endswith("/*") and within_group_priority == no_match_priority:
+                pattern_prefix = pattern[:-2]
+                if metric.startswith(pattern_prefix + "/"):
+                    within_group_priority = i + len(plot_order)
+
+        return (group_priority, within_group_priority, metric)
+
+    result = {}
+    for metric in metrics:
+        if "/" not in metric:
+            if "charts" not in result:
+                result["charts"] = {"direct_metrics": [], "subgroups": {}}
+            result["charts"]["direct_metrics"].append(metric)
+        else:
+            parts = metric.split("/")
+            main_prefix = parts[0]
+            if main_prefix not in result:
+                result[main_prefix] = {"direct_metrics": [], "subgroups": {}}
+            if len(parts) == 2:
+                result[main_prefix]["direct_metrics"].append(metric)
+            else:
+                subprefix = parts[1]
+                if subprefix not in result[main_prefix]["subgroups"]:
+                    result[main_prefix]["subgroups"][subprefix] = []
+                result[main_prefix]["subgroups"][subprefix].append(metric)
+
+    for group_data in result.values():
+        group_data["direct_metrics"].sort(key=get_metric_priority)
+        for subgroup_name in group_data["subgroups"]:
+            group_data["subgroups"][subgroup_name].sort(key=get_metric_priority)
+
+    if "charts" in result and not result["charts"]["direct_metrics"]:
+        del result["charts"]
+
+    def get_group_priority(group_name: str) -> tuple[int, str]:
+        if not plot_order:
+            return (float("inf"), group_name)
+
+        min_priority = len(plot_order)
+        for i, pattern in enumerate(plot_order):
+            pattern_group = pattern.split("/")[0] if "/" in pattern else "charts"
+            if pattern_group == group_name:
+                min_priority = min(min_priority, i)
+        return (min_priority, group_name)
+
+    ordered_groups = sorted(result.keys(), key=get_group_priority)
+
+    return ordered_groups, result
+
+
+def persistent_storage_enabled() -> bool:
+    return (
+        os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
+    )  # typo in the name of the environment variable
+
+
+def _get_trackio_dir() -> Path:
+    if persistent_storage_enabled():
+        return Path("/data/trackio")
+    elif os.environ.get("TRACKIO_DIR"):
+        return Path(os.environ.get("TRACKIO_DIR"))
+    return Path(HF_HOME) / "trackio"
+
+
+TRACKIO_DIR = _get_trackio_dir()
+MEDIA_DIR = TRACKIO_DIR / "media"
 
 
 def generate_readable_name(used_names: list[str], space_id: str | None = None) -> str:
@@ -226,10 +345,24 @@ def generate_readable_name(used_names: list[str], space_id: str | None = None) -
     return name
 
 
-def block_except_in_notebook():
-    in_notebook = bool(getattr(sys, "ps1", sys.flags.interactive))
-    if in_notebook:
-        return
+def is_in_notebook():
+    """
+    Detect if code is running in a notebook environment (Jupyter, Colab, etc.).
+    """
+    try:
+        from IPython import get_ipython
+
+        if get_ipython() is not None:
+            return get_ipython().__class__.__name__ in [
+                "ZMQInteractiveShell",  # Jupyter notebook/lab
+                "Shell",  # IPython terminal
+            ] or "google.colab" in str(get_ipython())
+    except ImportError:
+        pass
+    return False
+
+
+def block_main_thread_until_keyboard_interrupt():
     try:
         while True:
             time.sleep(0.1)
@@ -273,12 +406,12 @@ def print_dashboard_instructions(project: str) -> None:
     Args:
         project: The name of the project to show dashboard for.
     """
-    YELLOW = "\033[93m"
+    ORANGE = "\033[38;5;208m"
     BOLD = "\033[1m"
     RESET = "\033[0m"
 
     print("* View dashboard by running in your terminal:")
-    print(f'{BOLD}{YELLOW}trackio show --project "{project}"{RESET}')
+    print(f'{BOLD}{ORANGE}trackio show --project "{project}"{RESET}')
     print(f'* or by running in Python: trackio.show(project="{project}")')
 
 
@@ -304,30 +437,72 @@ def fibo():
         a, b = b, a + b
 
 
-COLOR_PALETTE = [
+def format_timestamp(timestamp_str):
+    """Convert ISO timestamp to human-readable format like '3 minutes ago'."""
+    if not timestamp_str or pd.isna(timestamp_str):
+        return "Unknown"
+
+    try:
+        created_time = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+        if created_time.tzinfo is None:
+            created_time = created_time.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        diff = now - created_time
+
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return "Just now"
+        elif seconds < 3600:
+            minutes = seconds // 60
+            return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+        elif seconds < 86400:
+            hours = seconds // 3600
+            return f"{hours} hour{'s' if hours != 1 else ''} ago"
+        else:
+            days = seconds // 86400
+            return f"{days} day{'s' if days != 1 else ''} ago"
+    except Exception:
+        return "Unknown"
+
+
+DEFAULT_COLOR_PALETTE = [
+    "#A8769B",
+    "#E89957",
     "#3B82F6",
-    "#EF4444",
     "#10B981",
-    "#F59E0B",
+    "#EF4444",
     "#8B5CF6",
+    "#14B8A6",
+    "#F59E0B",
     "#EC4899",
     "#06B6D4",
-    "#84CC16",
-    "#F97316",
-    "#6366F1",
 ]
 
 
-def get_color_mapping(runs: list[str], smoothing: bool) -> dict[str, str]:
+def get_color_palette() -> list[str]:
+    """Get the color palette from environment variable or use default."""
+    env_palette = os.environ.get("TRACKIO_COLOR_PALETTE")
+    if env_palette:
+        return [color.strip() for color in env_palette.split(",")]
+    return DEFAULT_COLOR_PALETTE
+
+
+def get_color_mapping(
+    runs: list[str], smoothing: bool, color_palette: list[str] | None = None
+) -> dict[str, str]:
     """Generate color mapping for runs, with transparency for original data when smoothing is enabled."""
+    if color_palette is None:
+        color_palette = get_color_palette()
+
     color_map = {}
 
     for i, run in enumerate(runs):
-        base_color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
+        base_color = color_palette[i % len(color_palette)]
 
         if smoothing:
+            color_map[run] = base_color + "4D"
             color_map[f"{run}_smoothed"] = base_color
-            color_map[f"{run}_original"] = base_color + "4D"
         else:
             color_map[run] = base_color
 
@@ -339,15 +514,44 @@ def downsample(
     x: str,
     y: str,
     color: str | None,
-    x_lim: tuple[float, float] | None = None,
-) -> pd.DataFrame:
+    x_lim: tuple[float | None, float | None] | None = None,
+) -> tuple[pd.DataFrame, tuple[float, float] | None]:
+    """
+    Downsample the dataframe to reduce the number of points plotted.
+    Also updates the x-axis limits to the data min/max if either of the x-axis limits are None.
+
+    Args:
+        df: The dataframe to downsample.
+        x: The column name to use for the x-axis.
+        y: The column name to use for the y-axis.
+        color: The column name to use for the color.
+        x_lim: The x-axis limits to use.
+
+    Returns:
+        A tuple containing the downsampled dataframe and the updated x-axis limits.
+    """
     if df.empty:
-        return df
+        if x_lim is not None:
+            x_lim = (x_lim[0] or 0, x_lim[1] or 0)
+        return df, x_lim
 
     columns_to_keep = [x, y]
     if color is not None and color in df.columns:
         columns_to_keep.append(color)
     df = df[columns_to_keep].copy()
+
+    data_x_min = df[x].min()
+    data_x_max = df[x].max()
+
+    if x_lim is not None:
+        x_min, x_max = x_lim
+        if x_min is None:
+            x_min = data_x_min
+        if x_max is None:
+            x_max = data_x_max
+        updated_x_lim = (x_min, x_max)
+    else:
+        updated_x_lim = None
 
     n_bins = 100
 
@@ -364,8 +568,8 @@ def downsample(
 
         group_df = group_df.sort_values(x)
 
-        if x_lim is not None:
-            x_min, x_max = x_lim
+        if updated_x_lim is not None:
+            x_min, x_max = updated_x_lim
             before_point = group_df[group_df[x] < x_min].tail(1)
             after_point = group_df[group_df[x] > x_max].head(1)
             group_df = group_df[(group_df[x] >= x_min) & (group_df[x] <= x_max)]
@@ -415,10 +619,19 @@ def downsample(
     unique_indices = list(set(downsampled_indices))
 
     downsampled_df = df.loc[unique_indices].copy()
-    downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
+
+    if color is not None:
+        downsampled_df = (
+            downsampled_df.groupby(color, sort=False)[downsampled_df.columns]
+            .apply(lambda group: group.sort_values(x))
+            .reset_index(drop=True)
+        )
+    else:
+        downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
+
     downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
 
-    return downsampled_df
+    return downsampled_df, updated_x_lim
 
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
@@ -498,66 +711,6 @@ def group_metrics_by_prefix(metrics: list[str]) -> dict[str, list[str]]:
     return groups
 
 
-def group_metrics_with_subprefixes(metrics: list[str]) -> dict:
-    """
-    Group metrics with simple 2-level nested structure detection.
-
-    Returns a dictionary where each prefix group can have:
-    - direct_metrics: list of metrics at this level (e.g., "train/acc")
-    - subgroups: dict of subgroup name -> list of metrics (e.g., "loss" -> ["train/loss/norm", "train/loss/unnorm"])
-
-    Example:
-        Input: ["loss", "train/acc", "train/loss/normalized", "train/loss/unnormalized", "val/loss"]
-        Output: {
-            "charts": {
-                "direct_metrics": ["loss"],
-                "subgroups": {}
-            },
-            "train": {
-                "direct_metrics": ["train/acc"],
-                "subgroups": {
-                    "loss": ["train/loss/normalized", "train/loss/unnormalized"]
-                }
-            },
-            "val": {
-                "direct_metrics": ["val/loss"],
-                "subgroups": {}
-            }
-        }
-    """
-    result = {}
-
-    for metric in metrics:
-        if "/" not in metric:
-            if "charts" not in result:
-                result["charts"] = {"direct_metrics": [], "subgroups": {}}
-            result["charts"]["direct_metrics"].append(metric)
-        else:
-            parts = metric.split("/")
-            main_prefix = parts[0]
-
-            if main_prefix not in result:
-                result[main_prefix] = {"direct_metrics": [], "subgroups": {}}
-
-            if len(parts) == 2:
-                result[main_prefix]["direct_metrics"].append(metric)
-            else:
-                subprefix = parts[1]
-                if subprefix not in result[main_prefix]["subgroups"]:
-                    result[main_prefix]["subgroups"][subprefix] = []
-                result[main_prefix]["subgroups"][subprefix].append(metric)
-
-    for group_data in result.values():
-        group_data["direct_metrics"].sort()
-        for subgroup_metrics in group_data["subgroups"].values():
-            subgroup_metrics.sort()
-
-    if "charts" in result and not result["charts"]["direct_metrics"]:
-        del result["charts"]
-
-    return result
-
-
 def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int | None:
     """Get the sync status from the CommitScheduler in an integer number of minutes, or None if not synced yet."""
     if getattr(
@@ -567,6 +720,152 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return int(time_diff / 60)
     else:
         return None
+
+
+def generate_embed_code(project: str, metrics: str, selected_runs: list = None) -> str:
+    """Generate the embed iframe code based on current settings."""
+    space_host = os.environ.get("SPACE_HOST", "")
+    if not space_host:
+        return ""
+
+    params = []
+
+    if project:
+        params.append(f"project={project}")
+
+    if metrics and metrics.strip():
+        params.append(f"metrics={metrics}")
+
+    if selected_runs:
+        runs_param = ",".join(selected_runs)
+        params.append(f"runs={runs_param}")
+
+    params.append("sidebar=hidden")
+    params.append("navbar=hidden")
+
+    query_string = "&".join(params)
+    embed_url = f"https://{space_host}?{query_string}"
+
+    return f'<iframe src="{embed_url}" style="width:1600px; height:500px; border:0;"></iframe>'
+
+
+def serialize_values(metrics):
+    """
+    Serialize infinity and NaN values in metrics dict to make it JSON-compliant.
+    Only handles top-level float values.
+
+    Converts:
+    - float('inf') -> "Infinity"
+    - float('-inf') -> "-Infinity"
+    - float('nan') -> "NaN"
+
+    Example:
+        {"loss": float('inf'), "accuracy": 0.95} -> {"loss": "Infinity", "accuracy": 0.95}
+    """
+    if not isinstance(metrics, dict):
+        return metrics
+
+    result = {}
+    for key, value in metrics.items():
+        if isinstance(value, float):
+            if math.isinf(value):
+                result[key] = "Infinity" if value > 0 else "-Infinity"
+            elif math.isnan(value):
+                result[key] = "NaN"
+            else:
+                result[key] = value
+        elif isinstance(value, np.floating):
+            float_val = float(value)
+            if math.isinf(float_val):
+                result[key] = "Infinity" if float_val > 0 else "-Infinity"
+            elif math.isnan(float_val):
+                result[key] = "NaN"
+            else:
+                result[key] = float_val
+        else:
+            result[key] = value
+    return result
+
+
+def deserialize_values(metrics):
+    """
+    Deserialize infinity and NaN string values back to their numeric forms.
+    Only handles top-level string values.
+
+    Converts:
+    - "Infinity" -> float('inf')
+    - "-Infinity" -> float('-inf')
+    - "NaN" -> float('nan')
+
+    Example:
+        {"loss": "Infinity", "accuracy": 0.95} -> {"loss": float('inf'), "accuracy": 0.95}
+    """
+    if not isinstance(metrics, dict):
+        return metrics
+
+    result = {}
+    for key, value in metrics.items():
+        if value == "Infinity":
+            result[key] = float("inf")
+        elif value == "-Infinity":
+            result[key] = float("-inf")
+        elif value == "NaN":
+            result[key] = float("nan")
+        else:
+            result[key] = value
+    return result
+
+
+def get_full_url(base_url: str, project: str | None, write_token: str) -> str:
+    params = []
+    if project:
+        params.append(f"project={project}")
+    params.append(f"write_token={write_token}")
+    return base_url + "?" + "&".join(params)
+
+
+def embed_url_in_notebook(url: str) -> None:
+    try:
+        from IPython.display import HTML, display
+
+        embed_code = HTML(
+            f'<div><iframe src="{url}" width="100%" height="1000px" allow="autoplay; camera; microphone; clipboard-read; clipboard-write;" frameborder="0" allowfullscreen></iframe></div>'
+        )
+        display(embed_code)
+    except ImportError:
+        pass
+
+
+def to_json_safe(obj):
+    if isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, dict):
+        return {str(k): to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [to_json_safe(v) for v in obj]
+    if hasattr(obj, "to_dict") and callable(obj.to_dict):
+        return to_json_safe(obj.to_dict())
+    if hasattr(obj, "__dict__"):
+        return {
+            str(k): to_json_safe(v)
+            for k, v in vars(obj).items()
+            if not k.startswith("_")
+        }
+    return str(obj)
+
+
+def get_space() -> str | None:
+    """
+    Get the space ID ("user/space") if Trackio is running in a Space, or None if not.
+    """
+    return os.environ.get("SPACE_ID")
+
+
+def ordered_subset(items: list[str], subset: list[str] | None) -> list[str]:
+    subset_set = set(subset or [])
+    return [item for item in items if item in subset_set]
 
 
 def _get_default_namespace() -> str:

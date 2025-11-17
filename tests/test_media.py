@@ -1,50 +1,104 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from trackio.media import TrackioImage
+from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
 
 PROJECT_NAME = "test_project"
 
 
-def test_image_save(temp_dir):
-    image = TrackioImage(np.random.randint(255, size=(100, 100, 3), dtype=np.uint8))
-    image._save(PROJECT_NAME, "test_run", 0, "PNG")
+@pytest.mark.parametrize("image", ["image_ndarray", "image_pil", "image_path"])
+def test_image_save(image, temp_dir, request):
+    image_value = request.getfixturevalue(image)
+    image = TrackioImage(image_value)
+    image._save(PROJECT_NAME, "test_run", 0)
 
-    assert image._file_format == "PNG"
-
-    expected_rel_dir = Path("media") / PROJECT_NAME / "test_run" / "0"
+    expected_rel_dir = Path(PROJECT_NAME) / "test_run" / "0"
     assert str(image._get_relative_file_path()).startswith(str(expected_rel_dir))
     assert str(image._get_absolute_file_path()).endswith(".png")
     assert image._get_absolute_file_path().is_file()
 
 
-def test_image_serialization(temp_dir):
+def test_image_serialization(image_ndarray, temp_dir):
     image = TrackioImage(
-        np.random.randint(255, size=(100, 100, 3), dtype=np.uint8),
+        image_ndarray,
         caption="test_caption",
     )
-    image._save(PROJECT_NAME, "test_run", 0, "PNG")
+    image._save(PROJECT_NAME, "test_run", 0)
     value = image._to_dict()
 
     assert value is not None
     assert value.get("_type") == TrackioImage.TYPE
     assert value.get("file_path") == str(image._get_relative_file_path())
-    assert value.get("file_format") == "PNG"
     assert value.get("caption") == "test_caption"
 
 
-def test_image_deserialization(temp_dir):
-    image = TrackioImage(
-        np.random.randint(255, size=(100, 100, 3), dtype=np.uint8),
-        caption="test_caption",
-    )
-    image._save(PROJECT_NAME, "test_run", 0, "PNG")
-    value = image._to_dict()
+@pytest.mark.parametrize(
+    "video", ["video_ndarray", "video_path", "video_ndarray_batch"]
+)
+def test_video_save(video, temp_dir, request):
+    video_value = request.getfixturevalue(video)
+    video = TrackioVideo(video_value, format="mp4")
+    video._save(PROJECT_NAME, "test_run", 0)
 
-    image2 = TrackioImage._from_dict(value)
-    assert image2._get_relative_file_path() == image._get_relative_file_path()
-    assert image2._get_absolute_file_path() == image._get_absolute_file_path()
-    assert image2._get_absolute_file_path().is_file()
-    assert image2._file_format == "PNG"
-    assert image2.caption == "test_caption"
+    expected_rel_dir = Path(PROJECT_NAME) / "test_run" / "0"
+    assert str(video._get_relative_file_path()).startswith(str(expected_rel_dir))
+    assert str(video._get_absolute_file_path()).endswith(".mp4")
+    assert video._get_absolute_file_path().is_file()
+
+
+def test_video_serialization(video_ndarray_batch, temp_dir):
+    video = TrackioVideo(video_ndarray_batch, format="mp4", caption="test_caption")
+    video._save(PROJECT_NAME, "test_run", 0)
+    value = video._to_dict()
+
+    assert value is not None
+    assert value.get("_type") == TrackioVideo.TYPE
+    assert value.get("file_path") == str(video._get_relative_file_path())
+    assert value.get("caption") == "test_caption"
+
+
+@pytest.mark.parametrize("audio", ["audio_ndarray", "audio_path"])
+def test_audio_save(audio, temp_dir, request):
+    audio_value = request.getfixturevalue(audio)
+    audio = TrackioAudio(audio_value, format="wav", sample_rate=16000)
+    audio._save(PROJECT_NAME, "test_run", 0)
+
+    expected_rel_dir = Path(PROJECT_NAME) / "test_run" / "0"
+    assert str(audio._get_relative_file_path()).startswith(str(expected_rel_dir))
+    assert str(audio._get_absolute_file_path()).endswith(".wav")
+    assert audio._get_absolute_file_path().is_file()
+
+
+def test_audio_serialization(audio_ndarray, temp_dir):
+    audio = TrackioAudio(
+        audio_ndarray, format="wav", sample_rate=16000, caption="test_caption"
+    )
+    audio._save(PROJECT_NAME, "test_run", 0)
+    value = audio._to_dict()
+
+    assert value is not None
+    assert value.get("_type") == TrackioAudio.TYPE
+    assert value.get("file_path") == str(audio._get_relative_file_path())
+    assert value.get("caption") == "test_caption"
+
+
+@pytest.mark.parametrize(
+    "media_cls, invalid_array",
+    [
+        (TrackioImage, lambda: np.random.rand(64, 64, 3)),
+        (TrackioVideo, lambda: np.random.rand(10, 3, 64, 64)),
+    ],
+)
+def test_invalid_dtype_raises(media_cls, invalid_array):
+    arr = invalid_array()
+    with pytest.raises(ValueError):
+        media_cls(arr)
+
+
+@pytest.mark.parametrize("media_cls", [TrackioImage, TrackioVideo])
+def test_invalid_type_raises(media_cls):
+    invalid_input = [[[0, 1, 2]]]
+    with pytest.raises(ValueError):
+        media_cls(invalid_input)

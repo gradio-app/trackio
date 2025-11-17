@@ -1,4 +1,11 @@
+import os
 import random
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from trackio import utils
 
@@ -40,7 +47,7 @@ def test_group_metrics_with_subprefixes():
         "test/f1/micro",
         "test/f1/macro",
     ]
-    result = utils.group_metrics_with_subprefixes(metrics)
+    _, result = utils.order_metrics_by_plot_preference(metrics)
     expected = {
         "charts": {"direct_metrics": ["loss"], "subgroups": {}},
         "train": {
@@ -54,3 +61,208 @@ def test_group_metrics_with_subprefixes():
         },
     }
     assert result == expected
+
+
+def test_format_timestamp():
+    now = datetime.now(timezone.utc)
+
+    two_minutes_ago = (now - timedelta(minutes=2)).isoformat()
+    assert utils.format_timestamp(two_minutes_ago) == "2 minutes ago"
+
+    one_hour_ago = (now - timedelta(hours=1)).isoformat()
+    assert utils.format_timestamp(one_hour_ago) == "1 hour ago"
+
+    two_days_ago = (now - timedelta(days=2)).isoformat()
+    assert utils.format_timestamp(two_days_ago) == "2 days ago"
+
+    thirty_seconds_ago = (now - timedelta(seconds=30)).isoformat()
+    assert utils.format_timestamp(thirty_seconds_ago) == "Just now"
+
+    assert utils.format_timestamp(None) == "Unknown"
+    assert utils.format_timestamp("invalid") == "Unknown"
+
+
+@pytest.mark.parametrize(
+    "api_url, project, write_token, expected",
+    [
+        (
+            "https://example.com",
+            "my_project",
+            "token123",
+            "https://example.com?project=my_project&write_token=token123",
+        ),
+        ("https://api.test.io", None, "abc", "https://api.test.io?write_token=abc"),
+        (
+            "http://localhost:8000",
+            "test",
+            "secret",
+            "http://localhost:8000?project=test&write_token=secret",
+        ),
+        ("https://app.com/api", "", "xyz789", "https://app.com/api?write_token=xyz789"),
+        (
+            "https://trackio.ai",
+            "demo/project",
+            "tok_en",
+            "https://trackio.ai?project=demo/project&write_token=tok_en",
+        ),
+    ],
+)
+def test_get_full_url(api_url, project, write_token, expected):
+    result = utils.get_full_url(api_url, project, write_token)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "obj, expected",
+    [
+        ("hello", "hello"),
+        ({"key": "value", "num": 123}, {"key": "value", "num": 123}),
+        ([1, 2, "three"], [1, 2, "three"]),
+        ((4, 5, 6), [4, 5, 6]),
+        ({7, 8, 9}, {7, 8, 9}),
+        ({"nested": {"dict": [1, 2]}}, {"nested": {"dict": [1, 2]}}),
+    ],
+)
+def test_to_json_safe(obj, expected):
+    result = utils.to_json_safe(obj)
+    if isinstance(obj, set):
+        assert set(result) == expected
+    else:
+        assert result == expected
+
+
+def test_to_json_safe_with_object():
+    class LoraConfig:
+        def __init__(self):
+            self.r = 8
+            self.lora_alpha = 16
+            self.target_modules = ["q_proj", "v_proj"]
+            self.lora_dropout = 0.1
+            self.bias = "none"
+            self.task_type = "CAUSAL_LM"
+            self._private_config = "hidden"
+
+    lora_config = LoraConfig()
+    assert utils.to_json_safe(lora_config) == {
+        "r": 8,
+        "lora_alpha": 16,
+        "target_modules": ["q_proj", "v_proj"],
+        "lora_dropout": 0.1,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+    }
+
+
+def test_trackio_dir_env_var(monkeypatch):
+    """Test that TRACKIO_DIR environment variable is respected."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_path = str(tmpdir)
+
+        monkeypatch.setenv("TRACKIO_DIR", test_path)
+        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
+        result_dir = utils._get_trackio_dir()
+        assert str(result_dir) == test_path
+
+        monkeypatch.delenv("TRACKIO_DIR", raising=False)
+        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
+        result_dir = utils._get_trackio_dir()
+        assert "huggingface/trackio" in Path(result_dir).as_posix()
+
+        monkeypatch.delenv("TRACKIO_DIR", raising=False)
+        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
+        result_dir = utils._get_trackio_dir()
+        assert Path(result_dir).as_posix() == "/data/trackio"
+
+        monkeypatch.setenv("TRACKIO_DIR", test_path)
+        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
+        result_dir = utils._get_trackio_dir()
+        assert Path(result_dir).as_posix() == "/data/trackio"
+
+
+def test_plot_ordering():
+    """Test that TRACKIO_PLOT_ORDER environment variable correctly orders metrics."""
+    metrics = [
+        "test/f1",
+        "train/accuracy",
+        "val/loss",
+        "train/loss",
+        "val/accuracy",
+        "charts_metric",
+        "test/precision",
+        "eval/metric",
+    ]
+
+    # Test 1: No environment variable set - should be alphabetical by group
+    with patch.dict(os.environ, {}, clear=True):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["charts", "eval", "test", "train", "val"]
+        assert result["train"]["direct_metrics"] == ["train/accuracy", "train/loss"]
+        assert result["val"]["direct_metrics"] == ["val/accuracy", "val/loss"]
+
+    # Test 2: Specific metric order
+    with patch.dict(
+        os.environ, {"TRACKIO_PLOT_ORDER": "train/loss,val/loss"}, clear=True
+    ):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["train", "val", "charts", "eval", "test"]
+        assert result["train"]["direct_metrics"] == ["train/loss", "train/accuracy"]
+        assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
+
+    # Test 3: Group wildcards with specific metrics first
+    with patch.dict(
+        os.environ, {"TRACKIO_PLOT_ORDER": "val/loss,train/*,val/*"}, clear=True
+    ):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["val", "train", "charts", "eval", "test"]
+        assert result["train"]["direct_metrics"] == ["train/accuracy", "train/loss"]
+        assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
+
+    # Test 4: Mixed priorities
+    with patch.dict(
+        os.environ, {"TRACKIO_PLOT_ORDER": "test/*,train/loss,val/*"}, clear=True
+    ):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["test", "train", "val", "charts", "eval"]
+        assert result["train"]["direct_metrics"] == ["train/loss", "train/accuracy"]
+        assert result["test"]["direct_metrics"] == ["test/f1", "test/precision"]
+
+    # Test 5: With spaces in environment variable
+    with patch.dict(
+        os.environ, {"TRACKIO_PLOT_ORDER": " val/loss , train/* , test/f1 "}, clear=True
+    ):
+        group_order, result = utils.order_metrics_by_plot_preference(metrics)
+        assert group_order == ["val", "train", "test", "charts", "eval"]
+        assert result["val"]["direct_metrics"] == ["val/loss", "val/accuracy"]
+        assert result["test"]["direct_metrics"] == ["test/f1", "test/precision"]
+
+
+def test_downsample_with_none_x_lim():
+    """Test downsample function handles None values in x_lim correctly."""
+    import pandas as pd
+
+    data = {
+        "x": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "y": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    }
+    df = pd.DataFrame(data)
+
+    result_df, result_x_lim = utils.downsample(df, "x", "y", None, None)
+    assert result_x_lim is None
+    assert len(result_df) <= len(df)
+
+    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (None, 5))
+    assert result_x_lim == (0, 5)
+    assert len(result_df) <= len(df)
+
+    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (2, None))
+    assert result_x_lim == (2, 10)
+    assert len(result_df) <= len(df)
+
+    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (None, None))
+    assert result_x_lim == (0, 10)
+    assert len(result_df) <= len(df)
+
+    empty_df = pd.DataFrame({"x": [], "y": []})
+    result_df, result_x_lim = utils.downsample(empty_df, "x", "y", None, (2, None))
+    assert result_x_lim == (2, 0)
+    assert len(result_df) == 0

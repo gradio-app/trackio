@@ -1,5 +1,7 @@
 # Quickstart Guide
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gradio-app/trackio/blob/main/examples/notebooks/quickstart.ipynb)
+
 To get started, you can run a simple example that logs some fake training metrics:
 
 ```python
@@ -39,7 +41,7 @@ trackio.finish()
 
 Running the above will print to the terminal instructions on launching the dashboard.
 
-The usage of `trackio` is designed to be a identical to `wandb` in most cases, so you can easily switch between the two libraries.
+The usage of `trackio` is designed to be identical to `wandb` in most cases, so you can easily switch between the two libraries.
 
 ```py
 import trackio as wandb
@@ -106,3 +108,24 @@ trackio.init(project="my-project", space_id="username/space_id")
 ```
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
+
+Alternatively, you can sync an existing local project to a Hugging Face Space by running:
+
+<hfoptions id="language">
+<hfoption id="Shell">
+
+```sh
+trackio sync --project "my-project" --space-id "username/space_id"
+```
+
+</hfoption>
+<hfoption id="Python">
+
+```py
+trackio.sync(project="my-project", space_id="username/space_id")
+```
+
+</hfoption>
+</hfoptions>
+
+This will create the Space if it does not already exist, and upload all runs and associated data to the Space.

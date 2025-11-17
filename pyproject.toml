@@ -14,9 +14,12 @@ requires-python = ">=3.10"
 dependencies = [
     "pandas<3.0.0",
     "huggingface-hub<1.0.0",
-    "gradio>=5.44.0,<6.0.0",
+    "gradio[oauth]>=5.48.0,<6.0.0",
     "numpy<3.0.0",
     "pillow<12.0.0",
+    "orjson>=3.0,<4.0.0",
+    "pydub<1.0.0",
+    "plotly>=6.0.0,<7.0.0",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -31,9 +34,11 @@ repository = "https://github.com/gradio-app/trackio"
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
     "ruff==0.9.3",
     "pyarrow>=21.0",
+    "pytest>=8.0.0,<9.0.0",
+    "playwright>=1.40.0,<2.0.0",
+    "pytest-playwright>=0.7.0,<1.0.0",
 ]
 tensorboard = [
     "tbparse==0.0.9",
@@ -47,8 +52,8 @@ trackio = "trackio.cli:main"
 packages = ["trackio"]
 
 [tool.hatch.version]
-path = "trackio/version.txt"
-pattern = "^(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+(?:\\.dev0)?)$"
+path = "trackio/package.json"
+pattern = ".*\"version\":\\s*\"(?P<version>[^\"]+)\""
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
