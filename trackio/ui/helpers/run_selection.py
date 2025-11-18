@@ -6,6 +6,9 @@ except ImportError:
     import utils
 
 
+DEFAULT_MAX_SELECTED_RUNS = 10
+
+
 @dataclass
 class RunSelection:
     choices: list[str] = field(default_factory=list)
@@ -25,6 +28,8 @@ class RunSelection:
             base = set(preferred)
         else:
             base = set(runs)
+            if len(runs) > DEFAULT_MAX_SELECTED_RUNS:
+                base = set(runs[-DEFAULT_MAX_SELECTED_RUNS:])
         self.selected = [run for run in self.choices if run in base]
         return True
 
