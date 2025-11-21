@@ -1076,8 +1076,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 x_lim_value,
                             )
                             if not metric_df.empty:
-                                from vega_datasets import data
-
                                 plot = gr.LinePlot(
                                     downsampled_df,
                                     x=x_column,
