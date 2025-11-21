@@ -65,8 +65,6 @@ with gr.Blocks() as run_detail_page:
 
         config_display = {k: v for k, v in config.items() if not k.startswith("_")}
 
-        print(config_display)
-
         return gr.Markdown(details_md), config_display
 
     gr.on(
