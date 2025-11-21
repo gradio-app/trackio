@@ -11,7 +11,6 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from pydantic import BaseModel
 
 try:
     import trackio.utils as utils
@@ -92,58 +91,6 @@ trackio.finish()
 
 Read the [Trackio documentation](https://huggingface.co/docs/trackio/en/index) for more examples.
 """
-
-
-class BulkLogBody(BaseModel):
-    project: str
-    run: str
-    metrics_list: List[Dict[str, Any]]
-    steps: Optional[List[int]] = None
-    timestamps: Optional[List[str]] = None
-    config: Optional[Dict[str, Any]] = None
-
-
-def _mount_rest_api(app_blocks):
-    """
-    Mount FastAPI routes onto the Gradio Blocks app for headless clients.
-    This is called unconditionally so /api/* endpoints are available even if
-    demo.launch(show_api=False).
-    """
-    # Gradio exposes the underlying FastAPI app as .server_app (newer) or .app (older)
-    fastapi_app = getattr(app_blocks, "server_app", None) or getattr(
-        app_blocks, "app", None
-    )
-    if fastapi_app is None:
-        print(
-            "* Warning: Could not access FastAPI app from Gradio Blocks; REST API not mounted."
-        )
-        return
-
-    from trackio.sqlite_storage import SQLiteStorage  # local import to avoid cycles
-
-    @fastapi_app.post("/api/bulk_log")
-    def api_bulk_log(body: BulkLogBody):
-        SQLiteStorage.bulk_log(
-            project=body.project,
-            run=body.run,
-            metrics_list=body.metrics_list,
-            steps=body.steps,
-            timestamps=body.timestamps,
-            config=body.config,
-        )
-        return {"status": "ok"}
-
-    @fastapi_app.get("/api/projects")
-    def api_projects():
-        return SQLiteStorage.get_projects()
-
-    @fastapi_app.get("/api/runs/{project}")
-    def api_runs(project: str):
-        return SQLiteStorage.get_runs(project)
-
-    @fastapi_app.get("/api/logs/{project}/{run}")
-    def api_logs(project: str, run: str):
-        return SQLiteStorage.get_logs(project, run)
 
 
 def get_runs(project) -> list[str]:
@@ -1491,8 +1438,6 @@ write_token = secrets.token_urlsafe(32)
 demo.write_token = write_token
 run_page.write_token = write_token
 run_detail_page.write_token = write_token
-# Mount REST API routes so /api/bulk_log works even when show_api=False
-_mount_rest_api(demo)
 
 if __name__ == "__main__":
     demo.launch(
