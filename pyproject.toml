@@ -55,9 +55,6 @@ packages = ["trackio"]
 path = "trackio/package.json"
 pattern = ".*\"version\":\\s*\"(?P<version>[^\"]+)\""
 
-[tool.hatch.metadata]
-allow-direct-references = true
-
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [
