@@ -748,7 +748,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             smoothing_slider,
         ],
         queue=False,
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [demo.load],
@@ -756,7 +756,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         outputs=project_dd,
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [timer.tick],
@@ -764,14 +764,14 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
         outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [timer.tick],
         fn=lambda: gr.Dropdown(info=fns.get_project_info()),
         outputs=[project_dd],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [demo.load, project_dd.change],
@@ -780,34 +780,34 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     ).then(
         fn=update_x_axis_choices,
         inputs=[project_dd, run_selection_state],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     ).then(
         fn=generate_embed,
         inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=[embed_code],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     ).then(
         fns.update_navbar_value,
         inputs=[project_dd],
         outputs=[navbar],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     ).then(
         fn=fns.get_group_by_fields,
         inputs=[project_dd],
         outputs=[run_group_by_dd],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
 
@@ -818,7 +818,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [metric_filter_tb.change, run_cb.change],
@@ -826,7 +826,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=embed_code,
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
 
@@ -842,7 +842,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         inputs=[run_group_by_dd],
         outputs=[run_cb, grouped_runs_panel],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
 
@@ -850,28 +850,28 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         fn=toggle_timer,
         inputs=realtime_cb,
         outputs=timer,
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
     run_cb.input(
         fn=fns.handle_run_checkbox_change,
         inputs=[run_cb, run_selection_state],
         outputs=run_selection_state,
-        api_name=False,
+        api_visibility="private",
         queue=False,
     ).then(
         fn=generate_embed,
         inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=embed_code,
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
     run_tb.input(
         fn=refresh_runs,
         inputs=[project_dd, run_tb, run_selection_state],
         outputs=[run_cb, run_tb, run_selection_state],
-        api_name=False,
+        api_visibility="private",
         queue=False,
         show_progress="hidden",
     )
@@ -933,7 +933,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         inputs=[project_dd],
         outputs=last_steps,
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
     )
 
     @gr.render(
@@ -1417,7 +1417,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 run_cb,
                             ],
                             show_progress="hidden",
-                            api_name=False,
+                            api_visibility="private",
                             queue=False,
                         )
 
@@ -1431,7 +1431,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             ],
                             outputs=[run_selection_state, group_cb, run_cb],
                             show_progress="hidden",
-                            api_name=False,
+                            api_visibility="private",
                             queue=False,
                         )
 
