@@ -3,6 +3,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -144,7 +145,7 @@ def generate_readable_name(used_names: list[str], space_id: str | None = None) -
     If space_id is provided, generates username-timestamp format instead.
     """
     if space_id is not None:
-        username = huggingface_hub.whoami()["name"]
+        username = _get_default_namespace()
         timestamp = int(time.time())
         return f"{username}-{timestamp}"
     adjectives = [
@@ -418,10 +419,10 @@ def preprocess_space_and_dataset_ids(
     space_id: str | None, dataset_id: str | None
 ) -> tuple[str | None, str | None]:
     if space_id is not None and "/" not in space_id:
-        username = huggingface_hub.whoami()["name"]
+        username = _get_default_namespace()
         space_id = f"{username}/{space_id}"
     if dataset_id is not None and "/" not in dataset_id:
-        username = huggingface_hub.whoami()["name"]
+        username = _get_default_namespace()
         dataset_id = f"{username}/{dataset_id}"
     if space_id is not None and dataset_id is None:
         dataset_id = f"{space_id}-dataset"
@@ -869,3 +870,17 @@ def get_space() -> str | None:
 def ordered_subset(items: list[str], subset: list[str] | None) -> list[str]:
     subset_set = set(subset or [])
     return [item for item in items if item in subset_set]
+
+
+def _get_default_namespace() -> str:
+    """Get the default namespace (username).
+
+    This function uses caching to avoid repeated API calls to /whoami-v2.
+    """
+    token = huggingface_hub.get_token()
+    return _cached_whoami(token)["name"]
+
+
+@lru_cache(maxsize=32)
+def _cached_whoami(token: str | None) -> dict:
+    return huggingface_hub.whoami(token=token)

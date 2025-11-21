@@ -12,6 +12,7 @@ from gradio_client import Client
 from huggingface_hub import SpaceStorage
 
 from trackio import context_vars, deploy, utils
+from trackio.deploy import sync
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
@@ -39,6 +40,7 @@ __all__ = [
     "log",
     "finish",
     "show",
+    "sync",
     "delete_project",
     "import_csv",
     "import_tf_events",
