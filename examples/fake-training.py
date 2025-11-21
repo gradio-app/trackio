@@ -48,7 +48,7 @@ def generate_grad_norm_curve(epoch, max_epochs):
 for run in range(3):
     wandb.init(
         project=f"fake-training-{PROJECT_ID}",
-        name=f"test-run-{run}-with-long-name-and-lots-of-series",
+        name=f"test-run-{run}",
         config=dict(
             epochs=EPOCHS,
             learning_rate=0.001,
