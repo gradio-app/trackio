@@ -200,14 +200,14 @@ with gr.Blocks() as run_page:
         outputs=project_dd,
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [timer.tick],
         fn=lambda: gr.Dropdown(info=fns.get_project_info()),
         outputs=[project_dd],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [project_dd.change],
@@ -215,14 +215,14 @@ with gr.Blocks() as run_page:
         inputs=[project_dd],
         outputs=[runs_table],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     ).then(
         fns.update_navbar_value,
         inputs=[project_dd],
         outputs=[navbar],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
 
@@ -232,7 +232,7 @@ with gr.Blocks() as run_page:
         inputs=[],
         outputs=[delete_run_btn, runs_table, allow_deleting_runs],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
     gr.on(
@@ -241,7 +241,7 @@ with gr.Blocks() as run_page:
         inputs=[allow_deleting_runs, runs_table],
         outputs=[delete_run_btn],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
     gr.on(
@@ -254,7 +254,7 @@ with gr.Blocks() as run_page:
         inputs=None,
         outputs=[delete_run_btn, confirm_btn, cancel_btn],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
     gr.on(
@@ -267,7 +267,7 @@ with gr.Blocks() as run_page:
         inputs=None,
         outputs=[delete_run_btn, confirm_btn, cancel_btn],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
     gr.on(
@@ -276,6 +276,6 @@ with gr.Blocks() as run_page:
         inputs=[allow_deleting_runs, runs_table, project_dd],
         outputs=[runs_table],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
