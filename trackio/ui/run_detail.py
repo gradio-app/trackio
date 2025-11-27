@@ -73,13 +73,13 @@ with gr.Blocks() as run_detail_page:
         outputs=[project_dd, run_dd],
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     ).then(
         fns.update_navbar_value,
         inputs=[project_dd],
         outputs=[navbar],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
 
@@ -89,6 +89,6 @@ with gr.Blocks() as run_detail_page:
         inputs=[project_dd, run_dd],
         outputs=[run_details, run_config],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )

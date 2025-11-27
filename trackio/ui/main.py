@@ -558,7 +558,7 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
                                             )
 
 
-css = """
+CSS = """
 #run-cb .wrap { gap: 2px; }
 #run-cb .wrap label {
     line-height: 1;
@@ -619,7 +619,7 @@ css = """
 }
 """
 
-javascript = """
+HEAD = """
 <script>
 function setCookie(name, value, days) {
     var expires = "";
@@ -645,6 +645,7 @@ function getCookie(name) {
 (function() {
     const urlParams = new URLSearchParams(window.location.search);
     const writeToken = urlParams.get('write_token');
+    const footerParam = urlParams.get('footer');
     
     if (writeToken) {
         setCookie('trackio_write_token', writeToken, 7);
@@ -660,6 +661,12 @@ function getCookie(name) {
             window.history.replaceState({}, document.title, newUrl);
         }
     }
+    
+    if (footerParam === 'false') {
+        const style = document.createElement('style');
+        style.textContent = 'footer { display: none !important; }';
+        document.head.appendChild(style);
+    }
 })();
 </script>
 """
@@ -667,7 +674,7 @@ function getCookie(name) {
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
+with gr.Blocks(title="Trackio Dashboard") as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo_urls = utils.get_logo_urls()
         logo = gr.Markdown(
@@ -741,7 +748,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
             smoothing_slider,
         ],
         queue=False,
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [demo.load],
@@ -749,7 +756,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         outputs=project_dd,
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [timer.tick],
@@ -757,14 +764,14 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
         outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [timer.tick],
         fn=lambda: gr.Dropdown(info=fns.get_project_info()),
         outputs=[project_dd],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [demo.load, project_dd.change],
@@ -773,34 +780,34 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     ).then(
         fn=update_x_axis_choices,
         inputs=[project_dd, run_selection_state],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     ).then(
         fn=generate_embed,
         inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=[embed_code],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     ).then(
         fns.update_navbar_value,
         inputs=[project_dd],
         outputs=[navbar],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     ).then(
         fn=fns.get_group_by_fields,
         inputs=[project_dd],
         outputs=[run_group_by_dd],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
 
@@ -811,7 +818,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
-        api_name=False,
+        api_visibility="private",
     )
     gr.on(
         [metric_filter_tb.change, run_cb.change],
@@ -819,7 +826,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=embed_code,
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
 
@@ -835,7 +842,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         inputs=[run_group_by_dd],
         outputs=[run_cb, grouped_runs_panel],
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
 
@@ -843,28 +850,28 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         fn=toggle_timer,
         inputs=realtime_cb,
         outputs=timer,
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
     run_cb.input(
         fn=fns.handle_run_checkbox_change,
         inputs=[run_cb, run_selection_state],
         outputs=run_selection_state,
-        api_name=False,
+        api_visibility="private",
         queue=False,
     ).then(
         fn=generate_embed,
         inputs=[project_dd, metric_filter_tb, run_selection_state],
         outputs=embed_code,
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
         queue=False,
     )
     run_tb.input(
         fn=refresh_runs,
         inputs=[project_dd, run_tb, run_selection_state],
         outputs=[run_cb, run_tb, run_selection_state],
-        api_name=False,
+        api_visibility="private",
         queue=False,
         show_progress="hidden",
     )
@@ -926,7 +933,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
         inputs=[project_dd],
         outputs=last_steps,
         show_progress="hidden",
-        api_name=False,
+        api_visibility="private",
     )
 
     @gr.render(
@@ -1076,13 +1083,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                     y_title=metric_name.split("/")[-1],
                                     color=color,
                                     color_map=color_map,
+                                    colors_in_legend=original_runs,
                                     title=metric_name,
                                     key=f"plot-{metric_idx}",
                                     preserved_by_key=None,
+                                    buttons=["fullscreen", "export"],
                                     x_lim=updated_x_lim,
-                                    show_fullscreen_button=True,
                                     min_width=400,
-                                    show_export_button=True,
                                 )
                                 plot.select(
                                     update_x_lim,
@@ -1141,13 +1148,13 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                             y_title=metric_name.split("/")[-1],
                                             color=color,
                                             color_map=color_map,
+                                            colors_in_legend=original_runs,
                                             title=metric_name,
                                             key=f"plot-{metric_idx}",
                                             preserved_by_key=None,
+                                            buttons=["fullscreen", "export"],
                                             x_lim=updated_x_lim,
-                                            show_fullscreen_button=True,
                                             min_width=400,
-                                            show_export_button=True,
                                         )
                                         plot.select(
                                             update_x_lim,
@@ -1410,7 +1417,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                                 run_cb,
                             ],
                             show_progress="hidden",
-                            api_name=False,
+                            api_visibility="private",
                             queue=False,
                         )
 
@@ -1424,7 +1431,7 @@ with gr.Blocks(title="Trackio Dashboard", css=css, head=javascript) as demo:
                             ],
                             outputs=[run_selection_state, group_cb, run_cb],
                             show_progress="hidden",
-                            api_name=False,
+                            api_visibility="private",
                             queue=False,
                         )
 

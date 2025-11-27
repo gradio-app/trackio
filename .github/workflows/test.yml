@@ -48,8 +48,8 @@ jobs:
         
     - name: Install Python dependencies
       run: |
-        uv pip install --system -e .[dev,tensorboard]
-        uv pip install --system pytest
+        uv pip install --system -e .[dev,tensorboard] --prerelease=allow
+        uv pip install --system pytest --prerelease=allow
 
     - name: Install Playwright
       run: |

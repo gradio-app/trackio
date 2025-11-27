@@ -1,5 +1,11 @@
 # trackio
 
+## 0.10.0
+
+### Features
+
+- [#305](https://github.com/gradio-app/trackio/pull/305) [`e64883a`](https://github.com/gradio-app/trackio/commit/e64883a51f7b8b93f7d48b8afe55acdb62238b71) - bump to gradio 6.0, make `trackio` compatible, and fix related issues.  Thanks @abidlabs!
+
 ## 0.9.1
 
 ### Features
