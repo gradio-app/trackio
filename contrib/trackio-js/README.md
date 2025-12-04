@@ -8,7 +8,6 @@ It batches metrics and posts them to a locally running Trackio dashboard (or a S
 1) Start Trackio locally (with REST API enabled)
 
 ```bash
-export TRACKIO_SHOW_API=1
 python -c "import trackio; trackio.init(project='js-quickstart', embed=False); import time; time.sleep(9999)"
 ```
 2) Install

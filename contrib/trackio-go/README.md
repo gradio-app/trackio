@@ -12,7 +12,6 @@ go get github.com/gradio-app/trackio/contrib/trackio-go
 - Start the Trackio backend:
 
 ```bash
-export TRACKIO_SHOW_API=1
 python -c "import trackio; trackio.init(project='go-quickstart', embed=False); import time; time.sleep(9999)"
 ```
 

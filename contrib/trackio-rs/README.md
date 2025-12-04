@@ -37,7 +37,6 @@ trackio = { path = "../trackio-rs" }  # adjust the path to this folder
 - Start Trackio and expose its API:
 
 ```bash
-export TRACKIO_SHOW_API=1
 python -c "import trackio; trackio.init(project='rs-quickstart', embed=False); import time; time.sleep(9999)"
 ```
 
@@ -176,7 +175,6 @@ TRACKIO_MAX_BATCH	            Buffer size before auto-flush attempt in log()	128
 	1.	Try POST /api/bulk_log
 	2.	Else try POST /gradio_api/bulk_log
 	3.	Cache the working path for the rest of the run
-- If neither exists, you’ll get TrackioError::NoBulkEndpoint — this usually means your server wasn’t started with TRACKIO_SHOW_API=1.
 
 
 ## Developing

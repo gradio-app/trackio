@@ -18,29 +18,31 @@ https://huggingface.co/new-space?sdk=gradio&template=gradio-templates%2Ftrackio-
 
 This template already exposes all REST endpoints:
 
-/api/healthz       — health check
-/api/projects      — list projects
-/api/runs/{proj}   — list runs
-/api/logs/{p}/{r}  — read JSONL logs
-/api/bulk_log      — post metrics
+/api/healthz            — health check
+/api/projects           — list projects
+/api/runs/{project}     — list runs under a project
+/api/bulk_log           — submit metrics
 
-Once deployed, your Space URL will look like:
+Once deployed, the Space URL will look like:
 https://username-trackio-dashboard.hf.space
 
 
 2. Log from any client
 ----------------------
 
-Set TRACKIO_SERVER_URL to your Space URL.
+All clients communicate with Trackio using the REST endpoints above.
 
-Example for your real deployment:
-https://vaibhav2507-trackio-dashboard.hf.space
+To authenticate writes, set:
+
+export TRACKIO_SERVER_URL=“https://your-space-url.hf.space”
+export HF_TOKEN=“hf_token_here”
 
 
 ----------------
 Go Quickstart
 ----------------
-export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
+export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
+export HF_TOKEN=“hf_…”
 export TRACKIO_PROJECT="go-quickstart"
 export TRACKIO_RUN="go-run-1"
 
@@ -55,7 +57,8 @@ c.Flush()
 ----------------
 JavaScript Quickstart
 ----------------
-export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
+export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
+export HF_TOKEN=“hf_…”
 export TRACKIO_PROJECT="js-quickstart"
 export TRACKIO_RUN="js-run-1"
 
@@ -70,7 +73,8 @@ await c.flush()
 ----------------
 Rust Quickstart
 ----------------
-export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
+export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
+export HF_TOKEN=“hf_…”
 export TRACKIO_PROJECT="rs-quickstart"
 export TRACKIO_RUN="rs-run-1"
 
@@ -88,21 +92,20 @@ client.flush().expect("flush ok");
 1. Open your Space:
    https://vaibhav2507-trackio-dashboard.hf.space
 
-2. Click “↻ Refresh Projects”
-
-3. Select:
+2. Select:
    Project: go-quickstart / js-quickstart / rs-quickstart
    Run: go-run-1 / js-run-1 / rs-run-1
 
-4. Open the “Metrics” tab:
+3. Open the “Metrics” tab:
    X-axis: step
    Y-axis: check loss and acc
 
-You will see real-time metric plots generated from JSONL logs stored in the Space.
+Trackio stores all metrics in a SQLite database:
+~/.cache/huggingface/trackio/{project}.db
 
 ---
 
-## 4. CuRL Reference 
+4. curl Reference 
 
 ```bash
 curl -sS "$TRACKIO_SERVER_URL/api/healthz"
@@ -118,17 +121,8 @@ curl -sS -X POST "$TRACKIO_SERVER_URL/api/bulk_log" \
   }'
 
 
-5. Implementation Notes
------------------------
 
-- Backend uses FastAPI with a Gradio Blocks UI mounted on /
-- Metrics stored per run using JSONL:
-  ~/.cache/huggingface/trackio/{project}/{run}.jsonl
-- Works seamlessly in Hugging Face Spaces (Docker or Gradio SDK)
-- OAuth automatically handled if hf_oauth: true in Space metadata
-
-
-6. Example: Trackio Dashboard on Hugging Face Spaces
+5. Example: Trackio Dashboard on Hugging Face Spaces
 ----------------------------------------------------
 
 This repository demonstrates Go, JS, and Rust clients logging to a live Trackio dashboard.
@@ -137,12 +131,13 @@ Live demo:
 https://vaibhav2507-trackio-dashboard.hf.space
 
 Template used:
-Trackio Dashboard (Gradio template)
+Trackio Dashboard
 
 Workflow:
 1. Create your own dashboard Space from the template.
 2. Set TRACKIO_SERVER_URL to your Space URL.
-3. Log metrics from each client:
+3. Set HF_TOKEN 
+4. Log metrics from each client:
 
 Go:
   export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
