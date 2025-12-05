@@ -70,15 +70,41 @@ def update_navbar_value(project_dd, request: gr.Request):
 
     metrics_url = f"?selected_project={project_dd}"
     runs_url = f"runs?selected_project={project_dd}"
+    files_url = f"files?selected_project={project_dd}"
 
     if write_token:
         metrics_url += f"&write_token={write_token}"
         runs_url += f"&write_token={write_token}"
+        files_url += f"&write_token={write_token}"
 
     return gr.Navbar(
         value=[
             ("Metrics", metrics_url),
             ("Runs", runs_url),
+            ("Files", files_url),
+        ]
+    )
+
+
+def update_navbar_value_files(project_dd, request: gr.Request):
+    write_token = None
+    if hasattr(request, "query_params") and request.query_params:
+        write_token = request.query_params.get("write_token")
+
+    metrics_url = f"?selected_project={project_dd}"
+    runs_url = f"runs?selected_project={project_dd}"
+    files_url = f"files?selected_project={project_dd}"
+
+    if write_token:
+        metrics_url += f"&write_token={write_token}"
+        runs_url += f"&write_token={write_token}"
+        files_url += f"&write_token={write_token}"
+
+    return gr.Navbar(
+        value=[
+            ("Metrics", metrics_url),
+            ("Runs", runs_url),
+            ("Files", files_url),
         ]
     )
 

@@ -171,7 +171,10 @@ with gr.Blocks() as run_page:
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
-    navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
+    navbar = gr.Navbar(
+        value=[("Metrics", ""), ("Runs", "/runs"), ("Files", "/files")],
+        main_page_name=False,
+    )
     timer = gr.Timer(value=1)
     allow_deleting_runs = gr.State(False)
 

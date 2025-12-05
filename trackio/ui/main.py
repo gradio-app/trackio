@@ -26,6 +26,7 @@ try:
     from trackio.table import Table
     from trackio.typehints import FileUploadEntry, LogEntry, UploadEntry
     from trackio.ui import fns
+    from trackio.ui.files import files_page
     from trackio.ui.helpers.run_selection import RunSelection
     from trackio.ui.run_detail import run_detail_page
     from trackio.ui.runs import run_page
@@ -43,6 +44,7 @@ except ImportError:
     from table import Table
     from typehints import FileUploadEntry, LogEntry, UploadEntry
     from ui import fns
+    from ui.files import files_page
     from ui.helpers.run_selection import RunSelection
     from ui.run_detail import run_detail_page
     from ui.runs import run_page
@@ -750,7 +752,10 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             info="Filter metrics using regex patterns. Leave empty to show all metrics.",
         )
 
-    navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
+    navbar = gr.Navbar(
+        value=[("Metrics", ""), ("Runs", "/runs"), ("Files", "/files")],
+        main_page_name=False,
+    )
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
@@ -1466,11 +1471,14 @@ with demo.route("Runs", show_in_navbar=False):
     run_page.render()
 with demo.route("Run", show_in_navbar=False):
     run_detail_page.render()
+with demo.route("Files", show_in_navbar=False):
+    files_page.render()
 
 write_token = secrets.token_urlsafe(32)
 demo.write_token = write_token
 run_page.write_token = write_token
 run_detail_page.write_token = write_token
+files_page.write_token = write_token
 
 if __name__ == "__main__":
     demo.launch(
