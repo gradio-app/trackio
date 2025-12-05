@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+
 import gradio as gr
 
 try:
@@ -39,7 +40,6 @@ def extract_files(project: str, files_or_diectories: list[str | Path]):
         if os.path.isfile(file_or_directory):
             files.append(str(root_dir / file_or_directory))
     return files
-
 
 
 with gr.Blocks() as files_page:
@@ -93,4 +93,3 @@ with gr.Blocks() as files_page:
         inputs=[project_dd, file_explorer],
         outputs=[file_downloader],
     )
-
