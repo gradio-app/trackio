@@ -1,10 +1,8 @@
 import os
-import shutil
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-import numpy as np
 
 try:  # absolute imports when installed
     from trackio.media.utils import init_project_media_path

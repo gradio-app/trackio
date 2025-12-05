@@ -1,6 +1,5 @@
 import os
 import shutil
-import uuid
 from pathlib import Path
 
 import numpy as np
@@ -8,10 +7,8 @@ from PIL import Image as PILImage
 
 try:
     from trackio.media.media import TrackioMedia
-    from trackio.utils import MEDIA_DIR
 except ImportError:
     from media.media import TrackioMedia
-    from utils import MEDIA_DIR
 
 
 TrackioImageSourceType = str | Path | np.ndarray | PILImage.Image
