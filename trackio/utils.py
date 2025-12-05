@@ -418,6 +418,9 @@ def print_dashboard_instructions(project: str) -> None:
 def preprocess_space_and_dataset_ids(
     space_id: str | None, dataset_id: str | None
 ) -> tuple[str | None, str | None]:
+    """
+    Preprocesses the Space and Dataset names to ensure they are valid "username/space_id" or "username/dataset_id" format.
+    """
     if space_id is not None and "/" not in space_id:
         username = _get_default_namespace()
         space_id = f"{username}/{space_id}"

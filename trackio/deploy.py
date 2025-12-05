@@ -10,7 +10,6 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 from httpx import ReadTimeout
 from huggingface_hub.errors import RepositoryNotFoundError
-from requests import HTTPError
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage

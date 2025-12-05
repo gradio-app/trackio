@@ -10,6 +10,7 @@ from gradio.themes import ThemeClass
 from gradio.utils import TupleNoPrint
 from gradio_client import Client
 from huggingface_hub import SpaceStorage
+from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
 from trackio.deploy import sync
@@ -134,7 +135,14 @@ def init(
 
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
-    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
+    try:
+        space_id, dataset_id = utils.preprocess_space_and_dataset_ids(
+            space_id, dataset_id
+        )
+    except LocalTokenNotFoundError as e:
+        raise LocalTokenNotFoundError(
+            f"You must be logged in to Hugging Face locally when `space_id` is provided to deploy to a Space. {e}"
+        ) from e
     url = context_vars.current_server.get()
     share_url = context_vars.current_share_server.get()
 

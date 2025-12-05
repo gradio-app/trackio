@@ -15,7 +15,12 @@ import plotly.graph_objects as go
 try:
     import trackio.utils as utils
     from trackio.histogram import Histogram
-    from trackio.media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
+    from trackio.media import (
+        TrackioAudio,
+        TrackioImage,
+        TrackioVideo,
+        init_project_media_path,
+    )
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
@@ -26,7 +31,12 @@ try:
 except ImportError:
     import utils
     from histogram import Histogram
-    from media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
+    from media import (
+        TrackioAudio,
+        TrackioImage,
+        TrackioVideo,
+        init_project_media_path,
+    )
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
@@ -303,7 +313,7 @@ def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     """
     fns.check_hf_token_has_write_access(hf_token)
     for upload in uploads:
-        media_path = FileStorage.init_project_media_path(
+        media_path = init_project_media_path(
             upload["project"], upload["run"], upload["step"]
         )
         shutil.copy(upload["uploaded_file"]["path"], media_path)
