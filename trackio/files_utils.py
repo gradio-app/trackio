@@ -35,4 +35,3 @@ def init_project_files_path(project: str, relative_path: str | Path) -> Path:
     file_path = get_project_files_path(project, relative_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     return file_path
-

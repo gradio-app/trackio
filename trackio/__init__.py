@@ -370,7 +370,9 @@ def save(
         if not glob_str.is_absolute():
             pattern = str((Path.cwd() / glob_str).resolve())
         matched_files = [
-            Path(f).resolve() for f in glob.glob(pattern, recursive=True) if Path(f).is_file()
+            Path(f).resolve()
+            for f in glob.glob(pattern, recursive=True)
+            if Path(f).is_file()
         ]
 
     if not matched_files:
