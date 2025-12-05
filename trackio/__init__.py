@@ -1,25 +1,30 @@
+import glob
 import json
 import logging
 import os
+import shutil
 import warnings
 import webbrowser
 from pathlib import Path
 from typing import Any
 
+import huggingface_hub
 from gradio.themes import ThemeClass
 from gradio.utils import TupleNoPrint
-from gradio_client import Client
+from gradio_client import Client, handle_file
 from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
 from trackio.deploy import sync
+from trackio.files_utils import init_project_files_path
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
+from trackio.typehints import FileUploadEntry
 from trackio.ui.main import CSS, HEAD, demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
@@ -45,6 +50,7 @@ __all__ = [
     "delete_project",
     "import_csv",
     "import_tf_events",
+    "save",
     "Image",
     "Video",
     "Audio",
@@ -314,6 +320,99 @@ def delete_project(project: str, force: bool = False) -> bool:
     except Exception as e:
         print(f"* Error deleting project '{project}': {e}")
         return False
+
+
+def save(
+    glob_str: str | Path,
+    project: str | None = None,
+) -> str:
+    """
+    Saves files to a project (not linked to a specific run). If Trackio is running locally, the
+    file(s) will be moved to the project's files directory. If Trackio is running in a Space, the
+    file(s) will be uploaded to the Space's files directory.
+
+    Args:
+        glob_str (`str` or `Path`):
+            The file path or glob pattern to save. Can be a single file or a pattern
+            matching multiple files (e.g., `"*.py"`, `"models/**/*.pth"`).
+        project (`str`, *optional*):
+            The name of the project to save files to. If not provided, uses the current
+            project from `trackio.init()`. If no project is initialized, raises an error.
+
+    Returns:
+        `str`: The path where the file(s) were saved (project's files directory).
+
+    Example:
+        ```python
+        import trackio
+
+        trackio.init(project="my-project")
+        trackio.save("config.yaml")
+        trackio.save("models/*.pth")
+        ```
+    """
+    if project is None:
+        project = context_vars.current_project.get()
+        if project is None:
+            raise RuntimeError(
+                "No project specified. Either call trackio.init() first or provide a "
+                "project parameter to trackio.save()."
+            )
+
+    glob_str = Path(glob_str)
+    base_path = Path.cwd().resolve()
+
+    matched_files = []
+    if glob_str.is_file():
+        matched_files = [glob_str.resolve()]
+    else:
+        pattern = str(glob_str)
+        if not glob_str.is_absolute():
+            pattern = str((Path.cwd() / glob_str).resolve())
+        matched_files = [
+            Path(f).resolve() for f in glob.glob(pattern, recursive=True) if Path(f).is_file()
+        ]
+
+    if not matched_files:
+        raise ValueError(f"No files found matching pattern: {glob_str}")
+
+    space_id = utils.get_space()
+    saved_paths = []
+    upload_entries = []
+
+    for file_path in matched_files:
+        try:
+            relative_to_base = file_path.relative_to(base_path)
+        except ValueError:
+            relative_to_base = Path(file_path.name)
+
+        dest_path = init_project_files_path(project, relative_to_base)
+        shutil.copy2(file_path, dest_path)
+        saved_paths.append(str(dest_path))
+
+        if space_id:
+            upload_entry: FileUploadEntry = {
+                "project": project,
+                "relative_path": str(relative_to_base),
+                "uploaded_file": handle_file(file_path),
+            }
+            upload_entries.append(upload_entry)
+
+    if space_id and upload_entries:
+        try:
+            client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
+            client.predict(
+                api_name="/bulk_upload_files",
+                uploads=upload_entries,
+                hf_token=huggingface_hub.utils.get_token(),
+            )
+        except Exception as e:
+            warnings.warn(
+                f"Failed to upload files to Space '{space_id}': {e}. "
+                "Files were saved locally but may not be available on the Space."
+            )
+
+    return str(utils.FILES_DIR / project)
 
 
 def show(

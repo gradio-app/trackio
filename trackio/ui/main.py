@@ -23,7 +23,8 @@ try:
     )
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
-    from trackio.typehints import LogEntry, UploadEntry
+    from trackio.files_utils import init_project_files_path
+    from trackio.typehints import FileUploadEntry, LogEntry, UploadEntry
     from trackio.ui import fns
     from trackio.ui.helpers.run_selection import RunSelection
     from trackio.ui.run_detail import run_detail_page
@@ -39,7 +40,8 @@ except ImportError:
     )
     from sqlite_storage import SQLiteStorage
     from table import Table
-    from typehints import LogEntry, UploadEntry
+    from files_utils import init_project_files_path
+    from typehints import FileUploadEntry, LogEntry, UploadEntry
     from ui import fns
     from ui.helpers.run_selection import RunSelection
     from ui.run_detail import run_detail_page
@@ -317,6 +319,18 @@ def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
             upload["project"], upload["run"], upload["step"]
         )
         shutil.copy(upload["uploaded_file"]["path"], media_path)
+
+
+def bulk_upload_files(uploads: list[FileUploadEntry], hf_token: str | None) -> None:
+    """
+    Uploads project-level files to a Trackio dashboard. Each entry contains the project and relative path for the file.
+    """
+    fns.check_hf_token_has_write_access(hf_token)
+    for upload in uploads:
+        file_path = init_project_files_path(
+            upload["project"], upload["relative_path"]
+        )
+        shutil.copy(upload["uploaded_file"]["path"], file_path)
 
 
 def log(
@@ -893,6 +907,10 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(
         fn=bulk_upload_media,
         api_name="bulk_upload_media",
+    )
+    gr.api(
+        fn=bulk_upload_files,
+        api_name="bulk_upload_files",
     )
     gr.api(
         fn=log,

@@ -16,3 +16,9 @@ class UploadEntry(TypedDict):
     run: str
     step: int | None
     uploaded_file: FileData
+
+
+class FileUploadEntry(TypedDict):
+    project: str
+    relative_path: str
+    uploaded_file: FileData

@@ -137,6 +137,7 @@ def _get_trackio_dir() -> Path:
 
 TRACKIO_DIR = _get_trackio_dir()
 MEDIA_DIR = TRACKIO_DIR / "media"
+FILES_DIR = TRACKIO_DIR / "files"
 
 
 def generate_readable_name(used_names: list[str], space_id: str | None = None) -> str:
