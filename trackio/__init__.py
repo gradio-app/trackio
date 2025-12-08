@@ -2,7 +2,6 @@ import glob
 import json
 import logging
 import os
-import shutil
 import warnings
 import webbrowser
 from pathlib import Path
@@ -19,12 +18,7 @@ from trackio import context_vars, deploy, utils
 from trackio.deploy import sync
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
-from trackio.media import (
-    TrackioAudio,
-    TrackioImage,
-    TrackioVideo,
-    get_project_media_path,
-)
+from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -382,8 +376,9 @@ def save(
     if not matched_files:
         raise ValueError(f"No files found matching pattern: {glob_str}")
 
-    space_id = utils.get_space()
-    saved_paths = []
+    url = context_vars.current_server.get()
+    current_run = context_vars.current_run.get()
+
     upload_entries = []
 
     for file_path in matched_files:
@@ -392,31 +387,47 @@ def save(
         except ValueError:
             relative_to_base = Path(file_path.name)
 
-        dest_path = get_project_media_path(project, relative_path=relative_to_base)
-        shutil.copy2(file_path, dest_path)
-        saved_paths.append(str(dest_path))
-
-        if space_id:
+        if current_run is not None:
+            # If a run is active, use its queue to upload the file to the project's files directory
+            # as it's more efficent than uploading files one by one. But we should not use the run name
+            # as the files should be stored in the project's files directory, not the run's, hence
+            # the use_run_name flag is set to False.
+            current_run._queue_upload(
+                file_path,
+                step=None,
+                relative_path=str(relative_to_base),
+                use_run_name=False,
+            )
+        else:
             upload_entry: UploadEntry = {
                 "project": project,
+                "run": None,
+                "step": None,
                 "relative_path": str(relative_to_base),
                 "uploaded_file": handle_file(file_path),
             }
             upload_entries.append(upload_entry)
 
-    if space_id and upload_entries:
+    if upload_entries:
+        if url is None:
+            raise RuntimeError(
+                "No server available. Call trackio.init() before trackio.save() to start the server."
+            )
+
         try:
-            client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
+            client = Client(url, verbose=False, httpx_kwargs={"timeout": 90})
             client.predict(
-                api_name="/bulk_upload_files",
+                api_name="/bulk_upload_media",
                 uploads=upload_entries,
                 hf_token=huggingface_hub.utils.get_token(),
             )
         except Exception as e:
             warnings.warn(
-                f"Failed to upload files to Space '{space_id}': {e}. "
-                "Files were saved locally but may not be available on the Space."
+                f"Failed to upload files: {e}. "
+                "Files may not be available in the dashboard."
             )
+
+    return str(utils.MEDIA_DIR / project / "files")
 
 
 def show(
