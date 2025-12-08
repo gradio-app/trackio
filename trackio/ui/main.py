@@ -14,17 +14,16 @@ import plotly.graph_objects as go
 
 try:
     import trackio.utils as utils
-    from trackio.files_utils import init_project_files_path
     from trackio.histogram import Histogram
     from trackio.media import (
         TrackioAudio,
         TrackioImage,
         TrackioVideo,
-        init_project_media_path,
+        get_project_media_path,
     )
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
-    from trackio.typehints import FileUploadEntry, LogEntry, UploadEntry
+    from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
     from trackio.ui.files import files_page
     from trackio.ui.helpers.run_selection import RunSelection
@@ -32,17 +31,16 @@ try:
     from trackio.ui.runs import run_page
 except ImportError:
     import utils
-    from files_utils import init_project_files_path
     from histogram import Histogram
     from media import (
         TrackioAudio,
         TrackioImage,
         TrackioVideo,
-        init_project_media_path,
+        get_project_media_path,
     )
     from sqlite_storage import SQLiteStorage
     from table import Table
-    from typehints import FileUploadEntry, LogEntry, UploadEntry
+    from typehints import LogEntry, UploadEntry
     from ui import fns
     from ui.files import files_page
     from ui.helpers.run_selection import RunSelection
@@ -314,23 +312,17 @@ def toggle_timer(cb_value):
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     """
     Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
+    Also handles uplaoding project-level files to the project's files directory (if the run and step are not provided).
     """
     fns.check_hf_token_has_write_access(hf_token)
     for upload in uploads:
-        media_path = init_project_media_path(
-            upload["project"], upload["run"], upload["step"]
+        media_path = get_project_media_path(
+            project=upload["project"],
+            run=upload["run"],
+            step=upload["step"],
+            relative_path=upload["relative_path"],
         )
         shutil.copy(upload["uploaded_file"]["path"], media_path)
-
-
-def bulk_upload_files(uploads: list[FileUploadEntry], hf_token: str | None) -> None:
-    """
-    Uploads project-level files to a Trackio dashboard. Each entry contains the project and relative path for the file.
-    """
-    fns.check_hf_token_has_write_access(hf_token)
-    for upload in uploads:
-        file_path = init_project_files_path(upload["project"], upload["relative_path"])
-        shutil.copy(upload["uploaded_file"]["path"], file_path)
 
 
 def log(
@@ -910,10 +902,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(
         fn=bulk_upload_media,
         api_name="bulk_upload_media",
-    )
-    gr.api(
-        fn=bulk_upload_files,
-        api_name="bulk_upload_files",
     )
     gr.api(
         fn=log,

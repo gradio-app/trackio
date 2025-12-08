@@ -32,26 +32,32 @@ def get_project_media_path(
     project: str,
     run: str | None = None,
     step: int | None = None,
-    filename: str | None = None,
+    relative_path: str | Path | None = None,
 ) -> Path:
-    if filename is not None and step is None:
-        raise ValueError("filename requires step")
+    """
+    Get the full path where uploaded files are stored for a Trackio project (and create the directory if it doesn't exist).
+    If a run is not provided, the files are stored in a project-level directory with the given relative path.
+
+    Args:
+        project: The project name
+        run: The run name
+        step: The step number
+        relative_path: The relative path within the directory (only used if run is not provided)
+
+    Returns:
+        The full path to the media file
+    """
     if step is not None and run is None:
-        raise ValueError("step requires run")
+        raise ValueError("Uploading files at a specific step requires a run")
 
     path = MEDIA_DIR / project
     if run:
         path /= run
-    if step is not None:
-        path /= str(step)
-    if filename:
-        path /= filename
-    return path
-
-
-def init_project_media_path(
-    project: str, run: str | None = None, step: int | None = None
-) -> Path:
-    path = get_project_media_path(project, run, step)
+        if step is not None:
+            path /= str(step)
+    else:
+        path /= "files"
+        if relative_path:
+            path /= relative_path
     path.mkdir(parents=True, exist_ok=True)
     return path

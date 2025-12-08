@@ -14,10 +14,10 @@ except ImportError:
 
 
 def get_files_path(project: str | None) -> str | None:
-    """Get the files directory path for a project."""
+    """Get the files directory path for a project. If the directory does not exist, returns None."""
     if not project:
         return None
-    files_dir = utils.FILES_DIR / project
+    files_dir = utils.MEDIA_DIR / project / "files"
     if not files_dir.exists():
         return None
     return str(files_dir)

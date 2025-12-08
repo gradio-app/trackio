@@ -17,14 +17,18 @@ from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
 from trackio.deploy import sync
-from trackio.files_utils import init_project_files_path
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
-from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
+from trackio.media import (
+    TrackioAudio,
+    TrackioImage,
+    TrackioVideo,
+    get_project_media_path,
+)
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
-from trackio.typehints import FileUploadEntry
+from trackio.typehints import UploadEntry
 from trackio.ui.main import CSS, HEAD, demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
@@ -388,12 +392,12 @@ def save(
         except ValueError:
             relative_to_base = Path(file_path.name)
 
-        dest_path = init_project_files_path(project, relative_to_base)
+        dest_path = get_project_media_path(project, relative_path=relative_to_base)
         shutil.copy2(file_path, dest_path)
         saved_paths.append(str(dest_path))
 
         if space_id:
-            upload_entry: FileUploadEntry = {
+            upload_entry: UploadEntry = {
                 "project": project,
                 "relative_path": str(relative_to_base),
                 "uploaded_file": handle_file(file_path),
@@ -413,8 +417,6 @@ def save(
                 f"Failed to upload files to Space '{space_id}': {e}. "
                 "Files were saved locally but may not be available on the Space."
             )
-
-    return str(utils.FILES_DIR / project)
 
 
 def show(

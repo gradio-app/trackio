@@ -4,10 +4,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 try:  # absolute imports when installed
-    from trackio.media.utils import init_project_media_path
+    from trackio.media.utils import get_project_media_path
     from trackio.utils import MEDIA_DIR
 except ImportError:  # relative imports for local execution on Spaces
-    from media.utils import init_project_media_path
+    from media.utils import get_project_media_path
     from utils import MEDIA_DIR
 
 
@@ -59,7 +59,7 @@ class TrackioMedia(ABC):
         if self._file_path:
             return
 
-        media_dir = init_project_media_path(project, run, step)
+        media_dir = get_project_media_path(project=project, run=run, step=step)
         filename = f"{uuid.uuid4()}.{self._file_extension()}"
         file_path = media_dir / filename
 
