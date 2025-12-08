@@ -395,7 +395,7 @@ def save(
             current_run._queue_upload(
                 file_path,
                 step=None,
-                relative_path=str(relative_to_base),
+                relative_path=str(relative_to_base.parent),
                 use_run_name=False,
             )
         else:
