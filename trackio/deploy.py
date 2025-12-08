@@ -9,8 +9,7 @@ import gradio
 import huggingface_hub
 from gradio_client import Client, handle_file
 from httpx import ReadTimeout
-from huggingface_hub.errors import RepositoryNotFoundError
-from requests import HTTPError
+from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
@@ -69,7 +68,7 @@ def deploy_as_space(
             repo_type="space",
             exist_ok=True,
         )
-    except HTTPError as e:
+    except HfHubHTTPError as e:
         if e.response.status_code in [401, 403]:  # unauthorized or forbidden
             print("Need 'write' access token to create a Spaces repo.")
             huggingface_hub.login(add_to_git_credential=False)
@@ -208,7 +207,7 @@ def create_space_if_not_exists(
         return
     except RepositoryNotFoundError:
         pass
-    except HTTPError as e:
+    except HfHubHTTPError as e:
         if e.response.status_code in [401, 403]:  # unauthorized or forbidden
             print("Need 'write' access token to create a Spaces repo.")
             huggingface_hub.login(add_to_git_credential=False)

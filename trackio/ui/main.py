@@ -15,22 +15,34 @@ import plotly.graph_objects as go
 try:
     import trackio.utils as utils
     from trackio.histogram import Histogram
-    from trackio.media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
+    from trackio.media import (
+        TrackioAudio,
+        TrackioImage,
+        TrackioVideo,
+        get_project_media_path,
+    )
     from trackio.sqlite_storage import SQLiteStorage
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
+    from trackio.ui.files import files_page
     from trackio.ui.helpers.run_selection import RunSelection
     from trackio.ui.run_detail import run_detail_page
     from trackio.ui.runs import run_page
 except ImportError:
     import utils
     from histogram import Histogram
-    from media import FileStorage, TrackioAudio, TrackioImage, TrackioVideo
+    from media import (
+        TrackioAudio,
+        TrackioImage,
+        TrackioVideo,
+        get_project_media_path,
+    )
     from sqlite_storage import SQLiteStorage
     from table import Table
     from typehints import LogEntry, UploadEntry
     from ui import fns
+    from ui.files import files_page
     from ui.helpers.run_selection import RunSelection
     from ui.run_detail import run_detail_page
     from ui.runs import run_page
@@ -300,11 +312,15 @@ def toggle_timer(cb_value):
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     """
     Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
+    Also handles uplaoding project-level files to the project's files directory (if the run and step are not provided).
     """
     fns.check_hf_token_has_write_access(hf_token)
     for upload in uploads:
-        media_path = FileStorage.init_project_media_path(
-            upload["project"], upload["run"], upload["step"]
+        media_path = get_project_media_path(
+            project=upload["project"],
+            run=upload["run"],
+            step=upload["step"],
+            relative_path=upload["relative_path"],
         )
         shutil.copy(upload["uploaded_file"]["path"], media_path)
 
@@ -728,7 +744,10 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             info="Filter metrics using regex patterns. Leave empty to show all metrics.",
         )
 
-    navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
+    navbar = gr.Navbar(
+        value=[("Metrics", ""), ("Runs", "/runs"), ("Files", "/files")],
+        main_page_name=False,
+    )
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
@@ -1440,11 +1459,14 @@ with demo.route("Runs", show_in_navbar=False):
     run_page.render()
 with demo.route("Run", show_in_navbar=False):
     run_detail_page.render()
+with demo.route("Files", show_in_navbar=False):
+    files_page.render()
 
 write_token = secrets.token_urlsafe(32)
 demo.write_token = write_token
 run_page.write_token = write_token
 run_detail_page.write_token = write_token
+files_page.write_token = write_token
 
 if __name__ == "__main__":
     demo.launch(

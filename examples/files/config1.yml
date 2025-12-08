@@ -1,0 +1,17 @@
+model:
+  name: "simple_mlp"
+  layers: [128, 64, 32]
+  activation: "relu"
+  dropout: 0.2
+
+training:
+  epochs: 10
+  batch_size: 32
+  learning_rate: 0.001
+  optimizer: "adam"
+
+data:
+  dataset: "mnist"
+  train_split: 0.8
+  normalize: true
+
