@@ -1449,6 +1449,6 @@ run_detail_page.write_token = write_token
 if __name__ == "__main__":
     demo.launch(
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
-        show_api=False,
+        footer_links=["gradio", "settings"],
         show_error=True,
     )
