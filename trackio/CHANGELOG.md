@@ -1,5 +1,13 @@
 # trackio
 
+## 0.11.0
+
+### Features
+
+- [#355](https://github.com/gradio-app/trackio/pull/355) [`ea51f49`](https://github.com/gradio-app/trackio/commit/ea51f4954922f21be76ef828700420fe9a912c4b) - Color code run checkboxes and match with plot lines.  Thanks @abidlabs!
+- [#353](https://github.com/gradio-app/trackio/pull/353) [`8abe691`](https://github.com/gradio-app/trackio/commit/8abe6919aeefe21fc7a23af814883efbb037c21f) - Remove show_api from demo.launch.  Thanks @sergiopaniego!
+- [#351](https://github.com/gradio-app/trackio/pull/351) [`8a8957e`](https://github.com/gradio-app/trackio/commit/8a8957e530dd7908d1fef7f2df030303f808101f) - Add `trackio.save()`.  Thanks @abidlabs!
+
 ## 0.10.0
 
 ### Features
