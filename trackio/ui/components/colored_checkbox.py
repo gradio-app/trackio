@@ -151,7 +151,7 @@ if __name__ == "__main__":
         return colors
 
     def update_colors(color: str):
-        items = [f"Item {i+1}" for i in range(12)]
+        items = [f"Item {i + 1}" for i in range(12)]
         colors = generate_color_variants(color, len(items))
         return ColoredCheckboxGroup(
             choices=items,
@@ -164,7 +164,7 @@ if __name__ == "__main__":
             with gr.Column():
                 cp = gr.ColorPicker(value="#FF0000")
             with gr.Column(scale=2):
-                items = [f"Item {i+1}" for i in range(15)]
+                items = [f"Item {i + 1}" for i in range(15)]
                 colors = generate_color_variants("#FF0000", len(items))
                 cg = ColoredCheckboxGroup(
                     choices=items,
