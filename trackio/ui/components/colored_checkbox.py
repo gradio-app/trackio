@@ -11,8 +11,6 @@ class ColoredCheckboxGroup(gr.HTML):
         label: str | None = None,
         **kwargs,
     ):
-        self.choices = []
-        self.colors = colors or []
         html_template = """
         <div class="colored-checkbox-container">
             <div class="header-row">
@@ -38,6 +36,7 @@ class ColoredCheckboxGroup(gr.HTML):
             border: 1px solid var(--border-color-primary);
             border-radius: var(--radius-lg);
             padding: var(--spacing-lg);
+            background-color: var(--block-background-fill);
         }
         .header-row {
             display: flex;
@@ -66,10 +65,18 @@ class ColoredCheckboxGroup(gr.HTML):
         """
 
         js_on_load = """
-        const checkboxes = element.querySelectorAll('.item-checkbox input[type="checkbox"]');
-        const selectAllInput = element.querySelector('.select-all-input');
+        function getCheckboxes() {
+            return element.querySelectorAll('.item-checkbox input[type="checkbox"]');
+        }
+        
+        function getSelectAllInput() {
+            return element.querySelector('.select-all-input');
+        }
         
         function updateSelectAllState() {
+            const checkboxes = getCheckboxes();
+            const selectAllInput = getSelectAllInput();
+            if (!selectAllInput) return;
             const total = checkboxes.length;
             const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
             if (checked === total && total > 0) {
@@ -85,21 +92,28 @@ class ColoredCheckboxGroup(gr.HTML):
         }
         
         function updateValue() {
+            const checkboxes = getCheckboxes();
             props.value = Array.from(checkboxes)
                 .filter(cb => cb.checked)
                 .map(cb => cb.value);
             updateSelectAllState();
+            trigger('input');
         }
         
-        checkboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', updateValue);
+        element.addEventListener('change', (e) => {
+            if (e.target.classList.contains('select-all-input')) {
+                const shouldCheck = e.target.checked;
+                getCheckboxes().forEach(cb => { cb.checked = shouldCheck; });
+                updateValue();
+            } else if (e.target.closest('.item-checkbox')) {
+                updateValue();
+            }
         });
         
-        selectAllInput.addEventListener('change', () => {
-            const shouldCheck = selectAllInput.checked;
-            checkboxes.forEach(cb => { cb.checked = shouldCheck; });
-            updateValue();
+        const observer = new MutationObserver(() => {
+            updateSelectAllState();
         });
+        observer.observe(element, { childList: true, subtree: true, attributes: true });
         
         updateSelectAllState();
         """
@@ -117,7 +131,7 @@ class ColoredCheckboxGroup(gr.HTML):
 
     def api_info(self):
         return {
-            "items": {"enum": self.choices, "type": "string"},
+            "items": {"enum": self.props["choices"], "type": "string"},
             "title": "Checkbox Group",
             "type": "array",
         }
@@ -150,16 +164,17 @@ if __name__ == "__main__":
             colors.append(f"#{nr:02x}{ng:02x}{nb:02x}")
         return colors
 
-    def update_colors(color: str):
-        items = [f"Item {i + 1}" for i in range(12)]
+    def update_colors(color: str, s: int):
+        items = [f"Item {i + 1} ({s + 1})" for i in range(12)]
         colors = generate_color_variants(color, len(items))
         return ColoredCheckboxGroup(
             choices=items,
             colors=colors,
-            label="Runs",
-        )
+            label=f"Runs ({s + 1})",
+        ), s + 1
 
     with gr.Blocks() as demo:
+        s = gr.State(0)
         with gr.Row():
             with gr.Column():
                 cp = gr.ColorPicker(value="#FF0000")
@@ -176,5 +191,7 @@ if __name__ == "__main__":
                     inputs=cg,
                     outputs=gr.Textbox(label="output"),
                 )
-        cp.change(update_colors, inputs=cp, outputs=cg, show_progress="hidden")
+        cp.change(
+            update_colors, inputs=[cp, s], outputs=[cg, s], show_progress="hidden"
+        )
     demo.launch()

@@ -9,10 +9,12 @@ import huggingface_hub as hf
 try:
     import trackio.utils as utils
     from trackio.sqlite_storage import SQLiteStorage
+    from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
     from trackio.ui.helpers.run_selection import RunSelection
 except ImportError:
     import utils
     from sqlite_storage import SQLiteStorage
+    from ui.components.colored_checkbox import ColoredCheckboxGroup
     from ui.helpers.run_selection import RunSelection
 
 CONFIG_COLUMN_MAPPINGS = {
@@ -229,9 +231,14 @@ def group_runs_by_config(
 
 
 def run_checkbox_update(selection: RunSelection, **kwargs) -> gr.CheckboxGroup:
-    return gr.CheckboxGroup(
+    color_palette = utils.get_color_palette()
+    return ColoredCheckboxGroup(
         choices=selection.choices,
         value=selection.selected,
+        colors=[
+            color_palette[i % len(color_palette)] for i in range(len(selection.choices))
+        ],
+        label=f"Runs ({len(selection.choices)})",
         **kwargs,
     )
 

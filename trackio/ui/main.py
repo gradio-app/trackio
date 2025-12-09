@@ -25,6 +25,7 @@ try:
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
+    from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
     from trackio.ui.files import files_page
     from trackio.ui.helpers.run_selection import RunSelection
     from trackio.ui.run_detail import run_detail_page
@@ -42,6 +43,7 @@ except ImportError:
     from table import Table
     from typehints import LogEntry, UploadEntry
     from ui import fns
+    from ui.components.colored_checkbox import ColoredCheckboxGroup
     from ui.files import files_page
     from ui.helpers.run_selection import RunSelection
     from ui.run_detail import run_detail_page
@@ -281,7 +283,7 @@ def refresh_runs(
 
     did_change = selection.update_choices(runs, preferred)
     return (
-        fns.run_checkbox_update(selection) if did_change else gr.CheckboxGroup(),
+        fns.run_checkbox_update(selection) if did_change else gr.skip(),
         gr.Textbox(label=f"Runs ({len(runs)})"),
         selection,
     )
@@ -712,13 +714,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
             run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
             grouped_runs_panel = gr.Group(visible=False)
-            run_cb = gr.CheckboxGroup(
-                label="Runs",
-                choices=[],
-                interactive=True,
-                elem_id="run-cb",
-                show_select_all=True,
-            )
+        run_cb = ColoredCheckboxGroup(choices=[], colors=[], label="Runs")
 
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
