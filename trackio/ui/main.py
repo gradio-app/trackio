@@ -577,11 +577,6 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
 
 
 CSS = """
-#run-cb .wrap { gap: 2px; }
-#run-cb .wrap label {
-    line-height: 1;
-    padding: 6px;
-}
 .logo-light { display: block; } 
 .logo-dark { display: none; }
 .dark .logo-light { display: none; }
