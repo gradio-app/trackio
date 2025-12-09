@@ -25,6 +25,7 @@ try:
     from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
+    from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
     from trackio.ui.files import files_page
     from trackio.ui.helpers.run_selection import RunSelection
     from trackio.ui.run_detail import run_detail_page
@@ -42,6 +43,7 @@ except ImportError:
     from table import Table
     from typehints import LogEntry, UploadEntry
     from ui import fns
+    from ui.components.colored_checkbox import ColoredCheckboxGroup
     from ui.files import files_page
     from ui.helpers.run_selection import RunSelection
     from ui.run_detail import run_detail_page
@@ -281,7 +283,7 @@ def refresh_runs(
 
     did_change = selection.update_choices(runs, preferred)
     return (
-        fns.run_checkbox_update(selection) if did_change else gr.CheckboxGroup(),
+        fns.run_checkbox_update(selection) if did_change else gr.skip(),
         gr.Textbox(label=f"Runs ({len(runs)})"),
         selection,
     )
@@ -575,11 +577,6 @@ def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
 
 
 CSS = """
-#run-cb .wrap { gap: 2px; }
-#run-cb .wrap label {
-    line-height: 1;
-    padding: 6px;
-}
 .logo-light { display: block; } 
 .logo-dark { display: none; }
 .dark .logo-light { display: none; }
@@ -712,13 +709,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
             run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
             grouped_runs_panel = gr.Group(visible=False)
-            run_cb = gr.CheckboxGroup(
-                label="Runs",
-                choices=[],
-                interactive=True,
-                elem_id="run-cb",
-                show_select_all=True,
-            )
+        run_cb = ColoredCheckboxGroup(choices=[], colors=[], label="Runs")
 
         gr.HTML("<hr>")
         realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
@@ -977,6 +968,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_x_cb,
             log_scale_y_cb,
             metric_filter_tb,
+            run_selection_state,
         ],
         show_progress="hidden",
         queue=False,
@@ -991,6 +983,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         log_scale_x,
         log_scale_y,
         metric_filter,
+        selection,
     ):
         dfs = []
         media_by_run = {}
@@ -1054,7 +1047,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         ordered_groups, nested_metric_groups = utils.order_metrics_by_plot_preference(
             list(numeric_cols)
         )
-        color_map = utils.get_color_mapping(original_runs, smoothing_granularity > 0)
+        all_runs = selection.choices if selection else original_runs
+        color_map = utils.get_color_mapping(all_runs, smoothing_granularity > 0)
 
         metric_idx = 0
         for group_name in ordered_groups:
@@ -1414,16 +1408,27 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                         key=f"accordion-{group_key}-{label}",
                         preserved_by_key=["open"],
                     ):
-                        group_cb = gr.CheckboxGroup(
+                        color_palette = utils.get_color_palette()
+                        choice_indices = {
+                            run: i for i, run in enumerate(selection.choices)
+                        }
+                        colors = [
+                            color_palette[
+                                choice_indices.get(run, 0) % len(color_palette)
+                            ]
+                            for run in runs
+                        ]
+                        group_cb = ColoredCheckboxGroup(
                             choices=runs,
                             value=ordered_current,
-                            show_label=False,
+                            colors=colors,
+                            label=f"Runs ({len(runs)})",
                             key=f"group-cb-{group_key}-{label}",
                             preserved_by_key=None,
                         )
 
                         gr.on(
-                            [group_cb.change],
+                            [group_cb.input],
                             fn=fns.handle_group_checkbox_change,
                             inputs=[
                                 group_cb,
