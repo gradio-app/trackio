@@ -973,6 +973,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_x_cb,
             log_scale_y_cb,
             metric_filter_tb,
+            run_selection_state,
         ],
         show_progress="hidden",
         queue=False,
@@ -987,6 +988,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         log_scale_x,
         log_scale_y,
         metric_filter,
+        selection,
     ):
         dfs = []
         media_by_run = {}
@@ -1050,7 +1052,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         ordered_groups, nested_metric_groups = utils.order_metrics_by_plot_preference(
             list(numeric_cols)
         )
-        color_map = utils.get_color_mapping(original_runs, smoothing_granularity > 0)
+        all_runs = selection.choices if selection else original_runs
+        color_map = utils.get_color_mapping(all_runs, smoothing_granularity > 0)
 
         metric_idx = 0
         for group_name in ordered_groups:
@@ -1410,16 +1413,27 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                         key=f"accordion-{group_key}-{label}",
                         preserved_by_key=["open"],
                     ):
-                        group_cb = gr.CheckboxGroup(
+                        color_palette = utils.get_color_palette()
+                        choice_indices = {
+                            run: i for i, run in enumerate(selection.choices)
+                        }
+                        colors = [
+                            color_palette[
+                                choice_indices.get(run, 0) % len(color_palette)
+                            ]
+                            for run in runs
+                        ]
+                        group_cb = ColoredCheckboxGroup(
                             choices=runs,
                             value=ordered_current,
-                            show_label=False,
+                            colors=colors,
+                            label=f"Runs ({len(runs)})",
                             key=f"group-cb-{group_key}-{label}",
                             preserved_by_key=None,
                         )
 
                         gr.on(
-                            [group_cb.change],
+                            [group_cb.input],
                             fn=fns.handle_group_checkbox_change,
                             inputs=[
                                 group_cb,
