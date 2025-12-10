@@ -32,7 +32,7 @@ with gr.Blocks() as run_detail_page:
         )
         run_dd = gr.Dropdown(label="Run")
 
-    navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
+    navbar = gr.Navbar(value=[("Metrics", ""), ("Media & Tables", "/media"), ("Files", "/files"), ("Runs", "/runs")], main_page_name=False)
 
     run_details = gr.Markdown(RUN_DETAILS_TEMPLATE)
 

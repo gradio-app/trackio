@@ -26,9 +26,9 @@ try:
     from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
     from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
-    from trackio.ui.components.colored_dropdown import ColoredDropdown
     from trackio.ui.files import files_page
     from trackio.ui.helpers.run_selection import RunSelection
+    from trackio.ui.media import media_page
     from trackio.ui.run_detail import run_detail_page
     from trackio.ui.runs import run_page
 except ImportError:
@@ -45,9 +45,9 @@ except ImportError:
     from typehints import LogEntry, UploadEntry
     from ui import fns
     from ui.components.colored_checkbox import ColoredCheckboxGroup
-    from ui.components.colored_dropdown import ColoredDropdown
     from ui.files import files_page
     from ui.helpers.run_selection import RunSelection
+    from ui.media import media_page
     from ui.run_detail import run_detail_page
     from ui.runs import run_page
 
@@ -538,40 +538,6 @@ def configure(request: gr.Request):
     )
 
 
-def create_media_section():
-    image_and_video = [
-        item
-        for item in media_items
-        if item.type in [TrackioImage.TYPE, TrackioVideo.TYPE]
-    ]
-    audio = [
-        item
-        for item in media_items
-        if item.type == TrackioAudio.TYPE
-    ]
-    if image_and_video:
-        gr.Gallery(
-            [
-                (item.file_path, item.caption)
-                for item in image_and_video
-            ],
-            label=key,
-            columns=6,
-            elem_classes=("media-gallery"),
-        )
-    if audio:
-        with gr.Accordion(
-            label=key, elem_classes=("media-audio-accordion")
-        ):
-            for i in range(0, len(audio), 3):
-                with gr.Row(elem_classes=("media-audio-row")):
-                    for item in audio[i : i + 3]:
-                        gr.Audio(
-                            value=item.file_path,
-                            label=item.caption,
-                            elem_classes=("media-audio-item"),
-                        )
-
 
 CSS = """
 .logo-light { display: block; } 
@@ -733,7 +699,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         )
 
     navbar = gr.Navbar(
-        value=[("Metrics", ""), ("Runs", "/runs"), ("Files", "/files")],
+        value=[("Metrics", ""), ("Media & Tables", "/media"), ("Runs", "/runs"), ("Files", "/files")],
         main_page_name=False,
     )
     timer = gr.Timer(value=1)
@@ -983,16 +949,14 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         selection,
     ):
         dfs = []
-        media_by_run = {}
         original_runs = runs.copy()
 
         for run in runs:
-            df, media_by_key = load_run_data(
+            df, _ = load_run_data(
                 project, run, smoothing_granularity, x_axis, log_scale_x, log_scale_y
             )
             if df is not None:
                 dfs.append(df)
-                media_by_run[run] = media_by_key
 
         if dfs:
             if smoothing_granularity > 0:
@@ -1177,206 +1141,193 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                             key=f"double-{metric_idx}",
                                         )
                                     metric_idx += 1
-        if media_by_run and any(any(media) for media in media_by_run.values()):
-            runs_with_media = list(media_by_run.keys())
-            color_palette = utils.get_color_palette()
-            colors = [
-                color_palette[all_runs.index(run) % len(color_palette)]
-                for run in runs_with_media
-            ]
-            with gr.Accordion(label="media"):
-                colored_dropdown = ColoredDropdown(choices=runs_with_media, colors=colors, placeholder="Select Run")
-                colored_dropdown.change(
-                    fn=create_media_section,
-                    inputs=[colored_dropdown],
-                )
 
-    @gr.render(
-        triggers=[
-            demo.load,
-            run_cb.change,
-            last_steps.change,
-            metric_filter_tb.change,
-        ],
-        inputs=[
-            project_dd,
-            run_cb,
-            metrics_subset,
-            metric_filter_tb,
-        ],
-        show_progress="hidden",
-        queue=False,
-    )
-    def update_tables(
-        project,
-        runs,
-        metrics_subset_value,
-        metric_filter,
-    ):
-        dfs = []
-        for run in runs:
-            df, _ = load_run_data(project, run)
-            if df is not None:
-                dfs.append(df)
-        master_df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    with grouped_runs_panel:
+#         triggers=[
+#             demo.load,
+#             run_cb.change,
+#             last_steps.change,
+#             metric_filter_tb.change,
+#         ],
+#         inputs=[
+#             project_dd,
+#             run_cb,
+#             metrics_subset,
+#             metric_filter_tb,
+#         ],
+#         show_progress="hidden",
+#         queue=False,
+#     )
+#     def update_tables(
+#         project,
+#         runs,
+#         metrics_subset_value,
+#         metric_filter,
+#     ):
+#         dfs = []
+#         for run in runs:
+#             df, _ = load_run_data(project, run)
+#             if df is not None:
+#                 dfs.append(df)
+#         master_df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-        table_cols = master_df.select_dtypes(include="object").columns
-        table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
-        if metrics_subset_value:
-            table_cols = [c for c in table_cols if c in metrics_subset_value]
-        if metric_filter and metric_filter.strip():
-            table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
-        table_cols = [
-            c
-            for c in table_cols
-            if not (metric_df := master_df.dropna(subset=[c])).empty
-            and isinstance(first_value := metric_df[c].iloc[0], dict)
-            and first_value.get("_type") == Table.TYPE
-        ]
+#         table_cols = master_df.select_dtypes(include="object").columns
+#         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
+#         if metrics_subset_value:
+#             table_cols = [c for c in table_cols if c in metrics_subset_value]
+#         if metric_filter and metric_filter.strip():
+#             table_cols = filter_metrics_by_regex(list(table_cols), metric_filter)
+#         table_cols = [
+#             c
+#             for c in table_cols
+#             if not (metric_df := master_df.dropna(subset=[c])).empty
+#             and isinstance(first_value := metric_df[c].iloc[0], dict)
+#             and first_value.get("_type") == Table.TYPE
+#         ]
 
-        if len(table_cols) > 0:
-            with gr.Accordion(f"tables ({len(table_cols)})", open=True):
-                with gr.Row(key="row"):
-                    for metric_idx, metric_name in enumerate(table_cols):
-                        metric_df = master_df.dropna(subset=[metric_name])
-                        if not metric_df.empty:
-                            value = metric_df[metric_name]
-                            first_value = value.iloc[0]
-                            if (
-                                isinstance(first_value, dict)
-                                and "_type" in first_value
-                                and first_value["_type"] == Table.TYPE
-                            ):
-                                try:
-                                    with gr.Column():
-                                        s = gr.Slider(
-                                            value=len(value),
-                                            minimum=1,
-                                            maximum=len(value),
-                                            step=1,
-                                            container=False,
-                                            visible=len(value) > 1,
-                                        )
-                                        processed_data = Table.to_display_format(
-                                            value.iloc[-1]["_value"]
-                                        )
-                                        df = pd.DataFrame(processed_data)
-                                        table = gr.DataFrame(
-                                            df,
-                                            label=f"{metric_name} (index {len(value)})",
-                                            key=f"table-{metric_idx}",
-                                            wrap=True,
-                                            datatype="markdown",
-                                            preserved_by_key=None,
-                                        )
+#         if len(table_cols) > 0:
+#             with gr.Accordion(f"tables ({len(table_cols)})", open=True):
+#                 with gr.Row(key="row"):
+#                     for metric_idx, metric_name in enumerate(table_cols):
+#                         metric_df = master_df.dropna(subset=[metric_name])
+#                         if not metric_df.empty:
+#                             value = metric_df[metric_name]
+#                             first_value = value.iloc[0]
+#                             if (
+#                                 isinstance(first_value, dict)
+#                                 and "_type" in first_value
+#                                 and first_value["_type"] == Table.TYPE
+#                             ):
+#                                 try:
+#                                     with gr.Column():
+#                                         s = gr.Slider(
+#                                             value=len(value),
+#                                             minimum=1,
+#                                             maximum=len(value),
+#                                             step=1,
+#                                             container=False,
+#                                             visible=len(value) > 1,
+#                                         )
+#                                         processed_data = Table.to_display_format(
+#                                             value.iloc[-1]["_value"]
+#                                         )
+#                                         df = pd.DataFrame(processed_data)
+#                                         table = gr.DataFrame(
+#                                             df,
+#                                             label=f"{metric_name} (index {len(value)})",
+#                                             key=f"table-{metric_idx}",
+#                                             wrap=True,
+#                                             datatype="markdown",
+#                                             preserved_by_key=None,
+#                                         )
 
-                                        def get_table_at_index(index: int):
-                                            value = metric_df[metric_name]
-                                            processed_data = Table.to_display_format(
-                                                value.iloc[index - 1]["_value"]
-                                            )
-                                            df_ = pd.DataFrame(processed_data)
-                                            return gr.Dataframe(
-                                                df_,
-                                                label=f"{metric_name} (index {index})",
-                                            )
+#                                         def get_table_at_index(index: int):
+#                                             value = metric_df[metric_name]
+#                                             processed_data = Table.to_display_format(
+#                                                 value.iloc[index - 1]["_value"]
+#                                             )
+#                                             df_ = pd.DataFrame(processed_data)
+#                                             return gr.Dataframe(
+#                                                 df_,
+#                                                 label=f"{metric_name} (index {index})",
+#                                             )
 
-                                        s.input(
-                                            get_table_at_index,
-                                            inputs=s,
-                                            outputs=table,
-                                            show_progress="hidden",
-                                        )
-                                except Exception as e:
-                                    gr.Warning(
-                                        f"Column {metric_name} failed to render as a table: {e}"
-                                    )
+#                                         s.input(
+#                                             get_table_at_index,
+#                                             inputs=s,
+#                                             outputs=table,
+#                                             show_progress="hidden",
+#                                         )
+#                                 except Exception as e:
+#                                     gr.Warning(
+#                                         f"Column {metric_name} failed to render as a table: {e}"
+#                                     )
 
-        histogram_cols = set(master_df.columns) - {
-            "run",
-            "step",
-            "timestamp",
-            "data_type",
-        }
+#         histogram_cols = set(master_df.columns) - {
+#             "run",
+#             "step",
+#             "timestamp",
+#             "data_type",
+#         }
 
-        actual_histogram_count = sum(
-            1
-            for metric_name in histogram_cols
-            if not (metric_df := master_df.dropna(subset=[metric_name])).empty
-            and isinstance(value := metric_df[metric_name].iloc[-1], dict)
-            and value.get("_type") == Histogram.TYPE
-        )
+#         actual_histogram_count = sum(
+#             1
+#             for metric_name in histogram_cols
+#             if not (metric_df := master_df.dropna(subset=[metric_name])).empty
+#             and isinstance(value := metric_df[metric_name].iloc[-1], dict)
+#             and value.get("_type") == Histogram.TYPE
+#         )
 
-        if actual_histogram_count > 0:
-            with gr.Accordion(f"histograms ({actual_histogram_count})", open=True):
-                with gr.Row(key="histogram-row"):
-                    for metric_idx, metric_name in enumerate(histogram_cols):
-                        metric_df = master_df.dropna(subset=[metric_name])
-                        if not metric_df.empty:
-                            first_value = metric_df[metric_name].iloc[0]
-                            if (
-                                isinstance(first_value, dict)
-                                and "_type" in first_value
-                                and first_value["_type"] == Histogram.TYPE
-                            ):
-                                try:
-                                    steps = []
-                                    all_bins = None
-                                    heatmap_data = []
+#         if actual_histogram_count > 0:
+#             with gr.Accordion(f"histograms ({actual_histogram_count})", open=True):
+#                 with gr.Row(key="histogram-row"):
+#                     for metric_idx, metric_name in enumerate(histogram_cols):
+#                         metric_df = master_df.dropna(subset=[metric_name])
+#                         if not metric_df.empty:
+#                             first_value = metric_df[metric_name].iloc[0]
+#                             if (
+#                                 isinstance(first_value, dict)
+#                                 and "_type" in first_value
+#                                 and first_value["_type"] == Histogram.TYPE
+#                             ):
+#                                 try:
+#                                     steps = []
+#                                     all_bins = None
+#                                     heatmap_data = []
 
-                                    for _, row in metric_df.iterrows():
-                                        step = row.get("step", len(steps))
-                                        hist_data = row[metric_name]
+#                                     for _, row in metric_df.iterrows():
+#                                         step = row.get("step", len(steps))
+#                                         hist_data = row[metric_name]
 
-                                        if (
-                                            isinstance(hist_data, dict)
-                                            and hist_data.get("_type") == Histogram.TYPE
-                                        ):
-                                            bins = hist_data.get("bins", [])
-                                            values = hist_data.get("values", [])
+#                                         if (
+#                                             isinstance(hist_data, dict)
+#                                             and hist_data.get("_type") == Histogram.TYPE
+#                                         ):
+#                                             bins = hist_data.get("bins", [])
+#                                             values = hist_data.get("values", [])
 
-                                            if len(bins) > 0 and len(values) > 0:
-                                                steps.append(step)
+#                                             if len(bins) > 0 and len(values) > 0:
+#                                                 steps.append(step)
 
-                                                if all_bins is None:
-                                                    all_bins = bins
+#                                                 if all_bins is None:
+#                                                     all_bins = bins
 
-                                                heatmap_data.append(values)
+#                                                 heatmap_data.append(values)
 
-                                    if len(steps) > 0 and all_bins is not None:
-                                        bin_centers = [
-                                            (all_bins[i] + all_bins[i + 1]) / 2
-                                            for i in range(len(all_bins) - 1)
-                                        ]
+#                                     if len(steps) > 0 and all_bins is not None:
+#                                         bin_centers = [
+#                                             (all_bins[i] + all_bins[i + 1]) / 2
+#                                             for i in range(len(all_bins) - 1)
+#                                         ]
 
-                                        fig = go.Figure(
-                                            data=go.Heatmap(
-                                                z=np.array(heatmap_data).T,
-                                                x=steps,
-                                                y=bin_centers,
-                                                colorscale="Blues",
-                                                colorbar=dict(title="Count"),
-                                                hovertemplate="Step: %{x}<br>Value: %{y:.3f}<br>Count: %{z}<extra></extra>",
-                                            )
-                                        )
+#                                         fig = go.Figure(
+#                                             data=go.Heatmap(
+#                                                 z=np.array(heatmap_data).T,
+#                                                 x=steps,
+#                                                 y=bin_centers,
+#                                                 colorscale="Blues",
+#                                                 colorbar=dict(title="Count"),
+#                                                 hovertemplate="Step: %{x}<br>Value: %{y:.3f}<br>Count: %{z}<extra></extra>",
+#                                             )
+#                                         )
 
-                                        fig.update_layout(
-                                            title=metric_name,
-                                            xaxis_title="Step",
-                                            yaxis_title="Value",
-                                            height=400,
-                                            showlegend=False,
-                                        )
+#                                         fig.update_layout(
+#                                             title=metric_name,
+#                                             xaxis_title="Step",
+#                                             yaxis_title="Value",
+#                                             height=400,
+#                                             showlegend=False,
+#                                         )
 
-                                        gr.Plot(
-                                            fig,
-                                            key=f"histogram-{metric_idx}",
-                                            preserved_by_key=None,
-                                        )
-                                except Exception as e:
-                                    gr.Warning(
-                                        f"Column {metric_name} failed to render as a histogram: {e}"
-                                    )
+#                                         gr.Plot(
+#                                             fig,
+#                                             key=f"histogram-{metric_idx}",
+#                                             preserved_by_key=None,
+#                                         )
+#                                 except Exception as e:
+#                                     gr.Warning(
+#                                         f"Column {metric_name} failed to render as a histogram: {e}"
+#                                     )
 
     with grouped_runs_panel:
 
@@ -1468,6 +1419,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                         )
 
 
+with demo.route("Media", show_in_navbar=False):
+    media_page.render()
 with demo.route("Runs", show_in_navbar=False):
     run_page.render()
 with demo.route("Run", show_in_navbar=False):
