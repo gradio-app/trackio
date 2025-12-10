@@ -110,12 +110,25 @@ class Run:
 
         self._batch_sender()
 
-    def _queue_upload(self, file_path, step: int | None):
-        """Queue a media file for upload to space."""
+    def _queue_upload(
+        self,
+        file_path,
+        step: int | None,
+        relative_path: str | None = None,
+        use_run_name: bool = True,
+    ):
+        """Queue a media file for upload to space.
+        Args:
+            file_path: The path to the file to upload
+            step: The step number
+            relative_path: The relative path within the project's files directory. Used when uploading files via trackio.save().
+            use_run_name: Whether to use the run name for the uploaded file. This is set to False when uploading files via trackio.save().
+        """
         upload_entry: UploadEntry = {
             "project": self.project,
-            "run": self.name,
+            "run": self.name if use_run_name else None,
             "step": step,
+            "relative_path": relative_path,
             "uploaded_file": handle_file(file_path),
         }
         with self._client_lock:

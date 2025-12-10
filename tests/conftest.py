@@ -14,7 +14,7 @@ def temp_dir(monkeypatch):
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         for name in ["trackio.sqlite_storage"]:
             monkeypatch.setattr(f"{name}.TRACKIO_DIR", Path(tmpdir))
-        for name in ["trackio.media.media", "trackio.media.file_storage"]:
+        for name in ["trackio.media.media", "trackio.media.utils"]:
             monkeypatch.setattr(f"{name}.MEDIA_DIR", Path(tmpdir) / "media")
         yield tmpdir
 

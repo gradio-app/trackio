@@ -13,6 +13,7 @@ class LogEntry(TypedDict):
 
 class UploadEntry(TypedDict):
     project: str
-    run: str
+    run: str | None
     step: int | None
+    relative_path: str | None
     uploaded_file: FileData

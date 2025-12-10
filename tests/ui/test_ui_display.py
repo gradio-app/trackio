@@ -21,15 +21,17 @@ def test_that_runs_are_displayed(temp_dir):
             # The project name and run name should be displayed
             locator = page.get_by_label("Project")
             expect(locator).to_be_visible()
-            locator = page.get_by_test_id("checkbox-group").get_by_label("test_run")
-            expect(locator).to_be_visible()
+            checkbox_label = page.locator("label.checkbox-label").filter(
+                has_text="test_run"
+            )
+            expect(checkbox_label).to_be_visible()
 
             # Initially, two line plots should be displayed
             locator = page.locator(".vega-embed")
             expect(locator).to_have_count(2)
 
             # But if we uncheck the run, the line plots should be hidden
-            page.get_by_test_id("checkbox-group").get_by_label("test_run").uncheck()
+            checkbox_label.locator("input[type='checkbox']").uncheck()
             locator = page.locator(".vega-embed")
             expect(locator).to_have_count(0)
 

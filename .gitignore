@@ -1,8 +1,10 @@
 trackio/__pycache__/
 tests/__pycache__/
 .trackio/
+.gradio/
 trackio.db
 *.pyc
+*.pyi
 *.claude/
 .venv/
 **/.DS_Store

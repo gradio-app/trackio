@@ -80,8 +80,8 @@ def get_runs_table(project):
         column_widths=["40px", "150px"],
         interactive=True,
         static_columns=list(range(1, len(df.columns))),
-        row_count=(len(df), "fixed"),
-        col_count=(len(df.columns), "fixed"),
+        row_count=len(df),
+        column_count=len(df.columns),
     )
 
 
@@ -171,7 +171,10 @@ with gr.Blocks() as run_page:
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
-    navbar = gr.Navbar(value=[("Metrics", ""), ("Runs", "/runs")], main_page_name=False)
+    navbar = gr.Navbar(
+        value=[("Metrics", ""), ("Runs", "/runs"), ("Files", "/files")],
+        main_page_name=False,
+    )
     timer = gr.Timer(value=1)
     allow_deleting_runs = gr.State(False)
 

@@ -1,0 +1,5 @@
+FAKE_MODEL_FILE_1
+This is a fake PyTorch model checkpoint file.
+In reality, this would contain binary model weights.
+For testing purposes, this is just a text placeholder.
+

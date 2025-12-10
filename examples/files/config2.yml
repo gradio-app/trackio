@@ -1,0 +1,18 @@
+model:
+  name: "cnn"
+  layers: [32, 64, 128]
+  activation: "relu"
+  dropout: 0.3
+
+training:
+  epochs: 15
+  batch_size: 64
+  learning_rate: 0.0005
+  optimizer: "sgd"
+
+data:
+  dataset: "cifar10"
+  train_split: 0.75
+  normalize: true
+  augmentation: true
+
