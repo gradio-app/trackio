@@ -26,6 +26,7 @@ try:
     from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
     from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
+    from trackio.ui.components.colored_dropdown import ColoredDropdown
     from trackio.ui.files import files_page
     from trackio.ui.helpers.run_selection import RunSelection
     from trackio.ui.run_detail import run_detail_page
@@ -44,6 +45,7 @@ except ImportError:
     from typehints import LogEntry, UploadEntry
     from ui import fns
     from ui.components.colored_checkbox import ColoredCheckboxGroup
+    from ui.components.colored_dropdown import ColoredDropdown
     from ui.files import files_page
     from ui.helpers.run_selection import RunSelection
     from ui.run_detail import run_detail_page
@@ -536,44 +538,39 @@ def configure(request: gr.Request):
     )
 
 
-def create_media_section(media_by_run: dict[str, dict[str, list[MediaData]]]):
-    with gr.Accordion(label="media"):
-        with gr.Group(elem_classes=("media-group")):
-            for run, media_by_key in media_by_run.items():
-                with gr.Tab(label=run, elem_classes=("media-tab")):
-                    for key, media_items in media_by_key.items():
-                        image_and_video = [
-                            item
-                            for item in media_items
-                            if item.type in [TrackioImage.TYPE, TrackioVideo.TYPE]
-                        ]
-                        audio = [
-                            item
-                            for item in media_items
-                            if item.type == TrackioAudio.TYPE
-                        ]
-                        if image_and_video:
-                            gr.Gallery(
-                                [
-                                    (item.file_path, item.caption)
-                                    for item in image_and_video
-                                ],
-                                label=key,
-                                columns=6,
-                                elem_classes=("media-gallery"),
-                            )
-                        if audio:
-                            with gr.Accordion(
-                                label=key, elem_classes=("media-audio-accordion")
-                            ):
-                                for i in range(0, len(audio), 3):
-                                    with gr.Row(elem_classes=("media-audio-row")):
-                                        for item in audio[i : i + 3]:
-                                            gr.Audio(
-                                                value=item.file_path,
-                                                label=item.caption,
-                                                elem_classes=("media-audio-item"),
-                                            )
+def create_media_section():
+    image_and_video = [
+        item
+        for item in media_items
+        if item.type in [TrackioImage.TYPE, TrackioVideo.TYPE]
+    ]
+    audio = [
+        item
+        for item in media_items
+        if item.type == TrackioAudio.TYPE
+    ]
+    if image_and_video:
+        gr.Gallery(
+            [
+                (item.file_path, item.caption)
+                for item in image_and_video
+            ],
+            label=key,
+            columns=6,
+            elem_classes=("media-gallery"),
+        )
+    if audio:
+        with gr.Accordion(
+            label=key, elem_classes=("media-audio-accordion")
+        ):
+            for i in range(0, len(audio), 3):
+                with gr.Row(elem_classes=("media-audio-row")):
+                    for item in audio[i : i + 3]:
+                        gr.Audio(
+                            value=item.file_path,
+                            label=item.caption,
+                            elem_classes=("media-audio-item"),
+                        )
 
 
 CSS = """
@@ -1181,7 +1178,18 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         )
                                     metric_idx += 1
         if media_by_run and any(any(media) for media in media_by_run.values()):
-            create_media_section(media_by_run)
+            runs_with_media = list(media_by_run.keys())
+            color_palette = utils.get_color_palette()
+            colors = [
+                color_palette[all_runs.index(run) % len(color_palette)]
+                for run in runs_with_media
+            ]
+            with gr.Accordion(label="media"):
+                colored_dropdown = ColoredDropdown(choices=runs_with_media, colors=colors, placeholder="Select Run")
+                colored_dropdown.change(
+                    fn=create_media_section,
+                    inputs=[colored_dropdown],
+                )
 
     @gr.render(
         triggers=[
