@@ -34,7 +34,7 @@ All clients communicate with Trackio using the REST endpoints above.
 
 To authenticate writes, set:
 
-export TRACKIO_SERVER_URL=“https://your-space-url.hf.space”
+export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
 export HF_TOKEN=“hf_token_here”
 
 
