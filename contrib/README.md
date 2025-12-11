@@ -122,34 +122,6 @@ curl -sS -X POST "$TRACKIO_SERVER_URL/api/bulk_log" \
 ```
 
 
-## 5. Example: Trackio Dashboard on Hugging Face Spaces
-
-This repository demonstrates Go, JS, and Rust clients logging to a live Trackio dashboard.
-
-Live demo:
-https://vaibhav2507-trackio-dashboard.hf.space
-
-Template used:
-Trackio Dashboard
-
-Workflow:
-1. Create your own dashboard Space from the template.
-2. Set TRACKIO_SERVER_URL to your Space URL.
-3. Set HF_TOKEN to your Hugging Face token with write access.
-4. Log metrics from each client:
-
-Go:
-  export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
-  go run trackio-go/examples/quickstart
-
-JavaScript:
-  export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
-  node trackio-js/examples/quickstart.mjs
-
-Rust:
-  export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
-  cd trackio-rs && cargo run --example quickstart
-
 
 Summary Table
 -------------
