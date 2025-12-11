@@ -538,7 +538,6 @@ def configure(request: gr.Request):
     )
 
 
-
 CSS = """
 .logo-light { display: block; } 
 .logo-dark { display: none; }
@@ -699,7 +698,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         )
 
     navbar = gr.Navbar(
-        value=[("Metrics", ""), ("Media & Tables", "/media"), ("Runs", "/runs"), ("Files", "/files")],
+        value=[
+            ("Metrics", ""),
+            ("Media & Tables", "/media"),
+            ("Runs", "/runs"),
+            ("Files", "/files"),
+        ],
         main_page_name=False,
     )
     timer = gr.Timer(value=1)
@@ -1141,7 +1145,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                             key=f"double-{metric_idx}",
                                         )
                                     metric_idx += 1
+
     with grouped_runs_panel:
+
         @gr.render(
             triggers=[
                 demo.load,

@@ -282,6 +282,9 @@ if __name__ == "__main__":
                 output = gr.Textbox(label="Selected Value")
                 dropdown.input(lambda x: x, inputs=dropdown, outputs=output)
         cp.change(
-            update_dropdown, inputs=[cp, s], outputs=[dropdown, s], show_progress="hidden"
+            update_dropdown,
+            inputs=[cp, s],
+            outputs=[dropdown, s],
+            show_progress="hidden",
         )
     demo.launch()

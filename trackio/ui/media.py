@@ -91,10 +91,10 @@ def refresh_runs_dropdown(project: str | None):
         runs: list[str] = []
     else:
         runs = get_runs(project)
-    
+
     color_palette = utils.get_color_palette()
     colors = [color_palette[i % len(color_palette)] for i in range(len(runs))]
-    
+
     return ColoredDropdown(
         choices=runs,
         colors=colors,
@@ -115,7 +115,12 @@ with gr.Blocks() as media_page:
         runs_dropdown = ColoredDropdown(choices=[], colors=[], label="Run")
 
     navbar = gr.Navbar(
-        value=[("Metrics", ""), ("Media & Tables", "/media"), ("Runs", "/runs"), ("Files", "/files")],
+        value=[
+            ("Metrics", ""),
+            ("Media & Tables", "/media"),
+            ("Runs", "/runs"),
+            ("Files", "/files"),
+        ],
         main_page_name=False,
     )
     timer = gr.Timer(value=1)
@@ -169,17 +174,10 @@ with gr.Blocks() as media_page:
                     for item in media_items
                     if item.type in [TrackioImage.TYPE, TrackioVideo.TYPE]
                 ]
-                audio = [
-                    item
-                    for item in media_items
-                    if item.type == TrackioAudio.TYPE
-                ]
+                audio = [item for item in media_items if item.type == TrackioAudio.TYPE]
                 if image_and_video:
                     gr.Gallery(
-                        [
-                            (item.file_path, item.caption)
-                            for item in image_and_video
-                        ],
+                        [(item.file_path, item.caption) for item in image_and_video],
                         label=key,
                         columns=6,
                         elem_classes=("media-gallery"),
