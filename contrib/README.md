@@ -16,14 +16,12 @@ You can launch your own dashboard in seconds:
 Create Space:
 https://huggingface.co/new-space?sdk=gradio&template=gradio-templates%2Ftrackio-dashboard
 
-Once deployed, the Space URL will look like:
-https://username-trackio-dashboard.hf.space
-
+Once deployed, the iframed Space URL will be something like:
+https://username-trackio-dashboard.hf.space (you can find the iframed URL by clicking the triple dot menu next to Settings and then clicking "Embed this Space")
 
 2. Log from any client
 ----------------------
 
-All clients communicate with Trackio using the REST endpoints above.
 
 To authenticate writes, set:
 
