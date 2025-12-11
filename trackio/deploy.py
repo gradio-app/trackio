@@ -14,7 +14,7 @@ from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.utils import preprocess_space_and_dataset_ids, get_or_create_project_hash
+from trackio.utils import get_or_create_project_hash, preprocess_space_and_dataset_ids
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"

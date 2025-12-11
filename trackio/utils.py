@@ -1,6 +1,7 @@
 import math
 import os
 import re
+import secrets
 import time
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -141,7 +142,6 @@ FILES_DIR = TRACKIO_DIR / "files"
 
 
 def get_or_create_project_hash(project: str) -> str:
-    import secrets
     hash_path = TRACKIO_DIR / f"{project}.hash"
     if hash_path.exists():
         return hash_path.read_text().strip()
