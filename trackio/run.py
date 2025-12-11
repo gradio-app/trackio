@@ -117,12 +117,20 @@ class Run:
         relative_path: str | None = None,
         use_run_name: bool = True,
     ):
-        """Queue a media file for upload to space.
+        """
+        Queues a media file for upload to a Space.
+
         Args:
-            file_path: The path to the file to upload
-            step: The step number
-            relative_path: The relative path within the project's files directory. Used when uploading files via trackio.save().
-            use_run_name: Whether to use the run name for the uploaded file. This is set to False when uploading files via trackio.save().
+            file_path:
+                The path to the file to upload.
+            step (`int` or `None`, *optional*):
+                The step number associated with this upload.
+            relative_path (`str` or `None`, *optional*):
+                The relative path within the project's files directory. Used when
+                uploading files via `trackio.save()`.
+            use_run_name (`bool`, *optional*):
+                Whether to use the run name for the uploaded file. This is set to
+                `False` when uploading files via `trackio.save()`.
         """
         upload_entry: UploadEntry = {
             "project": self.project,

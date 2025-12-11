@@ -13,19 +13,22 @@ except ImportError:
 
 class Table:
     """
-    Initializes a Table object. Tables can be used to log tabular data including images, numbers, and text.
+    Initializes a Table object.
+
+    Tables can be used to log tabular data including images, numbers, and text.
 
     Args:
         columns (`list[str]`, *optional*):
             Names of the columns in the table. Optional if `data` is provided. Not
             expected if `dataframe` is provided. Currently ignored.
         data (`list[list[Any]]`, *optional*):
-            2D row-oriented array of values. Each value can be: a number, a string (treated as Markdown and truncated if too long),
-             or a `Trackio.Image` or list of `Trackio.Image` objects.
-        dataframe (`pandas.`DataFrame``, *optional*):
-            DataFrame object used to create the table. When set, `data` and `columns`
+            2D row-oriented array of values. Each value can be a number, a string
+            (treated as Markdown and truncated if too long), or a `Trackio.Image` or
+            list of `Trackio.Image` objects.
+        dataframe (`pandas.DataFrame`, *optional*):
+            DataFrame used to create the table. When set, `data` and `columns`
             arguments are ignored.
-        rows (`list[list[any]]`, *optional*):
+        rows (`list[list[Any]]`, *optional*):
             Currently ignored.
         optional (`bool` or `list[bool]`, *optional*, defaults to `True`):
             Currently ignored.
@@ -96,15 +99,20 @@ class Table:
 
     @staticmethod
     def to_display_format(table_data: list[dict]) -> list[dict]:
-        """Convert stored table data to display format for UI rendering. Note
-        that this does not use the self.data attribute, but instead uses the
-        table_data parameter, which is is what the UI receives.
+        """
+        Converts stored table data to display format for UI rendering.
+
+        Note:
+            This does not use the `self.data` attribute, but instead uses the
+            `table_data` parameter, which is what the UI receives.
 
         Args:
-            table_data: List of dictionaries representing table rows (from stored _value)
+            table_data (`list[dict]`):
+                List of dictionaries representing table rows (from stored `_value`).
 
         Returns:
-            Table data with images converted to markdown syntax and long text truncated.
+            `list[dict]`: Table data with images converted to markdown syntax and long
+            text truncated.
         """
         truncate_length = int(os.getenv("TRACKIO_TABLE_TRUNCATE_LENGTH", "250"))
 
@@ -149,12 +157,16 @@ class Table:
         return processed_data
 
     def _to_dict(self, project: str, run: str, step: int = 0):
-        """Convert table to dictionary representation.
+        """
+        Converts the table to a dictionary representation.
 
         Args:
-            project: Project name for saving media files
-            run: Run name for saving media files
-            step: Step number for saving media files
+            project (`str`):
+                Project name for saving media files.
+            run (`str`):
+                Run name for saving media files.
+            step (`int`, *optional*, defaults to `0`):
+                Step number for saving media files.
         """
         data = self._process_data(project, run, step)
         return {
