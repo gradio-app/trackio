@@ -10,11 +10,9 @@ from typing import Any
 import gradio as gr
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 
 try:
     import trackio.utils as utils
-    from trackio.histogram import Histogram
     from trackio.media import (
         TrackioAudio,
         TrackioImage,
@@ -22,7 +20,6 @@ try:
         get_project_media_path,
     )
     from trackio.sqlite_storage import SQLiteStorage
-    from trackio.table import Table
     from trackio.typehints import LogEntry, UploadEntry
     from trackio.ui import fns
     from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
@@ -33,7 +30,6 @@ try:
     from trackio.ui.runs import run_page
 except ImportError:
     import utils
-    from histogram import Histogram
     from media import (
         TrackioAudio,
         TrackioImage,
@@ -41,7 +37,6 @@ except ImportError:
         get_project_media_path,
     )
     from sqlite_storage import SQLiteStorage
-    from table import Table
     from typehints import LogEntry, UploadEntry
     from ui import fns
     from ui.components.colored_checkbox import ColoredCheckboxGroup

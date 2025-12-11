@@ -1,9 +1,7 @@
 """The Media and Tables page for the Trackio UI."""
 
-import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 import gradio as gr
 import pandas as pd
