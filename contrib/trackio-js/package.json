@@ -1,0 +1,33 @@
+{
+    "name": "@gradio-app/trackio-js",
+    "version": "0.1.0",
+    "license": "Apache-2.0",
+    "private": true,
+    "type": "module",
+    "main": "dist/index.cjs",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "require": "./dist/index.cjs",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "dev": "tsc -w",
+        "lint": "eslint .",
+        "test": "node --test",
+        "example": "node examples/quickstart.mjs",
+        "prepublishOnly": "npm run build && npm test"
+    },
+    "engines": {
+        "node": ">=18"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "eslint": "^9.0.0",
+        "typescript": "^5.9.3"
+    }
+}
