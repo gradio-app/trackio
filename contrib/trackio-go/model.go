@@ -14,14 +14,3 @@ type LogItem struct {
 	Step      *int           `json:"step,omitempty"`
 	Metrics   map[string]any `json:"metrics"`
 }
-
-type BulkLogRequest struct {
-	Project string         `json:"project"`
-	Run     string         `json:"run"`
-	Items   []LogItem      `json:"items"`
-	Config  map[string]any `json:"config,omitempty"`
-}
-
-type OkResponse struct {
-	Ok bool `json:"ok"`
-}
