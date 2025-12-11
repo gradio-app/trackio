@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Sequence
 
 import numpy as np
 
@@ -6,6 +6,14 @@ import numpy as np
 class Histogram:
     """
     Histogram data type for Trackio, compatible with wandb.Histogram.
+
+    Args:
+        sequence (`np.ndarray` or `Sequence[float]` or `Sequence[int]`, *optional*):
+            Sequence of values to create the histogram from.
+        np_histogram (`tuple`, *optional*):
+            Pre-computed NumPy histogram as a `(hist, bins)` tuple.
+        num_bins (`int`, *optional*, defaults to `64`):
+            Number of bins for the histogram (maximum `512`).
 
     Example:
         ```python
@@ -23,18 +31,13 @@ class Histogram:
         # Specify custom number of bins
         trackio.log({"distribution": trackio.Histogram(data, num_bins=50)})
         ```
-
-    Args:
-        sequence: Optional sequence of values to create histogram from
-        np_histogram: Optional pre-computed numpy histogram (hist, bins) tuple
-        num_bins: Number of bins for the histogram (default 64, max 512)
     """
 
     TYPE = "trackio.histogram"
 
     def __init__(
         self,
-        sequence: Any = None,
+        sequence: np.ndarray | Sequence[float] | Sequence[int] | None = None,
         np_histogram: tuple | None = None,
         num_bins: int = 64,
     ):
