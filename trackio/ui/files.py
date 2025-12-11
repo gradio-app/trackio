@@ -54,7 +54,12 @@ with gr.Blocks() as files_page:
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
 
     navbar = gr.Navbar(
-        value=[("Metrics", ""), ("Runs", "/runs"), ("Files", "/files")],
+        value=[
+            ("Metrics", ""),
+            ("Media & Tables", "/media"),
+            ("Runs", "/runs"),
+            ("Files", "/files"),
+        ],
         main_page_name=False,
     )
     timer = gr.Timer(value=1)
@@ -82,6 +87,30 @@ with gr.Blocks() as files_page:
         fn=update_file_explorer,
         inputs=[project_dd],
         outputs=[file_explorer],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    ).then(
+        fns.update_navbar_value,
+        inputs=[project_dd],
+        outputs=[navbar],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    )
+
+    gr.on(
+        [project_dd.change],
+        fn=update_file_explorer,
+        inputs=[project_dd],
+        outputs=[file_explorer],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    ).then(
+        fns.update_navbar_value,
+        inputs=[project_dd],
+        outputs=[navbar],
         show_progress="hidden",
         api_visibility="private",
         queue=False,

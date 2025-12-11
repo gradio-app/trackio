@@ -98,6 +98,7 @@ def refresh_runs_dropdown(project: str | None):
     return ColoredDropdown(
         choices=runs,
         colors=colors,
+        value=runs[0] if runs else None,
         placeholder=f"Select a run ({len(runs)})",
     )
 
@@ -128,7 +129,7 @@ with gr.Blocks() as media_page:
     @gr.render(
         triggers=[
             media_page.load,
-            runs_dropdown.input,
+            runs_dropdown.change,
             project_dd.change,
         ],
         inputs=[project_dd, runs_dropdown],
@@ -268,6 +269,13 @@ with gr.Blocks() as media_page:
         show_progress="hidden",
         queue=False,
         api_visibility="private",
+    ).then(
+        fns.update_navbar_value,
+        inputs=[project_dd],
+        outputs=[navbar],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
     )
     gr.on(
         [project_dd.change],
@@ -277,4 +285,11 @@ with gr.Blocks() as media_page:
         show_progress="hidden",
         queue=False,
         api_visibility="private",
+    ).then(
+        fns.update_navbar_value,
+        inputs=[project_dd],
+        outputs=[navbar],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
     )
