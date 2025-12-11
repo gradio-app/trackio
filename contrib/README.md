@@ -22,7 +22,7 @@ https://username-trackio-dashboard.hf.space (you can find the iframed URL by cli
 2. Log from any client
 ----------------------
 
-Then, `cd` into the `contrib` directory and run the appropriate quickstart script for the language you are interested in:
+Then, `cd` into this `contrib` directory and run the appropriate quickstart script for the language you are interested in:
 
 ----------------
 Go Quickstart
@@ -32,7 +32,7 @@ export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="go-quickstart"
 export TRACKIO_RUN="go-run-1"
 
-go run ./examples/quickstart
+go run trackio-go/examples/quickstart
 
 Internal calls:
 c.Log(map[string]float64{"loss":0.5,"acc":0.8}, 0, "")
@@ -48,7 +48,7 @@ export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="js-quickstart"
 export TRACKIO_RUN="js-run-1"
 
-node examples/quickstart.mjs
+node trackio-js/examples/quickstart.mjs
 
 Internal calls:
 c.log({loss:0.9, acc:0.6}, 0)
@@ -64,7 +64,7 @@ export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="rs-quickstart"
 export TRACKIO_RUN="rs-run-1"
 
-cargo run --example quickstart
+cd trackio-rs && cargo run --example quickstart
 
 Internal calls:
 client.log(json!({"loss":0.90,"acc":0.60}), Some(0), None);
@@ -85,9 +85,6 @@ client.flush().expect("flush ok");
 3. Open the "Metrics" tab:
    X-axis: step
    Y-axis: check loss and acc
-
-Trackio stores all metrics in a SQLite database:
-~/.cache/huggingface/trackio/{project}.db
 
 ---
 
@@ -135,7 +132,7 @@ JavaScript:
 
 Rust:
   export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
-  cargo run --example quickstart
+  cd trackio-rs && cargo run --example quickstart
 
 
 Summary Table
@@ -143,9 +140,9 @@ Summary Table
 
 Language | File                       | Command                          | Example Project
 ---------|-----------------------------|----------------------------------|------------------
-Go       | examples/quickstart.go      | go run ./examples/quickstart     | go-quickstart
-JS       | examples/quickstart.mjs     | node examples/quickstart.mjs     | js-quickstart
-Rust     | examples/quickstart.rs      | cargo run --example quickstart   | rs-quickstart
+Go       | trackio/go-examples/quickstart.go      | go run trackio-go/examples/quickstart     | go-quickstart
+JS       | trackio-js/examples/quickstart.mjs     | node trackio-js/examples/quickstart.mjs     | js-quickstart
+Rust     | trackio-rs/examples/quickstart.rs | cd trackio-rs && cargo run --example quickstart | rs-quickstart
 
 All clients log to the same Trackio dashboard in real time.
 
