@@ -2,7 +2,7 @@
 
 This folder contains **lightweight, open-source experiment tracking** clients for several languages: currently, Go, JavaScript, and Rust. These clients let you log experimental data to a Trackio dashboard hosted on [🤗 Hugging Face Spaces](https://huggingface.co/spaces) or running locally.
 
-**Note:** These Clients are contributed by the open-source community are not maintained at the same level as the rest of the Python-based repo.
+**Note:** These clients are contributed by the open-source community and are not maintained at the same level as the rest of the Python-based repo.
 
 # Usage
 
@@ -19,8 +19,7 @@ https://huggingface.co/new-space?sdk=gradio&template=gradio-templates%2Ftrackio-
 Once deployed, the iframed Space URL will be something like:
 https://username-trackio-dashboard.hf.space (you can find the iframed URL by clicking the triple dot menu next to Settings and then clicking "Embed this Space")
 
-2. Log from any client
-----------------------
+## 2. Log from any client
 
 Then, `cd` into this `contrib` directory and run the appropriate quickstart script for the language you are interested in:
 
@@ -72,8 +71,7 @@ client.log(json!({"loss":0.75,"acc":0.68}), Some(1), None);
 client.flush().expect("flush ok");
 
 
-3. View in the Dashboard
-------------------------
+## 3. View in the Dashboard
 
 1. Open your Space:
    https://vaibhav2507-trackio-dashboard.hf.space
@@ -84,11 +82,11 @@ client.flush().expect("flush ok");
 
 3. Open the "Metrics" tab:
    X-axis: step
-   Y-axis: check loss and acc
+   Y-axis: loss and acc
 
 ---
 
-4. curl Reference 
+## 4. curl Reference 
 
 ```bash
 curl -sS "$TRACKIO_SERVER_URL/api/healthz"
@@ -105,8 +103,7 @@ curl -sS -X POST "$TRACKIO_SERVER_URL/api/bulk_log" \
 
 
 
-5. Example: Trackio Dashboard on Hugging Face Spaces
-----------------------------------------------------
+## 5. Example: Trackio Dashboard on Hugging Face Spaces
 
 This repository demonstrates Go, JS, and Rust clients logging to a live Trackio dashboard.
 
@@ -119,16 +116,16 @@ Trackio Dashboard
 Workflow:
 1. Create your own dashboard Space from the template.
 2. Set TRACKIO_SERVER_URL to your Space URL.
-3. Set HF_TOKEN 
+3. Set HF_TOKEN to your Hugging Face token with write access.
 4. Log metrics from each client:
 
 Go:
   export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
-  go run ./examples/quickstart
+  go run trackio-go/examples/quickstart
 
 JavaScript:
   export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
-  node examples/quickstart.mjs
+  node trackio-js/examples/quickstart.mjs
 
 Rust:
   export TRACKIO_SERVER_URL="https://vaibhav2507-trackio-dashboard.hf.space"
@@ -140,7 +137,7 @@ Summary Table
 
 Language | File                       | Command                          | Example Project
 ---------|-----------------------------|----------------------------------|------------------
-Go       | trackio/go-examples/quickstart.go      | go run trackio-go/examples/quickstart     | go-quickstart
+Go       | trackio-go/examples/quickstart/main.go | go run trackio-go/examples/quickstart     | go-quickstart
 JS       | trackio-js/examples/quickstart.mjs     | node trackio-js/examples/quickstart.mjs     | js-quickstart
 Rust     | trackio-rs/examples/quickstart.rs | cd trackio-rs && cargo run --example quickstart | rs-quickstart
 
