@@ -1,12 +1,19 @@
+import numpy as np
 from playwright.sync_api import expect, sync_playwright
 
 import trackio
 
 
-def test_that_runs_are_displayed(temp_dir):
+def test_runs_plots_images_are_displayed(temp_dir):
     trackio.init(project="test_project", name="test_run")
     trackio.log(metrics={"loss": 0.1})
     trackio.log(metrics={"loss": 0.2, "acc": 0.9})
+
+    random_image = np.random.randint(0, 255, size=(64, 64, 3), dtype=np.uint8)
+    trackio.log(
+        metrics={"test_image": trackio.Image(random_image, caption="Test image")}
+    )
+
     trackio.finish()
 
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
@@ -34,6 +41,13 @@ def test_that_runs_are_displayed(temp_dir):
             checkbox_label.locator("input[type='checkbox']").uncheck()
             locator = page.locator(".vega-embed")
             expect(locator).to_have_count(0)
+
+            # Navigate to media page and verify image is displayed
+            page.get_by_role("link", name="Media & Tables").click()
+            gallery = page.locator(".media-gallery")
+            expect(gallery).to_be_visible()
+            gallery_images = gallery.locator("img")
+            expect(gallery_images.first).to_be_visible()
 
             browser.close()
     finally:
