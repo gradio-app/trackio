@@ -1,97 +1,66 @@
-# trackio-js: JS client for Trackio
+# trackio-js — JavaScript/TypeScript client for Trackio
 
-Tiny JavaScript/TypeScript client for Trackio.
-It batches metrics and posts them to a locally running Trackio dashboard (or a Space) via HTTP.
+A lightweight JavaScript/TypeScript client for [Trackio](https://github.com/gradio-app/trackio), the open-source experiment tracker built by Hugging Face.
 
-## Quick start
+## Quickstart
 
-1) Start Trackio locally (with REST API enabled)
+### 1. Create a Trackio Dashboard Space
+
+Create your dashboard Space:
+https://huggingface.co/new-space?sdk=gradio&template=gradio-templates%2Ftrackio-dashboard
+
+Once deployed, the iframed Space URL will be something like:
+`https://username-trackio-dashboard.hf.space` (you can find the iframed URL by clicking the triple dot menu next to Settings and then clicking "Embed this Space")
+
+### 2. Log metrics
+
+Set environment variables and run the example:
 
 ```bash
-python -c "import trackio; trackio.init(project='js-quickstart', embed=False); import time; time.sleep(9999)"
+export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
+export HF_TOKEN="hf_…"
+export TRACKIO_PROJECT="js-quickstart"
+export TRACKIO_RUN="js-run-1"
+
+node examples/quickstart.mjs
 ```
-2) Install
+
+### 3. View in the Dashboard
+
+Open your Space URL and select:
+- Project: `js-quickstart`
+- Run: `js-run-1`
+
+Open the "Metrics" tab to view your logged metrics.
+
+## Usage
+
+```javascript
+import { TrackioClient } from './src/client.js';
+
+const client = new TrackioClient({
+  baseUrl: 'https://your-space-url.hf.space',
+  project: 'my-project',
+  run: 'my-run',
+});
+
+client.log({ loss: 0.9, acc: 0.6 }, 0);
+client.log({ loss: 0.7, acc: 0.72 }, 1);
+await client.flush();
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TRACKIO_SERVER_URL` | Base Trackio server URL | `http://127.0.0.1:7860` |
+| `TRACKIO_PROJECT` | Project name | - |
+| `TRACKIO_RUN` | Run name | - |
+| `HF_TOKEN` | Hugging Face token with write access | - |
+
+## Install
 
 ```bash
 npm install
 npm run build
 ```
-
-Run the example:
-
-```bash
-npm run example
-```
-
-You should see logs like:
-
-```bash
-* Waiting for Trackio server at: http://127.0.0.1:7860
-* Trackio REST detected at: http://127.0.0.1:7860/api/projects
-* Logging sample metrics to: http://127.0.0.1:7860
-* Flushing logs...
-* Done. Check the Trackio dashboard.
-```
-
-Open the dashboard in your browser:
-
-```bash
-http://127.0.0.1:7860/?selected_project=js-quickstart
-```
-
-## API
-
-new TrackioClient(options?)
-
-Option	                            Type	            Default
-baseUrl	                            string	            process.env.TRACKIO_SERVER_URL → http://127.0.0.1:7860
-project	                            string	            process.env.TRACKIO_PROJECT
-run	                                string	            process.env.TRACKIO_RUN
-writeToken	                        string	            process.env.TRACKIO_WRITE_TOKEN
-timeoutMs	                        number	            process.env.TRACKIO_TIMEOUT_MS → 5000
-maxBatch	                        number	            process.env.TRACKIO_MAX_BATCH → 128
-
-
-Fluent setters are also available:
-	•	.withBaseUrl(url: string)
-	•	.withProject(project: string)
-	•	.withRun(run: string)
-	•	.withWriteToken(token: string)
-
-client.log(metrics: object, step?: number, timestamp?: string)
-
-Queues one log record.
-	•	timestamp may be an empty string "" (server will accept it).
-
-await client.flush()
-
-Sends all queued metrics. The client:
-	•	Auto-discovers the working endpoint on first call:
-	•	tries POST /api/bulk_log, falls back to POST /gradio_api/bulk_log
-	•	caches the working path for future flushes
-	•	Sends payload like:
-
-
-```bash
-{
-  "project": "js-quickstart",
-  "run": "js-run-1",
-  "metrics_list": [{"loss": 0.5}, {"loss": 0.4}],
-  "steps": [0, 1],
-  "timestamps": ["", ""]
-}
-```
-
-## Environment variables
-
-Name	                        Default	                    Notes
-TRACKIO_SERVER_URL	            http://127.0.0.1:7860	    Where Trackio UI is running
-TRACKIO_PROJECT	                —	                        Project name (optional)
-TRACKIO_RUN	                    —	                        Run name (optional)
-TRACKIO_WRITE_TOKEN	            —	                        optional write auth token
-TRACKIO_TIMEOUT_MS	            5000	                    HTTP request timeout
-TRACKIO_MAX_BATCH	            128	                        Max logs to buffer before flush
-
-
-
-
