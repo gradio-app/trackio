@@ -26,50 +26,69 @@ Then, `cd` into this `contrib` directory and run the appropriate quickstart scri
 ----------------
 Go Quickstart
 ----------------
+
+```bash
 export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
 export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="go-quickstart"
 export TRACKIO_RUN="go-run-1"
+```
 
+```bash
 go run trackio-go/examples/quickstart
+```
 
 Internal calls:
+
+```go
 c.Log(map[string]float64{"loss":0.5,"acc":0.8}, 0, "")
 c.Log(map[string]float64{"loss":0.4,"acc":0.82}, 1, "")
 c.Flush()
-
+```
 
 ----------------
 JavaScript Quickstart
 ----------------
+
+```bash
 export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
 export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="js-quickstart"
 export TRACKIO_RUN="js-run-1"
+```
 
+```bash
 node trackio-js/examples/quickstart.mjs
+```
 
 Internal calls:
+```js
 c.log({loss:0.9, acc:0.6}, 0)
 c.log({loss:0.7, acc:0.72}, 1)
 await c.flush()
-
+```
 
 ----------------
 Rust Quickstart
 ----------------
+
+```bash
 export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
 export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="rs-quickstart"
 export TRACKIO_RUN="rs-run-1"
+```
 
+```bash
 cd trackio-rs && cargo run --example quickstart
+```
 
 Internal calls:
+```rs
 client.log(json!({"loss":0.90,"acc":0.60}), Some(0), None);
 client.log(json!({"loss":0.75,"acc":0.68}), Some(1), None);
 client.flush().expect("flush ok");
-
+```
 
 ## 3. View in the Dashboard
 
@@ -100,7 +119,7 @@ curl -sS -X POST "$TRACKIO_SERVER_URL/api/bulk_log" \
     "metrics_list":[{"loss":0.9,"acc":0.6},{"loss":0.7,"acc":0.72}],
     "steps":[0,1]
   }'
-
+```
 
 
 ## 5. Example: Trackio Dashboard on Hugging Face Spaces
