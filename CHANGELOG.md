@@ -1,5 +1,12 @@
 # trackio
 
+## 0.12.0
+
+### Features
+
+- [#357](https://github.com/gradio-app/trackio/pull/357) [`02ba815`](https://github.com/gradio-app/trackio/commit/02ba815358060f1966052de051a5bdb09702920e) - Redesign media and tables to show up on separate page.  Thanks @abidlabs!
+- [#359](https://github.com/gradio-app/trackio/pull/359) [`08fe9c9`](https://github.com/gradio-app/trackio/commit/08fe9c9ddd7fe99ee811555fdfb62df9ab88e939) - docs: Improve docstrings.  Thanks @qgallouedec!
+
 ## 0.11.0
 
 ### Features
