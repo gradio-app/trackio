@@ -140,6 +140,17 @@ MEDIA_DIR = TRACKIO_DIR / "media"
 FILES_DIR = TRACKIO_DIR / "files"
 
 
+def get_or_create_project_hash(project: str) -> str:
+    import secrets
+    hash_path = TRACKIO_DIR / f"{project}.hash"
+    if hash_path.exists():
+        return hash_path.read_text().strip()
+    hash_value = secrets.token_urlsafe(16)
+    TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
+    hash_path.write_text(hash_value)
+    return hash_value
+
+
 def generate_readable_name(used_names: list[str], space_id: str | None = None) -> str:
     """
     Generates a random, readable name like "dainty-sunset-0".

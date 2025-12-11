@@ -24,7 +24,7 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import UploadEntry
 from trackio.ui.main import CSS, HEAD, demo
-from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
+from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, get_project_hash
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
