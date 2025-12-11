@@ -216,6 +216,7 @@ with gr.Blocks() as media_page:
                                             step=1,
                                             container=False,
                                             visible=len(value) > 1,
+                                            interactive=True,
                                         )
                                         processed_data = Table.to_display_format(
                                             value.iloc[-1]["_value"]
