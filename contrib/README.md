@@ -22,18 +22,13 @@ https://username-trackio-dashboard.hf.space (you can find the iframed URL by cli
 2. Log from any client
 ----------------------
 
-
-To authenticate writes, set:
-
-export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
-export HF_TOKEN=“hf_token_here”
-
+Then, `cd` into the `contrib` directory and run the appropriate quickstart script for the language you are interested in:
 
 ----------------
 Go Quickstart
 ----------------
 export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
-export HF_TOKEN=“hf_…”
+export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="go-quickstart"
 export TRACKIO_RUN="go-run-1"
 
@@ -49,7 +44,7 @@ c.Flush()
 JavaScript Quickstart
 ----------------
 export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
-export HF_TOKEN=“hf_…”
+export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="js-quickstart"
 export TRACKIO_RUN="js-run-1"
 
@@ -65,7 +60,7 @@ await c.flush()
 Rust Quickstart
 ----------------
 export TRACKIO_SERVER_URL="https://your-space-url.hf.space"
-export HF_TOKEN=“hf_…”
+export HF_TOKEN="hf_…"
 export TRACKIO_PROJECT="rs-quickstart"
 export TRACKIO_RUN="rs-run-1"
 
@@ -87,7 +82,7 @@ client.flush().expect("flush ok");
    Project: go-quickstart / js-quickstart / rs-quickstart
    Run: go-run-1 / js-run-1 / rs-run-1
 
-3. Open the “Metrics” tab:
+3. Open the "Metrics" tab:
    X-axis: step
    Y-axis: check loss and acc
 
