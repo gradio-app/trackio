@@ -14,7 +14,7 @@ from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.utils import preprocess_space_and_dataset_ids, get_project_hash
+from trackio.utils import preprocess_space_and_dataset_ids, get_or_create_project_hash
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
@@ -310,7 +310,7 @@ def sync(
         `str`: The URL of the Space where the project is synced.
     """
     if space_id is None:
-        space_id = f"{project}-{get_project_hash(project)}"
+        space_id = f"{project}-{get_or_create_project_hash(project)}"
     space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
 
     def space_creation_and_upload(
