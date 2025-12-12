@@ -325,9 +325,9 @@ def save(
     project: str | None = None,
 ) -> str:
     """
-    Saves files to a project (not linked to a specific run). If Trackio is running locally, the
-    file(s) will be moved to the project's files directory. If Trackio is running in a Space, the
-    file(s) will be uploaded to the Space's files directory.
+    Saves files to a project (not linked to a specific run). If Trackio is running
+    locally, the file(s) will be moved to the project's files directory. If Trackio is
+    running in a Space, the file(s) will be uploaded to the Space's files directory.
 
     Args:
         glob_str (`str` or `Path`):
@@ -335,7 +335,8 @@ def save(
             matching multiple files (e.g., `"*.py"`, `"models/**/*.pth"`).
         project (`str`, *optional*):
             The name of the project to save files to. If not provided, uses the current
-            project from `trackio.init()`. If no project is initialized, raises an error.
+            project from `trackio.init()`. If no project is initialized, raises an
+            error.
 
     Returns:
         `str`: The path where the file(s) were saved (project's files directory).
@@ -451,8 +452,8 @@ def show(
             A Gradio Theme to use for the dashboard instead of the default Gradio theme,
             can be a built-in theme (e.g. `'soft'`, `'citrus'`), a theme from the Hub
             (e.g. `"gstaff/xkcd"`), or a custom Theme class. If not provided, the
-            `TRACKIO_THEME` environment variable will be used, or if that is not set, the
-            default Gradio theme will be used.
+            `TRACKIO_THEME` environment variable will be used, or if that is not set,
+            the default Gradio theme will be used.
         mcp_server (`bool`, *optional*):
             If `True`, the Trackio dashboard will be set up as an MCP server and certain
             functions will be added as MCP tools. If `None` (default behavior), then the
@@ -467,8 +468,8 @@ def show(
             hex codes), or if that is not set, the default color palette will be used.
             Example: `['#FF0000', '#00FF00', '#0000FF']`
         open_browser (`bool`, *optional*, defaults to `True`):
-            If `True` and not in a notebook, a new browser tab will be opened with the dashboard.
-            If `False`, the browser will not be opened.
+            If `True` and not in a notebook, a new browser tab will be opened with the
+            dashboard. If `False`, the browser will not be opened.
         block_thread (`bool`, *optional*):
             If `True`, the main thread will be blocked until the dashboard is closed.
             If `None` (default behavior), then the main thread will not be blocked if the

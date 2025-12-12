@@ -16,13 +16,17 @@
 
 [[autodoc]] finish
 
-## save
-
-[[autodoc]] save
-
 ## show
 
 [[autodoc]] show
+
+## sync
+
+[[autodoc]] sync
+
+## delete_project
+
+[[autodoc]] delete_project
 
 ## import_csv
 
@@ -32,9 +36,9 @@
 
 [[autodoc]] import_tf_events
 
-## Table
+## save
 
-[[autodoc]] Table
+[[autodoc]] save
 
 ## Image
 
@@ -43,3 +47,15 @@
 ## Video
 
 [[autodoc]] Video
+
+## Audio
+
+[[autodoc]] Audio
+
+## Table
+
+[[autodoc]] Table
+
+## Histogram
+
+[[autodoc]] Histogram

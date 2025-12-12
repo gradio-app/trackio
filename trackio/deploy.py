@@ -165,14 +165,19 @@ def create_space_if_not_exists(
     private: bool | None = None,
 ) -> None:
     """
-    Creates a new Hugging Face Space if it does not exist. If a dataset_id is provided, it will be added as a space variable.
+    Creates a new Hugging Face Space if it does not exist.
 
     Args:
-        space_id: The ID of the Space to create.
-        dataset_id: The ID of the Dataset to add to the Space.
-        private: Whether to make the Space private. If None (default), the repo will be
-          public unless the organization's default is private. This value is ignored if
-          the repo already exists.
+        space_id (`str`):
+            The ID of the Space to create.
+        space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
+            Choice of persistent storage tier for the Space.
+        dataset_id (`str`, *optional*):
+            The ID of the Dataset to add to the Space as a space variable.
+        private (`bool`, *optional*):
+            Whether to make the Space private. If `None` (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
     """
     if "/" not in space_id:
         raise ValueError(
@@ -226,11 +231,14 @@ def wait_until_space_exists(
     space_id: str,
 ) -> None:
     """
-    Blocks the current thread until the space exists.
-    May raise a TimeoutError if this takes quite a while.
+    Blocks the current thread until the Space exists.
 
     Args:
-        space_id: The ID of the Space to wait for.
+        space_id (`str`):
+            The ID of the Space to wait for.
+
+    Raises:
+        `TimeoutError`: If waiting for the Space takes longer than expected.
     """
     hf_api = huggingface_hub.HfApi()
     delay = 1
@@ -246,14 +254,19 @@ def wait_until_space_exists(
 
 def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None:
     """
-    Uploads the database of a local Trackio project to a Hugging Face Space. It
-    uses the Gradio Client to upload since we do not want to trigger a new build
-    of the Space, which would happen if we used `huggingface_hub.upload_file`.
+    Uploads the database of a local Trackio project to a Hugging Face Space.
+
+    This uses the Gradio Client to upload since we do not want to trigger a new build of
+    the Space, which would happen if we used `huggingface_hub.upload_file`.
 
     Args:
-        project: The name of the project to upload.
-        space_id: The ID of the Space to upload to.
-        force: If True, overwrite existing database without prompting. If False, prompt for confirmation.
+        project (`str`):
+            The name of the project to upload.
+        space_id (`str`):
+            The ID of the Space to upload to.
+        force (`bool`, *optional*, defaults to `False`):
+            If `True`, overwrites the existing database without prompting. If `False`,
+            prompts for confirmation.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
     client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
