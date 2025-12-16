@@ -163,9 +163,12 @@ def init(
                 favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
                 allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
             )
+            context_vars.current_space_id.set(None)
         else:
             url = space_id
             share_url = None
+            context_vars.current_space_id.set(space_id)
+
         context_vars.current_server.set(url)
         context_vars.current_share_server.set(share_url)
     if (

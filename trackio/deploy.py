@@ -1,6 +1,7 @@
 import importlib.metadata
 import io
 import os
+import threading
 import time
 from importlib.resources import files
 from pathlib import Path
@@ -13,7 +14,7 @@ from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.utils import preprocess_space_and_dataset_ids
+from trackio.utils import get_or_create_project_hash, preprocess_space_and_dataset_ids
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
@@ -294,15 +295,20 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
 
 
 def sync(
-    project: str, space_id: str, private: bool | None = None, force: bool = False
-) -> None:
+    project: str,
+    space_id: str | None = None,
+    private: bool | None = None,
+    force: bool = False,
+    run_in_background: bool = False,
+) -> str:
     """
     Syncs a local Trackio project's database to a Hugging Face Space.
     If the Space does not exist, it will be created.
 
     Args:
         project (`str`): The name of the project to upload.
-        space_id (`str`): The ID of the Space to upload to (e.g., `"username/space_id"`).
+        space_id (`str`, *optional*): The ID of the Space to upload to (e.g., `"username/space_id"`).
+            If not provided, a random space_id (e.g. "username/project-2ac3z2aA") will be used.
         private (`bool`, *optional*):
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored
@@ -310,9 +316,31 @@ def sync(
         force (`bool`, *optional*, defaults to `False`):
             If `True`, overwrite the existing database without prompting for confirmation.
             If `False`, prompt the user before overwriting an existing database.
+        run_in_background (`bool`, *optional*, defaults to `False`):
+            If `True`, the Space creation and database upload will be run in a background thread.
+            If `False`, all the steps will be run synchronously.
+    Returns:
+        `str`: The Space ID of the synced project.
     """
+    if space_id is None:
+        space_id = f"{project}-{get_or_create_project_hash(project)}"
     space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
-    create_space_if_not_exists(space_id, private=private)
-    wait_until_space_exists(space_id)
-    upload_db_to_space(project, space_id, force=force)
-    print(f"Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
+
+    def space_creation_and_upload(
+        space_id: str, private: bool | None = None, force: bool = False
+    ):
+        print(
+            f"* Syncing local Trackio project to: {SPACE_URL.format(space_id=space_id)} (please wait...)"
+        )
+        create_space_if_not_exists(space_id, private=private)
+        wait_until_space_exists(space_id)
+        upload_db_to_space(project, space_id, force=force)
+        print(f"* Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
+
+    if run_in_background:
+        threading.Thread(
+            target=space_creation_and_upload, args=(space_id, private, force)
+        ).start()
+    else:
+        space_creation_and_upload(space_id, private, force)
+    return space_id
