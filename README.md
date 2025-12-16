@@ -22,7 +22,7 @@
 
 `trackio` is a lightweight, free experiment tracking Python library built by Hugging Face 🤗.
 
-![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
+![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
 
 
 - **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish`. Drop-in replacement: just 
@@ -147,6 +147,39 @@ trackio.init(project="my-project", space_id="username/space_id")
 ```
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
+
+## Syncing Offline Projects to Spaces
+
+If you've been tracking experiments locally and want to move them to Hugging Face Spaces for sharing or collaboration, use the `sync` function:
+
+```py
+import trackio
+
+trackio.sync(project="my-project", space_id="username/space_id")
+```
+
+This uploads your local project database to a new or existing Space. The Space will display all your logged experiments and metrics.
+
+**When to use sync:**
+- You started tracking experiments locally and later decided to share them
+- You want to collaborate with others on existing experiments
+- You need to access your experiments from multiple machines
+
+**Example workflow:**
+
+```py
+import trackio
+
+# Start tracking locally
+trackio.init(project="my-project", config={"lr": 0.001})
+trackio.log({"loss": 0.5})
+trackio.finish()
+
+# Later, sync to Spaces
+trackio.sync(project="my-project", space_id="username/my-experiments")
+```
+
+After syncing, your experiments will be available at `https://huggingface.co/spaces/username/my-experiments`.
 
 ## Embedding a Trackio Dashboard
 
