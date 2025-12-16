@@ -320,7 +320,7 @@ def sync(
             If `True`, the Space creation and database upload will be run in a background thread.
             If `False`, all the steps will be run synchronously.
     Returns:
-        `str`: The URL of the Space where the project is synced.
+        `str`: The Space ID of the synced project.
     """
     if space_id is None:
         space_id = f"{project}-{get_or_create_project_hash(project)}"
@@ -329,15 +329,19 @@ def sync(
     def space_creation_and_upload(
         space_id: str, private: bool | None = None, force: bool = False
     ):
+        print(f"* Syncing local Trackio project to: {SPACE_URL.format(space_id=space_id)} (please wait...)")
         create_space_if_not_exists(space_id, private=private)
         wait_until_space_exists(space_id)
         upload_db_to_space(project, space_id, force=force)
         print(f"* Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
 
     if run_in_background:
-        threading.Thread(
+        thread = threading.Thread(
             target=space_creation_and_upload, args=(space_id, private, force)
-        ).start()
+        )
+        thread.start()
+        import atexit
+        atexit.register(thread.join)
     else:
         space_creation_and_upload(space_id, private, force)
-    return SPACE_URL.format(space_id=space_id)
+    return space_id

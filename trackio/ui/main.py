@@ -25,7 +25,7 @@ try:
     from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
     from trackio.ui.files import files_page
     from trackio.ui.helpers.run_selection import RunSelection
-    from trackio.ui.media import media_page
+    from trackio.ui.media_page import media_page
     from trackio.ui.run_detail import run_detail_page
     from trackio.ui.runs import run_page
 except ImportError:
@@ -42,7 +42,7 @@ except ImportError:
     from ui.components.colored_checkbox import ColoredCheckboxGroup
     from ui.files import files_page
     from ui.helpers.run_selection import RunSelection
-    from ui.media import media_page
+    from ui.media_page import media_page
     from ui.run_detail import run_detail_page
     from ui.runs import run_page
 

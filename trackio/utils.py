@@ -145,7 +145,7 @@ def get_or_create_project_hash(project: str) -> str:
     hash_path = TRACKIO_DIR / f"{project}.hash"
     if hash_path.exists():
         return hash_path.read_text().strip()
-    hash_value = secrets.token_urlsafe(16)
+    hash_value = secrets.token_urlsafe(8)
     TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
     hash_path.write_text(hash_value)
     return hash_value
