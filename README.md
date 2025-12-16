@@ -160,11 +160,6 @@ trackio.sync(project="my-project", space_id="username/space_id")
 
 This uploads your local project database to a new or existing Space. The Space will display all your logged experiments and metrics.
 
-**When to use sync:**
-- You started tracking experiments locally and later decided to share them
-- You want to collaborate with others on existing experiments
-- You need to access your experiments from multiple machines
-
 **Example workflow:**
 
 ```py
@@ -178,8 +173,6 @@ trackio.finish()
 # Later, sync to Spaces
 trackio.sync(project="my-project", space_id="username/my-experiments")
 ```
-
-After syncing, your experiments will be available at `https://huggingface.co/spaces/username/my-experiments`.
 
 ## Embedding a Trackio Dashboard
 
