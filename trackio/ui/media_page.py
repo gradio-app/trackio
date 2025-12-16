@@ -292,4 +292,3 @@ with gr.Blocks() as media_page:
         api_visibility="private",
         queue=False,
     )
-

@@ -329,7 +329,9 @@ def sync(
     def space_creation_and_upload(
         space_id: str, private: bool | None = None, force: bool = False
     ):
-        print(f"* Syncing local Trackio project to: {SPACE_URL.format(space_id=space_id)} (please wait...)")
+        print(
+            f"* Syncing local Trackio project to: {SPACE_URL.format(space_id=space_id)} (please wait...)"
+        )
         create_space_if_not_exists(space_id, private=private)
         wait_until_space_exists(space_id)
         upload_db_to_space(project, space_id, force=force)
@@ -341,6 +343,7 @@ def sync(
         )
         thread.start()
         import atexit
+
         atexit.register(thread.join)
     else:
         space_creation_and_upload(space_id, private, force)
