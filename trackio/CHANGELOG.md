@@ -1,5 +1,11 @@
 # trackio
 
+## 0.13.0
+
+### Features
+
+- [#358](https://github.com/gradio-app/trackio/pull/358) [`073715d`](https://github.com/gradio-app/trackio/commit/073715d1caf8282f68890117f09c3ac301205312) - Improvements to `trackio.sync()`.  Thanks @abidlabs!
+
 ## 0.12.0
 
 ### Features
