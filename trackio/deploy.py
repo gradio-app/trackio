@@ -338,13 +338,9 @@ def sync(
         print(f"* Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
 
     if run_in_background:
-        thread = threading.Thread(
+        threading.Thread(
             target=space_creation_and_upload, args=(space_id, private, force)
-        )
-        thread.start()
-        import atexit
-
-        atexit.register(thread.join)
+        ).start()
     else:
         space_creation_and_upload(space_id, private, force)
     return space_id
