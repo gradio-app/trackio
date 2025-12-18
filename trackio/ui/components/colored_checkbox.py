@@ -9,6 +9,7 @@ class ColoredCheckboxGroup(gr.HTML):
         value: list[str] | None = None,
         colors: list[str] | None = None,
         label: str | None = None,
+        latest_checked: bool = False,
         **kwargs,
     ):
         html_template = """
@@ -18,6 +19,12 @@ class ColoredCheckboxGroup(gr.HTML):
                     <input type="checkbox" class="select-all-input">
                 </label>
                 ${label ? `<span class="container-label">${label}</span>` : ''}
+                <div class="latest-only-container">
+                    <em class="latest-only-label">Latest only</em>
+                    <label class="checkbox-label latest-only-label-wrapper">
+                        <input type="checkbox" class="latest-only-input" ${latest_checked ? 'checked' : ''}>
+                    </label>
+                </div>
             </div>
             <div class="colored-checkbox-group">
                 ${choices.map((choice, i) => `
@@ -42,9 +49,26 @@ class ColoredCheckboxGroup(gr.HTML):
             display: flex;
             align-items: center;
             margin-bottom: var(--spacing-md);
+            justify-content: space-between;
         }
         .container-label {
             color: var(--block-title-text-color);
+        }
+        .latest-only-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            border: 1px dashed var(--border-color-primary);
+            border-radius: var(--radius-sm);
+            padding: 4px 8px;
+        }
+        .latest-only-label {
+            font-style: italic;
+            color: var(--block-title-text-color);
+        }
+        .latest-only-label-wrapper {
+            margin: 0;
         }
         .colored-checkbox-group {
             display: flex;
@@ -126,6 +150,7 @@ class ColoredCheckboxGroup(gr.HTML):
             choices=choices,
             colors=colors,
             label=label,
+            latest_checked=latest_checked,
             **kwargs,
         )
 
