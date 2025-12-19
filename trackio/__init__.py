@@ -63,8 +63,6 @@ Audio = TrackioAudio
 
 config = {}
 
-DEFAULT_THEME = "default"
-
 
 def init(
     project: str,
@@ -487,7 +485,7 @@ def show(
     if color_palette is not None:
         os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
 
-    theme = theme or os.environ.get("TRACKIO_THEME", DEFAULT_THEME)
+    theme = theme or os.environ.get("TRACKIO_THEME")
 
     _mcp_server = (
         mcp_server
