@@ -1,5 +1,11 @@
 # trackio
 
+## 0.13.1
+
+### Features
+
+- [#369](https://github.com/gradio-app/trackio/pull/369) [`767e9fe`](https://github.com/gradio-app/trackio/commit/767e9fe095d7c6ed102016caf927c1517fb8618c) - tiny pr removing unnecessary code.  Thanks @abidlabs!
+
 ## 0.13.0
 
 ### Features
