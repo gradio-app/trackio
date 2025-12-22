@@ -154,7 +154,7 @@ class Run:
         """
         Serialize media in metrics and upload to space if needed.
         """
-        value._save(self.project, self.name, step)
+        value._save(self.project, self.name, step if step is not None else 0)
         if self._space_id:
             self._queue_upload(value._get_absolute_file_path(), step)
         return value._to_dict()

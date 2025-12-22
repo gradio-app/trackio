@@ -1,12 +1,12 @@
 import threading
 import time
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from trackio.run import Run
 
-pynvml = None
+pynvml: Any = None
 PYNVML_AVAILABLE = False
 _nvml_initialized = False
 _nvml_lock = threading.Lock()
