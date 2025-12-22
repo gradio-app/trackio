@@ -16,7 +16,7 @@ from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
 from trackio.deploy import sync
-from trackio.gpu import log_gpu
+from trackio.gpu import gpu_available, log_gpu
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
@@ -78,7 +78,7 @@ def init(
     settings: Any = None,
     private: bool | None = None,
     embed: bool = True,
-    auto_log_gpu: bool = False,
+    auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
 ) -> Run:
     """
@@ -130,9 +130,10 @@ def init(
         embed (`bool`, *optional*, defaults to `True`):
             If running inside a jupyter/Colab notebook, whether the dashboard should
             automatically be embedded in the cell when trackio.init() is called.
-        auto_log_gpu (`bool`, *optional*, defaults to `False`):
-            If `True`, GPU metrics will be automatically logged in the background
-            at regular intervals. Requires nvidia-ml-py to be installed.
+        auto_log_gpu (`bool` or `None`, *optional*, defaults to `None`):
+            Controls automatic GPU metrics logging. If `None` (default), GPU logging
+            is automatically enabled when `nvidia-ml-py` is installed and an NVIDIA
+            GPU is detected. Set to `True` to force enable or `False` to disable.
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
@@ -236,6 +237,11 @@ def init(
         resumed = False
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
+
+    if auto_log_gpu is None:
+        auto_log_gpu = gpu_available()
+        if auto_log_gpu:
+            print("* GPU detected, enabling automatic GPU metrics logging")
 
     run = Run(
         url=url,

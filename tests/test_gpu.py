@@ -4,6 +4,37 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+def test_gpu_available_no_pynvml():
+    from trackio import gpu
+
+    with patch.object(gpu, "_ensure_pynvml", side_effect=ImportError("no pynvml")):
+        assert gpu.gpu_available() is False
+
+
+@patch("trackio.gpu.pynvml")
+def test_gpu_available_with_gpu(mock_pynvml):
+    from trackio import gpu
+
+    gpu.PYNVML_AVAILABLE = True
+    gpu.pynvml = mock_pynvml
+
+    with patch.object(gpu, "_init_nvml", return_value=True):
+        mock_pynvml.nvmlDeviceGetCount.return_value = 2
+        assert gpu.gpu_available() is True
+
+
+@patch("trackio.gpu.pynvml")
+def test_gpu_available_no_gpu(mock_pynvml):
+    from trackio import gpu
+
+    gpu.PYNVML_AVAILABLE = True
+    gpu.pynvml = mock_pynvml
+
+    with patch.object(gpu, "_init_nvml", return_value=True):
+        mock_pynvml.nvmlDeviceGetCount.return_value = 0
+        assert gpu.gpu_available() is False
+
+
 def test_log_gpu_without_pynvml():
     with patch.dict("sys.modules", {"pynvml": None}):
         from trackio import gpu

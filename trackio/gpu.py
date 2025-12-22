@@ -63,6 +63,22 @@ def get_gpu_count() -> int:
         return 0
 
 
+def gpu_available() -> bool:
+    """
+    Check if GPU monitoring is available.
+
+    Returns True if nvidia-ml-py is installed and at least one NVIDIA GPU is detected.
+    This is used for auto-detection of GPU logging.
+    """
+    try:
+        _ensure_pynvml()
+        return get_gpu_count() > 0
+    except ImportError:
+        return False
+    except Exception:
+        return False
+
+
 def collect_gpu_metrics() -> dict:
     if not _init_nvml():
         return {}

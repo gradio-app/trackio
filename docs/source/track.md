@@ -167,42 +167,53 @@ Audio can be logged from a file path or a numpy array.
 
 ### Logging GPU metrics
 
-If you're training on NVIDIA GPUs, you can log GPU metrics (utilization, memory, temperature, power, etc.) using [`log_gpu`]. This requires the `nvidia-ml-py` package:
+If you're training on NVIDIA GPUs, you can log GPU metrics (utilization, memory, temperature, power, etc.). This requires the `nvidia-ml-py` package:
 
 ```bash
 pip install trackio[gpu]
 ```
 
-**Manual logging:**
+**Automatic logging (default):**
+
+When `nvidia-ml-py` is installed and an NVIDIA GPU is detected, GPU metrics are logged automatically in the background (every 10 seconds by default):
 
 ```python
 import trackio
 
+# GPU logging is auto-enabled when nvidia-ml-py is installed and GPU is detected
 trackio.init(project="my_project")
 
 for step in range(100):
     # ... training code ...
     trackio.log({"loss": loss})
-    trackio.log_gpu()  # Log GPU metrics at current step
+# GPU metrics are logged automatically in the background
 
 trackio.finish()
 ```
 
-**Automatic logging:**
-
-You can also enable automatic GPU logging in the background by setting `auto_log_gpu=True`:
+You can customize the interval or disable auto-logging:
 
 ```python
-trackio.init(
-    project="my_project",
-    auto_log_gpu=True,        # Enable automatic GPU logging
-    gpu_log_interval=10.0     # Log every 10 seconds (default)
-)
+# Custom interval
+trackio.init(project="my_project", gpu_log_interval=5.0)
+
+# Disable auto-logging
+trackio.init(project="my_project", auto_log_gpu=False)
+```
+
+**Manual logging:**
+
+You can also log GPU metrics manually at specific points using [`log_gpu`]:
+
+```python
+import trackio
+
+trackio.init(project="my_project", auto_log_gpu=False)
 
 for step in range(100):
     # ... training code ...
     trackio.log({"loss": loss})
-# GPU metrics are logged automatically in the background
+    trackio.log_gpu()  # Log GPU metrics at current step
 
 trackio.finish()
 ```
