@@ -89,6 +89,14 @@ def test_collect_gpu_metrics_single_gpu(mock_pynvml):
         mock_pynvml.NVML_TEMPERATURE_GPU = 0
         mock_pynvml.nvmlDeviceGetClockInfo.return_value = 1500
         mock_pynvml.NVML_CLOCK_SM = 0
+        mock_pynvml.NVML_CLOCK_MEM = 1
+
+        mock_pynvml.nvmlDeviceGetFanSpeed.return_value = 45
+        mock_pynvml.nvmlDeviceGetPerformanceState.return_value = 0
+        mock_pynvml.nvmlDeviceGetTotalEnergyConsumption.return_value = 5000000
+        mock_pynvml.nvmlDeviceGetPcieThroughput.return_value = 1024
+        mock_pynvml.NVML_PCIE_UTIL_TX_BYTES = 0
+        mock_pynvml.NVML_PCIE_UTIL_RX_BYTES = 1
 
         mock_pynvml.nvmlDeviceGetCurrentClocksThrottleReasons.return_value = 0
         mock_pynvml.nvmlClocksThrottleReasonSwThermalSlowdown = 1
@@ -115,6 +123,12 @@ def test_collect_gpu_metrics_single_gpu(mock_pynvml):
         assert metrics["gpu.0.powerPercent"] == 60.0
         assert metrics["gpu.0.temp"] == 65
         assert metrics["gpu.0.smClock"] == 1500
+        assert metrics["gpu.0.memoryClock"] == 1500
+        assert metrics["gpu.0.fanSpeed"] == 45
+        assert metrics["gpu.0.performanceState"] == 0
+        assert metrics["gpu.0.energyConsumedJoules"] == 0.0
+        assert metrics["gpu.0.pcieTxMBps"] == 1.0
+        assert metrics["gpu.0.pcieRxMBps"] == 1.0
         assert metrics["gpu.mean_utilization"] == 75
         assert metrics["gpu.total_power_watts"] == 150.0
         assert metrics["gpu.max_temp"] == 65
@@ -198,3 +212,46 @@ def test_log_gpu_empty_metrics(mock_collect):
         mock_run.log.assert_not_called()
     finally:
         context_vars.current_run.set(None)
+
+
+def test_reset_energy_baseline():
+    from trackio import gpu
+
+    gpu._energy_baseline = {0: 1000.0, 1: 2000.0}
+    gpu.reset_energy_baseline()
+    assert gpu._energy_baseline == {}
+
+
+@patch("trackio.gpu.pynvml")
+def test_energy_consumed_calculation(mock_pynvml):
+    from trackio import gpu
+
+    gpu.PYNVML_AVAILABLE = True
+    gpu.pynvml = mock_pynvml
+    gpu._energy_baseline = {}
+
+    with patch.object(gpu, "_init_nvml", return_value=True):
+        mock_pynvml.nvmlDeviceGetCount.return_value = 1
+        mock_handle = MagicMock()
+        mock_pynvml.nvmlDeviceGetHandleByIndex.return_value = mock_handle
+        mock_pynvml.nvmlDeviceGetUtilizationRates.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetMemoryInfo.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetPowerUsage.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetPowerManagementLimit.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetTemperature.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetClockInfo.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetFanSpeed.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetPerformanceState.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetPcieThroughput.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetCurrentClocksThrottleReasons.side_effect = Exception()
+        mock_pynvml.nvmlDeviceGetTotalEccErrors.side_effect = Exception()
+
+        mock_pynvml.nvmlDeviceGetTotalEnergyConsumption.return_value = 10000000
+
+        metrics1 = gpu.collect_gpu_metrics()
+        assert metrics1["gpu.0.energyConsumedJoules"] == 0.0
+
+        mock_pynvml.nvmlDeviceGetTotalEnergyConsumption.return_value = 15000000
+
+        metrics2 = gpu.collect_gpu_metrics()
+        assert metrics2["gpu.0.energyConsumedJoules"] == 5000.0

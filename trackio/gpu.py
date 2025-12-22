@@ -10,6 +10,7 @@ pynvml = None
 PYNVML_AVAILABLE = False
 _nvml_initialized = False
 _nvml_lock = threading.Lock()
+_energy_baseline: dict[int, float] = {}
 
 
 def _ensure_pynvml():
@@ -77,6 +78,12 @@ def gpu_available() -> bool:
         return False
     except Exception:
         return False
+
+
+def reset_energy_baseline():
+    """Reset the energy baseline for all GPUs. Called when a new run starts."""
+    global _energy_baseline
+    _energy_baseline = {}
 
 
 def collect_gpu_metrics() -> dict:
@@ -159,6 +166,45 @@ def collect_gpu_metrics() -> dict:
                 pass
 
             try:
+                mem_clock = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
+                metrics[f"{prefix}.memoryClock"] = mem_clock
+            except Exception:
+                pass
+
+            try:
+                fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
+                metrics[f"{prefix}.fanSpeed"] = fan_speed
+            except Exception:
+                pass
+
+            try:
+                pstate = pynvml.nvmlDeviceGetPerformanceState(handle)
+                metrics[f"{prefix}.performanceState"] = pstate
+            except Exception:
+                pass
+
+            try:
+                energy_mj = pynvml.nvmlDeviceGetTotalEnergyConsumption(handle)
+                if i not in _energy_baseline:
+                    _energy_baseline[i] = energy_mj
+                energy_consumed_mj = energy_mj - _energy_baseline[i]
+                metrics[f"{prefix}.energyConsumedJoules"] = energy_consumed_mj / 1000.0
+            except Exception:
+                pass
+
+            try:
+                pcie_tx = pynvml.nvmlDeviceGetPcieThroughput(
+                    handle, pynvml.NVML_PCIE_UTIL_TX_BYTES
+                )
+                pcie_rx = pynvml.nvmlDeviceGetPcieThroughput(
+                    handle, pynvml.NVML_PCIE_UTIL_RX_BYTES
+                )
+                metrics[f"{prefix}.pcieTxMBps"] = pcie_tx / 1024.0
+                metrics[f"{prefix}.pcieRxMBps"] = pcie_rx / 1024.0
+            except Exception:
+                pass
+
+            try:
                 throttle = pynvml.nvmlDeviceGetCurrentClocksThrottleReasons(handle)
                 metrics[f"{prefix}.throttle_thermal"] = int(
                     bool(throttle & pynvml.nvmlClocksThrottleReasonSwThermalSlowdown)
@@ -227,6 +273,7 @@ class GpuMonitor:
             )
             return
 
+        reset_energy_baseline()
         self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._thread.start()
 
