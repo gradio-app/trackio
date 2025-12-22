@@ -96,7 +96,7 @@ def collect_gpu_metrics() -> dict:
 
     metrics = {}
     total_util = 0.0
-    total_mem_used = 0
+    total_mem_used_gib = 0.0
     total_power = 0.0
     max_temp = 0.0
     valid_util_count = 0
@@ -117,17 +117,13 @@ def collect_gpu_metrics() -> dict:
 
             try:
                 mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                mem_used = mem.used
-                mem_total = mem.total
-                metrics[f"{prefix}/memoryAllocatedBytes"] = mem_used
-                metrics[f"{prefix}/memoryTotalBytes"] = mem_total
-                mem_used_gib = mem_used / (1024**3)
-                mem_total_gib = mem_total / (1024**3)
+                mem_used_gib = mem.used / (1024**3)
+                mem_total_gib = mem.total / (1024**3)
                 metrics[f"{prefix}/memoryUsedGiB"] = mem_used_gib
                 metrics[f"{prefix}/memoryTotalGiB"] = mem_total_gib
-                if mem_total > 0:
-                    metrics[f"{prefix}/memoryAllocated"] = (mem_used / mem_total) * 100
-                total_mem_used += mem_used
+                if mem.total > 0:
+                    metrics[f"{prefix}/memoryAllocated"] = (mem.used / mem.total) * 100
+                total_mem_used_gib += mem_used_gib
             except Exception:
                 pass
 
@@ -249,8 +245,8 @@ def collect_gpu_metrics() -> dict:
 
     if valid_util_count > 0:
         metrics["gpu/meanUtilization"] = total_util / valid_util_count
-    if total_mem_used > 0:
-        metrics["gpu/totalMemoryBytes"] = total_mem_used
+    if total_mem_used_gib > 0:
+        metrics["gpu/totalMemoryGiB"] = total_mem_used_gib
     if total_power > 0:
         metrics["gpu/totalPowerWatts"] = total_power
     if max_temp > 0:

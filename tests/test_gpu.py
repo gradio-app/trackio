@@ -113,8 +113,6 @@ def test_collect_gpu_metrics_single_gpu(mock_pynvml):
 
         assert metrics["gpu/0/utilization"] == 75
         assert metrics["gpu/0/memoryUtilization"] == 50
-        assert metrics["gpu/0/memoryAllocatedBytes"] == 4 * 1024**3
-        assert metrics["gpu/0/memoryTotalBytes"] == 8 * 1024**3
         assert metrics["gpu/0/memoryUsedGiB"] == 4.0
         assert metrics["gpu/0/memoryTotalGiB"] == 8.0
         assert metrics["gpu/0/memoryAllocated"] == 50.0
@@ -130,6 +128,7 @@ def test_collect_gpu_metrics_single_gpu(mock_pynvml):
         assert metrics["gpu/0/pcieTxMBps"] == 1.0
         assert metrics["gpu/0/pcieRxMBps"] == 1.0
         assert metrics["gpu/meanUtilization"] == 75
+        assert metrics["gpu/totalMemoryGiB"] == 4.0
         assert metrics["gpu/totalPowerWatts"] == 150.0
         assert metrics["gpu/maxTemp"] == 65
 
