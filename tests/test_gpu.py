@@ -3,18 +3,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from trackio import context_vars, gpu
+from trackio.gpu import GpuMonitor
+
 
 def test_gpu_available_no_pynvml():
-    from trackio import gpu
-
     with patch.object(gpu, "_ensure_pynvml", side_effect=ImportError("no pynvml")):
         assert gpu.gpu_available() is False
 
 
 @patch("trackio.gpu.pynvml")
 def test_gpu_available_with_gpu(mock_pynvml):
-    from trackio import gpu
-
     gpu.PYNVML_AVAILABLE = True
     gpu.pynvml = mock_pynvml
 
@@ -25,8 +24,6 @@ def test_gpu_available_with_gpu(mock_pynvml):
 
 @patch("trackio.gpu.pynvml")
 def test_gpu_available_no_gpu(mock_pynvml):
-    from trackio import gpu
-
     gpu.PYNVML_AVAILABLE = True
     gpu.pynvml = mock_pynvml
 
@@ -37,8 +34,6 @@ def test_gpu_available_no_gpu(mock_pynvml):
 
 def test_log_gpu_without_pynvml():
     with patch.dict("sys.modules", {"pynvml": None}):
-        from trackio import gpu
-
         gpu.PYNVML_AVAILABLE = False
         gpu.pynvml = None
 
@@ -47,15 +42,11 @@ def test_log_gpu_without_pynvml():
 
 
 def test_get_gpu_count_no_nvml():
-    from trackio import gpu
-
     with patch.object(gpu, "_init_nvml", return_value=False):
         assert gpu.get_gpu_count() == 0
 
 
 def test_collect_gpu_metrics_no_nvml():
-    from trackio import gpu
-
     with patch.object(gpu, "_init_nvml", return_value=False):
         metrics = gpu.collect_gpu_metrics()
         assert metrics == {}
@@ -63,8 +54,6 @@ def test_collect_gpu_metrics_no_nvml():
 
 @patch("trackio.gpu.pynvml")
 def test_collect_gpu_metrics_single_gpu(mock_pynvml):
-    from trackio import gpu
-
     gpu.PYNVML_AVAILABLE = True
     gpu.pynvml = mock_pynvml
 
@@ -136,10 +125,8 @@ def test_collect_gpu_metrics_single_gpu(mock_pynvml):
 @patch("trackio.gpu.get_gpu_count")
 @patch("trackio.gpu.collect_gpu_metrics")
 def test_gpu_monitor_lifecycle(mock_collect, mock_count):
-    from trackio.gpu import GpuMonitor
-
     mock_count.return_value = 1
-    mock_collect.return_value = {"gpu.0.gpu": 50}
+    mock_collect.return_value = {"gpu/0/utilization": 50}
 
     mock_run = MagicMock()
 
@@ -155,8 +142,6 @@ def test_gpu_monitor_lifecycle(mock_collect, mock_count):
 
 @patch("trackio.gpu.get_gpu_count")
 def test_gpu_monitor_no_gpus_warns(mock_count):
-    from trackio.gpu import GpuMonitor
-
     mock_count.return_value = 0
 
     mock_run = MagicMock()
@@ -170,9 +155,7 @@ def test_gpu_monitor_no_gpus_warns(mock_count):
 
 @patch("trackio.gpu.collect_gpu_metrics")
 def test_log_gpu_function(mock_collect):
-    from trackio import context_vars, gpu
-
-    mock_collect.return_value = {"gpu.0.gpu": 80}
+    mock_collect.return_value = {"gpu/0/utilization": 80}
 
     mock_run = MagicMock()
     context_vars.current_run.set(mock_run)
@@ -180,15 +163,13 @@ def test_log_gpu_function(mock_collect):
     try:
         result = gpu.log_gpu()
 
-        assert result == {"gpu.0.gpu": 80}
-        mock_run.log.assert_called_once_with({"gpu.0.gpu": 80})
+        assert result == {"gpu/0/utilization": 80}
+        mock_run.log.assert_called_once_with({"gpu/0/utilization": 80})
     finally:
         context_vars.current_run.set(None)
 
 
 def test_log_gpu_no_run():
-    from trackio import context_vars, gpu
-
     context_vars.current_run.set(None)
 
     with pytest.raises(RuntimeError, match="Call trackio.init\\(\\)"):
@@ -197,8 +178,6 @@ def test_log_gpu_no_run():
 
 @patch("trackio.gpu.collect_gpu_metrics")
 def test_log_gpu_empty_metrics(mock_collect):
-    from trackio import context_vars, gpu
-
     mock_collect.return_value = {}
 
     mock_run = MagicMock()
@@ -214,8 +193,6 @@ def test_log_gpu_empty_metrics(mock_collect):
 
 
 def test_reset_energy_baseline():
-    from trackio import gpu
-
     gpu._energy_baseline = {0: 1000.0, 1: 2000.0}
     gpu.reset_energy_baseline()
     assert gpu._energy_baseline == {}
@@ -223,8 +200,6 @@ def test_reset_energy_baseline():
 
 @patch("trackio.gpu.pynvml")
 def test_energy_consumed_calculation(mock_pynvml):
-    from trackio import gpu
-
     gpu.PYNVML_AVAILABLE = True
     gpu.pynvml = mock_pynvml
     gpu._energy_baseline = {}
