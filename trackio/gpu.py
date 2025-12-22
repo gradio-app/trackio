@@ -102,14 +102,14 @@ def collect_gpu_metrics() -> dict:
     valid_util_count = 0
 
     for i in range(gpu_count):
-        prefix = f"gpu.{i}"
+        prefix = f"gpu/{i}"
         try:
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
 
             try:
                 util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-                metrics[f"{prefix}.gpu"] = util.gpu
-                metrics[f"{prefix}.memory"] = util.memory
+                metrics[f"{prefix}/utilization"] = util.gpu
+                metrics[f"{prefix}/memoryUtilization"] = util.memory
                 total_util += util.gpu
                 valid_util_count += 1
             except Exception:
@@ -119,14 +119,14 @@ def collect_gpu_metrics() -> dict:
                 mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
                 mem_used = mem.used
                 mem_total = mem.total
-                metrics[f"{prefix}.memoryAllocatedBytes"] = mem_used
-                metrics[f"{prefix}.memoryTotalBytes"] = mem_total
+                metrics[f"{prefix}/memoryAllocatedBytes"] = mem_used
+                metrics[f"{prefix}/memoryTotalBytes"] = mem_total
                 mem_used_gib = mem_used / (1024**3)
                 mem_total_gib = mem_total / (1024**3)
-                metrics[f"{prefix}.memoryUsedGiB"] = mem_used_gib
-                metrics[f"{prefix}.memoryTotalGiB"] = mem_total_gib
+                metrics[f"{prefix}/memoryUsedGiB"] = mem_used_gib
+                metrics[f"{prefix}/memoryTotalGiB"] = mem_total_gib
                 if mem_total > 0:
-                    metrics[f"{prefix}.memoryAllocated"] = (mem_used / mem_total) * 100
+                    metrics[f"{prefix}/memoryAllocated"] = (mem_used / mem_total) * 100
                 total_mem_used += mem_used
             except Exception:
                 pass
@@ -134,7 +134,7 @@ def collect_gpu_metrics() -> dict:
             try:
                 power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
                 power_w = power_mw / 1000.0
-                metrics[f"{prefix}.powerWatts"] = power_w
+                metrics[f"{prefix}/powerWatts"] = power_w
                 total_power += power_w
             except Exception:
                 pass
@@ -142,10 +142,10 @@ def collect_gpu_metrics() -> dict:
             try:
                 power_limit_mw = pynvml.nvmlDeviceGetPowerManagementLimit(handle)
                 power_limit_w = power_limit_mw / 1000.0
-                metrics[f"{prefix}.enforcedPowerLimitWatts"] = power_limit_w
-                if power_limit_w > 0 and f"{prefix}.powerWatts" in metrics:
-                    metrics[f"{prefix}.powerPercent"] = (
-                        metrics[f"{prefix}.powerWatts"] / power_limit_w
+                metrics[f"{prefix}/powerLimitWatts"] = power_limit_w
+                if power_limit_w > 0 and f"{prefix}/powerWatts" in metrics:
+                    metrics[f"{prefix}/powerPercent"] = (
+                        metrics[f"{prefix}/powerWatts"] / power_limit_w
                     ) * 100
             except Exception:
                 pass
@@ -154,32 +154,32 @@ def collect_gpu_metrics() -> dict:
                 temp = pynvml.nvmlDeviceGetTemperature(
                     handle, pynvml.NVML_TEMPERATURE_GPU
                 )
-                metrics[f"{prefix}.temp"] = temp
+                metrics[f"{prefix}/temp"] = temp
                 max_temp = max(max_temp, temp)
             except Exception:
                 pass
 
             try:
                 sm_clock = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_SM)
-                metrics[f"{prefix}.smClock"] = sm_clock
+                metrics[f"{prefix}/smClock"] = sm_clock
             except Exception:
                 pass
 
             try:
                 mem_clock = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
-                metrics[f"{prefix}.memoryClock"] = mem_clock
+                metrics[f"{prefix}/memoryClock"] = mem_clock
             except Exception:
                 pass
 
             try:
                 fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
-                metrics[f"{prefix}.fanSpeed"] = fan_speed
+                metrics[f"{prefix}/fanSpeed"] = fan_speed
             except Exception:
                 pass
 
             try:
                 pstate = pynvml.nvmlDeviceGetPerformanceState(handle)
-                metrics[f"{prefix}.performanceState"] = pstate
+                metrics[f"{prefix}/performanceState"] = pstate
             except Exception:
                 pass
 
@@ -188,7 +188,7 @@ def collect_gpu_metrics() -> dict:
                 if i not in _energy_baseline:
                     _energy_baseline[i] = energy_mj
                 energy_consumed_mj = energy_mj - _energy_baseline[i]
-                metrics[f"{prefix}.energyConsumedJoules"] = energy_consumed_mj / 1000.0
+                metrics[f"{prefix}/energyConsumedJoules"] = energy_consumed_mj / 1000.0
             except Exception:
                 pass
 
@@ -199,23 +199,23 @@ def collect_gpu_metrics() -> dict:
                 pcie_rx = pynvml.nvmlDeviceGetPcieThroughput(
                     handle, pynvml.NVML_PCIE_UTIL_RX_BYTES
                 )
-                metrics[f"{prefix}.pcieTxMBps"] = pcie_tx / 1024.0
-                metrics[f"{prefix}.pcieRxMBps"] = pcie_rx / 1024.0
+                metrics[f"{prefix}/pcieTxMBps"] = pcie_tx / 1024.0
+                metrics[f"{prefix}/pcieRxMBps"] = pcie_rx / 1024.0
             except Exception:
                 pass
 
             try:
                 throttle = pynvml.nvmlDeviceGetCurrentClocksThrottleReasons(handle)
-                metrics[f"{prefix}.throttle_thermal"] = int(
+                metrics[f"{prefix}/throttleThermal"] = int(
                     bool(throttle & pynvml.nvmlClocksThrottleReasonSwThermalSlowdown)
                 )
-                metrics[f"{prefix}.throttle_power"] = int(
+                metrics[f"{prefix}/throttlePower"] = int(
                     bool(throttle & pynvml.nvmlClocksThrottleReasonSwPowerCap)
                 )
-                metrics[f"{prefix}.throttle_hw_slowdown"] = int(
+                metrics[f"{prefix}/throttleHwSlowdown"] = int(
                     bool(throttle & pynvml.nvmlClocksThrottleReasonHwSlowdown)
                 )
-                metrics[f"{prefix}.throttle_apps"] = int(
+                metrics[f"{prefix}/throttleApps"] = int(
                     bool(
                         throttle
                         & pynvml.nvmlClocksThrottleReasonApplicationsClocksSetting
@@ -230,7 +230,7 @@ def collect_gpu_metrics() -> dict:
                     pynvml.NVML_MEMORY_ERROR_TYPE_CORRECTED,
                     pynvml.NVML_VOLATILE_ECC,
                 )
-                metrics[f"{prefix}.correctedMemoryErrors"] = ecc_corrected
+                metrics[f"{prefix}/correctedMemoryErrors"] = ecc_corrected
             except Exception:
                 pass
 
@@ -240,7 +240,7 @@ def collect_gpu_metrics() -> dict:
                     pynvml.NVML_MEMORY_ERROR_TYPE_UNCORRECTED,
                     pynvml.NVML_VOLATILE_ECC,
                 )
-                metrics[f"{prefix}.uncorrectedMemoryErrors"] = ecc_uncorrected
+                metrics[f"{prefix}/uncorrectedMemoryErrors"] = ecc_uncorrected
             except Exception:
                 pass
 
@@ -248,13 +248,13 @@ def collect_gpu_metrics() -> dict:
             continue
 
     if valid_util_count > 0:
-        metrics["gpu.mean_utilization"] = total_util / valid_util_count
+        metrics["gpu/meanUtilization"] = total_util / valid_util_count
     if total_mem_used > 0:
-        metrics["gpu.total_memory_bytes"] = total_mem_used
+        metrics["gpu/totalMemoryBytes"] = total_mem_used
     if total_power > 0:
-        metrics["gpu.total_power_watts"] = total_power
+        metrics["gpu/totalPowerWatts"] = total_power
     if max_temp > 0:
-        metrics["gpu.max_temp"] = max_temp
+        metrics["gpu/maxTemp"] = max_temp
 
     return metrics
 
