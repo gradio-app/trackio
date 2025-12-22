@@ -75,6 +75,9 @@ def test_collect_gpu_metrics_single_gpu(mock_pynvml):
         assert metrics["gpu.0.gpu"] == 75
         assert metrics["gpu.0.memory"] == 50
         assert metrics["gpu.0.memoryAllocatedBytes"] == 4 * 1024**3
+        assert metrics["gpu.0.memoryTotalBytes"] == 8 * 1024**3
+        assert metrics["gpu.0.memoryUsedGiB"] == 4.0
+        assert metrics["gpu.0.memoryTotalGiB"] == 8.0
         assert metrics["gpu.0.memoryAllocated"] == 50.0
         assert metrics["gpu.0.powerWatts"] == 150.0
         assert metrics["gpu.0.enforcedPowerLimitWatts"] == 250.0

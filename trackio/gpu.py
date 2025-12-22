@@ -97,6 +97,11 @@ def collect_gpu_metrics() -> dict:
                 mem_used = mem.used
                 mem_total = mem.total
                 metrics[f"{prefix}.memoryAllocatedBytes"] = mem_used
+                metrics[f"{prefix}.memoryTotalBytes"] = mem_total
+                mem_used_gib = mem_used / (1024**3)
+                mem_total_gib = mem_total / (1024**3)
+                metrics[f"{prefix}.memoryUsedGiB"] = mem_used_gib
+                metrics[f"{prefix}.memoryTotalGiB"] = mem_total_gib
                 if mem_total > 0:
                     metrics[f"{prefix}.memoryAllocated"] = (mem_used / mem_total) * 100
                 total_mem_used += mem_used

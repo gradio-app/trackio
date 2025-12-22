@@ -212,10 +212,20 @@ trackio.finish()
 Per-GPU metrics (`gpu.{i}.{metric}`):
 - `gpu.0.gpu` - GPU utilization %
 - `gpu.0.memory` - Memory utilization %
+- `gpu.0.memoryAllocated` - Memory allocated %
 - `gpu.0.memoryAllocatedBytes` - Memory allocated in bytes
+- `gpu.0.memoryTotalBytes` - Total memory in bytes
+- `gpu.0.memoryUsedGiB` - Memory used in GiB
+- `gpu.0.memoryTotalGiB` - Total memory in GiB
 - `gpu.0.temp` - Temperature in Celsius
 - `gpu.0.powerWatts` - Power draw in watts
+- `gpu.0.powerPercent` - Power as % of limit
+- `gpu.0.enforcedPowerLimitWatts` - Power limit in watts
 - `gpu.0.smClock` - SM clock speed in MHz
+- `gpu.0.throttle_thermal` - Thermal throttling (0/1)
+- `gpu.0.throttle_power` - Power throttling (0/1)
+- `gpu.0.correctedMemoryErrors` - ECC corrected errors
+- `gpu.0.uncorrectedMemoryErrors` - ECC uncorrected errors
 
 Aggregated metrics:
 - `gpu.mean_utilization` - Mean GPU utilization across all GPUs
