@@ -165,6 +165,64 @@ Audio can be logged from a file path or a numpy array.
 - Values may be float or integer; floats are peak-normalized and converted to 16-bit PCM
 - `format` can be `"wav"` or `"mp3"` when logging from a numpy array (default `"wav"`)
 
+### Logging GPU metrics
+
+If you're training on NVIDIA GPUs, you can log GPU metrics (utilization, memory, temperature, power, etc.) using [`log_gpu`]. This requires the `nvidia-ml-py` package:
+
+```bash
+pip install trackio[gpu]
+```
+
+**Manual logging:**
+
+```python
+import trackio
+
+trackio.init(project="my_project")
+
+for step in range(100):
+    # ... training code ...
+    trackio.log({"loss": loss})
+    trackio.log_gpu()  # Log GPU metrics at current step
+
+trackio.finish()
+```
+
+**Automatic logging:**
+
+You can also enable automatic GPU logging in the background by setting `auto_log_gpu=True`:
+
+```python
+trackio.init(
+    project="my_project",
+    auto_log_gpu=True,        # Enable automatic GPU logging
+    gpu_log_interval=10.0     # Log every 10 seconds (default)
+)
+
+for step in range(100):
+    # ... training code ...
+    trackio.log({"loss": loss})
+# GPU metrics are logged automatically in the background
+
+trackio.finish()
+```
+
+**Logged metrics (wandb-compatible naming):**
+
+Per-GPU metrics (`gpu.{i}.{metric}`):
+- `gpu.0.gpu` - GPU utilization %
+- `gpu.0.memory` - Memory utilization %
+- `gpu.0.memoryAllocatedBytes` - Memory allocated in bytes
+- `gpu.0.temp` - Temperature in Celsius
+- `gpu.0.powerWatts` - Power draw in watts
+- `gpu.0.smClock` - SM clock speed in MHz
+
+Aggregated metrics:
+- `gpu.mean_utilization` - Mean GPU utilization across all GPUs
+- `gpu.total_memory_bytes` - Total memory used across all GPUs
+- `gpu.total_power_watts` - Total power draw across all GPUs
+- `gpu.max_temp` - Maximum temperature across all GPUs
+
 ## Finishing a Run
 
 When your run is complete, finalize it with [`finish`].

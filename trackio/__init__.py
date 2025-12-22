@@ -16,6 +16,7 @@ from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
 from trackio.deploy import sync
+from trackio.gpu import log_gpu
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
@@ -42,6 +43,7 @@ __version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_tex
 __all__ = [
     "init",
     "log",
+    "log_gpu",
     "finish",
     "show",
     "sync",
@@ -76,6 +78,8 @@ def init(
     settings: Any = None,
     private: bool | None = None,
     embed: bool = True,
+    auto_log_gpu: bool = False,
+    gpu_log_interval: float = 10.0,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -126,6 +130,12 @@ def init(
         embed (`bool`, *optional*, defaults to `True`):
             If running inside a jupyter/Colab notebook, whether the dashboard should
             automatically be embedded in the cell when trackio.init() is called.
+        auto_log_gpu (`bool`, *optional*, defaults to `False`):
+            If `True`, GPU metrics will be automatically logged in the background
+            at regular intervals. Requires nvidia-ml-py to be installed.
+        gpu_log_interval (`float`, *optional*, defaults to `10.0`):
+            The interval in seconds between automatic GPU metric logs.
+            Only used when `auto_log_gpu=True`.
 
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
@@ -235,6 +245,8 @@ def init(
         group=group,
         config=config,
         space_id=space_id,
+        auto_log_gpu=auto_log_gpu,
+        gpu_log_interval=gpu_log_interval,
     )
 
     if resumed:

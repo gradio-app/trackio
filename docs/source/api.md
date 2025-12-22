@@ -12,6 +12,10 @@
 
 [[autodoc]] log
 
+## log_gpu
+
+[[autodoc]] log_gpu
+
 ## finish
 
 [[autodoc]] finish
