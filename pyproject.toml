@@ -44,6 +44,9 @@ tensorboard = [
     "tbparse==0.0.9",
     "tensorboardX>=2.0.0,<3.0.0",
 ]
+gpu = [
+    "nvidia-ml-py>=12.0.0",
+]
 
 [project.scripts]
 trackio = "trackio.cli:main"

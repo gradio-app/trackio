@@ -7,6 +7,7 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio import utils
+from trackio.gpu import GpuMonitor
 from trackio.histogram import Histogram
 from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
@@ -27,6 +28,8 @@ class Run:
         group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
+        auto_log_gpu: bool = False,
+        gpu_log_interval: float = 10.0,
     ):
         self.url = url
         self.project = project
@@ -59,6 +62,11 @@ class Run:
         self._client_thread = threading.Thread(target=self._init_client_background)
         self._client_thread.daemon = True
         self._client_thread.start()
+
+        self._gpu_monitor: "GpuMonitor | None" = None
+        if auto_log_gpu:
+            self._gpu_monitor = GpuMonitor(self, interval=gpu_log_interval)
+            self._gpu_monitor.start()
 
     def _get_username(self) -> str | None:
         """Get the current HuggingFace username if logged in, otherwise None."""
@@ -146,7 +154,7 @@ class Run:
         """
         Serialize media in metrics and upload to space if needed.
         """
-        value._save(self.project, self.name, step)
+        value._save(self.project, self.name, step if step is not None else 0)
         if self._space_id:
             self._queue_upload(value._get_absolute_file_path(), step)
         return value._to_dict()
@@ -232,6 +240,9 @@ class Run:
 
     def finish(self):
         """Cleanup when run is finished."""
+        if self._gpu_monitor is not None:
+            self._gpu_monitor.stop()
+
         self._stop_flag.set()
 
         time.sleep(2 * BATCH_SEND_INTERVAL)

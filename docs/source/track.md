@@ -165,6 +165,91 @@ Audio can be logged from a file path or a numpy array.
 - Values may be float or integer; floats are peak-normalized and converted to 16-bit PCM
 - `format` can be `"wav"` or `"mp3"` when logging from a numpy array (default `"wav"`)
 
+### Logging GPU metrics
+
+If you're training on NVIDIA GPUs, you can log GPU metrics (utilization, memory, temperature, power, etc.). This requires the `nvidia-ml-py` package:
+
+```bash
+pip install trackio[gpu]
+```
+
+**Automatic logging (default):**
+
+When `nvidia-ml-py` is installed and an NVIDIA GPU is detected, GPU metrics are logged automatically in the background (every 10 seconds by default):
+
+```python
+import trackio
+
+# GPU logging is auto-enabled when nvidia-ml-py is installed and GPU is detected
+trackio.init(project="my_project")
+
+for step in range(100):
+    # ... training code ...
+    trackio.log({"loss": loss})
+# GPU metrics are logged automatically in the background
+
+trackio.finish()
+```
+
+You can customize the interval or disable auto-logging:
+
+```python
+# Custom interval
+trackio.init(project="my_project", gpu_log_interval=5.0)
+
+# Disable auto-logging
+trackio.init(project="my_project", auto_log_gpu=False)
+```
+
+**Manual logging:**
+
+You can also log GPU metrics manually at specific points using [`log_gpu`]:
+
+```python
+import trackio
+
+trackio.init(project="my_project", auto_log_gpu=False)
+
+for step in range(100):
+    # ... training code ...
+    trackio.log({"loss": loss})
+    trackio.log_gpu()  # Log GPU metrics at current step
+
+trackio.finish()
+```
+
+**Logged metrics:**
+
+Per-GPU metrics (`gpu/{i}/{metric}`):
+- `gpu/0/utilization` - GPU utilization %
+- `gpu/0/memoryUtilization` - Memory controller utilization %
+- `gpu/0/memoryAllocated` - Memory allocated %
+- `gpu/0/memoryUsedGiB` - Memory used in GiB
+- `gpu/0/memoryTotalGiB` - Total memory in GiB
+- `gpu/0/temp` - Temperature in Celsius
+- `gpu/0/powerWatts` - Power draw in watts
+- `gpu/0/powerPercent` - Power as % of limit
+- `gpu/0/powerLimitWatts` - Power limit in watts
+- `gpu/0/smClock` - SM clock speed in MHz
+- `gpu/0/memoryClock` - Memory clock speed in MHz
+- `gpu/0/fanSpeed` - Fan speed %
+- `gpu/0/performanceState` - Performance state (P0-P15)
+- `gpu/0/energyConsumedJoules` - Energy consumed since run start in Joules
+- `gpu/0/pcieTxMBps` - PCIe transmit bandwidth in MB/s
+- `gpu/0/pcieRxMBps` - PCIe receive bandwidth in MB/s
+- `gpu/0/throttleThermal` - Thermal throttling (0/1)
+- `gpu/0/throttlePower` - Power throttling (0/1)
+- `gpu/0/throttleHwSlowdown` - Hardware slowdown (0/1)
+- `gpu/0/throttleApps` - Application clock throttling (0/1)
+- `gpu/0/correctedMemoryErrors` - ECC corrected errors
+- `gpu/0/uncorrectedMemoryErrors` - ECC uncorrected errors
+
+Aggregated metrics:
+- `gpu/meanUtilization` - Mean GPU utilization across all GPUs
+- `gpu/totalMemoryGiB` - Total memory used across all GPUs in GiB
+- `gpu/totalPowerWatts` - Total power draw across all GPUs
+- `gpu/maxTemp` - Maximum temperature across all GPUs
+
 ## Finishing a Run
 
 When your run is complete, finalize it with [`finish`].

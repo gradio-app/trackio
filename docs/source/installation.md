@@ -69,3 +69,19 @@ pip install -e .
 
 </hfoption>
 </hfoptions>
+
+## Optional Dependencies
+
+Trackio has optional dependencies for additional features:
+
+**GPU Monitoring** - For logging NVIDIA GPU metrics (utilization, memory, temperature, etc.):
+
+```bash
+pip install trackio[gpu]
+```
+
+**TensorBoard Import** - For importing TensorBoard event files:
+
+```bash
+pip install trackio[tensorboard]
+```
