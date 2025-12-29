@@ -199,8 +199,9 @@ class SQLiteStorage:
                 del df["metrics"]
                 for col in metrics.columns:
                     df[col] = metrics[col]
-
-                df.to_parquet(parquet_path)
+                # include page index and cdc to get an HF Optimized Parquet file
+                # see: https://huggingface.co/docs/hub/datasets-libraries#optimized-parquet-files
+                df.to_parquet(parquet_path, write_page_index=True, use_content_defined_chunking=True)
 
     @staticmethod
     def _cleanup_wal_sidecars(db_path: Path) -> None:
