@@ -137,7 +137,7 @@ def test_gpu_monitor_lifecycle(mock_collect, mock_count):
 
     monitor.stop()
 
-    assert mock_run.log.call_count >= 2
+    assert mock_run.log_system.call_count >= 2
 
 
 @patch("trackio.gpu.get_gpu_count")
@@ -164,7 +164,7 @@ def test_log_gpu_function(mock_collect):
         result = gpu.log_gpu()
 
         assert result == {"gpu/0/utilization": 80}
-        mock_run.log.assert_called_once_with({"gpu/0/utilization": 80})
+        mock_run.log_system.assert_called_once_with({"gpu/0/utilization": 80})
     finally:
         context_vars.current_run.set(None)
 
@@ -187,7 +187,7 @@ def test_log_gpu_empty_metrics(mock_collect):
         result = gpu.log_gpu()
 
         assert result == {}
-        mock_run.log.assert_not_called()
+        mock_run.log_system.assert_not_called()
     finally:
         context_vars.current_run.set(None)
 

@@ -69,15 +69,18 @@ def update_navbar_value(project_dd, request: gr.Request):
     runs_url = f"runs?selected_project={project_dd}"
     files_url = f"files?selected_project={project_dd}"
 
+    system_url = f"/system?selected_project={project_dd}" if project_dd else "/system"
+
     if write_token:
         metrics_url += f"&write_token={write_token}"
+        system_url += f"{'&' if project_dd else '?'}write_token={write_token}"
         media_url += f"&write_token={write_token}"
         runs_url += f"&write_token={write_token}"
         files_url += f"&write_token={write_token}"
-
     return gr.Navbar(
         value=[
             ("Metrics", metrics_url),
+            ("System Metrics", system_url),
             ("Media & Tables", media_url),
             ("Runs", runs_url),
             ("Files", files_url),

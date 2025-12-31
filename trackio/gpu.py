@@ -1,5 +1,4 @@
 import threading
-import time
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -283,7 +282,7 @@ class GpuMonitor:
             try:
                 metrics = collect_gpu_metrics()
                 if metrics:
-                    self._run.log(metrics)
+                    self._run.log_system(metrics)
             except Exception:
                 pass
 
@@ -292,7 +291,7 @@ class GpuMonitor:
 
 def log_gpu(run: "Run | None" = None) -> dict:
     """
-    Log GPU metrics to the current or specified run.
+    Log GPU metrics to the current or specified run as system metrics.
 
     Args:
         run: Optional Run instance. If None, uses current run from context.
@@ -318,5 +317,5 @@ def log_gpu(run: "Run | None" = None) -> dict:
 
     metrics = collect_gpu_metrics()
     if metrics:
-        run.log(metrics)
+        run.log_system(metrics)
     return metrics
