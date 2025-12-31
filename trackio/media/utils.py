@@ -1,10 +1,7 @@
 import shutil
 from pathlib import Path
 
-try:
-    from trackio.utils import MEDIA_DIR
-except ImportError:
-    from utils import MEDIA_DIR
+from trackio.utils import MEDIA_DIR
 
 
 def check_path(file_path: str | Path) -> None:

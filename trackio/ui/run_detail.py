@@ -2,14 +2,9 @@
 
 import gradio as gr
 
-try:
-    import trackio.utils as utils
-    from trackio.sqlite_storage import SQLiteStorage
-    from trackio.ui import fns
-except ImportError:
-    import utils
-    from sqlite_storage import SQLiteStorage
-    from ui import fns
+import trackio.utils as utils
+from trackio.sqlite_storage import SQLiteStorage
+from trackio.ui import fns
 
 RUN_DETAILS_TEMPLATE = """
 ## Run Details
