@@ -16,6 +16,10 @@
 
 [[autodoc]] log_gpu
 
+## log_system
+
+[[autodoc]] log_system
+
 ## finish
 
 [[autodoc]] finish

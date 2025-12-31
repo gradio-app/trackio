@@ -43,6 +43,7 @@ __version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_tex
 __all__ = [
     "init",
     "log",
+    "log_system",
     "log_gpu",
     "finish",
     "show",
@@ -283,6 +284,20 @@ def log(metrics: dict, step: int | None = None) -> None:
         metrics=metrics,
         step=step,
     )
+
+
+def log_system(metrics: dict) -> None:
+    """
+    Logs system metrics (GPU, etc.) to the current run using timestamps instead of steps.
+
+    Args:
+        metrics (`dict`):
+            A dictionary of system metrics to log.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.log_system().")
+    run.log_system(metrics=metrics)
 
 
 def finish():
