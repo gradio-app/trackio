@@ -43,7 +43,9 @@ def test_log_gpu_without_pynvml():
 
 def test_get_gpu_count_no_nvml():
     with patch.object(gpu, "_init_nvml", return_value=False):
-        assert gpu.get_gpu_count() == 0
+        count, indices = gpu.get_gpu_count()
+        assert count == 0
+        assert indices == []
 
 
 def test_collect_gpu_metrics_no_nvml():
@@ -101,31 +103,31 @@ def test_collect_gpu_metrics_single_gpu(mock_pynvml):
         metrics = gpu.collect_gpu_metrics()
 
         assert metrics["gpu/0/utilization"] == 75
-        assert metrics["gpu/0/memoryUtilization"] == 50
-        assert metrics["gpu/0/memoryUsedGiB"] == 4.0
-        assert metrics["gpu/0/memoryTotalGiB"] == 8.0
-        assert metrics["gpu/0/memoryAllocated"] == 50.0
-        assert metrics["gpu/0/powerWatts"] == 150.0
-        assert metrics["gpu/0/powerLimitWatts"] == 250.0
-        assert metrics["gpu/0/powerPercent"] == 60.0
+        assert metrics["gpu/0/memory_utilization"] == 50
+        assert metrics["gpu/0/allocated_memory"] == 4.0
+        assert metrics["gpu/0/total_memory"] == 8.0
+        assert metrics["gpu/0/memory_usage"] == 0.5
+        assert metrics["gpu/0/power"] == 150.0
+        assert metrics["gpu/0/power_limit"] == 250.0
+        assert metrics["gpu/0/power_percent"] == 60.0
         assert metrics["gpu/0/temp"] == 65
-        assert metrics["gpu/0/smClock"] == 1500
-        assert metrics["gpu/0/memoryClock"] == 1500
-        assert metrics["gpu/0/fanSpeed"] == 45
-        assert metrics["gpu/0/performanceState"] == 0
-        assert metrics["gpu/0/energyConsumedJoules"] == 0.0
-        assert metrics["gpu/0/pcieTxMBps"] == 1.0
-        assert metrics["gpu/0/pcieRxMBps"] == 1.0
-        assert metrics["gpu/meanUtilization"] == 75
-        assert metrics["gpu/totalMemoryGiB"] == 4.0
-        assert metrics["gpu/totalPowerWatts"] == 150.0
-        assert metrics["gpu/maxTemp"] == 65
+        assert metrics["gpu/0/sm_clock"] == 1500
+        assert metrics["gpu/0/memory_clock"] == 1500
+        assert metrics["gpu/0/fan_speed"] == 45
+        assert metrics["gpu/0/performance_state"] == 0
+        assert metrics["gpu/0/energy_consumed"] == 0.0
+        assert metrics["gpu/0/pcie_tx"] == 1.0
+        assert metrics["gpu/0/pcie_rx"] == 1.0
+        assert metrics["gpu/mean_utilization"] == 75
+        assert metrics["gpu/total_allocated_memory"] == 4.0
+        assert metrics["gpu/total_power"] == 150.0
+        assert metrics["gpu/max_temp"] == 65
 
 
 @patch("trackio.gpu.get_gpu_count")
 @patch("trackio.gpu.collect_gpu_metrics")
 def test_gpu_monitor_lifecycle(mock_collect, mock_count):
-    mock_count.return_value = 1
+    mock_count.return_value = (1, [0])
     mock_collect.return_value = {"gpu/0/utilization": 50}
 
     mock_run = MagicMock()
@@ -142,7 +144,7 @@ def test_gpu_monitor_lifecycle(mock_collect, mock_count):
 
 @patch("trackio.gpu.get_gpu_count")
 def test_gpu_monitor_no_gpus_warns(mock_count):
-    mock_count.return_value = 0
+    mock_count.return_value = (0, [])
 
     mock_run = MagicMock()
 
@@ -199,6 +201,54 @@ def test_reset_energy_baseline():
 
 
 @patch("trackio.gpu.pynvml")
+def test_get_gpu_count_respects_cuda_visible_devices(mock_pynvml):
+    gpu.PYNVML_AVAILABLE = True
+    gpu.pynvml = mock_pynvml
+
+    with patch.object(gpu, "_init_nvml", return_value=True):
+        mock_pynvml.nvmlDeviceGetCount.return_value = 4
+
+        with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2,3"}):
+            count, indices = gpu.get_gpu_count()
+            assert count == 2
+            assert indices == [2, 3]
+
+
+@patch("trackio.gpu.pynvml")
+def test_get_gpu_count_no_cuda_visible_devices(mock_pynvml):
+    gpu.PYNVML_AVAILABLE = True
+    gpu.pynvml = mock_pynvml
+
+    with patch.object(gpu, "_init_nvml", return_value=True):
+        mock_pynvml.nvmlDeviceGetCount.return_value = 4
+
+        with patch.dict("os.environ", {}, clear=True):
+            import os
+
+            os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+            count, indices = gpu.get_gpu_count()
+            assert count == 4
+            assert indices == [0, 1, 2, 3]
+
+
+@patch("trackio.gpu.collect_gpu_metrics")
+def test_log_gpu_with_device(mock_collect):
+    mock_collect.return_value = {"gpu/0/utilization": 80}
+
+    mock_run = MagicMock()
+    context_vars.current_run.set(mock_run)
+
+    try:
+        result = gpu.log_gpu(device=0)
+
+        assert result == {"gpu/0/utilization": 80}
+        mock_collect.assert_called_once_with(device=0)
+        mock_run.log_system.assert_called_once_with({"gpu/0/utilization": 80})
+    finally:
+        context_vars.current_run.set(None)
+
+
+@patch("trackio.gpu.pynvml")
 def test_energy_consumed_calculation(mock_pynvml):
     gpu.PYNVML_AVAILABLE = True
     gpu.pynvml = mock_pynvml
@@ -223,9 +273,9 @@ def test_energy_consumed_calculation(mock_pynvml):
         mock_pynvml.nvmlDeviceGetTotalEnergyConsumption.return_value = 10000000
 
         metrics1 = gpu.collect_gpu_metrics()
-        assert metrics1["gpu/0/energyConsumedJoules"] == 0.0
+        assert metrics1["gpu/0/energy_consumed"] == 0.0
 
         mock_pynvml.nvmlDeviceGetTotalEnergyConsumption.return_value = 15000000
 
         metrics2 = gpu.collect_gpu_metrics()
-        assert metrics2["gpu/0/energyConsumedJoules"] == 5000.0
+        assert metrics2["gpu/0/energy_consumed"] == 5000.0

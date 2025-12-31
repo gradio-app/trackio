@@ -222,33 +222,33 @@ trackio.finish()
 
 Per-GPU metrics (`gpu/{i}/{metric}`):
 - `gpu/0/utilization` - GPU utilization %
-- `gpu/0/memoryUtilization` - Memory controller utilization %
-- `gpu/0/memoryAllocated` - Memory allocated %
-- `gpu/0/memoryUsedGiB` - Memory used in GiB
-- `gpu/0/memoryTotalGiB` - Total memory in GiB
+- `gpu/0/memory_utilization` - Memory controller utilization %
+- `gpu/0/allocated_memory` - Memory allocated in GiB
+- `gpu/0/total_memory` - Total memory in GiB
+- `gpu/0/memory_usage` - Memory usage ratio (0-1)
 - `gpu/0/temp` - Temperature in Celsius
-- `gpu/0/powerWatts` - Power draw in watts
-- `gpu/0/powerPercent` - Power as % of limit
-- `gpu/0/powerLimitWatts` - Power limit in watts
-- `gpu/0/smClock` - SM clock speed in MHz
-- `gpu/0/memoryClock` - Memory clock speed in MHz
-- `gpu/0/fanSpeed` - Fan speed %
-- `gpu/0/performanceState` - Performance state (P0-P15)
-- `gpu/0/energyConsumedJoules` - Energy consumed since run start in Joules
-- `gpu/0/pcieTxMBps` - PCIe transmit bandwidth in MB/s
-- `gpu/0/pcieRxMBps` - PCIe receive bandwidth in MB/s
-- `gpu/0/throttleThermal` - Thermal throttling (0/1)
-- `gpu/0/throttlePower` - Power throttling (0/1)
-- `gpu/0/throttleHwSlowdown` - Hardware slowdown (0/1)
-- `gpu/0/throttleApps` - Application clock throttling (0/1)
-- `gpu/0/correctedMemoryErrors` - ECC corrected errors
-- `gpu/0/uncorrectedMemoryErrors` - ECC uncorrected errors
+- `gpu/0/power` - Power draw in watts
+- `gpu/0/power_percent` - Power as % of limit
+- `gpu/0/power_limit` - Power limit in watts
+- `gpu/0/sm_clock` - SM clock speed in MHz
+- `gpu/0/memory_clock` - Memory clock speed in MHz
+- `gpu/0/fan_speed` - Fan speed %
+- `gpu/0/performance_state` - Performance state (P0-P15)
+- `gpu/0/energy_consumed` - Energy consumed since run start in Joules
+- `gpu/0/pcie_tx` - PCIe transmit bandwidth in MB/s
+- `gpu/0/pcie_rx` - PCIe receive bandwidth in MB/s
+- `gpu/0/throttle_thermal` - Thermal throttling (0/1)
+- `gpu/0/throttle_power` - Power throttling (0/1)
+- `gpu/0/throttle_hw_slowdown` - Hardware slowdown (0/1)
+- `gpu/0/throttle_apps` - Application clock throttling (0/1)
+- `gpu/0/corrected_memory_errors` - ECC corrected errors
+- `gpu/0/uncorrected_memory_errors` - ECC uncorrected errors
 
 Aggregated metrics:
-- `gpu/meanUtilization` - Mean GPU utilization across all GPUs
-- `gpu/totalMemoryGiB` - Total memory used across all GPUs in GiB
-- `gpu/totalPowerWatts` - Total power draw across all GPUs
-- `gpu/maxTemp` - Maximum temperature across all GPUs
+- `gpu/mean_utilization` - Mean GPU utilization across all GPUs
+- `gpu/total_allocated_memory` - Total memory used across all GPUs in GiB
+- `gpu/total_power` - Total power draw across all GPUs
+- `gpu/max_temp` - Maximum temperature across all GPUs
 
 ## Finishing a Run
 
