@@ -1,5 +1,11 @@
 # trackio
 
+## 0.14.0
+
+### Features
+
+- [#374](https://github.com/gradio-app/trackio/pull/374) [`388e26b`](https://github.com/gradio-app/trackio/commit/388e26b9e9f24cd7ad203affe9b709be885b3d24) - Save Optimized Parquet files.  Thanks @lhoestq!
+
 ## 0.13.1
 
 ### Features
