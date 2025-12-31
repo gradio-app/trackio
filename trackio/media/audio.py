@@ -7,12 +7,8 @@ from typing import Literal
 import numpy as np
 from pydub import AudioSegment
 
-try:
-    from trackio.media.media import TrackioMedia
-    from trackio.media.utils import check_ffmpeg_installed, check_path
-except ImportError:
-    from media.media import TrackioMedia
-    from media.utils import check_ffmpeg_installed, check_path
+from trackio.media.media import TrackioMedia
+from trackio.media.utils import check_ffmpeg_installed, check_path
 
 SUPPORTED_FORMATS = ["wav", "mp3"]
 AudioFormatType = Literal["wav", "mp3"]
