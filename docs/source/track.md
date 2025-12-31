@@ -167,7 +167,7 @@ Audio can be logged from a file path or a numpy array.
 
 ### Logging GPU metrics
 
-If you're training on NVIDIA GPUs, you can log GPU metrics (utilization, memory, temperature, power, etc.). This requires the `nvidia-ml-py` package:
+If you're training on NVIDIA GPUs, you can log GPU metrics (utilization, memory, temperature, power, etc.). This requires the `nvidia-ml-py` package, which is automatically installed as part of the `gpu` extra:
 
 ```bash
 pip install trackio[gpu]
@@ -203,7 +203,7 @@ trackio.init(project="my_project", auto_log_gpu=False)
 
 **Manual logging:**
 
-You can also log GPU metrics manually at specific points using [`log_gpu`]:
+You can also log GPU metrics manually at specific times using [`log_gpu`]:
 
 ```python
 import trackio
@@ -213,7 +213,7 @@ trackio.init(project="my_project", auto_log_gpu=False)
 for step in range(100):
     # ... training code ...
     trackio.log({"loss": loss})
-    trackio.log_gpu()  # Log GPU metrics at current step
+    trackio.log_gpu()  # Log GPU metrics at current time
 
 trackio.finish()
 ```
