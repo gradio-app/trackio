@@ -1,7 +1,10 @@
 import math
+import time
 import warnings
+from unittest.mock import patch
 
 import trackio
+from trackio import gpu
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -114,3 +117,40 @@ def test_reserved_keys_are_renamed(temp_dir):
     assert log["__time"] == 200
     assert log["__project"] == "test"
     assert log["normal_key"] == 42
+
+
+def test_auto_log_gpu(temp_dir):
+    def fake_gpu_metrics(device=None):
+        return {
+            "gpu/0/utilization": 75,
+            "gpu/0/allocated_memory": 4.5,
+            "gpu/0/total_memory": 12.0,
+            "gpu/0/temp": 65,
+            "gpu/0/power": 150.0,
+            "gpu/mean_utilization": 75,
+        }
+
+    with patch.object(gpu, "collect_gpu_metrics", fake_gpu_metrics):
+        with patch.object(gpu, "get_gpu_count", return_value=(1, [0])):
+            run = trackio.init(
+                project="test_gpu_project",
+                name="test_gpu_run",
+                auto_log_gpu=True,
+                gpu_log_interval=0.1,
+            )
+            trackio.log({"loss": 0.5})
+            time.sleep(0.3)
+            trackio.finish()
+
+    system_logs = SQLiteStorage.get_system_logs(
+        project="test_gpu_project", run="test_gpu_run"
+    )
+    assert len(system_logs) >= 1
+    log = system_logs[0]
+    assert log["gpu/0/utilization"] == 75
+    assert log["gpu/0/allocated_memory"] == 4.5
+    assert log["gpu/0/total_memory"] == 12.0
+    assert log["gpu/0/temp"] == 65
+    assert log["gpu/0/power"] == 150.0
+    assert log["gpu/mean_utilization"] == 75
+    assert "timestamp" in log
