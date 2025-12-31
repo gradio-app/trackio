@@ -1,10 +1,16 @@
 import importlib.metadata
 import io
 import os
+import sys
 import threading
 import time
 from importlib.resources import files
 from pathlib import Path
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 import gradio
 import huggingface_hub
@@ -18,6 +24,19 @@ from trackio.utils import get_or_create_project_hash, preprocess_space_and_datas
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
+
+
+def _get_source_install_dependencies() -> str:
+    """Get trackio dependencies from pyproject.toml for source installs."""
+    trackio_path = files("trackio")
+    pyproject_path = Path(trackio_path).parent / "pyproject.toml"
+    with open(pyproject_path, "rb") as f:
+        pyproject = tomllib.load(f)
+    deps = pyproject["project"]["dependencies"]
+    spaces_deps = (
+        pyproject["project"].get("optional-dependencies", {}).get("spaces", [])
+    )
+    return "\n".join(deps + spaces_deps)
 
 
 def _is_trackio_installed_from_source() -> bool:
@@ -100,12 +119,9 @@ def deploy_as_space(
     is_source_install = _is_trackio_installed_from_source()
 
     if is_source_install:
-        requirements_content = """pyarrow>=21.0
-plotly>=6.0.0,<7.0.0"""
+        requirements_content = _get_source_install_dependencies()
     else:
-        requirements_content = f"""pyarrow>=21.0
-trackio=={trackio.__version__}
-plotly>=6.0.0,<7.0.0"""
+        requirements_content = f"trackio[spaces]=={trackio.__version__}"
 
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(
@@ -122,18 +138,19 @@ plotly>=6.0.0,<7.0.0"""
             repo_id=space_id,
             repo_type="space",
             folder_path=trackio_path,
+            path_in_repo="trackio",
             ignore_patterns=["README.md"],
         )
-    else:
-        app_file_content = """import trackio
+
+    app_file_content = """import trackio
 trackio.show()"""
-        app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
-        hf_api.upload_file(
-            path_or_fileobj=app_file_buffer,
-            path_in_repo="ui/main.py",
-            repo_id=space_id,
-            repo_type="space",
-        )
+    app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
+    hf_api.upload_file(
+        path_or_fileobj=app_file_buffer,
+        path_in_repo="app.py",
+        repo_id=space_id,
+        repo_type="space",
+    )
 
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)

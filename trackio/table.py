@@ -3,12 +3,8 @@ from typing import Any, Literal
 
 from pandas import DataFrame
 
-try:
-    from trackio.media.media import TrackioMedia
-    from trackio.utils import MEDIA_DIR
-except ImportError:
-    from media.media import TrackioMedia
-    from utils import MEDIA_DIR
+from trackio.media.media import TrackioMedia
+from trackio.utils import MEDIA_DIR
 
 
 class Table:

@@ -5,11 +5,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image as PILImage
 
-try:
-    from trackio.media.media import TrackioMedia
-except ImportError:
-    from media.media import TrackioMedia
-
+from trackio.media.media import TrackioMedia
 
 TrackioImageSourceType = str | Path | np.ndarray | PILImage.Image
 

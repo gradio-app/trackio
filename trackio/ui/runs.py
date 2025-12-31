@@ -5,14 +5,9 @@ import re
 import gradio as gr
 import pandas as pd
 
-try:
-    import trackio.utils as utils
-    from trackio.sqlite_storage import SQLiteStorage
-    from trackio.ui import fns
-except ImportError:
-    import utils
-    from sqlite_storage import SQLiteStorage
-    from ui import fns
+import trackio.utils as utils
+from trackio.sqlite_storage import SQLiteStorage
+from trackio.ui import fns
 
 
 def get_runs_data(project):

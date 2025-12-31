@@ -5,12 +5,8 @@ from pathlib import Path
 
 import gradio as gr
 
-try:
-    import trackio.utils as utils
-    from trackio.ui import fns
-except ImportError:
-    import utils
-    from ui import fns
+import trackio.utils as utils
+from trackio.ui import fns
 
 
 def get_files_path(project: str | None) -> str | None:
