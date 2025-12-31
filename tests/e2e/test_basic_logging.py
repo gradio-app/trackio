@@ -132,7 +132,7 @@ def test_auto_log_gpu(temp_dir):
 
     with patch.object(gpu, "collect_gpu_metrics", fake_gpu_metrics):
         with patch.object(gpu, "get_gpu_count", return_value=(1, [0])):
-            run = trackio.init(
+            trackio.init(
                 project="test_gpu_project",
                 name="test_gpu_run",
                 auto_log_gpu=True,
