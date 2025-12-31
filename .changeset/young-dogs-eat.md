@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Add option to only show latest run
+feat:Add option to only show latest run, and fix the double logo issue.
