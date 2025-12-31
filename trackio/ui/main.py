@@ -247,6 +247,7 @@ def refresh_runs(
     filter_text: str | None,
     selection: RunSelection,
     selected_runs_from_url: list[str] | None = None,
+    latest_run_checked: bool = False,
 ):
     if project is None:
         runs: list[str] = []
@@ -256,12 +257,14 @@ def refresh_runs(
             runs = [r for r in runs if filter_text in r]
 
     preferred = None
-    if selected_runs_from_url:
+    if latest_run_checked and runs:
+        preferred = [runs[-1]]
+    elif selected_runs_from_url:
         preferred = [r for r in runs if r in selected_runs_from_url]
 
     did_change = selection.update_choices(runs, preferred)
     return (
-        fns.run_checkbox_update(selection) if did_change else gr.skip(),
+        fns.run_checkbox_update(selection, latest_checked=latest_run_checked) if did_change else gr.skip(),
         gr.Textbox(label=f"Runs ({len(runs)})"),
         selection,
     )
@@ -496,6 +499,8 @@ def configure(request: gr.Request):
     x_max = float(x_max_param) if x_max_param is not None else None
     smoothing_param = request.query_params.get("smoothing")
     smoothing_value = int(smoothing_param) if smoothing_param is not None else 10
+    latest_run_param = request.query_params.get("latest_run", "")
+    latest_run_checked = latest_run_param.lower() in ("true", "1", "yes")
 
     match navbar_param:
         case "hidden":
@@ -511,6 +516,7 @@ def configure(request: gr.Request):
         navbar,
         [x_min, x_max],
         smoothing_value,
+        latest_run_checked,
     )
 
 
@@ -686,6 +692,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
     run_selection_state = gr.State(RunSelection())
+    latest_run_checked = gr.State(False)
     x_lim = gr.State(None)
 
     gr.on(
@@ -699,6 +706,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             navbar,
             x_lim,
             smoothing_slider,
+            latest_run_checked,
         ],
         queue=False,
         api_visibility="private",
@@ -714,7 +722,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.on(
         [timer.tick],
         fn=refresh_runs,
-        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
+        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url, latest_run_checked],
         outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         api_visibility="private",
@@ -729,7 +737,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.on(
         [demo.load, project_dd.change],
         fn=refresh_runs,
-        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
+        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url, latest_run_checked],
         outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         queue=False,
@@ -822,7 +830,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     )
     run_tb.input(
         fn=refresh_runs,
-        inputs=[project_dd, run_tb, run_selection_state],
+        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url, latest_run_checked],
         outputs=[run_cb, run_tb, run_selection_state],
         api_visibility="private",
         queue=False,
@@ -1186,6 +1194,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 group_cb,
                                 run_selection_state,
                                 gr.State(runs),
+                                latest_run_checked,
                             ],
                             outputs=[
                                 run_selection_state,
@@ -1204,6 +1213,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 show_group_cb,
                                 run_selection_state,
                                 gr.State(runs),
+                                latest_run_checked,
                             ],
                             outputs=[run_selection_state, group_cb, run_cb],
                             show_progress="hidden",
