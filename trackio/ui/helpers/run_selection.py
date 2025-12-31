@@ -1,9 +1,6 @@
 from dataclasses import dataclass, field
 
-try:
-    import trackio.utils as utils
-except ImportError:
-    import utils
+import trackio.utils as utils
 
 
 @dataclass

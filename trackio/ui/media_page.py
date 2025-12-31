@@ -6,20 +6,12 @@ from dataclasses import dataclass
 import gradio as gr
 import pandas as pd
 
-try:
-    import trackio.utils as utils
-    from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
-    from trackio.sqlite_storage import SQLiteStorage
-    from trackio.table import Table
-    from trackio.ui import fns
-    from trackio.ui.components.colored_dropdown import ColoredDropdown
-except ImportError:
-    import utils
-    from media import TrackioAudio, TrackioImage, TrackioVideo
-    from sqlite_storage import SQLiteStorage
-    from table import Table
-    from ui import fns
-    from ui.components.colored_dropdown import ColoredDropdown
+import trackio.utils as utils
+from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
+from trackio.sqlite_storage import SQLiteStorage
+from trackio.table import Table
+from trackio.ui import fns
+from trackio.ui.components.colored_dropdown import ColoredDropdown
 
 
 def get_runs(project) -> list[str]:

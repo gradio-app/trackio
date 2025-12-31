@@ -11,41 +11,22 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 
-try:
-    import trackio.utils as utils
-    from trackio.media import (
-        TrackioAudio,
-        TrackioImage,
-        TrackioVideo,
-        get_project_media_path,
-    )
-    from trackio.sqlite_storage import SQLiteStorage
-    from trackio.typehints import LogEntry, UploadEntry
-    from trackio.ui import fns
-    from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
-    from trackio.ui.files import files_page
-    from trackio.ui.helpers.run_selection import RunSelection
-    from trackio.ui.media_page import media_page
-    from trackio.ui.run_detail import run_detail_page
-    from trackio.ui.runs import run_page
-except ImportError:
-    import utils
-    from media import (
-        TrackioAudio,
-        TrackioImage,
-        TrackioVideo,
-        get_project_media_path,
-    )
-    from sqlite_storage import SQLiteStorage
-    from typehints import LogEntry, UploadEntry
-    from ui import fns
-    from ui.components.colored_checkbox import ColoredCheckboxGroup
-    from ui.files import files_page
-    from ui.helpers.run_selection import RunSelection
-    from ui.media_page import media_page
-    from ui.run_detail import run_detail_page
-    from ui.runs import run_page
-
+import trackio.utils as utils
+from trackio.media import (
+    TrackioAudio,
+    TrackioImage,
+    TrackioVideo,
+    get_project_media_path,
+)
+from trackio.sqlite_storage import SQLiteStorage
+from trackio.typehints import LogEntry, UploadEntry
+from trackio.ui import fns
+from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
+from trackio.ui.files import files_page
+from trackio.ui.helpers.run_selection import RunSelection
+from trackio.ui.media_page import media_page
+from trackio.ui.run_detail import run_detail_page
+from trackio.ui.runs import run_page
 
 INSTRUCTIONS_SPACES = """
 ## Start logging with Trackio 🤗

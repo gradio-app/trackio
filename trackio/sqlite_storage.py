@@ -15,18 +15,13 @@ import huggingface_hub as hf
 import orjson
 import pandas as pd
 
-try:  # absolute imports when installed from PyPI
-    from trackio.commit_scheduler import CommitScheduler
-    from trackio.dummy_commit_scheduler import DummyCommitScheduler
-    from trackio.utils import (
-        TRACKIO_DIR,
-        deserialize_values,
-        serialize_values,
-    )
-except ImportError:  # relative imports when installed from source on Spaces
-    from commit_scheduler import CommitScheduler
-    from dummy_commit_scheduler import DummyCommitScheduler
-    from utils import TRACKIO_DIR, deserialize_values, serialize_values
+from trackio.commit_scheduler import CommitScheduler
+from trackio.dummy_commit_scheduler import DummyCommitScheduler
+from trackio.utils import (
+    TRACKIO_DIR,
+    deserialize_values,
+    serialize_values,
+)
 
 DB_EXT = ".db"
 
@@ -201,7 +196,11 @@ class SQLiteStorage:
                     df[col] = metrics[col]
                 # include page index and cdc to get an HF Optimized Parquet file
                 # see: https://huggingface.co/docs/hub/datasets-libraries#optimized-parquet-files
-                df.to_parquet(parquet_path, write_page_index=True, use_content_defined_chunking=True)
+                df.to_parquet(
+                    parquet_path,
+                    write_page_index=True,
+                    use_content_defined_chunking=True,
+                )
 
     @staticmethod
     def _cleanup_wal_sidecars(db_path: Path) -> None:

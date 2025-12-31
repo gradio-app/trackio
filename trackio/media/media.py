@@ -3,12 +3,8 @@ import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-try:  # absolute imports when installed
-    from trackio.media.utils import get_project_media_path
-    from trackio.utils import MEDIA_DIR
-except ImportError:  # relative imports for local execution on Spaces
-    from media.utils import get_project_media_path
-    from utils import MEDIA_DIR
+from trackio.media.utils import get_project_media_path
+from trackio.utils import MEDIA_DIR
 
 
 class TrackioMedia(ABC):
