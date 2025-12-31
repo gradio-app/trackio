@@ -7,11 +7,12 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio import utils
+from trackio.gpu import GpuMonitor
 from trackio.histogram import Histogram
 from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
-from trackio.typehints import LogEntry, UploadEntry
+from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
 from trackio.utils import _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
@@ -27,6 +28,8 @@ class Run:
         group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
+        auto_log_gpu: bool = False,
+        gpu_log_interval: float = 10.0,
     ):
         self.url = url
         self.project = project
@@ -52,6 +55,7 @@ class Run:
         self.config["_Group"] = self.group
 
         self._queued_logs: list[LogEntry] = []
+        self._queued_system_logs: list[SystemLogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._stop_flag = threading.Event()
         self._config_logged = False
@@ -59,6 +63,11 @@ class Run:
         self._client_thread = threading.Thread(target=self._init_client_background)
         self._client_thread.daemon = True
         self._client_thread.start()
+
+        self._gpu_monitor: "GpuMonitor | None" = None
+        if auto_log_gpu:
+            self._gpu_monitor = GpuMonitor(self, interval=gpu_log_interval)
+            self._gpu_monitor.start()
 
     def _get_username(self) -> str | None:
         """Get the current HuggingFace username if logged in, otherwise None."""
@@ -69,7 +78,11 @@ class Run:
 
     def _batch_sender(self):
         """Send batched logs every BATCH_SEND_INTERVAL."""
-        while not self._stop_flag.is_set() or len(self._queued_logs) > 0:
+        while (
+            not self._stop_flag.is_set()
+            or len(self._queued_logs) > 0
+            or len(self._queued_system_logs) > 0
+        ):
             if not self._stop_flag.is_set():
                 time.sleep(BATCH_SEND_INTERVAL)
 
@@ -82,6 +95,14 @@ class Run:
                     self._client.predict(
                         api_name="/bulk_log",
                         logs=logs_to_send,
+                        hf_token=huggingface_hub.utils.get_token(),
+                    )
+                if self._queued_system_logs:
+                    system_logs_to_send = self._queued_system_logs.copy()
+                    self._queued_system_logs.clear()
+                    self._client.predict(
+                        api_name="/bulk_log_system",
+                        logs=system_logs_to_send,
                         hf_token=huggingface_hub.utils.get_token(),
                     )
                 if self._queued_uploads:
@@ -146,7 +167,7 @@ class Run:
         """
         Serialize media in metrics and upload to space if needed.
         """
-        value._save(self.project, self.name, step)
+        value._save(self.project, self.name, step if step is not None else 0)
         if self._space_id:
             self._queue_upload(value._get_absolute_file_path(), step)
         return value._to_dict()
@@ -230,8 +251,29 @@ class Run:
         with self._client_lock:
             self._queued_logs.append(log_entry)
 
+    def log_system(self, metrics: dict):
+        """
+        Log system metrics (GPU, etc.) without a step number.
+        These metrics use timestamps for the x-axis instead of steps.
+        """
+        metrics = utils.serialize_values(metrics)
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        system_log_entry: SystemLogEntry = {
+            "project": self.project,
+            "run": self.name,
+            "metrics": metrics,
+            "timestamp": timestamp,
+        }
+
+        with self._client_lock:
+            self._queued_system_logs.append(system_log_entry)
+
     def finish(self):
         """Cleanup when run is finished."""
+        if self._gpu_monitor is not None:
+            self._gpu_monitor.stop()
+
         self._stop_flag.set()
 
         time.sleep(2 * BATCH_SEND_INTERVAL)
