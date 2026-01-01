@@ -177,7 +177,7 @@ def export_plot_data_as_json(
 ) -> str | None:
     """
     Export line plot data as JSON in the specified format.
-    
+
     Args:
         project: Project name
         runs: List of run names
@@ -187,15 +187,15 @@ def export_plot_data_as_json(
         x_axis: X-axis type ("step" or "time")
         log_scale_x: Whether X-axis is log scale
         log_scale_y: Whether Y-axis is log scale
-    
+
     Returns:
         Path to temporary JSON file, or None if export fails
     """
     if not project or not runs or not metric_name or not x_column:
         return None
-    
+
     runs_data = {}
-    
+
     for run in runs:
         df, _ = load_run_data(
             project, run, smoothing_granularity, x_axis, log_scale_x, log_scale_y
@@ -204,10 +204,12 @@ def export_plot_data_as_json(
             # Filter to original data only (exclude smoothed if smoothing is enabled)
             if smoothing_granularity > 0:
                 df = df[df["data_type"] == "original"]
-            
+
             # Filter to the specific metric
             if metric_name in df.columns and x_column in df.columns:
-                metric_df = df[[x_column, metric_name, "run"]].dropna(subset=[metric_name])
+                metric_df = df[[x_column, metric_name, "run"]].dropna(
+                    subset=[metric_name]
+                )
                 if not metric_df.empty:
                     # Get y-values for this run, sorted by x values
                     sorted_df = metric_df.sort_values(by=x_column)
@@ -218,14 +220,14 @@ def export_plot_data_as_json(
                         for v in y_values
                     ]
                     runs_data[run] = y_values
-    
+
     # Build the JSON structure
     export_data = {
         "x": x_column,
         "y": metric_name,
         "runs": runs_data,
     }
-    
+
     # Add additional context
     if project:
         export_data["project"] = project
@@ -235,18 +237,21 @@ def export_plot_data_as_json(
         export_data["log_scale_x"] = True
     if log_scale_y:
         export_data["log_scale_y"] = True
-    
+
     # Create temporary file with unique name to avoid conflicts
     import tempfile
     import time
+
     temp_dir = Path(tempfile.gettempdir())
     # Sanitize filename and add timestamp for uniqueness
-    safe_metric_name = metric_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    safe_metric_name = (
+        metric_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    )
     safe_project = str(project).replace("/", "_").replace("\\", "_").replace(" ", "_")
     timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
     filename = f"trackio_export_{safe_project}_{safe_metric_name}_{timestamp}.json"
     filepath = temp_dir / filename
-    
+
     try:
         # Write file efficiently
         with open(filepath, "w", encoding="utf-8") as f:
@@ -1197,26 +1202,44 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         size="sm",
                                         key=f"export-btn-{metric_idx}",
                                     )
-                                    def make_export_fn(proj, runs_list, x_col, met_name, smooth, x_ax, log_x, log_y):
+
+                                    def make_export_fn(
+                                        proj,
+                                        runs_list,
+                                        x_col,
+                                        met_name,
+                                        smooth,
+                                        x_ax,
+                                        log_x,
+                                        log_y,
+                                    ):
                                         def export_fn():
                                             filepath = export_plot_data_as_json(
-                                                proj, runs_list, x_col, met_name, smooth, x_ax, log_x, log_y
+                                                proj,
+                                                runs_list,
+                                                x_col,
+                                                met_name,
+                                                smooth,
+                                                x_ax,
+                                                log_x,
+                                                log_y,
                                             )
                                             if filepath:
                                                 return filepath
                                             return None
+
                                         return export_fn
-                                    
+
                                     export_json_btn.click(
                                         fn=make_export_fn(
-                                            project, 
-                                            original_runs, 
-                                            x_column, 
+                                            project,
+                                            original_runs,
+                                            x_column,
                                             metric_name,
                                             smoothing_granularity,
                                             x_axis,
                                             log_scale_x,
-                                            log_scale_y
+                                            log_scale_y,
                                         ),
                                         inputs=[],
                                         outputs=export_json_file,
@@ -1225,7 +1248,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         api_visibility="private",
                                         scroll_to_output=False,
                                     ).then(
-                                        fn=lambda f: gr.update(visible=True) if f else gr.update(visible=False),
+                                        fn=lambda f: gr.update(visible=True)
+                                        if f
+                                        else gr.update(visible=False),
                                         inputs=export_json_file,
                                         outputs=export_json_file,
                                         show_progress=False,
@@ -1234,7 +1259,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                     )
                                     # Hide file component when cleared to prevent upload interface
                                     export_json_file.change(
-                                        fn=lambda f: gr.update(visible=False) if not f else gr.update(visible=True),
+                                        fn=lambda f: gr.update(visible=False)
+                                        if not f
+                                        else gr.update(visible=True),
                                         inputs=export_json_file,
                                         outputs=export_json_file,
                                         queue=False,
@@ -1316,26 +1343,44 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                                 size="sm",
                                                 key=f"export-btn-{metric_idx}",
                                             )
-                                            def make_export_fn(proj, runs_list, x_col, met_name, smooth, x_ax, log_x, log_y):
+
+                                            def make_export_fn(
+                                                proj,
+                                                runs_list,
+                                                x_col,
+                                                met_name,
+                                                smooth,
+                                                x_ax,
+                                                log_x,
+                                                log_y,
+                                            ):
                                                 def export_fn():
                                                     filepath = export_plot_data_as_json(
-                                                        proj, runs_list, x_col, met_name, smooth, x_ax, log_x, log_y
+                                                        proj,
+                                                        runs_list,
+                                                        x_col,
+                                                        met_name,
+                                                        smooth,
+                                                        x_ax,
+                                                        log_x,
+                                                        log_y,
                                                     )
                                                     if filepath:
                                                         return filepath
                                                     return None
+
                                                 return export_fn
-                                            
+
                                             export_json_btn.click(
                                                 fn=make_export_fn(
-                                                    project, 
-                                                    original_runs, 
-                                                    x_column, 
+                                                    project,
+                                                    original_runs,
+                                                    x_column,
                                                     metric_name,
                                                     smoothing_granularity,
                                                     x_axis,
                                                     log_scale_x,
-                                                    log_scale_y
+                                                    log_scale_y,
                                                 ),
                                                 inputs=[],
                                                 outputs=export_json_file,
@@ -1344,7 +1389,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                                 api_visibility="private",
                                                 scroll_to_output=False,
                                             ).then(
-                                                fn=lambda f: gr.update(visible=True) if f else gr.update(visible=False),
+                                                fn=lambda f: gr.update(visible=True)
+                                                if f
+                                                else gr.update(visible=False),
                                                 inputs=export_json_file,
                                                 outputs=export_json_file,
                                                 show_progress=False,
@@ -1353,7 +1400,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                             )
                                             # Hide file component when cleared to prevent upload interface
                                             export_json_file.change(
-                                                fn=lambda f: gr.update(visible=False) if not f else gr.update(visible=True),
+                                                fn=lambda f: gr.update(visible=False)
+                                                if not f
+                                                else gr.update(visible=True),
                                                 inputs=export_json_file,
                                                 outputs=export_json_file,
                                                 queue=False,
