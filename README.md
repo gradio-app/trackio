@@ -228,6 +228,22 @@ We welcome contributions to Trackio! Whether you're fixing bugs, adding features
 
 To start contributing, see our [Contributing Guide](CONTRIBUTING.md).
 
+### Development Setup
+
+To set up Trackio for development:
+
+**On macOS (zsh):**
+```bash
+pip install -e ".[dev,tensorboard]"
+```
+
+**On Linux/Windows:**
+```bash
+pip install -e .[dev,tensorboard]
+```
+
+> **Note:** On macOS, zsh interprets square brackets as glob patterns, so the command must be quoted. On Linux and Windows, quoting is optional but works as well.
+
 
 ## Pronunciation
 

@@ -29,6 +29,13 @@ The flow of data is:
 
 1. Fork and clone the repository
 2. Install Trackio with development dependencies
+   
+   **On macOS (zsh):**
+   ```bash
+   pip install -e ".[dev,tensorboard]"
+   ```
+   
+   **On Linux/Windows:**
    ```bash
    pip install -e .[dev,tensorboard]
    ```
