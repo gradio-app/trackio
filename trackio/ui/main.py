@@ -568,6 +568,25 @@ CSS = """
 .tab-like-container {
     visibility: hidden;
 }
+
+/* Runs table styling - prevent text overflow and distortion */
+.dataframe table {
+    table-layout: fixed;
+    width: 100%;
+}
+.dataframe td, .dataframe th {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 8px 12px;
+}
+.dataframe td:hover, .dataframe th:hover {
+    overflow: visible;
+    white-space: normal;
+    word-wrap: break-word;
+    position: relative;
+    z-index: 10;
+}
 """
 
 HEAD = """

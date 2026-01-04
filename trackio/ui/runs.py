@@ -66,13 +66,19 @@ def get_runs_table(project):
 
     datatype = ["bool"] + ["markdown"] * (len(df.columns) - 1)
 
+    # Set appropriate column widths to prevent distortion
+    # First column (checkbox): 40px
+    # Second column (Name): 200px
+    # Remaining columns: 150px each (for Group, Username, Created, etc.)
+    column_widths = ["40px", "200px"] + ["150px"] * (len(df.columns) - 2)
+
     return gr.DataFrame(
         df,
         visible=True,
         pinned_columns=2,
         datatype=datatype,
-        wrap=True,
-        column_widths=["40px", "150px"],
+        wrap=False,  # Disable wrapping to prevent text distortion; tooltips will show full content
+        column_widths=column_widths,
         interactive=True,
         static_columns=list(range(1, len(df.columns))),
         row_count=len(df),
