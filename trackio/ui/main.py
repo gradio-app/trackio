@@ -21,7 +21,7 @@ from trackio.media import (
     get_project_media_path,
 )
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.typehints import LogEntry, UploadEntry
+from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
 from trackio.ui import fns
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.files import files_page
@@ -29,6 +29,7 @@ from trackio.ui.helpers.run_selection import RunSelection
 from trackio.ui.media_page import media_page
 from trackio.ui.run_detail import run_detail_page
 from trackio.ui.runs import run_page
+from trackio.ui.system_page import system_page
 
 INSTRUCTIONS_SPACES = """
 ## Start logging with Trackio 🤗
@@ -449,6 +450,32 @@ def bulk_log(
         )
 
 
+def bulk_log_system(
+    logs: list[SystemLogEntry],
+    hf_token: str | None,
+) -> None:
+    """
+    Logs system metrics (GPU, etc.) to a Trackio dashboard. These metrics use timestamps instead of steps.
+    """
+    fns.check_hf_token_has_write_access(hf_token)
+
+    logs_by_run = {}
+    for log_entry in logs:
+        key = (log_entry["project"], log_entry["run"])
+        if key not in logs_by_run:
+            logs_by_run[key] = {"metrics": [], "timestamps": []}
+        logs_by_run[key]["metrics"].append(log_entry["metrics"])
+        logs_by_run[key]["timestamps"].append(log_entry.get("timestamp"))
+
+    for (project, run), data in logs_by_run.items():
+        SQLiteStorage.bulk_log_system(
+            project=project,
+            run=run,
+            metrics_list=data["metrics"],
+            timestamps=data["timestamps"],
+        )
+
+
 def get_metric_values(
     project: str,
     run: str,
@@ -813,6 +840,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     navbar = gr.Navbar(
         value=[
             ("Metrics", ""),
+            ("System Metrics", "/system"),
             ("Media & Tables", "/media"),
             ("Runs", "/runs"),
             ("Files", "/files"),
@@ -981,6 +1009,10 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(
         fn=bulk_log,
         api_name="bulk_log",
+    )
+    gr.api(
+        fn=bulk_log_system,
+        api_name="bulk_log_system",
     )
     gr.api(
         fn=get_metric_values,
@@ -1501,6 +1533,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                         )
 
 
+with demo.route("System", show_in_navbar=False):
+    system_page.render()
 with demo.route("Media", show_in_navbar=False):
     media_page.render()
 with demo.route("Runs", show_in_navbar=False):
