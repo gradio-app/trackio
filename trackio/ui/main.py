@@ -542,37 +542,7 @@ def configure(request: gr.Request):
 
 
 CSS = """
-.logo-light { display: block; } 
-.logo-dark { display: none; }
-.dark .logo-light { display: none; }
-.dark .logo-dark { display: block; }
 .dark .caption-label { color: white; }
-
-.info-container {
-    position: relative;
-    display: inline;
-}
-.info-checkbox {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-}
-.info-icon {
-    border-bottom: 1px dotted;
-    cursor: pointer;
-    user-select: none;
-    color: var(--color-accent);
-}
-.info-expandable {
-    display: none;
-    opacity: 0;
-    transition: opacity 0.2s ease-in-out;
-}
-.info-checkbox:checked ~ .info-expandable {
-    display: inline;
-    opacity: 1;
-}
-.info-icon:hover { opacity: 0.8; }
 .accent-link { font-weight: bold; }
 
 .media-gallery .fixed-height { min-height: 275px; }
@@ -655,10 +625,13 @@ gr.set_static_paths(paths=[utils.MEDIA_DIR])
 with gr.Blocks(title="Trackio Dashboard") as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo_urls = utils.get_logo_urls()
-        logo = gr.Markdown(
+        logo = gr.HTML(
             f"""
-                <img src='{logo_urls["light"]}' width='80%' class='logo-light'>
-                <img src='{logo_urls["dark"]}' width='80%' class='logo-dark'>            
+                <picture>
+                    <source media="(prefers-color-scheme: dark)" srcset="{logo_urls["dark"]}">
+                    <source media="(prefers-color-scheme: light)" srcset="{logo_urls["light"]}">
+                    <img src="{logo_urls["light"]}" width="80%">
+                </picture>
             """
         )
         project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
