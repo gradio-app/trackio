@@ -30,7 +30,7 @@ The flow of data is:
 1. Fork and clone the repository
 2. Install Trackio with development dependencies
    ```bash
-   pip install -e .[dev,tensorboard]
+   pip install -e ".[dev,tensorboard]"
    ```
 3. Run tests before submitting changes:
    ```bash

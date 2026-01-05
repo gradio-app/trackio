@@ -228,6 +228,13 @@ We welcome contributions to Trackio! Whether you're fixing bugs, adding features
 
 To start contributing, see our [Contributing Guide](CONTRIBUTING.md).
 
+### Development Setup
+
+To set up Trackio for development, clone this repo and run:
+
+```bash
+pip install -e ".[dev,tensorboard]"
+```
 
 ## Pronunciation
 
