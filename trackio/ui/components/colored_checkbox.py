@@ -18,7 +18,7 @@ class ColoredCheckboxGroup(gr.HTML):
             value: List of selected values.
             colors: List of colors corresponding to the choices. Should be the same length as choices.
             label: Label for the checkbox group.
-            latest_checked: Whether the latest only checkbox is shown.
+            latest_checked: Whether the latest only checkbox is checked by default.
         """
         html_template = """
         <div class="colored-checkbox-container">
