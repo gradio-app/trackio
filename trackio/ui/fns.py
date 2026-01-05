@@ -46,6 +46,7 @@ def create_project_dropdown(interactive: bool = True) -> gr.Dropdown:
         label="Project", allow_custom_value=True, interactive=interactive
     )
 
+
 CONFIG_COLUMN_MAPPINGS = {
     "_Username": "Username",
     "_Created": "Created",
