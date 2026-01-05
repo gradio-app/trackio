@@ -1,0 +1,259 @@
+import gradio as gr
+
+
+class RunsTable(gr.HTML):
+    def __init__(
+        self,
+        headers: list[str] | None = None,
+        rows: list[list[str]] | None = None,
+        *,
+        value: list[int] | None = None,
+        interactive: bool = True,
+        **kwargs,
+    ):
+        headers = headers or []
+        rows = rows or []
+        value = value or []
+
+        html_template = """
+        <div class="runs-table-container">
+            <table class="runs-table">
+                <thead>
+                    <tr>
+                        <th class="checkbox-col">
+                            <input type="checkbox" class="select-all-checkbox" ${!interactive ? 'disabled' : ''}>
+                        </th>
+                        ${headers.map(h => `<th>${h}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.length === 0 ? `
+                        <tr class="empty-row">
+                            <td colspan="${headers.length + 1}">No runs found</td>
+                        </tr>
+                    ` : rows.map((row, idx) => `
+                        <tr data-idx="${idx}">
+                            <td class="checkbox-col">
+                                <input type="checkbox" class="row-checkbox" data-idx="${idx}" ${(value || []).includes(idx) ? 'checked' : ''} ${!interactive ? 'disabled' : ''}>
+                            </td>
+                            ${row.map((cell, colIdx) => `<td class="col-${colIdx}">${cell}</td>`).join('')}
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        """
+
+        css_template = """
+        .runs-table-container {
+            border: 1px solid var(--border-color-primary);
+            border-radius: var(--radius-lg);
+            background: var(--block-background-fill);
+            overflow: hidden;
+        }
+        .runs-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: var(--text-sm);
+        }
+        .runs-table thead {
+            background: var(--table-even-background-fill);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .runs-table th {
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--block-title-text-color);
+            border-bottom: 1px solid var(--border-color-primary);
+            white-space: nowrap;
+        }
+        .runs-table td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-color-primary);
+            color: var(--body-text-color);
+        }
+        .runs-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .runs-table tbody tr:hover {
+            background: var(--table-row-focus);
+        }
+        .runs-table tbody tr.selected {
+            background: var(--color-accent-soft);
+        }
+        .runs-table .checkbox-col {
+            width: 40px;
+            text-align: center;
+            padding: 10px 12px;
+        }
+        .runs-table input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--color-accent);
+        }
+        .runs-table input[type="checkbox"]:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .runs-table a {
+            color: var(--link-text-color);
+            text-decoration: underline;
+            text-decoration-style: dotted;
+        }
+        .runs-table a:hover {
+            text-decoration-style: solid;
+        }
+        .runs-table .empty-row td {
+            text-align: center;
+            padding: 40px 16px;
+            color: var(--block-label-text-color);
+            font-style: italic;
+        }
+        .runs-table .col-0 {
+            font-weight: 500;
+        }
+        """
+
+        js_on_load = """
+        function getRowCheckboxes() {
+            return element.querySelectorAll('.row-checkbox');
+        }
+
+        function getSelectAllCheckbox() {
+            return element.querySelector('.select-all-checkbox');
+        }
+
+        function updateSelectAllState() {
+            const checkboxes = getRowCheckboxes();
+            const selectAll = getSelectAllCheckbox();
+            if (!selectAll || checkboxes.length === 0) return;
+
+            const total = checkboxes.length;
+            const checked = Array.from(checkboxes).filter(cb => cb.checked).length;
+
+            if (checked === total) {
+                selectAll.checked = true;
+                selectAll.indeterminate = false;
+            } else if (checked > 0) {
+                selectAll.checked = false;
+                selectAll.indeterminate = true;
+            } else {
+                selectAll.checked = false;
+                selectAll.indeterminate = false;
+            }
+        }
+
+        function updateRowStyles() {
+            const checkboxes = getRowCheckboxes();
+            checkboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (cb.checked) {
+                    row.classList.add('selected');
+                } else {
+                    row.classList.remove('selected');
+                }
+            });
+        }
+
+        function updateValue() {
+            const checkboxes = getRowCheckboxes();
+            props.value = Array.from(checkboxes)
+                .filter(cb => cb.checked)
+                .map(cb => parseInt(cb.dataset.idx, 10));
+            updateSelectAllState();
+            updateRowStyles();
+            trigger('input');
+        }
+
+        element.addEventListener('change', (e) => {
+            if (e.target.classList.contains('select-all-checkbox')) {
+                const shouldCheck = e.target.checked;
+                getRowCheckboxes().forEach(cb => { cb.checked = shouldCheck; });
+                updateValue();
+            } else if (e.target.classList.contains('row-checkbox')) {
+                updateValue();
+            }
+        });
+
+        updateSelectAllState();
+        updateRowStyles();
+        """
+
+        super().__init__(
+            value=value,
+            html_template=html_template,
+            css_template=css_template,
+            js_on_load=js_on_load,
+            headers=headers,
+            rows=rows,
+            interactive=interactive,
+            **kwargs,
+        )
+
+    def api_info(self):
+        return {
+            "items": {"type": "integer"},
+            "title": "Runs Table Selected Indices",
+            "type": "array",
+        }
+
+
+if __name__ == "__main__":
+    sample_headers = ["Name", "Group", "Username", "Created"]
+    sample_rows = [
+        [
+            "<a href='/run?selected_project=test&selected_run=run-001'>run-001</a>",
+            "experiment-a",
+            "<a href='https://huggingface.co/johndoe'>johndoe</a>",
+            "2024-01-15 10:30",
+        ],
+        [
+            "<a href='/run?selected_project=test&selected_run=run-002'>run-002</a>",
+            "experiment-a",
+            "<a href='https://huggingface.co/janedoe'>janedoe</a>",
+            "2024-01-15 11:45",
+        ],
+        [
+            "<a href='/run?selected_project=test&selected_run=run-003'>run-003</a>",
+            "experiment-b",
+            "<a href='https://huggingface.co/johndoe'>johndoe</a>",
+            "2024-01-16 09:00",
+        ],
+    ]
+
+    with gr.Blocks() as demo:
+        gr.Markdown("## Runs Table Demo")
+
+        interactive_checkbox = gr.Checkbox(label="Interactive", value=True)
+
+        table = RunsTable(
+            headers=sample_headers,
+            rows=sample_rows,
+            value=[],
+            interactive=True,
+        )
+
+        selected_output = gr.JSON(label="Selected Row Indices")
+
+        table.input(lambda x: x, inputs=table, outputs=selected_output)
+
+        def toggle_interactive(is_interactive):
+            return RunsTable(
+                headers=sample_headers,
+                rows=sample_rows,
+                value=[],
+                interactive=is_interactive,
+            )
+
+        interactive_checkbox.change(
+            toggle_interactive,
+            inputs=[interactive_checkbox],
+            outputs=[table],
+        )
+
+    demo.launch()
+
