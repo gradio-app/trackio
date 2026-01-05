@@ -1,12 +1,10 @@
 """The main page for the Trackio UI."""
 
-import json
 import os
 import re
 import secrets
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import gradio as gr
@@ -164,103 +162,6 @@ def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
                     except Exception as e:
                         print(f"Media currently unavailable: {key}: {e}")
     return media_by_key
-
-
-def export_plot_data_as_json(
-    project: str | None,
-    runs: list[str],
-    x_column: str,
-    metric_name: str,
-    smoothing_granularity: int = 0,
-    x_axis: str = "step",
-    log_scale_x: bool = False,
-    log_scale_y: bool = False,
-) -> str | None:
-    """
-    Export line plot data as JSON in the specified format.
-
-    Args:
-        project: Project name
-        runs: List of run names
-        x_column: X-axis column name
-        metric_name: Metric name (y-axis)
-        smoothing_granularity: Smoothing factor
-        x_axis: X-axis type ("step" or "time")
-        log_scale_x: Whether X-axis is log scale
-        log_scale_y: Whether Y-axis is log scale
-
-    Returns:
-        Path to temporary JSON file, or None if export fails
-    """
-    if not project or not runs or not metric_name or not x_column:
-        return None
-
-    runs_data = {}
-
-    for run in runs:
-        df, _ = load_run_data(
-            project, run, smoothing_granularity, x_axis, log_scale_x, log_scale_y
-        )
-        if df is not None:
-            # Filter to original data only (exclude smoothed if smoothing is enabled)
-            if smoothing_granularity > 0:
-                df = df[df["data_type"] == "original"]
-
-            # Filter to the specific metric
-            if metric_name in df.columns and x_column in df.columns:
-                metric_df = df[[x_column, metric_name, "run"]].dropna(
-                    subset=[metric_name]
-                )
-                if not metric_df.empty:
-                    # Get y-values for this run, sorted by x values
-                    sorted_df = metric_df.sort_values(by=x_column)
-                    y_values = sorted_df[metric_name].tolist()
-                    # Convert numpy types to Python native types for JSON serialization
-                    y_values = [
-                        float(v) if isinstance(v, (np.integer, np.floating)) else v
-                        for v in y_values
-                    ]
-                    runs_data[run] = y_values
-
-    # Build the JSON structure
-    export_data = {
-        "x": x_column,
-        "y": metric_name,
-        "runs": runs_data,
-    }
-
-    # Add additional context
-    if project:
-        export_data["project"] = project
-    if smoothing_granularity > 0:
-        export_data["smoothing_granularity"] = smoothing_granularity
-    if log_scale_x:
-        export_data["log_scale_x"] = True
-    if log_scale_y:
-        export_data["log_scale_y"] = True
-
-    # Create temporary file with unique name to avoid conflicts
-    import tempfile
-    import time
-
-    temp_dir = Path(tempfile.gettempdir())
-    # Sanitize filename and add timestamp for uniqueness
-    safe_metric_name = (
-        metric_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
-    )
-    safe_project = str(project).replace("/", "_").replace("\\", "_").replace(" ", "_")
-    timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
-    filename = f"trackio_export_{safe_project}_{safe_metric_name}_{timestamp}.json"
-    filepath = temp_dir / filename
-
-    try:
-        # Write file efficiently
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(export_data, f, indent=2, ensure_ascii=False)
-        return str(filepath)
-    except Exception as e:
-        print(f"Error exporting plot data: {e}")
-        return None
 
 
 def load_run_data(
@@ -694,23 +595,6 @@ CSS = """
 .tab-like-container {
     visibility: hidden;
 }
-
-/* Hide upload interface for export-only File components */
-[key*="export-json"] .upload-area,
-[key*="export-json"] .upload-button,
-[key*="export-json"] .upload-text,
-[key*="export-json"] .upload-icon {
-    display: none !important;
-}
-
-[key*="export-json"] .file-preview {
-    border: none !important;
-    padding: 0 !important;
-}
-
-[key*="export-json"] .file-item {
-    margin: 0 !important;
-}
 """
 
 HEAD = """
@@ -761,27 +645,6 @@ function getCookie(name) {
         style.textContent = 'footer { display: none !important; }';
         document.head.appendChild(style);
     }
-    
-    // Hide upload interface for export-only File components
-    function hideExportUploadInterfaces() {
-        const exportFiles = document.querySelectorAll('[id*="export-json"]');
-        exportFiles.forEach(fileComponent => {
-            const uploadArea = fileComponent.querySelector('.upload-area, .upload-button, .upload-text, .upload-icon');
-            if (uploadArea) {
-                uploadArea.style.display = 'none';
-            }
-            // Also hide the entire upload section if file is empty
-            const filePreview = fileComponent.querySelector('.file-preview');
-            if (filePreview && filePreview.children.length === 0) {
-                fileComponent.style.display = 'none';
-            }
-        });
-    }
-    
-    // Run on page load and after mutations
-    hideExportUploadInterfaces();
-    const observer = new MutationObserver(hideExportUploadInterfaces);
-    observer.observe(document.body, { childList: true, subtree: true });
 })();
 </script>
 """
@@ -1199,107 +1062,31 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 x_lim_value,
                             )
                             if not metric_df.empty:
-                                with gr.Column(scale=1, min_width=400):
-                                    plot = gr.LinePlot(
-                                        downsampled_df,
-                                        x=x_column,
-                                        y=metric_name,
-                                        y_title=metric_name.split("/")[-1],
-                                        color=color,
-                                        color_map=color_map,
-                                        colors_in_legend=original_runs,
-                                        title=metric_name,
-                                        key=f"plot-{metric_idx}",
-                                        preserved_by_key=None,
-                                        buttons=["fullscreen", "export"],
-                                        x_lim=updated_x_lim,
-                                        min_width=400,
-                                    )
-                                    plot.select(
-                                        update_x_lim,
-                                        outputs=x_lim,
-                                        key=f"select-{metric_idx}",
-                                    )
-                                    plot.double_click(
-                                        lambda: None,
-                                        outputs=x_lim,
-                                        key=f"double-{metric_idx}",
-                                    )
-                                    export_json_file = gr.File(
-                                        visible=False,
-                                        key=f"export-json-{metric_idx}",
-                                    )
-                                    export_json_btn = gr.Button(
-                                        "Export as JSON",
-                                        size="sm",
-                                        key=f"export-btn-{metric_idx}",
-                                    )
-
-                                    def make_export_fn(
-                                        proj,
-                                        runs_list,
-                                        x_col,
-                                        met_name,
-                                        smooth,
-                                        x_ax,
-                                        log_x,
-                                        log_y,
-                                    ):
-                                        def export_fn():
-                                            filepath = export_plot_data_as_json(
-                                                proj,
-                                                runs_list,
-                                                x_col,
-                                                met_name,
-                                                smooth,
-                                                x_ax,
-                                                log_x,
-                                                log_y,
-                                            )
-                                            if filepath:
-                                                return filepath
-                                            return None
-
-                                        return export_fn
-
-                                    export_json_btn.click(
-                                        fn=make_export_fn(
-                                            project,
-                                            original_runs,
-                                            x_column,
-                                            metric_name,
-                                            smoothing_granularity,
-                                            x_axis,
-                                            log_scale_x,
-                                            log_scale_y,
-                                        ),
-                                        inputs=[],
-                                        outputs=export_json_file,
-                                        show_progress=False,
-                                        queue=False,
-                                        api_visibility="private",
-                                        scroll_to_output=False,
-                                    ).then(
-                                        fn=lambda f: gr.update(visible=True)
-                                        if f
-                                        else gr.update(visible=False),
-                                        inputs=export_json_file,
-                                        outputs=export_json_file,
-                                        show_progress=False,
-                                        queue=False,
-                                        api_visibility="private",
-                                    )
-                                    # Hide file component when cleared to prevent upload interface
-                                    export_json_file.change(
-                                        fn=lambda f: gr.update(visible=False)
-                                        if not f
-                                        else gr.update(visible=True),
-                                        inputs=export_json_file,
-                                        outputs=export_json_file,
-                                        queue=False,
-                                        api_visibility="private",
-                                        show_progress=False,
-                                    )
+                                plot = gr.LinePlot(
+                                    downsampled_df,
+                                    x=x_column,
+                                    y=metric_name,
+                                    y_title=metric_name.split("/")[-1],
+                                    color=color,
+                                    color_map=color_map,
+                                    colors_in_legend=original_runs,
+                                    title=metric_name,
+                                    key=f"plot-{metric_idx}",
+                                    preserved_by_key=None,
+                                    buttons=["fullscreen", "export"],
+                                    x_lim=updated_x_lim,
+                                    min_width=400,
+                                )
+                                plot.select(
+                                    update_x_lim,
+                                    outputs=x_lim,
+                                    key=f"select-{metric_idx}",
+                                )
+                                plot.double_click(
+                                    lambda: None,
+                                    outputs=x_lim,
+                                    key=f"double-{metric_idx}",
+                                )
                             metric_idx += 1
 
                 if group_data["subgroups"]:
@@ -1340,107 +1127,31 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         x_lim_value,
                                     )
                                     if not metric_df.empty:
-                                        with gr.Column(scale=1, min_width=400):
-                                            plot = gr.LinePlot(
-                                                downsampled_df,
-                                                x=x_column,
-                                                y=metric_name,
-                                                y_title=metric_name.split("/")[-1],
-                                                color=color,
-                                                color_map=color_map,
-                                                colors_in_legend=original_runs,
-                                                title=metric_name,
-                                                key=f"plot-{metric_idx}",
-                                                preserved_by_key=None,
-                                                buttons=["fullscreen", "export"],
-                                                x_lim=updated_x_lim,
-                                                min_width=400,
-                                            )
-                                            plot.select(
-                                                update_x_lim,
-                                                outputs=x_lim,
-                                                key=f"select-{metric_idx}",
-                                            )
-                                            plot.double_click(
-                                                lambda: None,
-                                                outputs=x_lim,
-                                                key=f"double-{metric_idx}",
-                                            )
-                                            export_json_file = gr.File(
-                                                visible=False,
-                                                key=f"export-json-{metric_idx}",
-                                            )
-                                            export_json_btn = gr.Button(
-                                                "Export as JSON",
-                                                size="sm",
-                                                key=f"export-btn-{metric_idx}",
-                                            )
-
-                                            def make_export_fn(
-                                                proj,
-                                                runs_list,
-                                                x_col,
-                                                met_name,
-                                                smooth,
-                                                x_ax,
-                                                log_x,
-                                                log_y,
-                                            ):
-                                                def export_fn():
-                                                    filepath = export_plot_data_as_json(
-                                                        proj,
-                                                        runs_list,
-                                                        x_col,
-                                                        met_name,
-                                                        smooth,
-                                                        x_ax,
-                                                        log_x,
-                                                        log_y,
-                                                    )
-                                                    if filepath:
-                                                        return filepath
-                                                    return None
-
-                                                return export_fn
-
-                                            export_json_btn.click(
-                                                fn=make_export_fn(
-                                                    project,
-                                                    original_runs,
-                                                    x_column,
-                                                    metric_name,
-                                                    smoothing_granularity,
-                                                    x_axis,
-                                                    log_scale_x,
-                                                    log_scale_y,
-                                                ),
-                                                inputs=[],
-                                                outputs=export_json_file,
-                                                show_progress=False,
-                                                queue=False,
-                                                api_visibility="private",
-                                                scroll_to_output=False,
-                                            ).then(
-                                                fn=lambda f: gr.update(visible=True)
-                                                if f
-                                                else gr.update(visible=False),
-                                                inputs=export_json_file,
-                                                outputs=export_json_file,
-                                                show_progress=False,
-                                                queue=False,
-                                                api_visibility="private",
-                                            )
-                                            # Hide file component when cleared to prevent upload interface
-                                            export_json_file.change(
-                                                fn=lambda f: gr.update(visible=False)
-                                                if not f
-                                                else gr.update(visible=True),
-                                                inputs=export_json_file,
-                                                outputs=export_json_file,
-                                                queue=False,
-                                                api_visibility="private",
-                                                show_progress=False,
-                                            )
+                                        plot = gr.LinePlot(
+                                            downsampled_df,
+                                            x=x_column,
+                                            y=metric_name,
+                                            y_title=metric_name.split("/")[-1],
+                                            color=color,
+                                            color_map=color_map,
+                                            colors_in_legend=original_runs,
+                                            title=metric_name,
+                                            key=f"plot-{metric_idx}",
+                                            preserved_by_key=None,
+                                            buttons=["fullscreen", "export"],
+                                            x_lim=updated_x_lim,
+                                            min_width=400,
+                                        )
+                                        plot.select(
+                                            update_x_lim,
+                                            outputs=x_lim,
+                                            key=f"select-{metric_idx}",
+                                        )
+                                        plot.double_click(
+                                            lambda: None,
+                                            outputs=x_lim,
+                                            key=f"double-{metric_idx}",
+                                        )
                                     metric_idx += 1
 
     with grouped_runs_panel:
