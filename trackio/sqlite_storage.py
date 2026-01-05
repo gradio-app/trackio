@@ -159,6 +159,22 @@ class SQLiteStorage:
                     ON metrics(run_name, timestamp)
                     """
                 )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS system_metrics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        run_name TEXT NOT NULL,
+                        metrics TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
+                    ON system_metrics(run_name, timestamp)
+                    """
+                )
                 conn.commit()
         return db_path
 
@@ -166,8 +182,8 @@ class SQLiteStorage:
     def export_to_parquet():
         """
         Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
+        Also exports system_metrics to separate parquet files with "_system.parquet" suffix.
         """
-        # don't attempt to export (potentially wrong/blank) data before importing for the first time
         if not SQLiteStorage._dataset_import_attempted:
             return
         if not TRACKIO_DIR.exists():
@@ -178,29 +194,54 @@ class SQLiteStorage:
         for db_name in db_names:
             db_path = TRACKIO_DIR / db_name
             parquet_path = db_path.with_suffix(".parquet")
+            system_parquet_path = db_path.with_suffix("") / ""
+            system_parquet_path = TRACKIO_DIR / (db_path.stem + "_system.parquet")
             if (not parquet_path.exists()) or (
                 db_path.stat().st_mtime > parquet_path.stat().st_mtime
             ):
                 with sqlite3.connect(str(db_path)) as conn:
                     df = pd.read_sql("SELECT * FROM metrics", conn)
-                # break out the single JSON metrics column into individual columns
-                metrics = df["metrics"].copy()
-                metrics = pd.DataFrame(
-                    metrics.apply(
-                        lambda x: deserialize_values(orjson.loads(x))
-                    ).values.tolist(),
-                    index=df.index,
-                )
-                del df["metrics"]
-                for col in metrics.columns:
-                    df[col] = metrics[col]
-                # include page index and cdc to get an HF Optimized Parquet file
-                # see: https://huggingface.co/docs/hub/datasets-libraries#optimized-parquet-files
-                df.to_parquet(
-                    parquet_path,
-                    write_page_index=True,
-                    use_content_defined_chunking=True,
-                )
+                if not df.empty:
+                    metrics = df["metrics"].copy()
+                    metrics = pd.DataFrame(
+                        metrics.apply(
+                            lambda x: deserialize_values(orjson.loads(x))
+                        ).values.tolist(),
+                        index=df.index,
+                    )
+                    del df["metrics"]
+                    for col in metrics.columns:
+                        df[col] = metrics[col]
+                    df.to_parquet(
+                        parquet_path,
+                        write_page_index=True,
+                        use_content_defined_chunking=True,
+                    )
+
+            if (not system_parquet_path.exists()) or (
+                db_path.stat().st_mtime > system_parquet_path.stat().st_mtime
+            ):
+                with sqlite3.connect(str(db_path)) as conn:
+                    try:
+                        sys_df = pd.read_sql("SELECT * FROM system_metrics", conn)
+                    except Exception:
+                        sys_df = pd.DataFrame()
+                if not sys_df.empty:
+                    sys_metrics = sys_df["metrics"].copy()
+                    sys_metrics = pd.DataFrame(
+                        sys_metrics.apply(
+                            lambda x: deserialize_values(orjson.loads(x))
+                        ).values.tolist(),
+                        index=sys_df.index,
+                    )
+                    del sys_df["metrics"]
+                    for col in sys_metrics.columns:
+                        sys_df[col] = sys_metrics[col]
+                    sys_df.to_parquet(
+                        system_parquet_path,
+                        write_page_index=True,
+                        use_content_defined_chunking=True,
+                    )
 
     @staticmethod
     def _cleanup_wal_sidecars(db_path: Path) -> None:
@@ -217,12 +258,17 @@ class SQLiteStorage:
     def import_from_parquet():
         """
         Imports to all DB files that have matching files under the same path but with extension ".parquet".
+        Also imports system_metrics from "_system.parquet" files.
         """
         if not TRACKIO_DIR.exists():
             return
 
         all_paths = os.listdir(TRACKIO_DIR)
-        parquet_names = [f for f in all_paths if f.endswith(".parquet")]
+        parquet_names = [
+            f
+            for f in all_paths
+            if f.endswith(".parquet") and not f.endswith("_system.parquet")
+        ]
         for pq_name in parquet_names:
             parquet_path = TRACKIO_DIR / pq_name
             db_path = parquet_path.with_suffix(DB_EXT)
@@ -230,20 +276,38 @@ class SQLiteStorage:
             SQLiteStorage._cleanup_wal_sidecars(db_path)
 
             df = pd.read_parquet(parquet_path)
-            # fix up df to have a single JSON metrics column
             if "metrics" not in df.columns:
-                # separate other columns from metrics
                 metrics = df.copy()
                 other_cols = ["id", "timestamp", "run_name", "step"]
                 df = df[other_cols]
                 for col in other_cols:
                     del metrics[col]
-                # combine them all into a single metrics col
                 metrics = orjson.loads(metrics.to_json(orient="records"))
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
             with sqlite3.connect(str(db_path), timeout=30.0) as conn:
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
+                conn.commit()
+
+        system_parquet_names = [f for f in all_paths if f.endswith("_system.parquet")]
+        for pq_name in system_parquet_names:
+            parquet_path = TRACKIO_DIR / pq_name
+            db_name = pq_name.replace("_system.parquet", DB_EXT)
+            db_path = TRACKIO_DIR / db_name
+
+            df = pd.read_parquet(parquet_path)
+            if "metrics" not in df.columns:
+                metrics = df.copy()
+                other_cols = ["id", "timestamp", "run_name"]
+                df = df[[c for c in other_cols if c in df.columns]]
+                for col in other_cols:
+                    if col in metrics.columns:
+                        del metrics[col]
+                metrics = orjson.loads(metrics.to_json(orient="records"))
+                df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
+
+            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+                df.to_sql("system_metrics", conn, if_exists="replace", index=False)
                 conn.commit()
 
     @staticmethod
@@ -266,7 +330,7 @@ class SQLiteStorage:
                     repo_type="dataset",
                     folder_path=TRACKIO_DIR,
                     private=True,
-                    allow_patterns=["*.parquet", "media/**/*"],
+                    allow_patterns=["*.parquet", "*_system.parquet", "media/**/*"],
                     squash_history=True,
                     token=hf_token,
                     on_before_commit=SQLiteStorage.export_to_parquet,
@@ -404,6 +468,133 @@ class SQLiteStorage:
                     )
 
                 conn.commit()
+
+    @staticmethod
+    def bulk_log_system(
+        project: str,
+        run: str,
+        metrics_list: list[dict],
+        timestamps: list[str] | None = None,
+    ):
+        """
+        Log system metrics (GPU, etc.) to the database without step numbers.
+        These metrics use timestamps for the x-axis instead of steps.
+        """
+        if not metrics_list:
+            return
+
+        if timestamps is None:
+            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+
+        if len(metrics_list) != len(timestamps):
+            raise ValueError("metrics_list and timestamps must have the same length")
+
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                data = []
+                for i, metrics in enumerate(metrics_list):
+                    data.append(
+                        (
+                            timestamps[i],
+                            run,
+                            orjson.dumps(serialize_values(metrics)),
+                        )
+                    )
+
+                cursor.executemany(
+                    """
+                    INSERT INTO system_metrics
+                    (timestamp, run_name, metrics)
+                    VALUES (?, ?, ?)
+                    """,
+                    data,
+                )
+                conn.commit()
+
+    @staticmethod
+    def get_system_logs(project: str, run: str) -> list[dict]:
+        """Retrieve system metrics for a specific run. Returns metrics with timestamps (no steps)."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT timestamp, metrics
+                    FROM system_metrics
+                    WHERE run_name = ?
+                    ORDER BY timestamp
+                    """,
+                    (run,),
+                )
+
+                rows = cursor.fetchall()
+                results = []
+                for row in rows:
+                    metrics = orjson.loads(row["metrics"])
+                    metrics = deserialize_values(metrics)
+                    metrics["timestamp"] = row["timestamp"]
+                    results.append(metrics)
+                return results
+            except sqlite3.OperationalError as e:
+                if "no such table: system_metrics" in str(e):
+                    return []
+                raise
+
+    @staticmethod
+    def get_all_system_metrics_for_run(project: str, run: str) -> list[str]:
+        """Get all system metric names for a specific project/run."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT metrics
+                    FROM system_metrics
+                    WHERE run_name = ?
+                    ORDER BY timestamp
+                    """,
+                    (run,),
+                )
+
+                rows = cursor.fetchall()
+                all_metrics = set()
+                for row in rows:
+                    metrics = orjson.loads(row["metrics"])
+                    metrics = deserialize_values(metrics)
+                    for key in metrics.keys():
+                        if key != "timestamp":
+                            all_metrics.add(key)
+                return sorted(list(all_metrics))
+            except sqlite3.OperationalError as e:
+                if "no such table: system_metrics" in str(e):
+                    return []
+                raise
+
+    @staticmethod
+    def has_system_metrics(project: str) -> bool:
+        """Check if a project has any system metrics logged."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return False
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT COUNT(*) FROM system_metrics LIMIT 1")
+                count = cursor.fetchone()[0]
+                return count > 0
+            except sqlite3.OperationalError:
+                return False
 
     @staticmethod
     def get_logs(project: str, run: str) -> list[dict]:
@@ -567,7 +758,7 @@ class SQLiteStorage:
 
     @staticmethod
     def delete_run(project: str, run: str) -> bool:
-        """Delete a run from the database (both metrics and config)."""
+        """Delete a run from the database (metrics, config, and system_metrics)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
@@ -578,6 +769,12 @@ class SQLiteStorage:
                 try:
                     cursor.execute("DELETE FROM metrics WHERE run_name = ?", (run,))
                     cursor.execute("DELETE FROM configs WHERE run_name = ?", (run,))
+                    try:
+                        cursor.execute(
+                            "DELETE FROM system_metrics WHERE run_name = ?", (run,)
+                        )
+                    except sqlite3.OperationalError:
+                        pass
                     conn.commit()
                     return True
                 except sqlite3.Error:
