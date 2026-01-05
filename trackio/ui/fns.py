@@ -207,19 +207,15 @@ def group_runs_by_config(
     return sorted_groups
 
 
-def run_checkbox_update(selection: RunSelection, latest_checked: bool = False, **kwargs) -> gr.CheckboxGroup:
+def run_checkbox_update(selection: RunSelection, **kwargs) -> gr.CheckboxGroup:
     color_palette = utils.get_color_palette()
-    value = selection.selected
-    if latest_checked and selection.choices:
-        value = [selection.choices[-1]]
     return ColoredCheckboxGroup(
         choices=selection.choices,
-        value=value,
+        value=selection.selected,
         colors=[
             color_palette[i % len(color_palette)] for i in range(len(selection.choices))
         ],
         label=f"Runs ({len(selection.choices)})",
-        latest_checked=latest_checked,
         **kwargs,
     )
 
@@ -253,13 +249,12 @@ def handle_group_checkbox_change(
     group_selected: list[str] | None,
     selection: RunSelection,
     group_runs: list[str] | None,
-    latest_checked: bool = False,
 ):
     selection.replace_group(group_runs or [], group_selected or [])
     return (
         selection,
         group_checkbox_update(group_runs or [], selection),
-        run_checkbox_update(selection, latest_checked=latest_checked),
+        run_checkbox_update(selection),
     )
 
 
@@ -267,12 +262,11 @@ def handle_group_toggle(
     select_all: bool,
     selection: RunSelection,
     group_runs: list[str] | None,
-    latest_checked: bool = False,
 ):
     target = list(group_runs or []) if select_all else []
     selection.replace_group(group_runs or [], target)
     return (
         selection,
         group_checkbox_update(group_runs or [], selection),
-        run_checkbox_update(selection, latest_checked=latest_checked),
+        run_checkbox_update(selection),
     )

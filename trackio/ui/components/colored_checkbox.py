@@ -129,6 +129,13 @@ class ColoredCheckboxGroup(gr.HTML):
                 const shouldCheck = e.target.checked;
                 getCheckboxes().forEach(cb => { cb.checked = shouldCheck; });
                 updateValue();
+            } else if (e.target.classList.contains('latest-only-input')) {
+                const checkboxes = getCheckboxes();
+                if (e.target.checked && checkboxes.length > 0) {
+                    const lastIndex = checkboxes.length - 1;
+                    checkboxes.forEach((cb, i) => { cb.checked = i === lastIndex; });
+                    updateValue();
+                }
             } else if (e.target.closest('.item-checkbox')) {
                 updateValue();
             }
@@ -138,6 +145,16 @@ class ColoredCheckboxGroup(gr.HTML):
             updateSelectAllState();
         });
         observer.observe(element, { childList: true, subtree: true, attributes: true });
+        
+        const latestOnlyInput = element.querySelector('.latest-only-input');
+        if (latestOnlyInput && latestOnlyInput.checked) {
+            const checkboxes = getCheckboxes();
+            if (checkboxes.length > 0) {
+                const lastIndex = checkboxes.length - 1;
+                checkboxes.forEach((cb, i) => { cb.checked = i === lastIndex; });
+                updateValue();
+            }
+        }
         
         updateSelectAllState();
         """
