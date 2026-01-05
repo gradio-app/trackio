@@ -1,5 +1,14 @@
 # trackio
 
+## 0.14.0
+
+### Features
+
+- [#377](https://github.com/gradio-app/trackio/pull/377) [`5c5015b`](https://github.com/gradio-app/trackio/commit/5c5015b68c85c5de51111dad983f735c27b9a05f) - fixed wrapping issue in Runs table.  Thanks @gaganchapa!
+- [#374](https://github.com/gradio-app/trackio/pull/374) [`388e26b`](https://github.com/gradio-app/trackio/commit/388e26b9e9f24cd7ad203affe9b709be885b3d24) - Save Optimized Parquet files.  Thanks @lhoestq!
+- [#371](https://github.com/gradio-app/trackio/pull/371) [`fbace9c`](https://github.com/gradio-app/trackio/commit/fbace9cd7732c166f34d268f54b05bb06846cc5d) - Add GPU metrics logging.  Thanks @kashif!
+- [#367](https://github.com/gradio-app/trackio/pull/367) [`862840c`](https://github.com/gradio-app/trackio/commit/862840c13e30fc960cbee5b9eac4d3c25beba9de) - Add option to only show latest run, and fix the double logo issue.  Thanks @abidlabs!
+
 ## 0.13.1
 
 ### Features
