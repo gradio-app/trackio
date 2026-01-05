@@ -85,6 +85,9 @@ class RunsTable(gr.HTML):
             color: var(--body-text-color);
             border: 1px solid var(--border-color-primary);
         }
+        .runs-table tbody tr:hover {
+            background: var(--table-row-focus);
+        }
         .runs-table tbody tr.selected {
             background: var(--color-accent-soft);
         }
@@ -96,78 +99,42 @@ class RunsTable(gr.HTML):
             left: 0;
             background: var(--background-fill-primary);
             z-index: 2;
-            border: 1px solid var(--border-color-primary);
-        }
-        .runs-table .checkbox-col::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: -1px;
-            width: 1px;
-            background: var(--border-color-primary);
-            z-index: 100;
-            pointer-events: none;
-        }
-        .runs-table .checkbox-col::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            right: -1px;
-            width: 1px;
-            background: var(--border-color-primary);
-            z-index: 100;
-            pointer-events: none;
         }
         .runs-table thead .checkbox-col {
             background: var(--background-fill-primary);
             z-index: 3;
-        }
-        .runs-table thead .checkbox-col::before,
-        .runs-table thead .checkbox-col::after {
-            z-index: 101;
         }
         .runs-table .name-col {
             position: sticky;
             left: 40px;
             background: var(--background-fill-primary);
             z-index: 2;
-            border: 1px solid var(--border-color-primary);
-        }
-        .runs-table .name-col::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: -1px;
-            width: 1px;
-            background: var(--border-color-primary);
-            z-index: 100;
-            pointer-events: none;
+            border-right: none;
         }
         .runs-table .name-col::after {
             content: '';
             position: absolute;
+            right: -2px;
             top: 0;
             bottom: 0;
-            right: -2px;
             width: 2px;
             background: var(--border-color-primary);
-            z-index: 100;
-            pointer-events: none;
+            z-index: 10;
         }
         .runs-table thead .name-col {
             background: var(--background-fill-primary);
             z-index: 3;
         }
-        .runs-table thead .name-col::before,
         .runs-table thead .name-col::after {
-            z-index: 101;
+            z-index: 11;
         }
         .runs-table tbody tr .checkbox-col,
         .runs-table tbody tr .name-col {
             background: var(--background-fill-primary);
+        }
+        .runs-table tbody tr:hover .checkbox-col,
+        .runs-table tbody tr:hover .name-col {
+            background: var(--table-row-focus);
         }
         .runs-table tbody tr.selected .checkbox-col,
         .runs-table tbody tr.selected .name-col {
