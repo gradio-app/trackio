@@ -11,6 +11,13 @@ class LogEntry(TypedDict):
     config: dict[str, Any] | None
 
 
+class SystemLogEntry(TypedDict):
+    project: str
+    run: str
+    metrics: dict[str, Any]
+    timestamp: str
+
+
 class UploadEntry(TypedDict):
     project: str
     run: str | None
