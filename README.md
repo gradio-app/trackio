@@ -230,7 +230,7 @@ To start contributing, see our [Contributing Guide](CONTRIBUTING.md).
 
 ### Development Setup
 
-To set up Trackio for development:
+To set up Trackio for development, clone this repo and run:
 
 ```bash
 pip install -e ".[dev,tensorboard]"
