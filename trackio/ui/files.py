@@ -47,8 +47,9 @@ with gr.Blocks() as files_page:
     timer = gr.Timer(value=1)
 
     gr.Markdown("## Files")
-    file_explorer = gr.FileExplorer(label="Uploaded Files", visible=False)
-    file_downloader = gr.Files(label="Download Selected Files")
+    with gr.Row():
+        file_explorer = gr.FileExplorer(label="Uploaded Files", visible=False)
+        file_downloader = gr.Files(label="Download Selected Files")
 
     gr.on(
         [timer.tick],
