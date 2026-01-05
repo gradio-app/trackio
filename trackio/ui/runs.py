@@ -50,9 +50,7 @@ def get_runs_data(project):
             if header == "Name":
                 cell_value = f"<a href='/run?selected_project={project}&selected_run={run_name}'>{run_name}</a>"
             elif header == "Username" and cell_value and cell_value != "None":
-                cell_value = (
-                    f"<a href='https://huggingface.co/{cell_value}' target='_blank' rel='noopener noreferrer'>{cell_value}</a>"
-                )
+                cell_value = f"<a href='https://huggingface.co/{cell_value}' target='_blank' rel='noopener noreferrer'>{cell_value}</a>"
             elif header == "Created" and cell_value:
                 cell_value = utils.format_timestamp(cell_value)
             else:
