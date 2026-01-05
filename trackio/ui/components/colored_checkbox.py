@@ -15,7 +15,7 @@ class ColoredCheckboxGroup(gr.HTML):
         html_template = """
         <div class="colored-checkbox-container">
             <div class="header-row">
-                <label class="checkbox-label select-all-label">
+                <label class="checkbox-label select-all-label ${latest_checked ? 'disabled' : ''}">
                     <input type="checkbox" class="select-all-input">
                 </label>
                 ${label ? `<span class="container-label">${label}</span>` : ''}
@@ -27,13 +27,17 @@ class ColoredCheckboxGroup(gr.HTML):
                 </div>
             </div>
             <div class="colored-checkbox-group">
-                ${choices.map((choice, i) => `
-                    <label class="checkbox-label item-checkbox">
-                        <input type="checkbox" value="${choice}" ${(value || []).includes(choice) ? 'checked' : ''}>
+                ${choices.map((choice, i) => {
+                    const isLast = i === choices.length - 1;
+                    const isDisabled = latest_checked && !isLast;
+                    const isChecked = latest_checked ? isLast : (value || []).includes(choice);
+                    return `
+                    <label class="checkbox-label item-checkbox ${isDisabled ? 'disabled' : ''}">
+                        <input type="checkbox" value="${choice}" ${isChecked ? 'checked' : ''}>
                         <span class="color-dot" style="background: ${colors[i]};"></span>
                         ${choice}
                     </label>
-                `).join('')}
+                `}).join('')}
             </div>
         </div>
         """
@@ -79,6 +83,7 @@ class ColoredCheckboxGroup(gr.HTML):
         }
         .checkbox-label { display: flex; align-items: center; cursor: pointer; }
         .checkbox-label input { margin-right: 8px; }
+        .checkbox-label.disabled { opacity: 0.5; pointer-events: none; }
         .color-dot {
             width: 10px;
             height: 10px;
@@ -124,15 +129,43 @@ class ColoredCheckboxGroup(gr.HTML):
             trigger('input');
         }
         
+        function applyDisabledState(isEnabled) {
+            const checkboxes = getCheckboxes();
+            const selectAllLabel = element.querySelector('.select-all-label');
+            
+            if (isEnabled) {
+                const lastIndex = checkboxes.length - 1;
+                checkboxes.forEach((cb, i) => {
+                    const label = cb.closest('.item-checkbox');
+                    if (i === lastIndex) {
+                        label.classList.remove('disabled');
+                    } else {
+                        label.classList.add('disabled');
+                    }
+                });
+                if (selectAllLabel) selectAllLabel.classList.add('disabled');
+            } else {
+                checkboxes.forEach((cb) => {
+                    const label = cb.closest('.item-checkbox');
+                    label.classList.remove('disabled');
+                });
+                if (selectAllLabel) selectAllLabel.classList.remove('disabled');
+            }
+        }
+        
         function applyLatestOnly() {
             const latestOnlyInput = element.querySelector('.latest-only-input');
+            const checkboxes = getCheckboxes();
+            
             if (latestOnlyInput && latestOnlyInput.checked) {
-                const checkboxes = getCheckboxes();
                 if (checkboxes.length > 0) {
                     const lastIndex = checkboxes.length - 1;
                     checkboxes.forEach((cb, i) => { cb.checked = i === lastIndex; });
                     updateValue();
+                    setTimeout(() => applyDisabledState(true), 0);
                 }
+            } else {
+                applyDisabledState(false);
             }
         }
         
@@ -142,19 +175,20 @@ class ColoredCheckboxGroup(gr.HTML):
                 getCheckboxes().forEach(cb => { cb.checked = shouldCheck; });
                 updateValue();
             } else if (e.target.classList.contains('latest-only-input')) {
-                if (e.target.checked) {
-                    applyLatestOnly();
-                }
+                applyLatestOnly();
             } else if (e.target.closest('.item-checkbox')) {
                 updateValue();
             }
         });
         
-        const observer = new MutationObserver(() => {
-            applyLatestOnly();
-            updateSelectAllState();
+        const observer = new MutationObserver((mutations) => {
+            const hasNewNodes = mutations.some(m => m.type === 'childList' && m.addedNodes.length > 0);
+            if (hasNewNodes) {
+                applyLatestOnly();
+                updateSelectAllState();
+            }
         });
-        observer.observe(element, { childList: true, subtree: true, attributes: true });
+        observer.observe(element, { childList: true, subtree: true });
         
         applyLatestOnly();
         updateSelectAllState();
