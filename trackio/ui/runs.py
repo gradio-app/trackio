@@ -45,7 +45,9 @@ def get_runs_data(project):
             if header == "Name":
                 cell_value = f"<a href='/run?selected_project={project}&selected_run={run_name}'>{run_name}</a>"
             elif header == "Username" and cell_value and cell_value != "None":
-                cell_value = f"<a href='https://huggingface.co/{cell_value}'>{cell_value}</a>"
+                cell_value = (
+                    f"<a href='https://huggingface.co/{cell_value}'>{cell_value}</a>"
+                )
             elif header == "Created" and cell_value:
                 cell_value = utils.format_timestamp(cell_value)
             else:
@@ -88,7 +90,9 @@ def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
     return False
 
 
-def set_deletion_allowed(project, request: gr.Request, oauth_token: gr.OAuthToken | None):
+def set_deletion_allowed(
+    project, request: gr.Request, oauth_token: gr.OAuthToken | None
+):
     """Update the delete button value and interactivity based on the runs data and user write access."""
     if oauth_token:
         try:
