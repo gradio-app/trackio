@@ -1266,4 +1266,5 @@ if __name__ == "__main__":
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
         footer_links=["gradio", "settings"],
         show_error=True,
+        ssr_mode=False,
     )
