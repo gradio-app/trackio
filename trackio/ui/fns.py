@@ -11,6 +11,42 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.helpers.run_selection import RunSelection
 
+
+def create_logo() -> gr.HTML:
+    """Create a logo component that automatically switches between light and dark themes."""
+    logo_urls = utils.get_logo_urls()
+    return gr.HTML(
+        f"""
+            <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="{logo_urls["dark"]}">
+                <source media="(prefers-color-scheme: light)" srcset="{logo_urls["light"]}">
+                <img src="{logo_urls["light"]}" width="80%">
+            </picture>
+        """
+    )
+
+
+def create_navbar() -> gr.Navbar:
+    """Create a static navbar component with standard navigation links."""
+    return gr.Navbar(
+        value=[
+            ("Metrics", ""),
+            ("System Metrics", "/system"),
+            ("Media & Tables", "/media"),
+            ("Runs", "/runs"),
+            ("Files", "/files"),
+        ],
+        main_page_name=False,
+    )
+
+
+def create_project_dropdown(interactive: bool = True) -> gr.Dropdown:
+    """Create a project dropdown component."""
+    return gr.Dropdown(
+        label="Project", allow_custom_value=True, interactive=interactive
+    )
+
+
 CONFIG_COLUMN_MAPPINGS = {
     "_Username": "Username",
     "_Created": "Created",
@@ -29,7 +65,7 @@ def get_project_info() -> str | None:
         return "&#10024; Persistent Storage is enabled, logs are stored directly in this Space."
     if dataset_id:
         sync_status = utils.get_sync_status(SQLiteStorage.get_scheduler())
-        upgrade_message = f"New changes are synced every 5 min <span class='info-container'><input type='checkbox' class='info-checkbox' id='upgrade-info'><label for='upgrade-info' class='info-icon'>&#9432;</label><span class='info-expandable'> To avoid losing data between syncs, <a href='https://huggingface.co/spaces/{space_id}/settings' class='accent-link'>click here</a> to open this Space's settings and add Persistent Storage. Make sure data is synced prior to enabling.</span></span>"
+        upgrade_message = f"New changes are synced every 5 min | To avoid losing data between syncs, <a href='https://huggingface.co/spaces/{space_id}/settings' class='accent-link'>click here</a> to open this Space's settings and add Persistent Storage. Make sure data is synced prior to enabling.</span></span>"
         if sync_status is not None:
             info = f"&#x21bb; Backed up {sync_status} min ago to <a href='https://huggingface.co/datasets/{dataset_id}' target='_blank' class='accent-link'>{dataset_id}</a> | {upgrade_message}"
         else:
