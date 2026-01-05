@@ -236,9 +236,6 @@ To set up Trackio for development:
 pip install -e ".[dev,tensorboard]"
 ```
 
-> **Note:** On macOS, zsh interprets square brackets as glob patterns, so the command must be quoted. On Linux and Windows, quoting is optional but works as well.
-
-
 ## Pronunciation
 
 Trackio is pronounced TRACK-yo, as in "track yo' experiments"
