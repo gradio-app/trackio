@@ -10,6 +10,8 @@ from trackio.ui.components.runs_table import RunsTable
 
 def get_runs_data(project):
     """Get the runs data as headers, rows, and run names list."""
+    if not project:
+        return [], [], []
     configs = SQLiteStorage.get_all_run_configs(project)
     if not configs:
         return [], [], []
@@ -23,6 +25,9 @@ def get_runs_data(project):
 
     header_mapping = {v: k for k, v in fns.CONFIG_COLUMN_MAPPINGS.items()}
     headers = [fns.CONFIG_COLUMN_MAPPINGS.get(h, h) for h in headers]
+
+    if "Name" not in headers:
+        headers.append("Name")
 
     priority_order = ["Name", "Group", "Username", "Created"]
     ordered_headers = []
@@ -46,7 +51,7 @@ def get_runs_data(project):
                 cell_value = f"<a href='/run?selected_project={project}&selected_run={run_name}'>{run_name}</a>"
             elif header == "Username" and cell_value and cell_value != "None":
                 cell_value = (
-                    f"<a href='https://huggingface.co/{cell_value}'>{cell_value}</a>"
+                    f"<a href='https://huggingface.co/{cell_value}' target='_blank' rel='noopener noreferrer'>{cell_value}</a>"
                 )
             elif header == "Created" and cell_value:
                 cell_value = utils.format_timestamp(cell_value)

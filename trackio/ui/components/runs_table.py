@@ -17,47 +17,56 @@ class RunsTable(gr.HTML):
 
         html_template = """
         <div class="runs-table-container">
-            <table class="runs-table">
-                <thead>
-                    <tr>
-                        <th class="checkbox-col">
-                            <input type="checkbox" class="select-all-checkbox" ${!interactive ? 'disabled' : ''}>
-                        </th>
-                        ${headers.map(h => `<th>${h}</th>`).join('')}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows.length === 0 ? `
-                        <tr class="empty-row">
-                            <td colspan="${headers.length + 1}">No runs found</td>
+            <div class="runs-table-scroll">
+                <table class="runs-table">
+                    <thead>
+                        <tr>
+                            <th class="checkbox-col">
+                                <input type="checkbox" class="select-all-checkbox" ${!interactive ? 'disabled' : ''}>
+                            </th>
+                            ${headers.map((h, idx) => `<th class="${idx === 0 ? 'name-col' : ''}">${h}</th>`).join('')}
                         </tr>
-                    ` : rows.map((row, idx) => `
-                        <tr data-idx="${idx}">
-                            <td class="checkbox-col">
-                                <input type="checkbox" class="row-checkbox" data-idx="${idx}" ${(value || []).includes(idx) ? 'checked' : ''} ${!interactive ? 'disabled' : ''}>
-                            </td>
-                            ${row.map((cell, colIdx) => `<td class="col-${colIdx}">${cell}</td>`).join('')}
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        ${rows.length === 0 ? `
+                            <tr class="empty-row">
+                                <td colspan="${headers.length + 1}">No runs found</td>
+                            </tr>
+                        ` : rows.map((row, idx) => `
+                            <tr data-idx="${idx}">
+                                <td class="checkbox-col">
+                                    <input type="checkbox" class="row-checkbox" data-idx="${idx}" ${(value || []).includes(idx) ? 'checked' : ''} ${!interactive ? 'disabled' : ''}>
+                                </td>
+                                ${row.map((cell, colIdx) => `<td class="col-${colIdx} ${colIdx === 0 ? 'name-col' : ''}">${cell}</td>`).join('')}
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         </div>
         """
 
         css_template = """
         .runs-table-container {
-            border: 1px solid var(--border-color-primary);
-            border-radius: var(--radius-lg);
-            background: var(--block-background-fill);
+            background: transparent;
             overflow: hidden;
+        }
+        .runs-table-scroll {
+            overflow-x: auto;
+            overflow-y: visible;
+            width: 100%;
+            max-width: 100%;
         }
         .runs-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: var(--text-sm);
+            font-size: var(--text-md);
+            min-width: max-content;
+            border: none;
+            background: transparent;
         }
         .runs-table thead {
-            background: var(--table-even-background-fill);
+            background: transparent;
             position: sticky;
             top: 0;
             z-index: 1;
@@ -67,16 +76,14 @@ class RunsTable(gr.HTML):
             text-align: left;
             font-weight: 600;
             color: var(--block-title-text-color);
-            border-bottom: 1px solid var(--border-color-primary);
             white-space: nowrap;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+            border: 1px solid var(--border-color-primary);
         }
         .runs-table td {
             padding: 10px 16px;
-            border-bottom: 1px solid var(--border-color-primary);
             color: var(--body-text-color);
-        }
-        .runs-table tbody tr:last-child td {
-            border-bottom: none;
+            border: 1px solid var(--border-color-primary);
         }
         .runs-table tbody tr:hover {
             background: var(--table-row-focus);
@@ -88,6 +95,50 @@ class RunsTable(gr.HTML):
             width: 40px;
             text-align: center;
             padding: 10px 12px;
+            position: sticky;
+            left: 0;
+            background: var(--background-fill-primary);
+            z-index: 2;
+        }
+        .runs-table thead .checkbox-col {
+            background: var(--background-fill-primary);
+            z-index: 3;
+        }
+        .runs-table .name-col {
+            position: sticky;
+            left: 40px;
+            background: var(--background-fill-primary);
+            z-index: 2;
+            border-right: none;
+        }
+        .runs-table .name-col::after {
+            content: '';
+            position: absolute;
+            right: -2px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border-color-primary);
+            z-index: 10;
+        }
+        .runs-table thead .name-col {
+            background: var(--background-fill-primary);
+            z-index: 3;
+        }
+        .runs-table thead .name-col::after {
+            z-index: 11;
+        }
+        .runs-table tbody tr .checkbox-col,
+        .runs-table tbody tr .name-col {
+            background: var(--background-fill-primary);
+        }
+        .runs-table tbody tr:hover .checkbox-col,
+        .runs-table tbody tr:hover .name-col {
+            background: var(--table-row-focus);
+        }
+        .runs-table tbody tr.selected .checkbox-col,
+        .runs-table tbody tr.selected .name-col {
+            background: var(--color-accent-soft);
         }
         .runs-table input[type="checkbox"] {
             width: 16px;
