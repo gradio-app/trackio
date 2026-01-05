@@ -11,6 +11,41 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.helpers.run_selection import RunSelection
 
+
+def create_logo() -> gr.HTML:
+    """Create a logo component that automatically switches between light and dark themes."""
+    logo_urls = utils.get_logo_urls()
+    return gr.HTML(
+        f"""
+            <picture>
+                <source media="(prefers-color-scheme: dark)" srcset="{logo_urls["dark"]}">
+                <source media="(prefers-color-scheme: light)" srcset="{logo_urls["light"]}">
+                <img src="{logo_urls["light"]}" width="80%">
+            </picture>
+        """
+    )
+
+
+def create_navbar() -> gr.Navbar:
+    """Create a static navbar component with standard navigation links."""
+    return gr.Navbar(
+        value=[
+            ("Metrics", ""),
+            ("System Metrics", "/system"),
+            ("Media & Tables", "/media"),
+            ("Runs", "/runs"),
+            ("Files", "/files"),
+        ],
+        main_page_name=False,
+    )
+
+
+def create_project_dropdown(interactive: bool = True) -> gr.Dropdown:
+    """Create a project dropdown component."""
+    return gr.Dropdown(
+        label="Project", allow_custom_value=True, interactive=interactive
+    )
+
 CONFIG_COLUMN_MAPPINGS = {
     "_Username": "Username",
     "_Created": "Created",

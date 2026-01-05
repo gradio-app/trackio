@@ -60,14 +60,8 @@ def load_system_data(
 
 with gr.Blocks() as system_page:
     with gr.Sidebar() as sidebar:
-        logo_urls = utils.get_logo_urls()
-        logo = gr.Markdown(
-            f"""
-                <img src='{logo_urls["light"]}' width='80%' class='logo-light'>
-                <img src='{logo_urls["dark"]}' width='80%' class='logo-dark'>            
-            """
-        )
-        project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
+        logo = fns.create_logo()
+        project_dd = fns.create_project_dropdown()
 
         with gr.Group():
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
@@ -84,16 +78,7 @@ with gr.Blocks() as system_page:
             info="0 = no smoothing",
         )
 
-    navbar = gr.Navbar(
-        value=[
-            ("Metrics", ""),
-            ("System Metrics", "/system"),
-            ("Media & Tables", "/media"),
-            ("Runs", "/runs"),
-            ("Files", "/files"),
-        ],
-        main_page_name=False,
-    )
+    navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
     run_selection_state = gr.State(RunSelection())
     x_lim = gr.State(None)

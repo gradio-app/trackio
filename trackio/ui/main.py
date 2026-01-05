@@ -643,17 +643,8 @@ gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 with gr.Blocks(title="Trackio Dashboard") as demo:
     with gr.Sidebar(open=False) as sidebar:
-        logo_urls = utils.get_logo_urls()
-        logo = gr.HTML(
-            f"""
-                <picture>
-                    <source media="(prefers-color-scheme: dark)" srcset="{logo_urls["dark"]}">
-                    <source media="(prefers-color-scheme: light)" srcset="{logo_urls["light"]}">
-                    <img src="{logo_urls["light"]}" width="80%">
-                </picture>
-            """
-        )
-        project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
+        logo = fns.create_logo()
+        project_dd = fns.create_project_dropdown()
 
         embed_code = gr.Code(
             label="Embed this view",
@@ -692,16 +683,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             info="Filter metrics using regex patterns. Leave empty to show all metrics.",
         )
 
-    navbar = gr.Navbar(
-        value=[
-            ("Metrics", ""),
-            ("System Metrics", "/system"),
-            ("Media & Tables", "/media"),
-            ("Runs", "/runs"),
-            ("Files", "/files"),
-        ],
-        main_page_name=False,
-    )
+    navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
