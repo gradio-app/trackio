@@ -4,11 +4,13 @@ import os
 import re
 import secrets
 import shutil
+import tempfile
 from dataclasses import dataclass
 from typing import Any
 
 import gradio as gr
 import numpy as np
+import orjson
 import pandas as pd
 
 import trackio.utils as utils
@@ -872,6 +874,62 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
 
     last_steps = gr.State({})
 
+    def create_export_handler(df, x_col, y_col):
+        """Create an export handler that captures the current values"""
+        # Convert dataframe to dictionary to avoid closure issues with DataFrame
+        df_dict = df.to_dict('records')
+        
+        def handler():
+            # Reconstruct DataFrame from dict
+            df_reconstructed = pd.DataFrame(df_dict)
+            return export_plot_as_json(df_reconstructed, x_col, y_col)
+
+        return handler
+
+    def export_plot_as_json(df: pd.DataFrame, x_column: str, y_column: str):
+        """
+        Export plot data as JSON in the format:
+        {
+          "x": "epoch",
+          "y": "loss",
+          "runs": {
+            "run_1": [2.31, 1.98, 1.72],
+            "run_2": [2.45, 2.10, 1.89]
+          }
+        }
+        """
+        import tempfile
+
+        result = {"x": x_column, "y": y_column, "runs": {}}
+
+        # Group by run and extract the y values
+        if "run" in df.columns:
+            # Filter to only original data (not smoothed) if data_type column exists
+            if "data_type" in df.columns:
+                df = df[df["data_type"] == "original"]
+
+            for run_name in df["run"].unique():
+                run_df = df[df["run"] == run_name].sort_values(x_column)
+                # Convert to list and handle NaN values
+                y_values = run_df[y_column].dropna().tolist()
+                result["runs"][run_name] = y_values
+        else:
+            # Single run case
+            run_df = df.sort_values(x_column)
+            y_values = run_df[y_column].dropna().tolist()
+            result["runs"]["run"] = y_values
+
+        # Write to a temporary file and return path
+        json_str = orjson.dumps(result, option=orjson.OPT_INDENT_2).decode(
+            "utf-8"
+        )
+        temp_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, prefix=f"{y_column.replace('/', '_')}_"
+        )
+        temp_file.write(json_str)
+        temp_file.close()
+        return temp_file.name
+
     def update_x_lim(select_data: gr.SelectData):
         return select_data.index
 
@@ -1030,31 +1088,54 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 x_lim_value,
                             )
                             if not metric_df.empty:
-                                plot = gr.LinePlot(
-                                    downsampled_df,
-                                    x=x_column,
-                                    y=metric_name,
-                                    y_title=metric_name.split("/")[-1],
-                                    color=color,
-                                    color_map=color_map,
-                                    colors_in_legend=original_runs,
-                                    title=metric_name,
-                                    key=f"plot-{metric_idx}",
-                                    preserved_by_key=None,
-                                    buttons=["fullscreen", "export"],
-                                    x_lim=updated_x_lim,
-                                    min_width=400,
-                                )
-                                plot.select(
-                                    update_x_lim,
-                                    outputs=x_lim,
-                                    key=f"select-{metric_idx}",
-                                )
-                                plot.double_click(
-                                    lambda: None,
-                                    outputs=x_lim,
-                                    key=f"double-{metric_idx}",
-                                )
+                                with gr.Column(min_width=400):
+                                    plot = gr.LinePlot(
+                                        downsampled_df,
+                                        x=x_column,
+                                        y=metric_name,
+                                        y_title=metric_name.split("/")[-1],
+                                        color=color,
+                                        color_map=color_map,
+                                        colors_in_legend=original_runs,
+                                        title=metric_name,
+                                        key=f"plot-{metric_idx}",
+                                        preserved_by_key=None,
+                                        buttons=["fullscreen", "export"],
+                                        x_lim=updated_x_lim,
+                                        min_width=400,
+                                    )
+                                    export_btn = gr.Button(
+                                        "📥 Export as JSON",
+                                        size="sm",
+                                        key=f"export-btn-{metric_idx}",
+                                    )
+                                    download_file = gr.File(
+                                        visible=False, key=f"download-{metric_idx}"
+                                    )
+
+                                    # Wire up the export button
+                                    export_btn.click(
+                                        fn=create_export_handler(
+                                            metric_df, x_column, metric_name
+                                        ),
+                                        outputs=download_file,
+                                        key=f"export-click-{metric_idx}",
+                                    ).then(
+                                        fn=lambda: gr.File(visible=True),
+                                        outputs=download_file,
+                                        key=f"show-download-{metric_idx}",
+                                    )
+
+                                    plot.select(
+                                        update_x_lim,
+                                        outputs=x_lim,
+                                        key=f"select-{metric_idx}",
+                                    )
+                                    plot.double_click(
+                                        lambda: None,
+                                        outputs=x_lim,
+                                        key=f"double-{metric_idx}",
+                                    )
                             metric_idx += 1
 
                 if group_data["subgroups"]:
@@ -1095,31 +1176,55 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         x_lim_value,
                                     )
                                     if not metric_df.empty:
-                                        plot = gr.LinePlot(
-                                            downsampled_df,
-                                            x=x_column,
-                                            y=metric_name,
-                                            y_title=metric_name.split("/")[-1],
-                                            color=color,
-                                            color_map=color_map,
-                                            colors_in_legend=original_runs,
-                                            title=metric_name,
-                                            key=f"plot-{metric_idx}",
-                                            preserved_by_key=None,
-                                            buttons=["fullscreen", "export"],
-                                            x_lim=updated_x_lim,
-                                            min_width=400,
-                                        )
-                                        plot.select(
-                                            update_x_lim,
-                                            outputs=x_lim,
-                                            key=f"select-{metric_idx}",
-                                        )
-                                        plot.double_click(
-                                            lambda: None,
-                                            outputs=x_lim,
-                                            key=f"double-{metric_idx}",
-                                        )
+                                        with gr.Column(min_width=400):
+                                            plot = gr.LinePlot(
+                                                downsampled_df,
+                                                x=x_column,
+                                                y=metric_name,
+                                                y_title=metric_name.split("/")[-1],
+                                                color=color,
+                                                color_map=color_map,
+                                                colors_in_legend=original_runs,
+                                                title=metric_name,
+                                                key=f"plot-{metric_idx}",
+                                                preserved_by_key=None,
+                                                buttons=["fullscreen", "export"],
+                                                x_lim=updated_x_lim,
+                                                min_width=400,
+                                            )
+                                            export_btn = gr.Button(
+                                                "📥 Export as JSON",
+                                                size="sm",
+                                                key=f"export-btn-{metric_idx}",
+                                            )
+                                            download_file = gr.File(
+                                                visible=False,
+                                                key=f"download-{metric_idx}",
+                                            )
+
+                                            # Wire up the export button
+                                            export_btn.click(
+                                                fn=create_export_handler(
+                                                    metric_df, x_column, metric_name
+                                                ),
+                                                outputs=download_file,
+                                                key=f"export-click-{metric_idx}",
+                                            ).then(
+                                                fn=lambda: gr.File(visible=True),
+                                                outputs=download_file,
+                                                key=f"show-download-{metric_idx}",
+                                            )
+
+                                            plot.select(
+                                                update_x_lim,
+                                                outputs=x_lim,
+                                                key=f"select-{metric_idx}",
+                                            )
+                                            plot.double_click(
+                                                lambda: None,
+                                                outputs=x_lim,
+                                                key=f"double-{metric_idx}",
+                                            )
                                     metric_idx += 1
 
     with grouped_runs_panel:
