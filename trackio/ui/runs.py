@@ -169,6 +169,7 @@ with gr.Blocks() as run_page:
     navbar = gr.Navbar(
         value=[
             ("Metrics", ""),
+            ("System Metrics", "/system"),
             ("Media & Tables", "/media"),
             ("Runs", "/runs"),
             ("Files", "/files"),
