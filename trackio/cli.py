@@ -1,5 +1,4 @@
 import argparse
-import sys
 
 from trackio import show, sync
 from trackio.cli_helpers import (
@@ -285,9 +284,17 @@ def main():
                 error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
             metrics = SQLiteStorage.get_all_metrics_for_run(args.project, args.run)
             if args.json:
-                print(format_json({"project": args.project, "run": args.run, "metrics": metrics}))
+                print(
+                    format_json(
+                        {"project": args.project, "run": args.run, "metrics": metrics}
+                    )
+                )
             else:
-                print(format_list(metrics, f"Metrics for '{args.run}' in '{args.project}'"))
+                print(
+                    format_list(
+                        metrics, f"Metrics for '{args.run}' in '{args.project}'"
+                    )
+                )
         elif args.list_type == "system-metrics":
             db_path = SQLiteStorage.get_project_db_path(args.project)
             if not db_path.exists():
@@ -295,9 +302,19 @@ def main():
             runs = SQLiteStorage.get_runs(args.project)
             if args.run not in runs:
                 error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
-            system_metrics = SQLiteStorage.get_all_system_metrics_for_run(args.project, args.run)
+            system_metrics = SQLiteStorage.get_all_system_metrics_for_run(
+                args.project, args.run
+            )
             if args.json:
-                print(format_json({"project": args.project, "run": args.run, "system_metrics": system_metrics}))
+                print(
+                    format_json(
+                        {
+                            "project": args.project,
+                            "run": args.run,
+                            "system_metrics": system_metrics,
+                        }
+                    )
+                )
             else:
                 print(format_system_metric_names(system_metrics))
     elif args.command == "get":
@@ -331,10 +348,23 @@ def main():
                 error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
             metrics = SQLiteStorage.get_all_metrics_for_run(args.project, args.run)
             if args.metric not in metrics:
-                error_exit(f"Metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'.")
-            values = SQLiteStorage.get_metric_values(args.project, args.run, args.metric)
+                error_exit(
+                    f"Metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
+                )
+            values = SQLiteStorage.get_metric_values(
+                args.project, args.run, args.metric
+            )
             if args.json:
-                print(format_json({"project": args.project, "run": args.run, "metric": args.metric, "values": values}))
+                print(
+                    format_json(
+                        {
+                            "project": args.project,
+                            "run": args.run,
+                            "metric": args.metric,
+                            "values": values,
+                        }
+                    )
+                )
             else:
                 print(format_metric_values(values))
         elif args.get_type == "system-metric":
@@ -346,22 +376,47 @@ def main():
                 error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
             if args.metric:
                 system_metrics = SQLiteStorage.get_system_logs(args.project, args.run)
-                all_system_metric_names = SQLiteStorage.get_all_system_metrics_for_run(args.project, args.run)
+                all_system_metric_names = SQLiteStorage.get_all_system_metrics_for_run(
+                    args.project, args.run
+                )
                 if args.metric not in all_system_metric_names:
-                    error_exit(f"System metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'.")
+                    error_exit(
+                        f"System metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
+                    )
                 filtered_metrics = [
-                    {k: v for k, v in entry.items() if k == "timestamp" or k == args.metric}
+                    {
+                        k: v
+                        for k, v in entry.items()
+                        if k == "timestamp" or k == args.metric
+                    }
                     for entry in system_metrics
                     if args.metric in entry
                 ]
                 if args.json:
-                    print(format_json({"project": args.project, "run": args.run, "metric": args.metric, "values": filtered_metrics}))
+                    print(
+                        format_json(
+                            {
+                                "project": args.project,
+                                "run": args.run,
+                                "metric": args.metric,
+                                "values": filtered_metrics,
+                            }
+                        )
+                    )
                 else:
                     print(format_system_metrics(filtered_metrics))
             else:
                 system_metrics = SQLiteStorage.get_system_logs(args.project, args.run)
                 if args.json:
-                    print(format_json({"project": args.project, "run": args.run, "system_metrics": system_metrics}))
+                    print(
+                        format_json(
+                            {
+                                "project": args.project,
+                                "run": args.run,
+                                "system_metrics": system_metrics,
+                            }
+                        )
+                    )
                 else:
                     print(format_system_metrics(system_metrics))
     else:
