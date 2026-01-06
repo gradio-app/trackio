@@ -13,6 +13,8 @@
     title: Track
   - local: launch
     title: Launch the Dashboard
+  - local: cli_commands
+    title: CLI Commands
   - local: deploy_embed
     title: Deploy and Embed Dashboards
   - local: manage
