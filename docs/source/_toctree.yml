@@ -17,6 +17,8 @@
     title: Deploy and Embed Dashboards
   - local: manage
     title: Manage Projects
+  - local: cli_commands
+    title: CLI Commands
   - local: api_mcp_server
     title: API and MCP Server
   - local: environment_variables
