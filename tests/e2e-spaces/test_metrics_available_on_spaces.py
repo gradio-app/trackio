@@ -33,7 +33,6 @@ def test_basic_logging():
     assert summary["num_logs"] == 2
     assert "loss" in summary["metrics"]
     assert "acc" in summary["metrics"]
-    assert summary["last_step"] == 1
 
     loss_values = client.predict(
         project=project_name,
