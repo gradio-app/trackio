@@ -1,5 +1,12 @@
 # trackio
 
+## 0.14.1
+
+### Features
+
+- [#382](https://github.com/gradio-app/trackio/pull/382) [`44fe9bb`](https://github.com/gradio-app/trackio/commit/44fe9bb264fb2aafb0ec302ff15227c045819a2c) - Fix app file path when Trackio is not installed from source.  Thanks @abidlabs!
+- [#380](https://github.com/gradio-app/trackio/pull/380) [`c3f4cff`](https://github.com/gradio-app/trackio/commit/c3f4cff74bc5676e812773d8571454894fcdc7cc) - Add CLI commands for querying projects, runs, and metrics.  Thanks @abidlabs!
+
 ## 0.14.0
 
 ### Features
@@ -70,6 +77,7 @@
 - [#324](https://github.com/gradio-app/trackio/pull/324) [`50b2122`](https://github.com/gradio-app/trackio/commit/50b2122e7965ac82a72e6cb3b7d048bc10a2a6b1) - Add log y-axis functionality to UI.  Thanks @abidlabs!
 - [#326](https://github.com/gradio-app/trackio/pull/326) [`61dc1f4`](https://github.com/gradio-app/trackio/commit/61dc1f40af2f545f8e70395ddf0dbb8aee6b60d5) - Fix: improve table rendering for metrics in Trackio Dashboard.  Thanks @vigneshwaran!
 - [#328](https://github.com/gradio-app/trackio/pull/328) [`6857cbb`](https://github.com/gradio-app/trackio/commit/6857cbbe557a59a4642f210ec42566d108294e63) - Support trackio.Table with trackio.Image columns.  Thanks @abidlabs!
+- [#323](https://github.com/gradio-app/trackio/pull/323) [`6857cbb`](https://github.com/gradio-app/trackio/commit/6857cbbe557a59a4642f210ec42566d108294e63) - add Trackio client implementations in Go, Rust, and JS.  Thanks @vaibhav-research!
 
 ## 0.7.0
 

@@ -1,5 +1,12 @@
 # trackio
 
+## 0.14.1
+
+### Features
+
+- [#382](https://github.com/gradio-app/trackio/pull/382) [`44fe9bb`](https://github.com/gradio-app/trackio/commit/44fe9bb264fb2aafb0ec302ff15227c045819a2c) - Fix app file path when Trackio is not installed from source.  Thanks @abidlabs!
+- [#380](https://github.com/gradio-app/trackio/pull/380) [`c3f4cff`](https://github.com/gradio-app/trackio/commit/c3f4cff74bc5676e812773d8571454894fcdc7cc) - Add CLI commands for querying projects, runs, and metrics.  Thanks @abidlabs!
+
 ## 0.14.0
 
 ### Features
