@@ -1,7 +1,7 @@
 ---
 sdk: gradio
 sdk_version: {GRADIO_VERSION}
-app_file: trackio/ui/main.py
+app_file: {APP_FILE}
 tags:
  - trackio
 hf_oauth: true
