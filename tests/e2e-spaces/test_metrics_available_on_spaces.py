@@ -1,6 +1,6 @@
 import os
-import time
 import secrets
+import time
 
 import pytest
 from gradio_client import Client
@@ -27,7 +27,9 @@ def wait_for_space_ready(space_url, max_retries=30, initial_delay=5):
                 time.sleep(delay)
                 delay = min(delay * 1.5, 60)
             else:
-                raise TimeoutError(f"Space {space_url} not ready after {max_retries} attempts")
+                raise TimeoutError(
+                    f"Space {space_url} not ready after {max_retries} attempts"
+                )
 
 
 def test_basic_logging():
@@ -52,14 +54,18 @@ def test_basic_logging():
     assert "acc" in summary["metrics"]
     assert summary["last_step"] == 1
 
-    loss_values = client.predict(project_name, run_name, "loss", api_name="/get_metric_values")
+    loss_values = client.predict(
+        project_name, run_name, "loss", api_name="/get_metric_values"
+    )
     assert len(loss_values) == 2
     assert loss_values[0]["value"] == 0.1
     assert loss_values[0]["step"] == 0
     assert loss_values[1]["value"] == 0.2
     assert loss_values[1]["step"] == 1
 
-    acc_values = client.predict(project_name, run_name, "acc", api_name="/get_metric_values")
+    acc_values = client.predict(
+        project_name, run_name, "acc", api_name="/get_metric_values"
+    )
     assert len(acc_values) == 1
     assert acc_values[0]["value"] == 0.9
     assert acc_values[0]["step"] == 1
