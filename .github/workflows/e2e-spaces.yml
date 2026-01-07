@@ -1,0 +1,122 @@
+name: e2e-spaces
+
+on:
+  workflow_run:
+    workflows: ["trigger-e2e-spaces"]
+    types:
+      - completed
+
+concurrency:
+  group: "${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}-e2e-spaces"
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  get-pr-info:
+    name: "get-pr-info"
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    permissions:
+      actions: read
+    outputs:
+      pr_number: ${{ steps.pr_info.outputs.pr_number }}
+      sha: ${{ steps.pr_info.outputs.sha }}
+      source_repo: ${{ steps.pr_info.outputs.source_repo }}
+      source_branch: ${{ steps.pr_info.outputs.source_branch }}
+    steps:
+      - name: Download PR info artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Parse PR info
+        id: pr_info
+        run: |
+          cat pr_info.json
+          echo "pr_number=$(jq -r '.pr_number' pr_info.json)" >> $GITHUB_OUTPUT
+          echo "sha=$(jq -r '.sha' pr_info.json)" >> $GITHUB_OUTPUT
+          echo "source_repo=$(jq -r '.source_repo' pr_info.json)" >> $GITHUB_OUTPUT
+          echo "source_branch=$(jq -r '.source_branch' pr_info.json)" >> $GITHUB_OUTPUT
+
+  e2e-test:
+    name: "e2e-spaces-test"
+    needs: get-pr-info
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Set pending status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.get-pr-info.outputs.sha }}',
+              state: 'pending',
+              context: 'E2E Spaces Test',
+              description: 'Running e2e tests on Spaces...',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            })
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.get-pr-info.outputs.source_repo }}
+          ref: ${{ needs.get-pr-info.outputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e .[dev,spaces] --prerelease=allow
+          uv pip install --system pytest gradio-client --prerelease=allow
+
+      - name: Run e2e Spaces tests
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PR_NUMBER: ${{ needs.get-pr-info.outputs.pr_number }}
+        run: |
+          pytest tests/e2e-spaces/ -v
+
+      - name: Set success status
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.get-pr-info.outputs.sha }}',
+              state: 'success',
+              context: 'E2E Spaces Test',
+              description: 'E2E tests passed!',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            })
+
+      - name: Set failure status
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.get-pr-info.outputs.sha }}',
+              state: 'failure',
+              context: 'E2E Spaces Test',
+              description: 'E2E tests failed',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            })
+
