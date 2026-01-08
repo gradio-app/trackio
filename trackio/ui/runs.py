@@ -264,4 +264,11 @@ with gr.Blocks() as run_page:
         show_progress="hidden",
         api_visibility="private",
         queue=False,
+    ).then(
+        fn=update_delete_button,
+        inputs=[allow_deleting_runs, runs_table],
+        outputs=[delete_run_btn],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
     )
