@@ -23,6 +23,8 @@ export TRACKIO_LOGO_LIGHT_URL="https://example.com/logo-light.png"
 export TRACKIO_LOGO_DARK_URL="https://example.com/logo-dark.png"
 ```
 
+> **Note:** For remote Trackio Spaces, these environment variables are only applied when the Space is first created via `trackio.init(space_id=...)`. To change logos on an existing Space, update the Space variables directly in the Hugging Face Space settings.
+
 ### `TRACKIO_PLOT_ORDER`
 
 Controls the ordering of plots and metric groups in the Trackio dashboard. The value should be a comma-separated list of metric patterns that specify the desired order. Groups are preserved - if `train/loss` is specified first, all other `train/*` metrics will appear together in the train group, with `train/loss` appearing first within that group.
@@ -44,6 +46,8 @@ export TRACKIO_PLOT_ORDER="train/loss,val/loss"
 - Groups appear in the order of their first matching pattern
 - Unspecified metrics appear in alphabetical order after specified ones
 
+> **Note:** For remote Trackio Spaces, this environment variable is only applied when the Space is first created via `trackio.init(space_id=...)`. To change the plot order on an existing Space, update the `TRACKIO_PLOT_ORDER` Space variable directly in the Hugging Face Space settings.
+
 ### `TRACKIO_THEME`
 
 Sets the theme for the Trackio dashboard. Can be a built-in Gradio theme name or a theme from the Hugging Face Hub.
@@ -58,6 +62,8 @@ export TRACKIO_THEME="monochrome"
 export TRACKIO_THEME="gstaff/xkcd"
 export TRACKIO_THEME="ParityError/Anime"
 ```
+
+> **Note:** For remote Trackio Spaces, this environment variable is only applied when the Space is first created via `trackio.init(space_id=...)`. To change the theme on an existing Space, update the `TRACKIO_THEME` Space variable directly in the Hugging Face Space settings.
 
 ### `TRACKIO_COLOR_PALETTE`
 
