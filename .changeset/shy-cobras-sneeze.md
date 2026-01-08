@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:changes
+feat:Fixing some issues related to deployed Trackio Spaces
