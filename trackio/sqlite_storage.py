@@ -183,6 +183,7 @@ class SQLiteStorage:
         """
         Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
         Also exports system_metrics to separate parquet files with "_system.parquet" suffix.
+        Also exports configs to separate parquet files with "_configs.parquet" suffix.
         """
         if not SQLiteStorage._dataset_import_attempted:
             return
@@ -196,6 +197,7 @@ class SQLiteStorage:
             parquet_path = db_path.with_suffix(".parquet")
             system_parquet_path = db_path.with_suffix("") / ""
             system_parquet_path = TRACKIO_DIR / (db_path.stem + "_system.parquet")
+            configs_parquet_path = TRACKIO_DIR / (db_path.stem + "_configs.parquet")
             if (not parquet_path.exists()) or (
                 db_path.stat().st_mtime > parquet_path.stat().st_mtime
             ):
@@ -243,6 +245,31 @@ class SQLiteStorage:
                         use_content_defined_chunking=True,
                     )
 
+            if (not configs_parquet_path.exists()) or (
+                db_path.stat().st_mtime > configs_parquet_path.stat().st_mtime
+            ):
+                with sqlite3.connect(str(db_path)) as conn:
+                    try:
+                        configs_df = pd.read_sql("SELECT * FROM configs", conn)
+                    except Exception:
+                        configs_df = pd.DataFrame()
+                if not configs_df.empty:
+                    config_data = configs_df["config"].copy()
+                    config_data = pd.DataFrame(
+                        config_data.apply(
+                            lambda x: deserialize_values(orjson.loads(x))
+                        ).values.tolist(),
+                        index=configs_df.index,
+                    )
+                    del configs_df["config"]
+                    for col in config_data.columns:
+                        configs_df[col] = config_data[col]
+                    configs_df.to_parquet(
+                        configs_parquet_path,
+                        write_page_index=True,
+                        use_content_defined_chunking=True,
+                    )
+
     @staticmethod
     def _cleanup_wal_sidecars(db_path: Path) -> None:
         """Remove leftover -wal/-shm files for a DB basename (prevents disk I/O errors)."""
@@ -259,6 +286,7 @@ class SQLiteStorage:
         """
         Imports to all DB files that have matching files under the same path but with extension ".parquet".
         Also imports system_metrics from "_system.parquet" files.
+        Also imports configs from "_configs.parquet" files.
         """
         if not TRACKIO_DIR.exists():
             return
@@ -267,7 +295,9 @@ class SQLiteStorage:
         parquet_names = [
             f
             for f in all_paths
-            if f.endswith(".parquet") and not f.endswith("_system.parquet")
+            if f.endswith(".parquet")
+            and not f.endswith("_system.parquet")
+            and not f.endswith("_configs.parquet")
         ]
         for pq_name in parquet_names:
             parquet_path = TRACKIO_DIR / pq_name
@@ -310,6 +340,29 @@ class SQLiteStorage:
                 df.to_sql("system_metrics", conn, if_exists="replace", index=False)
                 conn.commit()
 
+        configs_parquet_names = [f for f in all_paths if f.endswith("_configs.parquet")]
+        for pq_name in configs_parquet_names:
+            parquet_path = TRACKIO_DIR / pq_name
+            db_name = pq_name.replace("_configs.parquet", DB_EXT)
+            db_path = TRACKIO_DIR / db_name
+
+            df = pd.read_parquet(parquet_path)
+            if "config" not in df.columns:
+                config_data = df.copy()
+                other_cols = ["id", "run_name", "created_at"]
+                df = df[[c for c in other_cols if c in df.columns]]
+                for col in other_cols:
+                    if col in config_data.columns:
+                        del config_data[col]
+                config_data = orjson.loads(config_data.to_json(orient="records"))
+                df["config"] = [
+                    orjson.dumps(serialize_values(row)) for row in config_data
+                ]
+
+            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+                df.to_sql("configs", conn, if_exists="replace", index=False)
+                conn.commit()
+
     @staticmethod
     def get_scheduler():
         """
@@ -330,7 +383,12 @@ class SQLiteStorage:
                     repo_type="dataset",
                     folder_path=TRACKIO_DIR,
                     private=True,
-                    allow_patterns=["*.parquet", "*_system.parquet", "media/**/*"],
+                    allow_patterns=[
+                        "*.parquet",
+                        "*_system.parquet",
+                        "*_configs.parquet",
+                        "media/**/*",
+                    ],
                     squash_history=True,
                     token=hf_token,
                     on_before_commit=SQLiteStorage.export_to_parquet,
