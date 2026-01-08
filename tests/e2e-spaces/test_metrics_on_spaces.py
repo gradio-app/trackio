@@ -1,6 +1,7 @@
 import os
 import secrets
 
+import huggingface_hub
 import pytest
 from gradio_client import Client
 
@@ -55,3 +56,37 @@ def test_basic_logging():
     assert len(acc_values) == 1
     assert acc_values[0]["value"] == 0.9
     assert acc_values[0]["step"] == 1
+
+
+def test_runs_data_persisted_after_restart():
+    """Test that runs with configs are correctly restored after Space restart."""
+    pr_number = get_pr_number()
+    space_id = f"trackio-tests/test_{pr_number}"
+    project_name = f"test_project_{secrets.token_urlsafe(8)}"
+    run_name = "test_run_with_config"
+
+    trackio.init(
+        project=project_name,
+        name=run_name,
+        space_id=space_id,
+        config={"learning_rate": 0.001, "epochs": 10},
+    )
+    trackio.log(metrics={"loss": 0.5})
+    trackio.finish()
+
+    client = Client(space_id)
+
+    client.predict(api_name="/force_sync")
+
+    huggingface_hub.add_space_variable(
+        space_id, "TRACKIO_TEST_RESTART", secrets.token_urlsafe(8)
+    )
+
+    client = Client(space_id)
+
+    headers, rows, run_names = client.predict(
+        project=project_name, api_name="/get_runs_data"
+    )
+
+    assert run_name in run_names
+    assert any("0.001" in str(row) for row in rows)

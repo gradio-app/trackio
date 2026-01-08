@@ -876,6 +876,19 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_name="get_run_summary",
     )
 
+    def force_sync() -> bool:
+        """Force an immediate sync of all data to the dataset."""
+        SQLiteStorage._dataset_import_attempted = True
+        SQLiteStorage.export_to_parquet()
+        scheduler = SQLiteStorage.get_scheduler()
+        scheduler.trigger().result()
+        return True
+
+    gr.api(
+        fn=force_sync,
+        api_name="force_sync",
+    )
+
     last_steps = gr.State({})
 
     def update_x_lim(select_data: gr.SelectData):
