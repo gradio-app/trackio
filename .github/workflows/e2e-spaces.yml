@@ -83,10 +83,24 @@ jobs:
           uv pip install --system -e .[dev,spaces] --prerelease=allow
           uv pip install --system pytest gradio-client --prerelease=allow
 
+      - name: Delete test Space if exists
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -c "
+          import huggingface_hub
+          space_id = 'trackio-tests/test_${{ needs.get-pr-info.outputs.pr_number }}'
+          try:
+              huggingface_hub.delete_repo(space_id, repo_type='space')
+              print(f'Deleted existing Space: {space_id}')
+          except huggingface_hub.errors.RepositoryNotFoundError:
+              print(f'Space does not exist: {space_id}')
+          "
+
       - name: Run e2e Spaces tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          PR_NUMBER: ${{ needs.get-pr-info.outputs.pr_number }}
+          TEST_SPACE_ID: trackio-tests/test_${{ needs.get-pr-info.outputs.pr_number }}
         run: |
           pytest tests/e2e-spaces/ -v
 
