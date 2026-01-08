@@ -65,6 +65,7 @@ def test_runs_data_persisted_after_restart(test_space_id):
 
     client.predict(api_name="/force_sync")
 
+    # This will force a restart of the Space
     huggingface_hub.add_space_variable(
         test_space_id, "TRACKIO_TEST_RESTART", secrets.token_urlsafe(8)
     )
@@ -77,3 +78,4 @@ def test_runs_data_persisted_after_restart(test_space_id):
 
     assert run_name in run_names
     assert any("0.001" in str(row) for row in rows)
+    assert any("10" in str(row) for row in rows)
