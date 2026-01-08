@@ -30,10 +30,10 @@ def generate_accuracy_curve(epoch, max_epochs, max_acc=0.95, min_acc=0.1):
     return max(0, min(max_acc, base_curve + noise))
 
 
-for run in range(1):
+for run in range(3):
     wandb.init(
         project=f"deploy-on-spaces-{PROJECT_ID}",
-        name=f"sft_qwen3-0.6b_test",
+        name=f"test-run-{run}",
         config=dict(
             epochs=EPOCHS,
             learning_rate=0.001,
