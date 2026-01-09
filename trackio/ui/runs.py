@@ -8,7 +8,7 @@ from trackio.ui import fns
 from trackio.ui.components.runs_table import RunsTable
 
 
-def get_runs_data(project):
+def get_runs_data(project: str) -> tuple[list[str], list[list[str]], list[str]]:
     """Get the runs data as headers, rows, and run names list."""
     if not project:
         return [], [], []
@@ -62,7 +62,9 @@ def get_runs_data(project):
     return headers, rows, run_names
 
 
-def get_runs_table(project, interactive=True):
+def get_runs_table(
+    project: str, interactive: bool = True
+) -> tuple[RunsTable, list[str]]:
     headers, rows, run_names = get_runs_data(project)
     if not rows:
         return RunsTable(headers=[], rows=[], value=[], interactive=False), []
@@ -94,8 +96,8 @@ def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
 
 
 def set_deletion_allowed(
-    project, request: gr.Request, oauth_token: gr.OAuthToken | None
-):
+    project: str, request: gr.Request, oauth_token: gr.OAuthToken | None
+) -> tuple[gr.Button, RunsTable, list[str], bool]:
     """Update the delete button value and interactivity based on the runs data and user write access."""
     if oauth_token:
         try:
@@ -125,7 +127,9 @@ def set_deletion_allowed(
     )
 
 
-def update_delete_button(deletion_allowed, selected_indices):
+def update_delete_button(
+    deletion_allowed: bool, selected_indices: list[int]
+) -> gr.Button:
     """Update the delete button value and interactivity based on the selected runs."""
     if not deletion_allowed:
         return gr.Button(interactive=False)
@@ -138,7 +142,12 @@ def update_delete_button(deletion_allowed, selected_indices):
         return gr.Button("Select runs to delete", interactive=False)
 
 
-def delete_selected_runs(deletion_allowed, selected_indices, run_names_list, project):
+def delete_selected_runs(
+    deletion_allowed: bool,
+    selected_indices: list[int],
+    run_names_list: list[str],
+    project: str,
+) -> tuple[RunsTable, list[str]]:
     """Delete the selected runs and refresh the table."""
     if not deletion_allowed or not selected_indices:
         return get_runs_table(project, interactive=True)
@@ -264,4 +273,13 @@ with gr.Blocks() as run_page:
         show_progress="hidden",
         api_visibility="private",
         queue=False,
+    ).then(
+        fn=update_delete_button,
+        inputs=[allow_deleting_runs, runs_table],
+        outputs=[delete_run_btn],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
     )
+
+    gr.api(fn=get_runs_data, api_name="get_runs_data")

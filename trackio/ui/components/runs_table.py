@@ -21,16 +21,16 @@ class RunsTable(gr.HTML):
                 <table class="runs-table">
                     <thead>
                         <tr>
-                            <th class="checkbox-col">
+                            ${rows.length > 0 ? `<th class="checkbox-col">
                                 <input type="checkbox" class="select-all-checkbox" ${!interactive ? 'disabled' : ''}>
-                            </th>
+                            </th>` : ''}
                             ${headers.map((h, idx) => `<th class="${idx === 0 ? 'name-col' : ''}">${h}</th>`).join('')}
                         </tr>
                     </thead>
                     <tbody>
                         ${rows.length === 0 ? `
                             <tr class="empty-row">
-                                <td colspan="${headers.length + 1}">No runs found</td>
+                                <td colspan="${headers.length}">No runs found</td>
                             </tr>
                         ` : rows.map((row, idx) => `
                             <tr data-idx="${idx}">
@@ -203,12 +203,21 @@ class RunsTable(gr.HTML):
         """
 
         js_on_load = """
+        let previousRowsData = null;
+
         function getRowCheckboxes() {
             return element.querySelectorAll('.row-checkbox');
         }
 
         function getSelectAllCheckbox() {
             return element.querySelector('.select-all-checkbox');
+        }
+
+        function getRowDataHash() {
+            const rows = props.rows || [];
+            const headers = props.headers || [];
+            const rowsContent = rows.map(row => row.join('|')).join('||');
+            return JSON.stringify([headers, rowsContent]);
         }
 
         function updateSelectAllState() {
@@ -243,6 +252,14 @@ class RunsTable(gr.HTML):
             });
         }
 
+        function resetAllCheckboxes() {
+            const checkboxes = getRowCheckboxes();
+            checkboxes.forEach(cb => {
+                cb.checked = false;
+            });
+            updateValue();
+        }
+
         function updateValue() {
             const checkboxes = getRowCheckboxes();
             props.value = Array.from(checkboxes)
@@ -251,6 +268,14 @@ class RunsTable(gr.HTML):
             updateSelectAllState();
             updateRowStyles();
             trigger('input');
+        }
+
+        function checkAndResetIfDataChanged() {
+            const currentData = getRowDataHash();
+            if (previousRowsData !== null && previousRowsData !== currentData) {
+                resetAllCheckboxes();
+            }
+            previousRowsData = currentData;
         }
 
         element.addEventListener('change', (e) => {
@@ -263,6 +288,18 @@ class RunsTable(gr.HTML):
             }
         });
 
+        const observer = new MutationObserver(() => {
+            setTimeout(() => {
+                checkAndResetIfDataChanged();
+            }, 0);
+        });
+
+        observer.observe(element, {
+            childList: true,
+            subtree: true
+        });
+
+        checkAndResetIfDataChanged();
         updateSelectAllState();
         updateRowStyles();
         """
