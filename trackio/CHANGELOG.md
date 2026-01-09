@@ -1,5 +1,11 @@
 # trackio
 
+## 0.14.2
+
+### Features
+
+- [#386](https://github.com/gradio-app/trackio/pull/386) [`f9452cd`](https://github.com/gradio-app/trackio/commit/f9452cdb8f0819368f3610f7ac0ed08957305275) - Fixing some issues related to deployed Trackio Spaces.  Thanks @abidlabs!
+
 ## 0.14.1
 
 ### Features
