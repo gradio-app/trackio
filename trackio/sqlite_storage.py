@@ -927,6 +927,121 @@ class SQLiteStorage:
                         all_metrics.add(key)
             return sorted(list(all_metrics))
 
+    @staticmethod
+    def move_run(source_project: str, target_project: str, run_name: str) -> bool:
+        """
+        Move a run from source_project to target_project.
+        Returns True if successful, False if the run doesn't exist in source or already exists in target.
+        """
+        if source_project == target_project:
+            return False
+
+        source_db_path = SQLiteStorage.get_project_db_path(source_project)
+        if not source_db_path.exists():
+            return False
+
+        # Ensure target DB exists
+        target_db_path = SQLiteStorage.init_db(target_project)
+
+        # Acquire locks for both projects to ensure consistency
+        # Lock order: alphabetical by project name to avoid deadlocks
+        p1, p2 = sorted([source_project, target_project])
+        
+        with SQLiteStorage._get_process_lock(p1):
+            with SQLiteStorage._get_process_lock(p2):
+                
+                # 1. Check if run exists in target (Abort if True)
+                # We check this first to avoid unnecessary reads from source
+                with SQLiteStorage._get_connection(target_db_path) as target_conn:
+                    cursor = target_conn.cursor()
+                    cursor.execute("SELECT 1 FROM metrics WHERE run_name = ? LIMIT 1", (run_name,))
+                    if cursor.fetchone():
+                        return False
+                    cursor.execute("SELECT 1 FROM configs WHERE run_name = ? LIMIT 1", (run_name,))
+                    if cursor.fetchone():
+                        return False
+                
+                # 2. Read data from source
+                metrics_data = []
+                configs_data = []
+                system_metrics_data = []
+                
+                with SQLiteStorage._get_connection(source_db_path) as source_conn:
+                    source_conn.row_factory = sqlite3.Row
+                    cursor = source_conn.cursor()
+                    
+                    # Check if run exists in source
+                    cursor.execute("SELECT 1 FROM metrics WHERE run_name = ? LIMIT 1", (run_name,))
+                    has_metrics = cursor.fetchone() is not None
+                    cursor.execute("SELECT 1 FROM configs WHERE run_name = ? LIMIT 1", (run_name,))
+                    has_configs = cursor.fetchone() is not None
+                    
+                    if not has_metrics and not has_configs:
+                        return False
+
+                    # Fetch Metrics
+                    cursor.execute("SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?", (run_name,))
+                    rows = cursor.fetchall()
+                    for row in rows:
+                        metrics_data.append((row["timestamp"], run_name, row["step"], row["metrics"]))
+                        
+                    # Fetch Configs
+                    cursor.execute("SELECT config, created_at FROM configs WHERE run_name = ?", (run_name,))
+                    rows = cursor.fetchall()
+                    for row in rows:
+                        configs_data.append((run_name, row["config"], row["created_at"]))
+
+                    # Fetch System Metrics (handle case where table might not exist in old DBs)
+                    try:
+                        cursor.execute("SELECT timestamp, metrics FROM system_metrics WHERE run_name = ?", (run_name,))
+                        rows = cursor.fetchall()
+                        for row in rows:
+                            system_metrics_data.append((row["timestamp"], run_name, row["metrics"]))
+                    except sqlite3.OperationalError:
+                        # Table might not exist
+                        pass
+
+                # 3. Write data to target
+                try:
+                    with SQLiteStorage._get_connection(target_db_path) as target_conn:
+                        cursor = target_conn.cursor()
+                        
+                        if metrics_data:
+                            cursor.executemany(
+                                "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+                                metrics_data
+                            )
+                        
+                        if configs_data:
+                            cursor.executemany(
+                                "INSERT INTO configs (run_name, config, created_at) VALUES (?, ?, ?)",
+                                configs_data
+                            )
+                            
+                        if system_metrics_data:
+                            cursor.executemany(
+                                "INSERT INTO system_metrics (timestamp, run_name, metrics) VALUES (?, ?, ?)",
+                                system_metrics_data
+                            )
+                        
+                        target_conn.commit()
+                except Exception:
+                    return False
+
+                # 4. Delete from source
+                # Re-use delete_run logic but we are already holding the lock, so we do it manually or carefully.
+                with SQLiteStorage._get_connection(source_db_path) as source_conn:
+                    cursor = source_conn.cursor()
+                    cursor.execute("DELETE FROM metrics WHERE run_name = ?", (run_name,))
+                    cursor.execute("DELETE FROM configs WHERE run_name = ?", (run_name,))
+                    try:
+                        cursor.execute("DELETE FROM system_metrics WHERE run_name = ?", (run_name,))
+                    except sqlite3.OperationalError:
+                        pass
+                    source_conn.commit()
+                    
+        return True
+
     def finish(self):
         """Cleanup when run is finished."""
         pass
