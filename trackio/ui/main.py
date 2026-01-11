@@ -636,12 +636,109 @@ function getCookie(name) {
     }
 })();
 </script>
+
+<style>
+/* --- FORCED CSS INJECTION (Bypasses Gradio Cache) --- */
+
+/* 1. Global Scrollbar Styling (Universal Fix) */
+* {
+    scrollbar-color: #888 var(--background-fill-primary) !important; /* Lighter thumb for visibility */
+    scrollbar-width: thin !important;
+}
+
+/* Chrome/Webkit Universal Target */
+*::-webkit-scrollbar {
+    width: 10px !important;
+    height: 10px !important;
+}
+*::-webkit-scrollbar-track {
+    background: var(--background-fill-primary) !important;
+}
+*::-webkit-scrollbar-thumb {
+    background: #888 !important; /* Lighter Grey */
+    border-radius: 5px !important;
+    border: 2px solid var(--background-fill-primary) !important;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: #aaa !important; /* Even lighter on hover */
+}
+
+/* 2. Fullscreen & Body Background (Matches Theme) */
+body, html, :fullscreen, :-webkit-full-screen, :-moz-full-screen {
+    background-color: var(--background-fill-primary) !important;
+}
+
+/* 3. Toolbar Visibility in Standard View */
+.g2-toolbar, .vega-actions, [aria-label="Fullscreen"], button[title="Fullscreen"] {
+    opacity: 1 !important;
+    visibility: visible !important;
+    display: block !important;
+    z-index: 100 !important;
+    background: rgba(0,0,0,0.3) !important;
+    border-radius: 4px;
+}
+
+/* 4. Aggressive Scrollbar Hiding in Fullscreen */
+:fullscreen, :fullscreen *, :-webkit-full-screen, :-webkit-full-screen *, :-moz-full-screen, :-moz-full-screen * {
+    overflow: hidden !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+:fullscreen::-webkit-scrollbar, :fullscreen *::-webkit-scrollbar, 
+:-webkit-full-screen::-webkit-scrollbar, :-webkit-full-screen *::-webkit-scrollbar,
+html:fullscreen::-webkit-scrollbar, body:fullscreen::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    opacity: 0 !important;
+}
+
+/* 5. Safe Toolbar Positioning (80px) & Hover Fix */
+/* BROADEST POSSIBLE TOOLBAR TARGETING */
+:fullscreen .g2-toolbar, 
+:fullscreen .vega-actions, 
+:fullscreen details,
+:fullscreen summary,
+:fullscreen [class*="actions"],
+:fullscreen [class*="toolbar"],
+:fullscreen [class*="menu"],
+:fullscreen [role="toolbar"],
+:fullscreen .bokeh-toolbar, 
+:fullscreen .modebar,
+:fullscreen button.icon,
+:fullscreen .card-header .actions,
+/* Target direct children fixed/absolute at top right */
+:fullscreen > * > [style*="position"][style*="right"],
+:fullscreen > * > * > [style*="position"][style*="right"] {
+    position: fixed !important;
+    top: 15px !important;
+    right: 350px !important; /* Extremely aggressive push left to verify control */
+    z-index: 2147483647 !important;
+    background: #ffffff !important; /* DEBUG: Bright White Background */
+    color: #000000 !important; /* DEBUG: Black Text/Icon */
+    border: 2px solid #ff0000 !important; /* DEBUG: Red Border */
+    min-width: 20px !important;
+    min-height: 20px !important;
+    border-radius: 4px !important;
+    padding: 4px !important;
+    display: block !important;
+    visibility: visible !important;
+    overflow: hidden !important;
+}
+/* Stop scroll on hover */
+:fullscreen .g2-toolbar:hover, :fullscreen [class*="toolbar"]:hover {
+    overflow: hidden !important;
+    scrollbar-width: none !important;
+    background: #f0f0f0 !important; /* DEBUG: Hover state */
+}
+</style>
 """
 
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(title="Trackio Dashboard") as demo:
+with gr.Blocks(css=CSS, head=HEAD, title="Trackio Dashboard") as demo:
     with gr.Sidebar(open=False) as sidebar:
         logo = fns.create_logo()
         project_dd = fns.create_project_dropdown()
