@@ -1,6 +1,6 @@
 # CLI Commands
 
-Trackio provides a comprehensive set of CLI commands that enable you to query project, run, and metric information locally without needing to start the MCP server. This is particularly useful for LLM agents and automation scripts.
+Trackio provides a comprehensive set of CLI commands that enable you to query project, run, and metric information locally without needing to start the MCP server. This is particularly useful for LLM agents and automation scripts. With structured JSON output and programmatic access to all experiment data, Trackio is designed to support autonomous ML experiments run by LLMs.
 
 ## List Commands
 
