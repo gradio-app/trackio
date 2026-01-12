@@ -56,7 +56,8 @@ def test_move_run(temp_dir, image_ndarray):
     
     image1_path = source_logs[0]["img1"].get("file_path")
     assert image1_path is not None
-    assert str(image1_path).startswith(f"{source_project}/{run_name}/")
+    normalized_path = str(image1_path).replace("\\", "/")
+    assert normalized_path.startswith(f"{source_project}/{run_name}/")
     
     api = Api()
     runs = api.runs(source_project)
@@ -75,17 +76,20 @@ def test_move_run(temp_dir, image_ndarray):
     
     target_image1_path = target_logs[0]["img1"].get("file_path")
     assert target_image1_path is not None
-    assert str(target_image1_path).startswith(f"{target_project}/{run_name}/")
+    normalized_path1 = str(target_image1_path).replace("\\", "/")
+    assert normalized_path1.startswith(f"{target_project}/{run_name}/")
     
     target_image2_path = target_logs[1]["img2"].get("file_path")
     assert target_image2_path is not None
-    assert str(target_image2_path).startswith(f"{target_project}/{run_name}/")
+    normalized_path2 = str(target_image2_path).replace("\\", "/")
+    assert normalized_path2.startswith(f"{target_project}/{run_name}/")
     
     source_logs_after = SQLiteStorage.get_logs(project=source_project, run=run_name)
     assert len(source_logs_after) == 0
     
     source_runs_after = SQLiteStorage.get_runs(project=source_project)
     assert run_name not in source_runs_after
+    assert len(source_runs_after) == 0
     
     target_runs = SQLiteStorage.get_runs(project=target_project)
     assert run_name in target_runs

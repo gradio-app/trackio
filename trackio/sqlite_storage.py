@@ -885,8 +885,11 @@ class SQLiteStorage:
                             if isinstance(obj, dict):
                                 if obj.get("_type") in ["trackio.image", "trackio.video", "trackio.audio"]:
                                     old_path = obj.get("file_path", "")
-                                    if isinstance(old_path, str) and old_path.startswith(old_prefix):
-                                        return {**obj, "file_path": old_path.replace(old_prefix, new_prefix, 1)}
+                                    if isinstance(old_path, str):
+                                        normalized_path = old_path.replace("\\", "/")
+                                        if normalized_path.startswith(old_prefix):
+                                            new_path = normalized_path.replace(old_prefix, new_prefix, 1)
+                                            return {**obj, "file_path": new_path}
                                 return {key: update_media_paths(value, old_prefix, new_prefix) for key, value in obj.items()}
                             elif isinstance(obj, list):
                                 return [update_media_paths(item, old_prefix, new_prefix) for item in obj]
