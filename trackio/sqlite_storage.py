@@ -883,27 +883,43 @@ class SQLiteStorage:
 
                         def update_media_paths(obj, old_prefix, new_prefix):
                             if isinstance(obj, dict):
-                                if obj.get("_type") in ["trackio.image", "trackio.video", "trackio.audio"]:
+                                if obj.get("_type") in [
+                                    "trackio.image",
+                                    "trackio.video",
+                                    "trackio.audio",
+                                ]:
                                     old_path = obj.get("file_path", "")
                                     if isinstance(old_path, str):
                                         normalized_path = old_path.replace("\\", "/")
                                         if normalized_path.startswith(old_prefix):
-                                            new_path = normalized_path.replace(old_prefix, new_prefix, 1)
+                                            new_path = normalized_path.replace(
+                                                old_prefix, new_prefix, 1
+                                            )
                                             return {**obj, "file_path": new_path}
-                                return {key: update_media_paths(value, old_prefix, new_prefix) for key, value in obj.items()}
+                                return {
+                                    key: update_media_paths(
+                                        value, old_prefix, new_prefix
+                                    )
+                                    for key, value in obj.items()
+                                }
                             elif isinstance(obj, list):
-                                return [update_media_paths(item, old_prefix, new_prefix) for item in obj]
+                                return [
+                                    update_media_paths(item, old_prefix, new_prefix)
+                                    for item in obj
+                                ]
                             return obj
-                        
+
                         updated_metrics_rows = []
                         old_prefix = f"{project}/{run}/"
                         new_prefix = f"{new_project}/{run}/"
-                        
+
                         for row in metrics_rows:
                             metrics_data = orjson.loads(row["metrics"])
                             metrics_deserialized = deserialize_values(metrics_data)
-                            updated_metrics = update_media_paths(metrics_deserialized, old_prefix, new_prefix)
-                            
+                            updated_metrics = update_media_paths(
+                                metrics_deserialized, old_prefix, new_prefix
+                            )
+
                             updated_metrics_rows.append(
                                 (
                                     row["timestamp"],
@@ -947,15 +963,19 @@ class SQLiteStorage:
 
                         source_media_dir = MEDIA_DIR / project / run
                         target_media_dir = MEDIA_DIR / new_project / run
-                        
+
                         if source_media_dir.exists():
                             target_media_dir.parent.mkdir(parents=True, exist_ok=True)
                             if target_media_dir.exists():
                                 shutil.rmtree(target_media_dir)
                             shutil.move(str(source_media_dir), str(target_media_dir))
 
-                        source_cursor.execute("DELETE FROM metrics WHERE run_name = ?", (run,))
-                        source_cursor.execute("DELETE FROM configs WHERE run_name = ?", (run,))
+                        source_cursor.execute(
+                            "DELETE FROM metrics WHERE run_name = ?", (run,)
+                        )
+                        source_cursor.execute(
+                            "DELETE FROM configs WHERE run_name = ?", (run,)
+                        )
                         try:
                             source_cursor.execute(
                                 "DELETE FROM system_metrics WHERE run_name = ?", (run,)

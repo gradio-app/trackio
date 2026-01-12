@@ -64,4 +64,3 @@ class Api:
         if not SQLiteStorage.get_project_db_path(project).exists():
             raise ValueError(f"Project '{project}' does not exist")
         return Runs(project)
-
