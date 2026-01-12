@@ -8,9 +8,15 @@
 # ///
 
 import os
-from datasets import Dataset
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments
+
 import huggingface_hub
+from datasets import Dataset
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    Trainer,
+    TrainingArguments,
+)
 
 model_name = "distilbert-base-uncased"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -38,7 +44,6 @@ trainer = Trainer(
         report_to="trackio",
         push_to_hub=bool(hub_model_id),
         hub_model_id=hub_model_id,
-
     ),
     train_dataset=dataset,
 )
@@ -47,4 +52,3 @@ trainer.train()
 trainer.push_to_hub()
 
 print(f"Model pushed to Hub, available at: https://huggingface.co/{hub_model_id}")
-

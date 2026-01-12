@@ -1049,7 +1049,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 x_lim_value,
                             )
                             if not metric_df.empty:
-                                download_btn = gr.Button("⬇️")
+                                download_btn = gr.Button("📄")
                                 plot = gr.LinePlot(
                                     downsampled_df,
                                     x=x_column,
@@ -1061,11 +1061,13 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                     title=metric_name,
                                     key=f"plot-{metric_idx}",
                                     preserved_by_key=None,
-                                    buttons=["fullscreen", "export", download_btn],
+                                    buttons=[download_btn, "fullscreen", "export"],
                                     x_lim=updated_x_lim,
                                     min_width=400,
                                 )
-                                safe_filename = metric_name.replace("/", "_").replace("\\", "_")
+                                safe_filename = metric_name.replace("/", "_").replace(
+                                    "\\", "_"
+                                )
                                 download_btn.click(
                                     None,
                                     inputs=[plot],
@@ -1134,7 +1136,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         x_lim_value,
                                     )
                                     if not metric_df.empty:
-                                        download_btn = gr.Button("⬇️")
+                                        download_btn = gr.Button("📄")
                                         plot = gr.LinePlot(
                                             downsampled_df,
                                             x=x_column,
@@ -1146,11 +1148,17 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                             title=metric_name,
                                             key=f"plot-{metric_idx}",
                                             preserved_by_key=None,
-                                            buttons=["fullscreen", "export", download_btn],
+                                            buttons=[
+                                                download_btn,
+                                                "fullscreen",
+                                                "export",
+                                            ],
                                             x_lim=updated_x_lim,
                                             min_width=400,
                                         )
-                                        safe_filename = metric_name.replace("/", "_").replace("\\", "_")
+                                        safe_filename = metric_name.replace(
+                                            "/", "_"
+                                        ).replace("\\", "_")
                                         download_btn.click(
                                             None,
                                             inputs=[plot],
