@@ -86,6 +86,24 @@ Read the [Trackio documentation](https://huggingface.co/docs/trackio/en/index) f
 """
 
 
+def generate_download_plot_js(metric_name: str) -> str:
+    """Generate JavaScript code for downloading plot data as JSON."""
+    safe_filename = metric_name.replace("/", "_").replace("\\", "_")
+    return f"""(data) => {{
+        const jsonStr = JSON.stringify(data.value, null, 2);
+        const blob = new Blob([jsonStr], {{type: 'application/json'}});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '{safe_filename}.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return [];
+    }}"""
+
+
 def get_runs(project) -> list[str]:
     if not project:
         return []
@@ -1049,6 +1067,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 x_lim_value,
                             )
                             if not metric_df.empty:
+                                download_btn = gr.Button("📄")
                                 plot = gr.LinePlot(
                                     downsampled_df,
                                     x=x_column,
@@ -1060,9 +1079,15 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                     title=metric_name,
                                     key=f"plot-{metric_idx}",
                                     preserved_by_key=None,
-                                    buttons=["fullscreen", "export"],
+                                    buttons=[download_btn, "fullscreen", "export"],
                                     x_lim=updated_x_lim,
                                     min_width=400,
+                                )
+                                download_btn.click(
+                                    None,
+                                    inputs=[plot],
+                                    outputs=[],
+                                    js=generate_download_plot_js(metric_name),
                                 )
                                 plot.select(
                                     update_x_lim,
@@ -1114,6 +1139,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         x_lim_value,
                                     )
                                     if not metric_df.empty:
+                                        download_btn = gr.Button("📄")
                                         plot = gr.LinePlot(
                                             downsampled_df,
                                             x=x_column,
@@ -1125,9 +1151,19 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                             title=metric_name,
                                             key=f"plot-{metric_idx}",
                                             preserved_by_key=None,
-                                            buttons=["fullscreen", "export"],
+                                            buttons=[
+                                                download_btn,
+                                                "fullscreen",
+                                                "export",
+                                            ],
                                             x_lim=updated_x_lim,
                                             min_width=400,
+                                        )
+                                        download_btn.click(
+                                            None,
+                                            inputs=[plot],
+                                            outputs=[],
+                                            js=generate_download_plot_js(metric_name),
                                         )
                                         plot.select(
                                             update_x_lim,
