@@ -17,6 +17,8 @@
     title: Deploy and Embed Dashboards
   - local: manage
     title: Manage Projects
+  - local: python_api
+    title: Python API for Managing Runs
   - local: cli_commands
     title: CLI Commands
   - local: api_mcp_server

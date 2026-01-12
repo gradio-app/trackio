@@ -15,6 +15,7 @@ from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
+from trackio.api import Api
 from trackio.deploy import sync
 from trackio.gpu import gpu_available, log_gpu
 from trackio.histogram import Histogram
@@ -57,6 +58,7 @@ __all__ = [
     "Audio",
     "Table",
     "Histogram",
+    "Api",
 ]
 
 Image = TrackioImage

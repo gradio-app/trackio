@@ -1,5 +1,6 @@
 import os
 import platform
+import shutil
 import sqlite3
 import time
 from datetime import datetime
@@ -18,6 +19,7 @@ import pandas as pd
 from trackio.commit_scheduler import CommitScheduler
 from trackio.dummy_commit_scheduler import DummyCommitScheduler
 from trackio.utils import (
+    MEDIA_DIR,
     TRACKIO_DIR,
     deserialize_values,
     serialize_values,
@@ -837,6 +839,152 @@ class SQLiteStorage:
                     return True
                 except sqlite3.Error:
                     return False
+
+    @staticmethod
+    def move_run(project: str, run: str, new_project: str) -> bool:
+        """Move a run from one project to another."""
+        source_db_path = SQLiteStorage.get_project_db_path(project)
+        if not source_db_path.exists():
+            return False
+
+        target_db_path = SQLiteStorage.init_db(new_project)
+
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_process_lock(new_project):
+                with SQLiteStorage._get_connection(source_db_path) as source_conn:
+                    source_cursor = source_conn.cursor()
+
+                    source_cursor.execute(
+                        "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?",
+                        (run,),
+                    )
+                    metrics_rows = source_cursor.fetchall()
+
+                    source_cursor.execute(
+                        "SELECT config, created_at FROM configs WHERE run_name = ?",
+                        (run,),
+                    )
+                    config_row = source_cursor.fetchone()
+
+                    try:
+                        source_cursor.execute(
+                            "SELECT timestamp, metrics FROM system_metrics WHERE run_name = ?",
+                            (run,),
+                        )
+                        system_metrics_rows = source_cursor.fetchall()
+                    except sqlite3.OperationalError:
+                        system_metrics_rows = []
+
+                    if not metrics_rows and not config_row and not system_metrics_rows:
+                        return False
+
+                    with SQLiteStorage._get_connection(target_db_path) as target_conn:
+                        target_cursor = target_conn.cursor()
+
+                        def update_media_paths(obj, old_prefix, new_prefix):
+                            if isinstance(obj, dict):
+                                if obj.get("_type") in [
+                                    "trackio.image",
+                                    "trackio.video",
+                                    "trackio.audio",
+                                ]:
+                                    old_path = obj.get("file_path", "")
+                                    if isinstance(old_path, str):
+                                        normalized_path = old_path.replace("\\", "/")
+                                        if normalized_path.startswith(old_prefix):
+                                            new_path = normalized_path.replace(
+                                                old_prefix, new_prefix, 1
+                                            )
+                                            return {**obj, "file_path": new_path}
+                                return {
+                                    key: update_media_paths(
+                                        value, old_prefix, new_prefix
+                                    )
+                                    for key, value in obj.items()
+                                }
+                            elif isinstance(obj, list):
+                                return [
+                                    update_media_paths(item, old_prefix, new_prefix)
+                                    for item in obj
+                                ]
+                            return obj
+
+                        updated_metrics_rows = []
+                        old_prefix = f"{project}/{run}/"
+                        new_prefix = f"{new_project}/{run}/"
+
+                        for row in metrics_rows:
+                            metrics_data = orjson.loads(row["metrics"])
+                            metrics_deserialized = deserialize_values(metrics_data)
+                            updated_metrics = update_media_paths(
+                                metrics_deserialized, old_prefix, new_prefix
+                            )
+
+                            updated_metrics_rows.append(
+                                (
+                                    row["timestamp"],
+                                    run,
+                                    row["step"],
+                                    orjson.dumps(serialize_values(updated_metrics)),
+                                )
+                            )
+
+                        for row_data in updated_metrics_rows:
+                            target_cursor.execute(
+                                """
+                                INSERT INTO metrics (timestamp, run_name, step, metrics)
+                                VALUES (?, ?, ?, ?)
+                                """,
+                                row_data,
+                            )
+
+                        if config_row:
+                            target_cursor.execute(
+                                """
+                                INSERT OR REPLACE INTO configs (run_name, config, created_at)
+                                VALUES (?, ?, ?)
+                                """,
+                                (run, config_row["config"], config_row["created_at"]),
+                            )
+
+                        for row in system_metrics_rows:
+                            try:
+                                target_cursor.execute(
+                                    """
+                                    INSERT INTO system_metrics (timestamp, run_name, metrics)
+                                    VALUES (?, ?, ?)
+                                    """,
+                                    (row["timestamp"], run, row["metrics"]),
+                                )
+                            except sqlite3.OperationalError:
+                                pass
+
+                        target_conn.commit()
+
+                        source_media_dir = MEDIA_DIR / project / run
+                        target_media_dir = MEDIA_DIR / new_project / run
+
+                        if source_media_dir.exists():
+                            target_media_dir.parent.mkdir(parents=True, exist_ok=True)
+                            if target_media_dir.exists():
+                                shutil.rmtree(target_media_dir)
+                            shutil.move(str(source_media_dir), str(target_media_dir))
+
+                        source_cursor.execute(
+                            "DELETE FROM metrics WHERE run_name = ?", (run,)
+                        )
+                        source_cursor.execute(
+                            "DELETE FROM configs WHERE run_name = ?", (run,)
+                        )
+                        try:
+                            source_cursor.execute(
+                                "DELETE FROM system_metrics WHERE run_name = ?", (run,)
+                            )
+                        except sqlite3.OperationalError:
+                            pass
+                        source_conn.commit()
+
+                        return True
 
     @staticmethod
     def get_all_run_configs(project: str) -> dict[str, dict]:
