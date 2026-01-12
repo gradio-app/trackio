@@ -1,6 +1,6 @@
 # Trackio as an API and MCP Server
 
-The Trackio dashboard can be configured to run as both an API server and an MCP (Model Context Protocol) server, allowing external tools and applications to programmatically interact with your experiment tracking data, or for you to be able to "chat with your experiment data" in natural language using ChatGPT, Claude, Deepseek, or various LLMs that support MCPs.
+The Trackio dashboard can be configured to run as both an API server and an MCP (Model Context Protocol) server, allowing external tools and applications to programmatically interact with your experiment tracking data, or for you to be able to "chat with your experiment data" in natural language using ChatGPT, Claude, Deepseek, or various LLMs that support MCPs. This makes Trackio an ideal choice for LLM agents running autonomous ML experiments, as they can seamlessly log metrics and query experiment results.
 
 ## Setup
 

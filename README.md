@@ -35,6 +35,7 @@
 - **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id` in `trackio.init()`.
   - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
   - Visualize experiments with a Gradio dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
+- **LLM-friendly**: Built with autonomous ML experiments in mind. Includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
 - Everything here, including hosting on Hugging Face, is **free**!
 
 Trackio is designed to be lightweight (the core codebase is <5,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
