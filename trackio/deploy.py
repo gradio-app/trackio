@@ -103,9 +103,17 @@ def deploy_as_space(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
+    # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
+    # Make sure necessary dependencies are installed by creating a requirements.txt.
+    is_source_install = _is_trackio_installed_from_source()
+
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
         readme_content = readme_content.replace("{GRADIO_VERSION}", gradio.__version__)
+        if is_source_install:
+            readme_content = readme_content.replace("{APP_FILE}", "trackio/ui/main.py")
+        else:
+            readme_content = readme_content.replace("{APP_FILE}", "app.py")
         readme_buffer = io.BytesIO(readme_content.encode("utf-8"))
         hf_api.upload_file(
             path_or_fileobj=readme_buffer,
@@ -113,10 +121,6 @@ def deploy_as_space(
             repo_id=space_id,
             repo_type="space",
         )
-
-    # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
-    # Make sure necessary dependencies are installed by creating a requirements.txt.
-    is_source_install = _is_trackio_installed_from_source()
 
     if is_source_install:
         requirements_content = _get_source_install_dependencies()
@@ -156,7 +160,6 @@ trackio.show()"""
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
-
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
         huggingface_hub.add_space_variable(
             space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
@@ -165,13 +168,10 @@ trackio.show()"""
         huggingface_hub.add_space_variable(
             space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
         )
-
     if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
         huggingface_hub.add_space_variable(space_id, "TRACKIO_PLOT_ORDER", plot_order)
-
     if theme := os.environ.get("TRACKIO_THEME"):
         huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
-
     huggingface_hub.add_space_variable(space_id, "GRADIO_MCP_SERVER", "True")
 
 
@@ -207,26 +207,6 @@ def create_space_if_not_exists(
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
         print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
-        if dataset_id is not None:
-            huggingface_hub.add_space_variable(
-                space_id, "TRACKIO_DATASET_ID", dataset_id
-            )
-        if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
-            huggingface_hub.add_space_variable(
-                space_id, "TRACKIO_LOGO_LIGHT_URL", logo_light_url
-            )
-        if logo_dark_url := os.environ.get("TRACKIO_LOGO_DARK_URL"):
-            huggingface_hub.add_space_variable(
-                space_id, "TRACKIO_LOGO_DARK_URL", logo_dark_url
-            )
-
-        if plot_order := os.environ.get("TRACKIO_PLOT_ORDER"):
-            huggingface_hub.add_space_variable(
-                space_id, "TRACKIO_PLOT_ORDER", plot_order
-            )
-
-        if theme := os.environ.get("TRACKIO_THEME"):
-            huggingface_hub.add_space_variable(space_id, "TRACKIO_THEME", theme)
         return
     except RepositoryNotFoundError:
         pass
@@ -234,9 +214,6 @@ def create_space_if_not_exists(
         if e.response.status_code in [401, 403]:  # unauthorized or forbidden
             print("Need 'write' access token to create a Spaces repo.")
             huggingface_hub.login(add_to_git_credential=False)
-            huggingface_hub.add_space_variable(
-                space_id, "TRACKIO_DATASET_ID", dataset_id
-            )
         else:
             raise ValueError(f"Failed to create Space: {e}")
 

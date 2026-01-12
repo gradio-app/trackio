@@ -172,6 +172,7 @@ def init(
                 show_error=True,
                 favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
                 allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
+                ssr_mode=False,
             )
             context_vars.current_space_id.set(None)
         else:
@@ -537,6 +538,7 @@ def show(
         allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
         mcp_server=_mcp_server,
         theme=theme,
+        ssr_mode=False,
     )
 
     base_url = share_url + "/" if share_url else url

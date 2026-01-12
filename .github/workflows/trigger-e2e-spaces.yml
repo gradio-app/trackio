@@ -1,0 +1,35 @@
+name: trigger-e2e-spaces
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  trigger:
+    name: "trigger-e2e-spaces"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create PR info JSON
+        run: |
+          echo '{
+            "pr_number": "${{ github.event.pull_request.number }}",
+            "sha": "${{ github.event.pull_request.head.sha }}",
+            "source_repo": "${{ github.event.pull_request.head.repo.full_name }}",
+            "source_branch": "${{ github.event.pull_request.head.ref }}"
+          }' > pr_info.json
+          cat pr_info.json
+
+      - name: Upload PR info artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-info
+          path: pr_info.json
+

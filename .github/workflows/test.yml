@@ -57,7 +57,7 @@ jobs:
         
     - name: Run backend unit tests
       run: |
-        pytest --deselect=tests/ui 
+        pytest --deselect=tests/ui --deselect=tests/e2e-spaces
 
     - name: Run ui/ux interaction tests
       if: matrix.os == 'ubuntu-latest'

@@ -542,37 +542,7 @@ def configure(request: gr.Request):
 
 
 CSS = """
-.logo-light { display: block; } 
-.logo-dark { display: none; }
-.dark .logo-light { display: none; }
-.dark .logo-dark { display: block; }
 .dark .caption-label { color: white; }
-
-.info-container {
-    position: relative;
-    display: inline;
-}
-.info-checkbox {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-}
-.info-icon {
-    border-bottom: 1px dotted;
-    cursor: pointer;
-    user-select: none;
-    color: var(--color-accent);
-}
-.info-expandable {
-    display: none;
-    opacity: 0;
-    transition: opacity 0.2s ease-in-out;
-}
-.info-checkbox:checked ~ .info-expandable {
-    display: inline;
-    opacity: 1;
-}
-.info-icon:hover { opacity: 0.8; }
 .accent-link { font-weight: bold; }
 
 .media-gallery .fixed-height { min-height: 275px; }
@@ -594,6 +564,25 @@ CSS = """
 
 .tab-like-container {
     visibility: hidden;
+}
+
+/* Runs table styling - prevent text overflow and distortion */
+.dataframe table {
+    table-layout: fixed;
+    width: 100%;
+}
+.dataframe td, .dataframe th {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 8px 12px;
+}
+.dataframe td:hover, .dataframe th:hover {
+    overflow: visible;
+    white-space: normal;
+    word-wrap: break-word;
+    position: relative;
+    z-index: 10;
 }
 """
 
@@ -654,14 +643,8 @@ gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 with gr.Blocks(title="Trackio Dashboard") as demo:
     with gr.Sidebar(open=False) as sidebar:
-        logo_urls = utils.get_logo_urls()
-        logo = gr.Markdown(
-            f"""
-                <img src='{logo_urls["light"]}' width='80%' class='logo-light'>
-                <img src='{logo_urls["dark"]}' width='80%' class='logo-dark'>            
-            """
-        )
-        project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
+        logo = fns.create_logo()
+        project_dd = fns.create_project_dropdown()
 
         embed_code = gr.Code(
             label="Embed this view",
@@ -700,16 +683,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             info="Filter metrics using regex patterns. Leave empty to show all metrics.",
         )
 
-    navbar = gr.Navbar(
-        value=[
-            ("Metrics", ""),
-            ("System Metrics", "/system"),
-            ("Media & Tables", "/media"),
-            ("Runs", "/runs"),
-            ("Files", "/files"),
-        ],
-        main_page_name=False,
-    )
+    navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
@@ -900,6 +874,19 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(
         fn=get_run_summary,
         api_name="get_run_summary",
+    )
+
+    def force_sync() -> bool:
+        """Force an immediate sync of all data to the dataset."""
+        SQLiteStorage._dataset_import_attempted = True
+        SQLiteStorage.export_to_parquet()
+        scheduler = SQLiteStorage.get_scheduler()
+        scheduler.trigger().result()
+        return True
+
+    gr.api(
+        fn=force_sync,
+        api_name="force_sync",
     )
 
     last_steps = gr.State({})
@@ -1306,4 +1293,5 @@ if __name__ == "__main__":
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
         footer_links=["gradio", "settings"],
         show_error=True,
+        ssr_mode=False,
     )

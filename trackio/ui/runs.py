@@ -1,83 +1,80 @@
 """The Runs page for the Trackio UI."""
 
-import re
-
 import gradio as gr
-import pandas as pd
 
 import trackio.utils as utils
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import fns
+from trackio.ui.components.runs_table import RunsTable
 
 
-def get_runs_data(project):
-    """Get the runs data as a pandas DataFrame."""
+def get_runs_data(project: str) -> tuple[list[str], list[list[str]], list[str]]:
+    """Get the runs data as headers, rows, and run names list."""
+    if not project:
+        return [], [], []
     configs = SQLiteStorage.get_all_run_configs(project)
     if not configs:
-        return pd.DataFrame()
+        return [], [], []
 
-    df = pd.DataFrame.from_dict(configs, orient="index")
-    df = df.fillna("")
-    df.index.name = "Name"
-    df.reset_index(inplace=True)
+    run_names = list(configs.keys())
 
-    df.rename(columns=fns.CONFIG_COLUMN_MAPPINGS, inplace=True)
+    headers = set()
+    for config in configs.values():
+        headers.update(config.keys())
+    headers = list(headers)
 
-    if "Created" in df.columns:
-        df["Created"] = df["Created"].apply(utils.format_timestamp)
+    header_mapping = {v: k for k, v in fns.CONFIG_COLUMN_MAPPINGS.items()}
+    headers = [fns.CONFIG_COLUMN_MAPPINGS.get(h, h) for h in headers]
 
-    if "Username" in df.columns:
-        df["Username"] = df["Username"].apply(
-            lambda x: f"<a href='https://huggingface.co/{x}' style='text-decoration-style: dotted;'>{x}</a>"
-            if x and x != "None"
-            else x
-        )
+    if "Name" not in headers:
+        headers.append("Name")
 
-    if "Name" in df.columns:
-        df["Name"] = df["Name"].apply(
-            lambda x: f"<a href='/run?selected_project={project}&selected_run={x}'>{x}</a>"
-            if x and x != "None"
-            else x
-        )
+    priority_order = ["Name", "Group", "Username", "Created"]
+    ordered_headers = []
+    for col in priority_order:
+        if col in headers:
+            ordered_headers.append(col)
+            headers.remove(col)
+    ordered_headers.extend(sorted(headers))
+    headers = ordered_headers
 
-    df.insert(0, " ", False)
+    rows = []
+    for run_name, config in configs.items():
+        row = []
+        for header in headers:
+            original_key = header_mapping.get(header, header)
+            cell_value = config.get(original_key, config.get(header, ""))
+            if cell_value is None:
+                cell_value = ""
 
-    columns = list(df.columns)
-    # Ensure columns appear immediately after Name in this order: Group, Username, Created
-    if "Name" in columns:
-        order = [col for col in ["Group", "Username", "Created"] if col in columns]
-        if order:
-            for col in order:
-                columns.remove(col)
-            name_idx = columns.index("Name")
-            insert_pos = name_idx + 1
-            for col in order:
-                columns.insert(insert_pos, col)
-                insert_pos += 1
-            df = df[columns]
+            if header == "Name":
+                cell_value = f"<a href='/run?selected_project={project}&selected_run={run_name}'>{run_name}</a>"
+            elif header == "Username" and cell_value and cell_value != "None":
+                cell_value = f"<a href='https://huggingface.co/{cell_value}' target='_blank' rel='noopener noreferrer'>{cell_value}</a>"
+            elif header == "Created" and cell_value:
+                cell_value = utils.format_timestamp(cell_value)
+            else:
+                cell_value = str(cell_value)
 
-    return df
+            row.append(cell_value)
+        rows.append(row)
+
+    return headers, rows, run_names
 
 
-def get_runs_table(project):
-    df = get_runs_data(project)
-    if df.empty:
-        return gr.DataFrame(pd.DataFrame(), visible=False)
+def get_runs_table(
+    project: str, interactive: bool = True
+) -> tuple[RunsTable, list[str]]:
+    headers, rows, run_names = get_runs_data(project)
+    if not rows:
+        return RunsTable(headers=[], rows=[], value=[], interactive=False), []
 
-    datatype = ["bool"] + ["markdown"] * (len(df.columns) - 1)
-
-    return gr.DataFrame(
-        df,
-        visible=True,
-        pinned_columns=2,
-        datatype=datatype,
-        wrap=True,
-        column_widths=["40px", "150px"],
-        interactive=True,
-        static_columns=list(range(1, len(df.columns))),
-        row_count=len(df),
-        column_count=len(df.columns),
-    )
+    return RunsTable(
+        headers=headers,
+        rows=rows,
+        value=[],
+        interactive=interactive,
+    ), run_names
 
 
 def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
@@ -98,39 +95,46 @@ def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
     return False
 
 
-def set_deletion_allowed(request: gr.Request, oauth_token: gr.OAuthToken | None):
+def set_deletion_allowed(
+    project: str, request: gr.Request, oauth_token: gr.OAuthToken | None
+) -> tuple[gr.Button, RunsTable, list[str], bool]:
     """Update the delete button value and interactivity based on the runs data and user write access."""
     if oauth_token:
         try:
             fns.check_oauth_token_has_write_access(oauth_token.token)
         except PermissionError:
+            table, run_names = get_runs_table(project, interactive=False)
             return (
                 gr.Button("⚠️ Need write access to delete runs", interactive=False),
-                gr.Dataframe(interactive=False),
+                table,
+                run_names,
                 False,
             )
     elif not check_write_access_runs(request, run_page.write_token):
+        table, run_names = get_runs_table(project, interactive=False)
         return (
             gr.Button("⚠️ Need write access to delete runs", interactive=False),
-            gr.Dataframe(interactive=False),
+            table,
+            run_names,
             False,
         )
+    table, run_names = get_runs_table(project, interactive=True)
     return (
         gr.Button("Select runs to delete", interactive=False),
-        gr.Dataframe(interactive=True),
+        table,
+        run_names,
         True,
     )
 
 
-def update_delete_button(deletion_allowed, runs_data):
+def update_delete_button(
+    deletion_allowed: bool, selected_indices: list[int]
+) -> gr.Button:
     """Update the delete button value and interactivity based on the selected runs."""
     if not deletion_allowed:
         return gr.Button(interactive=False)
 
-    num_selected = 0
-    if runs_data is not None and len(runs_data) > 0:
-        first_column_values = runs_data.iloc[:, 0].tolist()
-        num_selected = sum(1 for x in first_column_values if x)
+    num_selected = len(selected_indices) if selected_indices else 0
 
     if num_selected:
         return gr.Button(f"Delete {num_selected} selected run(s)", interactive=True)
@@ -138,46 +142,33 @@ def update_delete_button(deletion_allowed, runs_data):
         return gr.Button("Select runs to delete", interactive=False)
 
 
-def delete_selected_runs(deletion_allowed, runs_data, project, request: gr.Request):
+def delete_selected_runs(
+    deletion_allowed: bool,
+    selected_indices: list[int],
+    run_names_list: list[str],
+    project: str,
+) -> tuple[RunsTable, list[str]]:
     """Delete the selected runs and refresh the table."""
-    if not deletion_allowed:
-        return runs_data
+    if not deletion_allowed or not selected_indices:
+        return get_runs_table(project, interactive=True)
 
-    first_column_values = runs_data.iloc[:, 0].tolist()
-    for i, selected in enumerate(first_column_values):
-        if selected:
-            run_name_raw = runs_data.iloc[i, 1]
-            match = re.search(r">([^<]+)<", run_name_raw)
-            run_name = match.group(1) if match else run_name_raw
+    for idx in selected_indices:
+        if 0 <= idx < len(run_names_list):
+            run_name = run_names_list[idx]
             SQLiteStorage.delete_run(project, run_name)
 
-    updated_data = get_runs_data(project)
-    return updated_data
+    return get_runs_table(project, interactive=True)
 
 
 with gr.Blocks() as run_page:
     with gr.Sidebar() as sidebar:
-        logo_urls = utils.get_logo_urls()
-        logo = gr.Markdown(
-            f"""
-                <img src='{logo_urls["light"]}' width='80%' class='logo-light'>
-                <img src='{logo_urls["dark"]}' width='80%' class='logo-dark'>            
-            """
-        )
-        project_dd = gr.Dropdown(label="Project", allow_custom_value=True)
+        logo = fns.create_logo()
+        project_dd = fns.create_project_dropdown()
 
-    navbar = gr.Navbar(
-        value=[
-            ("Metrics", ""),
-            ("System Metrics", "/system"),
-            ("Media & Tables", "/media"),
-            ("Runs", "/runs"),
-            ("Files", "/files"),
-        ],
-        main_page_name=False,
-    )
+    navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
     allow_deleting_runs = gr.State(False)
+    run_names_state = gr.State([])
 
     with gr.Row():
         with gr.Column():
@@ -196,7 +187,7 @@ with gr.Blocks() as run_page:
                 )
                 cancel_btn = gr.Button("Cancel", size="md", visible=False)
 
-    runs_table = gr.DataFrame()
+    runs_table = RunsTable(headers=[], rows=[], value=[])
 
     gr.on(
         [run_page.load],
@@ -217,7 +208,7 @@ with gr.Blocks() as run_page:
         [project_dd.change],
         fn=get_runs_table,
         inputs=[project_dd],
-        outputs=[runs_table],
+        outputs=[runs_table, run_names_state],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -233,14 +224,14 @@ with gr.Blocks() as run_page:
     gr.on(
         [run_page.load],
         fn=set_deletion_allowed,
-        inputs=[],
-        outputs=[delete_run_btn, runs_table, allow_deleting_runs],
+        inputs=[project_dd],
+        outputs=[delete_run_btn, runs_table, run_names_state, allow_deleting_runs],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
     )
     gr.on(
-        [runs_table.change],
+        [runs_table.input],
         fn=update_delete_button,
         inputs=[allow_deleting_runs, runs_table],
         outputs=[delete_run_btn],
@@ -277,9 +268,18 @@ with gr.Blocks() as run_page:
     gr.on(
         [confirm_btn.click],
         fn=delete_selected_runs,
-        inputs=[allow_deleting_runs, runs_table, project_dd],
-        outputs=[runs_table],
+        inputs=[allow_deleting_runs, runs_table, run_names_state, project_dd],
+        outputs=[runs_table, run_names_state],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    ).then(
+        fn=update_delete_button,
+        inputs=[allow_deleting_runs, runs_table],
+        outputs=[delete_run_btn],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
     )
+
+    gr.api(fn=get_runs_data, api_name="get_runs_data")

@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 
@@ -6,6 +7,14 @@ import pytest
 from PIL import Image as PILImage
 
 from trackio.media import write_audio, write_video
+
+
+@pytest.fixture
+def test_space_id():
+    space_id = os.environ.get("TEST_SPACE_ID")
+    if not space_id:
+        pytest.skip("TEST_SPACE_ID environment variable not set")
+    return space_id
 
 
 @pytest.fixture
