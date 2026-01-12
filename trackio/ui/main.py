@@ -1346,7 +1346,12 @@ run_detail_page.write_token = write_token
 files_page.write_token = write_token
 
 if __name__ == "__main__":
+    HOST = os.getenv("GRADIO_SERVER_NAME", "0.0.0.0")
+    PORT = int(os.getenv("GRADIO_SERVER_PORT", 7860))
+
     demo.launch(
+        server_name=HOST,
+        server_port=PORT,
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
         footer_links=["gradio", "settings"],
         show_error=True,
