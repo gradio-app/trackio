@@ -477,6 +477,7 @@ def show(
     color_palette: list[str] | None = None,
     open_browser: bool = True,
     block_thread: bool | None = None,
+    host: str | None = None,
 ):
     """
     Launches the Trackio dashboard.
@@ -511,6 +512,9 @@ def show(
             If `True`, the main thread will be blocked until the dashboard is closed.
             If `None` (default behavior), then the main thread will not be blocked if the
             dashboard is launched in a notebook, otherwise the main thread will be blocked.
+        host (`str`, *optional*):
+            The host to bind the server to. If not provided, defaults to `'127.0.0.1'`
+            (localhost only). Set to `'0.0.0.0'` to allow remote access.
 
         Returns:
             `app`: The Gradio app object corresponding to the dashboard launched by Trackio.
@@ -541,6 +545,7 @@ def show(
         mcp_server=_mcp_server,
         theme=theme,
         ssr_mode=False,
+        server_name=host,
     )
 
     base_url = share_url + "/" if share_url else url

@@ -53,6 +53,11 @@ def main():
         required=False,
         help="Comma-separated list of hex color codes for plot lines (e.g. '#FF0000,#00FF00,#0000FF'). If not provided, the TRACKIO_COLOR_PALETTE environment variable will be used, or the default palette if not set.",
     )
+    ui_parser.add_argument(
+        "--host",
+        required=False,
+        help="Host to bind the server to (e.g. '0.0.0.0' for remote access). If not provided, defaults to '127.0.0.1' (localhost only).",
+    )
 
     sync_parser = subparsers.add_parser(
         "sync",
@@ -251,6 +256,7 @@ def main():
             mcp_server=args.mcp_server,
             footer=args.footer,
             color_palette=color_palette,
+            host=args.host,
         )
     elif args.command == "sync":
         sync(
