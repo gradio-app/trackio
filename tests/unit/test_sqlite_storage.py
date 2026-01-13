@@ -232,3 +232,34 @@ def test_old_database_without_configs_table(temp_dir):
 
     all_configs = SQLiteStorage.get_all_run_configs("test")
     assert all_configs == {}
+
+
+def test_get_runs_returns_chronological_order(temp_dir):
+    db_path = SQLiteStorage.get_project_db_path("proj")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE metrics (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT,
+                run_name TEXT,
+                step INTEGER,
+                metrics TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+            ("2024-01-01", "run-z", 0, orjson.dumps({"loss": 0.5})),
+        )
+        conn.execute(
+            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+            ("2024-01-02", "run-a", 0, orjson.dumps({"loss": 0.5})),
+        )
+        conn.execute(
+            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+            ("2024-01-03", "run-m", 0, orjson.dumps({"loss": 0.5})),
+        )
+
+    runs = SQLiteStorage.get_runs("proj")
+    assert runs == ["run-z", "run-a", "run-m"]
