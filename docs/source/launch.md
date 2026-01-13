@@ -96,6 +96,31 @@ trackio.show(color_palette=["#FF0000", "#00FF00", "#0000FF"])
 
 The colors will be cycled through when displaying multiple runs. You can provide as many or as few colors as you like.
 
+## Enabling Remote Access
+
+By default, the dashboard binds to `127.0.0.1` (localhost), which means it can only be accessed from the same machine. To allow remote access from other machines on the network, use the `--host` option:
+
+<hfoptions id="language">
+<hfoption id="Shell">
+
+```sh
+trackio show --host 0.0.0.0
+```
+
+</hfoption>
+<hfoption id="Python">
+
+```py
+import trackio 
+
+trackio.show(host="0.0.0.0")
+```
+
+</hfoption>
+</hfoptions>
+
+This is particularly useful when running Trackio on a remote server or in a containerized environment where you need to access the dashboard from a different machine.
+
 ## Launching a Dashboard in Jupyter Notebooks
 
 You can also launch the dashboard directly within a Jupyter Notebook. Just use the same command as above:
