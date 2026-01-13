@@ -734,7 +734,7 @@ class SQLiteStorage:
 
     @staticmethod
     def get_runs(project: str) -> list[str]:
-        """Get list of all runs for a project."""
+        """Get list of all runs for a project, ordered by creation time."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
@@ -742,7 +742,12 @@ class SQLiteStorage:
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT DISTINCT run_name FROM metrics",
+                """
+                SELECT DISTINCT m.run_name
+                FROM metrics m
+                LEFT JOIN configs c ON m.run_name = c.run_name
+                ORDER BY c.created_at ASC, m.run_name ASC
+                """,
             )
             return [row[0] for row in cursor.fetchall()]
 
