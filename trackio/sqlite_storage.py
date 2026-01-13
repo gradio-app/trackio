@@ -743,10 +743,10 @@ class SQLiteStorage:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT DISTINCT m.run_name
-                FROM metrics m
-                LEFT JOIN configs c ON m.run_name = c.run_name
-                ORDER BY c.created_at ASC, m.run_name ASC
+                SELECT run_name
+                FROM metrics
+                GROUP BY run_name
+                ORDER BY MIN(timestamp) ASC
                 """,
             )
             return [row[0] for row in cursor.fetchall()]
