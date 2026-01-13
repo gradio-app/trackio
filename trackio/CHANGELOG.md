@@ -1,5 +1,14 @@
 # trackio
 
+## 0.15.0
+
+### Features
+
+- [#397](https://github.com/gradio-app/trackio/pull/397) [`6b38ad0`](https://github.com/gradio-app/trackio/commit/6b38ad02e5d73a0df49c4eede7e91331282ece04) - Adds `--host` cli option support.  Thanks @abidlabs!
+- [#396](https://github.com/gradio-app/trackio/pull/396) [`4a4d1ab`](https://github.com/gradio-app/trackio/commit/4a4d1ab85e63d923132a3fa7afa5d90e16431bec) - Fix run selection issue.  Thanks @abidlabs!
+- [#394](https://github.com/gradio-app/trackio/pull/394) [`c47a3a3`](https://github.com/gradio-app/trackio/commit/c47a3a31f8c4b83bce1aa7fc22eeba3d9021ad3d) - Add wandb-compatible API for trackio.  Thanks @abidlabs!
+- [#378](https://github.com/gradio-app/trackio/pull/378) [`b02046a`](https://github.com/gradio-app/trackio/commit/b02046a5b0dad7c9854e099a87f884afba4aecb2) - Add JSON export button for line plots and upgrade gradio dependency.  Thanks @JamshedAli18!
+
 ## 0.14.2
 
 ### Features
