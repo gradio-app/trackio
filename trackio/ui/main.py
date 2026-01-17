@@ -704,6 +704,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
     metrics_subset = gr.State([])
+    metrics_layout_state = gr.State({})
     selected_runs_from_url = gr.State([])
     run_selection_state = gr.State(RunSelection())
     x_lim = gr.State(None)
@@ -943,6 +944,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             run_cb,
             smoothing_slider,
             metrics_subset,
+            metrics_layout_state,
             x_lim,
             x_axis_dd,
             log_scale_x_cb,
@@ -958,6 +960,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         runs,
         smoothing_granularity,
         metrics_subset,
+        metrics_layout_state,
         x_lim_value,
         x_axis,
         log_scale_x,
@@ -1028,7 +1031,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         all_runs = selection.choices if selection else original_runs
         color_map = utils.get_color_mapping(all_runs, smoothing_granularity > 0)
 
-        metric_idx = 0
         for group_name in ordered_groups:
             group_data = nested_metric_groups[group_name]
 
@@ -1054,7 +1056,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             ):
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
-                        key=f"row-{group_name}-direct", orientation="row"
+                        key=f"row-{group_name}-direct",
+                        orientation="row",
+                        preserved_by_key=["children"],
                     ):
                         for metric_name in group_data["direct_metrics"]:
                             metric_df = master_df.dropna(subset=[metric_name])
@@ -1067,6 +1071,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 x_lim_value,
                             )
                             if not metric_df.empty:
+                                # Use stable key based on metric name, not loop index
+                                safe_metric_key = metric_name.replace("/", "-").replace(" ", "_")
                                 download_btn = gr.Button("📄")
                                 plot = gr.LinePlot(
                                     downsampled_df,
@@ -1077,8 +1083,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                     color_map=color_map,
                                     colors_in_legend=original_runs,
                                     title=metric_name,
-                                    key=f"plot-{metric_idx}",
-                                    preserved_by_key=None,
+                                    key=f"plot-{group_name}-{safe_metric_key}",
+                                    preserved_by_key=["value"],
                                     buttons=[download_btn, "fullscreen", "export"],
                                     x_lim=updated_x_lim,
                                     min_width=400,
@@ -1092,14 +1098,13 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 plot.select(
                                     update_x_lim,
                                     outputs=x_lim,
-                                    key=f"select-{metric_idx}",
+                                    key=f"select-{group_name}-{safe_metric_key}",
                                 )
                                 plot.double_click(
                                     lambda: None,
                                     outputs=x_lim,
-                                    key=f"double-{metric_idx}",
+                                    key=f"double-{group_name}-{safe_metric_key}",
                                 )
-                            metric_idx += 1
 
                 if group_data["subgroups"]:
                     for subgroup_name in sorted(group_data["subgroups"].keys()):
@@ -1125,6 +1130,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             with gr.Draggable(
                                 key=f"row-{group_name}-{subgroup_name}",
                                 orientation="row",
+                                preserved_by_key=["children"],
                             ):
                                 for metric_name in subgroup_metrics:
                                     metric_df = master_df.dropna(subset=[metric_name])
@@ -1139,6 +1145,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         x_lim_value,
                                     )
                                     if not metric_df.empty:
+                                        # Use stable key based on metric name, not loop index
+                                        safe_metric_key = metric_name.replace("/", "-").replace(" ", "_")
                                         download_btn = gr.Button("📄")
                                         plot = gr.LinePlot(
                                             downsampled_df,
@@ -1149,8 +1157,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                             color_map=color_map,
                                             colors_in_legend=original_runs,
                                             title=metric_name,
-                                            key=f"plot-{metric_idx}",
-                                            preserved_by_key=None,
+                                            key=f"plot-{group_name}-{subgroup_name}-{safe_metric_key}",
+                                            preserved_by_key=["value"],
                                             buttons=[
                                                 download_btn,
                                                 "fullscreen",
@@ -1168,14 +1176,13 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         plot.select(
                                             update_x_lim,
                                             outputs=x_lim,
-                                            key=f"select-{metric_idx}",
+                                            key=f"select-{group_name}-{subgroup_name}-{safe_metric_key}",
                                         )
                                         plot.double_click(
                                             lambda: None,
                                             outputs=x_lim,
-                                            key=f"double-{metric_idx}",
+                                            key=f"double-{group_name}-{subgroup_name}-{safe_metric_key}",
                                         )
-                                    metric_idx += 1
 
     with grouped_runs_panel:
 

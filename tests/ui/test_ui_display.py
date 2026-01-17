@@ -37,10 +37,35 @@ def test_runs_plots_images_are_displayed(temp_dir):
             locator = page.locator(".vega-embed")
             expect(locator).to_have_count(2)
 
+            # capture textual ordering of metric names on the page
+            body_text_before = page.locator("body").inner_text()
+            idx_loss_before = body_text_before.find("loss")
+            idx_acc_before = body_text_before.find("acc")
+            assert idx_loss_before != -1 and idx_acc_before != -1
+            assert idx_loss_before < idx_acc_before
+
+            # toggle the X-axis and ensure layout (order) is preserved
+            xaxis = page.get_by_label("X-axis")
+            try:
+                xaxis.select_option("time")
+                expect(locator).to_have_count(2)
+                body_text_after_x = page.locator("body").inner_text()
+                # relative order should remain
+                assert body_text_after_x.find("loss") < body_text_after_x.find("acc")
+            finally:
+                # switch back to step to avoid flakiness for other tests
+                xaxis.select_option("step")
+
             # But if we uncheck the run, the line plots should be hidden
             checkbox_label.locator("input[type='checkbox']").uncheck()
             locator = page.locator(".vega-embed")
             expect(locator).to_have_count(0)
+
+            # re-check the run — layout/order should be preserved
+            checkbox_label.locator("input[type='checkbox']").check()
+            expect(page.locator(".vega-embed")).to_have_count(2)
+            body_text_after = page.locator("body").inner_text()
+            assert body_text_after.find("loss") < body_text_after.find("acc")
 
             # Navigate to media page and verify image is displayed
             page.get_by_role("link", name="Media & Tables").click()

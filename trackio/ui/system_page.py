@@ -187,7 +187,6 @@ trackio.log_gpu()
         all_runs = selection.choices if selection else original_runs
         color_map = utils.get_color_mapping(all_runs, False)
 
-        metric_idx = 0
         for group_name in ordered_groups:
             group_data = nested_metric_groups[group_name]
 
@@ -213,7 +212,9 @@ trackio.log_gpu()
             ):
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
-                        key=f"sys-row-{group_name}-direct", orientation="row"
+                        key=f"sys-row-{group_name}-direct",
+                        orientation="row",
+                        preserved_by_key=["children"],
                     ):
                         for metric_name in group_data["direct_metrics"]:
                             metric_df = master_df.dropna(subset=[metric_name])
@@ -226,6 +227,8 @@ trackio.log_gpu()
                                 x_lim_value,
                             )
                             if not metric_df.empty:
+                                # Use stable key based on metric name, not loop index
+                                safe_metric_key = metric_name.replace("/", "-").replace(" ", "_")
                                 plot = gr.LinePlot(
                                     downsampled_df,
                                     x=x_column,
@@ -236,8 +239,8 @@ trackio.log_gpu()
                                     color_map=color_map,
                                     colors_in_legend=original_runs,
                                     title=metric_name,
-                                    key=f"sys-plot-{metric_idx}",
-                                    preserved_by_key=None,
+                                    key=f"sys-plot-{group_name}-{safe_metric_key}",
+                                    preserved_by_key=["value"],
                                     buttons=["fullscreen", "export"],
                                     x_lim=updated_x_lim,
                                     min_width=400,
@@ -245,14 +248,13 @@ trackio.log_gpu()
                                 plot.select(
                                     update_x_lim,
                                     outputs=x_lim,
-                                    key=f"sys-select-{metric_idx}",
+                                    key=f"sys-select-{group_name}-{safe_metric_key}",
                                 )
                                 plot.double_click(
                                     lambda: None,
                                     outputs=x_lim,
-                                    key=f"sys-double-{metric_idx}",
+                                    key=f"sys-double-{group_name}-{safe_metric_key}",
                                 )
-                            metric_idx += 1
 
                 if group_data["subgroups"]:
                     for subgroup_name in sorted(group_data["subgroups"].keys()):
@@ -278,6 +280,7 @@ trackio.log_gpu()
                             with gr.Draggable(
                                 key=f"sys-row-{group_name}-{subgroup_name}",
                                 orientation="row",
+                                preserved_by_key=["children"],
                             ):
                                 for metric_name in subgroup_metrics:
                                     metric_df = master_df.dropna(subset=[metric_name])
@@ -292,6 +295,8 @@ trackio.log_gpu()
                                         x_lim_value,
                                     )
                                     if not metric_df.empty:
+                                        # Use stable key based on metric name, not loop index
+                                        safe_metric_key = metric_name.replace("/", "-").replace(" ", "_")
                                         plot = gr.LinePlot(
                                             downsampled_df,
                                             x=x_column,
@@ -302,8 +307,8 @@ trackio.log_gpu()
                                             color_map=color_map,
                                             colors_in_legend=original_runs,
                                             title=metric_name,
-                                            key=f"sys-plot-{metric_idx}",
-                                            preserved_by_key=None,
+                                            key=f"sys-plot-{group_name}-{subgroup_name}-{safe_metric_key}",
+                                            preserved_by_key=["value"],
                                             buttons=["fullscreen", "export"],
                                             x_lim=updated_x_lim,
                                             min_width=400,
@@ -311,14 +316,13 @@ trackio.log_gpu()
                                         plot.select(
                                             update_x_lim,
                                             outputs=x_lim,
-                                            key=f"sys-select-{metric_idx}",
+                                            key=f"sys-select-{group_name}-{subgroup_name}-{safe_metric_key}",
                                         )
                                         plot.double_click(
                                             lambda: None,
                                             outputs=x_lim,
-                                            key=f"sys-double-{metric_idx}",
+                                            key=f"sys-double-{group_name}-{subgroup_name}-{safe_metric_key}",
                                         )
-                                    metric_idx += 1
 
     gr.on(
         [timer.tick],
