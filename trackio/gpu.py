@@ -13,6 +13,14 @@ _nvml_lock = threading.Lock()
 _energy_baseline: dict[int, float] = {}
 
 
+def _get_rank_prefix() -> str:
+    """Get rank prefix for distributed training. Returns empty string if not distributed."""
+    rank = os.environ.get("RANK") or os.environ.get("SLURM_PROCID")
+    if rank is not None:
+        return f"rank{rank}/"
+    return ""
+
+
 def _ensure_pynvml():
     global PYNVML_AVAILABLE, pynvml
     if PYNVML_AVAILABLE:
@@ -142,9 +150,10 @@ def collect_gpu_metrics(device: int | None = None) -> dict:
     total_power = 0.0
     max_temp = 0.0
     valid_util_count = 0
+    rank_prefix = _get_rank_prefix()
 
     for logical_idx, physical_idx in gpu_indices:
-        prefix = f"gpu/{logical_idx}"
+        prefix = f"{rank_prefix}gpu/{logical_idx}"
         try:
             handle = pynvml.nvmlDeviceGetHandleByIndex(physical_idx)
 
@@ -286,13 +295,13 @@ def collect_gpu_metrics(device: int | None = None) -> dict:
             continue
 
     if valid_util_count > 0:
-        metrics["gpu/mean_utilization"] = total_util / valid_util_count
+        metrics[f"{rank_prefix}gpu/mean_utilization"] = total_util / valid_util_count
     if total_mem_used_gib > 0:
-        metrics["gpu/total_allocated_memory"] = total_mem_used_gib
+        metrics[f"{rank_prefix}gpu/total_allocated_memory"] = total_mem_used_gib
     if total_power > 0:
-        metrics["gpu/total_power"] = total_power
+        metrics[f"{rank_prefix}gpu/total_power"] = total_power
     if max_temp > 0:
-        metrics["gpu/max_temp"] = max_temp
+        metrics[f"{rank_prefix}gpu/max_temp"] = max_temp
 
     return metrics
 
