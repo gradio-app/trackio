@@ -1,5 +1,11 @@
 # trackio
 
+## 0.15.1
+
+### Fixes
+
+- Fix metric layout reset when changing X-axis counter or removing runs from display.
+
 ## 0.15.0
 
 ### Features

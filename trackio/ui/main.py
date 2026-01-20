@@ -1054,9 +1054,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             ):
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
-                        key=f"row-{group_name}-direct", orientation="row"
+                        key=f"row-{group_name}-direct",
+                        orientation="row",
+                        preserved_by_key=["value"],
                     ):
                         for metric_name in group_data["direct_metrics"]:
+                            safe_metric_id = re.sub(r"[^a-zA-Z0-9_]+", "_", metric_name)
                             metric_df = master_df.dropna(subset=[metric_name])
                             color = "run" if "run" in metric_df.columns else None
                             downsampled_df, updated_x_lim = utils.downsample(
@@ -1077,8 +1080,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                     color_map=color_map,
                                     colors_in_legend=original_runs,
                                     title=metric_name,
-                                    key=f"plot-{metric_idx}",
-                                    preserved_by_key=None,
+                                    key=f"plot-{safe_metric_id}",
+                                    preserved_by_key=[],
                                     buttons=[download_btn, "fullscreen", "export"],
                                     x_lim=updated_x_lim,
                                     min_width=400,
@@ -1092,12 +1095,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 plot.select(
                                     update_x_lim,
                                     outputs=x_lim,
-                                    key=f"select-{metric_idx}",
+                                    key=f"select-{safe_metric_id}",
                                 )
                                 plot.double_click(
                                     lambda: None,
                                     outputs=x_lim,
-                                    key=f"double-{metric_idx}",
+                                    key=f"double-{safe_metric_id}",
                                 )
                             metric_idx += 1
 
@@ -1125,8 +1128,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             with gr.Draggable(
                                 key=f"row-{group_name}-{subgroup_name}",
                                 orientation="row",
+                                preserved_by_key=["value"],
                             ):
                                 for metric_name in subgroup_metrics:
+                                    safe_metric_id = re.sub(
+                                        r"[^a-zA-Z0-9_]+", "_", metric_name
+                                    )
                                     metric_df = master_df.dropna(subset=[metric_name])
                                     color = (
                                         "run" if "run" in metric_df.columns else None
@@ -1149,8 +1156,8 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                             color_map=color_map,
                                             colors_in_legend=original_runs,
                                             title=metric_name,
-                                            key=f"plot-{metric_idx}",
-                                            preserved_by_key=None,
+                                            key=f"plot-{safe_metric_id}",
+                                            preserved_by_key=[],
                                             buttons=[
                                                 download_btn,
                                                 "fullscreen",
@@ -1168,12 +1175,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                         plot.select(
                                             update_x_lim,
                                             outputs=x_lim,
-                                            key=f"select-{metric_idx}",
+                                            key=f"select-{safe_metric_id}",
                                         )
                                         plot.double_click(
                                             lambda: None,
                                             outputs=x_lim,
-                                            key=f"double-{metric_idx}",
+                                            key=f"double-{safe_metric_id}",
                                         )
                                     metric_idx += 1
 
