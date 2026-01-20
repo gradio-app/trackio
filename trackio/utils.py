@@ -12,7 +12,6 @@ import huggingface_hub
 import numpy as np
 import pandas as pd
 from huggingface_hub.constants import HF_HOME
-from trackio.geo import TrackioGeo
 
 if TYPE_CHECKING:
     from trackio.commit_scheduler import CommitScheduler
