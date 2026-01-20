@@ -1,6 +1,12 @@
 # Contributed Clients
 
-This folder contains **lightweight, open-source experiment tracking** clients for several languages: currently, Go, JavaScript, and Rust. These clients let you log experimental data to a Trackio dashboard hosted on [🤗 Hugging Face Spaces](https://huggingface.co/spaces) or running locally.
+These official community clients provide **high-performance, type-safe** access to Trackio across the most common development stacks.
+
+| Language | Registry | Installation |
+| :--- | :--- | :--- |
+| **Rust** | [crates.io](https://crates.io/crates/trackio-rs) | `cargo add trackio-rs` |
+| **JavaScript** | [npmjs.com](https://www.npmjs.com/package/trackio-js) | `npm install trackio-js` |
+| **Go** | [pkg.go.dev](https://pkg.go.dev/github.com/vaibhav-research/trackio/contrib/trackio-go) | `go get github.com/vaibhav-research/trackio/contrib/trackio-go` |
 
 **Note:** These clients are contributed by the open-source community and are not maintained at the same level as the rest of the Python-based repo.
 
@@ -35,7 +41,9 @@ export TRACKIO_RUN="go-run-1"
 ```
 
 ```bash
-go run trackio-go/examples/quickstart
+import "https://github.com/vaibhav-research/trackio/contrib/trackio-go"
+client := trackio.NewClient()
+client.Log(map[string]interface{}{"loss": 0.5}, 1)
 ```
 
 Internal calls:
@@ -58,7 +66,9 @@ export TRACKIO_RUN="js-run-1"
 ```
 
 ```bash
-node trackio-js/examples/quickstart.mjs
+import { TrackioClient } from 'trackio-js';
+const client = new TrackioClient();
+await client.log({ loss: 0.5 }, 0);
 ```
 
 Internal calls:
@@ -80,7 +90,9 @@ export TRACKIO_RUN="rs-run-1"
 ```
 
 ```bash
-cd trackio-rs && cargo run --example quickstart
+use trackio::TrackioClient;
+let client = TrackioClient::from_env();
+client.log(json!({"loss": 0.5}), Some(0), None);
 ```
 
 Internal calls:

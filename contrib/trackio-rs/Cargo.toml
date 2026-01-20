@@ -1,12 +1,18 @@
 [package]
-name = "trackio"
+name = "trackio-rs"
 version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
-description = "Minimal client-only Trackio SDK (Rust)"
+authors = ["Vaibhav Pandey <vaibhavpandey.uiet@gmail.com>"]
+description = "High-performance, thread-safe Rust client for Trackio experiment tracking."
 repository = "https://github.com/gradio-app/trackio"
+homepage = "https://github.com/gradio-app/trackio/tree/main/contrib/trackio-rs"
+license = "Apache-2.0"
+keywords = ["machine-learning", "experiment-tracking", "monitoring", "trackio"]
+categories = ["development-tools::profiling", "science"]
+readme = "README.md"
 
 [dependencies]
+# Your current dependencies are excellent choices for a production-grade SDK
 once_cell = "1.19"
 parking_lot = "0.12"
 reqwest = { version = "0.12", features = ["blocking", "json"] }

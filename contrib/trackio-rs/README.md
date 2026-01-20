@@ -1,6 +1,33 @@
-# trackio-rs — Rust client for Trackio
+# trackio-rs
 
-A lightweight Rust client for [Trackio](https://github.com/gradio-app/trackio), the open-source experiment tracker built by Hugging Face.
+[![Crates.io](https://img.shields.io/crates/v/trackio-rs.svg)](https://crates.io/crates/trackio-rs)
+[![Documentation](https://docs.rs/trackio-rs/badge.svg)](https://docs.rs/trackio-rs)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/gradio-app/trackio/blob/main/LICENSE)
+
+**trackio-rs** is the high-performance Rust client for [Trackio](https://github.com/gradio-app/trackio), the open-source experiment tracker built by Hugging Face. 
+
+This SDK enables systems engineers and ML researchers to log metrics from high-concurrency, production-grade environments with the safety and speed of Rust.
+
+## Why trackio-rs?
+
+While the Python client is ideal for research, **trackio-rs** is built for:
+- **Production Systems**: Low-latency metric logging for live model monitoring.
+- **Thread Safety**: Built on `parking_lot` and `reqwest` for safe concurrent logging.
+- **Memory Efficiency**: Minimal footprint for edge devices and high-throughput servers.
+
+## Quickstart
+
+### 1. Set Up Your Dashboard
+Deploy your Trackio Space on Hugging Face:
+[Deploy Trackio Template](https://huggingface.co/new-space?sdk=gradio&template=gradio-templates%2Ftrackio-dashboard)
+
+### 2. Installation
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+trackio-rs = "0.1.0"
+```
 
 ## Quickstart
 
@@ -58,11 +85,3 @@ client.flush()?;
 | `TRACKIO_RUN` | Run name | - |
 | `HF_TOKEN` | Hugging Face token with write access | - |
 
-## Install
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-trackio = { path = "../trackio-rs" }
-```

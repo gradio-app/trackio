@@ -1,6 +1,9 @@
-# trackio-js — JavaScript/TypeScript client for Trackio
+# trackio-js
 
-A lightweight JavaScript/TypeScript client for [Trackio](https://github.com/gradio-app/trackio), the open-source experiment tracker built by Hugging Face.
+[![npm version](https://img.shields.io/npm/v/trackio-client-js.svg)](https://www.npmjs.com/package/trackio-client-js)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/gradio-app/trackio/blob/main/LICENSE)
+
+The official JavaScript/TypeScript client for [Trackio](https://github.com/gradio-app/trackio).
 
 ## Quickstart
 
