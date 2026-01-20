@@ -866,8 +866,6 @@ def to_json_safe(obj):
         return [to_json_safe(v) for v in obj]
     if hasattr(obj, "to_dict") and callable(obj.to_dict):
         return to_json_safe(obj.to_dict())
-    if isinstance(obj, TrackioGeo):
-        return obj.to_dict()
     if hasattr(obj, "__dict__"):
         return {
             str(k): to_json_safe(v)
