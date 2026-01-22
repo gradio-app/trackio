@@ -6,7 +6,7 @@ These official community clients provide **high-performance, type-safe** access 
 | :--- | :--- | :--- |
 | **Rust** | [crates.io](https://crates.io/crates/trackio-rs) | `cargo add trackio-rs` |
 | **JavaScript** | [npmjs.com](https://www.npmjs.com/package/trackio-js) | `npm install trackio-js` |
-| **Go** | [pkg.go.dev](https://pkg.go.dev/github.com/vaibhav-research/trackio/contrib/trackio-go) | `go get github.com/vaibhav-research/trackio/contrib/trackio-go` |
+| **Go** | [pkg.go.dev](https://pkg.go.dev/github.com/gradio-app/trackio/contrib/trackio-go) | `go get github.com/gradio-app/trackio/contrib/trackio-go` |
 
 **Note:** These clients are contributed by the open-source community and are not maintained at the same level as the rest of the Python-based repo.
 
@@ -41,7 +41,7 @@ export TRACKIO_RUN="go-run-1"
 ```
 
 ```bash
-import "https://github.com/vaibhav-research/trackio/contrib/trackio-go"
+import "https://github.com/gradio-app/trackio/contrib/trackio-go"
 client := trackio.NewClient()
 client.Log(map[string]interface{}{"loss": 0.5}, 1)
 ```

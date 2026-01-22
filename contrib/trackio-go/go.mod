@@ -1,3 +1,3 @@
-module github.com/vaibhav-research/trackio/contrib/trackio-go
+module github.com/gradio-app/trackio/contrib/trackio-go
 
 go 1.22

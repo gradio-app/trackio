@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "private": false,
     "description": "Official JavaScript/TypeScript client for Trackio experiment tracking",
-    "author": "Vaibhav Pandey <vaibhavpandey.uiet@gmail.com> (https://github.com/vaibhav-research)",
+    "author": "Vaibhav Pandey <vaibhavpandey.uiet@gmail.com> (https://github.com/gradio-app)",
     "license": "Apache-2.0",
     "keywords": ["machine-learning", "experiment-tracking", "huggingface", "trackio", "typescript"],
     "publishConfig": {
