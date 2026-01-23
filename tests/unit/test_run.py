@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from trackio import Run, init
-from trackio.utils import _cached_whoami
 
 
 class DummyClient:
@@ -30,6 +29,8 @@ def test_run_log_calls_client(temp_dir):
 
 
 def test_init_resume_modes(temp_dir):
+    from trackio.sqlite_storage import SQLiteStorage
+
     run = init(
         project="test-project",
         name="new-run",
@@ -39,6 +40,7 @@ def test_init_resume_modes(temp_dir):
     assert run.name == "new-run"
 
     run.log({"x": 1})
+    SQLiteStorage.bulk_log("test-project", "new-run", [{"x": 1}])
     run.finish()
 
     run = init(
@@ -84,10 +86,10 @@ def test_init_resume_modes(temp_dir):
     assert run.name == "nonexistent-run"
 
 
-@patch("huggingface_hub.whoami")
+@patch("trackio.utils._cached_whoami")
 @patch("time.time")
-def test_run_name_generation_with_space_id(mock_time, mock_whoami, temp_dir):
-    mock_whoami.return_value = {"name": "testuser"}
+def test_run_name_generation_with_space_id(mock_time, mock_cached_whoami, temp_dir):
+    mock_cached_whoami.return_value = {"name": "testuser"}
     mock_time.return_value = 1234567890
 
     client = DummyClient()
@@ -100,8 +102,6 @@ def test_run_name_generation_with_space_id(mock_time, mock_whoami, temp_dir):
     )
     assert run.name == "testuser-1234567890"
 
-    _cached_whoami.cache_clear()
-
 
 def test_reserved_config_keys_rejected(temp_dir):
     with pytest.raises(ValueError, match="Config key '_test' is reserved"):
@@ -113,9 +113,9 @@ def test_reserved_config_keys_rejected(temp_dir):
         )
 
 
-@patch("huggingface_hub.whoami")
-def test_automatic_username_and_timestamp_added(mock_whoami, temp_dir):
-    mock_whoami.return_value = {"name": "testuser"}
+@patch("trackio.utils._cached_whoami")
+def test_automatic_username_and_timestamp_added(mock_cached_whoami, temp_dir):
+    mock_cached_whoami.return_value = {"name": "testuser"}
 
     run = Run(
         url="http://test",
@@ -132,8 +132,6 @@ def test_automatic_username_and_timestamp_added(mock_whoami, temp_dir):
 
     created_time = datetime.fromisoformat(run.config["_Created"])
     assert created_time.tzinfo is not None
-
-    _cached_whoami.cache_clear()
 
 
 def test_run_group_added(temp_dir):

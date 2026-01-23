@@ -94,12 +94,21 @@ def test_import_export(temp_dir):
 
 
 def _worker_using_sqlite_storage(
-    project, worker_id, duration_seconds=2, sync_start_time=None
+    project, worker_id, duration_seconds=2, sync_start_time=None, temp_dir=None
 ):
     """
     Worker that uses SQLiteStorage methods for database access.
     This will be protected by ProcessLock when available.
     """
+    if temp_dir:
+        os.environ["TRACKIO_DIR"] = temp_dir
+        from pathlib import Path
+
+        import trackio.sqlite_storage
+        import trackio.utils
+
+        trackio.utils.TRACKIO_DIR = Path(temp_dir)
+        trackio.sqlite_storage.TRACKIO_DIR = Path(temp_dir)
 
     def aggressive_get_connection(db_path):
         conn = sqlite3.connect(str(db_path), timeout=0.01)
@@ -144,23 +153,29 @@ def _worker_using_sqlite_storage(
 def test_concurrent_database_access_without_errors():
     """
     Test that concurrent database access doesn't produce 'database is locked' errors.
-    This test should fail on main (without ProcessLock) and pass with ProcessLock fix.
     """
+    from pathlib import Path
+
+    import trackio.sqlite_storage
+    import trackio.utils
+
     with tempfile.TemporaryDirectory() as temp_dir:
         os.environ["TRACKIO_DIR"] = str(temp_dir)
+        trackio.utils.TRACKIO_DIR = Path(temp_dir)
+        trackio.sqlite_storage.TRACKIO_DIR = Path(temp_dir)
+
         project = "concurrent_test"
 
         num_processes = 8
         duration = 2
 
-        # Synchronized start time (0.5s from now) to make all processes hit db simultaneously
         sync_start_time = time.time() + 0.5
 
         with multiprocessing.Pool(processes=num_processes) as pool:
             results = [
                 pool.apply_async(
                     _worker_using_sqlite_storage,
-                    (project, i, duration, sync_start_time),
+                    (project, i, duration, sync_start_time, temp_dir),
                 )
                 for i in range(num_processes)
             ]

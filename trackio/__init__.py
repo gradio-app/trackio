@@ -218,10 +218,6 @@ def init(
                 utils.embed_url_in_notebook(space_url)
     context_vars.current_project.set(project)
 
-    client = None
-    if not space_id:
-        client = Client(url, verbose=False)
-
     if resume == "must":
         if name is None:
             raise ValueError("Must provide a run name when resume='must'")
@@ -250,7 +246,7 @@ def init(
     run = Run(
         url=url,
         project=project,
-        client=client,
+        client=None,
         name=name,
         group=group,
         config=config,
