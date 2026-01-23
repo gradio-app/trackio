@@ -22,7 +22,7 @@ trainer.train()
 
 ## Configuring Project and Space
 
-Set the project and space ID directly in your `TrainingArguments`:
+Set the project and space ID directly in your [`~transformers.TrainingArguments`]:
 
 ```python
 from transformers import TrainingArguments
