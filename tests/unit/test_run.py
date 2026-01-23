@@ -1,9 +1,11 @@
 import time
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from trackio import Run, init
+from trackio.sqlite_storage import SQLiteStorage
 
 
 class DummyClient:
@@ -29,8 +31,6 @@ def test_run_log_calls_client(temp_dir):
 
 
 def test_init_resume_modes(temp_dir):
-    from trackio.sqlite_storage import SQLiteStorage
-
     run = init(
         project="test-project",
         name="new-run",
@@ -127,8 +127,6 @@ def test_automatic_username_and_timestamp_added(mock_cached_whoami, temp_dir):
     assert run.config["_Username"] == "testuser"
     assert "_Created" in run.config
     assert run.config["learning_rate"] == 0.01
-
-    from datetime import datetime
 
     created_time = datetime.fromisoformat(run.config["_Created"])
     assert created_time.tzinfo is not None

@@ -6,10 +6,13 @@ import random
 import sqlite3
 import tempfile
 import time
+from pathlib import Path
 
 import orjson
 import pytest
 
+import trackio.sqlite_storage
+import trackio.utils
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -154,11 +157,6 @@ def test_concurrent_database_access_without_errors():
     """
     Test that concurrent database access doesn't produce 'database is locked' errors.
     """
-    from pathlib import Path
-
-    import trackio.sqlite_storage
-    import trackio.utils
-
     with tempfile.TemporaryDirectory() as temp_dir:
         os.environ["TRACKIO_DIR"] = str(temp_dir)
         trackio.utils.TRACKIO_DIR = Path(temp_dir)
