@@ -31,6 +31,29 @@ class Run:
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
     ):
+        """
+        Initialize a Run for logging metrics to Trackio.
+
+        Args:
+            url: The URL of the Trackio server (local Gradio app or HF Space).
+            project: The name of the project to log metrics to.
+            client: A pre-configured gradio_client.Client instance, or None to
+                create one automatically in a background thread with retry logic.
+                Passing None is recommended for normal usage. Passing a client
+                is useful for testing (e.g., injecting a mock client).
+            name: The name of this run. If None, a readable name like
+                "brave-sunset-0" is auto-generated. If space_id is provided,
+                generates a "username-timestamp" format instead.
+            group: Optional group name to organize related runs together.
+            config: A dictionary of configuration/hyperparameters for this run.
+                Keys starting with '_' are reserved for internal use.
+            space_id: The HF Space ID if logging to a Space (e.g., "user/space").
+                If provided, media files will be uploaded to the Space.
+            auto_log_gpu: Whether to automatically log GPU metrics (utilization,
+                memory, temperature) at regular intervals.
+            gpu_log_interval: The interval in seconds between GPU metric logs.
+                Only used when auto_log_gpu is True.
+        """
         self.url = url
         self.project = project
         self._client_lock = threading.Lock()
