@@ -7,7 +7,8 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio import utils
-from trackio.gpu import GpuMonitor
+from trackio.apple_gpu import AppleGpuMonitor, apple_gpu_available
+from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.media import TrackioMedia
 from trackio.sqlite_storage import SQLiteStorage
@@ -87,10 +88,14 @@ class Run:
         self._client_thread.daemon = True
         self._client_thread.start()
 
-        self._gpu_monitor: "GpuMonitor | None" = None
+        self._gpu_monitor: "GpuMonitor | AppleGpuMonitor | None" = None
         if auto_log_gpu:
-            self._gpu_monitor = GpuMonitor(self, interval=gpu_log_interval)
-            self._gpu_monitor.start()
+            if gpu_available():
+                self._gpu_monitor = GpuMonitor(self, interval=gpu_log_interval)
+                self._gpu_monitor.start()
+            elif apple_gpu_available():
+                self._gpu_monitor = AppleGpuMonitor(self, interval=gpu_log_interval)
+                self._gpu_monitor.start()
 
     def _get_username(self) -> str | None:
         """Get the current HuggingFace username if logged in, otherwise None."""
