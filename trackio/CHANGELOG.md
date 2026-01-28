@@ -1,5 +1,11 @@
 # trackio
 
+## 0.15.1
+
+### Features
+
+- [#407](https://github.com/gradio-app/trackio/pull/407) [`c8a384d`](https://github.com/gradio-app/trackio/commit/c8a384ddfe5a295cecf862a26178d40e48acb424) - Fix pytests that were failling locally on MacOS.  Thanks @abidlabs!
+
 ## 0.15.0
 
 ### Features
