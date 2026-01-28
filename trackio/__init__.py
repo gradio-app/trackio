@@ -16,9 +16,11 @@ from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
 from trackio.api import Api
-from trackio.apple_gpu import apple_gpu_available, log_apple_gpu
+from trackio.apple_gpu import apple_gpu_available
+from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
 from trackio.deploy import sync
-from trackio.gpu import gpu_available, log_gpu
+from trackio.gpu import gpu_available
+from trackio.gpu import log_gpu as _log_nvidia_gpu
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
 from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
@@ -304,6 +306,48 @@ def log_system(metrics: dict) -> None:
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.log_system().")
     run.log_system(metrics=metrics)
+
+
+def log_gpu(run: Run | None = None, device: int | None = None) -> dict:
+    """
+    Log GPU metrics to the current or specified run as system metrics.
+    Automatically detects whether an NVIDIA or Apple GPU is available and calls
+    the appropriate logging method.
+
+    Args:
+        run: Optional Run instance. If None, uses current run from context.
+        device: CUDA device index to collect metrics from (NVIDIA GPUs only).
+                If None, collects from all GPUs visible to this process.
+                This parameter is ignored for Apple GPUs.
+
+    Returns:
+        dict: The GPU metrics that were logged.
+
+    Example:
+        ```python
+        import trackio
+
+        run = trackio.init(project="my-project")
+        trackio.log({"loss": 0.5})
+        trackio.log_gpu()
+        trackio.log_gpu(device=0)
+        ```
+    """
+    if run is None:
+        run = context_vars.current_run.get()
+        if run is None:
+            raise RuntimeError("Call trackio.init() before trackio.log_gpu().")
+
+    if gpu_available():
+        return _log_nvidia_gpu(run=run, device=device)
+    elif apple_gpu_available():
+        return _log_apple_gpu(run=run)
+    else:
+        warnings.warn(
+            "No GPU detected. Install nvidia-ml-py for NVIDIA GPU support "
+            "or psutil for Apple Silicon support."
+        )
+        return {}
 
 
 def finish():
