@@ -627,30 +627,58 @@ function getCookie(name) {
     return null;
 }
 
-(function() {
+(async function() {
     const urlParams = new URLSearchParams(window.location.search);
     const writeToken = urlParams.get('write_token');
     const footerParam = urlParams.get('footer');
-    
+
     if (writeToken) {
         setCookie('trackio_write_token', writeToken, 7);
-                
-        // Only remove write_token from URL if not in iframe
-        // In iframes, keep it in URL as cookies may be blocked
+
         const inIframe = window.self !== window.top;
         if (!inIframe) {
             urlParams.delete('write_token');
-            const newUrl = window.location.pathname + 
-                (urlParams.toString() ? '?' + urlParams.toString() : '') + 
+            const newUrl = window.location.pathname +
+                (urlParams.toString() ? '?' + urlParams.toString() : '') +
                 window.location.hash;
             window.history.replaceState({}, document.title, newUrl);
         }
     }
-    
+
     if (footerParam === 'false') {
         const style = document.createElement('style');
         style.textContent = 'footer { display: none !important; }';
         document.head.appendChild(style);
+    }
+
+    const inIframe = window.self !== window.top;
+    const isHfSpace = window.location.hostname.endsWith('.hf.space');
+
+    const waitForElement = function(selector) {
+        return new Promise(resolve => {
+            if (document.querySelector(selector)) {
+                return resolve(document.querySelector(selector));
+            }
+
+            const observer = new MutationObserver(mutations => {
+                if (document.querySelector(selector)) {
+                    observer.disconnect();
+                    resolve(document.querySelector(selector));
+                }
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        });
+    };
+    if (isHfSpace && !inIframe) {
+        document.querySelector('gradio-app').style.paddingTop = '56px';
+        const spaceHeaderCollapseButton = await waitForElement('#space-header__collapse');
+        spaceHeaderCollapseButton.addEventListener('click', function() {
+            document.querySelector('gradio-app').style.paddingTop = '0px';
+        });
     }
 })();
 </script>
@@ -1290,4 +1318,5 @@ if __name__ == "__main__":
         footer_links=["gradio", "settings"],
         show_error=True,
         ssr_mode=False,
+        head=HEAD,
     )
