@@ -1,6 +1,6 @@
 # RapidFire AI Integration
 
-[RapidFire AI](https://github.com/RapidFireAI/rapidfireai) enables rapid experimentation for easier, faster, and more impactful AI customization. Built for agentic RAG, context engineering, fine-tuning, and post-training of LLMs and other DL models. Delivers 16-24x higher throughput without extra resources. It supports two key use cases:
+[RapidFire AI](https://github.com/RapidFireAI/rapidfireai) enables rapid experimentation for easier, faster, and more impactful AI customization. It is built for agentic RAG, context engineering, fine-tuning, and post-training of LLMs and other DL models, delivering 16-24x higher throughput without extra resources. It supports two key use cases:
 
 - **Fine-tuning and post-training**: Compare learning rates, LoRA configurations, batch sizes, and other training hyperparameters
 - **RAG optimization**: Evaluate chunking strategies, embedding models, retrieval approaches, and reranking settings
@@ -39,8 +39,8 @@ export TRACKIO_PROJECT_NAME="my-experiment"
 ## Fine-Tuning Example
 
 For complete working examples, see the tutorial notebooks:
-- [SFT with Trackio Tutorial](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/rf-tutorial-sft-trackio.ipynb) *(coming soon)*
-- SFT with Trackio Tutorial (Colab) *(coming soon)*
+- [SFT with Trackio Tutorial](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-tutorial-sft-trackio.ipynb)
+- [SFT with Trackio Tutorial (Colab)](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-colab-trackio-tutorial.ipynb)
 
 Here's a minimal example of running a fine-tuning experiment with Trackio tracking:
 
@@ -78,8 +78,8 @@ experiment.run_fit(
 ## RAG Optimization Example
 
 For complete working examples, see the tutorial notebooks:
-- RAG FiQA with Trackio Tutorial *(coming soon)*
-- RAG FiQA Tutorial (Colab version) *(coming soon)*
+- [RAG FiQA with Trackio Tutorial](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/trackio/rf-tutorial-rag-fiqa_trackio.ipynb)
+- [RAG FiQA with Trackio Tutorial (Colab)](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/trackio/rf_colab_rag_fiqa_tutorial_trackio.ipynb)
 
 RapidFire AI also supports RAG pipeline optimization. Enable Trackio tracking the same way:
 
@@ -145,10 +145,16 @@ import trackio
 trackio.show(project="my-sft-experiment")
 ```
 
+The dashboard displays real-time training curves for all your runs, making it easy to compare configurations side-by-side:
+
+![Trackio dashboard showing RapidFire AI fine-tuning metrics](https://raw.githubusercontent.com/RapidFireAI/rapidfireai/main/tutorial_notebooks/fine-tuning/trackio/trackio-screenshot-sft.png)
+
+*Trackio dashboard comparing 4 fine-tuning runs with different hyperparameters. The plots show training loss, validation loss, learning rate schedules, and ROUGE-L scores—making it easy to identify which configuration (Run 4, in orange) achieves the lowest loss and best generation quality.*
+
 ## Learn More
 
 **Fine-Tuning Tutorials**:
-- [RapidFire AI + Trackio SFT Tutorial](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/rf-tutorial-sft-trackio.ipynb) - Complete fine-tuning example with Trackio
+- [RapidFire AI + Trackio SFT Tutorial](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-tutorial-sft-trackio.ipynb) - Complete fine-tuning example with Trackio
 
 **RAG Tutorials** (enable Trackio by setting `RF_TRACKIO_ENABLED=true`):
 - [RAG FiQA Tutorial (Colab)](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/rf-colab-rag-fiqa-tutorial.ipynb) - Financial Q&A RAG pipeline
