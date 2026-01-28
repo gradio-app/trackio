@@ -151,15 +151,6 @@ The dashboard displays real-time training curves for all your runs, making it ea
 
 *Trackio dashboard comparing 4 fine-tuning runs with different hyperparameters. The plots show training loss, validation loss, learning rate schedules, and ROUGE-L scores—making it easy to identify which configuration (Run 4, in orange) achieves the lowest loss and best generation quality.*
 
-## Learn More
-
-**Fine-Tuning Tutorials**:
-- [RapidFire AI + Trackio SFT Tutorial](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-tutorial-sft-trackio.ipynb) - Complete fine-tuning example with Trackio
-
-**RAG Tutorials** (enable Trackio by setting `RF_TRACKIO_ENABLED=true`):
-- [RAG FiQA Tutorial (Colab)](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/rf-colab-rag-fiqa-tutorial.ipynb) - Financial Q&A RAG pipeline
-- [RAG SciFact Evaluation](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/rf-tutorial-scifact-full-evaluation.ipynb) - Scientific claim verification
-
 **Documentation**:
 - [RapidFire AI Documentation](https://oss-docs.rapidfire.ai/) - Getting started guide
 - [RapidFire AI GitHub](https://github.com/RapidFireAI/rapidfireai) - Source code and tutorials
