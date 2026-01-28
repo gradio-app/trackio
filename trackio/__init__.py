@@ -16,6 +16,7 @@ from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
 from trackio.api import Api
+from trackio.apple_gpu import apple_gpu_available, log_apple_gpu
 from trackio.deploy import sync
 from trackio.gpu import gpu_available, log_gpu
 from trackio.histogram import Histogram
@@ -46,6 +47,7 @@ __all__ = [
     "log",
     "log_system",
     "log_gpu",
+    "log_apple_gpu",
     "finish",
     "show",
     "sync",
@@ -136,7 +138,8 @@ def init(
         auto_log_gpu (`bool` or `None`, *optional*, defaults to `None`):
             Controls automatic GPU metrics logging. If `None` (default), GPU logging
             is automatically enabled when `nvidia-ml-py` is installed and an NVIDIA
-            GPU is detected. Set to `True` to force enable or `False` to disable.
+            GPU or Apple M series is detected. Set to `True` to force enable or
+            `False` to disable.
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
@@ -239,9 +242,13 @@ def init(
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
     if auto_log_gpu is None:
-        auto_log_gpu = gpu_available()
-        if auto_log_gpu:
-            print("* GPU detected, enabling automatic GPU metrics logging")
+        nvidia_available = gpu_available()
+        apple_available = apple_gpu_available()
+        auto_log_gpu = nvidia_available or apple_available
+        if nvidia_available:
+            print("* NVIDIA GPU detected, enabling automatic GPU metrics logging")
+        elif apple_available:
+            print("* Apple Silicon detected, enabling automatic system metrics logging")
 
     run = Run(
         url=url,
