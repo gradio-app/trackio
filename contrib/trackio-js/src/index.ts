@@ -1,2 +1,1 @@
-export { TrackioClient } from './client.js';
-
+export { TrackioClient } from "./client.js";

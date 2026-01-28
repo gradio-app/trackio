@@ -1,6 +1,8 @@
-# trackio-go — Go client for Trackio
+# trackio-go
 
-A lightweight Go client for [Trackio](https://github.com/gradio-app/trackio), the open-source experiment tracker built by Hugging Face.
+[![Go Reference](https://pkg.go.dev/badge/github.com/gradio-app/trackio/contrib/go.svg)](https://pkg.go.dev/github.com/gradio-app/trackio/contrib/go)
+
+The official Go SDK for [Trackio](https://github.com/gradio-app/trackio).
 
 ## Quickstart
 
