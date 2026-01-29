@@ -43,7 +43,7 @@ def _is_trackio_installed_from_source() -> bool:
     """Check if trackio is installed from source/editable install vs PyPI."""
     try:
         trackio_file = trackio.__file__
-        if "site-packages" not in trackio_file:
+        if "site-packages" not in trackio_file and "dist-packages" not in trackio_file:
             return True
 
         dist = importlib.metadata.distribution("trackio")
