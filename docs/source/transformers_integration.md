@@ -14,7 +14,7 @@ dataset = Dataset.from_dict({"input_ids": data, "labels": data})
 # Train a model using the Trainer API
 trainer = Trainer(
     model=AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B"),
-    args=TrainingArguments(run_name="Qwen3-0.6B-training", report_to="trackio"),
+    args=TrainingArguments(report_to="trackio", run_name="Qwen3-0.6B-training"),
     train_dataset=dataset,
 )
 trainer.train()
@@ -22,22 +22,17 @@ trainer.train()
 
 ## Configuring Project and Space
 
-You can specify your Trackio project name and space ID using environment variables:
-
-```sh
-export TRACKIO_PROJECT_NAME="my-project"
-export TRACKIO_SPACE_ID="username/space_id"
-```
-
-Or set them directly in Python:
+Set the project and space ID directly in your [`~transformers.TrainingArguments`]:
 
 ```python
-import os
+from transformers import TrainingArguments
 
-os.environ["TRACKIO_PROJECT_NAME"] = "my-project"
-os.environ["TRACKIO_SPACE_ID"] = "username/space_id"
-
-# rest of your code...
+args = TrainingArguments(
+    report_to="trackio",
+    run_name="my-run",
+    project="my-project",
+    trackio_space_id="username/space_id",
+)
 ```
 
 <iframe 
