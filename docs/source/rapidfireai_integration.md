@@ -40,7 +40,7 @@ export TRACKIO_PROJECT_NAME="my-experiment"
 
 For complete working examples, see the tutorial notebooks:
 - [SFT with Trackio Tutorial](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-tutorial-sft-trackio.ipynb)
-- [SFT with Trackio Tutorial (Colab)](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-colab-tutorial-sft-trackio.ipynb)
+- [SFT with Trackio Tutorial (Colab Version)](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/fine-tuning/trackio/rf-colab-tutorial-sft-trackio.ipynb)
 
 Here's a minimal example of running a fine-tuning experiment with Trackio tracking:
 
@@ -79,7 +79,7 @@ experiment.run_fit(
 
 For complete working examples, see the tutorial notebooks:
 - [RAG FiQA with Trackio Tutorial](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/trackio/rf-tutorial-rag-fiqa-trackio.ipynb)
-- [RAG FiQA with Trackio Tutorial (Colab)](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/trackio/rf-colab-tutorial-rag-fiqa-trackio.ipynb)
+- [RAG FiQA with Trackio Tutorial (Colab Version)](https://github.com/RapidFireAI/rapidfireai/blob/main/tutorial_notebooks/rag-contexteng/trackio/rf-colab-tutorial-rag-fiqa-trackio.ipynb)
 
 RapidFire AI also supports RAG pipeline optimization. Enable Trackio tracking the same way:
 
