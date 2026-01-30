@@ -7,8 +7,6 @@
 # ]
 # ///
 
-import os
-
 import huggingface_hub
 from datasets import Dataset
 from transformers import (
@@ -31,8 +29,6 @@ dataset = Dataset.from_dict({**encodings, "labels": labels})
 username = huggingface_hub.whoami()["name"]
 hub_model_id = f"{username}/trackio-transformers-demo"
 
-os.environ["TRACKIO_PROJECT"] = "trackio-transformers-demo"
-
 trainer = Trainer(
     model=model,
     args=TrainingArguments(
@@ -42,6 +38,7 @@ trainer = Trainer(
         learning_rate=2e-5,
         logging_steps=1,
         report_to="trackio",
+        project="trackio-transformers-demo",
         push_to_hub=bool(hub_model_id),
         hub_model_id=hub_model_id,
     ),

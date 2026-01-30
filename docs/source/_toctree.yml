@@ -29,6 +29,8 @@
 - sections:
   - local: transformers_integration
     title: Transformers Trainer
+  - local: rapidfireai_integration
+    title: RapidFire AI
   title: Integration
 - sections:
   - local: api
