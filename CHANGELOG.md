@@ -1,5 +1,13 @@
 # trackio
 
+## 0.16.0
+
+### Features
+
+- [#413](https://github.com/gradio-app/trackio/pull/413) [`39c4750`](https://github.com/gradio-app/trackio/commit/39c4750951d554ba6eb4d58847c6bb444b2891a8) - Check `dist-packages` when checking for source installation.  Thanks @sergiopaniego!
+- [#407](https://github.com/gradio-app/trackio/pull/407) [`c8a384d`](https://github.com/gradio-app/trackio/commit/c8a384ddfe5a295cecf862a26178d40e48acb424) - Fix pytests that were failling locally on MacOS.  Thanks @abidlabs!
+- [#405](https://github.com/gradio-app/trackio/pull/405) [`35aae4e`](https://github.com/gradio-app/trackio/commit/35aae4e3aa3e2b2888887528478b9dc6a9808bda) - Add conditional padding for HF Space dashboard when not in iframe.  Thanks @znation!
+
 ## 0.15.0
 
 ### Features
