@@ -1,5 +1,6 @@
 """The Media and Tables page for the Trackio UI."""
 
+import os
 import re
 from dataclasses import dataclass
 
@@ -112,7 +113,11 @@ with gr.Blocks() as media_page:
         show_progress="hidden",
         queue=False,
     )
-    def display_media_and_tables(project: str | None, selected_run: str | None):
+    def display_media_and_tables(
+        project: str | None,
+        selected_run: str | None,
+        request: gr.Request,
+    ):
         if not project or not selected_run:
             gr.Markdown("*Select a project and run to view media and tables*")
             return
@@ -153,8 +158,20 @@ with gr.Blocks() as media_page:
                 ]
                 audio = [item for item in media_items if item.type == TrackioAudio.TYPE]
                 if image_and_video:
+                    if os.environ.get("GRADIO_ROOT_PATH"):
+                        gallery_items = [
+                            (item.file_path, item.caption) for item in image_and_video
+                        ]
+                    else:
+                        gallery_items = [
+                            (
+                                f"{request.base_url}gradio_api/file={item.file_path}",
+                                item.caption,
+                            )
+                            for item in image_and_video
+                        ]
                     gr.Gallery(
-                        [(item.file_path, item.caption) for item in image_and_video],
+                        value=gallery_items,
                         label=key,
                         columns=6,
                         elem_classes=("media-gallery"),
