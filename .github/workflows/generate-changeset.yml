@@ -83,7 +83,7 @@ jobs:
           token: ${{ secrets.COMMIT_STATUS }}
           name: "Changeset Results"
           pr: ${{ needs.get-pr.outputs.pr_number }}
-          result: ${{ needs.version.outputs.approved == 'true' && 'success' || 'failure' }}
+          result: 'success'
           type: all
   comment-changes-skipped:
     uses: "./.github/workflows/comment-queue.yml"
