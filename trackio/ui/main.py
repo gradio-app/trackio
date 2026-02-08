@@ -602,6 +602,11 @@ CSS = """
     position: relative;
     z-index: 10;
 }
+
+.vega-embed .role-legend-symbol path {
+    stroke-width: 5px !important;
+}
+
 """
 
 HEAD = """
@@ -687,7 +692,7 @@ function getCookie(name) {
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
-with gr.Blocks(title="Trackio Dashboard") as demo:
+with gr.Blocks(title="Trackio Dashboard", css=CSS) as demo:  # if any issue change here
     with gr.Sidebar(open=False) as sidebar:
         logo = fns.create_logo()
         project_dd = fns.create_project_dropdown()
