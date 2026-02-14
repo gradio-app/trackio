@@ -28,6 +28,12 @@ class Run:
             self.project = new_project
         return success
 
+    def rename(self, new_name: str) -> bool:
+        success = SQLiteStorage.rename_run(self.project, self.name, new_name)
+        if success:
+            self.name = new_name
+        return success
+
     def __repr__(self) -> str:
         return f"<Run {self.name} in project {self.project}>"
 

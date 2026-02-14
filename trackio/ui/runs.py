@@ -97,14 +97,15 @@ def check_write_access_runs(request: gr.Request, write_token: str) -> bool:
 
 def set_deletion_allowed(
     project: str, request: gr.Request, oauth_token: gr.OAuthToken | None
-) -> tuple[gr.Button, RunsTable, list[str], bool]:
-    """Update the delete button value and interactivity based on the runs data and user write access."""
+) -> tuple[gr.Button, gr.Button, RunsTable, list[str], bool]:
+    """Update the delete and rename buttons based on the runs data and user write access."""
     if oauth_token:
         try:
             fns.check_oauth_token_has_write_access(oauth_token.token)
         except PermissionError:
             table, run_names = get_runs_table(project, interactive=False)
             return (
+                gr.Button("⚠️ Need write access to rename runs", interactive=False),
                 gr.Button("⚠️ Need write access to delete runs", interactive=False),
                 table,
                 run_names,
@@ -113,6 +114,7 @@ def set_deletion_allowed(
     elif not check_write_access_runs(request, run_page.write_token):
         table, run_names = get_runs_table(project, interactive=False)
         return (
+            gr.Button("⚠️ Need write access to rename runs", interactive=False),
             gr.Button("⚠️ Need write access to delete runs", interactive=False),
             table,
             run_names,
@@ -120,7 +122,8 @@ def set_deletion_allowed(
         )
     table, run_names = get_runs_table(project, interactive=True)
     return (
-        gr.Button("Select runs to delete", interactive=False),
+        gr.Button("Rename", interactive=False),
+        gr.Button("Delete", interactive=False),
         table,
         run_names,
         True,
@@ -137,9 +140,24 @@ def update_delete_button(
     num_selected = len(selected_indices) if selected_indices else 0
 
     if num_selected:
-        return gr.Button(f"Delete {num_selected} selected run(s)", interactive=True)
+        return gr.Button(f"Delete ({num_selected})", interactive=True)
     else:
-        return gr.Button("Select runs to delete", interactive=False)
+        return gr.Button("Delete", interactive=False)
+
+
+def update_rename_button(
+    deletion_allowed: bool, selected_indices: list[int]
+) -> gr.Button:
+    """Update the rename button value and interactivity based on the selected runs."""
+    if not deletion_allowed:
+        return gr.Button(interactive=False)
+
+    num_selected = len(selected_indices) if selected_indices else 0
+
+    if num_selected == 1:
+        return gr.Button("Rename", interactive=True)
+    else:
+        return gr.Button("Rename", interactive=False)
 
 
 def delete_selected_runs(
@@ -160,6 +178,48 @@ def delete_selected_runs(
     return get_runs_table(project, interactive=True)
 
 
+def rename_selected_run(
+    deletion_allowed: bool,
+    selected_indices: list[int],
+    run_names_list: list[str],
+    project: str,
+    new_name: str,
+) -> tuple[RunsTable, list[str]]:
+    """Rename the selected run and refresh the table."""
+    if not deletion_allowed or not selected_indices or len(selected_indices) != 1:
+        gr.Info("Please select exactly one run to rename")
+        return get_runs_table(project, interactive=True)
+
+    if not new_name or not new_name.strip():
+        gr.Info("New name cannot be empty")
+        return get_runs_table(project, interactive=True)
+
+    new_name = new_name.strip()
+    idx = selected_indices[0]
+
+    if 0 <= idx < len(run_names_list):
+        old_name = run_names_list[idx]
+
+        if old_name == new_name:
+            gr.Info("New name must be different from the current name")
+            return get_runs_table(project, interactive=True)
+
+        if new_name in run_names_list:
+            gr.Info(f"A run named '{new_name}' already exists")
+            return get_runs_table(project, interactive=True)
+
+        success = SQLiteStorage.rename_run(project, old_name, new_name)
+        if success:
+            gr.Info(f"Successfully renamed '{old_name}' to '{new_name}'")
+            return get_runs_table(project, interactive=True)
+        else:
+            gr.Info("Failed to rename run")
+            return get_runs_table(project, interactive=True)
+
+    gr.Info("Invalid run selection")
+    return get_runs_table(project, interactive=True)
+
+
 with gr.Blocks() as run_page:
     with gr.Sidebar() as sidebar:
         logo = fns.create_logo()
@@ -173,19 +233,38 @@ with gr.Blocks() as run_page:
     with gr.Row():
         with gr.Column():
             if utils.get_space():
-                gr.LoginButton("Login to delete runs", size="md")
+                gr.LoginButton("Login to delete or rename runs", size="md")
+        with gr.Column(scale=2):
+            gr.Markdown("")
         with gr.Column():
             with gr.Row():
+                rename_run_btn = gr.Button(
+                    "⚠️ Need write access to rename runs",
+                    interactive=False,
+                    size="sm",
+                )
                 delete_run_btn = gr.Button(
                     "⚠️ Need write access to delete runs",
                     interactive=False,
                     variant="stop",
-                    size="md",
+                    size="sm",
                 )
-                confirm_btn = gr.Button(
-                    "Confirm delete", variant="stop", size="md", visible=False
+                cancel_delete_btn = gr.Button("Cancel", size="sm", visible=False)
+                confirm_delete_btn = gr.Button(
+                    "Confirm", variant="stop", size="sm", visible=False
                 )
-                cancel_btn = gr.Button("Cancel", size="md", visible=False)
+            with gr.Column(visible=False) as rename_controls:
+                rename_input = gr.Textbox(
+                    label="New Name",
+                    placeholder="New name",
+                )
+                rename_info = gr.Markdown(
+                    "**Warning**: Ensure the run is complete before renaming.",
+                    visible=False,
+                )
+                with gr.Row():
+                    cancel_rename_btn = gr.Button("Cancel", size="sm", variant="secondary")
+                    confirm_rename_btn = gr.Button("Confirm", size="sm", variant="primary")
 
     runs_table = RunsTable(headers=[], rows=[], value=[])
 
@@ -225,7 +304,13 @@ with gr.Blocks() as run_page:
         [run_page.load],
         fn=set_deletion_allowed,
         inputs=[project_dd],
-        outputs=[delete_run_btn, runs_table, run_names_state, allow_deleting_runs],
+        outputs=[
+            rename_run_btn,
+            delete_run_btn,
+            runs_table,
+            run_names_state,
+            allow_deleting_runs,
+        ],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -240,33 +325,62 @@ with gr.Blocks() as run_page:
         queue=False,
     )
     gr.on(
+        [runs_table.input],
+        fn=update_rename_button,
+        inputs=[allow_deleting_runs, runs_table],
+        outputs=[rename_run_btn],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    )
+    gr.on(
         [delete_run_btn.click],
         fn=lambda: [
             gr.Button(visible=False),
             gr.Button(visible=True),
             gr.Button(visible=True),
+            gr.Button(visible=False),
+            gr.Row(visible=False),
+            gr.Markdown(visible=False),
         ],
         inputs=None,
-        outputs=[delete_run_btn, confirm_btn, cancel_btn],
+        outputs=[
+            delete_run_btn,
+            confirm_delete_btn,
+            cancel_delete_btn,
+            rename_run_btn,
+            rename_controls,
+            rename_info,
+        ],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
     )
     gr.on(
-        [confirm_btn.click, cancel_btn.click],
+        [confirm_delete_btn.click, cancel_delete_btn.click],
         fn=lambda: [
             gr.Button(visible=True),
             gr.Button(visible=False),
             gr.Button(visible=False),
+            gr.Button(visible=True),
+            gr.Row(visible=False),
+            gr.Markdown(visible=False),
         ],
         inputs=None,
-        outputs=[delete_run_btn, confirm_btn, cancel_btn],
+        outputs=[
+            delete_run_btn,
+            confirm_delete_btn,
+            cancel_delete_btn,
+            rename_run_btn,
+            rename_controls,
+            rename_info,
+        ],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
     )
     gr.on(
-        [confirm_btn.click],
+        [confirm_delete_btn.click],
         fn=delete_selected_runs,
         inputs=[allow_deleting_runs, runs_table, run_names_state, project_dd],
         outputs=[runs_table, run_names_state],
@@ -277,6 +391,121 @@ with gr.Blocks() as run_page:
         fn=update_delete_button,
         inputs=[allow_deleting_runs, runs_table],
         outputs=[delete_run_btn],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    )
+
+    def show_rename_controls(
+        selected_indices: list[int], run_names_list: list[str]
+    ) -> tuple[
+        gr.Button, gr.Row, gr.Markdown, gr.Textbox, gr.Button, gr.Button, gr.Button
+    ]:
+        """Show rename controls and prefill with current run name."""
+        if selected_indices and len(selected_indices) == 1:
+            idx = selected_indices[0]
+            if 0 <= idx < len(run_names_list):
+                current_name = run_names_list[idx]
+                return (
+                    gr.Button(visible=False),
+                    gr.Row(visible=True),
+                    gr.Markdown(visible=True),
+                    gr.Textbox(value=current_name),
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                    gr.Button(visible=False),
+                )
+        return (
+            gr.Button(visible=False),
+            gr.Row(visible=True),
+            gr.Markdown(visible=True),
+            gr.Textbox(value=""),
+            gr.Button(visible=False),
+            gr.Button(visible=False),
+            gr.Button(visible=False),
+        )
+
+    def hide_rename_controls() -> tuple[
+        gr.Button, gr.Row, gr.Markdown, gr.Textbox, gr.Button, gr.Button, gr.Button
+    ]:
+        """Hide rename controls and show main rename button."""
+        return (
+            gr.Button(visible=True),
+            gr.Row(visible=False),
+            gr.Markdown(visible=False),
+            gr.Textbox(value=""),
+            gr.Button(visible=True),
+            gr.Button(visible=False),
+            gr.Button(visible=False),
+        )
+
+    gr.on(
+        [rename_run_btn.click],
+        fn=show_rename_controls,
+        inputs=[runs_table, run_names_state],
+        outputs=[
+            rename_run_btn,
+            rename_controls,
+            rename_info,
+            rename_input,
+            delete_run_btn,
+            confirm_delete_btn,
+            cancel_delete_btn,
+        ],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    )
+    gr.on(
+        [cancel_rename_btn.click],
+        fn=hide_rename_controls,
+        inputs=None,
+        outputs=[
+            rename_run_btn,
+            rename_controls,
+            rename_info,
+            rename_input,
+            delete_run_btn,
+            confirm_delete_btn,
+            cancel_delete_btn,
+        ],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    )
+    gr.on(
+        [confirm_rename_btn.click],
+        fn=rename_selected_run,
+        inputs=[
+            allow_deleting_runs,
+            runs_table,
+            run_names_state,
+            project_dd,
+            rename_input,
+        ],
+        outputs=[runs_table, run_names_state],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    ).then(
+        fn=hide_rename_controls,
+        inputs=None,
+        outputs=[
+            rename_run_btn,
+            rename_controls,
+            rename_info,
+            rename_input,
+            delete_run_btn,
+            confirm_delete_btn,
+            cancel_delete_btn,
+        ],
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
+    ).then(
+        fn=update_rename_button,
+        inputs=[allow_deleting_runs, runs_table],
+        outputs=[rename_run_btn],
         show_progress="hidden",
         api_visibility="private",
         queue=False,

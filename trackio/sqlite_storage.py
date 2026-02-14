@@ -846,6 +846,126 @@ class SQLiteStorage:
                     return False
 
     @staticmethod
+    def _update_media_paths(obj, old_prefix, new_prefix):
+        """Update media file paths in nested data structures."""
+        if isinstance(obj, dict):
+            if obj.get("_type") in [
+                "trackio.image",
+                "trackio.video",
+                "trackio.audio",
+            ]:
+                old_path = obj.get("file_path", "")
+                if isinstance(old_path, str):
+                    normalized_path = old_path.replace("\\", "/")
+                    if normalized_path.startswith(old_prefix):
+                        new_path = normalized_path.replace(old_prefix, new_prefix, 1)
+                        return {**obj, "file_path": new_path}
+            return {
+                key: SQLiteStorage._update_media_paths(value, old_prefix, new_prefix)
+                for key, value in obj.items()
+            }
+        elif isinstance(obj, list):
+            return [
+                SQLiteStorage._update_media_paths(item, old_prefix, new_prefix)
+                for item in obj
+            ]
+        return obj
+
+    @staticmethod
+    def rename_run(project: str, old_name: str, new_name: str) -> bool:
+        """Rename a run within the same project."""
+        if not new_name or not new_name.strip():
+            return False
+
+        new_name = new_name.strip()
+
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return False
+
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+
+                cursor.execute(
+                    "SELECT COUNT(*) FROM metrics WHERE run_name = ?", (old_name,)
+                )
+                if cursor.fetchone()[0] == 0:
+                    return False
+
+                cursor.execute(
+                    "SELECT COUNT(*) FROM metrics WHERE run_name = ?", (new_name,)
+                )
+                if cursor.fetchone()[0] > 0:
+                    return False
+
+                try:
+                    cursor.execute(
+                        "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?",
+                        (old_name,),
+                    )
+                    metrics_rows = cursor.fetchall()
+
+                    old_prefix = f"{project}/{old_name}/"
+                    new_prefix = f"{project}/{new_name}/"
+
+                    updated_metrics_rows = []
+                    for row in metrics_rows:
+                        metrics_data = orjson.loads(row["metrics"])
+                        metrics_deserialized = deserialize_values(metrics_data)
+                        updated_metrics = SQLiteStorage._update_media_paths(
+                            metrics_deserialized, old_prefix, new_prefix
+                        )
+                        updated_metrics_rows.append(
+                            (
+                                row["timestamp"],
+                                new_name,
+                                row["step"],
+                                orjson.dumps(serialize_values(updated_metrics)),
+                            )
+                        )
+
+                    cursor.execute(
+                        "DELETE FROM metrics WHERE run_name = ?", (old_name,)
+                    )
+
+                    cursor.executemany(
+                        """
+                        INSERT INTO metrics (timestamp, run_name, step, metrics)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        updated_metrics_rows,
+                    )
+
+                    cursor.execute(
+                        "UPDATE configs SET run_name = ? WHERE run_name = ?",
+                        (new_name, old_name),
+                    )
+
+                    try:
+                        cursor.execute(
+                            "UPDATE system_metrics SET run_name = ? WHERE run_name = ?",
+                            (new_name, old_name),
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+
+                    conn.commit()
+
+                    old_media_dir = MEDIA_DIR / project / old_name
+                    new_media_dir = MEDIA_DIR / project / new_name
+
+                    if old_media_dir.exists():
+                        new_media_dir.parent.mkdir(parents=True, exist_ok=True)
+                        if new_media_dir.exists():
+                            shutil.rmtree(new_media_dir)
+                        shutil.move(str(old_media_dir), str(new_media_dir))
+
+                    return True
+                except sqlite3.Error:
+                    return False
+
+    @staticmethod
     def move_run(project: str, run: str, new_project: str) -> bool:
         """Move a run from one project to another."""
         source_db_path = SQLiteStorage.get_project_db_path(project)
@@ -886,34 +1006,6 @@ class SQLiteStorage:
                     with SQLiteStorage._get_connection(target_db_path) as target_conn:
                         target_cursor = target_conn.cursor()
 
-                        def update_media_paths(obj, old_prefix, new_prefix):
-                            if isinstance(obj, dict):
-                                if obj.get("_type") in [
-                                    "trackio.image",
-                                    "trackio.video",
-                                    "trackio.audio",
-                                ]:
-                                    old_path = obj.get("file_path", "")
-                                    if isinstance(old_path, str):
-                                        normalized_path = old_path.replace("\\", "/")
-                                        if normalized_path.startswith(old_prefix):
-                                            new_path = normalized_path.replace(
-                                                old_prefix, new_prefix, 1
-                                            )
-                                            return {**obj, "file_path": new_path}
-                                return {
-                                    key: update_media_paths(
-                                        value, old_prefix, new_prefix
-                                    )
-                                    for key, value in obj.items()
-                                }
-                            elif isinstance(obj, list):
-                                return [
-                                    update_media_paths(item, old_prefix, new_prefix)
-                                    for item in obj
-                                ]
-                            return obj
-
                         updated_metrics_rows = []
                         old_prefix = f"{project}/{run}/"
                         new_prefix = f"{new_project}/{run}/"
@@ -921,7 +1013,7 @@ class SQLiteStorage:
                         for row in metrics_rows:
                             metrics_data = orjson.loads(row["metrics"])
                             metrics_deserialized = deserialize_values(metrics_data)
-                            updated_metrics = update_media_paths(
+                            updated_metrics = SQLiteStorage._update_media_paths(
                                 metrics_deserialized, old_prefix, new_prefix
                             )
 
