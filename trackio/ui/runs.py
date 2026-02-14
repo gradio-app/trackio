@@ -220,6 +220,42 @@ def rename_selected_run(
     return get_runs_table(project, interactive=True)
 
 
+def show_delete_confirmation(
+    selected_indices: list[int], run_names_list: list[str]
+) -> tuple[gr.Button, gr.Button, gr.Button, gr.Button, gr.Column, gr.Markdown]:
+    """Show delete confirmation with warning message."""
+    if not selected_indices or not run_names_list:
+        return (
+            gr.Button(visible=False),
+            gr.Button(visible=True),
+            gr.Button(visible=True),
+            gr.Button(visible=False),
+            gr.Column(visible=False),
+            gr.Markdown("", visible=False),
+        )
+
+    selected_runs = [
+        run_names_list[idx]
+        for idx in selected_indices
+        if 0 <= idx < len(run_names_list)
+    ]
+
+    if len(selected_runs) > 1:
+        runs_list = "<br/>".join([f"- `{run}`" for run in selected_runs])
+        warning_msg = f"**Warning**<br/> Are you sure you want to delete the following runs ({len(selected_runs)})?<br/> {runs_list}"
+    else:
+        warning_msg = f"**Warning**<br/> Are you sure you want to delete the following run?<br/> - `{selected_runs[0]}`"
+
+    return (
+        gr.Button(visible=False),
+        gr.Button(visible=True),
+        gr.Button(visible=True),
+        gr.Button(visible=False),
+        gr.Column(visible=False),
+        gr.Markdown(warning_msg, visible=True),
+    )
+
+
 with gr.Blocks() as run_page:
     with gr.Sidebar() as sidebar:
         logo = fns.create_logo()
@@ -249,9 +285,11 @@ with gr.Blocks() as run_page:
                     variant="stop",
                     size="sm",
                 )
+            delete_warning = gr.Markdown("", visible=False)
+            with gr.Row():
                 cancel_delete_btn = gr.Button("Cancel", size="sm", visible=False)
                 confirm_delete_btn = gr.Button(
-                    "Confirm", variant="stop", size="sm", visible=False
+                    "Delete", variant="stop", size="sm", visible=False
                 )
             with gr.Column(visible=False) as rename_controls:
                 rename_input = gr.Textbox(
@@ -263,8 +301,12 @@ with gr.Blocks() as run_page:
                     visible=False,
                 )
                 with gr.Row():
-                    cancel_rename_btn = gr.Button("Cancel", size="sm", variant="secondary")
-                    confirm_rename_btn = gr.Button("Confirm", size="sm", variant="primary")
+                    cancel_rename_btn = gr.Button(
+                        "Cancel", size="sm", variant="secondary"
+                    )
+                    confirm_rename_btn = gr.Button(
+                        "Rename", size="sm", variant="primary"
+                    )
 
     runs_table = RunsTable(headers=[], rows=[], value=[])
 
@@ -335,22 +377,15 @@ with gr.Blocks() as run_page:
     )
     gr.on(
         [delete_run_btn.click],
-        fn=lambda: [
-            gr.Button(visible=False),
-            gr.Button(visible=True),
-            gr.Button(visible=True),
-            gr.Button(visible=False),
-            gr.Row(visible=False),
-            gr.Markdown(visible=False),
-        ],
-        inputs=None,
+        fn=show_delete_confirmation,
+        inputs=[runs_table, run_names_state],
         outputs=[
             delete_run_btn,
             confirm_delete_btn,
             cancel_delete_btn,
             rename_run_btn,
             rename_controls,
-            rename_info,
+            delete_warning,
         ],
         show_progress="hidden",
         api_visibility="private",
@@ -363,8 +398,8 @@ with gr.Blocks() as run_page:
             gr.Button(visible=False),
             gr.Button(visible=False),
             gr.Button(visible=True),
-            gr.Row(visible=False),
-            gr.Markdown(visible=False),
+            gr.Column(visible=False),
+            gr.Markdown("", visible=False),
         ],
         inputs=None,
         outputs=[
@@ -373,7 +408,7 @@ with gr.Blocks() as run_page:
             cancel_delete_btn,
             rename_run_btn,
             rename_controls,
-            rename_info,
+            delete_warning,
         ],
         show_progress="hidden",
         api_visibility="private",
