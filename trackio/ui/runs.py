@@ -221,9 +221,13 @@ def rename_selected_run(
 
 
 def show_delete_confirmation(
-    selected_indices: list[int], run_names_list: list[str]
-) -> tuple[gr.Button, gr.Button, gr.Button, gr.Button, gr.Column, gr.Markdown]:
+    selected_indices: list[int], run_names_list: list[str], project: str
+) -> tuple[
+    gr.Button, gr.Button, gr.Button, gr.Button, gr.Column, gr.Markdown, RunsTable
+]:
     """Show delete confirmation with warning message."""
+    table, _ = get_runs_table(project, interactive=False)
+
     if not selected_indices or not run_names_list:
         return (
             gr.Button(visible=False),
@@ -232,6 +236,7 @@ def show_delete_confirmation(
             gr.Button(visible=False),
             gr.Column(visible=False),
             gr.Markdown("", visible=False),
+            table,
         )
 
     selected_runs = [
@@ -253,6 +258,7 @@ def show_delete_confirmation(
         gr.Button(visible=False),
         gr.Column(visible=False),
         gr.Markdown(warning_msg, visible=True),
+        table,
     )
 
 
@@ -378,7 +384,7 @@ with gr.Blocks() as run_page:
     gr.on(
         [delete_run_btn.click],
         fn=show_delete_confirmation,
-        inputs=[runs_table, run_names_state],
+        inputs=[runs_table, run_names_state, project_dd],
         outputs=[
             delete_run_btn,
             confirm_delete_btn,
@@ -386,22 +392,34 @@ with gr.Blocks() as run_page:
             rename_run_btn,
             rename_controls,
             delete_warning,
+            runs_table,
         ],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
     )
-    gr.on(
-        [confirm_delete_btn.click, cancel_delete_btn.click],
-        fn=lambda: [
+
+    def hide_delete_confirmation(
+        project: str,
+    ) -> tuple[
+        gr.Button, gr.Button, gr.Button, gr.Button, gr.Column, gr.Markdown, RunsTable
+    ]:
+        """Hide delete confirmation and restore interactive table."""
+        table, _ = get_runs_table(project, interactive=True)
+        return (
             gr.Button(visible=True),
             gr.Button(visible=False),
             gr.Button(visible=False),
             gr.Button(visible=True),
             gr.Column(visible=False),
             gr.Markdown("", visible=False),
-        ],
-        inputs=None,
+            table,
+        )
+
+    gr.on(
+        [confirm_delete_btn.click, cancel_delete_btn.click],
+        fn=hide_delete_confirmation,
+        inputs=[project_dd],
         outputs=[
             delete_run_btn,
             confirm_delete_btn,
@@ -409,6 +427,7 @@ with gr.Blocks() as run_page:
             rename_run_btn,
             rename_controls,
             delete_warning,
+            runs_table,
         ],
         show_progress="hidden",
         api_visibility="private",
@@ -432,11 +451,20 @@ with gr.Blocks() as run_page:
     )
 
     def show_rename_controls(
-        selected_indices: list[int], run_names_list: list[str]
+        selected_indices: list[int], run_names_list: list[str], project: str
     ) -> tuple[
-        gr.Button, gr.Row, gr.Markdown, gr.Textbox, gr.Button, gr.Button, gr.Button
+        gr.Button,
+        gr.Row,
+        gr.Markdown,
+        gr.Textbox,
+        gr.Button,
+        gr.Button,
+        gr.Button,
+        RunsTable,
     ]:
         """Show rename controls and prefill with current run name."""
+        table, _ = get_runs_table(project, interactive=False)
+
         if selected_indices and len(selected_indices) == 1:
             idx = selected_indices[0]
             if 0 <= idx < len(run_names_list):
@@ -449,6 +477,7 @@ with gr.Blocks() as run_page:
                     gr.Button(visible=False),
                     gr.Button(visible=False),
                     gr.Button(visible=False),
+                    table,
                 )
         return (
             gr.Button(visible=False),
@@ -458,12 +487,23 @@ with gr.Blocks() as run_page:
             gr.Button(visible=False),
             gr.Button(visible=False),
             gr.Button(visible=False),
+            table,
         )
 
-    def hide_rename_controls() -> tuple[
-        gr.Button, gr.Row, gr.Markdown, gr.Textbox, gr.Button, gr.Button, gr.Button
+    def hide_rename_controls(
+        project: str,
+    ) -> tuple[
+        gr.Button,
+        gr.Row,
+        gr.Markdown,
+        gr.Textbox,
+        gr.Button,
+        gr.Button,
+        gr.Button,
+        RunsTable,
     ]:
         """Hide rename controls and show main rename button."""
+        table, _ = get_runs_table(project, interactive=True)
         return (
             gr.Button(visible=True),
             gr.Row(visible=False),
@@ -472,12 +512,13 @@ with gr.Blocks() as run_page:
             gr.Button(visible=True),
             gr.Button(visible=False),
             gr.Button(visible=False),
+            table,
         )
 
     gr.on(
         [rename_run_btn.click],
         fn=show_rename_controls,
-        inputs=[runs_table, run_names_state],
+        inputs=[runs_table, run_names_state, project_dd],
         outputs=[
             rename_run_btn,
             rename_controls,
@@ -486,6 +527,7 @@ with gr.Blocks() as run_page:
             delete_run_btn,
             confirm_delete_btn,
             cancel_delete_btn,
+            runs_table,
         ],
         show_progress="hidden",
         api_visibility="private",
@@ -494,7 +536,7 @@ with gr.Blocks() as run_page:
     gr.on(
         [cancel_rename_btn.click],
         fn=hide_rename_controls,
-        inputs=None,
+        inputs=[project_dd],
         outputs=[
             rename_run_btn,
             rename_controls,
@@ -503,6 +545,7 @@ with gr.Blocks() as run_page:
             delete_run_btn,
             confirm_delete_btn,
             cancel_delete_btn,
+            runs_table,
         ],
         show_progress="hidden",
         api_visibility="private",
@@ -524,7 +567,7 @@ with gr.Blocks() as run_page:
         queue=False,
     ).then(
         fn=hide_rename_controls,
-        inputs=None,
+        inputs=[project_dd],
         outputs=[
             rename_run_btn,
             rename_controls,
@@ -533,6 +576,7 @@ with gr.Blocks() as run_page:
             delete_run_btn,
             confirm_delete_btn,
             cancel_delete_btn,
+            runs_table,
         ],
         show_progress="hidden",
         api_visibility="private",
