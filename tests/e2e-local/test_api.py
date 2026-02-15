@@ -101,3 +101,65 @@ def test_move_run(temp_dir, image_ndarray):
 
     target_config = SQLiteStorage.get_run_config(project=target_project, run=run_name)
     assert target_config is not None
+
+
+def test_rename_run(temp_dir, image_ndarray):
+    project = "test_rename_project"
+    old_name = "old_run_name"
+    new_name = "new_run_name"
+
+    trackio.init(project=project, name=old_name)
+
+    image1 = trackio.Image(image_ndarray, caption="test_image_1")
+    image2 = trackio.Image(image_ndarray, caption="test_image_2")
+
+    trackio.log(metrics={"loss": 0.1, "acc": 0.9, "img1": image1})
+    trackio.log(metrics={"loss": 0.2, "acc": 0.95, "img2": image2})
+    trackio.finish()
+
+    old_logs = SQLiteStorage.get_logs(project=project, run=old_name)
+    assert len(old_logs) == 2
+    assert old_logs[0]["loss"] == 0.1
+    assert old_logs[1]["loss"] == 0.2
+
+    image1_path = old_logs[0]["img1"].get("file_path")
+    assert image1_path is not None
+    normalized_path = str(image1_path).replace("\\", "/")
+    assert normalized_path.startswith(f"{project}/{old_name}/")
+
+    api = Api()
+    runs = api.runs(project)
+    run = runs[0]
+    assert run.name == old_name
+
+    success = run.rename(new_name)
+    assert success is True
+    assert run.name == new_name
+
+    new_logs = SQLiteStorage.get_logs(project=project, run=new_name)
+    assert len(new_logs) == 2
+    assert new_logs[0]["loss"] == 0.1
+    assert new_logs[1]["loss"] == 0.2
+
+    new_image1_path = new_logs[0]["img1"].get("file_path")
+    assert new_image1_path is not None
+    normalized_new_path1 = str(new_image1_path).replace("\\", "/")
+    assert normalized_new_path1.startswith(f"{project}/{new_name}/")
+
+    new_image2_path = new_logs[1]["img2"].get("file_path")
+    assert new_image2_path is not None
+    normalized_new_path2 = str(new_image2_path).replace("\\", "/")
+    assert normalized_new_path2.startswith(f"{project}/{new_name}/")
+
+    old_logs_after = SQLiteStorage.get_logs(project=project, run=old_name)
+    assert len(old_logs_after) == 0
+
+    runs_after = SQLiteStorage.get_runs(project=project)
+    assert old_name not in runs_after
+    assert new_name in runs_after
+
+    old_config_after = SQLiteStorage.get_run_config(project=project, run=old_name)
+    assert old_config_after is None
+
+    new_config = SQLiteStorage.get_run_config(project=project, run=new_name)
+    assert new_config is not None
