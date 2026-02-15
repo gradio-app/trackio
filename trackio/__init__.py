@@ -164,7 +164,7 @@ def init(
 
     if url is None:
         if space_id is None:
-            _, url, share_url = demo.launch(
+            _, url, share_url = demo.queue().launch(
                 css=CSS,
                 head=HEAD,
                 footer_links=["gradio", "settings"],
@@ -529,7 +529,7 @@ def show(
         else os.environ.get("GRADIO_MCP_SERVER", "False") == "True"
     )
 
-    app, url, share_url = demo.launch(
+    app, url, share_url = demo.queue().launch(
         css=CSS,
         head=HEAD,
         footer_links=["gradio", "settings"] + (["api"] if _mcp_server else []),

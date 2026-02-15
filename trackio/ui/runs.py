@@ -63,7 +63,7 @@ def get_runs_data(project: str) -> tuple[list[str], list[list[str]], list[str]]:
 
 
 def get_runs_table(
-    project: str, interactive: bool = True
+    project: str, interactive: bool = True, selected_indices: list[int] | None = None
 ) -> tuple[RunsTable, list[str]]:
     headers, rows, run_names = get_runs_data(project)
     if not rows:
@@ -72,7 +72,7 @@ def get_runs_table(
     return RunsTable(
         headers=headers,
         rows=rows,
-        value=[],
+        value=selected_indices if selected_indices is not None else [],
         interactive=interactive,
     ), run_names
 
@@ -168,12 +168,36 @@ def delete_selected_runs(
 ) -> tuple[RunsTable, list[str]]:
     """Delete the selected runs and refresh the table."""
     if not deletion_allowed or not selected_indices:
+        gr.Warning("No runs selected for deletion")
         return get_runs_table(project, interactive=True)
 
-    for idx in selected_indices:
-        if 0 <= idx < len(run_names_list):
-            run_name = run_names_list[idx]
-            SQLiteStorage.delete_run(project, run_name)
+    failed_deletes = []
+    successful_deletes = []
+
+    try:
+        for idx in selected_indices:
+            if 0 <= idx < len(run_names_list):
+                run_name = run_names_list[idx]
+                success = SQLiteStorage.delete_run(project, run_name)
+                if success:
+                    successful_deletes.append(run_name)
+                else:
+                    failed_deletes.append(run_name)
+    except Exception as e:
+        gr.Error(f"Unexpected error during deletion: {str(e)}")
+        return get_runs_table(project, interactive=True)
+
+    if successful_deletes and not failed_deletes:
+        if len(successful_deletes) == 1:
+            gr.Info(f"Successfully deleted run '{successful_deletes[0]}'")
+        else:
+            gr.Info(f"Successfully deleted {len(successful_deletes)} runs")
+    elif successful_deletes and failed_deletes:
+        gr.Warning(
+            f"Deleted {len(successful_deletes)} runs, but failed to delete: {', '.join(failed_deletes)}"
+        )
+    elif failed_deletes:
+        gr.Warning(f"Failed to delete runs: {', '.join(failed_deletes)}")
 
     return get_runs_table(project, interactive=True)
 
@@ -187,12 +211,16 @@ def rename_selected_run(
 ) -> tuple[RunsTable, list[str]]:
     """Rename the selected run and refresh the table."""
     if not deletion_allowed or not selected_indices or len(selected_indices) != 1:
-        gr.Info("Please select exactly one run to rename")
-        return get_runs_table(project, interactive=True)
+        gr.Warning("Please select exactly one run to rename")
+        return get_runs_table(
+            project, interactive=True, selected_indices=selected_indices
+        )
 
     if not new_name or not new_name.strip():
-        gr.Info("New name cannot be empty")
-        return get_runs_table(project, interactive=True)
+        gr.Warning("New name cannot be empty")
+        return get_runs_table(
+            project, interactive=True, selected_indices=selected_indices
+        )
 
     new_name = new_name.strip()
     idx = selected_indices[0]
@@ -201,27 +229,43 @@ def rename_selected_run(
         old_name = run_names_list[idx]
 
         if old_name == new_name:
-            gr.Info("New name must be different from the current name")
-            return get_runs_table(project, interactive=True)
+            gr.Warning("New name must be different from the current name")
+            return get_runs_table(
+                project, interactive=True, selected_indices=selected_indices
+            )
 
         if new_name in run_names_list:
-            gr.Info(f"A run named '{new_name}' already exists")
-            return get_runs_table(project, interactive=True)
+            gr.Warning(f"A run named '{new_name}' already exists")
+            return get_runs_table(
+                project, interactive=True, selected_indices=selected_indices
+            )
 
-        success = SQLiteStorage.rename_run(project, old_name, new_name)
-        if success:
-            gr.Info(f"Successfully renamed '{old_name}' to '{new_name}'")
-            return get_runs_table(project, interactive=True)
-        else:
-            gr.Info("Failed to rename run")
-            return get_runs_table(project, interactive=True)
+        try:
+            success = SQLiteStorage.rename_run(project, old_name, new_name)
+            if success:
+                gr.Info(f"✓ Successfully renamed '{old_name}' to '{new_name}'")
+                return get_runs_table(
+                    project, interactive=True, selected_indices=selected_indices
+                )
+            else:
+                gr.Warning(
+                    f"Failed to rename run '{old_name}' - database operation unsuccessful"
+                )
+                return get_runs_table(
+                    project, interactive=True, selected_indices=selected_indices
+                )
+        except Exception as e:
+            gr.Error(f"Unexpected error during rename: {str(e)}")
+            return get_runs_table(
+                project, interactive=True, selected_indices=selected_indices
+            )
 
-    gr.Info("Invalid run selection")
-    return get_runs_table(project, interactive=True)
+    gr.Warning("Invalid run selection")
+    return get_runs_table(project, interactive=True, selected_indices=selected_indices)
 
 
 def show_delete_confirmation(
-    selected_indices: list[int], run_names_list: list[str], project: str
+    selected_indices: list[int], run_names_list: list[str]
 ) -> tuple[gr.Button, gr.Button, gr.Button, gr.Button, gr.Column, gr.Markdown, dict]:
     """Show delete confirmation with warning message."""
     if not selected_indices or not run_names_list:
@@ -380,7 +424,7 @@ with gr.Blocks() as run_page:
     gr.on(
         [delete_run_btn.click],
         fn=show_delete_confirmation,
-        inputs=[runs_table, run_names_state, project_dd],
+        inputs=[runs_table, run_names_state],
         outputs=[
             delete_run_btn,
             confirm_delete_btn,
@@ -433,7 +477,7 @@ with gr.Blocks() as run_page:
         outputs=[runs_table, run_names_state],
         show_progress="hidden",
         api_visibility="private",
-        queue=False,
+        queue=True,
     ).then(
         fn=update_delete_button,
         inputs=[allow_deleting_runs, runs_table],
@@ -444,7 +488,7 @@ with gr.Blocks() as run_page:
     )
 
     def show_rename_controls(
-        selected_indices: list[int], run_names_list: list[str], project: str
+        selected_indices: list[int], run_names_list: list[str]
     ) -> tuple[
         gr.Button,
         gr.Row,
@@ -506,7 +550,7 @@ with gr.Blocks() as run_page:
     gr.on(
         [rename_run_btn.click],
         fn=show_rename_controls,
-        inputs=[runs_table, run_names_state, project_dd],
+        inputs=[runs_table, run_names_state],
         outputs=[
             rename_run_btn,
             rename_controls,
@@ -552,7 +596,7 @@ with gr.Blocks() as run_page:
         outputs=[runs_table, run_names_state],
         show_progress="hidden",
         api_visibility="private",
-        queue=False,
+        queue=True,
     ).then(
         fn=hide_rename_controls,
         inputs=None,
