@@ -114,17 +114,17 @@ class TrackioAudio(TrackioMedia):
 
         converters: dict[np.dtype, callable] = {
             np.dtype(np.int16): lambda a: a,
-            np.dtype(np.int32): lambda a: (
-                (a.astype(np.int32) // 65536).astype(np.int16, copy=False)
+            np.dtype(np.int32): lambda a: (a.astype(np.int32) // 65536).astype(
+                np.int16, copy=False
             ),
-            np.dtype(np.uint16): lambda a: (
-                (a.astype(np.int32) - 32768).astype(np.int16, copy=False)
+            np.dtype(np.uint16): lambda a: (a.astype(np.int32) - 32768).astype(
+                np.int16, copy=False
             ),
-            np.dtype(np.uint8): lambda a: (
-                (a.astype(np.int32) * 257 - 32768).astype(np.int16, copy=False)
+            np.dtype(np.uint8): lambda a: (a.astype(np.int32) * 257 - 32768).astype(
+                np.int16, copy=False
             ),
-            np.dtype(np.int8): lambda a: (
-                (a.astype(np.int32) * 256).astype(np.int16, copy=False)
+            np.dtype(np.int8): lambda a: (a.astype(np.int32) * 256).astype(
+                np.int16, copy=False
             ),
         }
 
