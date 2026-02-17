@@ -61,9 +61,11 @@ class Table:
             if (
                 dataframe[col]
                 .apply(
-                    lambda x: isinstance(x, list)
-                    and len(x) > 0
-                    and isinstance(x[0], TrackioMedia)
+                    lambda x: (
+                        isinstance(x, list)
+                        and len(x) > 0
+                        and isinstance(x[0], TrackioMedia)
+                    )
                 )
                 .any()
             ):
