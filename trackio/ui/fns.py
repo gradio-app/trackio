@@ -263,24 +263,6 @@ def handle_run_checkbox_change(
     return selection
 
 
-def group_checkbox_update(
-    group_runs: list[str], selection: RunSelection
-) -> ColoredCheckboxGroup:
-    color_palette = utils.get_color_palette()
-    choice_indices = {run: i for i, run in enumerate(selection.choices)}
-    colors = [
-        color_palette[choice_indices.get(run, 0) % len(color_palette)]
-        for run in group_runs
-    ]
-    subset = utils.ordered_subset(group_runs, selection.selected)
-    return ColoredCheckboxGroup(
-        choices=group_runs,
-        value=subset,
-        colors=colors,
-        label=f"Runs ({len(group_runs)})",
-    )
-
-
 def handle_group_checkbox_change(
     group_selected: list[str] | None,
     selection: RunSelection,
@@ -289,7 +271,6 @@ def handle_group_checkbox_change(
     selection.replace_group(group_runs or [], group_selected or [])
     return (
         selection,
-        group_checkbox_update(group_runs or [], selection),
         run_checkbox_update(selection),
     )
 
@@ -303,6 +284,5 @@ def handle_group_toggle(
     selection.replace_group(group_runs or [], target)
     return (
         selection,
-        group_checkbox_update(group_runs or [], selection),
         run_checkbox_update(selection),
     )
