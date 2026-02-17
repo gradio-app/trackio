@@ -241,7 +241,7 @@ def init(
     if auto_log_gpu is None:
         auto_log_gpu = gpu_available()
         if auto_log_gpu:
-            print("* GPU detected,  enabling automatic GPU metrics logging")
+            print("* GPU detected, enabling automatic GPU metrics logging")
 
     run = Run(
         url=url,
