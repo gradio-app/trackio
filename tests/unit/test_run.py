@@ -132,6 +132,21 @@ def test_automatic_username_and_timestamp_added(mock_cached_whoami, temp_dir):
     assert created_time.tzinfo is not None
 
 
+def test_step_recovery_after_crash(temp_dir):
+    SQLiteStorage.bulk_log(
+        "proj", "run1", [{"loss": 0.5}, {"loss": 0.4}, {"loss": 0.3}]
+    )
+
+    client = DummyClient()
+    run = Run(url="fake_url", project="proj", client=client, name="run1", space_id=None)
+    assert run._next_step == 3
+
+    run.log({"loss": 0.2})
+    time.sleep(0.6)
+    logged_step = client.predict.call_args[1]["logs"][0]["step"]
+    assert logged_step == 3
+
+
 def test_run_group_added(temp_dir):
     run = Run(
         url="http://test",

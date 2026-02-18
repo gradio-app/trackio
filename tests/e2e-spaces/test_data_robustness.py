@@ -7,16 +7,9 @@ import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def _wait_for_client(run, timeout=60):
-    """Wait for the Run's background client to connect to the Space."""
-    deadline = time.time() + timeout
-    while run._client is None:
-        if time.time() > deadline:
-            raise TimeoutError("Client did not connect within timeout")
-        time.sleep(0.1)
-
-
-def test_data_not_lost_on_transient_network_error(test_space_id, temp_dir):
+def test_data_not_lost_on_transient_network_error(
+    test_space_id, temp_dir, wait_for_client
+):
     """
     When predict() fails once due to a transient network error and then
     recovers, the failed batch should be retried and all data should
@@ -26,7 +19,7 @@ def test_data_not_lost_on_transient_network_error(test_space_id, temp_dir):
     run_name = "test_run"
 
     run = trackio.init(project=project_name, name=run_name, space_id=test_space_id)
-    _wait_for_client(run)
+    wait_for_client(run)
 
     original_predict = run._client.predict
     call_count = [0]
@@ -51,7 +44,7 @@ def test_data_not_lost_on_transient_network_error(test_space_id, temp_dir):
     assert summary["num_logs"] == 2
 
 
-def test_failed_data_persisted_locally(test_space_id, temp_dir):
+def test_failed_data_persisted_locally(test_space_id, temp_dir, wait_for_client):
     """
     When predict() permanently fails (Space unreachable), data should be
     persisted to the local SQLite database as a fallback buffer so it is
@@ -61,7 +54,7 @@ def test_failed_data_persisted_locally(test_space_id, temp_dir):
     run_name = "test_run"
 
     run = trackio.init(project=project_name, name=run_name, space_id=test_space_id)
-    _wait_for_client(run)
+    wait_for_client(run)
 
     original_predict = run._client.predict
 
@@ -83,7 +76,9 @@ def test_failed_data_persisted_locally(test_space_id, temp_dir):
     )
 
 
-def test_data_delivered_after_batch_sender_crash(test_space_id, temp_dir):
+def test_data_delivered_after_batch_sender_crash(
+    test_space_id, temp_dir, wait_for_client
+):
     """
     After a network error crashes the batch sender, subsequently-logged
     data should still be delivered to the Space (either by retrying within
@@ -93,7 +88,7 @@ def test_data_delivered_after_batch_sender_crash(test_space_id, temp_dir):
     run_name = "test_run"
 
     run = trackio.init(project=project_name, name=run_name, space_id=test_space_id)
-    _wait_for_client(run)
+    wait_for_client(run)
 
     original_predict = run._client.predict
     call_count = [0]
@@ -123,7 +118,7 @@ def test_data_delivered_after_batch_sender_crash(test_space_id, temp_dir):
     )
 
 
-def test_local_buffer_flushed_after_recovery(test_space_id, temp_dir):
+def test_local_buffer_flushed_after_recovery(test_space_id, temp_dir, wait_for_client):
     """
     When the connection recovers after several failures, data that was
     persisted in the local SQLite fallback buffer should be flushed to the
@@ -133,7 +128,7 @@ def test_local_buffer_flushed_after_recovery(test_space_id, temp_dir):
     run_name = "test_run"
 
     run = trackio.init(project=project_name, name=run_name, space_id=test_space_id)
-    _wait_for_client(run)
+    wait_for_client(run)
 
     original_predict = run._client.predict
     call_count = [0]

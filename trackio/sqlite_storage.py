@@ -349,10 +349,18 @@ class SQLiteStorage:
             df = pd.read_parquet(parquet_path)
             if "metrics" not in df.columns:
                 metrics = df.copy()
-                other_cols = ["id", "timestamp", "run_name", "step"]
-                df = df[other_cols]
-                for col in other_cols:
-                    del metrics[col]
+                structural_cols = [
+                    "id",
+                    "timestamp",
+                    "run_name",
+                    "step",
+                    "log_id",
+                    "space_id",
+                ]
+                df = df[[c for c in structural_cols if c in df.columns]]
+                for col in structural_cols:
+                    if col in metrics.columns:
+                        del metrics[col]
                 metrics = orjson.loads(metrics.to_json(orient="records"))
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
@@ -822,6 +830,19 @@ class SQLiteStorage:
                 results[row["run_name"]] = row["max_step"]
 
             return results
+
+    @staticmethod
+    def get_max_step_for_run(project: str, run: str) -> int | None:
+        """Get the maximum step for a specific run, or None if no logs exist."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,))
+            result = cursor.fetchone()[0]
+            return result
 
     @staticmethod
     def store_config(project: str, run: str, config: dict) -> None:
@@ -1422,10 +1443,6 @@ class SQLiteStorage:
                     }
                 )
             return results
-
-    @staticmethod
-    def get_all_configs_for_sync(project: str) -> dict[str, dict]:
-        return SQLiteStorage.get_all_run_configs(project)
 
     def finish(self):
         """Cleanup when run is finished."""

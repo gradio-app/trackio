@@ -7,15 +7,7 @@ from gradio_client import Client
 import trackio
 
 
-def _wait_for_client(run, timeout=60):
-    deadline = time.time() + timeout
-    while run._client is None:
-        if time.time() > deadline:
-            raise TimeoutError("Client did not connect within timeout")
-        time.sleep(0.1)
-
-
-def test_burst_2000_logs_single_process(test_space_id):
+def test_burst_2000_logs_single_process(test_space_id, wait_for_client):
     """
     A single process burst-sends 2,000 trackio.log() calls in ~2 seconds.
     All 2,000 entries should eventually arrive at the Space.
@@ -25,7 +17,7 @@ def test_burst_2000_logs_single_process(test_space_id):
     num_logs = 2000
 
     run = trackio.init(project=project_name, name=run_name, space_id=test_space_id)
-    _wait_for_client(run)
+    wait_for_client(run)
 
     t0 = time.time()
     for i in range(num_logs):
@@ -54,7 +46,7 @@ def test_burst_2000_logs_single_process(test_space_id):
     assert loss_values[-1]["step"] == num_logs - 1
 
 
-def test_32_parallel_threads_1000_logs_each(test_space_id):
+def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     """
     32 parallel threads each run their own trackio run and send 1,000
     log() calls. All 32,000 entries across 32 runs should arrive at the
@@ -71,7 +63,7 @@ def test_32_parallel_threads_1000_logs_each(test_space_id):
             run = trackio.init(
                 project=project_name, name=run_name, space_id=test_space_id
             )
-            _wait_for_client(run)
+            wait_for_client(run)
             for i in range(logs_per_thread):
                 run.log({"loss": 1.0 / (i + 1), "thread": thread_idx})
             run.finish()

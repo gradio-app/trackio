@@ -307,8 +307,6 @@ def sync_incremental(
         private: Whether to make the Space private if creating.
         pending_only: If True, only sync rows tagged with space_id (pending data).
     """
-    from gradio_client import handle_file as _handle_file
-
     print(
         f"* Syncing project '{project}' to: {SPACE_URL.format(space_id=space_id)} (please wait...)"
     )
@@ -355,7 +353,7 @@ def sync_incremental(
                             "run": u["run"],
                             "step": u["step"],
                             "relative_path": u["relative_path"],
-                            "uploaded_file": _handle_file(fp),
+                            "uploaded_file": handle_file(fp),
                         }
                     )
             if upload_entries:
@@ -386,11 +384,6 @@ def sync_incremental(
                 client.predict(
                     api_name="/bulk_log_system", logs=batch, hf_token=hf_token
                 )
-
-        configs = SQLiteStorage.get_all_configs_for_sync(project)
-        if configs:
-            for run_name, config_dict in configs.items():
-                SQLiteStorage.store_config(project, run_name, config_dict)
 
     SQLiteStorage.set_project_metadata(project, "space_id", space_id)
     print(f"* Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
@@ -430,11 +423,11 @@ def sync(
         space_id = f"{project}-{get_or_create_project_hash(project)}"
     space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
 
-    def _do_sync(space_id: str, private: bool | None = None, force: bool = False):
+    def _do_sync(space_id: str, private: bool | None = None):
         sync_incremental(project, space_id, private=private, pending_only=False)
 
     if run_in_background:
-        threading.Thread(target=_do_sync, args=(space_id, private, force)).start()
+        threading.Thread(target=_do_sync, args=(space_id, private)).start()
     else:
-        _do_sync(space_id, private, force)
+        _do_sync(space_id, private)
     return space_id

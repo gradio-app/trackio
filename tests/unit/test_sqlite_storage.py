@@ -65,9 +65,9 @@ def test_import_export(temp_dir):
     db_path_1 = SQLiteStorage.init_db("proj1")
     db_path_2 = SQLiteStorage.init_db("proj2")
 
-    # log some data, export to parquet, keep a copy in `metrics`
     SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
     SQLiteStorage.log(project="proj2", run="run2", metrics={"b": 2})
+    SQLiteStorage._dataset_import_attempted = True
     SQLiteStorage.export_to_parquet()
 
     metrics_before = {}

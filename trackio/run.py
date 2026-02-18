@@ -85,7 +85,8 @@ class Run:
         self._queued_uploads: list[UploadEntry] = []
         self._stop_flag = threading.Event()
         self._config_logged = False
-        self._next_step = 0
+        max_step = SQLiteStorage.get_max_step_for_run(self.project, self.name)
+        self._next_step = 0 if max_step is None else max_step + 1
         self._has_local_buffer = False
 
         self._client_thread = threading.Thread(target=self._init_client_background)
