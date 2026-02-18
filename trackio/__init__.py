@@ -1,3 +1,4 @@
+import atexit
 import glob
 import json
 import logging
@@ -67,6 +68,17 @@ Audio = TrackioAudio
 
 
 config = {}
+
+_atexit_registered = False
+
+
+def _cleanup_current_run():
+    run = context_vars.current_run.get()
+    if run is not None:
+        try:
+            run.finish()
+        except Exception:
+            pass
 
 
 def init(
@@ -254,6 +266,16 @@ def init(
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
     )
+
+    if space_id is not None:
+        SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+        if SQLiteStorage.has_pending_data(project):
+            run._has_local_buffer = True
+
+    global _atexit_registered
+    if not _atexit_registered:
+        atexit.register(_cleanup_current_run)
+        _atexit_registered = True
 
     if resumed:
         print(f"* Resumed existing run: {run.name}")

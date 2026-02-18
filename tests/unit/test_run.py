@@ -26,7 +26,7 @@ def test_run_log_calls_client(temp_dir):
     assert kwargs["logs"][0]["project"] == "proj"
     assert kwargs["logs"][0]["run"] == "run1"
     assert kwargs["logs"][0]["metrics"] == metrics
-    assert kwargs["logs"][0]["step"] is None
+    assert kwargs["logs"][0]["step"] == 0
     assert "config" in kwargs["logs"][0]
 
 

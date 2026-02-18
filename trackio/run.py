@@ -1,7 +1,9 @@
 import threading
 import time
+import uuid
 import warnings
 from datetime import datetime, timezone
+from pathlib import Path
 
 import huggingface_hub
 from gradio_client import Client, handle_file
@@ -16,6 +18,7 @@ from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
 from trackio.utils import _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
+MAX_BACKOFF = 30
 
 
 class Run:
@@ -82,6 +85,8 @@ class Run:
         self._queued_uploads: list[UploadEntry] = []
         self._stop_flag = threading.Event()
         self._config_logged = False
+        self._next_step = 0
+        self._has_local_buffer = False
 
         self._client_thread = threading.Thread(target=self._init_client_background)
         self._client_thread.daemon = True
@@ -100,42 +105,204 @@ class Run:
             return None
 
     def _batch_sender(self):
-        """Send batched logs every BATCH_SEND_INTERVAL."""
+        """Send batched logs every BATCH_SEND_INTERVAL with error handling and local fallback."""
+        consecutive_failures = 0
         while (
             not self._stop_flag.is_set()
             or len(self._queued_logs) > 0
             or len(self._queued_system_logs) > 0
+            or len(self._queued_uploads) > 0
         ):
             if not self._stop_flag.is_set():
-                time.sleep(BATCH_SEND_INTERVAL)
+                if consecutive_failures:
+                    sleep_time = min(
+                        BATCH_SEND_INTERVAL * (2**consecutive_failures), MAX_BACKOFF
+                    )
+                else:
+                    sleep_time = BATCH_SEND_INTERVAL
+                time.sleep(sleep_time)
 
             with self._client_lock:
                 if self._client is None:
                     return
+
+                failed = False
+
                 if self._queued_logs:
                     logs_to_send = self._queued_logs.copy()
                     self._queued_logs.clear()
-                    self._client.predict(
-                        api_name="/bulk_log",
-                        logs=logs_to_send,
-                        hf_token=huggingface_hub.utils.get_token(),
-                    )
+                    try:
+                        self._client.predict(
+                            api_name="/bulk_log",
+                            logs=logs_to_send,
+                            hf_token=huggingface_hub.utils.get_token(),
+                        )
+                    except Exception:
+                        self._persist_logs_locally(logs_to_send)
+                        failed = True
+
                 if self._queued_system_logs:
                     system_logs_to_send = self._queued_system_logs.copy()
                     self._queued_system_logs.clear()
-                    self._client.predict(
-                        api_name="/bulk_log_system",
-                        logs=system_logs_to_send,
-                        hf_token=huggingface_hub.utils.get_token(),
-                    )
+                    try:
+                        self._client.predict(
+                            api_name="/bulk_log_system",
+                            logs=system_logs_to_send,
+                            hf_token=huggingface_hub.utils.get_token(),
+                        )
+                    except Exception:
+                        self._persist_system_logs_locally(system_logs_to_send)
+                        failed = True
+
                 if self._queued_uploads:
                     uploads_to_send = self._queued_uploads.copy()
                     self._queued_uploads.clear()
+                    try:
+                        self._client.predict(
+                            api_name="/bulk_upload_media",
+                            uploads=uploads_to_send,
+                            hf_token=huggingface_hub.utils.get_token(),
+                        )
+                    except Exception:
+                        self._persist_uploads_locally(uploads_to_send)
+                        failed = True
+
+                if failed:
+                    consecutive_failures += 1
+                else:
+                    consecutive_failures = 0
+                    if self._has_local_buffer:
+                        self._flush_local_buffer()
+
+    def _persist_logs_locally(self, logs: list[LogEntry]):
+        if not self._space_id:
+            return
+        logs_by_run: dict[tuple, dict] = {}
+        for entry in logs:
+            key = (entry["project"], entry["run"])
+            if key not in logs_by_run:
+                logs_by_run[key] = {
+                    "metrics": [],
+                    "steps": [],
+                    "timestamps": [],
+                    "log_ids": [],
+                    "config": None,
+                }
+            logs_by_run[key]["metrics"].append(entry["metrics"])
+            logs_by_run[key]["steps"].append(entry.get("step"))
+            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
+            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
+            if entry.get("config") and logs_by_run[key]["config"] is None:
+                logs_by_run[key]["config"] = entry["config"]
+
+        for (project, run), data in logs_by_run.items():
+            SQLiteStorage.bulk_log(
+                project=project,
+                run=run,
+                metrics_list=data["metrics"],
+                steps=data["steps"],
+                timestamps=data["timestamps"],
+                log_ids=data["log_ids"],
+                config=data["config"],
+                space_id=self._space_id,
+            )
+        self._has_local_buffer = True
+
+    def _persist_system_logs_locally(self, logs: list[SystemLogEntry]):
+        if not self._space_id:
+            return
+        logs_by_run: dict[tuple, dict] = {}
+        for entry in logs:
+            key = (entry["project"], entry["run"])
+            if key not in logs_by_run:
+                logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
+            logs_by_run[key]["metrics"].append(entry["metrics"])
+            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
+            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
+
+        for (project, run), data in logs_by_run.items():
+            SQLiteStorage.bulk_log_system(
+                project=project,
+                run=run,
+                metrics_list=data["metrics"],
+                timestamps=data["timestamps"],
+                log_ids=data["log_ids"],
+                space_id=self._space_id,
+            )
+        self._has_local_buffer = True
+
+    def _persist_uploads_locally(self, uploads: list[UploadEntry]):
+        if not self._space_id:
+            return
+        for entry in uploads:
+            file_data = entry.get("uploaded_file")
+            file_path = ""
+            if isinstance(file_data, dict):
+                file_path = file_data.get("path", "")
+            elif hasattr(file_data, "path"):
+                file_path = str(file_data.path)
+            else:
+                file_path = str(file_data)
+            SQLiteStorage.add_pending_upload(
+                project=entry["project"],
+                space_id=self._space_id,
+                run_name=entry.get("run"),
+                step=entry.get("step"),
+                file_path=file_path,
+                relative_path=entry.get("relative_path"),
+            )
+        self._has_local_buffer = True
+
+    def _flush_local_buffer(self):
+        try:
+            buffered_logs = SQLiteStorage.get_pending_logs(self.project)
+            if buffered_logs:
+                self._client.predict(
+                    api_name="/bulk_log",
+                    logs=buffered_logs["logs"],
+                    hf_token=huggingface_hub.utils.get_token(),
+                )
+                SQLiteStorage.clear_pending_logs(self.project, buffered_logs["ids"])
+
+            buffered_sys = SQLiteStorage.get_pending_system_logs(self.project)
+            if buffered_sys:
+                self._client.predict(
+                    api_name="/bulk_log_system",
+                    logs=buffered_sys["logs"],
+                    hf_token=huggingface_hub.utils.get_token(),
+                )
+                SQLiteStorage.clear_pending_system_logs(
+                    self.project, buffered_sys["ids"]
+                )
+
+            buffered_uploads = SQLiteStorage.get_pending_uploads(self.project)
+            if buffered_uploads:
+                upload_entries = []
+                for u in buffered_uploads["uploads"]:
+                    fp = u["file_path"]
+                    if Path(fp).exists():
+                        upload_entries.append(
+                            {
+                                "project": u["project"],
+                                "run": u["run"],
+                                "step": u["step"],
+                                "relative_path": u["relative_path"],
+                                "uploaded_file": handle_file(fp),
+                            }
+                        )
+                if upload_entries:
                     self._client.predict(
                         api_name="/bulk_upload_media",
-                        uploads=uploads_to_send,
+                        uploads=upload_entries,
                         hf_token=huggingface_hub.utils.get_token(),
                     )
+                SQLiteStorage.clear_pending_uploads(
+                    self.project, buffered_uploads["ids"]
+                )
+
+            self._has_local_buffer = False
+        except Exception:
+            pass
 
     def _init_client_background(self):
         if self._client is None:
@@ -230,6 +397,16 @@ class Run:
                                 absolute_path = MEDIA_DIR / file_path
                                 self._queue_upload(absolute_path, step)
 
+    def _ensure_sender_alive(self):
+        if (
+            self._client_thread is not None
+            and not self._client_thread.is_alive()
+            and not self._stop_flag.is_set()
+        ):
+            self._client_thread = threading.Thread(target=self._init_client_background)
+            self._client_thread.daemon = True
+            self._client_thread.start()
+
     def log(self, metrics: dict, step: int | None = None):
         renamed_keys = []
         new_metrics = {}
@@ -258,6 +435,10 @@ class Run:
                 metrics[key] = self._process_media(value, step)
         metrics = utils.serialize_values(metrics)
 
+        if step is None:
+            step = self._next_step
+        self._next_step = max(self._next_step, step + 1)
+
         config_to_log = None
         if not self._config_logged and self.config:
             config_to_log = utils.to_json_safe(self.config)
@@ -269,10 +450,13 @@ class Run:
             "metrics": metrics,
             "step": step,
             "config": config_to_log,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "log_id": uuid.uuid4().hex,
         }
 
         with self._client_lock:
             self._queued_logs.append(log_entry)
+            self._ensure_sender_alive()
 
     def log_system(self, metrics: dict):
         """
@@ -287,10 +471,12 @@ class Run:
             "run": self.name,
             "metrics": metrics,
             "timestamp": timestamp,
+            "log_id": uuid.uuid4().hex,
         }
 
         with self._client_lock:
             self._queued_system_logs.append(system_log_entry)
+            self._ensure_sender_alive()
 
     def finish(self):
         """Cleanup when run is finished."""
@@ -299,8 +485,10 @@ class Run:
 
         self._stop_flag.set()
 
-        time.sleep(2 * BATCH_SEND_INTERVAL)
-
         if self._client_thread is not None:
             print("* Run finished. Uploading logs to Trackio (please wait...)")
-            self._client_thread.join()
+            self._client_thread.join(timeout=30)
+            if self._client_thread.is_alive():
+                warnings.warn(
+                    "Could not flush all logs within 30s. Some data may be buffered locally."
+                )

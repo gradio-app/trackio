@@ -353,19 +353,31 @@ def bulk_log(
     for log_entry in logs:
         key = (log_entry["project"], log_entry["run"])
         if key not in logs_by_run:
-            logs_by_run[key] = {"metrics": [], "steps": [], "config": None}
+            logs_by_run[key] = {
+                "metrics": [],
+                "steps": [],
+                "timestamps": [],
+                "log_ids": [],
+                "config": None,
+            }
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["steps"].append(log_entry.get("step"))
+        logs_by_run[key]["timestamps"].append(log_entry.get("timestamp"))
+        logs_by_run[key]["log_ids"].append(log_entry.get("log_id"))
         if log_entry.get("config") and logs_by_run[key]["config"] is None:
             logs_by_run[key]["config"] = log_entry["config"]
 
     for (project, run), data in logs_by_run.items():
+        has_timestamps = any(t is not None for t in data["timestamps"])
+        has_log_ids = any(lid is not None for lid in data["log_ids"])
         SQLiteStorage.bulk_log(
             project=project,
             run=run,
             metrics_list=data["metrics"],
             steps=data["steps"],
             config=data["config"],
+            timestamps=data["timestamps"] if has_timestamps else None,
+            log_ids=data["log_ids"] if has_log_ids else None,
         )
 
 
@@ -382,16 +394,19 @@ def bulk_log_system(
     for log_entry in logs:
         key = (log_entry["project"], log_entry["run"])
         if key not in logs_by_run:
-            logs_by_run[key] = {"metrics": [], "timestamps": []}
+            logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["timestamps"].append(log_entry.get("timestamp"))
+        logs_by_run[key]["log_ids"].append(log_entry.get("log_id"))
 
     for (project, run), data in logs_by_run.items():
+        has_log_ids = any(lid is not None for lid in data["log_ids"])
         SQLiteStorage.bulk_log_system(
             project=project,
             run=run,
             metrics_list=data["metrics"],
             timestamps=data["timestamps"],
+            log_ids=data["log_ids"] if has_log_ids else None,
         )
 
 
