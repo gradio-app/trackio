@@ -155,9 +155,9 @@ def update_rename_button(
     num_selected = len(selected_indices) if selected_indices else 0
 
     if num_selected == 1:
-        return gr.Button("Rename", interactive=True)
+        return gr.Button("Rename", interactive=True, variant="huggingface")
     else:
-        return gr.Button("Rename", interactive=False)
+        return gr.Button("Rename", interactive=False, variant="huggingface")
 
 
 def delete_selected_runs(
