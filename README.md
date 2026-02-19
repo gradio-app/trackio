@@ -20,10 +20,13 @@
 
 </div>
 
-`trackio` is a lightweight, free experiment tracking Python library built by Hugging Face 🤗.
+Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking Python library built by Hugging Face 🤗. It is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
+
+Trackio also ships with a Gradio-based dashboard you can use to view metrics locally:
 
 ![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
 
+Trackio's main features:
 
 - **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish`. Drop-in replacement: just 
 
@@ -36,9 +39,10 @@
   - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
   - Visualize experiments with a Gradio dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
+
 - Everything here, including hosting on Hugging Face, is **free**!
 
-Trackio is designed to be lightweight (the core codebase is <5,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
+Trackio is designed to be lightweight and extensible. It is written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
 
 ## Installation
 
