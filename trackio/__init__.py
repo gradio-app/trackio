@@ -189,7 +189,6 @@ def init(
         if url is None:
             url = space_id
             context_vars.current_server.set(url)
-            context_vars.current_share_server.set(None)
             context_vars.current_space_id.set(space_id)
 
     if (

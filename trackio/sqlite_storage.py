@@ -1444,6 +1444,3 @@ class SQLiteStorage:
                 )
             return results
 
-    def finish(self):
-        """Cleanup when run is finished."""
-        pass
