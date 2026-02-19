@@ -13,13 +13,35 @@ class DummyClient:
         self.predict = MagicMock()
 
 
-def test_run_log_calls_client(temp_dir):
-    client = DummyClient()
-    run = Run(url="fake_url", project="proj", client=client, name="run1", space_id=None)
+def test_run_log_writes_to_sqlite_locally(temp_dir):
+    run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
     metrics = {"x": 1}
     run.log(metrics)
 
-    time.sleep(0.6)  # Wait for the client to send the log
+    time.sleep(0.6)
+
+    logs = SQLiteStorage.get_logs("proj", "run1")
+    assert len(logs) == 1
+    assert logs[0]["x"] == 1
+    assert logs[0]["step"] == 0
+
+    config = SQLiteStorage.get_run_config("proj", "run1")
+    assert config is not None
+
+
+def test_run_log_calls_client_for_spaces(temp_dir):
+    client = DummyClient()
+    run = Run(
+        url="fake_url",
+        project="proj",
+        client=client,
+        name="run1",
+        space_id="user/space",
+    )
+    metrics = {"x": 1}
+    run.log(metrics)
+
+    time.sleep(0.6)
     args, kwargs = client.predict.call_args
     assert kwargs["api_name"] == "/bulk_log"
     assert len(kwargs["logs"]) == 1
@@ -106,7 +128,7 @@ def test_run_name_generation_with_space_id(mock_time, mock_cached_whoami, temp_d
 def test_reserved_config_keys_rejected(temp_dir):
     with pytest.raises(ValueError, match="Config key '_test' is reserved"):
         Run(
-            url="http://test",
+            url=None,
             project="test_project",
             client=None,
             config={"_test": "value"},
@@ -118,7 +140,7 @@ def test_automatic_username_and_timestamp_added(mock_cached_whoami, temp_dir):
     mock_cached_whoami.return_value = {"name": "testuser"}
 
     run = Run(
-        url="http://test",
+        url=None,
         project="test_project",
         client=None,
         config={"learning_rate": 0.01},
@@ -137,19 +159,20 @@ def test_step_recovery_after_crash(temp_dir):
         "proj", "run1", [{"loss": 0.5}, {"loss": 0.4}, {"loss": 0.3}]
     )
 
-    client = DummyClient()
-    run = Run(url="fake_url", project="proj", client=client, name="run1", space_id=None)
+    run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
     assert run._next_step == 3
 
     run.log({"loss": 0.2})
     time.sleep(0.6)
-    logged_step = client.predict.call_args[1]["logs"][0]["step"]
-    assert logged_step == 3
+
+    logs = SQLiteStorage.get_logs("proj", "run1")
+    assert len(logs) == 4
+    assert logs[3]["step"] == 3
 
 
 def test_run_group_added(temp_dir):
     run = Run(
-        url="http://test",
+        url=None,
         project="test_project",
         group="test_group",
         client=None,

@@ -1,3 +1,4 @@
+import shutil
 import threading
 import time
 import uuid
@@ -11,7 +12,7 @@ from gradio_client import Client, handle_file
 from trackio import utils
 from trackio.gpu import GpuMonitor
 from trackio.histogram import Histogram
-from trackio.media import TrackioMedia
+from trackio.media import TrackioMedia, get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
@@ -24,7 +25,7 @@ MAX_BACKOFF = 30
 class Run:
     def __init__(
         self,
-        url: str,
+        url: str | None,
         project: str,
         client: Client | None,
         name: str | None = None,
@@ -34,29 +35,6 @@ class Run:
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
     ):
-        """
-        Initialize a Run for logging metrics to Trackio.
-
-        Args:
-            url: The URL of the Trackio server (local Gradio app or HF Space).
-            project: The name of the project to log metrics to.
-            client: A pre-configured gradio_client.Client instance, or None to
-                create one automatically in a background thread with retry logic.
-                Passing None is recommended for normal usage. Passing a client
-                is useful for testing (e.g., injecting a mock client).
-            name: The name of this run. If None, a readable name like
-                "brave-sunset-0" is auto-generated. If space_id is provided,
-                generates a "username-timestamp" format instead.
-            group: Optional group name to organize related runs together.
-            config: A dictionary of configuration/hyperparameters for this run.
-                Keys starting with '_' are reserved for internal use.
-            space_id: The HF Space ID if logging to a Space (e.g., "user/space").
-                If provided, media files will be uploaded to the Space.
-            auto_log_gpu: Whether to automatically log GPU metrics (utilization,
-                memory, temperature) at regular intervals.
-            gpu_log_interval: The interval in seconds between GPU metric logs.
-                Only used when auto_log_gpu is True.
-        """
         self.url = url
         self.project = project
         self._client_lock = threading.Lock()
@@ -89,9 +67,18 @@ class Run:
         self._next_step = 0 if max_step is None else max_step + 1
         self._has_local_buffer = False
 
-        self._client_thread = threading.Thread(target=self._init_client_background)
-        self._client_thread.daemon = True
-        self._client_thread.start()
+        self._is_local = space_id is None
+
+        if self._is_local:
+            self._local_sender_thread = threading.Thread(
+                target=self._local_batch_sender
+            )
+            self._local_sender_thread.daemon = True
+            self._local_sender_thread.start()
+        else:
+            self._client_thread = threading.Thread(target=self._init_client_background)
+            self._client_thread.daemon = True
+            self._client_thread.start()
 
         self._gpu_monitor: "GpuMonitor | None" = None
         if auto_log_gpu:
@@ -99,14 +86,84 @@ class Run:
             self._gpu_monitor.start()
 
     def _get_username(self) -> str | None:
-        """Get the current HuggingFace username if logged in, otherwise None."""
         try:
             return _get_default_namespace()
         except Exception:
             return None
 
+    def _local_batch_sender(self):
+        while (
+            not self._stop_flag.is_set()
+            or len(self._queued_logs) > 0
+            or len(self._queued_system_logs) > 0
+        ):
+            if not self._stop_flag.is_set():
+                time.sleep(BATCH_SEND_INTERVAL)
+
+            with self._client_lock:
+                if self._queued_logs:
+                    logs_to_send = self._queued_logs.copy()
+                    self._queued_logs.clear()
+                    self._write_logs_to_sqlite(logs_to_send)
+
+                if self._queued_system_logs:
+                    system_logs_to_send = self._queued_system_logs.copy()
+                    self._queued_system_logs.clear()
+                    self._write_system_logs_to_sqlite(system_logs_to_send)
+
+    def _write_logs_to_sqlite(self, logs: list[LogEntry]):
+        logs_by_run: dict[tuple, dict] = {}
+        for entry in logs:
+            key = (entry["project"], entry["run"])
+            if key not in logs_by_run:
+                logs_by_run[key] = {
+                    "metrics": [],
+                    "steps": [],
+                    "timestamps": [],
+                    "log_ids": [],
+                    "config": None,
+                }
+            logs_by_run[key]["metrics"].append(entry["metrics"])
+            logs_by_run[key]["steps"].append(entry.get("step"))
+            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
+            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
+            if entry.get("config") and logs_by_run[key]["config"] is None:
+                logs_by_run[key]["config"] = entry["config"]
+
+        for (project, run), data in logs_by_run.items():
+            has_timestamps = any(t is not None for t in data["timestamps"])
+            has_log_ids = any(lid is not None for lid in data["log_ids"])
+            SQLiteStorage.bulk_log(
+                project=project,
+                run=run,
+                metrics_list=data["metrics"],
+                steps=data["steps"],
+                config=data["config"],
+                timestamps=data["timestamps"] if has_timestamps else None,
+                log_ids=data["log_ids"] if has_log_ids else None,
+            )
+
+    def _write_system_logs_to_sqlite(self, logs: list[SystemLogEntry]):
+        logs_by_run: dict[tuple, dict] = {}
+        for entry in logs:
+            key = (entry["project"], entry["run"])
+            if key not in logs_by_run:
+                logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
+            logs_by_run[key]["metrics"].append(entry["metrics"])
+            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
+            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
+
+        for (project, run), data in logs_by_run.items():
+            has_log_ids = any(lid is not None for lid in data["log_ids"])
+            SQLiteStorage.bulk_log_system(
+                project=project,
+                run=run,
+                metrics_list=data["metrics"],
+                timestamps=data["timestamps"],
+                log_ids=data["log_ids"] if has_log_ids else None,
+            )
+
     def _batch_sender(self):
-        """Send batched logs every BATCH_SEND_INTERVAL with error handling and local fallback."""
         consecutive_failures = 0
         while (
             not self._stop_flag.is_set()
@@ -329,44 +386,43 @@ class Run:
         relative_path: str | None = None,
         use_run_name: bool = True,
     ):
-        """
-        Queues a media file for upload to a Space.
+        if self._is_local:
+            self._save_upload_locally(file_path, step, relative_path, use_run_name)
+        else:
+            upload_entry: UploadEntry = {
+                "project": self.project,
+                "run": self.name if use_run_name else None,
+                "step": step,
+                "relative_path": relative_path,
+                "uploaded_file": handle_file(file_path),
+            }
+            with self._client_lock:
+                self._queued_uploads.append(upload_entry)
 
-        Args:
-            file_path:
-                The path to the file to upload.
-            step (`int` or `None`, *optional*):
-                The step number associated with this upload.
-            relative_path (`str` or `None`, *optional*):
-                The relative path within the project's files directory. Used when
-                uploading files via `trackio.save()`.
-            use_run_name (`bool`, *optional*):
-                Whether to use the run name for the uploaded file. This is set to
-                `False` when uploading files via `trackio.save()`.
-        """
-        upload_entry: UploadEntry = {
-            "project": self.project,
-            "run": self.name if use_run_name else None,
-            "step": step,
-            "relative_path": relative_path,
-            "uploaded_file": handle_file(file_path),
-        }
-        with self._client_lock:
-            self._queued_uploads.append(upload_entry)
+    def _save_upload_locally(
+        self,
+        file_path,
+        step: int | None,
+        relative_path: str | None = None,
+        use_run_name: bool = True,
+    ):
+        media_path = get_project_media_path(
+            project=self.project,
+            run=self.name if use_run_name else None,
+            step=step,
+            relative_path=relative_path,
+        )
+        src = Path(file_path)
+        if src.exists() and str(src.resolve()) != str(Path(media_path).resolve()):
+            shutil.copy(str(src), str(media_path))
 
     def _process_media(self, value: TrackioMedia, step: int | None) -> dict:
-        """
-        Serialize media in metrics and upload to space if needed.
-        """
         value._save(self.project, self.name, step if step is not None else 0)
         if self._space_id:
             self._queue_upload(value._get_absolute_file_path(), step)
         return value._to_dict()
 
     def _scan_and_queue_media_uploads(self, table_dict: dict, step: int | None):
-        """
-        Scan a serialized table for media objects and queue them for upload to space.
-        """
         if not self._space_id:
             return
 
@@ -399,14 +455,28 @@ class Run:
                                 self._queue_upload(absolute_path, step)
 
     def _ensure_sender_alive(self):
-        if (
-            self._client_thread is not None
-            and not self._client_thread.is_alive()
-            and not self._stop_flag.is_set()
-        ):
-            self._client_thread = threading.Thread(target=self._init_client_background)
-            self._client_thread.daemon = True
-            self._client_thread.start()
+        if self._is_local:
+            if (
+                hasattr(self, "_local_sender_thread")
+                and not self._local_sender_thread.is_alive()
+                and not self._stop_flag.is_set()
+            ):
+                self._local_sender_thread = threading.Thread(
+                    target=self._local_batch_sender
+                )
+                self._local_sender_thread.daemon = True
+                self._local_sender_thread.start()
+        else:
+            if (
+                self._client_thread is not None
+                and not self._client_thread.is_alive()
+                and not self._stop_flag.is_set()
+            ):
+                self._client_thread = threading.Thread(
+                    target=self._init_client_background
+                )
+                self._client_thread.daemon = True
+                self._client_thread.start()
 
     def log(self, metrics: dict, step: int | None = None):
         renamed_keys = []
@@ -460,10 +530,6 @@ class Run:
             self._ensure_sender_alive()
 
     def log_system(self, metrics: dict):
-        """
-        Log system metrics (GPU, etc.) without a step number.
-        These metrics use timestamps for the x-axis instead of steps.
-        """
         metrics = utils.serialize_values(metrics)
         timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -480,16 +546,24 @@ class Run:
             self._ensure_sender_alive()
 
     def finish(self):
-        """Cleanup when run is finished."""
         if self._gpu_monitor is not None:
             self._gpu_monitor.stop()
 
         self._stop_flag.set()
 
-        if self._client_thread is not None:
-            print("* Run finished. Uploading logs to Trackio (please wait...)")
-            self._client_thread.join(timeout=30)
-            if self._client_thread.is_alive():
-                warnings.warn(
-                    "Could not flush all logs within 30s. Some data may be buffered locally."
-                )
+        if self._is_local:
+            if hasattr(self, "_local_sender_thread"):
+                print("* Run finished. Uploading logs to Trackio (please wait...)")
+                self._local_sender_thread.join(timeout=30)
+                if self._local_sender_thread.is_alive():
+                    warnings.warn(
+                        "Could not flush all logs within 30s. Some data may be buffered locally."
+                    )
+        else:
+            if self._client_thread is not None:
+                print("* Run finished. Uploading logs to Trackio (please wait...)")
+                self._client_thread.join(timeout=30)
+                if self._client_thread.is_alive():
+                    warnings.warn(
+                        "Could not flush all logs within 30s. Some data may be buffered locally."
+                    )

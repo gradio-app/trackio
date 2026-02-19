@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from PIL import Image as PILImage
 
+from trackio import context_vars
 from trackio.media import write_audio, write_video
 
 
@@ -25,7 +26,17 @@ def temp_dir(monkeypatch):
             monkeypatch.setattr(f"{name}.TRACKIO_DIR", Path(tmpdir))
         for name in ["trackio.media.media", "trackio.media.utils", "trackio.utils"]:
             monkeypatch.setattr(f"{name}.MEDIA_DIR", Path(tmpdir) / "media")
+        context_vars.current_run.set(None)
+        context_vars.current_project.set(None)
+        context_vars.current_server.set(None)
+        context_vars.current_space_id.set(None)
+        context_vars.current_share_server.set(None)
         yield tmpdir
+        context_vars.current_run.set(None)
+        context_vars.current_project.set(None)
+        context_vars.current_server.set(None)
+        context_vars.current_space_id.set(None)
+        context_vars.current_share_server.set(None)
 
 
 @pytest.fixture(autouse=True)
