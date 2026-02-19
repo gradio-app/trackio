@@ -1443,4 +1443,3 @@ class SQLiteStorage:
                     }
                 )
             return results
-
