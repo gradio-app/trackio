@@ -602,10 +602,22 @@ CSS = """
     position: relative;
     z-index: 10;
 }
+
+.vega-embed .role-legend-symbol path {
+    stroke-width: 0 !important;
+}
 """
 
 HEAD = """
 <script>
+new MutationObserver(function() {
+    document.querySelectorAll('.vega-embed .role-legend-symbol path').forEach(function(p) {
+        var s = p.style.stroke || p.getAttribute('stroke');
+        if (s && s !== 'none' && p.style.fill !== s) {
+            p.style.fill = s;
+        }
+    });
+}).observe(document.body, { childList: true, subtree: true });
 function setCookie(name, value, days) {
     var expires = "";
     if (days) {
@@ -1318,4 +1330,5 @@ if __name__ == "__main__":
         show_error=True,
         ssr_mode=False,
         head=HEAD,
+        css=CSS,
     )
