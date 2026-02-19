@@ -1,5 +1,15 @@
 # trackio
 
+## 0.16.0
+
+### Features
+
+- [#426](https://github.com/gradio-app/trackio/pull/426) [`ead4dc8`](https://github.com/gradio-app/trackio/commit/ead4dc8e74ee2d8e47d61bca0a7668456acf49be) - Fix redundant double rendering of group checkboxes.  Thanks @abidlabs!
+- [#413](https://github.com/gradio-app/trackio/pull/413) [`39c4750`](https://github.com/gradio-app/trackio/commit/39c4750951d554ba6eb4d58847c6bb444b2891a8) - Check `dist-packages` when checking for source installation.  Thanks @sergiopaniego!
+- [#423](https://github.com/gradio-app/trackio/pull/423) [`2e52ab3`](https://github.com/gradio-app/trackio/commit/2e52ab303e3041718a6a56fbf84d0848aca9ad67) - Fix legend outline visibility issue.  Thanks @Raghunath-Balaji!
+- [#407](https://github.com/gradio-app/trackio/pull/407) [`c8a384d`](https://github.com/gradio-app/trackio/commit/c8a384ddfe5a295cecf862a26178d40e48acb424) - Fix pytests that were failling locally on MacOS.  Thanks @abidlabs!
+- [#405](https://github.com/gradio-app/trackio/pull/405) [`35aae4e`](https://github.com/gradio-app/trackio/commit/35aae4e3aa3e2b2888887528478b9dc6a9808bda) - Add conditional padding for HF Space dashboard when not in iframe.  Thanks @znation!
+
 ## 0.15.0
 
 ### Features
