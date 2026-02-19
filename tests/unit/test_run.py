@@ -17,8 +17,7 @@ def test_run_log_writes_to_sqlite_locally(temp_dir):
     run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
     metrics = {"x": 1}
     run.log(metrics)
-
-    time.sleep(0.6)
+    run.finish()
 
     logs = SQLiteStorage.get_logs("proj", "run1")
     assert len(logs) == 1
