@@ -606,6 +606,10 @@ CSS = """
 .vega-embed .role-legend-symbol path {
     stroke-width: 0 !important;
 }
+
+.nav-holder {
+    border-bottom: 0px !important;
+}
 """
 
 HEAD = """
