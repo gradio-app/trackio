@@ -553,7 +553,9 @@ class Run:
                     )
         else:
             if self._client_thread is not None:
-                print("* Run finished. Uploading logs to Trackio Space (please wait...)")
+                print(
+                    "* Run finished. Uploading logs to Trackio Space (please wait...)"
+                )
                 self._client_thread.join(timeout=30)
                 if self._client_thread.is_alive():
                     warnings.warn(
