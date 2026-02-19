@@ -48,10 +48,8 @@ def test_delete_run(temp_dir):
     run_name = "test_run"
 
     config = {"param1": "value1", "_Created": "2023-01-01T00:00:00"}
-    SQLiteStorage.store_config(project, run_name, config)
-
     metrics = [{"accuracy": 0.95, "loss": 0.1}]
-    SQLiteStorage.bulk_log(project, run_name, metrics)
+    SQLiteStorage.bulk_log(project, run_name, metrics, config=config)
 
     assert SQLiteStorage.get_run_config(project, run_name) is not None
     assert len(SQLiteStorage.get_logs(project, run_name)) > 0
