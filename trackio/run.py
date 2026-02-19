@@ -119,19 +119,16 @@ class Run:
                 logs_by_run[key] = {
                     "metrics": [],
                     "steps": [],
-                    "timestamps": [],
                     "log_ids": [],
                     "config": None,
                 }
             logs_by_run[key]["metrics"].append(entry["metrics"])
             logs_by_run[key]["steps"].append(entry.get("step"))
-            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
             logs_by_run[key]["log_ids"].append(entry.get("log_id"))
             if entry.get("config") and logs_by_run[key]["config"] is None:
                 logs_by_run[key]["config"] = entry["config"]
 
         for (project, run), data in logs_by_run.items():
-            has_timestamps = any(t is not None for t in data["timestamps"])
             has_log_ids = any(lid is not None for lid in data["log_ids"])
             SQLiteStorage.bulk_log(
                 project=project,
@@ -139,7 +136,6 @@ class Run:
                 metrics_list=data["metrics"],
                 steps=data["steps"],
                 config=data["config"],
-                timestamps=data["timestamps"] if has_timestamps else None,
                 log_ids=data["log_ids"] if has_log_ids else None,
             )
 
@@ -242,13 +238,11 @@ class Run:
                 logs_by_run[key] = {
                     "metrics": [],
                     "steps": [],
-                    "timestamps": [],
                     "log_ids": [],
                     "config": None,
                 }
             logs_by_run[key]["metrics"].append(entry["metrics"])
             logs_by_run[key]["steps"].append(entry.get("step"))
-            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
             logs_by_run[key]["log_ids"].append(entry.get("log_id"))
             if entry.get("config") and logs_by_run[key]["config"] is None:
                 logs_by_run[key]["config"] = entry["config"]
@@ -259,7 +253,6 @@ class Run:
                 run=run,
                 metrics_list=data["metrics"],
                 steps=data["steps"],
-                timestamps=data["timestamps"],
                 log_ids=data["log_ids"],
                 config=data["config"],
                 space_id=self._space_id,
@@ -521,7 +514,6 @@ class Run:
             "metrics": metrics,
             "step": step,
             "config": config_to_log,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
             "log_id": uuid.uuid4().hex,
         }
 

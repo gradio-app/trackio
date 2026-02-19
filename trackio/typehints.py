@@ -9,7 +9,6 @@ class LogEntry(TypedDict, total=False):
     metrics: dict[str, Any]
     step: int | None
     config: dict[str, Any] | None
-    timestamp: str | None
     log_id: str | None
 
 
