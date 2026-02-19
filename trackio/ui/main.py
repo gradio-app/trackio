@@ -1284,7 +1284,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             ],
                             outputs=[
                                 run_selection_state,
-                                group_cb,
                                 run_cb,
                             ],
                             show_progress="hidden",
@@ -1300,7 +1299,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 run_selection_state,
                                 gr.State(runs),
                             ],
-                            outputs=[run_selection_state, group_cb, run_cb],
+                            outputs=[run_selection_state, run_cb],
                             show_progress="hidden",
                             api_visibility="private",
                             queue=False,
