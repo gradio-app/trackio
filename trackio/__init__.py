@@ -25,7 +25,6 @@ from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import UploadEntry
-from trackio.ui.main import CSS, HEAD, demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -67,6 +66,12 @@ Audio = TrackioAudio
 
 
 config = {}
+
+
+def _get_demo():
+    from trackio.ui.main import CSS, HEAD, demo
+
+    return demo, CSS, HEAD
 
 
 def init(
@@ -159,6 +164,7 @@ def init(
         raise LocalTokenNotFoundError(
             f"You must be logged in to Hugging Face locally when `space_id` is provided to deploy to a Space. {e}"
         ) from e
+    demo, CSS, HEAD = _get_demo()
     url = context_vars.current_server.get()
     share_url = context_vars.current_share_server.get()
 
@@ -518,6 +524,8 @@ def show(
             `share_url`: The public share URL of the dashboard.
             `full_url`: The full URL of the dashboard including the write token (will use the public share URL if launched publicly, otherwise the local URL).
     """
+    demo, CSS, HEAD = _get_demo()
+
     if color_palette is not None:
         os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
 
