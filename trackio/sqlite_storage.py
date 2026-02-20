@@ -177,6 +177,45 @@ class SQLiteStorage:
                     ON system_metrics(run_name, timestamp)
                     """
                 )
+
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS project_metadata (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                    """
+                )
+
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS pending_uploads (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        space_id TEXT NOT NULL,
+                        run_name TEXT,
+                        step INTEGER,
+                        file_path TEXT NOT NULL,
+                        relative_path TEXT,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+
+                for table in ("metrics", "system_metrics"):
+                    for col in ("log_id TEXT", "space_id TEXT"):
+                        try:
+                            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+                        except sqlite3.OperationalError:
+                            pass
+                    cursor.execute(
+                        f"""CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_log_id
+                        ON {table}(log_id) WHERE log_id IS NOT NULL"""
+                    )
+                    cursor.execute(
+                        f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
+                        ON {table}(space_id) WHERE space_id IS NOT NULL"""
+                    )
+
                 conn.commit()
         return db_path
 
@@ -310,10 +349,18 @@ class SQLiteStorage:
             df = pd.read_parquet(parquet_path)
             if "metrics" not in df.columns:
                 metrics = df.copy()
-                other_cols = ["id", "timestamp", "run_name", "step"]
-                df = df[other_cols]
-                for col in other_cols:
-                    del metrics[col]
+                structural_cols = [
+                    "id",
+                    "timestamp",
+                    "run_name",
+                    "step",
+                    "log_id",
+                    "space_id",
+                ]
+                df = df[[c for c in structural_cols if c in df.columns]]
+                for col in structural_cols:
+                    if col in metrics.columns:
+                        del metrics[col]
                 metrics = orjson.loads(metrics.to_json(orient="records"))
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
@@ -451,6 +498,8 @@ class SQLiteStorage:
         steps: list[int] | None = None,
         timestamps: list[str] | None = None,
         config: dict | None = None,
+        log_ids: list[str] | None = None,
+        space_id: str | None = None,
     ):
         """
         Safely log bulk metrics to the database. Before logging, this method will ensure the database exists
@@ -494,20 +543,23 @@ class SQLiteStorage:
 
                 data = []
                 for i, metrics in enumerate(metrics_list):
+                    lid = log_ids[i] if log_ids else None
                     data.append(
                         (
                             timestamps[i],
                             run,
                             steps[i],
                             orjson.dumps(serialize_values(metrics)),
+                            lid,
+                            space_id,
                         )
                     )
 
                 cursor.executemany(
                     """
-                    INSERT INTO metrics
-                    (timestamp, run_name, step, metrics)
-                    VALUES (?, ?, ?, ?)
+                    INSERT OR IGNORE INTO metrics
+                    (timestamp, run_name, step, metrics, log_id, space_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     data,
                 )
@@ -535,6 +587,8 @@ class SQLiteStorage:
         run: str,
         metrics_list: list[dict],
         timestamps: list[str] | None = None,
+        log_ids: list[str] | None = None,
+        space_id: str | None = None,
     ):
         """
         Log system metrics (GPU, etc.) to the database without step numbers.
@@ -555,19 +609,22 @@ class SQLiteStorage:
                 cursor = conn.cursor()
                 data = []
                 for i, metrics in enumerate(metrics_list):
+                    lid = log_ids[i] if log_ids else None
                     data.append(
                         (
                             timestamps[i],
                             run,
                             orjson.dumps(serialize_values(metrics)),
+                            lid,
+                            space_id,
                         )
                     )
 
                 cursor.executemany(
                     """
-                    INSERT INTO system_metrics
-                    (timestamp, run_name, metrics)
-                    VALUES (?, ?, ?)
+                    INSERT OR IGNORE INTO system_metrics
+                    (timestamp, run_name, metrics, log_id, space_id)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
                     data,
                 )
@@ -609,36 +666,9 @@ class SQLiteStorage:
     @staticmethod
     def get_all_system_metrics_for_run(project: str, run: str) -> list[str]:
         """Get all system metric names for a specific project/run."""
-        db_path = SQLiteStorage.get_project_db_path(project)
-        if not db_path.exists():
-            return []
-
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute(
-                    """
-                    SELECT metrics
-                    FROM system_metrics
-                    WHERE run_name = ?
-                    ORDER BY timestamp
-                    """,
-                    (run,),
-                )
-
-                rows = cursor.fetchall()
-                all_metrics = set()
-                for row in rows:
-                    metrics = orjson.loads(row["metrics"])
-                    metrics = deserialize_values(metrics)
-                    for key in metrics.keys():
-                        if key != "timestamp":
-                            all_metrics.add(key)
-                return sorted(list(all_metrics))
-            except sqlite3.OperationalError as e:
-                if "no such table: system_metrics" in str(e):
-                    return []
-                raise
+        return SQLiteStorage._get_metric_names(
+            project, run, "system_metrics", exclude_keys={"timestamp"}
+        )
 
     @staticmethod
     def has_system_metrics(project: str) -> bool:
@@ -775,24 +805,17 @@ class SQLiteStorage:
             return results
 
     @staticmethod
-    def store_config(project: str, run: str, config: dict) -> None:
-        """Store configuration for a run."""
-        db_path = SQLiteStorage.init_db(project)
+    def get_max_step_for_run(project: str, run: str) -> int | None:
+        """Get the maximum step for a specific run, or None if no logs exist."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
 
-        with SQLiteStorage._get_process_lock(project):
-            with SQLiteStorage._get_connection(db_path) as conn:
-                cursor = conn.cursor()
-                current_timestamp = datetime.now().isoformat()
-
-                cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO configs
-                    (run_name, config, created_at)
-                    VALUES (?, ?, ?)
-                    """,
-                    (run, orjson.dumps(serialize_values(config)), current_timestamp),
-                )
-                conn.commit()
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,))
+            result = cursor.fetchone()[0]
+            return result
 
     @staticmethod
     def get_run_config(project: str, run: str) -> dict | None:
@@ -1054,32 +1077,309 @@ class SQLiteStorage:
     @staticmethod
     def get_all_metrics_for_run(project: str, run: str) -> list[str]:
         """Get all metric names for a specific project/run."""
+        return SQLiteStorage._get_metric_names(
+            project, run, "metrics", exclude_keys={"timestamp", "step"}
+        )
+
+    @staticmethod
+    def _get_metric_names(
+        project: str, run: str, table: str, exclude_keys: set[str]
+    ) -> list[str]:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT metrics
-                FROM metrics
-                WHERE run_name = ?
-                ORDER BY timestamp
-                """,
-                (run,),
-            )
+            try:
+                cursor.execute(
+                    f"""
+                    SELECT metrics
+                    FROM {table}
+                    WHERE run_name = ?
+                    ORDER BY timestamp
+                    """,
+                    (run,),
+                )
 
+                rows = cursor.fetchall()
+                all_metrics = set()
+                for row in rows:
+                    metrics = orjson.loads(row["metrics"])
+                    metrics = deserialize_values(metrics)
+                    for key in metrics.keys():
+                        if key not in exclude_keys:
+                            all_metrics.add(key)
+                return sorted(list(all_metrics))
+            except sqlite3.OperationalError as e:
+                if f"no such table: {table}" in str(e):
+                    return []
+                raise
+
+    @staticmethod
+    def set_project_metadata(project: str, key: str, value: str) -> None:
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO project_metadata (key, value) VALUES (?, ?)",
+                    (key, value),
+                )
+                conn.commit()
+
+    @staticmethod
+    def get_project_metadata(project: str, key: str) -> str | None:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT value FROM project_metadata WHERE key = ?", (key,)
+                )
+                row = cursor.fetchone()
+                return row[0] if row else None
+            except sqlite3.OperationalError:
+                return None
+
+    @staticmethod
+    def get_space_id(project: str) -> str | None:
+        return SQLiteStorage.get_project_metadata(project, "space_id")
+
+    @staticmethod
+    def has_pending_data(project: str) -> bool:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return False
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT EXISTS(SELECT 1 FROM metrics WHERE space_id IS NOT NULL LIMIT 1)"
+                )
+                if cursor.fetchone()[0]:
+                    return True
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute(
+                    "SELECT EXISTS(SELECT 1 FROM system_metrics WHERE space_id IS NOT NULL LIMIT 1)"
+                )
+                if cursor.fetchone()[0]:
+                    return True
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("SELECT EXISTS(SELECT 1 FROM pending_uploads LIMIT 1)")
+                if cursor.fetchone()[0]:
+                    return True
+            except sqlite3.OperationalError:
+                pass
+            return False
+
+    @staticmethod
+    def get_pending_logs(project: str) -> dict | None:
+        return SQLiteStorage._get_pending(
+            project, "metrics", extra_fields=["step"], include_config=True
+        )
+
+    @staticmethod
+    def clear_pending_logs(project: str, metric_ids: list[int]) -> None:
+        SQLiteStorage._clear_pending(project, "metrics", metric_ids)
+
+    @staticmethod
+    def get_pending_system_logs(project: str) -> dict | None:
+        return SQLiteStorage._get_pending(project, "system_metrics")
+
+    @staticmethod
+    def _get_pending(
+        project: str,
+        table: str,
+        extra_fields: list[str] | None = None,
+        include_config: bool = False,
+    ) -> dict | None:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        extra_cols = ", ".join(extra_fields) + ", " if extra_fields else ""
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    f"""SELECT id, timestamp, run_name, {extra_cols}metrics, log_id, space_id
+                    FROM {table} WHERE space_id IS NOT NULL"""
+                )
+            except sqlite3.OperationalError:
+                return None
             rows = cursor.fetchall()
-            all_metrics = set()
+            if not rows:
+                return None
+            logs = []
+            ids = []
             for row in rows:
-                metrics = orjson.loads(row["metrics"])
-                metrics = deserialize_values(metrics)
-                for key in metrics.keys():
-                    if key not in ["timestamp", "step"]:
-                        all_metrics.add(key)
-            return sorted(list(all_metrics))
+                metrics = deserialize_values(orjson.loads(row["metrics"]))
+                entry = {
+                    "project": project,
+                    "run": row["run_name"],
+                    "metrics": metrics,
+                    "timestamp": row["timestamp"],
+                    "log_id": row["log_id"],
+                }
+                for field in extra_fields or []:
+                    entry[field] = row[field]
+                if include_config:
+                    entry["config"] = None
+                logs.append(entry)
+                ids.append(row["id"])
+            return {"logs": logs, "ids": ids, "space_id": rows[0]["space_id"]}
 
-    def finish(self):
-        """Cleanup when run is finished."""
-        pass
+    @staticmethod
+    def clear_pending_system_logs(project: str, metric_ids: list[int]) -> None:
+        SQLiteStorage._clear_pending(project, "system_metrics", metric_ids)
+
+    @staticmethod
+    def _clear_pending(project: str, table: str, ids: list[int]) -> None:
+        if not ids:
+            return
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"DELETE FROM {table} WHERE id IN ({placeholders})",
+                    ids,
+                )
+                conn.commit()
+
+    @staticmethod
+    def get_pending_uploads(project: str) -> dict | None:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """SELECT id, space_id, run_name, step, file_path, relative_path
+                    FROM pending_uploads"""
+                )
+            except sqlite3.OperationalError:
+                return None
+            rows = cursor.fetchall()
+            if not rows:
+                return None
+            uploads = []
+            ids = []
+            for row in rows:
+                uploads.append(
+                    {
+                        "project": project,
+                        "run": row["run_name"],
+                        "step": row["step"],
+                        "file_path": row["file_path"],
+                        "relative_path": row["relative_path"],
+                    }
+                )
+                ids.append(row["id"])
+            return {"uploads": uploads, "ids": ids, "space_id": rows[0]["space_id"]}
+
+    @staticmethod
+    def clear_pending_uploads(project: str, upload_ids: list[int]) -> None:
+        if not upload_ids:
+            return
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                placeholders = ",".join("?" * len(upload_ids))
+                conn.execute(
+                    f"DELETE FROM pending_uploads WHERE id IN ({placeholders})",
+                    upload_ids,
+                )
+                conn.commit()
+
+    @staticmethod
+    def add_pending_upload(
+        project: str,
+        space_id: str,
+        run_name: str | None,
+        step: int | None,
+        file_path: str,
+        relative_path: str | None,
+    ) -> None:
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                conn.execute(
+                    """INSERT INTO pending_uploads
+                    (space_id, run_name, step, file_path, relative_path, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        space_id,
+                        run_name,
+                        step,
+                        file_path,
+                        relative_path,
+                        datetime.now().isoformat(),
+                    ),
+                )
+                conn.commit()
+
+    @staticmethod
+    def get_all_logs_for_sync(project: str) -> list[dict]:
+        return SQLiteStorage._get_all_for_sync(
+            project,
+            "metrics",
+            order_by="run_name, step",
+            extra_fields=["step"],
+            include_config=True,
+        )
+
+    @staticmethod
+    def get_all_system_logs_for_sync(project: str) -> list[dict]:
+        return SQLiteStorage._get_all_for_sync(
+            project, "system_metrics", order_by="run_name, timestamp"
+        )
+
+    @staticmethod
+    def _get_all_for_sync(
+        project: str,
+        table: str,
+        order_by: str,
+        extra_fields: list[str] | None = None,
+        include_config: bool = False,
+    ) -> list[dict]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        extra_cols = ", ".join(extra_fields) + ", " if extra_fields else ""
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    f"""SELECT timestamp, run_name, {extra_cols}metrics, log_id
+                    FROM {table} ORDER BY {order_by}"""
+                )
+            except sqlite3.OperationalError:
+                return []
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
+                metrics = deserialize_values(orjson.loads(row["metrics"]))
+                entry = {
+                    "project": project,
+                    "run": row["run_name"],
+                    "metrics": metrics,
+                    "timestamp": row["timestamp"],
+                    "log_id": row["log_id"],
+                }
+                for field in extra_fields or []:
+                    entry[field] = row[field]
+                if include_config:
+                    entry["config"] = None
+                results.append(entry)
+            return results

@@ -12,6 +12,12 @@ from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.helpers.run_selection import RunSelection
 
 
+def get_runs(project) -> list[str]:
+    if not project:
+        return []
+    return SQLiteStorage.get_runs(project)
+
+
 def create_logo() -> gr.HTML:
     """Create a logo component that automatically switches between light and dark themes."""
     logo_urls = utils.get_logo_urls()

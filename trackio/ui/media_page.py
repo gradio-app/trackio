@@ -1,6 +1,5 @@
 """The Media and Tables page for the Trackio UI."""
 
-import re
 from dataclasses import dataclass
 
 import gradio as gr
@@ -12,12 +11,6 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.ui import fns
 from trackio.ui.components.colored_dropdown import ColoredDropdown
-
-
-def get_runs(project) -> list[str]:
-    if not project:
-        return []
-    return SQLiteStorage.get_runs(project)
 
 
 @dataclass
@@ -53,34 +46,11 @@ def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
     return media_by_key
 
 
-def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
-    """
-    Filter metrics using regex pattern.
-
-    Args:
-        metrics: List of metric names to filter
-        filter_pattern: Regex pattern to match against metric names
-
-    Returns:
-        List of metric names that match the pattern
-    """
-    if not filter_pattern.strip():
-        return metrics
-
-    try:
-        pattern = re.compile(filter_pattern, re.IGNORECASE)
-        return [metric for metric in metrics if pattern.search(metric)]
-    except re.error:
-        return [
-            metric for metric in metrics if filter_pattern.lower() in metric.lower()
-        ]
-
-
 def refresh_runs_dropdown(project: str | None):
     if project is None:
         runs: list[str] = []
     else:
-        runs = get_runs(project)
+        runs = fns.get_runs(project)
 
     color_palette = utils.get_color_palette()
     colors = [color_palette[i % len(color_palette)] for i in range(len(runs))]

@@ -14,7 +14,7 @@ def test_rapid_bulk_logging(temp_dir):
     run1_name = "bulk_test_run1"
     run2_name = "bulk_test_run2"
 
-    trackio.init(project=project_name, name=run1_name)
+    run1 = trackio.init(project=project_name, name=run1_name)
     start_time = time.time()
 
     num_logs_run1 = 300
@@ -31,8 +31,7 @@ def test_rapid_bulk_logging(temp_dir):
         f"1000 calls of trackio.log() took {time_to_run_1000_logs} seconds, which is too long"
     )
     trackio.finish()
-
-    time.sleep(0.6)  # Wait for the client to send the logs
+    run1.finish()
 
     # Verify run1 metrics
     metrics_run1 = SQLiteStorage.get_logs(project_name, run1_name)

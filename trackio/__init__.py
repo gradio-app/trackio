@@ -1,7 +1,9 @@
+import atexit
 import glob
 import json
 import logging
 import os
+import shutil
 import warnings
 import webbrowser
 from pathlib import Path
@@ -20,7 +22,12 @@ from trackio.deploy import sync
 from trackio.gpu import gpu_available, log_gpu
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
-from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
+from trackio.media import (
+    TrackioAudio,
+    TrackioImage,
+    TrackioVideo,
+    get_project_media_path,
+)
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -66,6 +73,17 @@ Audio = TrackioAudio
 
 
 config = {}
+
+_atexit_registered = False
+
+
+def _cleanup_current_run():
+    run = context_vars.current_run.get()
+    if run is not None:
+        try:
+            run.finish()
+        except Exception:
+            pass
 
 
 def _get_demo():
@@ -166,32 +184,15 @@ def init(
         raise LocalTokenNotFoundError(
             f"You must be logged in to Hugging Face locally when `space_id` is provided to deploy to a Space. {e}"
         ) from e
-    demo, CSS, HEAD = _get_demo()
-    url = context_vars.current_server.get()
-    share_url = context_vars.current_share_server.get()
 
-    if url is None:
-        if space_id is None:
-            _, url, share_url = demo.launch(
-                css=CSS,
-                head=HEAD,
-                footer_links=["gradio", "settings"],
-                inline=False,
-                quiet=True,
-                prevent_thread_lock=True,
-                show_error=True,
-                favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
-                allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
-                ssr_mode=False,
-            )
-            context_vars.current_space_id.set(None)
-        else:
+    url = context_vars.current_server.get()
+
+    if space_id is not None:
+        if url is None:
             url = space_id
-            share_url = None
+            context_vars.current_server.set(url)
             context_vars.current_space_id.set(space_id)
 
-        context_vars.current_server.set(url)
-        context_vars.current_share_server.set(share_url)
     if (
         context_vars.current_project.get() is None
         or context_vars.current_project.get() != project
@@ -205,14 +206,7 @@ def init(
             )
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            if utils.is_in_notebook() and embed:
-                base_url = share_url + "/" if share_url else url
-                full_url = utils.get_full_url(
-                    base_url, project=project, write_token=demo.write_token, footer=True
-                )
-                utils.embed_url_in_notebook(full_url)
-            else:
-                utils.print_dashboard_instructions(project)
+            utils.print_dashboard_instructions(project)
         else:
             deploy.create_space_if_not_exists(
                 space_id, space_storage, dataset_id, private
@@ -262,6 +256,16 @@ def init(
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
     )
+
+    if space_id is not None:
+        SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+        if SQLiteStorage.has_pending_data(project):
+            run._has_local_buffer = True
+
+    global _atexit_registered
+    if not _atexit_registered:
+        atexit.register(_cleanup_current_run)
+        _atexit_registered = True
 
     if resumed:
         print(f"* Resumed existing run: {run.name}")
@@ -367,7 +371,7 @@ def save(
 ) -> str:
     """
     Saves files to a project (not linked to a specific run). If Trackio is running
-    locally, the file(s) will be moved to the project's files directory. If Trackio is
+    locally, the file(s) will be copied to the project's files directory. If Trackio is
     running in a Space, the file(s) will be uploaded to the Space's files directory.
 
     Args:
@@ -418,56 +422,80 @@ def save(
     if not matched_files:
         raise ValueError(f"No files found matching pattern: {glob_str}")
 
-    url = context_vars.current_server.get()
     current_run = context_vars.current_run.get()
+    is_local = (
+        current_run._is_local
+        if current_run is not None
+        else (context_vars.current_space_id.get() is None)
+    )
 
-    upload_entries = []
+    if is_local:
+        for file_path in matched_files:
+            try:
+                relative_to_base = file_path.relative_to(base_path)
+            except ValueError:
+                relative_to_base = Path(file_path.name)
 
-    for file_path in matched_files:
-        try:
-            relative_to_base = file_path.relative_to(base_path)
-        except ValueError:
-            relative_to_base = Path(file_path.name)
+            if current_run is not None:
+                current_run._queue_upload(
+                    file_path,
+                    step=None,
+                    relative_path=str(relative_to_base.parent),
+                    use_run_name=False,
+                )
+            else:
+                media_path = get_project_media_path(
+                    project=project,
+                    run=None,
+                    step=None,
+                    relative_path=str(relative_to_base),
+                )
+                shutil.copy(str(file_path), str(media_path))
+    else:
+        url = context_vars.current_server.get()
 
-        if current_run is not None:
-            # If a run is active, use its queue to upload the file to the project's files directory
-            # as it's more efficent than uploading files one by one. But we should not use the run name
-            # as the files should be stored in the project's files directory, not the run's, hence
-            # the use_run_name flag is set to False.
-            current_run._queue_upload(
-                file_path,
-                step=None,
-                relative_path=str(relative_to_base.parent),
-                use_run_name=False,
-            )
-        else:
-            upload_entry: UploadEntry = {
-                "project": project,
-                "run": None,
-                "step": None,
-                "relative_path": str(relative_to_base),
-                "uploaded_file": handle_file(file_path),
-            }
-            upload_entries.append(upload_entry)
+        upload_entries = []
+        for file_path in matched_files:
+            try:
+                relative_to_base = file_path.relative_to(base_path)
+            except ValueError:
+                relative_to_base = Path(file_path.name)
 
-    if upload_entries:
-        if url is None:
-            raise RuntimeError(
-                "No server available. Call trackio.init() before trackio.save() to start the server."
-            )
+            if current_run is not None:
+                current_run._queue_upload(
+                    file_path,
+                    step=None,
+                    relative_path=str(relative_to_base.parent),
+                    use_run_name=False,
+                )
+            else:
+                upload_entry: UploadEntry = {
+                    "project": project,
+                    "run": None,
+                    "step": None,
+                    "relative_path": str(relative_to_base),
+                    "uploaded_file": handle_file(file_path),
+                }
+                upload_entries.append(upload_entry)
 
-        try:
-            client = Client(url, verbose=False, httpx_kwargs={"timeout": 90})
-            client.predict(
-                api_name="/bulk_upload_media",
-                uploads=upload_entries,
-                hf_token=huggingface_hub.utils.get_token(),
-            )
-        except Exception as e:
-            warnings.warn(
-                f"Failed to upload files: {e}. "
-                "Files may not be available in the dashboard."
-            )
+        if upload_entries:
+            if url is None:
+                raise RuntimeError(
+                    "No server available. Call trackio.init() before trackio.save() to start the server."
+                )
+
+            try:
+                client = Client(url, verbose=False, httpx_kwargs={"timeout": 90})
+                client.predict(
+                    api_name="/bulk_upload_media",
+                    uploads=upload_entries,
+                    hf_token=huggingface_hub.utils.get_token(),
+                )
+            except Exception as e:
+                warnings.warn(
+                    f"Failed to upload files: {e}. "
+                    "Files may not be available in the dashboard."
+                )
 
     return str(utils.MEDIA_DIR / project / "files")
 
