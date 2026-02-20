@@ -69,6 +69,8 @@ config = {}
 
 
 def _get_demo():
+    # Lazy import to avoid initializing Gradio Blocks (and FastAPI) at import time,
+    # which causes import lock errors for libraries that just `import trackio`.
     from trackio.ui.main import CSS, HEAD, demo
 
     return demo, CSS, HEAD
