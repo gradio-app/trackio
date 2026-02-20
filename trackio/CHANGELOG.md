@@ -1,5 +1,11 @@
 # trackio
 
+## 0.16.1
+
+### Features
+
+- [#431](https://github.com/gradio-app/trackio/pull/431) [`c7ce55b`](https://github.com/gradio-app/trackio/commit/c7ce55b14dd5eb0c2165fb15df17dd60721c9325) - Lazy load the UI when trackio is imported.  Thanks @abidlabs!
+
 ## 0.16.0
 
 ### Features
