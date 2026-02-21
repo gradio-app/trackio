@@ -282,10 +282,8 @@ def test_rename_run(temp_dir):
     new_name = "new_run"
 
     config = {"param1": "value1", "_Created": "2023-01-01T00:00:00"}
-    SQLiteStorage.store_config(project, old_name, config)
-
     metrics = [{"accuracy": 0.95, "loss": 0.1}]
-    SQLiteStorage.bulk_log(project, old_name, metrics)
+    SQLiteStorage.bulk_log(project, old_name, metrics, config=config)
 
     assert SQLiteStorage.get_run_config(project, old_name) is not None
     assert len(SQLiteStorage.get_logs(project, old_name)) > 0
