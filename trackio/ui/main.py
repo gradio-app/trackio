@@ -241,9 +241,9 @@ def refresh_runs(
 
 
 def generate_embed(
-    project: str, metrics: str, selection: RunSelection, hide_headers: bool = False
+    project: str, metrics: str, selection: RunSelection, show_headers: bool = True
 ) -> str:
-    return utils.generate_embed_code(project, metrics, selection.selected, hide_headers)
+    return utils.generate_embed_code(project, metrics, selection.selected, not show_headers)
 
 
 def update_x_axis_choices(project, selection):
@@ -515,8 +515,7 @@ def configure(request: gr.Request):
         case _:
             navbar = gr.Navbar(visible=True)
 
-    headers_hidden = request.query_params.get("headers") == "hidden"
-    hide_headers_cb = gr.Checkbox(value=headers_hidden)
+    show_headers_cb = gr.Checkbox(value=request.query_params.get("headers") != "hidden")
 
     return (
         [],
@@ -526,7 +525,7 @@ def configure(request: gr.Request):
         navbar,
         [x_min, x_max],
         smoothing_value,
-        hide_headers_cb,
+        show_headers_cb,
     )
 
 
@@ -701,9 +700,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             language="html",
             visible=bool(os.environ.get("SPACE_HOST")),
         )
-        hide_headers_cb = gr.Checkbox(
-            label="Hide section headers",
-            value=False,
+        show_headers_cb = gr.Checkbox(
+            label="Show section headers",
+            value=True,
             visible=bool(os.environ.get("SPACE_HOST")),
         )
         with gr.Group():
@@ -754,7 +753,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             navbar,
             x_lim,
             smoothing_slider,
-            hide_headers_cb,
+            show_headers_cb,
         ],
         queue=False,
         api_visibility="private",
@@ -799,7 +798,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_visibility="private",
     ).then(
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state, hide_headers_cb],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
         outputs=[embed_code],
         show_progress="hidden",
         api_visibility="private",
@@ -832,7 +831,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.on(
         [metric_filter_tb.change, run_cb.change],
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state, hide_headers_cb],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
         outputs=embed_code,
         show_progress="hidden",
         api_visibility="private",
@@ -870,7 +869,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         queue=False,
     ).then(
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state, hide_headers_cb],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
         outputs=embed_code,
         show_progress="hidden",
         api_visibility="private",
@@ -885,17 +884,17 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         show_progress="hidden",
     )
 
-    hide_headers_cb.change(
+    show_headers_cb.change(
         fn=None,
-        inputs=[hide_headers_cb],
+        inputs=[show_headers_cb],
         outputs=[],
-        js="(checked) => { document.body.classList.toggle('trackio-no-accordion', checked); }",
+        js="(checked) => { document.body.classList.toggle('trackio-no-accordion', !checked); }",
         queue=False,
         api_visibility="private",
     )
-    hide_headers_cb.change(
+    show_headers_cb.change(
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state, hide_headers_cb],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
         outputs=embed_code,
         show_progress="hidden",
         api_visibility="private",
