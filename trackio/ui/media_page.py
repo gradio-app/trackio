@@ -76,6 +76,10 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
         ]
 
 
+def is_table(value) -> bool:
+    return isinstance(value, dict) and value.get("_type") == Table.TYPE
+
+
 def refresh_runs_dropdown(project: str | None):
     if project is None:
         runs: list[str] = []
@@ -134,13 +138,7 @@ with gr.Blocks() as media_page:
         table_cols = [
             c
             for c in table_cols
-            if not (
-                metric_df := df[
-                    df[c].apply(
-                        lambda x: isinstance(x, dict) and x.get("_type") == Table.TYPE
-                    )
-                ]
-            ).empty
+            if any(is_table(x) for x in df[c])
         ]
         has_tables = len(table_cols) > 0
 
@@ -180,12 +178,7 @@ with gr.Blocks() as media_page:
             with gr.Accordion(f"Tables ({len(table_cols)})", open=True):
                 with gr.Row(key="row"):
                     for metric_idx, metric_name in enumerate(table_cols):
-                        metric_df = df[
-                            df[metric_name].apply(
-                                lambda x: isinstance(x, dict)
-                                and x.get("_type") == Table.TYPE
-                            )
-                        ]
+                        metric_df = df[df[metric_name].apply(is_table)]
                         if not metric_df.empty:
                             value = metric_df[metric_name]
                             first_value = value.iloc[0]
