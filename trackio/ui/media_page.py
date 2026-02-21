@@ -134,9 +134,13 @@ with gr.Blocks() as media_page:
         table_cols = [
             c
             for c in table_cols
-            if not (metric_df := df.dropna(subset=[c])).empty
-            and isinstance(first_value := metric_df[c].iloc[0], dict)
-            and first_value.get("_type") == Table.TYPE
+            if not (
+                metric_df := df[
+                    df[c].apply(
+                        lambda x: isinstance(x, dict) and x.get("_type") == Table.TYPE
+                    )
+                ]
+            ).empty
         ]
         has_tables = len(table_cols) > 0
 
@@ -176,7 +180,12 @@ with gr.Blocks() as media_page:
             with gr.Accordion(f"Tables ({len(table_cols)})", open=True):
                 with gr.Row(key="row"):
                     for metric_idx, metric_name in enumerate(table_cols):
-                        metric_df = df.dropna(subset=[metric_name])
+                        metric_df = df[
+                            df[metric_name].apply(
+                                lambda x: isinstance(x, dict)
+                                and x.get("_type") == Table.TYPE
+                            )
+                        ]
                         if not metric_df.empty:
                             value = metric_df[metric_name]
                             first_value = value.iloc[0]
@@ -209,16 +218,27 @@ with gr.Blocks() as media_page:
                                             preserved_by_key=None,
                                         )
 
-                                        def get_table_at_index(index: int):
-                                            value = metric_df[metric_name]
-                                            processed_data = Table.to_display_format(
-                                                value.iloc[index - 1]["_value"]
-                                            )
-                                            df_ = pd.DataFrame(processed_data)
-                                            return gr.DataFrame(
-                                                df_,
-                                                label=f"{metric_name} (index {index})",
-                                            )
+                                        def make_table_renderer(
+                                            capture_df, capture_name
+                                        ):
+                                            def get_table_at_index(index: int):
+                                                value = capture_df[capture_name]
+                                                processed_data = (
+                                                    Table.to_display_format(
+                                                        value.iloc[index - 1]["_value"]
+                                                    )
+                                                )
+                                                df_ = pd.DataFrame(processed_data)
+                                                return gr.DataFrame(
+                                                    df_,
+                                                    label=f"{capture_name} (index {index})",
+                                                )
+
+                                            return get_table_at_index
+
+                                        get_table_at_index = make_table_renderer(
+                                            metric_df, metric_name
+                                        )
 
                                         s.input(
                                             get_table_at_index,
