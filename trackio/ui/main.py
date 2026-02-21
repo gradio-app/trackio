@@ -629,7 +629,7 @@ function getCookie(name) {
     const writeToken = urlParams.get('write_token');
     const footerParam = urlParams.get('footer');
 
-    if (urlParams.get('accordion') === 'hidden') {
+    if (urlParams.get('headers') === 'hidden') {
         document.body.classList.add('trackio-no-accordion');
     }
 
