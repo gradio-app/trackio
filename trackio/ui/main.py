@@ -583,6 +583,17 @@ CSS = """
 .nav-holder {
     border-bottom: 0px !important;
 }
+
+body.trackio-no-accordion .trackio-main-accordion > button {
+    display: none !important;
+}
+
+body.trackio-no-accordion .trackio-main-accordion {
+    box-shadow: none !important;
+    border-width: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+}
 """
 
 HEAD = """
@@ -620,6 +631,10 @@ function getCookie(name) {
     const urlParams = new URLSearchParams(window.location.search);
     const writeToken = urlParams.get('write_token');
     const footerParam = urlParams.get('footer');
+
+    if (urlParams.get('accordion') === 'hidden') {
+        document.body.classList.add('trackio-no-accordion');
+    }
 
     if (writeToken) {
         setCookie('trackio_write_token', writeToken, 7);
@@ -873,6 +888,14 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     )
 
     hide_accordion_cb.change(
+        fn=None,
+        inputs=[hide_accordion_cb],
+        outputs=[],
+        js="(checked) => { document.body.classList.toggle('trackio-no-accordion', checked); }",
+        queue=False,
+        api_visibility="private",
+    )
+    hide_accordion_cb.change(
         fn=generate_embed,
         inputs=[project_dd, metric_filter_tb, run_selection_state, hide_accordion_cb],
         outputs=embed_code,
@@ -969,7 +992,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_x_cb.change,
             log_scale_y_cb.change,
             metric_filter_tb.change,
-            hide_accordion_cb.change,
         ],
         inputs=[
             project_dd,
@@ -982,7 +1004,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_y_cb,
             metric_filter_tb,
             run_selection_state,
-            hide_accordion_cb,
         ],
         show_progress="hidden",
         queue=False,
@@ -998,7 +1019,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         log_scale_y,
         metric_filter,
         selection,
-        accordion_hidden,
     ):
         dfs = []
         original_runs = runs.copy()
@@ -1081,15 +1101,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                 else group_name
             )
 
-            group_ctx = (
-                gr.Group()
-                if accordion_hidden
-                else gr.Accordion(
-                    label=group_label,
-                    open=True,
-                    key=f"accordion-{group_name}",
-                    preserved_by_key=["value", "open"],
-                )
+            group_ctx = gr.Accordion(
+                label=group_label,
+                open=True,
+                key=f"accordion-{group_name}",
+                preserved_by_key=["value", "open"],
+                elem_classes=["trackio-main-accordion"],
             )
             with group_ctx:
                 if group_data["direct_metrics"]:
@@ -1156,15 +1173,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             else subgroup_name
                         )
 
-                        subgroup_ctx = (
-                            gr.Group()
-                            if accordion_hidden
-                            else gr.Accordion(
-                                label=subgroup_label,
-                                open=True,
-                                key=f"accordion-{group_name}-{subgroup_name}",
-                                preserved_by_key=["value", "open"],
-                            )
+                        subgroup_ctx = gr.Accordion(
+                            label=subgroup_label,
+                            open=True,
+                            key=f"accordion-{group_name}-{subgroup_name}",
+                            preserved_by_key=["value", "open"],
+                            elem_classes=["trackio-main-accordion"],
                         )
                         with subgroup_ctx:
                             with gr.Draggable(
