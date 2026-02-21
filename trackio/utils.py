@@ -138,7 +138,6 @@ def _get_trackio_dir() -> Path:
 
 TRACKIO_DIR = _get_trackio_dir()
 MEDIA_DIR = TRACKIO_DIR / "media"
-FILES_DIR = TRACKIO_DIR / "files"
 
 
 def get_or_create_project_hash(project: str) -> str:

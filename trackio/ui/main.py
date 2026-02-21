@@ -4,7 +4,6 @@ import os
 import re
 import secrets
 import shutil
-from dataclasses import dataclass
 from typing import Any
 
 import gradio as gr
@@ -12,12 +11,7 @@ import numpy as np
 import pandas as pd
 
 import trackio.utils as utils
-from trackio.media import (
-    TrackioAudio,
-    TrackioImage,
-    TrackioVideo,
-    get_project_media_path,
-)
+from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
 from trackio.ui import fns
@@ -104,12 +98,6 @@ def generate_download_plot_js(metric_name: str) -> str:
     }}"""
 
 
-def get_runs(project) -> list[str]:
-    if not project:
-        return []
-    return SQLiteStorage.get_runs(project)
-
-
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
@@ -149,39 +137,6 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
-@dataclass
-class MediaData:
-    caption: str | None
-    file_path: str
-    type: str
-
-
-def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
-    media_by_key: dict[str, list[MediaData]] = {}
-    logs = sorted(logs, key=lambda x: x.get("step", 0))
-    for log in logs:
-        for key, value in log.items():
-            if isinstance(value, dict):
-                type = value.get("_type")
-                if (
-                    type == TrackioImage.TYPE
-                    or type == TrackioVideo.TYPE
-                    or type == TrackioAudio.TYPE
-                ):
-                    if key not in media_by_key:
-                        media_by_key[key] = []
-                    try:
-                        media_data = MediaData(
-                            file_path=utils.MEDIA_DIR / value.get("file_path"),
-                            type=type,
-                            caption=value.get("caption"),
-                        )
-                        media_by_key[key].append(media_data)
-                    except Exception as e:
-                        print(f"Media currently unavailable: {key}: {e}")
-    return media_by_key
-
-
 def load_run_data(
     project: str | None,
     run: str | None,
@@ -189,15 +144,14 @@ def load_run_data(
     x_axis: str = "step",
     log_scale_x: bool = False,
     log_scale_y: bool = False,
-) -> tuple[pd.DataFrame, dict]:
+) -> pd.DataFrame | None:
     if not project or not run:
-        return None, None
+        return None
 
     logs = SQLiteStorage.get_logs(project, run)
     if not logs:
-        return None, None
+        return None
 
-    media = extract_media(logs)
     df = pd.DataFrame(logs)
 
     if "step" not in df.columns:
@@ -253,12 +207,12 @@ def load_run_data(
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        return combined_df, media
+        return combined_df
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        return df, media
+        return df
 
 
 def refresh_runs(
@@ -270,7 +224,7 @@ def refresh_runs(
     if project is None:
         runs: list[str] = []
     else:
-        runs = get_runs(project)
+        runs = fns.get_runs(project)
         if filter_text:
             runs = [r for r in runs if filter_text in r]
 
@@ -353,19 +307,27 @@ def bulk_log(
     for log_entry in logs:
         key = (log_entry["project"], log_entry["run"])
         if key not in logs_by_run:
-            logs_by_run[key] = {"metrics": [], "steps": [], "config": None}
+            logs_by_run[key] = {
+                "metrics": [],
+                "steps": [],
+                "log_ids": [],
+                "config": None,
+            }
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["steps"].append(log_entry.get("step"))
+        logs_by_run[key]["log_ids"].append(log_entry.get("log_id"))
         if log_entry.get("config") and logs_by_run[key]["config"] is None:
             logs_by_run[key]["config"] = log_entry["config"]
 
     for (project, run), data in logs_by_run.items():
+        has_log_ids = any(lid is not None for lid in data["log_ids"])
         SQLiteStorage.bulk_log(
             project=project,
             run=run,
             metrics_list=data["metrics"],
             steps=data["steps"],
             config=data["config"],
+            log_ids=data["log_ids"] if has_log_ids else None,
         )
 
 
@@ -382,16 +344,19 @@ def bulk_log_system(
     for log_entry in logs:
         key = (log_entry["project"], log_entry["run"])
         if key not in logs_by_run:
-            logs_by_run[key] = {"metrics": [], "timestamps": []}
+            logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["timestamps"].append(log_entry.get("timestamp"))
+        logs_by_run[key]["log_ids"].append(log_entry.get("log_id"))
 
     for (project, run), data in logs_by_run.items():
+        has_log_ids = any(lid is not None for lid in data["log_ids"])
         SQLiteStorage.bulk_log_system(
             project=project,
             run=run,
             metrics_list=data["metrics"],
             timestamps=data["timestamps"],
+            log_ids=data["log_ids"] if has_log_ids else None,
         )
 
 
@@ -602,10 +567,26 @@ CSS = """
     position: relative;
     z-index: 10;
 }
+
+.vega-embed .role-legend-symbol path {
+    stroke-width: 0 !important;
+}
+
+.nav-holder {
+    border-bottom: 0px !important;
+}
 """
 
 HEAD = """
 <script>
+new MutationObserver(function() {
+    document.querySelectorAll('.vega-embed .role-legend-symbol path').forEach(function(p) {
+        var s = p.style.stroke || p.getAttribute('stroke');
+        if (s && s !== 'none' && p.style.fill !== s) {
+            p.style.fill = s;
+        }
+    });
+}).observe(document.body, { childList: true, subtree: true });
 function setCookie(name, value, days) {
     var expires = "";
     if (days) {
@@ -997,7 +978,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         original_runs = runs.copy()
 
         for run in runs:
-            df, _ = load_run_data(
+            df = load_run_data(
                 project, run, smoothing_granularity, x_axis, log_scale_x, log_scale_y
             )
             if df is not None:
@@ -1272,7 +1253,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             ],
                             outputs=[
                                 run_selection_state,
-                                group_cb,
                                 run_cb,
                             ],
                             show_progress="hidden",
@@ -1288,7 +1268,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 run_selection_state,
                                 gr.State(runs),
                             ],
-                            outputs=[run_selection_state, group_cb, run_cb],
+                            outputs=[run_selection_state, run_cb],
                             show_progress="hidden",
                             api_visibility="private",
                             queue=False,
@@ -1319,4 +1299,5 @@ if __name__ == "__main__":
         show_error=True,
         ssr_mode=False,
         head=HEAD,
+        css=CSS,
     )

@@ -288,6 +288,107 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
     )
 
 
+SYNC_BATCH_SIZE = 500
+
+
+def sync_incremental(
+    project: str,
+    space_id: str,
+    private: bool | None = None,
+    pending_only: bool = False,
+) -> None:
+    """
+    Syncs a local Trackio project to a Space via the bulk_log API endpoints
+    instead of uploading the entire DB file. Supports incremental sync.
+
+    Args:
+        project: The name of the project to sync.
+        space_id: The HF Space ID to sync to.
+        private: Whether to make the Space private if creating.
+        pending_only: If True, only sync rows tagged with space_id (pending data).
+    """
+    print(
+        f"* Syncing project '{project}' to: {SPACE_URL.format(space_id=space_id)} (please wait...)"
+    )
+    create_space_if_not_exists(space_id, private=private)
+    wait_until_space_exists(space_id)
+
+    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
+    hf_token = huggingface_hub.utils.get_token()
+
+    if pending_only:
+        pending_logs = SQLiteStorage.get_pending_logs(project)
+        if pending_logs:
+            logs = pending_logs["logs"]
+            for i in range(0, len(logs), SYNC_BATCH_SIZE):
+                batch = logs[i : i + SYNC_BATCH_SIZE]
+                print(
+                    f"  Syncing metrics: {min(i + SYNC_BATCH_SIZE, len(logs))}/{len(logs)}..."
+                )
+                client.predict(api_name="/bulk_log", logs=batch, hf_token=hf_token)
+            SQLiteStorage.clear_pending_logs(project, pending_logs["ids"])
+
+        pending_sys = SQLiteStorage.get_pending_system_logs(project)
+        if pending_sys:
+            logs = pending_sys["logs"]
+            for i in range(0, len(logs), SYNC_BATCH_SIZE):
+                batch = logs[i : i + SYNC_BATCH_SIZE]
+                print(
+                    f"  Syncing system metrics: {min(i + SYNC_BATCH_SIZE, len(logs))}/{len(logs)}..."
+                )
+                client.predict(
+                    api_name="/bulk_log_system", logs=batch, hf_token=hf_token
+                )
+            SQLiteStorage.clear_pending_system_logs(project, pending_sys["ids"])
+
+        pending_uploads = SQLiteStorage.get_pending_uploads(project)
+        if pending_uploads:
+            upload_entries = []
+            for u in pending_uploads["uploads"]:
+                fp = u["file_path"]
+                if os.path.exists(fp):
+                    upload_entries.append(
+                        {
+                            "project": u["project"],
+                            "run": u["run"],
+                            "step": u["step"],
+                            "relative_path": u["relative_path"],
+                            "uploaded_file": handle_file(fp),
+                        }
+                    )
+            if upload_entries:
+                print(f"  Syncing {len(upload_entries)} media files...")
+                client.predict(
+                    api_name="/bulk_upload_media",
+                    uploads=upload_entries,
+                    hf_token=hf_token,
+                )
+            SQLiteStorage.clear_pending_uploads(project, pending_uploads["ids"])
+    else:
+        all_logs = SQLiteStorage.get_all_logs_for_sync(project)
+        if all_logs:
+            for i in range(0, len(all_logs), SYNC_BATCH_SIZE):
+                batch = all_logs[i : i + SYNC_BATCH_SIZE]
+                print(
+                    f"  Syncing metrics: {min(i + SYNC_BATCH_SIZE, len(all_logs))}/{len(all_logs)}..."
+                )
+                client.predict(api_name="/bulk_log", logs=batch, hf_token=hf_token)
+
+        all_sys_logs = SQLiteStorage.get_all_system_logs_for_sync(project)
+        if all_sys_logs:
+            for i in range(0, len(all_sys_logs), SYNC_BATCH_SIZE):
+                batch = all_sys_logs[i : i + SYNC_BATCH_SIZE]
+                print(
+                    f"  Syncing system metrics: {min(i + SYNC_BATCH_SIZE, len(all_sys_logs))}/{len(all_sys_logs)}..."
+                )
+                client.predict(
+                    api_name="/bulk_log_system", logs=batch, hf_token=hf_token
+                )
+
+    SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+    print(f"* Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
+
+
 def sync(
     project: str,
     space_id: str | None = None,
@@ -302,7 +403,7 @@ def sync(
     Args:
         project (`str`): The name of the project to upload.
         space_id (`str`, *optional*): The ID of the Space to upload to (e.g., `"username/space_id"`).
-            If not provided, a random space_id (e.g. "username/project-2ac3z2aA") will be used.
+            If not provided, checks project metadata first, then generates a random space_id.
         private (`bool`, *optional*):
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored
@@ -317,24 +418,16 @@ def sync(
         `str`: The Space ID of the synced project.
     """
     if space_id is None:
+        space_id = SQLiteStorage.get_space_id(project)
+    if space_id is None:
         space_id = f"{project}-{get_or_create_project_hash(project)}"
     space_id, _ = preprocess_space_and_dataset_ids(space_id, None)
 
-    def space_creation_and_upload(
-        space_id: str, private: bool | None = None, force: bool = False
-    ):
-        print(
-            f"* Syncing local Trackio project to: {SPACE_URL.format(space_id=space_id)} (please wait...)"
-        )
-        create_space_if_not_exists(space_id, private=private)
-        wait_until_space_exists(space_id)
-        upload_db_to_space(project, space_id, force=force)
-        print(f"* Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
+    def _do_sync(space_id: str, private: bool | None = None):
+        sync_incremental(project, space_id, private=private, pending_only=False)
 
     if run_in_background:
-        threading.Thread(
-            target=space_creation_and_upload, args=(space_id, private, force)
-        ).start()
+        threading.Thread(target=_do_sync, args=(space_id, private)).start()
     else:
-        space_creation_and_upload(space_id, private, force)
+        _do_sync(space_id, private)
     return space_id
