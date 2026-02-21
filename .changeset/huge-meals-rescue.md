@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:add ability to rename runs
+feat:feat: add ability to rename runs
