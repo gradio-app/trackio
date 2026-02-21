@@ -1,7 +1,6 @@
 """Tests for table column detection and slider logic in media_page."""
 
 import pandas as pd
-import pytest
 
 from trackio.table import Table
 
@@ -29,7 +28,7 @@ def test_table_col_detection_with_mixed_types():
 
     object_cols = df.select_dtypes(include="object").columns
     table_cols = [
-        c for c in object_cols if not (metric_df := filter_table_df(df, c)).empty
+        c for c in object_cols if any(is_table_entry(x) for x in df[c])
     ]
 
     assert "completions" in table_cols
@@ -63,7 +62,7 @@ def test_table_col_detection_float_first():
 
     object_cols = df.select_dtypes(include="object").columns
     table_cols = [
-        c for c in object_cols if not (metric_df := filter_table_df(df, c)).empty
+        c for c in object_cols if any(is_table_entry(x) for x in df[c])
     ]
 
     assert "score" in table_cols
