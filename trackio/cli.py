@@ -15,6 +15,77 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui.main import get_project_summary, get_run_summary
 
 
+def _handle_status():
+    print("Reading local Trackio projects...\n")
+    projects = SQLiteStorage.get_projects()
+    if not projects:
+        print("No Trackio projects found.")
+        return
+
+    local_projects = []
+    synced_projects = []
+    unsynced_projects = []
+
+    for project in projects:
+        space_id = SQLiteStorage.get_space_id(project)
+        if space_id is None:
+            local_projects.append(project)
+        elif SQLiteStorage.has_pending_data(project):
+            unsynced_projects.append(project)
+        else:
+            synced_projects.append(project)
+
+    print("Finished reading Trackio projects")
+    if local_projects:
+        print(f"  * {len(local_projects)} local trackio project(s) [OK]")
+    if synced_projects:
+        print(f"  * {len(synced_projects)} trackio project(s) synced to Spaces [OK]")
+    if unsynced_projects:
+        print(
+            f"  * {len(unsynced_projects)} trackio project(s) with unsynced changes [WARNING]:"
+        )
+        for p in unsynced_projects:
+            print(f"    - {p}")
+
+    if unsynced_projects:
+        print(
+            f"\nRun `trackio sync --project {unsynced_projects[0]}` to sync. "
+            "Or run `trackio sync --all` to sync all unsynced changes."
+        )
+
+
+def _handle_sync(args):
+    from trackio.deploy import sync_incremental
+
+    if args.sync_all and args.project:
+        error_exit("Cannot use --all and --project together.")
+    if not args.sync_all and not args.project:
+        error_exit("Must provide either --project or --all.")
+
+    if args.sync_all:
+        projects = SQLiteStorage.get_projects()
+        synced_any = False
+        for project in projects:
+            space_id = SQLiteStorage.get_space_id(project)
+            if space_id and SQLiteStorage.has_pending_data(project):
+                sync_incremental(
+                    project, space_id, private=args.private, pending_only=True
+                )
+                synced_any = True
+        if not synced_any:
+            print("No projects with unsynced data found.")
+    else:
+        space_id = args.space_id
+        if space_id is None:
+            space_id = SQLiteStorage.get_space_id(args.project)
+        sync(
+            project=args.project,
+            space_id=space_id,
+            private=args.private,
+            force=args.force,
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Trackio CLI")
     subparsers = parser.add_subparsers(dest="command")
@@ -59,17 +130,30 @@ def main():
         help="Host to bind the server to (e.g. '0.0.0.0' for remote access). If not provided, defaults to '127.0.0.1' (localhost only).",
     )
 
+    subparsers.add_parser(
+        "status",
+        help="Show the status of all local Trackio projects, including sync status.",
+    )
+
     sync_parser = subparsers.add_parser(
         "sync",
         help="Sync a local project's database to a Hugging Face Space. If the Space does not exist, it will be created.",
     )
     sync_parser.add_argument(
-        "--project", required=True, help="The name of the local project."
+        "--project",
+        required=False,
+        help="The name of the local project.",
     )
     sync_parser.add_argument(
         "--space-id",
-        required=True,
-        help="The Hugging Face Space ID where the project will be synced (e.g. username/space_id).",
+        required=False,
+        help="The Hugging Face Space ID where the project will be synced (e.g. username/space_id). If not provided, uses the previously-configured Space.",
+    )
+    sync_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="sync_all",
+        help="Sync all projects that have unsynced data to their configured Spaces.",
     )
     sync_parser.add_argument(
         "--private",
@@ -258,13 +342,10 @@ def main():
             color_palette=color_palette,
             host=args.host,
         )
+    elif args.command == "status":
+        _handle_status()
     elif args.command == "sync":
-        sync(
-            project=args.project,
-            space_id=args.space_id,
-            private=args.private,
-            force=args.force,
-        )
+        _handle_sync(args)
     elif args.command == "list":
         if args.list_type == "projects":
             projects = SQLiteStorage.get_projects()

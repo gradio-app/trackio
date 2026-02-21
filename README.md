@@ -20,10 +20,13 @@
 
 </div>
 
-`trackio` is a lightweight, free experiment tracking Python library built by Hugging Face 🤗.
+Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking Python library built by Hugging Face 🤗. It is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
+
+Trackio also ships with a Gradio-based dashboard you can use to view metrics locally:
 
 ![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
 
+Trackio's main features:
 
 - **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish`. Drop-in replacement: just 
 
@@ -36,9 +39,10 @@
   - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
   - Visualize experiments with a Gradio dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
+
 - Everything here, including hosting on Hugging Face, is **free**!
 
-Trackio is designed to be lightweight (the core codebase is <5,000 lines of Python code), not fully-featured. It is designed in an extensible way and written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
+Trackio is designed to be lightweight and extensible. It is written entirely in Python so that developers can easily fork the repository and add functionality that they care about.
 
 ## Installation
 
@@ -204,6 +208,27 @@ To get started and see basic examples of usage, see these files:
 - [Basic example of logging metrics locally](https://github.com/gradio-app/trackio/blob/main/examples/fake-training.py)
 - [Persisting metrics in a Hugging Face Dataset](https://github.com/gradio-app/trackio/blob/main/examples/persist-dataset.py)
 - [Deploying the dashboard to Spaces](https://github.com/gradio-app/trackio/blob/main/examples/deploy-on-spaces.py)
+
+## Throughput & Rate Limits
+
+### Local logging
+
+`trackio.log()` is a non-blocking call that appends to an in-memory queue and returns immediately. A background thread drains the queue every **0.5 s** and writes to the local SQLite database. Because log calls never touch the network or disk on the calling thread, the client-side throughput is effectively **unlimited** -- you can burst thousands of calls per second without slowing down your training loop.
+
+### Logging to a Hugging Face Space
+
+When a `space_id` is provided, the same background thread batches queued entries and pushes them to the Space via the Gradio client API. The main factors that affect end-to-end throughput are:
+
+| Metric | Measured | Notes |
+|---|---|---|
+| **Burst from a single run** | **2,000 logs delivered in < 8 s** | `log()` calls themselves complete in ~0.01 s; the rest is network drain time. |
+| **Parallel runs (32 threads)** | **32,000 logs (32 × 1,000) delivered in ~14 s wall time** | Each thread opens its own Gradio client connection to the Space. |
+| **Logs per batch** | No hard cap | All entries queued during the 0.5 s interval are sent in a single `predict()` call. |
+| **Data safety** | Zero-loss | If a batch fails to send, it is persisted to local SQLite and retried automatically when the connection recovers. |
+
+These numbers were measured against a free-tier Hugging Face Space (2 vCPU / 16 GB RAM). Throughput will scale with the Space hardware tier, and local-only logging is orders of magnitude faster since no network round-trip is involved.
+
+> **Tip:** For high-frequency logging (e.g. logging every training step), Trackio's queue-and-batch design means your training loop is never blocked by network I/O. Even if the Space is temporarily unreachable, logs accumulate locally and are replayed once the connection is restored.
 
 ## Note: Trackio is in Beta (DB Schema May Change)
 

@@ -14,12 +14,6 @@ from trackio.ui import fns
 from trackio.ui.components.colored_dropdown import ColoredDropdown
 
 
-def get_runs(project) -> list[str]:
-    if not project:
-        return []
-    return SQLiteStorage.get_runs(project)
-
-
 @dataclass
 class MediaData:
     caption: str | None
@@ -80,11 +74,12 @@ def is_table(value) -> bool:
     return isinstance(value, dict) and value.get("_type") == Table.TYPE
 
 
+
 def refresh_runs_dropdown(project: str | None):
     if project is None:
         runs: list[str] = []
     else:
-        runs = get_runs(project)
+        runs = fns.get_runs(project)
 
     color_palette = utils.get_color_palette()
     colors = [color_palette[i % len(color_palette)] for i in range(len(runs))]
