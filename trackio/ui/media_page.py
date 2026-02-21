@@ -74,7 +74,6 @@ def is_table(value) -> bool:
     return isinstance(value, dict) and value.get("_type") == Table.TYPE
 
 
-
 def refresh_runs_dropdown(project: str | None):
     if project is None:
         runs: list[str] = []
@@ -130,11 +129,7 @@ with gr.Blocks() as media_page:
 
         table_cols = df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
-        table_cols = [
-            c
-            for c in table_cols
-            if any(is_table(x) for x in df[c])
-        ]
+        table_cols = [c for c in table_cols if any(is_table(x) for x in df[c])]
         has_tables = len(table_cols) > 0
 
         if not has_media and not has_tables:
