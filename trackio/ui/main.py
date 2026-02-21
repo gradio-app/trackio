@@ -243,7 +243,9 @@ def refresh_runs(
 def generate_embed(
     project: str, metrics: str, selection: RunSelection, show_headers: bool = True
 ) -> str:
-    return utils.generate_embed_code(project, metrics, selection.selected, not show_headers)
+    return utils.generate_embed_code(
+        project, metrics, selection.selected, not show_headers
+    )
 
 
 def update_x_axis_choices(project, selection):
