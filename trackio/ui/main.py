@@ -240,8 +240,12 @@ def refresh_runs(
     )
 
 
-def generate_embed(project: str, metrics: str, selection: RunSelection) -> str:
-    return utils.generate_embed_code(project, metrics, selection.selected)
+def generate_embed(
+    project: str, metrics: str, selection: RunSelection, hide_accordion: bool = False
+) -> str:
+    return utils.generate_embed_code(
+        project, metrics, selection.selected, hide_accordion
+    )
 
 
 def update_x_axis_choices(project, selection):
@@ -513,6 +517,9 @@ def configure(request: gr.Request):
         case _:
             navbar = gr.Navbar(visible=True)
 
+    accordion_hidden = request.query_params.get("accordion") == "hidden"
+    hide_accordion_cb = gr.Checkbox(value=accordion_hidden)
+
     return (
         [],
         sidebar,
@@ -521,6 +528,7 @@ def configure(request: gr.Request):
         navbar,
         [x_min, x_max],
         smoothing_value,
+        hide_accordion_cb,
     )
 
 
@@ -680,6 +688,11 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             language="html",
             visible=bool(os.environ.get("SPACE_HOST")),
         )
+        hide_accordion_cb = gr.Checkbox(
+            label="Hide section headers",
+            value=False,
+            visible=bool(os.environ.get("SPACE_HOST")),
+        )
         with gr.Group():
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
             run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
@@ -728,6 +741,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             navbar,
             x_lim,
             smoothing_slider,
+            hide_accordion_cb,
         ],
         queue=False,
         api_visibility="private",
@@ -772,7 +786,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_visibility="private",
     ).then(
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, hide_accordion_cb],
         outputs=[embed_code],
         show_progress="hidden",
         api_visibility="private",
@@ -805,7 +819,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.on(
         [metric_filter_tb.change, run_cb.change],
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, hide_accordion_cb],
         outputs=embed_code,
         show_progress="hidden",
         api_visibility="private",
@@ -843,7 +857,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         queue=False,
     ).then(
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, hide_accordion_cb],
         outputs=embed_code,
         show_progress="hidden",
         api_visibility="private",
@@ -856,6 +870,15 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_visibility="private",
         queue=False,
         show_progress="hidden",
+    )
+
+    hide_accordion_cb.change(
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state, hide_accordion_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
     )
 
     gr.api(
@@ -946,6 +969,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_x_cb.change,
             log_scale_y_cb.change,
             metric_filter_tb.change,
+            hide_accordion_cb.change,
         ],
         inputs=[
             project_dd,
@@ -958,6 +982,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_y_cb,
             metric_filter_tb,
             run_selection_state,
+            hide_accordion_cb,
         ],
         show_progress="hidden",
         queue=False,
@@ -973,6 +998,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         log_scale_y,
         metric_filter,
         selection,
+        accordion_hidden,
     ):
         dfs = []
         original_runs = runs.copy()
@@ -1055,12 +1081,17 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                 else group_name
             )
 
-            with gr.Accordion(
-                label=group_label,
-                open=True,
-                key=f"accordion-{group_name}",
-                preserved_by_key=["value", "open"],
-            ):
+            group_ctx = (
+                gr.Group()
+                if accordion_hidden
+                else gr.Accordion(
+                    label=group_label,
+                    open=True,
+                    key=f"accordion-{group_name}",
+                    preserved_by_key=["value", "open"],
+                )
+            )
+            with group_ctx:
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
                         key=f"row-{group_name}-direct", orientation="row"
@@ -1125,12 +1156,17 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             else subgroup_name
                         )
 
-                        with gr.Accordion(
-                            label=subgroup_label,
-                            open=True,
-                            key=f"accordion-{group_name}-{subgroup_name}",
-                            preserved_by_key=["value", "open"],
-                        ):
+                        subgroup_ctx = (
+                            gr.Group()
+                            if accordion_hidden
+                            else gr.Accordion(
+                                label=subgroup_label,
+                                open=True,
+                                key=f"accordion-{group_name}-{subgroup_name}",
+                                preserved_by_key=["value", "open"],
+                            )
+                        )
+                        with subgroup_ctx:
                             with gr.Draggable(
                                 key=f"row-{group_name}-{subgroup_name}",
                                 orientation="row",
