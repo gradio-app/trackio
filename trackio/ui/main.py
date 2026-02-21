@@ -1293,7 +1293,7 @@ run_detail_page.write_token = write_token
 files_page.write_token = write_token
 
 if __name__ == "__main__":
-    demo.queue().launch(
+    demo.launch(
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
         footer_links=["gradio", "settings"],
         show_error=True,
