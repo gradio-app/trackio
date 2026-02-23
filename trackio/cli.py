@@ -11,6 +11,7 @@ from trackio.cli_helpers import (
     format_system_metric_names,
     format_system_metrics,
 )
+from trackio.markdown import Markdown
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui.main import get_project_summary, get_run_summary
 
@@ -84,6 +85,31 @@ def _handle_sync(args):
             private=args.private,
             force=args.force,
         )
+
+
+def _extract_reports(
+    run: str, logs: list[dict], report_name: str | None = None
+) -> list[dict]:
+    reports = []
+    for log in logs:
+        timestamp = log.get("timestamp")
+        step = log.get("step")
+        for key, value in log.items():
+            if report_name is not None and key != report_name:
+                continue
+            if isinstance(value, dict) and value.get("_type") == Markdown.TYPE:
+                content = value.get("_value")
+                if isinstance(content, str):
+                    reports.append(
+                        {
+                            "run": run,
+                            "report": key,
+                            "step": step,
+                            "timestamp": timestamp,
+                            "content": content,
+                        }
+                    )
+    return reports
 
 
 def main():
@@ -237,6 +263,26 @@ def main():
         help="Output in JSON format",
     )
 
+    list_reports_parser = list_subparsers.add_parser(
+        "reports",
+        help="List markdown reports for a project or run",
+    )
+    list_reports_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    list_reports_parser.add_argument(
+        "--run",
+        required=False,
+        help="Run name (optional)",
+    )
+    list_reports_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
     get_parser = subparsers.add_parser(
         "get",
         help="Get project, run, or metric information",
@@ -328,6 +374,31 @@ def main():
         help="Output in JSON format",
     )
 
+    get_report_parser = get_subparsers.add_parser(
+        "report",
+        help="Get markdown report entries for a run",
+    )
+    get_report_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    get_report_parser.add_argument(
+        "--run",
+        required=True,
+        help="Run name",
+    )
+    get_report_parser.add_argument(
+        "--report",
+        required=True,
+        help="Report metric name",
+    )
+    get_report_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
     args = parser.parse_args()
 
     if args.command == "show":
@@ -404,6 +475,44 @@ def main():
                 )
             else:
                 print(format_system_metric_names(system_metrics))
+        elif args.list_type == "reports":
+            db_path = SQLiteStorage.get_project_db_path(args.project)
+            if not db_path.exists():
+                error_exit(f"Project '{args.project}' not found.")
+            runs = SQLiteStorage.get_runs(args.project)
+            if args.run and args.run not in runs:
+                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
+
+            target_runs = [args.run] if args.run else runs
+            all_reports = []
+            for run_name in target_runs:
+                logs = SQLiteStorage.get_logs(args.project, run_name)
+                all_reports.extend(_extract_reports(run_name, logs))
+
+            if args.json:
+                print(
+                    format_json(
+                        {
+                            "project": args.project,
+                            "run": args.run,
+                            "reports": all_reports,
+                        }
+                    )
+                )
+            else:
+                report_lines = [
+                    f"{entry['run']} | {entry['report']} | step={entry['step']} | {entry['timestamp']}"
+                    for entry in all_reports
+                ]
+                if args.run:
+                    print(
+                        format_list(
+                            report_lines,
+                            f"Reports for '{args.run}' in '{args.project}'",
+                        )
+                    )
+                else:
+                    print(format_list(report_lines, f"Reports in '{args.project}'"))
     elif args.command == "get":
         if args.get_type == "project":
             db_path = SQLiteStorage.get_project_db_path(args.project)
@@ -506,6 +615,42 @@ def main():
                     )
                 else:
                     print(format_system_metrics(system_metrics))
+        elif args.get_type == "report":
+            db_path = SQLiteStorage.get_project_db_path(args.project)
+            if not db_path.exists():
+                error_exit(f"Project '{args.project}' not found.")
+            runs = SQLiteStorage.get_runs(args.project)
+            if args.run not in runs:
+                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
+
+            logs = SQLiteStorage.get_logs(args.project, args.run)
+            reports = _extract_reports(args.run, logs, report_name=args.report)
+            if not reports:
+                error_exit(
+                    f"Report '{args.report}' not found in run '{args.run}' of project '{args.project}'."
+                )
+
+            if args.json:
+                print(
+                    format_json(
+                        {
+                            "project": args.project,
+                            "run": args.run,
+                            "report": args.report,
+                            "values": reports,
+                        }
+                    )
+                )
+            else:
+                output = []
+                for idx, entry in enumerate(reports, start=1):
+                    output.append(
+                        f"Entry {idx} | step={entry['step']} | timestamp={entry['timestamp']}"
+                    )
+                    output.append(entry["content"])
+                    if idx < len(reports):
+                        output.append("-" * 80)
+                print("\n".join(output))
     else:
         parser.print_help()
 

@@ -22,6 +22,7 @@ from trackio.deploy import sync
 from trackio.gpu import gpu_available, log_gpu
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
+from trackio.markdown import Markdown
 from trackio.media import (
     TrackioAudio,
     TrackioImage,
@@ -64,6 +65,7 @@ __all__ = [
     "Audio",
     "Table",
     "Histogram",
+    "Markdown",
     "Api",
 ]
 
@@ -108,6 +110,7 @@ def init(
     embed: bool = True,
     auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
+    auto_generate_report: bool = True,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -165,6 +168,9 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
+        auto_generate_report (`bool`, *optional*, defaults to `True`):
+            If `True`, `trackio.finish()` will automatically log a markdown report
+            containing the final scalar metric values for the run.
 
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
@@ -255,6 +261,7 @@ def init(
         space_id=space_id,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
+        auto_generate_report=auto_generate_report,
     )
 
     if space_id is not None:

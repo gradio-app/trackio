@@ -24,6 +24,7 @@ with gr.Blocks() as run_detail_page:
             ("Metrics", ""),
             ("System Metrics", "/system"),
             ("Media & Tables", "/media"),
+            ("Reports", "/reports"),
             ("Files", "/files"),
             ("Runs", "/runs"),
         ],

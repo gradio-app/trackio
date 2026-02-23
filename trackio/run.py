@@ -12,6 +12,7 @@ from gradio_client import Client, handle_file
 from trackio import utils
 from trackio.gpu import GpuMonitor
 from trackio.histogram import Histogram
+from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -34,6 +35,7 @@ class Run:
         space_id: str | None = None,
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
+        auto_generate_report: bool = True,
     ):
         """
         Initialize a Run for logging metrics to Trackio.
@@ -57,6 +59,8 @@ class Run:
                 memory, temperature) at regular intervals.
             gpu_log_interval: The interval in seconds between GPU metric logs.
                 Only used when auto_log_gpu is True.
+            auto_generate_report: Whether to automatically generate a markdown
+                report with final scalar metrics when finishing the run.
         """
         self.url = url
         self.project = project
@@ -104,9 +108,76 @@ class Run:
             self._client_thread.start()
 
         self._gpu_monitor: "GpuMonitor | None" = None
+        self._auto_generate_report = auto_generate_report
+        self._auto_report_logged = False
         if auto_log_gpu:
             self._gpu_monitor = GpuMonitor(self, interval=gpu_log_interval)
             self._gpu_monitor.start()
+
+    def _extract_final_scalar_metrics(self) -> tuple[int | None, dict]:
+        latest_step = None
+        latest_metrics: dict = {}
+
+        persisted_logs = SQLiteStorage.get_logs(self.project, self.name)
+        for log in persisted_logs:
+            step = log.get("step")
+            if step is None:
+                continue
+            if latest_step is None or step >= latest_step:
+                latest_step = step
+                latest_metrics = {
+                    k: v for k, v in log.items() if k not in {"step", "timestamp"}
+                }
+
+        with self._client_lock:
+            queued_logs = [
+                entry
+                for entry in self._queued_logs
+                if entry["project"] == self.project and entry["run"] == self.name
+            ]
+        for entry in queued_logs:
+            step = entry.get("step")
+            if step is None:
+                continue
+            if latest_step is None or step >= latest_step:
+                latest_step = step
+                latest_metrics = utils.deserialize_values(entry["metrics"])
+
+        scalar_metrics = {}
+        for key, value in latest_metrics.items():
+            if isinstance(value, bool | int | float | str) or value is None:
+                scalar_metrics[key] = value
+
+        return latest_step, scalar_metrics
+
+    def _build_auto_report(self) -> Markdown:
+        latest_step, scalar_metrics = self._extract_final_scalar_metrics()
+        lines = [
+            "# Auto-generated Trackio report",
+            "",
+            "This report was generated automatically at `trackio.finish()`.",
+            "",
+        ]
+        if latest_step is not None:
+            lines.append(f"Final step: `{latest_step}`")
+            lines.append("")
+
+        if scalar_metrics:
+            lines.append("## Final scalar metrics")
+            lines.append("")
+            for key in sorted(scalar_metrics):
+                lines.append(f"- **{key}**: `{scalar_metrics[key]}`")
+        else:
+            lines.append("No scalar metrics were available at the final step.")
+
+        return Markdown("\n".join(lines))
+
+    def _log_auto_report(self) -> None:
+        if self._auto_report_logged:
+            return
+        report = self._build_auto_report()
+        self.log({"auto_report": report})
+        self._auto_report_logged = True
 
     def _get_username(self) -> str | None:
         try:
@@ -518,6 +589,8 @@ class Run:
                 self._scan_and_queue_media_uploads(metrics[key], step)
             elif isinstance(value, Histogram):
                 metrics[key] = value._to_dict()
+            elif isinstance(value, Markdown):
+                metrics[key] = value._to_dict()
             elif isinstance(value, TrackioMedia):
                 metrics[key] = self._process_media(value, step)
         metrics = utils.serialize_values(metrics)
@@ -561,6 +634,9 @@ class Run:
             self._ensure_sender_alive()
 
     def finish(self):
+        if self._auto_generate_report:
+            self._log_auto_report()
+
         if self._gpu_monitor is not None:
             self._gpu_monitor.stop()
 
