@@ -3,7 +3,7 @@ import platform
 import shutil
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 
@@ -474,7 +474,7 @@ class SQLiteStorage:
                     if step is None and last_step is None
                     else (step if step is not None else last_step + 1)
                 )
-                current_timestamp = datetime.now().isoformat()
+                current_timestamp = datetime.now(timezone.utc).isoformat()
                 cursor.execute(
                     """
                     INSERT INTO metrics
@@ -510,7 +510,7 @@ class SQLiteStorage:
             return
 
         if timestamps is None:
-            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+            timestamps = [datetime.now(timezone.utc).isoformat()] * len(metrics_list)
 
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
@@ -565,7 +565,7 @@ class SQLiteStorage:
                 )
 
                 if config:
-                    current_timestamp = datetime.now().isoformat()
+                    current_timestamp = datetime.now(timezone.utc).isoformat()
                     cursor.execute(
                         """
                         INSERT OR REPLACE INTO configs
@@ -598,7 +598,7 @@ class SQLiteStorage:
             return
 
         if timestamps is None:
-            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+            timestamps = [datetime.now(timezone.utc).isoformat()] * len(metrics_list)
 
         if len(metrics_list) != len(timestamps):
             raise ValueError("metrics_list and timestamps must have the same length")
@@ -1324,7 +1324,7 @@ class SQLiteStorage:
                         step,
                         file_path,
                         relative_path,
-                        datetime.now().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
                 conn.commit()
