@@ -5,7 +5,7 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Lock
+from threading import Lock, RLock
 
 try:
     import fcntl
@@ -31,14 +31,24 @@ DB_EXT = ".db"
 class ProcessLock:
     """A file-based lock that works across processes. Is a no-op on Windows."""
 
+    _windows_locks: dict[str, RLock] = {}
+    _windows_locks_guard = Lock()
+
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
         self.lockfile = None
         self.is_windows = platform.system() == "Windows"
+        self._windows_lock: RLock | None = None
 
     def __enter__(self):
         """Acquire the lock with retry logic."""
         if self.is_windows:
+            lock_key = str(self.lockfile_path)
+            with ProcessLock._windows_locks_guard:
+                if lock_key not in ProcessLock._windows_locks:
+                    ProcessLock._windows_locks[lock_key] = RLock()
+                self._windows_lock = ProcessLock._windows_locks[lock_key]
+            self._windows_lock.acquire()
             return self
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
         self.lockfile = open(self.lockfile_path, "w")
@@ -57,6 +67,8 @@ class ProcessLock:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Release the lock."""
         if self.is_windows:
+            if self._windows_lock is not None:
+                self._windows_lock.release()
             return
 
         if self.lockfile:
