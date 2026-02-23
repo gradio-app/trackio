@@ -14,14 +14,7 @@ class DummyClient:
 
 
 def test_run_log_writes_to_sqlite_locally(temp_dir):
-    run = Run(
-        url=None,
-        project="proj",
-        client=None,
-        name="run1",
-        space_id=None,
-        auto_generate_report=False,
-    )
+    run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
     metrics = {"x": 1}
     run.log(metrics)
     run.finish()
@@ -35,7 +28,7 @@ def test_run_log_writes_to_sqlite_locally(temp_dir):
     assert config is not None
 
 
-def test_markdown_and_auto_report_logging(temp_dir):
+def test_markdown_logging(temp_dir):
     run = Run(url=None, project="proj", client=None, name="run-report", space_id=None)
     run.log({"loss": 0.1, "summary": Markdown("# Training summary")})
     run.finish()
@@ -50,16 +43,6 @@ def test_markdown_and_auto_report_logging(temp_dir):
     ]
     assert len(markdown_entries) == 1
     assert markdown_entries[0]["summary"]["_value"] == "# Training summary"
-
-    auto_reports = [
-        entry
-        for entry in logs
-        if isinstance(entry.get("auto_report"), dict)
-        and entry["auto_report"].get("_type") == Markdown.TYPE
-    ]
-    assert len(auto_reports) == 1
-    assert "Final scalar metrics" in auto_reports[0]["auto_report"]["_value"]
-    assert "loss" in auto_reports[0]["auto_report"]["_value"]
 
 
 def test_run_log_calls_client_for_spaces(temp_dir):
