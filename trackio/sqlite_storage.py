@@ -1,16 +1,20 @@
 import os
-import platform
 import shutil
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 
 try:
     import fcntl
-except ImportError:  # fcntl is not available on Windows
+except ImportError:
     fcntl = None
+
+try:
+    import msvcrt as _msvcrt
+except ImportError:
+    _msvcrt = None
 
 import huggingface_hub as hf
 import orjson
@@ -29,16 +33,14 @@ DB_EXT = ".db"
 
 
 class ProcessLock:
-    """A file-based lock that works across processes. Is a no-op on Windows."""
+    """A file-based lock that works across processes using fcntl (Unix) or msvcrt (Windows)."""
 
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
         self.lockfile = None
-        self.is_windows = platform.system() == "Windows"
 
     def __enter__(self):
-        """Acquire the lock with retry logic."""
-        if self.is_windows:
+        if fcntl is None and _msvcrt is None:
             return self
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
         self.lockfile = open(self.lockfile_path, "w")
@@ -46,21 +48,26 @@ class ProcessLock:
         max_retries = 100
         for attempt in range(max_retries):
             try:
-                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if fcntl is not None:
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    _msvcrt.locking(self.lockfile.fileno(), _msvcrt.LK_NBLCK, 1)
                 return self
-            except IOError:
+            except (IOError, OSError):
                 if attempt < max_retries - 1:
                     time.sleep(0.1)
                 else:
                     raise IOError("Could not acquire database lock after 10 seconds")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Release the lock."""
-        if self.is_windows:
-            return
-
         if self.lockfile:
-            fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+            try:
+                if fcntl is not None:
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+                elif _msvcrt is not None:
+                    _msvcrt.locking(self.lockfile.fileno(), _msvcrt.LK_UNLCK, 1)
+            except (IOError, OSError):
+                pass
             self.lockfile.close()
 
 
@@ -474,7 +481,7 @@ class SQLiteStorage:
                     if step is None and last_step is None
                     else (step if step is not None else last_step + 1)
                 )
-                current_timestamp = datetime.now().isoformat()
+                current_timestamp = datetime.now(timezone.utc).isoformat()
                 cursor.execute(
                     """
                     INSERT INTO metrics
@@ -510,7 +517,7 @@ class SQLiteStorage:
             return
 
         if timestamps is None:
-            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+            timestamps = [datetime.now(timezone.utc).isoformat()] * len(metrics_list)
 
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
@@ -565,7 +572,7 @@ class SQLiteStorage:
                 )
 
                 if config:
-                    current_timestamp = datetime.now().isoformat()
+                    current_timestamp = datetime.now(timezone.utc).isoformat()
                     cursor.execute(
                         """
                         INSERT OR REPLACE INTO configs
@@ -598,7 +605,7 @@ class SQLiteStorage:
             return
 
         if timestamps is None:
-            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+            timestamps = [datetime.now(timezone.utc).isoformat()] * len(metrics_list)
 
         if len(metrics_list) != len(timestamps):
             raise ValueError("metrics_list and timestamps must have the same length")
@@ -1324,7 +1331,7 @@ class SQLiteStorage:
                         step,
                         file_path,
                         relative_path,
-                        datetime.now().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
                 conn.commit()

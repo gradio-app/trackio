@@ -22,6 +22,7 @@ from trackio.deploy import sync
 from trackio.gpu import gpu_available, log_gpu
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
+from trackio.markdown import Markdown
 from trackio.media import (
     TrackioAudio,
     TrackioImage,
@@ -64,6 +65,7 @@ __all__ = [
     "Audio",
     "Table",
     "Histogram",
+    "Markdown",
     "Api",
 ]
 
@@ -165,7 +167,6 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
-
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """

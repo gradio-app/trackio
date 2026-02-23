@@ -12,6 +12,7 @@ from gradio_client import Client, handle_file
 from trackio import utils
 from trackio.gpu import GpuMonitor
 from trackio.histogram import Histogram
+from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -517,6 +518,8 @@ class Run:
                 )
                 self._scan_and_queue_media_uploads(metrics[key], step)
             elif isinstance(value, Histogram):
+                metrics[key] = value._to_dict()
+            elif isinstance(value, Markdown):
                 metrics[key] = value._to_dict()
             elif isinstance(value, TrackioMedia):
                 metrics[key] = self._process_media(value, step)
