@@ -383,6 +383,8 @@ class Run:
         if self._client is None:
             fib = utils.fibo()
             for sleep_coefficient in fib:
+                if self._stop_flag.is_set():
+                    return
                 try:
                     client = Client(self.url, verbose=False)
 
@@ -392,7 +394,8 @@ class Run:
                 except Exception:
                     pass
                 if sleep_coefficient is not None:
-                    time.sleep(0.1 * sleep_coefficient)
+                    if self._stop_flag.wait(timeout=0.1 * sleep_coefficient):
+                        return
 
         self._batch_sender()
 
