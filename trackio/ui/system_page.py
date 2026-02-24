@@ -1,5 +1,7 @@
 """The System Metrics page for the Trackio UI (GPU metrics, etc.)."""
 
+import re
+
 import gradio as gr
 import pandas as pd
 
@@ -8,6 +10,58 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import fns
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.helpers.run_selection import RunSelection
+
+GPU_METRIC_PATTERN = re.compile(r"^((?:rank\d+/)?gpu)/(\d+)/(.+)$")
+
+
+def melt_gpu_metrics(
+    df: pd.DataFrame, metric_cols: list[str]
+) -> tuple[pd.DataFrame, dict[str, list[str]]]:
+    """
+    Transform GPU metrics to combine all GPUs onto single plots.
+    
+    Returns:
+        - Modified dataframe with melted GPU metrics
+        - Dict mapping metric type (e.g. "utilization") to list of original column names
+    """
+    gpu_groups: dict[str, list[str]] = {}
+    non_gpu_cols = []
+    
+    for col in metric_cols:
+        match = GPU_METRIC_PATTERN.match(col)
+        if match:
+            prefix, gpu_id, metric_type = match.groups()
+            key = f"{prefix}/{metric_type}"
+            if key not in gpu_groups:
+                gpu_groups[key] = []
+            gpu_groups[key].append((col, gpu_id))
+        else:
+            non_gpu_cols.append(col)
+    
+    if not gpu_groups:
+        return df, {}
+    
+    melted_dfs = []
+    base_cols = ["time", "run"] if "run" in df.columns else ["time"]
+    
+    for metric_key, cols_and_ids in gpu_groups.items():
+        for original_col, gpu_id in cols_and_ids:
+            if original_col not in df.columns:
+                continue
+            subset = df[base_cols + [original_col]].copy()
+            subset = subset.dropna(subset=[original_col])
+            if subset.empty:
+                continue
+            subset["gpu_id"] = gpu_id
+            subset = subset.rename(columns={original_col: metric_key})
+            melted_dfs.append(subset)
+    
+    if melted_dfs:
+        melted_df = pd.concat(melted_dfs, ignore_index=True)
+        non_gpu_df = df[base_cols + non_gpu_cols].copy() if non_gpu_cols else None
+        return melted_df, {k: [c for c, _ in v] for k, v in gpu_groups.items()}
+    
+    return df, {}
 
 
 def refresh_runs(
@@ -166,152 +220,134 @@ trackio.log_gpu()
         numeric_cols = master_df.select_dtypes(include="number").columns
         numeric_cols = [c for c in numeric_cols if c not in ["time", "timestamp"]]
 
+        melted_df, gpu_metric_groups = melt_gpu_metrics(master_df, list(numeric_cols))
+        non_gpu_cols = [c for c in numeric_cols if not GPU_METRIC_PATTERN.match(c)]
+
         if smoothing_granularity > 0:
             window_size = max(3, min(smoothing_granularity, len(master_df)))
-            for col in numeric_cols:
-                master_df[col] = master_df.groupby("run")[col].transform(
-                    lambda x: x.rolling(
-                        window=window_size, center=True, min_periods=1
-                    ).mean()
-                )
+            for col in non_gpu_cols:
+                if col in master_df.columns:
+                    master_df[col] = master_df.groupby("run")[col].transform(
+                        lambda x: x.rolling(
+                            window=window_size, center=True, min_periods=1
+                        ).mean()
+                    )
 
-        ordered_groups, nested_metric_groups = utils.order_metrics_by_plot_preference(
-            list(numeric_cols)
-        )
         all_runs = selection.choices if selection else original_runs
         color_map = utils.get_color_mapping(all_runs, False)
+        gpu_ids = sorted(melted_df["gpu_id"].unique()) if "gpu_id" in melted_df.columns else []
+        gpu_color_map = {gid: utils.get_color_palette()[i % len(utils.get_color_palette())] for i, gid in enumerate(gpu_ids)}
 
         metric_idx = 0
-        for group_name in ordered_groups:
-            group_data = nested_metric_groups[group_name]
 
-            total_plot_count = sum(
-                1
-                for m in group_data["direct_metrics"]
-                if not master_df.dropna(subset=[m]).empty
-            ) + sum(
-                sum(1 for m in metrics if not master_df.dropna(subset=[m]).empty)
-                for metrics in group_data["subgroups"].values()
-            )
-            group_label = (
-                f"{group_name} ({total_plot_count})"
-                if total_plot_count > 0
-                else group_name
-            )
-
+        if gpu_metric_groups:
+            gpu_plot_count = len(gpu_metric_groups)
             with gr.Accordion(
-                label=group_label,
+                label=f"gpu ({gpu_plot_count})",
                 open=True,
-                key=f"sys-accordion-{group_name}",
+                key="sys-accordion-gpu-combined",
                 preserved_by_key=["value", "open"],
             ):
-                if group_data["direct_metrics"]:
-                    with gr.Draggable(
-                        key=f"sys-row-{group_name}-direct", orientation="row"
-                    ):
-                        for metric_name in group_data["direct_metrics"]:
-                            metric_df = master_df.dropna(subset=[metric_name])
-                            color = "run" if "run" in metric_df.columns else None
-                            downsampled_df, updated_x_lim = utils.downsample(
-                                metric_df,
-                                x_column,
-                                metric_name,
-                                color,
-                                x_lim_value,
-                            )
-                            if not metric_df.empty:
-                                plot = gr.LinePlot(
-                                    downsampled_df,
-                                    x=x_column,
-                                    y=metric_name,
-                                    x_title="Time (seconds)",
-                                    y_title=metric_name.split("/")[-1],
-                                    color=color,
-                                    color_map=color_map,
-                                    colors_in_legend=original_runs,
-                                    title=metric_name,
-                                    key=f"sys-plot-{metric_idx}",
-                                    preserved_by_key=None,
-                                    buttons=["fullscreen", "export"],
-                                    x_lim=updated_x_lim,
-                                    min_width=400,
-                                )
-                                plot.select(
-                                    update_x_lim,
-                                    outputs=x_lim,
-                                    key=f"sys-select-{metric_idx}",
-                                )
-                                plot.double_click(
-                                    lambda: None,
-                                    outputs=x_lim,
-                                    key=f"sys-double-{metric_idx}",
-                                )
-                            metric_idx += 1
+                with gr.Draggable(key="sys-row-gpu-combined", orientation="row"):
+                    for metric_key in sorted(gpu_metric_groups.keys()):
+                        metric_df = melted_df[melted_df[metric_key].notna()].copy() if metric_key in melted_df.columns else pd.DataFrame()
+                        if metric_df.empty:
+                            continue
+                        color = "gpu_id"
+                        downsampled_df, updated_x_lim = utils.downsample(
+                            metric_df, x_column, metric_key, color, x_lim_value
+                        )
+                        metric_display = metric_key.split("/")[-1]
+                        plot = gr.LinePlot(
+                            downsampled_df,
+                            x=x_column,
+                            y=metric_key,
+                            x_title="Time (seconds)",
+                            y_title=metric_display,
+                            color=color,
+                            color_map=gpu_color_map,
+                            title=metric_key,
+                            key=f"sys-plot-{metric_idx}",
+                            preserved_by_key=None,
+                            buttons=["fullscreen", "export"],
+                            x_lim=updated_x_lim,
+                            min_width=400,
+                        )
+                        plot.select(update_x_lim, outputs=x_lim, key=f"sys-select-{metric_idx}")
+                        plot.double_click(lambda: None, outputs=x_lim, key=f"sys-double-{metric_idx}")
+                        metric_idx += 1
 
-                if group_data["subgroups"]:
+        if non_gpu_cols:
+            ordered_groups, nested_metric_groups = utils.order_metrics_by_plot_preference(non_gpu_cols)
+            for group_name in ordered_groups:
+                group_data = nested_metric_groups[group_name]
+                total_plot_count = sum(
+                    1 for m in group_data["direct_metrics"] if not master_df.dropna(subset=[m]).empty
+                ) + sum(
+                    sum(1 for m in metrics if not master_df.dropna(subset=[m]).empty)
+                    for metrics in group_data["subgroups"].values()
+                )
+                if total_plot_count == 0:
+                    continue
+                group_label = f"{group_name} ({total_plot_count})"
+
+                with gr.Accordion(
+                    label=group_label, open=True,
+                    key=f"sys-accordion-{group_name}", preserved_by_key=["value", "open"],
+                ):
+                    if group_data["direct_metrics"]:
+                        with gr.Draggable(key=f"sys-row-{group_name}-direct", orientation="row"):
+                            for metric_name in group_data["direct_metrics"]:
+                                metric_df = master_df.dropna(subset=[metric_name])
+                                if metric_df.empty:
+                                    continue
+                                color = "run" if "run" in metric_df.columns else None
+                                downsampled_df, updated_x_lim = utils.downsample(
+                                    metric_df, x_column, metric_name, color, x_lim_value
+                                )
+                                plot = gr.LinePlot(
+                                    downsampled_df, x=x_column, y=metric_name,
+                                    x_title="Time (seconds)", y_title=metric_name.split("/")[-1],
+                                    color=color, color_map=color_map, colors_in_legend=original_runs,
+                                    title=metric_name, key=f"sys-plot-{metric_idx}",
+                                    preserved_by_key=None, buttons=["fullscreen", "export"],
+                                    x_lim=updated_x_lim, min_width=400,
+                                )
+                                plot.select(update_x_lim, outputs=x_lim, key=f"sys-select-{metric_idx}")
+                                plot.double_click(lambda: None, outputs=x_lim, key=f"sys-double-{metric_idx}")
+                                metric_idx += 1
+
                     for subgroup_name in sorted(group_data["subgroups"].keys()):
                         subgroup_metrics = group_data["subgroups"][subgroup_name]
-
                         subgroup_plot_count = sum(
-                            1
-                            for m in subgroup_metrics
-                            if not master_df.dropna(subset=[m]).empty
+                            1 for m in subgroup_metrics if not master_df.dropna(subset=[m]).empty
                         )
-                        subgroup_label = (
-                            f"{subgroup_name} ({subgroup_plot_count})"
-                            if subgroup_plot_count > 0
-                            else subgroup_name
-                        )
-
+                        if subgroup_plot_count == 0:
+                            continue
                         with gr.Accordion(
-                            label=subgroup_label,
-                            open=True,
+                            label=f"{subgroup_name} ({subgroup_plot_count})", open=True,
                             key=f"sys-accordion-{group_name}-{subgroup_name}",
                             preserved_by_key=["value", "open"],
                         ):
-                            with gr.Draggable(
-                                key=f"sys-row-{group_name}-{subgroup_name}",
-                                orientation="row",
-                            ):
+                            with gr.Draggable(key=f"sys-row-{group_name}-{subgroup_name}", orientation="row"):
                                 for metric_name in subgroup_metrics:
                                     metric_df = master_df.dropna(subset=[metric_name])
-                                    color = (
-                                        "run" if "run" in metric_df.columns else None
-                                    )
+                                    if metric_df.empty:
+                                        continue
+                                    color = "run" if "run" in metric_df.columns else None
                                     downsampled_df, updated_x_lim = utils.downsample(
-                                        metric_df,
-                                        x_column,
-                                        metric_name,
-                                        color,
-                                        x_lim_value,
+                                        metric_df, x_column, metric_name, color, x_lim_value
                                     )
-                                    if not metric_df.empty:
-                                        plot = gr.LinePlot(
-                                            downsampled_df,
-                                            x=x_column,
-                                            y=metric_name,
-                                            x_title="Time (seconds)",
-                                            y_title=metric_name.split("/")[-1],
-                                            color=color,
-                                            color_map=color_map,
-                                            colors_in_legend=original_runs,
-                                            title=metric_name,
-                                            key=f"sys-plot-{metric_idx}",
-                                            preserved_by_key=None,
-                                            buttons=["fullscreen", "export"],
-                                            x_lim=updated_x_lim,
-                                            min_width=400,
-                                        )
-                                        plot.select(
-                                            update_x_lim,
-                                            outputs=x_lim,
-                                            key=f"sys-select-{metric_idx}",
-                                        )
-                                        plot.double_click(
-                                            lambda: None,
-                                            outputs=x_lim,
-                                            key=f"sys-double-{metric_idx}",
-                                        )
+                                    plot = gr.LinePlot(
+                                        downsampled_df, x=x_column, y=metric_name,
+                                        x_title="Time (seconds)", y_title=metric_name.split("/")[-1],
+                                        color=color, color_map=color_map, colors_in_legend=original_runs,
+                                        title=metric_name, key=f"sys-plot-{metric_idx}",
+                                        preserved_by_key=None, buttons=["fullscreen", "export"],
+                                        x_lim=updated_x_lim, min_width=400,
+                                    )
+                                    plot.select(update_x_lim, outputs=x_lim, key=f"sys-select-{metric_idx}")
+                                    plot.double_click(lambda: None, outputs=x_lim, key=f"sys-double-{metric_idx}")
                                     metric_idx += 1
 
     gr.on(
