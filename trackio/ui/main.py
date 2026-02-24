@@ -517,7 +517,9 @@ def configure(request: gr.Request):
         case _:
             navbar = gr.Navbar(visible=True)
 
-    show_headers_cb = gr.Checkbox(value=request.query_params.get("accordion") != "hidden")
+    show_headers_cb = gr.Checkbox(
+        value=request.query_params.get("accordion") != "hidden"
+    )
 
     return (
         [],
