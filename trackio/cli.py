@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from trackio import show, sync
 from trackio.cli_helpers import (
@@ -128,6 +129,11 @@ def main():
         "--host",
         required=False,
         help="Host to bind the server to (e.g. '0.0.0.0' for remote access). If not provided, defaults to '127.0.0.1' (localhost only).",
+    )
+    ui_parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable auto-reload for UI development. Watches trackio/ui/ for changes and reloads automatically.",
     )
 
     subparsers.add_parser(
@@ -331,6 +337,25 @@ def main():
     args = parser.parse_args()
 
     if args.command == "show":
+        if args.reload:
+            import subprocess
+            import sys
+            from pathlib import Path
+
+            import trackio.ui.main as _ui_main
+
+            env = os.environ.copy()
+            if args.color_palette:
+                env["TRACKIO_COLOR_PALETTE"] = args.color_palette
+            if args.theme and args.theme != "default":
+                env["TRACKIO_THEME"] = args.theme
+            if args.host:
+                env["GRADIO_SERVER_NAME"] = args.host
+
+            ui_path = Path(_ui_main.__file__)
+            subprocess.run([sys.executable, "-m", "gradio", str(ui_path)], env=env)
+            return
+
         color_palette = None
         if args.color_palette:
             color_palette = [color.strip() for color in args.color_palette.split(",")]

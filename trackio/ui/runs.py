@@ -283,8 +283,9 @@ CSS = """
 .no-wrap-row { flex-wrap: nowrap !important; }
 .html-container:has(.runs-table-container) { padding: 0; }
 .runs-action-col button { min-width: 130px; }
+button.login-btn { width: 220px; }
 """
-
+    
 with gr.Blocks() as run_page:
     gr.HTML(f"<style>{CSS}</style>", visible="hidden")
     with gr.Sidebar() as sidebar:
@@ -298,10 +299,9 @@ with gr.Blocks() as run_page:
 
     with gr.Row():
         with gr.Column(scale=2):
-            gr.Markdown("")
-        with gr.Column(elem_classes="runs-action-col"):
             if utils.get_space():
-                gr.LoginButton("Login to delete or rename runs", size="md")
+                gr.LoginButton("Login to manage", size="sm", elem_classes="login-btn")
+        with gr.Column(elem_classes="runs-action-col"):
             with gr.Row(elem_classes="no-wrap-row") as action_buttons:
                 rename_run_btn = gr.Button(
                     "Rename",
