@@ -99,31 +99,20 @@ def set_deletion_allowed(
     project: str, request: gr.Request, oauth_token: gr.OAuthToken | None
 ) -> dict:
     """Update the delete and rename buttons based on the runs data and user write access."""
+    has_access = True
     if oauth_token:
         try:
             fns.check_oauth_token_has_write_access(oauth_token.token)
         except PermissionError:
-            table, run_names = get_runs_table(project, interactive=False)
-            return {
-                action_buttons: gr.Row(visible=True),
-                runs_table: table,
-                run_names_state: run_names,
-                allow_deleting_runs: False,
-            }
+            has_access = False
     elif not check_write_access_runs(request, run_page.write_token):
-        table, run_names = get_runs_table(project, interactive=False)
-        return {
-            action_buttons: gr.Row(visible=True),
-            runs_table: table,
-            run_names_state: run_names,
-            allow_deleting_runs: False,
-        }
-    table, run_names = get_runs_table(project, interactive=True)
+        has_access = False
+    table, run_names = get_runs_table(project, interactive=has_access)
     return {
         action_buttons: gr.Row(visible=True),
         runs_table: table,
         run_names_state: run_names,
-        allow_deleting_runs: True,
+        allow_deleting_runs: has_access,
     }
 
 
