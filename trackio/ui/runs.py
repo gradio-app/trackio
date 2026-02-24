@@ -129,7 +129,9 @@ def update_action_buttons(
         if num_selected
         else gr.Button("Delete", interactive=False)
     )
-    rename_btn = gr.Button("Rename", interactive=num_selected == 1, variant="huggingface")
+    rename_btn = gr.Button(
+        "Rename", interactive=num_selected == 1, variant="huggingface"
+    )
     return delete_btn, rename_btn
 
 
