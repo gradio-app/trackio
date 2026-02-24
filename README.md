@@ -200,6 +200,7 @@ Supported query parameters:
 - `xmin`: (number) Set the initial minimum value for the x-axis limits across all metric plots.
 - `xmax`: (number) Set the initial maximum value for the x-axis limits across all metric plots.
 - `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
+- `accordion`: (string: "hidden"). When set to "hidden", hides the section header accordions around metric groups. By default, section headers are visible.
 
 ## Examples
 
