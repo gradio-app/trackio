@@ -895,6 +895,35 @@ class SQLiteStorage:
         return obj
 
     @staticmethod
+    def _rewrite_metrics_rows(metrics_rows, new_run_name, old_prefix, new_prefix):
+        """Deserialize metrics rows, update media paths, and reserialize."""
+        result = []
+        for row in metrics_rows:
+            metrics_data = orjson.loads(row["metrics"])
+            metrics_deserialized = deserialize_values(metrics_data)
+            updated = SQLiteStorage._update_media_paths(
+                metrics_deserialized, old_prefix, new_prefix
+            )
+            result.append(
+                (
+                    row["timestamp"],
+                    new_run_name,
+                    row["step"],
+                    orjson.dumps(serialize_values(updated)),
+                )
+            )
+        return result
+
+    @staticmethod
+    def _move_media_dir(source: Path, target: Path):
+        """Move a media directory from source to target."""
+        if source.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.move(str(source), str(target))
+
+    @staticmethod
     def rename_run(project: str, old_name: str, new_name: str) -> bool:
         """Rename a run within the same project."""
         if not new_name or not new_name.strip():
@@ -932,32 +961,16 @@ class SQLiteStorage:
                     old_prefix = f"{project}/{old_name}/"
                     new_prefix = f"{project}/{new_name}/"
 
-                    updated_metrics_rows = []
-                    for row in metrics_rows:
-                        metrics_data = orjson.loads(row["metrics"])
-                        metrics_deserialized = deserialize_values(metrics_data)
-                        updated_metrics = SQLiteStorage._update_media_paths(
-                            metrics_deserialized, old_prefix, new_prefix
-                        )
-                        updated_metrics_rows.append(
-                            (
-                                row["timestamp"],
-                                new_name,
-                                row["step"],
-                                orjson.dumps(serialize_values(updated_metrics)),
-                            )
-                        )
+                    updated_rows = SQLiteStorage._rewrite_metrics_rows(
+                        metrics_rows, new_name, old_prefix, new_prefix
+                    )
 
                     cursor.execute(
                         "DELETE FROM metrics WHERE run_name = ?", (old_name,)
                     )
-
                     cursor.executemany(
-                        """
-                        INSERT INTO metrics (timestamp, run_name, step, metrics)
-                        VALUES (?, ?, ?, ?)
-                        """,
-                        updated_metrics_rows,
+                        "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+                        updated_rows,
                     )
 
                     cursor.execute(
@@ -975,14 +988,10 @@ class SQLiteStorage:
 
                     conn.commit()
 
-                    old_media_dir = MEDIA_DIR / project / old_name
-                    new_media_dir = MEDIA_DIR / project / new_name
-
-                    if old_media_dir.exists():
-                        new_media_dir.parent.mkdir(parents=True, exist_ok=True)
-                        if new_media_dir.exists():
-                            shutil.rmtree(new_media_dir)
-                        shutil.move(str(old_media_dir), str(new_media_dir))
+                    SQLiteStorage._move_media_dir(
+                        MEDIA_DIR / project / old_name,
+                        MEDIA_DIR / project / new_name,
+                    )
 
                     return True
                 except sqlite3.Error:
@@ -1029,34 +1038,16 @@ class SQLiteStorage:
                     with SQLiteStorage._get_connection(target_db_path) as target_conn:
                         target_cursor = target_conn.cursor()
 
-                        updated_metrics_rows = []
                         old_prefix = f"{project}/{run}/"
                         new_prefix = f"{new_project}/{run}/"
+                        updated_rows = SQLiteStorage._rewrite_metrics_rows(
+                            metrics_rows, run, old_prefix, new_prefix
+                        )
 
-                        for row in metrics_rows:
-                            metrics_data = orjson.loads(row["metrics"])
-                            metrics_deserialized = deserialize_values(metrics_data)
-                            updated_metrics = SQLiteStorage._update_media_paths(
-                                metrics_deserialized, old_prefix, new_prefix
-                            )
-
-                            updated_metrics_rows.append(
-                                (
-                                    row["timestamp"],
-                                    run,
-                                    row["step"],
-                                    orjson.dumps(serialize_values(updated_metrics)),
-                                )
-                            )
-
-                        for row_data in updated_metrics_rows:
-                            target_cursor.execute(
-                                """
-                                INSERT INTO metrics (timestamp, run_name, step, metrics)
-                                VALUES (?, ?, ?, ?)
-                                """,
-                                row_data,
-                            )
+                        target_cursor.executemany(
+                            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+                            updated_rows,
+                        )
 
                         if config_row:
                             target_cursor.execute(
@@ -1081,14 +1072,10 @@ class SQLiteStorage:
 
                         target_conn.commit()
 
-                        source_media_dir = MEDIA_DIR / project / run
-                        target_media_dir = MEDIA_DIR / new_project / run
-
-                        if source_media_dir.exists():
-                            target_media_dir.parent.mkdir(parents=True, exist_ok=True)
-                            if target_media_dir.exists():
-                                shutil.rmtree(target_media_dir)
-                            shutil.move(str(source_media_dir), str(target_media_dir))
+                        SQLiteStorage._move_media_dir(
+                            MEDIA_DIR / project / run,
+                            MEDIA_DIR / new_project / run,
+                        )
 
                         source_cursor.execute(
                             "DELETE FROM metrics WHERE run_name = ?", (run,)
