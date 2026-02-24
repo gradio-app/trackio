@@ -186,20 +186,20 @@ def rename_selected_run(
 ) -> dict:
     """Rename the selected run and refresh the table. Returns hide-controls state on success."""
 
+    def make_result(table, run_names, close=False) -> dict:
+        return {
+            runs_table: table,
+            run_names_state: run_names,
+            action_buttons: gr.Row(visible=close),
+            rename_controls: gr.Column(visible=not close),
+            rename_input: gr.Textbox(value="" if close else new_name),
+        }
+
     def keep_open() -> dict:
         table, run_names = get_runs_table(
             project, interactive=False, selected_indices=selected_indices
         )
-        return {runs_table: table, run_names_state: run_names}
-
-    def close_controls(table, run_names) -> dict:
-        return {
-            runs_table: table,
-            run_names_state: run_names,
-            action_buttons: gr.Row(visible=True),
-            rename_controls: gr.Column(visible=False),
-            rename_input: gr.Textbox(value=""),
-        }
+        return make_result(table, run_names, close=False)
 
     if not deletion_allowed or not selected_indices or len(selected_indices) != 1:
         gr.Warning("Please select exactly one run to rename")
@@ -229,7 +229,7 @@ def rename_selected_run(
             table, run_names = get_runs_table(
                 project, interactive=True, selected_indices=[idx]
             )
-            return close_controls(table, run_names)
+            return make_result(table, run_names, close=True)
         else:
             gr.Warning(
                 f"Failed to rename run '{old_name}' - database operation unsuccessful"
@@ -259,6 +259,9 @@ def show_delete_confirmation(
         if 0 <= idx < len(run_names_list)
     ]
 
+    if not selected_runs:
+        return {**base, delete_warning: gr.Markdown("")}
+
     if len(selected_runs) > 1:
         runs_list = "<br/>".join([f"- `{run}`" for run in selected_runs])
         warning_msg = f"**Warning**<br/> Are you sure you want to delete the following runs ({len(selected_runs)})?<br/> {runs_list}"
@@ -266,6 +269,43 @@ def show_delete_confirmation(
         warning_msg = f"**Warning**<br/> Are you sure you want to delete the following run?<br/> - `{selected_runs[0]}`"
 
     return {**base, delete_warning: gr.Markdown(warning_msg)}
+
+
+def hide_delete_confirmation() -> dict:
+    """Hide delete confirmation and restore interactive table."""
+    return {
+        action_buttons: gr.Row(visible=True),
+        delete_controls: gr.Column(visible=False),
+        runs_table: gr.update(interactive=True),
+    }
+
+
+def show_rename_controls(
+    selected_indices: list[int], run_names_list: list[str]
+) -> dict:
+    """Show rename controls and prefill with current run name."""
+    current_name = ""
+    if selected_indices and len(selected_indices) == 1:
+        idx = selected_indices[0]
+        if 0 <= idx < len(run_names_list):
+            current_name = run_names_list[idx]
+    return {
+        action_buttons: gr.Row(visible=False),
+        rename_controls: gr.Column(visible=True),
+        rename_input: gr.Textbox(value=current_name),
+        delete_controls: gr.Column(visible=False),
+        runs_table: gr.update(interactive=False),
+    }
+
+
+def hide_rename_controls() -> dict:
+    """Hide rename controls and show main rename button."""
+    return {
+        action_buttons: gr.Row(visible=True),
+        rename_controls: gr.Column(visible=False),
+        rename_input: gr.Textbox(value=""),
+        runs_table: gr.update(interactive=True),
+    }
 
 
 CSS = """
@@ -398,14 +438,6 @@ with gr.Blocks() as run_page:
         queue=False,
     )
 
-    def hide_delete_confirmation() -> dict:
-        """Hide delete confirmation and restore interactive table."""
-        return {
-            action_buttons: gr.Row(visible=True),
-            delete_controls: gr.Column(visible=False),
-            runs_table: gr.update(interactive=True),
-        }
-
     gr.on(
         [confirm_delete_btn.click, cancel_delete_btn.click],
         fn=hide_delete_confirmation,
@@ -435,32 +467,6 @@ with gr.Blocks() as run_page:
         api_visibility="private",
         queue=False,
     )
-
-    def show_rename_controls(
-        selected_indices: list[int], run_names_list: list[str]
-    ) -> dict:
-        """Show rename controls and prefill with current run name."""
-        current_name = ""
-        if selected_indices and len(selected_indices) == 1:
-            idx = selected_indices[0]
-            if 0 <= idx < len(run_names_list):
-                current_name = run_names_list[idx]
-        return {
-            action_buttons: gr.Row(visible=False),
-            rename_controls: gr.Column(visible=True),
-            rename_input: gr.Textbox(value=current_name),
-            delete_controls: gr.Column(visible=False),
-            runs_table: gr.update(interactive=False),
-        }
-
-    def hide_rename_controls() -> dict:
-        """Hide rename controls and show main rename button."""
-        return {
-            action_buttons: gr.Row(visible=True),
-            rename_controls: gr.Column(visible=False),
-            rename_input: gr.Textbox(value=""),
-            runs_table: gr.update(interactive=True),
-        }
 
     gr.on(
         [rename_run_btn.click],
