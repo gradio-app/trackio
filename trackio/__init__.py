@@ -56,7 +56,6 @@ __all__ = [
     "log_gpu",
     "finish",
     "alert",
-    "alert_when",
     "AlertLevel",
     "show",
     "sync",
@@ -114,6 +113,7 @@ def init(
     embed: bool = True,
     auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
+    webhook_url: str | None = None,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -174,6 +174,12 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
+        webhook_url (`str`, *optional*):
+            A webhook URL to POST alert payloads to when `trackio.alert()` is
+            called. Supports Slack and Discord webhook URLs natively (payloads
+            are formatted automatically). Can also be set via the
+            `TRACKIO_WEBHOOK_URL` environment variable. Individual alerts can
+            override this URL by passing `webhook_url` to `trackio.alert()`.
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
@@ -267,6 +273,7 @@ def init(
         space_id=space_id,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
+        webhook_url=webhook_url,
     )
 
     if space_id is not None:
@@ -341,10 +348,14 @@ def alert(
     title: str,
     text: str | None = None,
     level: AlertLevel = AlertLevel.WARN,
+    webhook_url: str | None = None,
 ) -> None:
     """
     Fires an alert immediately on the current run. The alert is printed to the
-    terminal, stored in the database, and displayed in the dashboard.
+    terminal, stored in the database, and displayed in the dashboard. If a
+    webhook URL is configured (via `trackio.init()`, the `TRACKIO_WEBHOOK_URL`
+    environment variable, or the `webhook_url` parameter here), the alert is
+    also POSTed to that URL.
 
     Args:
         title (`str`):
@@ -354,43 +365,16 @@ def alert(
         level (`AlertLevel`, *optional*, defaults to `AlertLevel.WARN`):
             The severity level. One of `AlertLevel.INFO`, `AlertLevel.WARN`,
             or `AlertLevel.ERROR`.
+        webhook_url (`str`, *optional*):
+            A webhook URL to send this specific alert to. Overrides any
+            URL set in `trackio.init()` or the `TRACKIO_WEBHOOK_URL`
+            environment variable. Supports Slack and Discord webhook
+            URLs natively.
     """
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.alert().")
-    run.alert(title=title, text=text, level=level)
-
-
-def alert_when(
-    condition,
-    title="Alert",
-    text=None,
-    level: AlertLevel = AlertLevel.WARN,
-) -> None:
-    """
-    Registers a declarative, edge-triggered alert condition on the current run.
-    The condition is checked on every `trackio.log()` call. An alert fires when
-    the condition transitions from `False` to `True`, and re-arms when it goes
-    back to `False`.
-
-    Args:
-        condition (`Callable[[dict], bool]`):
-            A function that takes a metrics dict (including `"step"`) and returns
-            `True` when the alert should fire.
-        title (`str` or `Callable[[dict], str]`, *optional*, defaults to `"Alert"`):
-            A short title for the alert. Can be a callable that receives the
-            metrics dict to produce a dynamic title.
-        text (`str` or `Callable[[dict], str]` or `None`, *optional*):
-            A longer description. Can be a callable that receives the metrics
-            dict to produce a dynamic message.
-        level (`AlertLevel`, *optional*, defaults to `AlertLevel.WARN`):
-            The severity level. One of `AlertLevel.INFO`, `AlertLevel.WARN`,
-            or `AlertLevel.ERROR`.
-    """
-    run = context_vars.current_run.get()
-    if run is None:
-        raise RuntimeError("Call trackio.init() before trackio.alert_when().")
-    run.alert_when(condition=condition, title=title, text=text, level=level)
+    run.alert(title=title, text=text, level=level, webhook_url=webhook_url)
 
 
 def delete_project(project: str, force: bool = False) -> bool:

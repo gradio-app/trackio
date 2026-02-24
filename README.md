@@ -201,6 +201,31 @@ Supported query parameters:
 - `xmax`: (number) Set the initial maximum value for the x-axis limits across all metric plots.
 - `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
 
+## Alerts
+
+Trackio supports alerts that let you flag important events during training. Alerts are printed to the terminal, stored in the database, displayed in the dashboard, and optionally sent to webhooks (Slack, Discord, or any URL).
+
+```python
+import trackio
+
+trackio.init(project="my-project", webhook_url="https://hooks.slack.com/services/T.../B.../xxx")
+
+for epoch in range(100):
+    loss = train(...)
+    trackio.log({"loss": loss})
+
+    if epoch > 10 and loss > 5.0:
+        trackio.alert(
+            title="Loss spike",
+            text=f"Loss jumped to {loss:.2f} at epoch {epoch}",
+            level=trackio.AlertLevel.ERROR,
+        )
+
+trackio.finish()
+```
+
+You can query alerts via the CLI (`trackio get alerts --project "my-project" --json`), the Python API (`trackio.Api().alerts("my-project")`), or the HTTP endpoint (`/get_alerts`). For full details, see the [Alerts guide](https://huggingface.co/docs/trackio/alerts) and the [ML Agents guide](https://huggingface.co/docs/trackio/ml_agents).
+
 ## Examples
 
 To get started and see basic examples of usage, see these files:

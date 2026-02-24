@@ -19,8 +19,10 @@ class Run:
             self._config = SQLiteStorage.get_run_config(self.project, self.name)
         return self._config
 
-    def alerts(self, level: str | None = None) -> list[dict]:
-        return SQLiteStorage.get_alerts(self.project, run_name=self.name, level=level)
+    def alerts(self, level: str | None = None, since: str | None = None) -> list[dict]:
+        return SQLiteStorage.get_alerts(
+            self.project, run_name=self.name, level=level, since=since
+        )
 
     def delete(self) -> bool:
         return SQLiteStorage.delete_run(self.project, self.name)
@@ -74,8 +76,12 @@ class Api:
         return Runs(project)
 
     def alerts(
-        self, project: str, run: str | None = None, level: str | None = None
+        self,
+        project: str,
+        run: str | None = None,
+        level: str | None = None,
+        since: str | None = None,
     ) -> list[dict]:
         if not SQLiteStorage.get_project_db_path(project).exists():
             raise ValueError(f"Project '{project}' does not exist")
-        return SQLiteStorage.get_alerts(project, run_name=run, level=level)
+        return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)

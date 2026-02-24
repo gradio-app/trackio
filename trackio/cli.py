@@ -288,6 +288,11 @@ def main():
         action="store_true",
         help="Output in JSON format",
     )
+    list_alerts_parser.add_argument(
+        "--since",
+        required=False,
+        help="Only show alerts after this ISO 8601 timestamp",
+    )
 
     list_reports_parser = list_subparsers.add_parser(
         "reports",
@@ -424,6 +429,11 @@ def main():
         action="store_true",
         help="Output in JSON format",
     )
+    get_alerts_parser.add_argument(
+        "--since",
+        required=False,
+        help="Only show alerts after this ISO 8601 timestamp",
+    )
 
     get_report_parser = get_subparsers.add_parser(
         "report",
@@ -531,7 +541,10 @@ def main():
             if not db_path.exists():
                 error_exit(f"Project '{args.project}' not found.")
             alerts = SQLiteStorage.get_alerts(
-                args.project, run_name=args.run, level=args.level
+                args.project,
+                run_name=args.run,
+                level=args.level,
+                since=args.since,
             )
             if args.json:
                 print(
@@ -540,6 +553,7 @@ def main():
                             "project": args.project,
                             "run": args.run,
                             "level": args.level,
+                            "since": args.since,
                             "alerts": alerts,
                         }
                     )
@@ -691,7 +705,10 @@ def main():
             if not db_path.exists():
                 error_exit(f"Project '{args.project}' not found.")
             alerts = SQLiteStorage.get_alerts(
-                args.project, run_name=args.run, level=args.level
+                args.project,
+                run_name=args.run,
+                level=args.level,
+                since=args.since,
             )
             if args.json:
                 print(
@@ -700,6 +717,7 @@ def main():
                             "project": args.project,
                             "run": args.run,
                             "level": args.level,
+                            "since": args.since,
                             "alerts": alerts,
                         }
                     )

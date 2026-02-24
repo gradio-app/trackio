@@ -408,12 +408,14 @@ def get_alerts(
     project: str,
     run: str | None = None,
     level: str | None = None,
+    since: str | None = None,
 ) -> list[dict]:
     """
-    Get alerts for a project, optionally filtered by run and level.
+    Get alerts for a project, optionally filtered by run, level, and timestamp.
     Returns a list of alert dictionaries with timestamp, run, title, text, level, and step.
+    Pass `since` as an ISO 8601 timestamp to only return alerts after that time.
     """
-    return SQLiteStorage.get_alerts(project, run_name=run, level=level)
+    return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
 
 
 def get_metric_values(

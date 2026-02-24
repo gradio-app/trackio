@@ -1,3 +1,4 @@
+import os
 import shutil
 import threading
 import time
@@ -10,7 +11,7 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio import utils
-from trackio.alerts import AlertCondition, AlertLevel, format_alert_terminal
+from trackio.alerts import AlertLevel, format_alert_terminal, send_webhook
 from trackio.gpu import GpuMonitor
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
@@ -36,6 +37,7 @@ class Run:
         space_id: str | None = None,
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
+        webhook_url: str | None = None,
     ):
         """
         Initialize a Run for logging metrics to Trackio.
@@ -59,6 +61,9 @@ class Run:
                 memory, temperature) at regular intervals.
             gpu_log_interval: The interval in seconds between GPU metric logs.
                 Only used when auto_log_gpu is True.
+            webhook_url: A webhook URL to POST alert payloads to. Supports
+                Slack and Discord webhook URLs natively. Can also be set via
+                the TRACKIO_WEBHOOK_URL environment variable.
         """
         self.url = url
         self.project = project
@@ -87,7 +92,6 @@ class Run:
         self._queued_system_logs: list[SystemLogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._queued_alerts: list[AlertEntry] = []
-        self._alert_conditions: list[AlertCondition] = []
         self._stop_flag = threading.Event()
         self._config_logged = False
         max_step = SQLiteStorage.get_max_step_for_run(self.project, self.name)
@@ -95,6 +99,7 @@ class Run:
         self._has_local_buffer = False
 
         self._is_local = space_id is None
+        self._webhook_url = webhook_url or os.environ.get("TRACKIO_WEBHOOK_URL")
 
         if self._is_local:
             self._local_sender_thread = threading.Thread(
@@ -603,15 +608,13 @@ class Run:
             self._queued_logs.append(log_entry)
             self._ensure_sender_alive()
 
-        if self._alert_conditions:
-            self._check_alert_conditions(step, metrics)
-
     def alert(
         self,
         title: str,
         text: str | None = None,
         level: AlertLevel = AlertLevel.WARN,
         step: int | None = None,
+        webhook_url: str | None = None,
     ):
         if step is None:
             step = max(self._next_step - 1, 0)
@@ -634,40 +637,23 @@ class Run:
             self._queued_alerts.append(alert_entry)
             self._ensure_sender_alive()
 
-    def alert_when(
-        self,
-        condition: "Callable[[dict], bool]",
-        title: str | "Callable[[dict], str]",
-        text: str | "Callable[[dict], str] | None" = None,
-        level: AlertLevel = AlertLevel.WARN,
-    ):
-        self._alert_conditions.append(
-            AlertCondition(
-                condition=condition,
-                title=title,
-                text=text,
-                level=level,
+        url = webhook_url or self._webhook_url
+        if url:
+            t = threading.Thread(
+                target=send_webhook,
+                args=(
+                    url,
+                    level,
+                    title,
+                    text,
+                    self.project,
+                    self.name,
+                    step,
+                    timestamp,
+                ),
+                daemon=True,
             )
-        )
-
-    def _check_alert_conditions(self, step: int, metrics: dict):
-        check_dict = {"step": step, **metrics}
-        for cond in self._alert_conditions:
-            try:
-                result = bool(cond.condition(check_dict))
-            except Exception:
-                result = False
-
-            if result and not cond._last_state:
-                resolved_title = cond.resolve_title(check_dict)
-                resolved_text = cond.resolve_text(check_dict)
-                self.alert(
-                    title=resolved_title,
-                    text=resolved_text,
-                    level=cond.level,
-                    step=step,
-                )
-            cond._last_state = result
+            t.start()
 
     def log_system(self, metrics: dict):
         metrics = utils.serialize_values(metrics)

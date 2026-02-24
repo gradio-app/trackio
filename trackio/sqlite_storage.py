@@ -721,6 +721,7 @@ class SQLiteStorage:
         project: str,
         run_name: str | None = None,
         level: str | None = None,
+        since: str | None = None,
     ) -> list[dict]:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -740,6 +741,9 @@ class SQLiteStorage:
                 if level is not None:
                     conditions.append("level = ?")
                     params.append(level)
+                if since is not None:
+                    conditions.append("timestamp > ?")
+                    params.append(since)
                 if conditions:
                     query += " WHERE " + " AND ".join(conditions)
                 query += " ORDER BY timestamp DESC"
