@@ -126,8 +126,10 @@ def parse_alert_level(level: AlertLevel | str) -> AlertLevel:
     try:
         return AlertLevel(normalized)
     except ValueError as e:
-        allowed = ", ".join(l.value for l in AlertLevel)
-        raise ValueError(f"Invalid alert level '{level}'. Expected one of: {allowed}.") from e
+        allowed = ", ".join(lvl.value for lvl in AlertLevel)
+        raise ValueError(
+            f"Invalid alert level '{level}'. Expected one of: {allowed}."
+        ) from e
 
 
 def resolve_webhook_min_level(
@@ -138,7 +140,9 @@ def resolve_webhook_min_level(
     return parse_alert_level(webhook_min_level)
 
 
-def should_send_webhook(level: AlertLevel, webhook_min_level: AlertLevel | None) -> bool:
+def should_send_webhook(
+    level: AlertLevel, webhook_min_level: AlertLevel | None
+) -> bool:
     if webhook_min_level is None:
         return True
     return ALERT_LEVEL_ORDER[level] >= ALERT_LEVEL_ORDER[webhook_min_level]
