@@ -517,7 +517,7 @@ def configure(request: gr.Request):
         case _:
             navbar = gr.Navbar(visible=True)
 
-    show_headers_cb = gr.Checkbox(value=request.query_params.get("headers") != "hidden")
+    show_headers_cb = gr.Checkbox(value=request.query_params.get("accordion") != "hidden")
 
     return (
         [],
@@ -631,7 +631,7 @@ function getCookie(name) {
     const writeToken = urlParams.get('write_token');
     const footerParam = urlParams.get('footer');
 
-    if (urlParams.get('headers') === 'hidden') {
+    if (urlParams.get('accordion') === 'hidden') {
         document.body.classList.add('trackio-no-accordion');
     }
 

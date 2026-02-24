@@ -760,7 +760,7 @@ def generate_embed_code(
         params.append(f"runs={runs_param}")
 
     if hide_headers:
-        params.append("headers=hidden")
+        params.append("accordion=hidden")
 
     params.append("sidebar=hidden")
     params.append("navbar=hidden")
