@@ -27,7 +27,7 @@ def load_alerts(
         return pd.DataFrame()
 
     df = pd.DataFrame(alerts)
-    df["level"] = df["level"].map(lambda l: f"{LEVEL_BADGES.get(l, '')} {l.upper()}")
+    df["level"] = df["level"].map(lambda lvl: f"{LEVEL_BADGES.get(lvl, '')} {lvl.upper()}")
     df["text"] = df["text"].fillna("")
     df = df[["timestamp", "run", "level", "title", "text", "step"]]
     df.columns = ["Timestamp", "Run", "Level", "Title", "Text", "Step"]

@@ -84,6 +84,16 @@ Controls the maximum length of string values displayed in table cells before the
 export TRACKIO_TABLE_TRUNCATE_LENGTH="500"
 ```
 
+### `TRACKIO_WEBHOOK_URL`
+
+Sets a global webhook URL for alerts. When set, every call to `trackio.alert()` will POST the alert payload to this URL. Supports Slack and Discord webhook URLs natively (payloads are formatted automatically). Can be overridden per-alert or per-run via the `webhook_url` parameter.
+
+```bash
+export TRACKIO_WEBHOOK_URL="https://hooks.slack.com/services/T.../B.../xxx"
+```
+
+See the [Alerts guide](alerts.md) for more details.
+
 ### `TRACKIO_DATASET_ID`
 
 Sets the Hugging Face Dataset ID where logs will be stored when running on Hugging Face Spaces. If not provided, the dataset name will be set automatically when deploying to Spaces.
