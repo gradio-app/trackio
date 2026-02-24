@@ -104,10 +104,10 @@ def set_deletion_allowed(
             fns.check_oauth_token_has_write_access(oauth_token.token)
         except PermissionError:
             table, run_names = get_runs_table(project, interactive=False)
-            return (gr.Row(visible=False), table, run_names, False)
+            return (gr.Row(visible=True), table, run_names, False)
     elif not check_write_access_runs(request, run_page.write_token):
         table, run_names = get_runs_table(project, interactive=False)
-        return (gr.Row(visible=False), table, run_names, False)
+        return (gr.Row(visible=True), table, run_names, False)
     table, run_names = get_runs_table(project, interactive=True)
     return (gr.Row(visible=True), table, run_names, True)
 
@@ -283,7 +283,7 @@ CSS = """
 .no-wrap-row { flex-wrap: nowrap !important; }
 .html-container:has(.runs-table-container) { padding: 0; }
 .runs-action-col button { min-width: 130px; }
-button.login-btn { width: 220px; }
+button.login-btn { width: 209; }
 """
     
 with gr.Blocks() as run_page:
