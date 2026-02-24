@@ -705,7 +705,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         show_headers_cb = gr.Checkbox(
             label="Show section headers",
             value=True,
-            visible=bool(os.environ.get("SPACE_HOST")),
         )
         with gr.Group():
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
