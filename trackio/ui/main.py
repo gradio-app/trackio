@@ -241,8 +241,12 @@ def refresh_runs(
     )
 
 
-def generate_embed(project: str, metrics: str, selection: RunSelection) -> str:
-    return utils.generate_embed_code(project, metrics, selection.selected)
+def generate_share_fields(
+    project: str, metrics: str, selection: RunSelection
+) -> tuple[str, str]:
+    share_url = utils.generate_share_url(project, metrics, selection.selected)
+    embed_code = utils.generate_embed_code(project, metrics, selection.selected)
+    return share_url, embed_code
 
 
 def update_x_axis_choices(project, selection):
@@ -674,13 +678,22 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         logo = fns.create_logo()
         project_dd = fns.create_project_dropdown()
 
-        embed_code = gr.Code(
-            label="Embed this view",
-            max_lines=2,
-            lines=2,
-            language="html",
-            visible=bool(os.environ.get("SPACE_HOST")),
-        )
+        with gr.Tabs(visible=bool(os.environ.get("SPACE_HOST"))):
+            with gr.Tab("Share"):
+                share_url = gr.Textbox(
+                    label="Share this view",
+                    max_lines=1,
+                    lines=1,
+                    interactive=False,
+                    buttons=["copy"],
+                )
+            with gr.Tab("Embed"):
+                embed_code = gr.Code(
+                    label="Embed this view",
+                    max_lines=2,
+                    lines=2,
+                    language="html",
+                )
         with gr.Group():
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
             run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
@@ -772,9 +785,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         queue=False,
         api_visibility="private",
     ).then(
-        fn=generate_embed,
+        fn=generate_share_fields,
         inputs=[project_dd, metric_filter_tb, run_selection_state],
-        outputs=[embed_code],
+        outputs=[share_url, embed_code],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -805,9 +818,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     )
     gr.on(
         [metric_filter_tb.change, run_cb.change],
-        fn=generate_embed,
+        fn=generate_share_fields,
         inputs=[project_dd, metric_filter_tb, run_selection_state],
-        outputs=embed_code,
+        outputs=[share_url, embed_code],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -843,9 +856,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_visibility="private",
         queue=False,
     ).then(
-        fn=generate_embed,
+        fn=generate_share_fields,
         inputs=[project_dd, metric_filter_tb, run_selection_state],
-        outputs=embed_code,
+        outputs=[share_url, embed_code],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
