@@ -22,6 +22,7 @@ from trackio.deploy import sync
 from trackio.gpu import gpu_available, log_gpu
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
+from trackio.markdown import Markdown
 from trackio.media import (
     TrackioAudio,
     TrackioImage,
@@ -64,6 +65,7 @@ __all__ = [
     "Audio",
     "Table",
     "Histogram",
+    "Markdown",
     "Api",
 ]
 
@@ -156,8 +158,11 @@ def init(
         settings (`Any`, *optional*):
             Not used. Provided for compatibility with `wandb.init()`.
         embed (`bool`, *optional*, defaults to `True`):
-            If running inside a jupyter/Colab notebook, whether the dashboard should
-            automatically be embedded in the cell when trackio.init() is called.
+            If running inside a Jupyter/Colab notebook, whether the dashboard should
+            automatically be embedded in the cell when trackio.init() is called. For
+            local runs, this launches a local Gradio app and embeds it. For Space runs,
+            this embeds the Space URL. In Colab, the local dashboard will be accessible
+            via a public share URL (default Gradio behavior).
         auto_log_gpu (`bool` or `None`, *optional*, defaults to `None`):
             Controls automatic GPU metrics logging. If `None` (default), GPU logging
             is automatically enabled when `nvidia-ml-py` is installed and an NVIDIA
@@ -165,7 +170,6 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
-
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
@@ -193,6 +197,8 @@ def init(
             context_vars.current_server.set(url)
             context_vars.current_space_id.set(space_id)
 
+    _should_embed_local = False
+
     if (
         context_vars.current_project.get() is None
         or context_vars.current_project.get() != project
@@ -206,7 +212,9 @@ def init(
             )
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            utils.print_dashboard_instructions(project)
+            _should_embed_local = embed and utils.is_in_notebook()
+            if not _should_embed_local:
+                utils.print_dashboard_instructions(project)
         else:
             deploy.create_space_if_not_exists(
                 space_id, space_storage, dataset_id, private
@@ -274,6 +282,10 @@ def init(
 
     context_vars.current_run.set(run)
     globals()["config"] = run.config
+
+    if _should_embed_local:
+        show(project=project, open_browser=False, block_thread=False)
+
     return run
 
 

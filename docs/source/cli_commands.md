@@ -60,6 +60,26 @@ Output in JSON format:
 trackio list system-metrics --project "my-project" --run "my-run" --json
 ```
 
+### List Reports
+
+List markdown reports in a project (across all runs):
+
+```sh
+trackio list reports --project "my-project"
+```
+
+List markdown reports for a specific run:
+
+```sh
+trackio list reports --project "my-project" --run "my-run"
+```
+
+Output in JSON format:
+
+```sh
+trackio list reports --project "my-project" --run "my-run" --json
+```
+
 ## Get Commands
 
 ### Get Project Summary
@@ -140,6 +160,20 @@ Output in JSON format:
 trackio get system-metric --project "my-project" --run "my-run" --metric "gpu_utilization" --json
 ```
 
+### Get Report Content
+
+Print markdown report entries for a specific report name in a run:
+
+```sh
+trackio get report --project "my-project" --run "my-run" --report "training_report"
+```
+
+Output in JSON format:
+
+```sh
+trackio get report --project "my-project" --run "my-run" --report "training_report" --json
+```
+
 ## Output Formats
 
 All commands support two output formats:
@@ -154,6 +188,7 @@ The CLI commands include comprehensive validation and error handling:
 - If a project doesn't exist, an error message is displayed
 - If a run doesn't exist in a project, an error message is displayed
 - If a metric doesn't exist in a run, an error message is displayed
+- If a report doesn't exist in a run, an error message is displayed
 
 All errors are written to stderr and the command exits with a non-zero exit code.
 
@@ -182,6 +217,12 @@ trackio get metric --project "my-project" --run "my-run" --metric "loss"
 
 # 7. Get system metrics (if available)
 trackio list system-metrics --project "my-project" --run "my-run"
+
+# 8. List reports in a run
+trackio list reports --project "my-project" --run "my-run"
+
+# 9. Print report markdown in terminal
+trackio get report --project "my-project" --run "my-run" --report "training_report"
 ```
 
 ## Use Cases
