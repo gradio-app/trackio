@@ -286,7 +286,7 @@ CSS = """
 """
 
 with gr.Blocks() as run_page:
-    gr.HTML(f"<style>{CSS}</style>")
+    gr.HTML(f"<style>{CSS}</style>", visible="hidden")
     with gr.Sidebar() as sidebar:
         logo = fns.create_logo()
         project_dd = fns.create_project_dropdown()
@@ -297,7 +297,6 @@ with gr.Blocks() as run_page:
     run_names_state = gr.State([])
 
     with gr.Row():
-        # Spacer
         with gr.Column(scale=2):
             gr.Markdown("")
         with gr.Column(elem_classes="runs-action-col"):
