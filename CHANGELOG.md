@@ -1,5 +1,13 @@
 # trackio
 
+## 0.17.0
+
+### Features
+
+- [#428](https://github.com/gradio-app/trackio/pull/428) [`f7dd1ce`](https://github.com/gradio-app/trackio/commit/f7dd1ce2dc8a1936f9983467fcbcf93bfef01e09) - feat: add ability to rename runs.  Thanks @Saba9!
+- [#437](https://github.com/gradio-app/trackio/pull/437) [`2727c0b`](https://github.com/gradio-app/trackio/commit/2727c0b0755f48f7f186162ea45185c98f6b5516) - Add markdown reports across Trackio.  Thanks @abidlabs!
+- [#427](https://github.com/gradio-app/trackio/pull/427) [`5aeb9ed`](https://github.com/gradio-app/trackio/commit/5aeb9edcfd2068d309d9d64f172dcbcc327be1ab) - Make Trackio logging much more robust.  Thanks @abidlabs!
+
 ## 0.16.1
 
 ### Features
