@@ -413,7 +413,7 @@ from transformers import Trainer, TrainerCallback, TrainingArguments
 
 class AlertCallback(TrainerCallback):
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs is None:
+        if "trackio" not in args.report_to or logs is None:
             return
         loss = logs.get("loss")
         if loss is not None and loss > 5.0:
@@ -425,7 +425,7 @@ class AlertCallback(TrainerCallback):
             )
 
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-        if metrics is None:
+        if "trackio" not in args.report_to or metrics is None:
             return
         eval_loss = metrics.get("eval_loss")
         if eval_loss is not None and eval_loss > 2.0:
@@ -464,7 +464,7 @@ from transformers import TrainerCallback
 
 class RLAlertCallback(TrainerCallback):
     def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs is None:
+        if "trackio" not in args.report_to or logs is None:
             return
 
         reward = logs.get("train/reward")
