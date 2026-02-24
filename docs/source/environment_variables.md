@@ -94,6 +94,18 @@ export TRACKIO_WEBHOOK_URL="https://hooks.slack.com/services/T.../B.../xxx"
 
 See the [Alerts guide](alerts.md) for more details.
 
+### `TRACKIO_WEBHOOK_MIN_LEVEL`
+
+Sets the minimum alert level that should be sent to webhooks. Alerts below this level are still printed to terminal, stored in the database, and shown in the dashboard, but are not sent to webhook destinations.
+
+Allowed values: `info`, `warn`, `error`.
+
+```bash
+export TRACKIO_WEBHOOK_MIN_LEVEL="warn"
+```
+
+With `warn`, only `WARN` and `ERROR` alerts are sent to webhook URLs.
+
 ### `TRACKIO_DATASET_ID`
 
 Sets the Hugging Face Dataset ID where logs will be stored when running on Hugging Face Spaces. If not provided, the dataset name will be set automatically when deploying to Spaces.

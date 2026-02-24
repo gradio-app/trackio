@@ -208,7 +208,11 @@ Trackio supports alerts that let you flag important events during training. Aler
 ```python
 import trackio
 
-trackio.init(project="my-project", webhook_url="https://hooks.slack.com/services/T.../B.../xxx")
+trackio.init(
+    project="my-project",
+    webhook_url="https://hooks.slack.com/services/T.../B.../xxx",
+    webhook_min_level=trackio.AlertLevel.WARN,
+)
 
 for epoch in range(100):
     loss = train(...)

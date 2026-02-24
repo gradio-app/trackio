@@ -110,6 +110,7 @@ def update_navbar_value(project_dd, request: gr.Request):
 
     metrics_url = f"?selected_project={project_dd}"
     media_url = f"media?selected_project={project_dd}"
+    alerts_url = f"alerts?selected_project={project_dd}"
     reports_url = f"reports?selected_project={project_dd}"
     runs_url = f"runs?selected_project={project_dd}"
     files_url = f"files?selected_project={project_dd}"
@@ -120,6 +121,7 @@ def update_navbar_value(project_dd, request: gr.Request):
         metrics_url += f"&write_token={write_token}"
         system_url += f"&write_token={write_token}"
         media_url += f"&write_token={write_token}"
+        alerts_url += f"&write_token={write_token}"
         reports_url += f"&write_token={write_token}"
         runs_url += f"&write_token={write_token}"
         files_url += f"&write_token={write_token}"
@@ -128,6 +130,7 @@ def update_navbar_value(project_dd, request: gr.Request):
             ("Metrics", metrics_url),
             ("System Metrics", system_url),
             ("Media & Tables", media_url),
+            ("Alerts", alerts_url),
             ("Reports", reports_url),
             ("Runs", runs_url),
             ("Files", files_url),

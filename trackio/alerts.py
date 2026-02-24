@@ -13,6 +13,12 @@ class AlertLevel(str, Enum):
     ERROR = "error"
 
 
+ALERT_LEVEL_ORDER = {
+    AlertLevel.INFO: 0,
+    AlertLevel.WARN: 1,
+    AlertLevel.ERROR: 2,
+}
+
 ALERT_COLORS = {
     AlertLevel.INFO: "\033[94m",
     AlertLevel.WARN: "\033[93m",
@@ -111,6 +117,31 @@ def _build_generic_payload(
         "step": step,
         "timestamp": timestamp,
     }
+
+
+def parse_alert_level(level: AlertLevel | str) -> AlertLevel:
+    if isinstance(level, AlertLevel):
+        return level
+    normalized = level.lower().strip()
+    try:
+        return AlertLevel(normalized)
+    except ValueError as e:
+        allowed = ", ".join(l.value for l in AlertLevel)
+        raise ValueError(f"Invalid alert level '{level}'. Expected one of: {allowed}.") from e
+
+
+def resolve_webhook_min_level(
+    webhook_min_level: AlertLevel | str | None,
+) -> AlertLevel | None:
+    if webhook_min_level is None:
+        return None
+    return parse_alert_level(webhook_min_level)
+
+
+def should_send_webhook(level: AlertLevel, webhook_min_level: AlertLevel | None) -> bool:
+    if webhook_min_level is None:
+        return True
+    return ALERT_LEVEL_ORDER[level] >= ALERT_LEVEL_ORDER[webhook_min_level]
 
 
 def send_webhook(

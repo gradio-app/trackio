@@ -11,7 +11,13 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio import utils
-from trackio.alerts import AlertLevel, format_alert_terminal, send_webhook
+from trackio.alerts import (
+    AlertLevel,
+    format_alert_terminal,
+    resolve_webhook_min_level,
+    send_webhook,
+    should_send_webhook,
+)
 from trackio.gpu import GpuMonitor
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
@@ -38,6 +44,7 @@ class Run:
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
         webhook_url: str | None = None,
+        webhook_min_level: AlertLevel | str | None = None,
     ):
         """
         Initialize a Run for logging metrics to Trackio.
@@ -64,6 +71,10 @@ class Run:
             webhook_url: A webhook URL to POST alert payloads to. Supports
                 Slack and Discord webhook URLs natively. Can also be set via
                 the TRACKIO_WEBHOOK_URL environment variable.
+            webhook_min_level: Minimum alert level that should trigger webhook
+                delivery. For example, `AlertLevel.WARN` sends only WARN and
+                ERROR alerts to webhook destinations. Can also be set via
+                `TRACKIO_WEBHOOK_MIN_LEVEL`.
         """
         self.url = url
         self.project = project
@@ -100,6 +111,9 @@ class Run:
 
         self._is_local = space_id is None
         self._webhook_url = webhook_url or os.environ.get("TRACKIO_WEBHOOK_URL")
+        self._webhook_min_level = resolve_webhook_min_level(
+            webhook_min_level or os.environ.get("TRACKIO_WEBHOOK_MIN_LEVEL")
+        )
 
         if self._is_local:
             self._local_sender_thread = threading.Thread(
@@ -638,7 +652,7 @@ class Run:
             self._ensure_sender_alive()
 
         url = webhook_url or self._webhook_url
-        if url:
+        if url and should_send_webhook(level, self._webhook_min_level):
             t = threading.Thread(
                 target=send_webhook,
                 args=(

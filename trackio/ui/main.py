@@ -633,6 +633,10 @@ CSS = """
 .nav-holder {
     border-bottom: 0px !important;
 }
+
+.html-container {
+    padding: 0 !important;
+}
 """
 
 HEAD = """

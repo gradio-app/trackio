@@ -114,6 +114,7 @@ def init(
     auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
     webhook_url: str | None = None,
+    webhook_min_level: AlertLevel | str | None = None,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -180,6 +181,11 @@ def init(
             are formatted automatically). Can also be set via the
             `TRACKIO_WEBHOOK_URL` environment variable. Individual alerts can
             override this URL by passing `webhook_url` to `trackio.alert()`.
+        webhook_min_level (`AlertLevel` or `str`, *optional*):
+            Minimum alert level that should trigger webhook delivery.
+            For example, `AlertLevel.WARN` sends only `WARN` and `ERROR`
+            alerts to the webhook destination. Can also be set via
+            `TRACKIO_WEBHOOK_MIN_LEVEL`.
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
@@ -274,6 +280,7 @@ def init(
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
         webhook_url=webhook_url,
+        webhook_min_level=webhook_min_level,
     )
 
     if space_id is not None:

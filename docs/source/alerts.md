@@ -159,6 +159,28 @@ trackio.init(project="my-project")
 
 The env variable is convenient when you want the same webhook for all projects without changing code.
 
+### Sending Only Higher-Severity Alerts to Webhooks
+
+If you only want webhooks for important alerts, set `webhook_min_level` in `trackio.init()`:
+
+```python
+trackio.init(
+    project="my-project",
+    webhook_url="https://hooks.slack.com/services/T.../B.../xxx",
+    webhook_min_level=trackio.AlertLevel.WARN,
+)
+```
+
+With `webhook_min_level=AlertLevel.WARN`:
+- `INFO` alerts are still printed/stored/shown in UI, but not sent to webhook
+- `WARN` and `ERROR` alerts are sent to webhook
+
+You can also configure this globally with an environment variable:
+
+```bash
+export TRACKIO_WEBHOOK_MIN_LEVEL="warn"
+```
+
 ### Overriding Per-Alert
 
 Pass `webhook_url` directly to `trackio.alert()` to override the global setting for a single alert, or to send a specific alert to a different channel:

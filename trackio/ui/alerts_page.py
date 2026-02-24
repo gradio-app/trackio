@@ -3,8 +3,11 @@
 import gradio as gr
 import pandas as pd
 
+import trackio.utils as utils
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import fns
+from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
+from trackio.ui.helpers.run_selection import RunSelection
 
 LEVEL_BADGES = {
     "info": "🔵",
@@ -15,18 +18,24 @@ LEVEL_BADGES = {
 
 def load_alerts(
     project: str | None,
-    run_filter: str | None = None,
-    level_filter: str | None = None,
+    run_filter: list[str] | None = None,
+    level_filter: list[str] | None = None,
 ) -> pd.DataFrame:
     if not project:
         return pd.DataFrame()
 
-    level = level_filter if level_filter and level_filter != "all" else None
-    alerts = SQLiteStorage.get_alerts(project, run_name=run_filter, level=level)
+    selected_levels = set(level_filter or [])
+    selected_runs = set(run_filter or [])
+    alerts = SQLiteStorage.get_alerts(project, run_name=None, level=None)
+    if run_filter:
+        alerts = [a for a in alerts if a["run"] in selected_runs]
+    if level_filter is not None:
+        alerts = [a for a in alerts if a["level"] in selected_levels]
     if not alerts:
         return pd.DataFrame()
 
     df = pd.DataFrame(alerts)
+    df["timestamp"] = df["timestamp"].map(utils.format_timestamp)
     df["level"] = df["level"].map(
         lambda lvl: f"{LEVEL_BADGES.get(lvl, '')} {lvl.upper()}"
     )
@@ -41,17 +50,13 @@ with gr.Blocks() as alerts_page:
         logo = fns.create_logo()
         project_dd = fns.create_project_dropdown()
 
-        run_filter_dd = gr.Dropdown(
-            label="Filter by Run",
-            choices=[],
-            value=None,
-            allow_custom_value=True,
-            interactive=True,
-        )
-        level_filter_dd = gr.Dropdown(
+        with gr.Group():
+            run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
+        run_cb = ColoredCheckboxGroup(choices=[], colors=[], label="Runs")
+        level_filter_dd = gr.CheckboxGroup(
             label="Filter by Level",
-            choices=["all", "info", "warn", "error"],
-            value="all",
+            choices=["info", "warn", "error"],
+            value=["info", "warn", "error"],
             interactive=True,
         )
 
@@ -60,7 +65,8 @@ with gr.Blocks() as alerts_page:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=2)
-    last_alert_count = gr.State(0)
+    last_alert_snapshot = gr.State({})
+    run_selection_state = gr.State(RunSelection())
 
     def toggle_timer(cb_value):
         if cb_value:
@@ -68,26 +74,40 @@ with gr.Blocks() as alerts_page:
         else:
             return gr.Timer(active=False)
 
-    def update_run_choices(project):
-        if not project:
-            return gr.Dropdown(choices=[], value=None)
-        runs = fns.get_runs(project)
-        return gr.Dropdown(choices=[None] + runs, value=None)
+    def refresh_runs(
+        project: str | None,
+        filter_text: str | None,
+        selection: RunSelection,
+    ):
+        if project is None:
+            runs: list[str] = []
+        else:
+            runs = fns.get_runs(project)
+            if filter_text:
+                runs = [r for r in runs if filter_text in r]
 
-    def check_alert_count(project):
+        did_change = selection.update_choices(runs)
+        return (
+            fns.run_checkbox_update(selection) if did_change else gr.skip(),
+            gr.Textbox(label=f"Runs ({len(runs)})"),
+            selection,
+        )
+
+    def check_alert_snapshot(project):
         if not project:
-            return 0
-        return SQLiteStorage.get_alert_count(project)
+            return {}
+        count = SQLiteStorage.get_alert_count(project)
+        runs = SQLiteStorage.get_runs(project)
+        return {"count": count, "runs_len": len(runs)}
 
     @gr.render(
         triggers=[
             alerts_page.load,
-            project_dd.change,
-            run_filter_dd.change,
+            run_cb.change,
             level_filter_dd.change,
-            last_alert_count.change,
+            last_alert_snapshot.change,
         ],
-        inputs=[project_dd, run_filter_dd, level_filter_dd],
+        inputs=[project_dd, run_cb, level_filter_dd],
         show_progress="hidden",
         queue=False,
     )
@@ -105,19 +125,10 @@ import trackio
 
 trackio.init(project="my-project")
 
-# Imperative: fire an alert immediately
 trackio.alert(
     title="Low margin",
     text="Margin dropped below threshold",
     level=trackio.AlertLevel.WARN,
-)
-
-# Declarative: fire when condition transitions to True
-trackio.alert_when(
-    condition=lambda m: m["loss"] > 5.0,
-    title="Loss spike",
-    text=lambda m: f"Loss spiked to {m['loss']:.4f}",
-    level=trackio.AlertLevel.ERROR,
 )
 ```
 """
@@ -141,9 +152,18 @@ trackio.alert_when(
 
     gr.on(
         [timer.tick],
-        fn=check_alert_count,
+        fn=check_alert_snapshot,
         inputs=[project_dd],
-        outputs=last_alert_count,
+        outputs=last_alert_snapshot,
+        show_progress="hidden",
+        api_visibility="private",
+    )
+
+    gr.on(
+        [timer.tick],
+        fn=refresh_runs,
+        inputs=[project_dd, run_tb, run_selection_state],
+        outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         api_visibility="private",
     )
@@ -166,9 +186,9 @@ trackio.alert_when(
 
     gr.on(
         [alerts_page.load, project_dd.change],
-        fn=update_run_choices,
-        inputs=[project_dd],
-        outputs=[run_filter_dd],
+        fn=refresh_runs,
+        inputs=[project_dd, run_tb, run_selection_state],
+        outputs=[run_cb, run_tb, run_selection_state],
         show_progress="hidden",
         queue=False,
         api_visibility="private",
@@ -187,4 +207,21 @@ trackio.alert_when(
         outputs=timer,
         api_visibility="private",
         queue=False,
+    )
+
+    run_cb.input(
+        fn=fns.handle_run_checkbox_change,
+        inputs=[run_cb, run_selection_state],
+        outputs=run_selection_state,
+        api_visibility="private",
+        queue=False,
+    )
+
+    run_tb.input(
+        fn=refresh_runs,
+        inputs=[project_dd, run_tb, run_selection_state],
+        outputs=[run_cb, run_tb, run_selection_state],
+        api_visibility="private",
+        queue=False,
+        show_progress="hidden",
     )
