@@ -171,9 +171,9 @@ def delete_selected_runs(
 
     if successful_deletes and not failed_deletes:
         if len(successful_deletes) == 1:
-            gr.Info(f"Successfully deleted run '{successful_deletes[0]}'")
+            gr.Info(f"✓ Successfully deleted run '{successful_deletes[0]}'")
         else:
-            gr.Info(f"Successfully deleted {len(successful_deletes)} runs")
+            gr.Info(f"✓ Successfully deleted {len(successful_deletes)} runs")
     elif successful_deletes and failed_deletes:
         gr.Warning(
             f"Deleted {len(successful_deletes)} runs, but failed to delete: {', '.join(failed_deletes)}"
@@ -281,7 +281,7 @@ CSS = """
 .no-wrap-row { flex-wrap: nowrap !important; }
 .html-container:has(.runs-table-container) { padding: 0; }
 .runs-action-col button { min-width: 130px; }
-button.login-btn { width: 209; }
+button.login-btn { width: 209px; }
 """
     
 with gr.Blocks() as run_page:
