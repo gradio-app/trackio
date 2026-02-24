@@ -104,12 +104,27 @@ def set_deletion_allowed(
             fns.check_oauth_token_has_write_access(oauth_token.token)
         except PermissionError:
             table, run_names = get_runs_table(project, interactive=False)
-            return {action_buttons: gr.Row(visible=True), runs_table: table, run_names_state: run_names, allow_deleting_runs: False}
+            return {
+                action_buttons: gr.Row(visible=True),
+                runs_table: table,
+                run_names_state: run_names,
+                allow_deleting_runs: False,
+            }
     elif not check_write_access_runs(request, run_page.write_token):
         table, run_names = get_runs_table(project, interactive=False)
-        return {action_buttons: gr.Row(visible=True), runs_table: table, run_names_state: run_names, allow_deleting_runs: False}
+        return {
+            action_buttons: gr.Row(visible=True),
+            runs_table: table,
+            run_names_state: run_names,
+            allow_deleting_runs: False,
+        }
     table, run_names = get_runs_table(project, interactive=True)
-    return {action_buttons: gr.Row(visible=True), runs_table: table, run_names_state: run_names, allow_deleting_runs: True}
+    return {
+        action_buttons: gr.Row(visible=True),
+        runs_table: table,
+        run_names_state: run_names,
+        allow_deleting_runs: True,
+    }
 
 
 def update_delete_button(
@@ -235,7 +250,9 @@ def rename_selected_run(
             success = SQLiteStorage.rename_run(project, old_name, new_name)
             if success:
                 gr.Info(f"✓ Successfully renamed '{old_name}' to '{new_name}'")
-                table, run_names = get_runs_table(project, interactive=True, selected_indices=[idx])
+                table, run_names = get_runs_table(
+                    project, interactive=True, selected_indices=[idx]
+                )
                 return close_controls(table, run_names)
             else:
                 gr.Warning(
@@ -277,13 +294,14 @@ def show_delete_confirmation(
 
     return {**base, delete_warning: gr.Markdown(warning_msg)}
 
+
 CSS = """
 .no-wrap-row { flex-wrap: nowrap !important; }
 .html-container:has(.runs-table-container) { padding: 0; }
 .runs-action-col button { min-width: 130px; }
 button.login-btn { width: 209px; }
 """
-    
+
 with gr.Blocks() as run_page:
     gr.HTML(f"<style>{CSS}</style>", visible="hidden")
     with gr.Sidebar() as sidebar:
@@ -455,7 +473,9 @@ with gr.Blocks() as run_page:
         queue=False,
     )
 
-    def show_rename_controls(selected_indices: list[int], run_names_list: list[str]) -> dict:
+    def show_rename_controls(
+        selected_indices: list[int], run_names_list: list[str]
+    ) -> dict:
         """Show rename controls and prefill with current run name."""
         current_name = ""
         if selected_indices and len(selected_indices) == 1:
