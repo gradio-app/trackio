@@ -221,7 +221,6 @@ def rename_selected_run(
             action_buttons: gr.Row(visible=True),
             rename_controls: gr.Column(visible=False),
             rename_input: gr.Textbox(value=""),
-            delete_controls: gr.Column(visible=False),
         }
 
     if not deletion_allowed or not selected_indices or len(selected_indices) != 1:
@@ -434,7 +433,6 @@ with gr.Blocks() as run_page:
         return {
             action_buttons: gr.Row(visible=True),
             delete_controls: gr.Column(visible=False),
-            rename_controls: gr.Column(visible=False),
             runs_table: gr.update(interactive=True),
         }
 
@@ -445,7 +443,6 @@ with gr.Blocks() as run_page:
         outputs=[
             action_buttons,
             delete_controls,
-            rename_controls,
             runs_table,
         ],
         show_progress="hidden",
@@ -492,7 +489,6 @@ with gr.Blocks() as run_page:
             action_buttons: gr.Row(visible=True),
             rename_controls: gr.Column(visible=False),
             rename_input: gr.Textbox(value=""),
-            delete_controls: gr.Column(visible=False),
             runs_table: gr.update(interactive=True),
         }
 
@@ -519,7 +515,6 @@ with gr.Blocks() as run_page:
             action_buttons,
             rename_controls,
             rename_input,
-            delete_controls,
             runs_table,
         ],
         show_progress="hidden",
@@ -542,7 +537,6 @@ with gr.Blocks() as run_page:
             action_buttons,
             rename_controls,
             rename_input,
-            delete_controls,
         ],
         show_progress="hidden",
         api_visibility="private",
