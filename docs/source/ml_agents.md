@@ -399,6 +399,128 @@ for iteration in range(5):
 
 This example is self-contained and uses simulated metrics. Replace the `run_experiment` function body with your real training code and the pattern stays the same.
 
+## Using Alerts with Transformers and TRL
+
+When using `report_to="trackio"` with the Hugging Face `Trainer`, the built-in `TrackioCallback` handles `trackio.init()`, `trackio.log()`, and `trackio.finish()` automatically. Since `trackio.init()` is called before training begins, the current run is set and `trackio.alert()` works from any other callback in the same process.
+
+To add alerts, write a small `TrainerCallback` and pass it to the Trainer via `callbacks=`:
+
+### Transformers
+
+```python
+import trackio
+from transformers import Trainer, TrainerCallback, TrainingArguments
+
+class AlertCallback(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is None:
+            return
+        loss = logs.get("loss")
+        if loss is not None and loss > 5.0:
+            trackio.alert(
+                title="Training loss spike",
+                text=f"loss={loss:.4f} at step {state.global_step}. "
+                     "Consider lowering the learning rate.",
+                level=trackio.AlertLevel.ERROR,
+            )
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics is None:
+            return
+        eval_loss = metrics.get("eval_loss")
+        if eval_loss is not None and eval_loss > 2.0:
+            trackio.alert(
+                title="High eval loss",
+                text=f"eval_loss={eval_loss:.4f} at step {state.global_step}.",
+                level=trackio.AlertLevel.WARN,
+            )
+
+trainer = Trainer(
+    model=model,
+    args=TrainingArguments(
+        report_to="trackio",
+        project="my-project",
+        output_dir="./output",
+        num_train_epochs=3,
+        eval_strategy="steps",
+        eval_steps=100,
+    ),
+    train_dataset=train_dataset,
+    eval_dataset=eval_dataset,
+    callbacks=[AlertCallback()],
+)
+trainer.train()
+```
+
+An agent generating this code only needs to define the `AlertCallback` class with the right conditions, then add it to the `callbacks` list. The pattern is the same regardless of the model or dataset.
+
+### TRL
+
+The same approach works with TRL trainers like `GRPOTrainer` or `SFTTrainer`. Here's an example for reinforcement learning with alerts on reward collapse and KL divergence:
+
+```python
+import trackio
+from transformers import TrainerCallback
+
+class RLAlertCallback(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is None:
+            return
+
+        reward = logs.get("train/reward")
+        if reward is not None and reward < -1.0:
+            trackio.alert(
+                title="Reward collapse",
+                text=f"reward={reward:.4f} at step {state.global_step}. "
+                     "Consider lowering the learning rate or checking the "
+                     "reward model.",
+                level=trackio.AlertLevel.ERROR,
+            )
+
+        kl = logs.get("train/kl")
+        if kl is not None and kl > 10.0:
+            trackio.alert(
+                title="KL divergence too high",
+                text=f"kl={kl:.4f} at step {state.global_step}. "
+                     "The policy is drifting too far from the reference model.",
+                level=trackio.AlertLevel.WARN,
+            )
+
+        completion_length = logs.get("train/completion_length")
+        if completion_length is not None and completion_length < 5.0:
+            trackio.alert(
+                title="Completions too short",
+                text=f"Mean completion length={completion_length:.1f} tokens. "
+                     "The model may be collapsing to short outputs.",
+                level=trackio.AlertLevel.WARN,
+            )
+```
+
+Then pass it to any TRL trainer:
+
+```python
+from trl import GRPOTrainer, GRPOConfig
+
+trainer = GRPOTrainer(
+    model=model,
+    config=GRPOConfig(
+        report_to="trackio",
+        project="rl-experiment",
+        output_dir="./output",
+    ),
+    train_dataset=dataset,
+    callbacks=[RLAlertCallback()],
+)
+trainer.train()
+```
+
+### Tips for Agents Writing Alert Callbacks
+
+- **Keep conditions simple.** Each `if` block should check one metric against one threshold. This makes it easy for an agent to add, remove, or adjust conditions between runs.
+- **Include the metric value and step in `text`.** This gives the agent concrete numbers to reason about when deciding the next hyperparameters.
+- **Include actionable suggestions.** Text like "Consider lowering the learning rate" helps the agent decide what to change next.
+- **Use `on_evaluate` for eval metrics.** Eval metrics are only available in `on_evaluate`, not in `on_log`. Training metrics like `loss` appear in `on_log`.
+
 ## Best Practices Summary
 
 1. **Use alerts as structured signals, not just notifications.** Include numeric values and actionable suggestions in `text` so the agent can parse them and act on them.
