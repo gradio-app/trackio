@@ -224,7 +224,7 @@ def rename_selected_run(
 
     try:
         SQLiteStorage.rename_run(project, old_name, new_name)
-        gr.Info(f"✓ Successfully renamed '{old_name}' to '{new_name}'")
+        gr.Success(f"Successfully renamed '{old_name}' to '{new_name}'")
         table, run_names = get_runs_table(
             project, interactive=True, selected_indices=[idx]
         )
