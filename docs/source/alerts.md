@@ -248,6 +248,9 @@ trackio.alert(
 
 ### What it looks like
 
+<img width="848" height="158" alt="image" src="https://github.com/user-attachments/assets/9004eb22-68e4-4c06-9ed4-2319d8e56e9f" />
+
+
 Trackio sends Slack [Block Kit](https://api.slack.com/block-kit) messages with:
 - A bold header with an emoji and severity level (e.g., "⚠️ **[WARN] Loss spike**")
 - An optional description section with your `text`
