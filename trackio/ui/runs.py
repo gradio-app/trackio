@@ -190,19 +190,25 @@ def rename_selected_run(
     run_names_list: list[str],
     project: str,
     new_name: str,
-) -> tuple[RunsTable, list[str]]:
-    """Rename the selected run and refresh the table."""
+) -> tuple[RunsTable, list[str], gr.Row, gr.Column, gr.Textbox, gr.Row]:
+    """Rename the selected run and refresh the table. Returns hide-controls state on success."""
+
+    def keep_open() -> tuple[RunsTable, list[str], gr.Row, gr.Column, gr.Textbox, gr.Row]:
+        table, run_names = get_runs_table(
+            project, interactive=False, selected_indices=selected_indices
+        )
+        return (table, run_names, gr.update(), gr.update(), gr.update(), gr.update())
+
+    def close_controls(table, run_names) -> tuple[RunsTable, list[str], gr.Row, gr.Column, gr.Textbox, gr.Row]:
+        return (table, run_names, gr.Row(visible=True), gr.Column(visible=False), gr.Textbox(value=""), gr.Row(visible=False))
+
     if not deletion_allowed or not selected_indices or len(selected_indices) != 1:
         gr.Warning("Please select exactly one run to rename")
-        return get_runs_table(
-            project, interactive=True, selected_indices=selected_indices
-        )
+        return keep_open()
 
     if not new_name or not new_name.strip():
         gr.Warning("New name cannot be empty")
-        return get_runs_table(
-            project, interactive=True, selected_indices=selected_indices
-        )
+        return keep_open()
 
     new_name = new_name.strip()
     idx = selected_indices[0]
@@ -212,38 +218,29 @@ def rename_selected_run(
 
         if old_name == new_name:
             gr.Warning("New name must be different from the current name")
-            return get_runs_table(
-                project, interactive=True, selected_indices=selected_indices
-            )
+            return keep_open()
 
         if new_name in run_names_list:
             gr.Warning(f"A run named '{new_name}' already exists")
-            return get_runs_table(
-                project, interactive=True, selected_indices=selected_indices
-            )
+            return keep_open()
 
         try:
             success = SQLiteStorage.rename_run(project, old_name, new_name)
             if success:
                 gr.Info(f"✓ Successfully renamed '{old_name}' to '{new_name}'")
-                return get_runs_table(
-                    project, interactive=True, selected_indices=selected_indices
-                )
+                table, run_names = get_runs_table(project, interactive=True)
+                return close_controls(table, run_names)
             else:
                 gr.Warning(
                     f"Failed to rename run '{old_name}' - database operation unsuccessful"
                 )
-                return get_runs_table(
-                    project, interactive=True, selected_indices=selected_indices
-                )
+                return keep_open()
         except Exception as e:
             gr.Error(f"Unexpected error during rename: {str(e)}")
-            return get_runs_table(
-                project, interactive=True, selected_indices=selected_indices
-            )
+            return keep_open()
 
     gr.Warning("Invalid run selection")
-    return get_runs_table(project, interactive=True, selected_indices=selected_indices)
+    return keep_open()
 
 
 def show_delete_confirmation(
@@ -524,23 +521,17 @@ with gr.Blocks() as run_page:
             project_dd,
             rename_input,
         ],
-        outputs=[runs_table, run_names_state],
-        show_progress="hidden",
-        api_visibility="private",
-        queue=True,
-    ).then(
-        fn=hide_rename_controls,
-        inputs=None,
         outputs=[
+            runs_table,
+            run_names_state,
             action_buttons,
             rename_controls,
             rename_input,
             delete_controls,
-            runs_table,
         ],
         show_progress="hidden",
         api_visibility="private",
-        queue=False,
+        queue=True,
     ).then(
         fn=update_rename_button,
         inputs=[allow_deleting_runs, runs_table],
