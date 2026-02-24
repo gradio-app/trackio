@@ -272,6 +272,7 @@ CSS = """
 .no-wrap-row { flex-wrap: nowrap !important; }
 .html-container:has(.runs-table-container) { padding: 0; }
 .runs-action-col button { min-width: 130px; }
+.runs-action-row { align-items: end !important; }
 button.login-btn { width: 209px; }
 """
 
@@ -286,7 +287,7 @@ with gr.Blocks() as run_page:
     allow_deleting_runs = gr.State(False)
     run_names_state = gr.State([])
 
-    with gr.Row():
+    with gr.Row(elem_classes="runs-action-row"):
         with gr.Column(scale=2):
             if utils.get_space():
                 gr.LoginButton("Login to manage", size="sm", elem_classes="login-btn")
