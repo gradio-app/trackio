@@ -132,8 +132,8 @@ def test_rename_run(temp_dir, image_ndarray):
     run = runs[0]
     assert run.name == old_name
 
-    success = run.rename(new_name)
-    assert success is True
+    result = run.rename(new_name)
+    assert result is run
     assert run.name == new_name
 
     new_logs = SQLiteStorage.get_logs(project=project, run=new_name)

@@ -288,8 +288,7 @@ def test_rename_run(temp_dir):
     assert SQLiteStorage.get_run_config(project, old_name) is not None
     assert len(SQLiteStorage.get_logs(project, old_name)) > 0
 
-    success = SQLiteStorage.rename_run(project, old_name, new_name)
-    assert success is True
+    SQLiteStorage.rename_run(project, old_name, new_name)
 
     assert SQLiteStorage.get_run_config(project, old_name) is None
     assert len(SQLiteStorage.get_logs(project, old_name)) == 0
@@ -310,8 +309,8 @@ def test_rename_run_duplicate_name(temp_dir):
     SQLiteStorage.bulk_log(project, run1, [{"a": 1}])
     SQLiteStorage.bulk_log(project, run2, [{"b": 2}])
 
-    success = SQLiteStorage.rename_run(project, run1, run2)
-    assert success is False
+    with pytest.raises(ValueError, match="already exists"):
+        SQLiteStorage.rename_run(project, run1, run2)
 
     assert len(SQLiteStorage.get_logs(project, run1)) > 0
     assert len(SQLiteStorage.get_logs(project, run2)) > 0
@@ -340,8 +339,7 @@ def test_rename_run_with_media(temp_dir):
     ]
     SQLiteStorage.bulk_log(project, old_name, metrics)
 
-    success = SQLiteStorage.rename_run(project, old_name, new_name)
-    assert success is True
+    SQLiteStorage.rename_run(project, old_name, new_name)
 
     new_media_dir = MEDIA_DIR / project / new_name
     assert new_media_dir.exists()
@@ -361,8 +359,8 @@ def test_rename_run_nonexistent(temp_dir):
     old_name = "nonexistent_run"
     new_name = "new_run"
 
-    success = SQLiteStorage.rename_run(project, old_name, new_name)
-    assert success is False
+    with pytest.raises(ValueError, match="does not exist"):
+        SQLiteStorage.rename_run(project, old_name, new_name)
 
 
 def test_rename_run_empty_name(temp_dir):
@@ -371,11 +369,11 @@ def test_rename_run_empty_name(temp_dir):
 
     SQLiteStorage.bulk_log(project, old_name, [{"a": 1}])
 
-    success = SQLiteStorage.rename_run(project, old_name, "")
-    assert success is False
+    with pytest.raises(ValueError, match="cannot be empty"):
+        SQLiteStorage.rename_run(project, old_name, "")
 
-    success = SQLiteStorage.rename_run(project, old_name, "   ")
-    assert success is False
+    with pytest.raises(ValueError, match="cannot be empty"):
+        SQLiteStorage.rename_run(project, old_name, "   ")
 
     assert len(SQLiteStorage.get_logs(project, old_name)) > 0
 
@@ -391,8 +389,7 @@ def test_rename_run_with_system_metrics(temp_dir):
     system_metrics = [{"gpu_usage": 80.5}]
     SQLiteStorage.bulk_log_system(project, old_name, system_metrics)
 
-    success = SQLiteStorage.rename_run(project, old_name, new_name)
-    assert success is True
+    SQLiteStorage.rename_run(project, old_name, new_name)
 
     assert len(SQLiteStorage.get_logs(project, new_name)) > 0
     assert len(SQLiteStorage.get_system_logs(project, new_name)) > 0

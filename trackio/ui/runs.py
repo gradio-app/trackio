@@ -223,20 +223,14 @@ def rename_selected_run(
         return keep_open()
 
     try:
-        success = SQLiteStorage.rename_run(project, old_name, new_name)
-        if success:
-            gr.Info(f"✓ Successfully renamed '{old_name}' to '{new_name}'")
-            table, run_names = get_runs_table(
-                project, interactive=True, selected_indices=[idx]
-            )
-            return make_result(table, run_names, close=True)
-        else:
-            gr.Warning(
-                f"Failed to rename run '{old_name}' - database operation unsuccessful"
-            )
-            return keep_open()
-    except Exception as e:
-        gr.Error(f"Unexpected error during rename: {str(e)}")
+        SQLiteStorage.rename_run(project, old_name, new_name)
+        gr.Info(f"✓ Successfully renamed '{old_name}' to '{new_name}'")
+        table, run_names = get_runs_table(
+            project, interactive=True, selected_indices=[idx]
+        )
+        return make_result(table, run_names, close=True)
+    except (ValueError, RuntimeError) as e:
+        gr.Warning(str(e))
         return keep_open()
 
 

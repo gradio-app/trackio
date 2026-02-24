@@ -931,16 +931,22 @@ class SQLiteStorage:
             shutil.move(str(source), str(target))
 
     @staticmethod
-    def rename_run(project: str, old_name: str, new_name: str) -> bool:
-        """Rename a run within the same project."""
+    def rename_run(project: str, old_name: str, new_name: str) -> None:
+        """Rename a run within the same project.
+
+        Raises:
+            ValueError: If the new name is empty, the old run doesn't exist,
+                        or a run with the new name already exists.
+            RuntimeError: If the database operation fails.
+        """
         if not new_name or not new_name.strip():
-            return False
+            raise ValueError("New run name cannot be empty")
 
         new_name = new_name.strip()
 
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
-            return False
+            raise ValueError(f"Project '{project}' does not exist")
 
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
@@ -950,13 +956,17 @@ class SQLiteStorage:
                     "SELECT COUNT(*) FROM metrics WHERE run_name = ?", (old_name,)
                 )
                 if cursor.fetchone()[0] == 0:
-                    return False
+                    raise ValueError(
+                        f"Run '{old_name}' does not exist in project '{project}'"
+                    )
 
                 cursor.execute(
                     "SELECT COUNT(*) FROM metrics WHERE run_name = ?", (new_name,)
                 )
                 if cursor.fetchone()[0] > 0:
-                    return False
+                    raise ValueError(
+                        f"A run named '{new_name}' already exists in project '{project}'"
+                    )
 
                 try:
                     cursor.execute(
@@ -999,10 +1009,10 @@ class SQLiteStorage:
                         MEDIA_DIR / project / old_name,
                         MEDIA_DIR / project / new_name,
                     )
-
-                    return True
-                except sqlite3.Error:
-                    return False
+                except sqlite3.Error as e:
+                    raise RuntimeError(
+                        f"Database error while renaming run '{old_name}' to '{new_name}': {e}"
+                    ) from e
 
     @staticmethod
     def move_run(project: str, run: str, new_project: str) -> bool:
