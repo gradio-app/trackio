@@ -91,7 +91,29 @@ with gr.Blocks() as reports_page:
 
         reports = extract_reports(logs)
         if not reports:
-            gr.Markdown("*No reports found for this run*")
+            gr.Markdown(
+                """
+## No Reports Available
+
+Reports will appear here once logged. To log a markdown report:
+
+```python
+import trackio
+
+run = trackio.init(project="my-project")
+
+# Log metrics as usual
+trackio.log({"loss": 0.5, "accuracy": 0.9})
+
+# Log a markdown report
+report = \"\"\"# Training Report
+- Final loss: 0.05
+- Best accuracy: 0.98
+\"\"\"
+trackio.log({"training_report": trackio.Markdown(report)})
+```
+"""
+            )
             return
 
         for index, report in enumerate(reports):
