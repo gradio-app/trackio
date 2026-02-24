@@ -235,36 +235,32 @@ def rename_selected_run(
     new_name = new_name.strip()
     idx = selected_indices[0]
 
-    if 0 <= idx < len(run_names_list):
-        old_name = run_names_list[idx]
+    old_name = run_names_list[idx]
 
-        if old_name == new_name:
-            gr.Warning("New name must be different from the current name")
+    if old_name == new_name:
+        gr.Warning("New name must be different from the current name")
+        return keep_open()
+
+    if new_name in run_names_list:
+        gr.Warning(f"A run named '{new_name}' already exists")
+        return keep_open()
+
+    try:
+        success = SQLiteStorage.rename_run(project, old_name, new_name)
+        if success:
+            gr.Info(f"✓ Successfully renamed '{old_name}' to '{new_name}'")
+            table, run_names = get_runs_table(
+                project, interactive=True, selected_indices=[idx]
+            )
+            return close_controls(table, run_names)
+        else:
+            gr.Warning(
+                f"Failed to rename run '{old_name}' - database operation unsuccessful"
+            )
             return keep_open()
-
-        if new_name in run_names_list:
-            gr.Warning(f"A run named '{new_name}' already exists")
-            return keep_open()
-
-        try:
-            success = SQLiteStorage.rename_run(project, old_name, new_name)
-            if success:
-                gr.Info(f"✓ Successfully renamed '{old_name}' to '{new_name}'")
-                table, run_names = get_runs_table(
-                    project, interactive=True, selected_indices=[idx]
-                )
-                return close_controls(table, run_names)
-            else:
-                gr.Warning(
-                    f"Failed to rename run '{old_name}' - database operation unsuccessful"
-                )
-                return keep_open()
-        except Exception as e:
-            gr.Error(f"Unexpected error during rename: {str(e)}")
-            return keep_open()
-
-    gr.Warning("Invalid run selection")
-    return keep_open()
+    except Exception as e:
+        gr.Error(f"Unexpected error during rename: {str(e)}")
+        return keep_open()
 
 
 def show_delete_confirmation(
