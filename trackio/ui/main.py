@@ -685,6 +685,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                     max_lines=1,
                     lines=1,
                     interactive=False,
+                    buttons=["copy"],
                 )
             with gr.Tab("Embed"):
                 embed_code = gr.Code(
