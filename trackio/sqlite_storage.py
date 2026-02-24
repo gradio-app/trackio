@@ -208,6 +208,39 @@ class SQLiteStorage:
                     """
                 )
 
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS alerts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        run_name TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        text TEXT,
+                        level TEXT NOT NULL DEFAULT 'warn',
+                        step INTEGER,
+                        alert_id TEXT
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_alerts_run
+                    ON alerts(run_name)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_alerts_timestamp
+                    ON alerts(timestamp)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_alert_id
+                    ON alerts(alert_id) WHERE alert_id IS NOT NULL
+                    """
+                )
+
                 for table in ("metrics", "system_metrics"):
                     for col in ("log_id TEXT", "space_id TEXT"):
                         try:
@@ -638,6 +671,112 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
+    def bulk_alert(
+        project: str,
+        run: str,
+        titles: list[str],
+        texts: list[str | None],
+        levels: list[str],
+        steps: list[int | None],
+        timestamps: list[str] | None = None,
+        alert_ids: list[str] | None = None,
+    ):
+        if not titles:
+            return
+
+        if timestamps is None:
+            timestamps = [datetime.now(timezone.utc).isoformat()] * len(titles)
+
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                data = []
+                for i in range(len(titles)):
+                    aid = alert_ids[i] if alert_ids else None
+                    data.append(
+                        (
+                            timestamps[i],
+                            run,
+                            titles[i],
+                            texts[i],
+                            levels[i],
+                            steps[i],
+                            aid,
+                        )
+                    )
+
+                cursor.executemany(
+                    """
+                    INSERT OR IGNORE INTO alerts
+                    (timestamp, run_name, title, text, level, step, alert_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    data,
+                )
+                conn.commit()
+
+    @staticmethod
+    def get_alerts(
+        project: str,
+        run_name: str | None = None,
+        level: str | None = None,
+    ) -> list[dict]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                query = (
+                    "SELECT timestamp, run_name, title, text, level, step FROM alerts"
+                )
+                conditions = []
+                params = []
+                if run_name is not None:
+                    conditions.append("run_name = ?")
+                    params.append(run_name)
+                if level is not None:
+                    conditions.append("level = ?")
+                    params.append(level)
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                query += " ORDER BY timestamp DESC"
+                cursor.execute(query, params)
+
+                rows = cursor.fetchall()
+                return [
+                    {
+                        "timestamp": row["timestamp"],
+                        "run": row["run_name"],
+                        "title": row["title"],
+                        "text": row["text"],
+                        "level": row["level"],
+                        "step": row["step"],
+                    }
+                    for row in rows
+                ]
+            except sqlite3.OperationalError as e:
+                if "no such table: alerts" in str(e):
+                    return []
+                raise
+
+    @staticmethod
+    def get_alert_count(project: str) -> int:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return 0
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT COUNT(*) FROM alerts")
+                return cursor.fetchone()[0]
+            except sqlite3.OperationalError:
+                return 0
+
+    @staticmethod
     def get_system_logs(project: str, run: str) -> list[dict]:
         """Retrieve system metrics for a specific run. Returns metrics with timestamps (no steps)."""
         db_path = SQLiteStorage.get_project_db_path(project)
@@ -870,6 +1009,10 @@ class SQLiteStorage:
                         )
                     except sqlite3.OperationalError:
                         pass
+                    try:
+                        cursor.execute("DELETE FROM alerts WHERE run_name = ?", (run,))
+                    except sqlite3.OperationalError:
+                        pass
                     conn.commit()
                     return True
                 except sqlite3.Error:
@@ -1003,6 +1146,14 @@ class SQLiteStorage:
                     except sqlite3.OperationalError:
                         pass
 
+                    try:
+                        cursor.execute(
+                            "UPDATE alerts SET run_name = ? WHERE run_name = ?",
+                            (new_name, old_name),
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+
                     conn.commit()
 
                     SQLiteStorage._move_media_dir(
@@ -1049,6 +1200,15 @@ class SQLiteStorage:
                     except sqlite3.OperationalError:
                         system_metrics_rows = []
 
+                    try:
+                        source_cursor.execute(
+                            "SELECT timestamp, title, text, level, step, alert_id FROM alerts WHERE run_name = ?",
+                            (run,),
+                        )
+                        alert_rows = source_cursor.fetchall()
+                    except sqlite3.OperationalError:
+                        alert_rows = []
+
                     if not metrics_rows and not config_row and not system_metrics_rows:
                         return False
 
@@ -1087,6 +1247,26 @@ class SQLiteStorage:
                             except sqlite3.OperationalError:
                                 pass
 
+                        for row in alert_rows:
+                            try:
+                                target_cursor.execute(
+                                    """
+                                    INSERT OR IGNORE INTO alerts (timestamp, run_name, title, text, level, step, alert_id)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                    """,
+                                    (
+                                        row["timestamp"],
+                                        run,
+                                        row["title"],
+                                        row["text"],
+                                        row["level"],
+                                        row["step"],
+                                        row["alert_id"],
+                                    ),
+                                )
+                            except sqlite3.OperationalError:
+                                pass
+
                         target_conn.commit()
 
                         SQLiteStorage._move_media_dir(
@@ -1103,6 +1283,12 @@ class SQLiteStorage:
                         try:
                             source_cursor.execute(
                                 "DELETE FROM system_metrics WHERE run_name = ?", (run,)
+                            )
+                        except sqlite3.OperationalError:
+                            pass
+                        try:
+                            source_cursor.execute(
+                                "DELETE FROM alerts WHERE run_name = ?", (run,)
                             )
                         except sqlite3.OperationalError:
                             pass

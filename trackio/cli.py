@@ -3,6 +3,7 @@ import argparse
 from trackio import show, sync
 from trackio.cli_helpers import (
     error_exit,
+    format_alerts,
     format_json,
     format_list,
     format_metric_values,
@@ -263,6 +264,31 @@ def main():
         help="Output in JSON format",
     )
 
+    list_alerts_parser = list_subparsers.add_parser(
+        "alerts",
+        help="List alerts for a project or run",
+    )
+    list_alerts_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    list_alerts_parser.add_argument(
+        "--run",
+        required=False,
+        help="Run name (optional)",
+    )
+    list_alerts_parser.add_argument(
+        "--level",
+        required=False,
+        help="Filter by alert level (info, warn, error)",
+    )
+    list_alerts_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
     list_reports_parser = list_subparsers.add_parser(
         "reports",
         help="List markdown reports for a project or run",
@@ -374,6 +400,31 @@ def main():
         help="Output in JSON format",
     )
 
+    get_alerts_parser = get_subparsers.add_parser(
+        "alerts",
+        help="Get alerts for a project or run",
+    )
+    get_alerts_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    get_alerts_parser.add_argument(
+        "--run",
+        required=False,
+        help="Run name (optional)",
+    )
+    get_alerts_parser.add_argument(
+        "--level",
+        required=False,
+        help="Filter by alert level (info, warn, error)",
+    )
+    get_alerts_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
     get_report_parser = get_subparsers.add_parser(
         "report",
         help="Get markdown report entries for a run",
@@ -475,6 +526,26 @@ def main():
                 )
             else:
                 print(format_system_metric_names(system_metrics))
+        elif args.list_type == "alerts":
+            db_path = SQLiteStorage.get_project_db_path(args.project)
+            if not db_path.exists():
+                error_exit(f"Project '{args.project}' not found.")
+            alerts = SQLiteStorage.get_alerts(
+                args.project, run_name=args.run, level=args.level
+            )
+            if args.json:
+                print(
+                    format_json(
+                        {
+                            "project": args.project,
+                            "run": args.run,
+                            "level": args.level,
+                            "alerts": alerts,
+                        }
+                    )
+                )
+            else:
+                print(format_alerts(alerts))
         elif args.list_type == "reports":
             db_path = SQLiteStorage.get_project_db_path(args.project)
             if not db_path.exists():
@@ -615,6 +686,26 @@ def main():
                     )
                 else:
                     print(format_system_metrics(system_metrics))
+        elif args.get_type == "alerts":
+            db_path = SQLiteStorage.get_project_db_path(args.project)
+            if not db_path.exists():
+                error_exit(f"Project '{args.project}' not found.")
+            alerts = SQLiteStorage.get_alerts(
+                args.project, run_name=args.run, level=args.level
+            )
+            if args.json:
+                print(
+                    format_json(
+                        {
+                            "project": args.project,
+                            "run": args.run,
+                            "level": args.level,
+                            "alerts": alerts,
+                        }
+                    )
+                )
+            else:
+                print(format_alerts(alerts))
         elif args.get_type == "report":
             db_path = SQLiteStorage.get_project_db_path(args.project)
             if not db_path.exists():

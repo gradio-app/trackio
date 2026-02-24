@@ -17,6 +17,7 @@ from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
+from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.deploy import sync
 from trackio.gpu import gpu_available, log_gpu
@@ -54,6 +55,9 @@ __all__ = [
     "log_system",
     "log_gpu",
     "finish",
+    "alert",
+    "alert_when",
+    "AlertLevel",
     "show",
     "sync",
     "delete_project",
@@ -331,6 +335,62 @@ def finish():
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.finish().")
     run.finish()
+
+
+def alert(
+    title: str,
+    text: str | None = None,
+    level: AlertLevel = AlertLevel.WARN,
+) -> None:
+    """
+    Fires an alert immediately on the current run. The alert is printed to the
+    terminal, stored in the database, and displayed in the dashboard.
+
+    Args:
+        title (`str`):
+            A short title for the alert.
+        text (`str`, *optional*):
+            A longer description with details about the alert.
+        level (`AlertLevel`, *optional*, defaults to `AlertLevel.WARN`):
+            The severity level. One of `AlertLevel.INFO`, `AlertLevel.WARN`,
+            or `AlertLevel.ERROR`.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.alert().")
+    run.alert(title=title, text=text, level=level)
+
+
+def alert_when(
+    condition,
+    title="Alert",
+    text=None,
+    level: AlertLevel = AlertLevel.WARN,
+) -> None:
+    """
+    Registers a declarative, edge-triggered alert condition on the current run.
+    The condition is checked on every `trackio.log()` call. An alert fires when
+    the condition transitions from `False` to `True`, and re-arms when it goes
+    back to `False`.
+
+    Args:
+        condition (`Callable[[dict], bool]`):
+            A function that takes a metrics dict (including `"step"`) and returns
+            `True` when the alert should fire.
+        title (`str` or `Callable[[dict], str]`, *optional*, defaults to `"Alert"`):
+            A short title for the alert. Can be a callable that receives the
+            metrics dict to produce a dynamic title.
+        text (`str` or `Callable[[dict], str]` or `None`, *optional*):
+            A longer description. Can be a callable that receives the metrics
+            dict to produce a dynamic message.
+        level (`AlertLevel`, *optional*, defaults to `AlertLevel.WARN`):
+            The severity level. One of `AlertLevel.INFO`, `AlertLevel.WARN`,
+            or `AlertLevel.ERROR`.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.alert_when().")
+    run.alert_when(condition=condition, title=title, text=text, level=level)
 
 
 def delete_project(project: str, force: bool = False) -> bool:

@@ -39,6 +39,7 @@ def create_navbar() -> gr.Navbar:
             ("Metrics", ""),
             ("System Metrics", "/system"),
             ("Media & Tables", "/media"),
+            ("Alerts", "/alerts"),
             ("Reports", "/reports"),
             ("Runs", "/runs"),
             ("Files", "/files"),
