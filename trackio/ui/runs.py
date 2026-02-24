@@ -127,34 +127,21 @@ def set_deletion_allowed(
     }
 
 
-def update_delete_button(
+def update_action_buttons(
     deletion_allowed: bool, selected_indices: list[int]
-) -> gr.Button:
-    """Update the delete button value and interactivity based on the selected runs."""
+) -> tuple[gr.Button, gr.Button]:
+    """Update action button labels and interactivity based on selection and access."""
     if not deletion_allowed:
-        return gr.Button(interactive=False)
+        return gr.Button(interactive=False), gr.Button(interactive=False)
 
     num_selected = len(selected_indices) if selected_indices else 0
-
-    if num_selected:
-        return gr.Button(f"Delete ({num_selected})", interactive=True)
-    else:
-        return gr.Button("Delete", interactive=False)
-
-
-def update_rename_button(
-    deletion_allowed: bool, selected_indices: list[int]
-) -> gr.Button:
-    """Update the rename button value and interactivity based on the selected runs."""
-    if not deletion_allowed:
-        return gr.Button(interactive=False)
-
-    num_selected = len(selected_indices) if selected_indices else 0
-
-    if num_selected == 1:
-        return gr.Button("Rename", interactive=True, variant="huggingface")
-    else:
-        return gr.Button("Rename", interactive=False, variant="huggingface")
+    delete_btn = (
+        gr.Button(f"Delete ({num_selected})", interactive=True)
+        if num_selected
+        else gr.Button("Delete", interactive=False)
+    )
+    rename_btn = gr.Button("Rename", interactive=num_selected == 1, variant="huggingface")
+    return delete_btn, rename_btn
 
 
 def delete_selected_runs(
@@ -396,18 +383,9 @@ with gr.Blocks() as run_page:
     )
     gr.on(
         [runs_table.input],
-        fn=update_delete_button,
+        fn=update_action_buttons,
         inputs=[allow_deleting_runs, runs_table],
-        outputs=[delete_run_btn],
-        show_progress="hidden",
-        api_visibility="private",
-        queue=False,
-    )
-    gr.on(
-        [runs_table.input],
-        fn=update_rename_button,
-        inputs=[allow_deleting_runs, runs_table],
-        outputs=[rename_run_btn],
+        outputs=[delete_run_btn, rename_run_btn],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -458,9 +436,9 @@ with gr.Blocks() as run_page:
         api_visibility="private",
         queue=True,
     ).then(
-        fn=update_delete_button,
+        fn=update_action_buttons,
         inputs=[allow_deleting_runs, runs_table],
-        outputs=[delete_run_btn],
+        outputs=[delete_run_btn, rename_run_btn],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -542,9 +520,9 @@ with gr.Blocks() as run_page:
         api_visibility="private",
         queue=True,
     ).then(
-        fn=update_rename_button,
+        fn=update_action_buttons,
         inputs=[allow_deleting_runs, runs_table],
-        outputs=[rename_run_btn],
+        outputs=[delete_run_btn, rename_run_btn],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
