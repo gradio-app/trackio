@@ -132,15 +132,17 @@ def test_auto_log_gpu(temp_dir):
 
     with patch.object(gpu, "collect_gpu_metrics", fake_gpu_metrics):
         with patch.object(gpu, "get_gpu_count", return_value=(1, [0])):
-            trackio.init(
-                project="test_gpu_project",
-                name="test_gpu_run",
-                auto_log_gpu=True,
-                gpu_log_interval=0.1,
-            )
-            trackio.log({"loss": 0.5})
-            time.sleep(0.3)
-            trackio.finish()
+            with patch("trackio.run.gpu_available", return_value=True):
+                with patch("trackio.run.apple_gpu_available", return_value=False):
+                    trackio.init(
+                        project="test_gpu_project",
+                        name="test_gpu_run",
+                        auto_log_gpu=True,
+                        gpu_log_interval=0.1,
+                    )
+                    trackio.log({"loss": 0.5})
+                    time.sleep(0.3)
+                    trackio.finish()
 
     system_logs = SQLiteStorage.get_system_logs(
         project="test_gpu_project", run="test_gpu_run"
