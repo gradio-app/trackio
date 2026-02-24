@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Add alerts
+feat:Add alerts with webhooks, CLI, and documentation
