@@ -57,6 +57,7 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     logs_per_thread = 1000
     thread_stagger = 0.2
     errors = []
+    run_objects = [None] * num_threads
 
     def worker(thread_idx):
         try:
@@ -64,6 +65,7 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
             run = trackio.init(
                 project=project_name, name=run_name, space_id=test_space_id
             )
+            run_objects[thread_idx] = run
             wait_for_client(run)
             for i in range(logs_per_thread):
                 run.log({"loss": 1.0 / (i + 1), "thread": thread_idx})
@@ -82,13 +84,17 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     for t in threads:
         t.join(timeout=180)
 
+    assert not errors, f"Worker errors: {errors}"
+
+    for run in run_objects:
+        if run is not None and run._client_thread is not None:
+            run._client_thread.join(timeout=120)
+
     wall_time = time.time() - t0
     print(
         f"{num_threads} threads x {logs_per_thread} logs = "
         f"{num_threads * logs_per_thread} total, wall time {wall_time:.1f}s"
     )
-
-    assert not errors, f"Worker errors: {errors}"
 
     verify_client = Client(test_space_id)
 

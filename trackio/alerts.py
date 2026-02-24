@@ -1,8 +1,16 @@
 import json
 import logging
+import ssl
 import urllib.error
 import urllib.request
 from enum import Enum
+
+try:
+    import certifi
+
+    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    _SSL_CONTEXT = None
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +180,6 @@ def send_webhook(
         url, data=data, headers={"Content-Type": "application/json"}
     )
     try:
-        urllib.request.urlopen(req, timeout=10)
+        urllib.request.urlopen(req, timeout=10, context=_SSL_CONTEXT)
     except Exception as e:
         logger.warning(f"Failed to send webhook to {url}: {e}")

@@ -14,7 +14,6 @@ if SLACK_WEBHOOK_URL == "PASTE_YOUR_SLACK_WEBHOOK_URL_HERE":
 trackio.init(
     project=PROJECT,
     webhook_url=SLACK_WEBHOOK_URL,
-    webhook_min_level=trackio.AlertLevel.ERROR,
     config={
         "epochs": 12,
         "learning_rate": 0.001,
