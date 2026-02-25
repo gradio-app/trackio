@@ -55,9 +55,7 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     project_name = f"test_parallel_{secrets.token_urlsafe(8)}"
     num_threads = 32
     logs_per_thread = 1000
-    thread_stagger = 0.2
     errors = []
-    run_objects = [None] * num_threads
 
     def worker(thread_idx):
         try:
@@ -65,7 +63,6 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
             run = trackio.init(
                 project=project_name, name=run_name, space_id=test_space_id
             )
-            run_objects[thread_idx] = run
             wait_for_client(run)
             for i in range(logs_per_thread):
                 run.log({"loss": 1.0 / (i + 1), "thread": thread_idx})
@@ -79,16 +76,9 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
         t = threading.Thread(target=worker, args=(t_idx,))
         threads.append(t)
         t.start()
-        time.sleep(thread_stagger)
 
     for t in threads:
-        t.join(timeout=180)
-
-    assert not errors, f"Worker errors: {errors}"
-
-    for run in run_objects:
-        if run is not None and run._client_thread is not None:
-            run._client_thread.join(timeout=120)
+        t.join(timeout=120)
 
     wall_time = time.time() - t0
     print(
@@ -96,42 +86,17 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
         f"{num_threads * logs_per_thread} total, wall time {wall_time:.1f}s"
     )
 
-    def make_client():
-        return Client(test_space_id)
+    assert not errors, f"Worker errors: {errors}"
 
-    def robust_predict(client_box, **kwargs):
-        for attempt in range(3):
-            try:
-                return client_box[0].predict(**kwargs)
-            except Exception:
-                time.sleep(2)
-                client_box[0] = make_client()
-        return client_box[0].predict(**kwargs)
-
-    vc = [make_client()]
-
-    deadline = time.time() + 120
-    runs = []
-    while time.time() < deadline:
-        runs = robust_predict(
-            vc, project=project_name, api_name="/get_runs_for_project"
-        )
-        if len(runs) == num_threads:
-            break
-        time.sleep(5)
+    verify_client = Client(test_space_id)
+    runs = verify_client.predict(project=project_name, api_name="/get_runs_for_project")
     assert len(runs) == num_threads, f"Expected {num_threads} runs, got {len(runs)}"
 
     total_logs = 0
     for run_name in runs:
-        dl = time.time() + 60
-        summary = None
-        while time.time() < dl:
-            summary = robust_predict(
-                vc, project=project_name, run=run_name, api_name="/get_run_summary"
-            )
-            if summary["num_logs"] == logs_per_thread:
-                break
-            time.sleep(3)
+        summary = verify_client.predict(
+            project=project_name, run=run_name, api_name="/get_run_summary"
+        )
         total_logs += summary["num_logs"]
         assert summary["num_logs"] == logs_per_thread, (
             f"Run {run_name}: expected {logs_per_thread} logs, got {summary['num_logs']}"
