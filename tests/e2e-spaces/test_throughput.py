@@ -96,13 +96,24 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
         f"{num_threads * logs_per_thread} total, wall time {wall_time:.1f}s"
     )
 
-    verify_client = Client(test_space_id)
+    def make_client():
+        return Client(test_space_id)
+
+    def robust_predict(client_box, **kwargs):
+        for attempt in range(3):
+            try:
+                return client_box[0].predict(**kwargs)
+            except Exception:
+                time.sleep(2)
+                client_box[0] = make_client()
+        return client_box[0].predict(**kwargs)
+
+    vc = [make_client()]
 
     deadline = time.time() + 120
+    runs = []
     while time.time() < deadline:
-        runs = verify_client.predict(
-            project=project_name, api_name="/get_runs_for_project"
-        )
+        runs = robust_predict(vc, project=project_name, api_name="/get_runs_for_project")
         if len(runs) == num_threads:
             break
         time.sleep(5)
@@ -111,9 +122,10 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     total_logs = 0
     for run_name in runs:
         dl = time.time() + 60
+        summary = None
         while time.time() < dl:
-            summary = verify_client.predict(
-                project=project_name, run=run_name, api_name="/get_run_summary"
+            summary = robust_predict(
+                vc, project=project_name, run=run_name, api_name="/get_run_summary"
             )
             if summary["num_logs"] == logs_per_thread:
                 break
