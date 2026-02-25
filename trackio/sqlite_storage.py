@@ -1327,23 +1327,47 @@ class SQLiteStorage:
                 raise
 
     @staticmethod
-    def get_metric_values(project: str, run: str, metric_name: str) -> list[dict]:
-        """Get all values for a specific metric in a project/run."""
+    def get_metric_values(
+        project: str,
+        run: str,
+        metric_name: str,
+        step: int | None = None,
+        around_step: int | None = None,
+        at_time: str | None = None,
+        window: int | float | None = None,
+    ) -> list[dict]:
+        """Get values for a specific metric in a project/run with optional filtering.
+
+        Filtering modes:
+          - step: return the single row at exactly this step
+          - around_step + window: return rows where step is in [around_step - window, around_step + window]
+          - at_time + window: return rows within ±window seconds of the ISO timestamp
+          - No filters: return all rows
+        """
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT timestamp, step, metrics
-                FROM metrics
-                WHERE run_name = ?
-                ORDER BY timestamp
-                """,
-                (run,),
-            )
+            query = "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?"
+            params: list = [run]
+
+            if step is not None:
+                query += " AND step = ?"
+                params.append(step)
+            elif around_step is not None and window is not None:
+                query += " AND step >= ? AND step <= ?"
+                params.extend([around_step - int(window), around_step + int(window)])
+            elif at_time is not None and window is not None:
+                query += (
+                    " AND timestamp >= datetime(?, '-' || ? || ' seconds')"
+                    " AND timestamp <= datetime(?, '+' || ? || ' seconds')"
+                )
+                params.extend([at_time, int(window), at_time, int(window)])
+
+            query += " ORDER BY timestamp"
+            cursor.execute(query, params)
 
             rows = cursor.fetchall()
             results = []
@@ -1359,6 +1383,60 @@ class SQLiteStorage:
                         }
                     )
             return results
+
+    @staticmethod
+    def get_snapshot(
+        project: str,
+        run: str,
+        step: int | None = None,
+        around_step: int | None = None,
+        at_time: str | None = None,
+        window: int | float | None = None,
+    ) -> dict[str, list[dict]]:
+        """Get all metrics at/around a point in time or step.
+
+        Returns a dict mapping metric names to lists of {timestamp, step, value}.
+        """
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return {}
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            query = "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?"
+            params: list = [run]
+
+            if step is not None:
+                query += " AND step = ?"
+                params.append(step)
+            elif around_step is not None and window is not None:
+                query += " AND step >= ? AND step <= ?"
+                params.extend([around_step - int(window), around_step + int(window)])
+            elif at_time is not None and window is not None:
+                query += (
+                    " AND timestamp >= datetime(?, '-' || ? || ' seconds')"
+                    " AND timestamp <= datetime(?, '+' || ? || ' seconds')"
+                )
+                params.extend([at_time, int(window), at_time, int(window)])
+
+            query += " ORDER BY timestamp"
+            cursor.execute(query, params)
+
+            result: dict[str, list[dict]] = {}
+            for row in cursor.fetchall():
+                metrics = orjson.loads(row["metrics"])
+                metrics = deserialize_values(metrics)
+                for key, value in metrics.items():
+                    if key not in result:
+                        result[key] = []
+                    result[key].append(
+                        {
+                            "timestamp": row["timestamp"],
+                            "step": row["step"],
+                            "value": value,
+                        }
+                    )
+            return result
 
     @staticmethod
     def get_all_metrics_for_run(project: str, run: str) -> list[str]:

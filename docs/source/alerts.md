@@ -91,6 +91,20 @@ trackio get alerts --project "my-project" --since "2025-06-01T00:00:00"
 trackio get alerts --project "my-project" --json
 ```
 
+### Inspecting Metrics Around an Alert
+
+When an alert fires, you often want to see what all the metrics looked like at that point. Use `trackio get snapshot` to get every metric at/around the alert's step or timestamp:
+
+```bash
+# An alert fired at step 200 — get all metrics in a ±5 step window
+trackio get snapshot --project "my-project" --run "brave-sunset-0" --around 200 --window 5 --json
+
+# Or inspect a single metric around the alert's timestamp
+trackio get metric --project "my-project" --run "brave-sunset-0" --metric "loss" --at-time "2025-06-01T12:05:30" --window 60 --json
+```
+
+See the [CLI Commands](cli_commands) page for the full list of filtering options.
+
 ### Python API
 
 ```python

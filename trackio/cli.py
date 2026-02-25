@@ -9,6 +9,7 @@ from trackio.cli_helpers import (
     format_metric_values,
     format_project_summary,
     format_run_summary,
+    format_snapshot,
     format_system_metric_names,
     format_system_metrics,
 )
@@ -375,6 +376,74 @@ def main():
         help="Metric name",
     )
     get_metric_parser.add_argument(
+        "--step",
+        type=int,
+        required=False,
+        help="Get metric at exactly this step",
+    )
+    get_metric_parser.add_argument(
+        "--around",
+        type=int,
+        required=False,
+        help="Get metrics around this step (use with --window)",
+    )
+    get_metric_parser.add_argument(
+        "--at-time",
+        required=False,
+        help="Get metrics around this ISO 8601 timestamp (use with --window)",
+    )
+    get_metric_parser.add_argument(
+        "--window",
+        type=int,
+        required=False,
+        default=10,
+        help="Window size: ±steps for --around, ±seconds for --at-time (default: 10)",
+    )
+    get_metric_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
+    get_snapshot_parser = get_subparsers.add_parser(
+        "snapshot",
+        help="Get all metrics at/around a step or timestamp",
+    )
+    get_snapshot_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    get_snapshot_parser.add_argument(
+        "--run",
+        required=True,
+        help="Run name",
+    )
+    get_snapshot_parser.add_argument(
+        "--step",
+        type=int,
+        required=False,
+        help="Get all metrics at exactly this step",
+    )
+    get_snapshot_parser.add_argument(
+        "--around",
+        type=int,
+        required=False,
+        help="Get all metrics around this step (use with --window)",
+    )
+    get_snapshot_parser.add_argument(
+        "--at-time",
+        required=False,
+        help="Get all metrics around this ISO 8601 timestamp (use with --window)",
+    )
+    get_snapshot_parser.add_argument(
+        "--window",
+        type=int,
+        required=False,
+        default=10,
+        help="Window size: ±steps for --around, ±seconds for --at-time (default: 10)",
+    )
+    get_snapshot_parser.add_argument(
         "--json",
         action="store_true",
         help="Output in JSON format",
@@ -632,8 +701,15 @@ def main():
                 error_exit(
                     f"Metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
                 )
+            at_time = getattr(args, "at_time", None)
             values = SQLiteStorage.get_metric_values(
-                args.project, args.run, args.metric
+                args.project,
+                args.run,
+                args.metric,
+                step=args.step,
+                around_step=args.around,
+                at_time=at_time,
+                window=args.window,
             )
             if args.json:
                 print(
@@ -648,6 +724,43 @@ def main():
                 )
             else:
                 print(format_metric_values(values))
+        elif args.get_type == "snapshot":
+            db_path = SQLiteStorage.get_project_db_path(args.project)
+            if not db_path.exists():
+                error_exit(f"Project '{args.project}' not found.")
+            runs = SQLiteStorage.get_runs(args.project)
+            if args.run not in runs:
+                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
+            if not args.step and not args.around and not getattr(args, "at_time", None):
+                error_exit(
+                    "Provide --step, --around (with --window), or --at-time (with --window)."
+                )
+            at_time = getattr(args, "at_time", None)
+            snapshot = SQLiteStorage.get_snapshot(
+                args.project,
+                args.run,
+                step=args.step,
+                around_step=args.around,
+                at_time=at_time,
+                window=args.window,
+            )
+            if args.json:
+                result = {
+                    "project": args.project,
+                    "run": args.run,
+                    "metrics": snapshot,
+                }
+                if args.step is not None:
+                    result["step"] = args.step
+                if args.around is not None:
+                    result["around"] = args.around
+                    result["window"] = args.window
+                if at_time is not None:
+                    result["at_time"] = at_time
+                    result["window"] = args.window
+                print(format_json(result))
+            else:
+                print(format_snapshot(snapshot))
         elif args.get_type == "system-metric":
             db_path = SQLiteStorage.get_project_db_path(args.project)
             if not db_path.exists():
