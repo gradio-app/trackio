@@ -113,7 +113,9 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     deadline = time.time() + 120
     runs = []
     while time.time() < deadline:
-        runs = robust_predict(vc, project=project_name, api_name="/get_runs_for_project")
+        runs = robust_predict(
+            vc, project=project_name, api_name="/get_runs_for_project"
+        )
         if len(runs) == num_threads:
             break
         time.sleep(5)
