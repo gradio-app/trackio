@@ -4,7 +4,7 @@ Trackio alerts let you flag important events during a run. When an alert fires, 
 
 1. **Printed to the terminal** with a color-coded severity label
 2. **Stored in the database** so it can be queried later via the CLI, Python API, or HTTP endpoint
-3. **Displayed in the dashboard** on the Alerts page
+3. **Displayed in the dashboard** via a floating alert panel and the Reports page
 4. **Sent to a webhook** (optional) — with native formatting for Slack and Discord
 
 ## Firing an Alert
@@ -60,15 +60,17 @@ This means alerts work out of the box with no setup — if you can see your trai
 
 ## Dashboard
 
-Alerts appear on the **Alerts** page in the Trackio dashboard. You can filter alerts by run name and severity level. The page auto-refreshes so new alerts appear without needing to reload.
+Alerts appear in two places in the Trackio dashboard:
+
+1. **Alert panel** — A floating panel in the bottom-right corner of every dashboard page. It shows all alerts (across all projects) that arrived since the dashboard was launched, with the latest alert at the bottom. You can filter by severity level and expand/collapse the panel. The panel flashes when new alerts arrive.
+
+2. **Reports page** — The Reports page includes a full alerts table below the reports section. You can filter alerts by run (via the sidebar dropdown) and by severity level (via the sidebar checkbox group).
 
 To launch the dashboard:
 
 ```bash
 trackio show --project "my-project"
 ```
-
-Then click **Alerts** in the navigation bar.
 
 ## Querying Alerts
 
