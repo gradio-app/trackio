@@ -16,6 +16,7 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
 from trackio.ui import fns
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
+from trackio.ui.components.html_accordion import HTMLAccordion
 from trackio.ui.files import files_page
 from trackio.ui.helpers.run_selection import RunSelection
 from trackio.ui.media_page import media_page
@@ -585,17 +586,6 @@ CSS = """
 .nav-holder {
     border-bottom: 0px !important;
 }
-
-body.trackio-no-accordion .trackio-main-accordion > button {
-    display: none !important;
-}
-
-body.trackio-no-accordion .trackio-main-accordion {
-    box-shadow: none !important;
-    border-width: 0 !important;
-    background: transparent !important;
-    padding: 0 !important;
-}
 """
 
 HEAD = """
@@ -633,10 +623,6 @@ function getCookie(name) {
     const urlParams = new URLSearchParams(window.location.search);
     const writeToken = urlParams.get('write_token');
     const footerParam = urlParams.get('footer');
-
-    if (urlParams.get('accordion') === 'hidden') {
-        document.body.classList.add('trackio-no-accordion');
-    }
 
     if (writeToken) {
         setCookie('trackio_write_token', writeToken, 7);
@@ -889,14 +875,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     )
 
     show_headers_cb.change(
-        fn=None,
-        inputs=[show_headers_cb],
-        outputs=[],
-        js="(checked) => { document.body.classList.toggle('trackio-no-accordion', !checked); }",
-        queue=False,
-        api_visibility="private",
-    )
-    show_headers_cb.change(
         fn=generate_embed,
         inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
         outputs=embed_code,
@@ -993,6 +971,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_x_cb.change,
             log_scale_y_cb.change,
             metric_filter_tb.change,
+            show_headers_cb.change,
         ],
         inputs=[
             project_dd,
@@ -1005,6 +984,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_y_cb,
             metric_filter_tb,
             run_selection_state,
+            show_headers_cb,
         ],
         show_progress="hidden",
         queue=False,
@@ -1020,6 +1000,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         log_scale_y,
         metric_filter,
         selection,
+        show_headers,
     ):
         dfs = []
         original_runs = runs.copy()
@@ -1102,14 +1083,13 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                 else group_name
             )
 
-            group_ctx = gr.Accordion(
+            with HTMLAccordion(
                 label=group_label,
                 open=True,
+                hidden=not show_headers,
                 key=f"accordion-{group_name}",
-                preserved_by_key=["value", "open"],
-                elem_classes=["trackio-main-accordion"],
-            )
-            with group_ctx:
+                preserved_by_key=["open"],
+            ):
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
                         key=f"row-{group_name}-direct", orientation="row"
@@ -1174,14 +1154,13 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             else subgroup_name
                         )
 
-                        subgroup_ctx = gr.Accordion(
+                        with HTMLAccordion(
                             label=subgroup_label,
                             open=True,
+                            hidden=not show_headers,
                             key=f"accordion-{group_name}-{subgroup_name}",
-                            preserved_by_key=["value", "open"],
-                            elem_classes=["trackio-main-accordion"],
-                        )
-                        with subgroup_ctx:
+                            preserved_by_key=["open"],
+                        ):
                             with gr.Draggable(
                                 key=f"row-{group_name}-{subgroup_name}",
                                 orientation="row",
