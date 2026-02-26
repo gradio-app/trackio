@@ -1,3 +1,4 @@
+import os
 import shutil
 import threading
 import time
@@ -10,13 +11,20 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio import utils
+from trackio.alerts import (
+    AlertLevel,
+    format_alert_terminal,
+    resolve_webhook_min_level,
+    send_webhook,
+    should_send_webhook,
+)
 from trackio.gpu import GpuMonitor
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
-from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
+from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 from trackio.utils import _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
@@ -35,6 +43,8 @@ class Run:
         space_id: str | None = None,
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
+        webhook_url: str | None = None,
+        webhook_min_level: AlertLevel | str | None = None,
     ):
         """
         Initialize a Run for logging metrics to Trackio.
@@ -58,6 +68,13 @@ class Run:
                 memory, temperature) at regular intervals.
             gpu_log_interval: The interval in seconds between GPU metric logs.
                 Only used when auto_log_gpu is True.
+            webhook_url: A webhook URL to POST alert payloads to. Supports
+                Slack and Discord webhook URLs natively. Can also be set via
+                the TRACKIO_WEBHOOK_URL environment variable.
+            webhook_min_level: Minimum alert level that should trigger webhook
+                delivery. For example, `AlertLevel.WARN` sends only WARN and
+                ERROR alerts to webhook destinations. Can also be set via
+                `TRACKIO_WEBHOOK_MIN_LEVEL`.
         """
         self.url = url
         self.project = project
@@ -85,6 +102,7 @@ class Run:
         self._queued_logs: list[LogEntry] = []
         self._queued_system_logs: list[SystemLogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
+        self._queued_alerts: list[AlertEntry] = []
         self._stop_flag = threading.Event()
         self._config_logged = False
         max_step = SQLiteStorage.get_max_step_for_run(self.project, self.name)
@@ -92,6 +110,10 @@ class Run:
         self._has_local_buffer = False
 
         self._is_local = space_id is None
+        self._webhook_url = webhook_url or os.environ.get("TRACKIO_WEBHOOK_URL")
+        self._webhook_min_level = resolve_webhook_min_level(
+            webhook_min_level or os.environ.get("TRACKIO_WEBHOOK_MIN_LEVEL")
+        )
 
         if self._is_local:
             self._local_sender_thread = threading.Thread(
@@ -120,6 +142,7 @@ class Run:
             not self._stop_flag.is_set()
             or len(self._queued_logs) > 0
             or len(self._queued_system_logs) > 0
+            or len(self._queued_alerts) > 0
         ):
             if not self._stop_flag.is_set():
                 time.sleep(BATCH_SEND_INTERVAL)
@@ -134,6 +157,11 @@ class Run:
                     system_logs_to_send = self._queued_system_logs.copy()
                     self._queued_system_logs.clear()
                     self._write_system_logs_to_sqlite(system_logs_to_send)
+
+                if self._queued_alerts:
+                    alerts_to_send = self._queued_alerts.copy()
+                    self._queued_alerts.clear()
+                    self._write_alerts_to_sqlite(alerts_to_send)
 
     def _write_logs_to_sqlite(self, logs: list[LogEntry]):
         logs_by_run: dict[tuple, dict] = {}
@@ -183,6 +211,39 @@ class Run:
                 log_ids=data["log_ids"] if has_log_ids else None,
             )
 
+    def _write_alerts_to_sqlite(self, alerts: list[AlertEntry]):
+        alerts_by_run: dict[tuple, dict] = {}
+        for entry in alerts:
+            key = (entry["project"], entry["run"])
+            if key not in alerts_by_run:
+                alerts_by_run[key] = {
+                    "titles": [],
+                    "texts": [],
+                    "levels": [],
+                    "steps": [],
+                    "timestamps": [],
+                    "alert_ids": [],
+                }
+            alerts_by_run[key]["titles"].append(entry["title"])
+            alerts_by_run[key]["texts"].append(entry.get("text"))
+            alerts_by_run[key]["levels"].append(entry["level"])
+            alerts_by_run[key]["steps"].append(entry.get("step"))
+            alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
+            alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
+
+        for (project, run), data in alerts_by_run.items():
+            has_alert_ids = any(aid is not None for aid in data["alert_ids"])
+            SQLiteStorage.bulk_alert(
+                project=project,
+                run=run,
+                titles=data["titles"],
+                texts=data["texts"],
+                levels=data["levels"],
+                steps=data["steps"],
+                timestamps=data["timestamps"],
+                alert_ids=data["alert_ids"] if has_alert_ids else None,
+            )
+
     def _batch_sender(self):
         consecutive_failures = 0
         while (
@@ -190,6 +251,7 @@ class Run:
             or len(self._queued_logs) > 0
             or len(self._queued_system_logs) > 0
             or len(self._queued_uploads) > 0
+            or len(self._queued_alerts) > 0
         ):
             if not self._stop_flag.is_set():
                 if consecutive_failures:
@@ -243,6 +305,19 @@ class Run:
                         )
                     except Exception:
                         self._persist_uploads_locally(uploads_to_send)
+                        failed = True
+
+                if self._queued_alerts:
+                    alerts_to_send = self._queued_alerts.copy()
+                    self._queued_alerts.clear()
+                    try:
+                        self._client.predict(
+                            api_name="/bulk_alert",
+                            alerts=alerts_to_send,
+                            hf_token=huggingface_hub.utils.get_token(),
+                        )
+                    except Exception:
+                        self._write_alerts_to_sqlite(alerts_to_send)
                         failed = True
 
                 if failed:
@@ -546,6 +621,53 @@ class Run:
         with self._client_lock:
             self._queued_logs.append(log_entry)
             self._ensure_sender_alive()
+
+    def alert(
+        self,
+        title: str,
+        text: str | None = None,
+        level: AlertLevel = AlertLevel.WARN,
+        step: int | None = None,
+        webhook_url: str | None = None,
+    ):
+        if step is None:
+            step = max(self._next_step - 1, 0)
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        print(format_alert_terminal(level, title, text, step))
+
+        alert_entry: AlertEntry = {
+            "project": self.project,
+            "run": self.name,
+            "title": title,
+            "text": text,
+            "level": level.value,
+            "step": step,
+            "timestamp": timestamp,
+            "alert_id": uuid.uuid4().hex,
+        }
+
+        with self._client_lock:
+            self._queued_alerts.append(alert_entry)
+            self._ensure_sender_alive()
+
+        url = webhook_url or self._webhook_url
+        if url and should_send_webhook(level, self._webhook_min_level):
+            t = threading.Thread(
+                target=send_webhook,
+                args=(
+                    url,
+                    level,
+                    title,
+                    text,
+                    self.project,
+                    self.name,
+                    step,
+                    timestamp,
+                ),
+                daemon=True,
+            )
+            t.start()
 
     def log_system(self, metrics: dict):
         metrics = utils.serialize_values(metrics)

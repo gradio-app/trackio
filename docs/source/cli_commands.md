@@ -142,6 +142,71 @@ The output includes:
 - Timestamp
 - Metric value
 
+#### Filtering by Step or Time
+
+You can filter metric values to a specific step or a window around a step/timestamp. This is useful for inspecting metrics around the time an alert was fired.
+
+```sh
+# Get metric at exactly step 200
+trackio get metric --project "my-project" --run "my-run" --metric "loss" --step 200
+
+# Get metrics in a window around step 200 (±10 steps, the default)
+trackio get metric --project "my-project" --run "my-run" --metric "loss" --around 200
+
+# Get metrics in a window around step 200 (±50 steps)
+trackio get metric --project "my-project" --run "my-run" --metric "loss" --around 200 --window 50
+
+# Get metrics within ±60 seconds of a timestamp
+trackio get metric --project "my-project" --run "my-run" --metric "loss" --at-time "2025-06-01T12:05:30" --window 60
+```
+
+| Flag | Description |
+|------|-------------|
+| `--step N` | Return the metric at exactly step N |
+| `--around N` | Return metrics in a window around step N |
+| `--at-time T` | Return metrics in a window around ISO 8601 timestamp T |
+| `--window W` | Window size: ±steps for `--around`, ±seconds for `--at-time` (default: 10) |
+
+### Get Metrics Snapshot
+
+Get **all** metrics at/around a step or timestamp in a single call. This is the fastest way for an agent to understand the state of a run at a specific point — for example, right when an alert fired.
+
+```sh
+# All metrics at step 200
+trackio get snapshot --project "my-project" --run "my-run" --step 200 --json
+
+# All metrics in a window around step 200 (±5 steps)
+trackio get snapshot --project "my-project" --run "my-run" --around 200 --window 5 --json
+
+# All metrics within ±60 seconds of a timestamp
+trackio get snapshot --project "my-project" --run "my-run" --at-time "2025-06-01T12:05:30" --window 60 --json
+```
+
+Example JSON output:
+
+```json
+{
+  "project": "my-project",
+  "run": "my-run",
+  "around": 200,
+  "window": 5,
+  "metrics": {
+    "loss": [
+      {"step": 196, "timestamp": "2025-06-01T12:04:50", "value": 0.42},
+      {"step": 200, "timestamp": "2025-06-01T12:05:30", "value": 0.45}
+    ],
+    "accuracy": [
+      {"step": 196, "timestamp": "2025-06-01T12:04:50", "value": 0.88},
+      {"step": 200, "timestamp": "2025-06-01T12:05:30", "value": 0.87}
+    ],
+    "lr": [
+      {"step": 196, "timestamp": "2025-06-01T12:04:50", "value": 0.0001},
+      {"step": 200, "timestamp": "2025-06-01T12:05:30", "value": 0.0001}
+    ]
+  }
+}
+```
+
 ### Get System Metric Values
 
 Get system metric values for a run. If no metric name is provided, all system metrics are returned:
@@ -215,13 +280,16 @@ trackio list metrics --project "my-project" --run "my-run"
 # 6. Get specific metric values
 trackio get metric --project "my-project" --run "my-run" --metric "loss"
 
-# 7. Get system metrics (if available)
+# 7. Get all metrics at a specific step (e.g. where an alert fired)
+trackio get snapshot --project "my-project" --run "my-run" --step 200 --json
+
+# 8. Get system metrics (if available)
 trackio list system-metrics --project "my-project" --run "my-run"
 
-# 8. List reports in a run
+# 9. List reports in a run
 trackio list reports --project "my-project" --run "my-run"
 
-# 9. Print report markdown in terminal
+# 10. Print report markdown in terminal
 trackio get report --project "my-project" --run "my-run" --report "training_report"
 ```
 
@@ -232,6 +300,7 @@ trackio get report --project "my-project" --run "my-run" --report "training_repo
 These CLI commands are particularly useful for LLM agents that need to:
 - Discover available projects and runs
 - Query metric values programmatically
+- Inspect metrics around an alert with `get snapshot` or `get metric --around`
 - Get summaries without starting a server
 - Parse structured JSON output for further processing
 

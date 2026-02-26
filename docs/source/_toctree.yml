@@ -23,6 +23,10 @@
     title: CLI Commands
   - local: api_mcp_server
     title: API and MCP Server
+  - local: alerts
+    title: Alerts
+  - local: ml_agents
+    title: ML Agents
   - local: environment_variables
     title: Environment Variables
   title: How-to guides

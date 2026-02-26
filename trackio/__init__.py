@@ -17,6 +17,7 @@ from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
+from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.deploy import sync
 from trackio.gpu import gpu_available, log_gpu
@@ -54,6 +55,8 @@ __all__ = [
     "log_system",
     "log_gpu",
     "finish",
+    "alert",
+    "AlertLevel",
     "show",
     "sync",
     "delete_project",
@@ -110,6 +113,8 @@ def init(
     embed: bool = True,
     auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
+    webhook_url: str | None = None,
+    webhook_min_level: AlertLevel | str | None = None,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -170,6 +175,17 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
+        webhook_url (`str`, *optional*):
+            A webhook URL to POST alert payloads to when `trackio.alert()` is
+            called. Supports Slack and Discord webhook URLs natively (payloads
+            are formatted automatically). Can also be set via the
+            `TRACKIO_WEBHOOK_URL` environment variable. Individual alerts can
+            override this URL by passing `webhook_url` to `trackio.alert()`.
+        webhook_min_level (`AlertLevel` or `str`, *optional*):
+            Minimum alert level that should trigger webhook delivery.
+            For example, `AlertLevel.WARN` sends only `WARN` and `ERROR`
+            alerts to the webhook destination. Can also be set via
+            `TRACKIO_WEBHOOK_MIN_LEVEL`.
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
@@ -263,6 +279,8 @@ def init(
         space_id=space_id,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
+        webhook_url=webhook_url,
+        webhook_min_level=webhook_min_level,
     )
 
     if space_id is not None:
@@ -331,6 +349,39 @@ def finish():
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.finish().")
     run.finish()
+
+
+def alert(
+    title: str,
+    text: str | None = None,
+    level: AlertLevel = AlertLevel.WARN,
+    webhook_url: str | None = None,
+) -> None:
+    """
+    Fires an alert immediately on the current run. The alert is printed to the
+    terminal, stored in the database, and displayed in the dashboard. If a
+    webhook URL is configured (via `trackio.init()`, the `TRACKIO_WEBHOOK_URL`
+    environment variable, or the `webhook_url` parameter here), the alert is
+    also POSTed to that URL.
+
+    Args:
+        title (`str`):
+            A short title for the alert.
+        text (`str`, *optional*):
+            A longer description with details about the alert.
+        level (`AlertLevel`, *optional*, defaults to `AlertLevel.WARN`):
+            The severity level. One of `AlertLevel.INFO`, `AlertLevel.WARN`,
+            or `AlertLevel.ERROR`.
+        webhook_url (`str`, *optional*):
+            A webhook URL to send this specific alert to. Overrides any
+            URL set in `trackio.init()` or the `TRACKIO_WEBHOOK_URL`
+            environment variable. Supports Slack and Discord webhook
+            URLs natively.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.alert().")
+    run.alert(title=title, text=text, level=level, webhook_url=webhook_url)
 
 
 def delete_project(project: str, force: bool = False) -> bool:

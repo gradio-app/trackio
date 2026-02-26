@@ -13,7 +13,7 @@ import pandas as pd
 import trackio.utils as utils
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
+from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 from trackio.ui import fns
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.files import files_page
@@ -361,6 +361,62 @@ def bulk_log_system(
         )
 
 
+def bulk_alert(
+    alerts: list[AlertEntry],
+    hf_token: str | None,
+) -> None:
+    """
+    Logs a list of alerts to a Trackio dashboard.
+    """
+    fns.check_hf_token_has_write_access(hf_token)
+
+    alerts_by_run: dict[tuple, dict] = {}
+    for entry in alerts:
+        key = (entry["project"], entry["run"])
+        if key not in alerts_by_run:
+            alerts_by_run[key] = {
+                "titles": [],
+                "texts": [],
+                "levels": [],
+                "steps": [],
+                "timestamps": [],
+                "alert_ids": [],
+            }
+        alerts_by_run[key]["titles"].append(entry["title"])
+        alerts_by_run[key]["texts"].append(entry.get("text"))
+        alerts_by_run[key]["levels"].append(entry["level"])
+        alerts_by_run[key]["steps"].append(entry.get("step"))
+        alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
+        alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
+
+    for (project, run), data in alerts_by_run.items():
+        has_alert_ids = any(aid is not None for aid in data["alert_ids"])
+        SQLiteStorage.bulk_alert(
+            project=project,
+            run=run,
+            titles=data["titles"],
+            texts=data["texts"],
+            levels=data["levels"],
+            steps=data["steps"],
+            timestamps=data["timestamps"],
+            alert_ids=data["alert_ids"] if has_alert_ids else None,
+        )
+
+
+def get_alerts(
+    project: str,
+    run: str | None = None,
+    level: str | None = None,
+    since: str | None = None,
+) -> list[dict]:
+    """
+    Get alerts for a project, optionally filtered by run, level, and timestamp.
+    Returns a list of alert dictionaries with timestamp, run, title, text, level, and step.
+    Pass `since` as an ISO 8601 timestamp to only return alerts after that time.
+    """
+    return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
+
+
 def get_metric_values(
     project: str,
     run: str,
@@ -576,6 +632,10 @@ CSS = """
 .nav-holder {
     border-bottom: 0px !important;
 }
+
+.html-container {
+    padding: 0 !important;
+}
 """
 
 HEAD = """
@@ -713,6 +773,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
     run_selection_state = gr.State(RunSelection())
@@ -878,6 +939,14 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(
         fn=bulk_log_system,
         api_name="bulk_log_system",
+    )
+    gr.api(
+        fn=bulk_alert,
+        api_name="bulk_alert",
+    )
+    gr.api(
+        fn=get_alerts,
+        api_name="get_alerts",
     )
     gr.api(
         fn=get_metric_values,
