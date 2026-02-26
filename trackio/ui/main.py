@@ -16,6 +16,7 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
 from trackio.ui import fns
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
+from trackio.ui.components.html_accordion import HTMLAccordion
 from trackio.ui.files import files_page
 from trackio.ui.helpers.run_selection import RunSelection
 from trackio.ui.media_page import media_page
@@ -241,8 +242,12 @@ def refresh_runs(
     )
 
 
-def generate_embed(project: str, metrics: str, selection: RunSelection) -> str:
-    return utils.generate_embed_code(project, metrics, selection.selected)
+def generate_embed(
+    project: str, metrics: str, selection: RunSelection, show_headers: bool = True
+) -> str:
+    return utils.generate_embed_code(
+        project, metrics, selection.selected, not show_headers
+    )
 
 
 def update_x_axis_choices(project, selection):
@@ -514,6 +519,10 @@ def configure(request: gr.Request):
         case _:
             navbar = gr.Navbar(visible=True)
 
+    show_headers_cb = gr.Checkbox(
+        value=request.query_params.get("accordion") != "hidden"
+    )
+
     return (
         [],
         sidebar,
@@ -522,6 +531,7 @@ def configure(request: gr.Request):
         navbar,
         [x_min, x_max],
         smoothing_value,
+        show_headers_cb,
     )
 
 
@@ -681,6 +691,10 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             language="html",
             visible=bool(os.environ.get("SPACE_HOST")),
         )
+        show_headers_cb = gr.Checkbox(
+            label="Show section headers",
+            value=True,
+        )
         with gr.Group():
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
             run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
@@ -729,6 +743,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             navbar,
             x_lim,
             smoothing_slider,
+            show_headers_cb,
         ],
         queue=False,
         api_visibility="private",
@@ -773,7 +788,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_visibility="private",
     ).then(
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
         outputs=[embed_code],
         show_progress="hidden",
         api_visibility="private",
@@ -806,7 +821,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.on(
         [metric_filter_tb.change, run_cb.change],
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
         outputs=embed_code,
         show_progress="hidden",
         api_visibility="private",
@@ -844,7 +859,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         queue=False,
     ).then(
         fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
         outputs=embed_code,
         show_progress="hidden",
         api_visibility="private",
@@ -857,6 +872,15 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_visibility="private",
         queue=False,
         show_progress="hidden",
+    )
+
+    show_headers_cb.change(
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
     )
 
     gr.api(
@@ -947,6 +971,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_x_cb.change,
             log_scale_y_cb.change,
             metric_filter_tb.change,
+            show_headers_cb.change,
         ],
         inputs=[
             project_dd,
@@ -959,6 +984,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_y_cb,
             metric_filter_tb,
             run_selection_state,
+            show_headers_cb,
         ],
         show_progress="hidden",
         queue=False,
@@ -974,6 +1000,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         log_scale_y,
         metric_filter,
         selection,
+        show_headers,
     ):
         dfs = []
         original_runs = runs.copy()
@@ -1056,11 +1083,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                 else group_name
             )
 
-            with gr.Accordion(
+            with HTMLAccordion(
                 label=group_label,
                 open=True,
+                hidden=not show_headers,
                 key=f"accordion-{group_name}",
-                preserved_by_key=["value", "open"],
+                preserved_by_key=["open"],
             ):
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
@@ -1126,11 +1154,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             else subgroup_name
                         )
 
-                        with gr.Accordion(
+                        with HTMLAccordion(
                             label=subgroup_label,
                             open=True,
+                            hidden=not show_headers,
                             key=f"accordion-{group_name}-{subgroup_name}",
-                            preserved_by_key=["value", "open"],
+                            preserved_by_key=["open"],
                         ):
                             with gr.Draggable(
                                 key=f"row-{group_name}-{subgroup_name}",
