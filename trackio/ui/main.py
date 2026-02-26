@@ -15,7 +15,6 @@ from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 from trackio.ui import fns
-from trackio.ui.alerts_page import alerts_page
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.files import files_page
 from trackio.ui.helpers.run_selection import RunSelection
@@ -774,6 +773,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
     run_selection_state = gr.State(RunSelection())
@@ -1349,8 +1349,6 @@ with demo.route("System", show_in_navbar=False):
     system_page.render()
 with demo.route("Media", show_in_navbar=False):
     media_page.render()
-with demo.route("Alerts", show_in_navbar=False):
-    alerts_page.render()
 with demo.route("Reports", show_in_navbar=False):
     reports_page.render()
 with demo.route("Runs", show_in_navbar=False):

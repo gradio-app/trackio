@@ -529,6 +529,55 @@ def main():
         help="Output in JSON format",
     )
 
+    skills_parser = subparsers.add_parser(
+        "skills",
+        help="Manage Trackio skills for AI coding assistants",
+    )
+    skills_subparsers = skills_parser.add_subparsers(
+        dest="skills_action", required=True
+    )
+    skills_add_parser = skills_subparsers.add_parser(
+        "add",
+        help="Download and install the Trackio skill for an AI assistant",
+    )
+    skills_add_parser.add_argument(
+        "--cursor",
+        action="store_true",
+        help="Install for Cursor",
+    )
+    skills_add_parser.add_argument(
+        "--claude",
+        action="store_true",
+        help="Install for Claude Code",
+    )
+    skills_add_parser.add_argument(
+        "--codex",
+        action="store_true",
+        help="Install for Codex",
+    )
+    skills_add_parser.add_argument(
+        "--opencode",
+        action="store_true",
+        help="Install for OpenCode",
+    )
+    skills_add_parser.add_argument(
+        "--global",
+        dest="global_",
+        action="store_true",
+        help="Install globally (user-level) instead of in the current project directory",
+    )
+    skills_add_parser.add_argument(
+        "--dest",
+        type=str,
+        required=False,
+        help="Install into a custom destination (path to skills directory)",
+    )
+    skills_add_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing skill if it already exists",
+    )
+
     args = parser.parse_args()
 
     if args.command == "show":
@@ -873,8 +922,121 @@ def main():
                     if idx < len(reports):
                         output.append("-" * 80)
                 print("\n".join(output))
+    elif args.command == "skills":
+        if args.skills_action == "add":
+            _handle_skills_add(args)
     else:
         parser.print_help()
+
+
+def _handle_skills_add(args):
+    import os
+    import shutil
+    from pathlib import Path
+
+    try:
+        from huggingface_hub.cli.skills import (
+            CENTRAL_GLOBAL,
+            CENTRAL_LOCAL,
+            GLOBAL_TARGETS,
+            LOCAL_TARGETS,
+        )
+    except (ImportError, ModuleNotFoundError):
+        error_exit(
+            "The 'trackio skills' command requires huggingface_hub >= 1.4.0.\n"
+            "Please upgrade: pip install --upgrade huggingface_hub"
+        )
+
+    SKILL_ID = "trackio"
+    GITHUB_RAW = "https://raw.githubusercontent.com/gradio-app/trackio/main"
+    SKILL_PREFIX = ".agents/skills/trackio"
+    SKILL_FILES = [
+        "SKILL.md",
+        "alerts.md",
+        "logging_metrics.md",
+        "retrieving_metrics.md",
+    ]
+
+    if not (args.cursor or args.claude or args.codex or args.opencode or args.dest):
+        error_exit(
+            "Pick a destination via --cursor, --claude, --codex, --opencode, or --dest."
+        )
+
+    def download(url: str) -> str:
+        from huggingface_hub.utils import get_session
+
+        try:
+            response = get_session().get(url)
+            response.raise_for_status()
+        except Exception as e:
+            error_exit(
+                f"Failed to download {url}\n{e}\n\n"
+                "Make sure you have internet access. The skill files are fetched from "
+                "the Trackio GitHub repository."
+            )
+        return response.text
+
+    def remove_existing(path: Path, force: bool):
+        if not (path.exists() or path.is_symlink()):
+            return
+        if not force:
+            error_exit(
+                f"Skill already exists at {path}.\nRe-run with --force to overwrite."
+            )
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+    def install_to(skills_dir: Path, force: bool) -> Path:
+        skills_dir = skills_dir.expanduser().resolve()
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        dest = skills_dir / SKILL_ID
+        remove_existing(dest, force)
+        dest.mkdir()
+        for fname in SKILL_FILES:
+            content = download(f"{GITHUB_RAW}/{SKILL_PREFIX}/{fname}")
+            (dest / fname).write_text(content, encoding="utf-8")
+        return dest
+
+    def create_symlink(
+        agent_skills_dir: Path, central_skill_path: Path, force: bool
+    ) -> Path:
+        agent_skills_dir = agent_skills_dir.expanduser().resolve()
+        agent_skills_dir.mkdir(parents=True, exist_ok=True)
+        link_path = agent_skills_dir / SKILL_ID
+        remove_existing(link_path, force)
+        link_path.symlink_to(os.path.relpath(central_skill_path, agent_skills_dir))
+        return link_path
+
+    global_targets = {**GLOBAL_TARGETS, "cursor": Path("~/.cursor/skills")}
+    local_targets = {**LOCAL_TARGETS, "cursor": Path(".cursor/skills")}
+    targets_dict = global_targets if args.global_ else local_targets
+
+    if args.dest:
+        if args.cursor or args.claude or args.codex or args.opencode or args.global_:
+            error_exit("--dest cannot be combined with agent flags or --global.")
+        skill_dest = install_to(Path(args.dest), args.force)
+        print(f"Installed '{SKILL_ID}' to {skill_dest}")
+        return
+
+    agent_targets = []
+    if args.cursor:
+        agent_targets.append(targets_dict["cursor"])
+    if args.claude:
+        agent_targets.append(targets_dict["claude"])
+    if args.codex:
+        agent_targets.append(targets_dict["codex"])
+    if args.opencode:
+        agent_targets.append(targets_dict["opencode"])
+
+    central_path = CENTRAL_GLOBAL if args.global_ else CENTRAL_LOCAL
+    central_skill_path = install_to(central_path, args.force)
+    print(f"Installed '{SKILL_ID}' to central location: {central_skill_path}")
+
+    for agent_target in agent_targets:
+        link_path = create_symlink(agent_target, central_skill_path, args.force)
+        print(f"Created symlink: {link_path}")
 
 
 if __name__ == "__main__":

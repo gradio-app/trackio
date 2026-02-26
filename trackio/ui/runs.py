@@ -318,6 +318,7 @@ with gr.Blocks() as run_page:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
     allow_deleting_runs = gr.State(False)
     run_names_state = gr.State([])
 

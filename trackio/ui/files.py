@@ -45,6 +45,7 @@ with gr.Blocks() as files_page:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
 
     gr.Markdown("## Files")
     with gr.Row():
