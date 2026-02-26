@@ -19,6 +19,7 @@ from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.files import files_page
 from trackio.ui.helpers.run_selection import RunSelection
 from trackio.ui.media_page import media_page
+from trackio.ui.reports_page import reports_page
 from trackio.ui.run_detail import run_detail_page
 from trackio.ui.runs import run_page
 from trackio.ui.system_page import system_page
@@ -1329,6 +1330,8 @@ with demo.route("System", show_in_navbar=False):
     system_page.render()
 with demo.route("Media", show_in_navbar=False):
     media_page.render()
+with demo.route("Reports", show_in_navbar=False):
+    reports_page.render()
 with demo.route("Runs", show_in_navbar=False):
     run_page.render()
 with demo.route("Run", show_in_navbar=False):

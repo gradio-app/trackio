@@ -111,7 +111,29 @@ with gr.Blocks() as media_page:
         has_tables = len(table_cols) > 0
 
         if not has_media and not has_tables:
-            gr.Markdown("*No media or tables found for this run*")
+            gr.Markdown(
+                """
+## No Media or Tables Available
+
+Media and tables will appear here once logged. To log media or tables:
+
+```python
+import trackio
+import numpy as np
+
+run = trackio.init(project="my-project")
+
+# Log an image (from numpy array, PIL Image, or file path)
+image = trackio.Image(np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8), caption="Sample")
+trackio.log({"my_image": image})
+
+# Log a table (from a pandas DataFrame)
+import pandas as pd
+df = pd.DataFrame({"col1": [1, 2], "col2": [3, 4]})
+trackio.log({"my_table": trackio.Table(dataframe=df)})
+```
+"""
+            )
             return
 
         if has_media:
