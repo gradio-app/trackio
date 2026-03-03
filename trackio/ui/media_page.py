@@ -47,29 +47,6 @@ def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
     return media_by_key
 
 
-def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
-    """
-    Filter metrics using regex pattern.
-
-    Args:
-        metrics: List of metric names to filter
-        filter_pattern: Regex pattern to match against metric names
-
-    Returns:
-        List of metric names that match the pattern
-    """
-    if not filter_pattern.strip():
-        return metrics
-
-    try:
-        pattern = re.compile(filter_pattern, re.IGNORECASE)
-        return [metric for metric in metrics if pattern.search(metric)]
-    except re.error:
-        return [
-            metric for metric in metrics if filter_pattern.lower() in metric.lower()
-        ]
-
-
 def is_table(value) -> bool:
     return isinstance(value, dict) and value.get("_type") == Table.TYPE
 
