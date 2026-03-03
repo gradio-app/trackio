@@ -1,6 +1,5 @@
 """The Media and Tables page for the Trackio UI."""
 
-import re
 from dataclasses import dataclass
 
 import gradio as gr
