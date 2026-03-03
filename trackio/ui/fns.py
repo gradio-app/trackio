@@ -253,6 +253,60 @@ def group_runs_by_config(
     return sorted_groups
 
 
+_LEVEL_BADGES = {"info": "🔵", "warn": "🟡", "error": "🔴"}
+_dashboard_launch_time: str | None = None
+
+
+def fetch_alerts_for_panel():
+    global _dashboard_launch_time
+    from datetime import datetime, timezone
+
+    if _dashboard_launch_time is None:
+        _dashboard_launch_time = datetime.now(timezone.utc).isoformat()
+
+    projects = SQLiteStorage.get_projects()
+    all_alerts = []
+    for project in projects:
+        alerts = SQLiteStorage.get_alerts(
+            project, run_name=None, level=None, since=_dashboard_launch_time
+        )
+        for a in alerts:
+            a["project"] = project
+        all_alerts.extend(alerts)
+
+    all_alerts.sort(key=lambda a: a["timestamp"])
+    all_alerts = all_alerts[-50:]
+
+    result = []
+    for a in all_alerts:
+        meta = f"{a['project']}/{a['run']} · {utils.format_timestamp(a['timestamp'])}"
+        if a.get("step") is not None:
+            meta += f" · step {a['step']}"
+        result.append(
+            {
+                "level": a["level"],
+                "title": a["title"],
+                "badge": _LEVEL_BADGES.get(a["level"], ""),
+                "meta": meta,
+                "text": a.get("text") or "",
+            }
+        )
+    return result
+
+
+def setup_alert_notifications(timer, project_dd):
+    from trackio.ui.components.alert_panel import AlertPanel
+
+    panel = AlertPanel()
+    gr.on(
+        [timer.tick],
+        fn=fetch_alerts_for_panel,
+        outputs=panel,
+        show_progress="hidden",
+        api_visibility="private",
+    )
+
+
 def run_checkbox_update(selection: RunSelection, **kwargs) -> gr.CheckboxGroup:
     color_palette = utils.get_color_palette()
     return ColoredCheckboxGroup(
