@@ -74,6 +74,7 @@ with gr.Blocks() as system_page:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
     run_selection_state = gr.State(RunSelection())
     x_lim = gr.State(None)
     last_system_update = gr.State({})

@@ -147,7 +147,7 @@ trackio.show(project="my-sft-experiment")
 
 The dashboard displays real-time training curves for all your runs, making it easy to compare configurations side-by-side:
 
-![Trackio dashboard showing RapidFire AI fine-tuning metrics](./trackio-screenshot-sft.png)
+![Trackio dashboard showing RapidFire AI fine-tuning metrics](https://github.com/user-attachments/assets/3c239fb9-3f07-4297-a3f3-1c51d9181eac)
 
 *Trackio dashboard comparing 4 fine-tuning runs with different hyperparameters. The plots show training loss, validation loss, learning rate schedules, and ROUGE-L scores—making it easy to identify which configuration (Run 4, in orange) achieves the lowest loss and best generation quality.*
 

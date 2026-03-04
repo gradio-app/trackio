@@ -1,16 +1,20 @@
 import os
-import platform
 import shutil
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 
 try:
     import fcntl
-except ImportError:  # fcntl is not available on Windows
+except ImportError:
     fcntl = None
+
+try:
+    import msvcrt as _msvcrt
+except ImportError:
+    _msvcrt = None
 
 import huggingface_hub as hf
 import orjson
@@ -29,16 +33,14 @@ DB_EXT = ".db"
 
 
 class ProcessLock:
-    """A file-based lock that works across processes. Is a no-op on Windows."""
+    """A file-based lock that works across processes using fcntl (Unix) or msvcrt (Windows)."""
 
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
         self.lockfile = None
-        self.is_windows = platform.system() == "Windows"
 
     def __enter__(self):
-        """Acquire the lock with retry logic."""
-        if self.is_windows:
+        if fcntl is None and _msvcrt is None:
             return self
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
         self.lockfile = open(self.lockfile_path, "w")
@@ -46,21 +48,26 @@ class ProcessLock:
         max_retries = 100
         for attempt in range(max_retries):
             try:
-                fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if fcntl is not None:
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    _msvcrt.locking(self.lockfile.fileno(), _msvcrt.LK_NBLCK, 1)
                 return self
-            except IOError:
+            except (IOError, OSError):
                 if attempt < max_retries - 1:
                     time.sleep(0.1)
                 else:
                     raise IOError("Could not acquire database lock after 10 seconds")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Release the lock."""
-        if self.is_windows:
-            return
-
         if self.lockfile:
-            fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+            try:
+                if fcntl is not None:
+                    fcntl.flock(self.lockfile.fileno(), fcntl.LOCK_UN)
+                elif _msvcrt is not None:
+                    _msvcrt.locking(self.lockfile.fileno(), _msvcrt.LK_UNLCK, 1)
+            except (IOError, OSError):
+                pass
             self.lockfile.close()
 
 
@@ -198,6 +205,39 @@ class SQLiteStorage:
                         relative_path TEXT,
                         created_at TEXT NOT NULL
                     )
+                    """
+                )
+
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS alerts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        run_name TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        text TEXT,
+                        level TEXT NOT NULL DEFAULT 'warn',
+                        step INTEGER,
+                        alert_id TEXT
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_alerts_run
+                    ON alerts(run_name)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_alerts_timestamp
+                    ON alerts(timestamp)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_alert_id
+                    ON alerts(alert_id) WHERE alert_id IS NOT NULL
                     """
                 )
 
@@ -474,7 +514,7 @@ class SQLiteStorage:
                     if step is None and last_step is None
                     else (step if step is not None else last_step + 1)
                 )
-                current_timestamp = datetime.now().isoformat()
+                current_timestamp = datetime.now(timezone.utc).isoformat()
                 cursor.execute(
                     """
                     INSERT INTO metrics
@@ -510,7 +550,7 @@ class SQLiteStorage:
             return
 
         if timestamps is None:
-            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+            timestamps = [datetime.now(timezone.utc).isoformat()] * len(metrics_list)
 
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
@@ -565,7 +605,7 @@ class SQLiteStorage:
                 )
 
                 if config:
-                    current_timestamp = datetime.now().isoformat()
+                    current_timestamp = datetime.now(timezone.utc).isoformat()
                     cursor.execute(
                         """
                         INSERT OR REPLACE INTO configs
@@ -598,7 +638,7 @@ class SQLiteStorage:
             return
 
         if timestamps is None:
-            timestamps = [datetime.now().isoformat()] * len(metrics_list)
+            timestamps = [datetime.now(timezone.utc).isoformat()] * len(metrics_list)
 
         if len(metrics_list) != len(timestamps):
             raise ValueError("metrics_list and timestamps must have the same length")
@@ -629,6 +669,116 @@ class SQLiteStorage:
                     data,
                 )
                 conn.commit()
+
+    @staticmethod
+    def bulk_alert(
+        project: str,
+        run: str,
+        titles: list[str],
+        texts: list[str | None],
+        levels: list[str],
+        steps: list[int | None],
+        timestamps: list[str] | None = None,
+        alert_ids: list[str] | None = None,
+    ):
+        if not titles:
+            return
+
+        if timestamps is None:
+            timestamps = [datetime.now(timezone.utc).isoformat()] * len(titles)
+
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                data = []
+                for i in range(len(titles)):
+                    aid = alert_ids[i] if alert_ids else None
+                    data.append(
+                        (
+                            timestamps[i],
+                            run,
+                            titles[i],
+                            texts[i],
+                            levels[i],
+                            steps[i],
+                            aid,
+                        )
+                    )
+
+                cursor.executemany(
+                    """
+                    INSERT OR IGNORE INTO alerts
+                    (timestamp, run_name, title, text, level, step, alert_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    data,
+                )
+                conn.commit()
+
+    @staticmethod
+    def get_alerts(
+        project: str,
+        run_name: str | None = None,
+        level: str | None = None,
+        since: str | None = None,
+    ) -> list[dict]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                query = (
+                    "SELECT timestamp, run_name, title, text, level, step FROM alerts"
+                )
+                conditions = []
+                params = []
+                if run_name is not None:
+                    conditions.append("run_name = ?")
+                    params.append(run_name)
+                if level is not None:
+                    conditions.append("level = ?")
+                    params.append(level)
+                if since is not None:
+                    conditions.append("timestamp > ?")
+                    params.append(since)
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                query += " ORDER BY timestamp DESC"
+                cursor.execute(query, params)
+
+                rows = cursor.fetchall()
+                return [
+                    {
+                        "timestamp": row["timestamp"],
+                        "run": row["run_name"],
+                        "title": row["title"],
+                        "text": row["text"],
+                        "level": row["level"],
+                        "step": row["step"],
+                    }
+                    for row in rows
+                ]
+            except sqlite3.OperationalError as e:
+                if "no such table: alerts" in str(e):
+                    return []
+                raise
+
+    @staticmethod
+    def get_alert_count(project: str) -> int:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return 0
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT COUNT(*) FROM alerts")
+                return cursor.fetchone()[0]
+            except sqlite3.OperationalError:
+                return 0
 
     @staticmethod
     def get_system_logs(project: str, run: str) -> list[dict]:
@@ -863,10 +1013,161 @@ class SQLiteStorage:
                         )
                     except sqlite3.OperationalError:
                         pass
+                    try:
+                        cursor.execute("DELETE FROM alerts WHERE run_name = ?", (run,))
+                    except sqlite3.OperationalError:
+                        pass
                     conn.commit()
                     return True
                 except sqlite3.Error:
                     return False
+
+    @staticmethod
+    def _update_media_paths(obj, old_prefix, new_prefix):
+        """Update media file paths in nested data structures."""
+        if isinstance(obj, dict):
+            if obj.get("_type") in [
+                "trackio.image",
+                "trackio.video",
+                "trackio.audio",
+            ]:
+                old_path = obj.get("file_path", "")
+                if isinstance(old_path, str):
+                    normalized_path = old_path.replace("\\", "/")
+                    if normalized_path.startswith(old_prefix):
+                        new_path = normalized_path.replace(old_prefix, new_prefix, 1)
+                        return {**obj, "file_path": new_path}
+            return {
+                key: SQLiteStorage._update_media_paths(value, old_prefix, new_prefix)
+                for key, value in obj.items()
+            }
+        elif isinstance(obj, list):
+            return [
+                SQLiteStorage._update_media_paths(item, old_prefix, new_prefix)
+                for item in obj
+            ]
+        return obj
+
+    @staticmethod
+    def _rewrite_metrics_rows(metrics_rows, new_run_name, old_prefix, new_prefix):
+        """Deserialize metrics rows, update media paths, and reserialize."""
+        result = []
+        for row in metrics_rows:
+            metrics_data = orjson.loads(row["metrics"])
+            metrics_deserialized = deserialize_values(metrics_data)
+            updated = SQLiteStorage._update_media_paths(
+                metrics_deserialized, old_prefix, new_prefix
+            )
+            result.append(
+                (
+                    row["timestamp"],
+                    new_run_name,
+                    row["step"],
+                    orjson.dumps(serialize_values(updated)),
+                )
+            )
+        return result
+
+    @staticmethod
+    def _move_media_dir(source: Path, target: Path):
+        """Move a media directory from source to target."""
+        if source.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.move(str(source), str(target))
+
+    @staticmethod
+    def rename_run(project: str, old_name: str, new_name: str) -> None:
+        """Rename a run within the same project.
+
+        Raises:
+            ValueError: If the new name is empty, the old run doesn't exist,
+                        or a run with the new name already exists.
+            RuntimeError: If the database operation fails.
+        """
+        if not new_name or not new_name.strip():
+            raise ValueError("New run name cannot be empty")
+
+        new_name = new_name.strip()
+
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            raise ValueError(f"Project '{project}' does not exist")
+
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+
+                cursor.execute(
+                    "SELECT COUNT(*) FROM metrics WHERE run_name = ?", (old_name,)
+                )
+                if cursor.fetchone()[0] == 0:
+                    raise ValueError(
+                        f"Run '{old_name}' does not exist in project '{project}'"
+                    )
+
+                cursor.execute(
+                    "SELECT COUNT(*) FROM metrics WHERE run_name = ?", (new_name,)
+                )
+                if cursor.fetchone()[0] > 0:
+                    raise ValueError(
+                        f"A run named '{new_name}' already exists in project '{project}'"
+                    )
+
+                try:
+                    cursor.execute(
+                        "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?",
+                        (old_name,),
+                    )
+                    metrics_rows = cursor.fetchall()
+
+                    old_prefix = f"{project}/{old_name}/"
+                    new_prefix = f"{project}/{new_name}/"
+
+                    updated_rows = SQLiteStorage._rewrite_metrics_rows(
+                        metrics_rows, new_name, old_prefix, new_prefix
+                    )
+
+                    cursor.execute(
+                        "DELETE FROM metrics WHERE run_name = ?", (old_name,)
+                    )
+                    cursor.executemany(
+                        "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+                        updated_rows,
+                    )
+
+                    cursor.execute(
+                        "UPDATE configs SET run_name = ? WHERE run_name = ?",
+                        (new_name, old_name),
+                    )
+
+                    try:
+                        cursor.execute(
+                            "UPDATE system_metrics SET run_name = ? WHERE run_name = ?",
+                            (new_name, old_name),
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+
+                    try:
+                        cursor.execute(
+                            "UPDATE alerts SET run_name = ? WHERE run_name = ?",
+                            (new_name, old_name),
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+
+                    conn.commit()
+
+                    SQLiteStorage._move_media_dir(
+                        MEDIA_DIR / project / old_name,
+                        MEDIA_DIR / project / new_name,
+                    )
+                except sqlite3.Error as e:
+                    raise RuntimeError(
+                        f"Database error while renaming run '{old_name}' to '{new_name}': {e}"
+                    ) from e
 
     @staticmethod
     def move_run(project: str, run: str, new_project: str) -> bool:
@@ -903,68 +1204,31 @@ class SQLiteStorage:
                     except sqlite3.OperationalError:
                         system_metrics_rows = []
 
+                    try:
+                        source_cursor.execute(
+                            "SELECT timestamp, title, text, level, step, alert_id FROM alerts WHERE run_name = ?",
+                            (run,),
+                        )
+                        alert_rows = source_cursor.fetchall()
+                    except sqlite3.OperationalError:
+                        alert_rows = []
+
                     if not metrics_rows and not config_row and not system_metrics_rows:
                         return False
 
                     with SQLiteStorage._get_connection(target_db_path) as target_conn:
                         target_cursor = target_conn.cursor()
 
-                        def update_media_paths(obj, old_prefix, new_prefix):
-                            if isinstance(obj, dict):
-                                if obj.get("_type") in [
-                                    "trackio.image",
-                                    "trackio.video",
-                                    "trackio.audio",
-                                ]:
-                                    old_path = obj.get("file_path", "")
-                                    if isinstance(old_path, str):
-                                        normalized_path = old_path.replace("\\", "/")
-                                        if normalized_path.startswith(old_prefix):
-                                            new_path = normalized_path.replace(
-                                                old_prefix, new_prefix, 1
-                                            )
-                                            return {**obj, "file_path": new_path}
-                                return {
-                                    key: update_media_paths(
-                                        value, old_prefix, new_prefix
-                                    )
-                                    for key, value in obj.items()
-                                }
-                            elif isinstance(obj, list):
-                                return [
-                                    update_media_paths(item, old_prefix, new_prefix)
-                                    for item in obj
-                                ]
-                            return obj
-
-                        updated_metrics_rows = []
                         old_prefix = f"{project}/{run}/"
                         new_prefix = f"{new_project}/{run}/"
+                        updated_rows = SQLiteStorage._rewrite_metrics_rows(
+                            metrics_rows, run, old_prefix, new_prefix
+                        )
 
-                        for row in metrics_rows:
-                            metrics_data = orjson.loads(row["metrics"])
-                            metrics_deserialized = deserialize_values(metrics_data)
-                            updated_metrics = update_media_paths(
-                                metrics_deserialized, old_prefix, new_prefix
-                            )
-
-                            updated_metrics_rows.append(
-                                (
-                                    row["timestamp"],
-                                    run,
-                                    row["step"],
-                                    orjson.dumps(serialize_values(updated_metrics)),
-                                )
-                            )
-
-                        for row_data in updated_metrics_rows:
-                            target_cursor.execute(
-                                """
-                                INSERT INTO metrics (timestamp, run_name, step, metrics)
-                                VALUES (?, ?, ?, ?)
-                                """,
-                                row_data,
-                            )
+                        target_cursor.executemany(
+                            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+                            updated_rows,
+                        )
 
                         if config_row:
                             target_cursor.execute(
@@ -987,16 +1251,32 @@ class SQLiteStorage:
                             except sqlite3.OperationalError:
                                 pass
 
+                        for row in alert_rows:
+                            try:
+                                target_cursor.execute(
+                                    """
+                                    INSERT OR IGNORE INTO alerts (timestamp, run_name, title, text, level, step, alert_id)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                    """,
+                                    (
+                                        row["timestamp"],
+                                        run,
+                                        row["title"],
+                                        row["text"],
+                                        row["level"],
+                                        row["step"],
+                                        row["alert_id"],
+                                    ),
+                                )
+                            except sqlite3.OperationalError:
+                                pass
+
                         target_conn.commit()
 
-                        source_media_dir = MEDIA_DIR / project / run
-                        target_media_dir = MEDIA_DIR / new_project / run
-
-                        if source_media_dir.exists():
-                            target_media_dir.parent.mkdir(parents=True, exist_ok=True)
-                            if target_media_dir.exists():
-                                shutil.rmtree(target_media_dir)
-                            shutil.move(str(source_media_dir), str(target_media_dir))
+                        SQLiteStorage._move_media_dir(
+                            MEDIA_DIR / project / run,
+                            MEDIA_DIR / new_project / run,
+                        )
 
                         source_cursor.execute(
                             "DELETE FROM metrics WHERE run_name = ?", (run,)
@@ -1007,6 +1287,12 @@ class SQLiteStorage:
                         try:
                             source_cursor.execute(
                                 "DELETE FROM system_metrics WHERE run_name = ?", (run,)
+                            )
+                        except sqlite3.OperationalError:
+                            pass
+                        try:
+                            source_cursor.execute(
+                                "DELETE FROM alerts WHERE run_name = ?", (run,)
                             )
                         except sqlite3.OperationalError:
                             pass
@@ -1041,23 +1327,47 @@ class SQLiteStorage:
                 raise
 
     @staticmethod
-    def get_metric_values(project: str, run: str, metric_name: str) -> list[dict]:
-        """Get all values for a specific metric in a project/run."""
+    def get_metric_values(
+        project: str,
+        run: str,
+        metric_name: str,
+        step: int | None = None,
+        around_step: int | None = None,
+        at_time: str | None = None,
+        window: int | float | None = None,
+    ) -> list[dict]:
+        """Get values for a specific metric in a project/run with optional filtering.
+
+        Filtering modes:
+          - step: return the single row at exactly this step
+          - around_step + window: return rows where step is in [around_step - window, around_step + window]
+          - at_time + window: return rows within ±window seconds of the ISO timestamp
+          - No filters: return all rows
+        """
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT timestamp, step, metrics
-                FROM metrics
-                WHERE run_name = ?
-                ORDER BY timestamp
-                """,
-                (run,),
-            )
+            query = "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?"
+            params: list = [run]
+
+            if step is not None:
+                query += " AND step = ?"
+                params.append(step)
+            elif around_step is not None and window is not None:
+                query += " AND step >= ? AND step <= ?"
+                params.extend([around_step - int(window), around_step + int(window)])
+            elif at_time is not None and window is not None:
+                query += (
+                    " AND timestamp >= datetime(?, '-' || ? || ' seconds')"
+                    " AND timestamp <= datetime(?, '+' || ? || ' seconds')"
+                )
+                params.extend([at_time, int(window), at_time, int(window)])
+
+            query += " ORDER BY timestamp"
+            cursor.execute(query, params)
 
             rows = cursor.fetchall()
             results = []
@@ -1073,6 +1383,60 @@ class SQLiteStorage:
                         }
                     )
             return results
+
+    @staticmethod
+    def get_snapshot(
+        project: str,
+        run: str,
+        step: int | None = None,
+        around_step: int | None = None,
+        at_time: str | None = None,
+        window: int | float | None = None,
+    ) -> dict[str, list[dict]]:
+        """Get all metrics at/around a point in time or step.
+
+        Returns a dict mapping metric names to lists of {timestamp, step, value}.
+        """
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return {}
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            query = "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?"
+            params: list = [run]
+
+            if step is not None:
+                query += " AND step = ?"
+                params.append(step)
+            elif around_step is not None and window is not None:
+                query += " AND step >= ? AND step <= ?"
+                params.extend([around_step - int(window), around_step + int(window)])
+            elif at_time is not None and window is not None:
+                query += (
+                    " AND timestamp >= datetime(?, '-' || ? || ' seconds')"
+                    " AND timestamp <= datetime(?, '+' || ? || ' seconds')"
+                )
+                params.extend([at_time, int(window), at_time, int(window)])
+
+            query += " ORDER BY timestamp"
+            cursor.execute(query, params)
+
+            result: dict[str, list[dict]] = {}
+            for row in cursor.fetchall():
+                metrics = orjson.loads(row["metrics"])
+                metrics = deserialize_values(metrics)
+                for key, value in metrics.items():
+                    if key not in result:
+                        result[key] = []
+                    result[key].append(
+                        {
+                            "timestamp": row["timestamp"],
+                            "step": row["step"],
+                            "value": value,
+                        }
+                    )
+            return result
 
     @staticmethod
     def get_all_metrics_for_run(project: str, run: str) -> list[str]:
@@ -1324,7 +1688,7 @@ class SQLiteStorage:
                         step,
                         file_path,
                         relative_path,
-                        datetime.now().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
                 conn.commit()
