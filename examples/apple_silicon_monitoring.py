@@ -11,7 +11,7 @@ The library will automatically detect if you're running on Apple Silicon and log
   - GPU detection
 
 Requirements:
-  pip install trackio[gpu]  # Installs psutil for system monitoring
+  pip install trackio[apple-gpu]  # Installs psutil for system monitoring
 """
 
 import time
