@@ -11,8 +11,6 @@ import huggingface_hub
 from gradio_client import Client, handle_file
 
 from trackio import utils
-from trackio.apple_gpu import AppleGpuMonitor, apple_gpu_available
-from trackio.gpu import GpuMonitor, gpu_available
 from trackio.alerts import (
     AlertLevel,
     format_alert_terminal,
@@ -20,6 +18,8 @@ from trackio.alerts import (
     send_webhook,
     should_send_webhook,
 )
+from trackio.apple_gpu import AppleGpuMonitor, apple_gpu_available
+from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
