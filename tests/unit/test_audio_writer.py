@@ -78,8 +78,8 @@ def test_write_mp3_mono_and_stereo(tmp_path: Path, channels: int) -> None:
     "dtype, generator",
     [
         (np.int32, lambda n: (np.arange(n, dtype=np.int32) % 10000) - 5000),
-        (np.uint16, lambda n: (np.arange(n, dtype=np.uint16) % 65535)),
-        (np.uint8, lambda n: (np.arange(n, dtype=np.uint8) % 255)),
+        (np.uint16, lambda n: np.arange(n, dtype=np.uint16) % 65535),
+        (np.uint8, lambda n: np.arange(n, dtype=np.uint8) % 255),
         (np.int8, lambda n: (np.arange(n, dtype=np.int8) % 127) - 63),
     ],
 )

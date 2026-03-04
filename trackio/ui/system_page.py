@@ -10,12 +10,6 @@ from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.helpers.run_selection import RunSelection
 
 
-def get_runs(project) -> list[str]:
-    if not project:
-        return []
-    return SQLiteStorage.get_runs(project)
-
-
 def refresh_runs(
     project: str | None,
     filter_text: str | None,
@@ -24,7 +18,7 @@ def refresh_runs(
     if project is None:
         runs: list[str] = []
     else:
-        runs = get_runs(project)
+        runs = fns.get_runs(project)
         if filter_text:
             runs = [r for r in runs if filter_text in r]
 
@@ -80,6 +74,7 @@ with gr.Blocks() as system_page:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
     run_selection_state = gr.State(RunSelection())
     x_lim = gr.State(None)
     last_system_update = gr.State({})

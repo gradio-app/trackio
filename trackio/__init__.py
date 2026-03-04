@@ -1,7 +1,9 @@
+import atexit
 import glob
 import json
 import logging
 import os
+import shutil
 import warnings
 import webbrowser
 from pathlib import Path
@@ -15,6 +17,7 @@ from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
+from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
@@ -23,12 +26,17 @@ from trackio.gpu import gpu_available
 from trackio.gpu import log_gpu as _log_nvidia_gpu
 from trackio.histogram import Histogram
 from trackio.imports import import_csv, import_tf_events
-from trackio.media import TrackioAudio, TrackioImage, TrackioVideo
+from trackio.markdown import Markdown
+from trackio.media import (
+    TrackioAudio,
+    TrackioImage,
+    TrackioVideo,
+    get_project_media_path,
+)
 from trackio.run import Run
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import UploadEntry
-from trackio.ui.main import CSS, HEAD, demo
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -51,6 +59,8 @@ __all__ = [
     "log_gpu",
     "log_apple_gpu",
     "finish",
+    "alert",
+    "AlertLevel",
     "show",
     "sync",
     "delete_project",
@@ -62,6 +72,7 @@ __all__ = [
     "Audio",
     "Table",
     "Histogram",
+    "Markdown",
     "Api",
 ]
 
@@ -71,6 +82,25 @@ Audio = TrackioAudio
 
 
 config = {}
+
+_atexit_registered = False
+
+
+def _cleanup_current_run():
+    run = context_vars.current_run.get()
+    if run is not None:
+        try:
+            run.finish()
+        except Exception:
+            pass
+
+
+def _get_demo():
+    # Lazy import to avoid initializing Gradio Blocks (and FastAPI) at import time,
+    # which causes import lock errors for libraries that just `import trackio`.
+    from trackio.ui.main import CSS, HEAD, demo
+
+    return demo, CSS, HEAD
 
 
 def init(
@@ -87,6 +117,8 @@ def init(
     embed: bool = True,
     auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
+    webhook_url: str | None = None,
+    webhook_min_level: AlertLevel | str | None = None,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -135,8 +167,11 @@ def init(
         settings (`Any`, *optional*):
             Not used. Provided for compatibility with `wandb.init()`.
         embed (`bool`, *optional*, defaults to `True`):
-            If running inside a jupyter/Colab notebook, whether the dashboard should
-            automatically be embedded in the cell when trackio.init() is called.
+            If running inside a Jupyter/Colab notebook, whether the dashboard should
+            automatically be embedded in the cell when trackio.init() is called. For
+            local runs, this launches a local Gradio app and embeds it. For Space runs,
+            this embeds the Space URL. In Colab, the local dashboard will be accessible
+            via a public share URL (default Gradio behavior).
         auto_log_gpu (`bool` or `None`, *optional*, defaults to `None`):
             Controls automatic GPU metrics logging. If `None` (default), GPU logging
             is automatically enabled when `nvidia-ml-py` is installed and an NVIDIA
@@ -145,7 +180,17 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
-
+        webhook_url (`str`, *optional*):
+            A webhook URL to POST alert payloads to when `trackio.alert()` is
+            called. Supports Slack and Discord webhook URLs natively (payloads
+            are formatted automatically). Can also be set via the
+            `TRACKIO_WEBHOOK_URL` environment variable. Individual alerts can
+            override this URL by passing `webhook_url` to `trackio.alert()`.
+        webhook_min_level (`AlertLevel` or `str`, *optional*):
+            Minimum alert level that should trigger webhook delivery.
+            For example, `AlertLevel.WARN` sends only `WARN` and `ERROR`
+            alerts to the webhook destination. Can also be set via
+            `TRACKIO_WEBHOOK_MIN_LEVEL`.
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
@@ -164,31 +209,17 @@ def init(
         raise LocalTokenNotFoundError(
             f"You must be logged in to Hugging Face locally when `space_id` is provided to deploy to a Space. {e}"
         ) from e
-    url = context_vars.current_server.get()
-    share_url = context_vars.current_share_server.get()
 
-    if url is None:
-        if space_id is None:
-            _, url, share_url = demo.launch(
-                css=CSS,
-                head=HEAD,
-                footer_links=["gradio", "settings"],
-                inline=False,
-                quiet=True,
-                prevent_thread_lock=True,
-                show_error=True,
-                favicon_path=TRACKIO_LOGO_DIR / "trackio_logo_light.png",
-                allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
-                ssr_mode=False,
-            )
-            context_vars.current_space_id.set(None)
-        else:
+    url = context_vars.current_server.get()
+
+    if space_id is not None:
+        if url is None:
             url = space_id
-            share_url = None
+            context_vars.current_server.set(url)
             context_vars.current_space_id.set(space_id)
 
-        context_vars.current_server.set(url)
-        context_vars.current_share_server.set(share_url)
+    _should_embed_local = False
+
     if (
         context_vars.current_project.get() is None
         or context_vars.current_project.get() != project
@@ -202,13 +233,8 @@ def init(
             )
         if space_id is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
-            if utils.is_in_notebook() and embed:
-                base_url = share_url + "/" if share_url else url
-                full_url = utils.get_full_url(
-                    base_url, project=project, write_token=demo.write_token, footer=True
-                )
-                utils.embed_url_in_notebook(full_url)
-            else:
+            _should_embed_local = embed and utils.is_in_notebook()
+            if not _should_embed_local:
                 utils.print_dashboard_instructions(project)
         else:
             deploy.create_space_if_not_exists(
@@ -262,7 +288,19 @@ def init(
         space_id=space_id,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
+        webhook_url=webhook_url,
+        webhook_min_level=webhook_min_level,
     )
+
+    if space_id is not None:
+        SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+        if SQLiteStorage.has_pending_data(project):
+            run._has_local_buffer = True
+
+    global _atexit_registered
+    if not _atexit_registered:
+        atexit.register(_cleanup_current_run)
+        _atexit_registered = True
 
     if resumed:
         print(f"* Resumed existing run: {run.name}")
@@ -271,6 +309,10 @@ def init(
 
     context_vars.current_run.set(run)
     globals()["config"] = run.config
+
+    if _should_embed_local:
+        show(project=project, open_browser=False, block_thread=False)
+
     return run
 
 
@@ -360,6 +402,39 @@ def finish():
     run.finish()
 
 
+def alert(
+    title: str,
+    text: str | None = None,
+    level: AlertLevel = AlertLevel.WARN,
+    webhook_url: str | None = None,
+) -> None:
+    """
+    Fires an alert immediately on the current run. The alert is printed to the
+    terminal, stored in the database, and displayed in the dashboard. If a
+    webhook URL is configured (via `trackio.init()`, the `TRACKIO_WEBHOOK_URL`
+    environment variable, or the `webhook_url` parameter here), the alert is
+    also POSTed to that URL.
+
+    Args:
+        title (`str`):
+            A short title for the alert.
+        text (`str`, *optional*):
+            A longer description with details about the alert.
+        level (`AlertLevel`, *optional*, defaults to `AlertLevel.WARN`):
+            The severity level. One of `AlertLevel.INFO`, `AlertLevel.WARN`,
+            or `AlertLevel.ERROR`.
+        webhook_url (`str`, *optional*):
+            A webhook URL to send this specific alert to. Overrides any
+            URL set in `trackio.init()` or the `TRACKIO_WEBHOOK_URL`
+            environment variable. Supports Slack and Discord webhook
+            URLs natively.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.alert().")
+    run.alert(title=title, text=text, level=level, webhook_url=webhook_url)
+
+
 def delete_project(project: str, force: bool = False) -> bool:
     """
     Deletes a project by removing its local SQLite database.
@@ -410,7 +485,7 @@ def save(
 ) -> str:
     """
     Saves files to a project (not linked to a specific run). If Trackio is running
-    locally, the file(s) will be moved to the project's files directory. If Trackio is
+    locally, the file(s) will be copied to the project's files directory. If Trackio is
     running in a Space, the file(s) will be uploaded to the Space's files directory.
 
     Args:
@@ -461,56 +536,80 @@ def save(
     if not matched_files:
         raise ValueError(f"No files found matching pattern: {glob_str}")
 
-    url = context_vars.current_server.get()
     current_run = context_vars.current_run.get()
+    is_local = (
+        current_run._is_local
+        if current_run is not None
+        else (context_vars.current_space_id.get() is None)
+    )
 
-    upload_entries = []
+    if is_local:
+        for file_path in matched_files:
+            try:
+                relative_to_base = file_path.relative_to(base_path)
+            except ValueError:
+                relative_to_base = Path(file_path.name)
 
-    for file_path in matched_files:
-        try:
-            relative_to_base = file_path.relative_to(base_path)
-        except ValueError:
-            relative_to_base = Path(file_path.name)
+            if current_run is not None:
+                current_run._queue_upload(
+                    file_path,
+                    step=None,
+                    relative_path=str(relative_to_base.parent),
+                    use_run_name=False,
+                )
+            else:
+                media_path = get_project_media_path(
+                    project=project,
+                    run=None,
+                    step=None,
+                    relative_path=str(relative_to_base),
+                )
+                shutil.copy(str(file_path), str(media_path))
+    else:
+        url = context_vars.current_server.get()
 
-        if current_run is not None:
-            # If a run is active, use its queue to upload the file to the project's files directory
-            # as it's more efficent than uploading files one by one. But we should not use the run name
-            # as the files should be stored in the project's files directory, not the run's, hence
-            # the use_run_name flag is set to False.
-            current_run._queue_upload(
-                file_path,
-                step=None,
-                relative_path=str(relative_to_base.parent),
-                use_run_name=False,
-            )
-        else:
-            upload_entry: UploadEntry = {
-                "project": project,
-                "run": None,
-                "step": None,
-                "relative_path": str(relative_to_base),
-                "uploaded_file": handle_file(file_path),
-            }
-            upload_entries.append(upload_entry)
+        upload_entries = []
+        for file_path in matched_files:
+            try:
+                relative_to_base = file_path.relative_to(base_path)
+            except ValueError:
+                relative_to_base = Path(file_path.name)
 
-    if upload_entries:
-        if url is None:
-            raise RuntimeError(
-                "No server available. Call trackio.init() before trackio.save() to start the server."
-            )
+            if current_run is not None:
+                current_run._queue_upload(
+                    file_path,
+                    step=None,
+                    relative_path=str(relative_to_base.parent),
+                    use_run_name=False,
+                )
+            else:
+                upload_entry: UploadEntry = {
+                    "project": project,
+                    "run": None,
+                    "step": None,
+                    "relative_path": str(relative_to_base),
+                    "uploaded_file": handle_file(file_path),
+                }
+                upload_entries.append(upload_entry)
 
-        try:
-            client = Client(url, verbose=False, httpx_kwargs={"timeout": 90})
-            client.predict(
-                api_name="/bulk_upload_media",
-                uploads=upload_entries,
-                hf_token=huggingface_hub.utils.get_token(),
-            )
-        except Exception as e:
-            warnings.warn(
-                f"Failed to upload files: {e}. "
-                "Files may not be available in the dashboard."
-            )
+        if upload_entries:
+            if url is None:
+                raise RuntimeError(
+                    "No server available. Call trackio.init() before trackio.save() to start the server."
+                )
+
+            try:
+                client = Client(url, verbose=False, httpx_kwargs={"timeout": 90})
+                client.predict(
+                    api_name="/bulk_upload_media",
+                    uploads=upload_entries,
+                    hf_token=huggingface_hub.utils.get_token(),
+                )
+            except Exception as e:
+                warnings.warn(
+                    f"Failed to upload files: {e}. "
+                    "Files may not be available in the dashboard."
+                )
 
     return str(utils.MEDIA_DIR / project / "files")
 
@@ -569,6 +668,8 @@ def show(
             `share_url`: The public share URL of the dashboard.
             `full_url`: The full URL of the dashboard including the write token (will use the public share URL if launched publicly, otherwise the local URL).
     """
+    demo, CSS, HEAD = _get_demo()
+
     if color_palette is not None:
         os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
 

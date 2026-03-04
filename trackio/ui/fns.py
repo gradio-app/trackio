@@ -12,6 +12,12 @@ from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
 from trackio.ui.helpers.run_selection import RunSelection
 
 
+def get_runs(project) -> list[str]:
+    if not project:
+        return []
+    return SQLiteStorage.get_runs(project)
+
+
 def create_logo() -> gr.HTML:
     """Create a logo component that automatically switches between light and dark themes."""
     logo_urls = utils.get_logo_urls()
@@ -33,6 +39,7 @@ def create_navbar() -> gr.Navbar:
             ("Metrics", ""),
             ("System Metrics", "/system"),
             ("Media & Tables", "/media"),
+            ("Reports", "/reports"),
             ("Runs", "/runs"),
             ("Files", "/files"),
         ],
@@ -102,6 +109,7 @@ def update_navbar_value(project_dd, request: gr.Request):
 
     metrics_url = f"?selected_project={project_dd}"
     media_url = f"media?selected_project={project_dd}"
+    reports_url = f"reports?selected_project={project_dd}"
     runs_url = f"runs?selected_project={project_dd}"
     files_url = f"files?selected_project={project_dd}"
 
@@ -111,6 +119,7 @@ def update_navbar_value(project_dd, request: gr.Request):
         metrics_url += f"&write_token={write_token}"
         system_url += f"&write_token={write_token}"
         media_url += f"&write_token={write_token}"
+        reports_url += f"&write_token={write_token}"
         runs_url += f"&write_token={write_token}"
         files_url += f"&write_token={write_token}"
     return gr.Navbar(
@@ -118,6 +127,7 @@ def update_navbar_value(project_dd, request: gr.Request):
             ("Metrics", metrics_url),
             ("System Metrics", system_url),
             ("Media & Tables", media_url),
+            ("Reports", reports_url),
             ("Runs", runs_url),
             ("Files", files_url),
         ]
@@ -243,6 +253,60 @@ def group_runs_by_config(
     return sorted_groups
 
 
+_LEVEL_BADGES = {"info": "🔵", "warn": "🟡", "error": "🔴"}
+_dashboard_launch_time: str | None = None
+
+
+def fetch_alerts_for_panel():
+    global _dashboard_launch_time
+    from datetime import datetime, timezone
+
+    if _dashboard_launch_time is None:
+        _dashboard_launch_time = datetime.now(timezone.utc).isoformat()
+
+    projects = SQLiteStorage.get_projects()
+    all_alerts = []
+    for project in projects:
+        alerts = SQLiteStorage.get_alerts(
+            project, run_name=None, level=None, since=_dashboard_launch_time
+        )
+        for a in alerts:
+            a["project"] = project
+        all_alerts.extend(alerts)
+
+    all_alerts.sort(key=lambda a: a["timestamp"])
+    all_alerts = all_alerts[-50:]
+
+    result = []
+    for a in all_alerts:
+        meta = f"{a['project']}/{a['run']} · {utils.format_timestamp(a['timestamp'])}"
+        if a.get("step") is not None:
+            meta += f" · step {a['step']}"
+        result.append(
+            {
+                "level": a["level"],
+                "title": a["title"],
+                "badge": _LEVEL_BADGES.get(a["level"], ""),
+                "meta": meta,
+                "text": a.get("text") or "",
+            }
+        )
+    return result
+
+
+def setup_alert_notifications(timer, project_dd):
+    from trackio.ui.components.alert_panel import AlertPanel
+
+    panel = AlertPanel()
+    gr.on(
+        [timer.tick],
+        fn=fetch_alerts_for_panel,
+        outputs=panel,
+        show_progress="hidden",
+        api_visibility="private",
+    )
+
+
 def run_checkbox_update(selection: RunSelection, **kwargs) -> gr.CheckboxGroup:
     color_palette = utils.get_color_palette()
     return ColoredCheckboxGroup(
@@ -263,24 +327,6 @@ def handle_run_checkbox_change(
     return selection
 
 
-def group_checkbox_update(
-    group_runs: list[str], selection: RunSelection
-) -> ColoredCheckboxGroup:
-    color_palette = utils.get_color_palette()
-    choice_indices = {run: i for i, run in enumerate(selection.choices)}
-    colors = [
-        color_palette[choice_indices.get(run, 0) % len(color_palette)]
-        for run in group_runs
-    ]
-    subset = utils.ordered_subset(group_runs, selection.selected)
-    return ColoredCheckboxGroup(
-        choices=group_runs,
-        value=subset,
-        colors=colors,
-        label=f"Runs ({len(group_runs)})",
-    )
-
-
 def handle_group_checkbox_change(
     group_selected: list[str] | None,
     selection: RunSelection,
@@ -289,7 +335,6 @@ def handle_group_checkbox_change(
     selection.replace_group(group_runs or [], group_selected or [])
     return (
         selection,
-        group_checkbox_update(group_runs or [], selection),
         run_checkbox_update(selection),
     )
 
@@ -303,6 +348,5 @@ def handle_group_toggle(
     selection.replace_group(group_runs or [], target)
     return (
         selection,
-        group_checkbox_update(group_runs or [], selection),
         run_checkbox_update(selection),
     )

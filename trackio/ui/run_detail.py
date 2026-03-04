@@ -24,11 +24,15 @@ with gr.Blocks() as run_detail_page:
             ("Metrics", ""),
             ("System Metrics", "/system"),
             ("Media & Tables", "/media"),
+            ("Reports", "/reports"),
             ("Files", "/files"),
             ("Runs", "/runs"),
         ],
         main_page_name=False,
     )
+
+    timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
 
     run_details = gr.Markdown(RUN_DETAILS_TEMPLATE)
 

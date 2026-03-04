@@ -1,5 +1,29 @@
 # trackio
 
+## 0.17.0
+
+### Features
+
+- [#428](https://github.com/gradio-app/trackio/pull/428) [`f7dd1ce`](https://github.com/gradio-app/trackio/commit/f7dd1ce2dc8a1936f9983467fcbcf93bfef01e09) - feat: add ability to rename runs.  Thanks @Saba9!
+- [#437](https://github.com/gradio-app/trackio/pull/437) [`2727c0b`](https://github.com/gradio-app/trackio/commit/2727c0b0755f48f7f186162ea45185c98f6b5516) - Add markdown reports across Trackio.  Thanks @abidlabs!
+- [#427](https://github.com/gradio-app/trackio/pull/427) [`5aeb9ed`](https://github.com/gradio-app/trackio/commit/5aeb9edcfd2068d309d9d64f172dcbcc327be1ab) - Make Trackio logging much more robust.  Thanks @abidlabs!
+
+## 0.16.1
+
+### Features
+
+- [#431](https://github.com/gradio-app/trackio/pull/431) [`c7ce55b`](https://github.com/gradio-app/trackio/commit/c7ce55b14dd5eb0c2165fb15df17dd60721c9325) - Lazy load the UI when trackio is imported.  Thanks @abidlabs!
+
+## 0.16.0
+
+### Features
+
+- [#426](https://github.com/gradio-app/trackio/pull/426) [`ead4dc8`](https://github.com/gradio-app/trackio/commit/ead4dc8e74ee2d8e47d61bca0a7668456acf49be) - Fix redundant double rendering of group checkboxes.  Thanks @abidlabs!
+- [#413](https://github.com/gradio-app/trackio/pull/413) [`39c4750`](https://github.com/gradio-app/trackio/commit/39c4750951d554ba6eb4d58847c6bb444b2891a8) - Check `dist-packages` when checking for source installation.  Thanks @sergiopaniego!
+- [#423](https://github.com/gradio-app/trackio/pull/423) [`2e52ab3`](https://github.com/gradio-app/trackio/commit/2e52ab303e3041718a6a56fbf84d0848aca9ad67) - Fix legend outline visibility issue.  Thanks @Raghunath-Balaji!
+- [#407](https://github.com/gradio-app/trackio/pull/407) [`c8a384d`](https://github.com/gradio-app/trackio/commit/c8a384ddfe5a295cecf862a26178d40e48acb424) - Fix pytests that were failling locally on MacOS.  Thanks @abidlabs!
+- [#405](https://github.com/gradio-app/trackio/pull/405) [`35aae4e`](https://github.com/gradio-app/trackio/commit/35aae4e3aa3e2b2888887528478b9dc6a9808bda) - Add conditional padding for HF Space dashboard when not in iframe.  Thanks @znation!
+
 ## 0.15.0
 
 ### Features

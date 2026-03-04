@@ -91,6 +91,30 @@ trackio.log(
     style="border:0;">
 </iframe>
 
+### Logging reports (Markdown)
+
+You can log markdown reports using the [`Markdown`] class. Reports are shown in the **Reports** page in the dashboard, where the newest report appears first.
+
+```python
+trackio.log(
+    {
+        "training_report": trackio.Markdown(
+            """# Training Report
+
+Final validation accuracy: **0.92**
+
+- Best epoch: 18
+- Early stopping: enabled
+"""
+        )
+    }
+)
+```
+
+You can log reports multiple times during a run (for example, one report per checkpoint), and Trackio will keep the full history across steps.
+
+For a complete runnable script, see `examples/training-with-report.py`.
+
 ### Logging images
 
 You can log images using the [`Image`] class.

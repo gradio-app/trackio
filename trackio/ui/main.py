@@ -4,7 +4,6 @@ import os
 import re
 import secrets
 import shutil
-from dataclasses import dataclass
 from typing import Any
 
 import gradio as gr
@@ -12,19 +11,16 @@ import numpy as np
 import pandas as pd
 
 import trackio.utils as utils
-from trackio.media import (
-    TrackioAudio,
-    TrackioImage,
-    TrackioVideo,
-    get_project_media_path,
-)
+from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.typehints import LogEntry, SystemLogEntry, UploadEntry
+from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 from trackio.ui import fns
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
+from trackio.ui.components.html_accordion import HTMLAccordion
 from trackio.ui.files import files_page
 from trackio.ui.helpers.run_selection import RunSelection
 from trackio.ui.media_page import media_page
+from trackio.ui.reports_page import reports_page
 from trackio.ui.run_detail import run_detail_page
 from trackio.ui.runs import run_page
 from trackio.ui.system_page import system_page
@@ -104,12 +100,6 @@ def generate_download_plot_js(metric_name: str) -> str:
     }}"""
 
 
-def get_runs(project) -> list[str]:
-    if not project:
-        return []
-    return SQLiteStorage.get_runs(project)
-
-
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
@@ -149,39 +139,6 @@ def get_available_metrics(project: str, runs: list[str]) -> list[str]:
     return result
 
 
-@dataclass
-class MediaData:
-    caption: str | None
-    file_path: str
-    type: str
-
-
-def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
-    media_by_key: dict[str, list[MediaData]] = {}
-    logs = sorted(logs, key=lambda x: x.get("step", 0))
-    for log in logs:
-        for key, value in log.items():
-            if isinstance(value, dict):
-                type = value.get("_type")
-                if (
-                    type == TrackioImage.TYPE
-                    or type == TrackioVideo.TYPE
-                    or type == TrackioAudio.TYPE
-                ):
-                    if key not in media_by_key:
-                        media_by_key[key] = []
-                    try:
-                        media_data = MediaData(
-                            file_path=utils.MEDIA_DIR / value.get("file_path"),
-                            type=type,
-                            caption=value.get("caption"),
-                        )
-                        media_by_key[key].append(media_data)
-                    except Exception as e:
-                        print(f"Media currently unavailable: {key}: {e}")
-    return media_by_key
-
-
 def load_run_data(
     project: str | None,
     run: str | None,
@@ -189,15 +146,14 @@ def load_run_data(
     x_axis: str = "step",
     log_scale_x: bool = False,
     log_scale_y: bool = False,
-) -> tuple[pd.DataFrame, dict]:
+) -> pd.DataFrame | None:
     if not project or not run:
-        return None, None
+        return None
 
     logs = SQLiteStorage.get_logs(project, run)
     if not logs:
-        return None, None
+        return None
 
-    media = extract_media(logs)
     df = pd.DataFrame(logs)
 
     if "step" not in df.columns:
@@ -253,12 +209,12 @@ def load_run_data(
 
         combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
         combined_df["x_axis"] = x_column
-        return combined_df, media
+        return combined_df
     else:
         df["run"] = run
         df["data_type"] = "original"
         df["x_axis"] = x_column
-        return df, media
+        return df
 
 
 def refresh_runs(
@@ -270,7 +226,7 @@ def refresh_runs(
     if project is None:
         runs: list[str] = []
     else:
-        runs = get_runs(project)
+        runs = fns.get_runs(project)
         if filter_text:
             runs = [r for r in runs if filter_text in r]
 
@@ -286,18 +242,36 @@ def refresh_runs(
     )
 
 
-def generate_embed(project: str, metrics: str, selection: RunSelection) -> str:
-    return utils.generate_embed_code(project, metrics, selection.selected)
+def generate_share_fields(
+    project: str,
+    metrics: str,
+    selection: RunSelection,
+    show_headers: bool = True,
+) -> tuple[str, str]:
+    share_url = utils.generate_share_url(project, metrics, selection.selected)
+    embed_code = utils.generate_embed_code(
+        project, metrics, selection.selected, not show_headers
+    )
+    return share_url, embed_code
 
 
-def update_x_axis_choices(project, selection):
+def generate_embed(
+    project: str, metrics: str, selection: RunSelection, show_headers: bool = True
+) -> str:
+    return utils.generate_embed_code(
+        project, metrics, selection.selected, not show_headers
+    )
+
+
+def update_x_axis_choices(project, selection, current_x_axis="step"):
     """Update x-axis dropdown choices based on available metrics."""
     runs = selection.selected
     available_metrics = get_available_metrics(project, runs)
+    value = current_x_axis if current_x_axis in available_metrics else "step"
     return gr.Dropdown(
         label="X-axis",
         choices=available_metrics,
-        value="step",
+        value=value,
     )
 
 
@@ -353,19 +327,27 @@ def bulk_log(
     for log_entry in logs:
         key = (log_entry["project"], log_entry["run"])
         if key not in logs_by_run:
-            logs_by_run[key] = {"metrics": [], "steps": [], "config": None}
+            logs_by_run[key] = {
+                "metrics": [],
+                "steps": [],
+                "log_ids": [],
+                "config": None,
+            }
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["steps"].append(log_entry.get("step"))
+        logs_by_run[key]["log_ids"].append(log_entry.get("log_id"))
         if log_entry.get("config") and logs_by_run[key]["config"] is None:
             logs_by_run[key]["config"] = log_entry["config"]
 
     for (project, run), data in logs_by_run.items():
+        has_log_ids = any(lid is not None for lid in data["log_ids"])
         SQLiteStorage.bulk_log(
             project=project,
             run=run,
             metrics_list=data["metrics"],
             steps=data["steps"],
             config=data["config"],
+            log_ids=data["log_ids"] if has_log_ids else None,
         )
 
 
@@ -382,17 +364,76 @@ def bulk_log_system(
     for log_entry in logs:
         key = (log_entry["project"], log_entry["run"])
         if key not in logs_by_run:
-            logs_by_run[key] = {"metrics": [], "timestamps": []}
+            logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["timestamps"].append(log_entry.get("timestamp"))
+        logs_by_run[key]["log_ids"].append(log_entry.get("log_id"))
 
     for (project, run), data in logs_by_run.items():
+        has_log_ids = any(lid is not None for lid in data["log_ids"])
         SQLiteStorage.bulk_log_system(
             project=project,
             run=run,
             metrics_list=data["metrics"],
             timestamps=data["timestamps"],
+            log_ids=data["log_ids"] if has_log_ids else None,
         )
+
+
+def bulk_alert(
+    alerts: list[AlertEntry],
+    hf_token: str | None,
+) -> None:
+    """
+    Logs a list of alerts to a Trackio dashboard.
+    """
+    fns.check_hf_token_has_write_access(hf_token)
+
+    alerts_by_run: dict[tuple, dict] = {}
+    for entry in alerts:
+        key = (entry["project"], entry["run"])
+        if key not in alerts_by_run:
+            alerts_by_run[key] = {
+                "titles": [],
+                "texts": [],
+                "levels": [],
+                "steps": [],
+                "timestamps": [],
+                "alert_ids": [],
+            }
+        alerts_by_run[key]["titles"].append(entry["title"])
+        alerts_by_run[key]["texts"].append(entry.get("text"))
+        alerts_by_run[key]["levels"].append(entry["level"])
+        alerts_by_run[key]["steps"].append(entry.get("step"))
+        alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
+        alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
+
+    for (project, run), data in alerts_by_run.items():
+        has_alert_ids = any(aid is not None for aid in data["alert_ids"])
+        SQLiteStorage.bulk_alert(
+            project=project,
+            run=run,
+            titles=data["titles"],
+            texts=data["texts"],
+            levels=data["levels"],
+            steps=data["steps"],
+            timestamps=data["timestamps"],
+            alert_ids=data["alert_ids"] if has_alert_ids else None,
+        )
+
+
+def get_alerts(
+    project: str,
+    run: str | None = None,
+    level: str | None = None,
+    since: str | None = None,
+) -> list[dict]:
+    """
+    Get alerts for a project, optionally filtered by run, level, and timestamp.
+    Returns a list of alert dictionaries with timestamp, run, title, text, level, and step.
+    Pass `since` as an ISO 8601 timestamp to only return alerts after that time.
+    """
+    return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
 
 
 def get_metric_values(
@@ -548,6 +589,10 @@ def configure(request: gr.Request):
         case _:
             navbar = gr.Navbar(visible=True)
 
+    show_headers_cb = gr.Checkbox(
+        value=request.query_params.get("accordion") != "hidden"
+    )
+
     return (
         [],
         sidebar,
@@ -556,6 +601,7 @@ def configure(request: gr.Request):
         navbar,
         [x_min, x_max],
         smoothing_value,
+        show_headers_cb,
     )
 
 
@@ -602,10 +648,30 @@ CSS = """
     position: relative;
     z-index: 10;
 }
+
+.vega-embed .role-legend-symbol path {
+    stroke-width: 0 !important;
+}
+
+.nav-holder {
+    border-bottom: 0px !important;
+}
+
+.html-container {
+    padding: 0 !important;
+}
 """
 
 HEAD = """
 <script>
+new MutationObserver(function() {
+    document.querySelectorAll('.vega-embed .role-legend-symbol path').forEach(function(p) {
+        var s = p.style.stroke || p.getAttribute('stroke');
+        if (s && s !== 'none' && p.style.fill !== s) {
+            p.style.fill = s;
+        }
+    });
+}).observe(document.body, { childList: true, subtree: true });
 function setCookie(name, value, days) {
     var expires = "";
     if (days) {
@@ -692,13 +758,22 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         logo = fns.create_logo()
         project_dd = fns.create_project_dropdown()
 
-        embed_code = gr.Code(
-            label="Embed this view",
-            max_lines=2,
-            lines=2,
-            language="html",
-            visible=bool(os.environ.get("SPACE_HOST")),
-        )
+        with gr.Tabs(visible=bool(os.environ.get("SPACE_HOST"))):
+            with gr.Tab("Share"):
+                share_url = gr.Textbox(
+                    label="Share this view",
+                    max_lines=1,
+                    lines=1,
+                    interactive=False,
+                    buttons=["copy"],
+                )
+            with gr.Tab("Embed"):
+                embed_code = gr.Code(
+                    label="Embed this view",
+                    max_lines=2,
+                    lines=2,
+                    language="html",
+                )
         with gr.Group():
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
             run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
@@ -722,6 +797,10 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         )
         log_scale_x_cb = gr.Checkbox(label="Log scale X-axis", value=False)
         log_scale_y_cb = gr.Checkbox(label="Log scale Y-axis", value=False)
+        show_headers_cb = gr.Checkbox(
+            label="Show section headers",
+            value=True,
+        )
         metric_filter_tb = gr.Textbox(
             label="Metric Filter (regex)",
             placeholder="e.g., loss|ndcg@10|gpu",
@@ -731,6 +810,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
     metrics_subset = gr.State([])
     selected_runs_from_url = gr.State([])
     run_selection_state = gr.State(RunSelection())
@@ -747,6 +827,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             navbar,
             x_lim,
             smoothing_slider,
+            show_headers_cb,
         ],
         queue=False,
         api_visibility="private",
@@ -790,9 +871,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         queue=False,
         api_visibility="private",
     ).then(
-        fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
-        outputs=[embed_code],
+        fn=generate_share_fields,
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
+        outputs=[share_url, embed_code],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -815,7 +896,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.on(
         [run_cb.input],
         fn=update_x_axis_choices,
-        inputs=[project_dd, run_selection_state],
+        inputs=[project_dd, run_selection_state, x_axis_dd],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
@@ -823,9 +904,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     )
     gr.on(
         [metric_filter_tb.change, run_cb.change],
-        fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
-        outputs=embed_code,
+        fn=generate_share_fields,
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
+        outputs=[share_url, embed_code],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -861,9 +942,9 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_visibility="private",
         queue=False,
     ).then(
-        fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state],
-        outputs=embed_code,
+        fn=generate_share_fields,
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
+        outputs=[share_url, embed_code],
         show_progress="hidden",
         api_visibility="private",
         queue=False,
@@ -875,6 +956,15 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         api_visibility="private",
         queue=False,
         show_progress="hidden",
+    )
+
+    show_headers_cb.change(
+        fn=generate_embed,
+        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
+        outputs=embed_code,
+        show_progress="hidden",
+        api_visibility="private",
+        queue=False,
     )
 
     gr.api(
@@ -896,6 +986,14 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(
         fn=bulk_log_system,
         api_name="bulk_log_system",
+    )
+    gr.api(
+        fn=bulk_alert,
+        api_name="bulk_alert",
+    )
+    gr.api(
+        fn=get_alerts,
+        api_name="get_alerts",
     )
     gr.api(
         fn=get_metric_values,
@@ -965,6 +1063,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_x_cb.change,
             log_scale_y_cb.change,
             metric_filter_tb.change,
+            show_headers_cb.change,
         ],
         inputs=[
             project_dd,
@@ -977,6 +1076,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             log_scale_y_cb,
             metric_filter_tb,
             run_selection_state,
+            show_headers_cb,
         ],
         show_progress="hidden",
         queue=False,
@@ -992,12 +1092,13 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         log_scale_y,
         metric_filter,
         selection,
+        show_headers,
     ):
         dfs = []
         original_runs = runs.copy()
 
         for run in runs:
-            df, _ = load_run_data(
+            df = load_run_data(
                 project, run, smoothing_granularity, x_axis, log_scale_x, log_scale_y
             )
             if df is not None:
@@ -1074,11 +1175,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                 else group_name
             )
 
-            with gr.Accordion(
+            with HTMLAccordion(
                 label=group_label,
                 open=True,
+                hidden=not show_headers,
                 key=f"accordion-{group_name}",
-                preserved_by_key=["value", "open"],
+                preserved_by_key=["open"],
             ):
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
@@ -1144,11 +1246,12 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             else subgroup_name
                         )
 
-                        with gr.Accordion(
+                        with HTMLAccordion(
                             label=subgroup_label,
                             open=True,
+                            hidden=not show_headers,
                             key=f"accordion-{group_name}-{subgroup_name}",
-                            preserved_by_key=["value", "open"],
+                            preserved_by_key=["open"],
                         ):
                             with gr.Draggable(
                                 key=f"row-{group_name}-{subgroup_name}",
@@ -1272,7 +1375,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                             ],
                             outputs=[
                                 run_selection_state,
-                                group_cb,
                                 run_cb,
                             ],
                             show_progress="hidden",
@@ -1288,7 +1390,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
                                 run_selection_state,
                                 gr.State(runs),
                             ],
-                            outputs=[run_selection_state, group_cb, run_cb],
+                            outputs=[run_selection_state, run_cb],
                             show_progress="hidden",
                             api_visibility="private",
                             queue=False,
@@ -1299,6 +1401,8 @@ with demo.route("System", show_in_navbar=False):
     system_page.render()
 with demo.route("Media", show_in_navbar=False):
     media_page.render()
+with demo.route("Reports", show_in_navbar=False):
+    reports_page.render()
 with demo.route("Runs", show_in_navbar=False):
     run_page.render()
 with demo.route("Run", show_in_navbar=False):
@@ -1319,4 +1423,5 @@ if __name__ == "__main__":
         show_error=True,
         ssr_mode=False,
         head=HEAD,
+        css=CSS,
     )

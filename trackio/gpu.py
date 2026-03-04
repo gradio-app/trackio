@@ -44,17 +44,6 @@ def _init_nvml() -> bool:
             return False
 
 
-def _shutdown_nvml():
-    global _nvml_initialized
-    with _nvml_lock:
-        if _nvml_initialized and pynvml is not None:
-            try:
-                pynvml.nvmlShutdown()
-            except Exception:
-                pass
-            _nvml_initialized = False
-
-
 def get_gpu_count() -> tuple[int, list[int]]:
     """
     Get the number of GPUs visible to this process and their physical indices.

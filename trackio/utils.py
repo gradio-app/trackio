@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 import huggingface_hub
 import numpy as np
@@ -138,7 +139,6 @@ def _get_trackio_dir() -> Path:
 
 TRACKIO_DIR = _get_trackio_dir()
 MEDIA_DIR = TRACKIO_DIR / "media"
-FILES_DIR = TRACKIO_DIR / "files"
 
 
 def get_or_create_project_hash(project: str) -> str:
@@ -737,29 +737,47 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return None
 
 
-def generate_embed_code(project: str, metrics: str, selected_runs: list = None) -> str:
-    """Generate the embed iframe code based on current settings."""
+def generate_share_url(
+    project: str,
+    metrics: str,
+    selected_runs: list = None,
+    hide_headers: bool = False,
+) -> str:
+    """Generate the shareable Space URL based on current settings."""
     space_host = os.environ.get("SPACE_HOST", "")
     if not space_host:
         return ""
 
-    params = []
+    params: dict[str, str] = {}
 
     if project:
-        params.append(f"project={project}")
+        params["project"] = project
 
     if metrics and metrics.strip():
-        params.append(f"metrics={metrics}")
+        params["metrics"] = metrics
 
     if selected_runs:
-        runs_param = ",".join(selected_runs)
-        params.append(f"runs={runs_param}")
+        params["runs"] = ",".join(selected_runs)
 
-    params.append("sidebar=hidden")
-    params.append("navbar=hidden")
+    if hide_headers:
+        params["accordion"] = "hidden"
+    params["sidebar"] = "hidden"
+    params["navbar"] = "hidden"
 
-    query_string = "&".join(params)
-    embed_url = f"https://{space_host}?{query_string}"
+    query_string = urlencode(params)
+    return f"https://{space_host}?{query_string}"
+
+
+def generate_embed_code(
+    project: str,
+    metrics: str,
+    selected_runs: list = None,
+    hide_headers: bool = False,
+) -> str:
+    """Generate the embed iframe code based on current settings."""
+    embed_url = generate_share_url(project, metrics, selected_runs, hide_headers)
+    if not embed_url:
+        return ""
 
     return f'<iframe src="{embed_url}" style="width:1600px; height:500px; border:0;"></iframe>'
 
