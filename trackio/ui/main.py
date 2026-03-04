@@ -245,14 +245,15 @@ def generate_embed(project: str, metrics: str, selection: RunSelection) -> str:
     return utils.generate_embed_code(project, metrics, selection.selected)
 
 
-def update_x_axis_choices(project, selection):
+def update_x_axis_choices(project, selection, current_x_axis="step"):
     """Update x-axis dropdown choices based on available metrics."""
     runs = selection.selected
     available_metrics = get_available_metrics(project, runs)
+    value = current_x_axis if current_x_axis in available_metrics else "step"
     return gr.Dropdown(
         label="X-axis",
         choices=available_metrics,
-        value="step",
+        value=value,
     )
 
 
@@ -858,7 +859,7 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.on(
         [run_cb.input],
         fn=update_x_axis_choices,
-        inputs=[project_dd, run_selection_state],
+        inputs=[project_dd, run_selection_state, x_axis_dd],
         outputs=x_axis_dd,
         show_progress="hidden",
         queue=False,
