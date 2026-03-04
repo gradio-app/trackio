@@ -46,6 +46,10 @@ def extract_media(logs: list[dict]) -> dict[str, list[MediaData]]:
     return media_by_key
 
 
+def is_table(value) -> bool:
+    return isinstance(value, dict) and value.get("_type") == Table.TYPE
+
+
 def refresh_runs_dropdown(project: str | None):
     if project is None:
         runs: list[str] = []
@@ -71,6 +75,7 @@ with gr.Blocks() as media_page:
 
     navbar = fns.create_navbar()
     timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
 
     @gr.render(
         triggers=[
@@ -101,17 +106,33 @@ with gr.Blocks() as media_page:
 
         table_cols = df.select_dtypes(include="object").columns
         table_cols = [c for c in table_cols if c not in utils.RESERVED_KEYS]
-        table_cols = [
-            c
-            for c in table_cols
-            if not (metric_df := df.dropna(subset=[c])).empty
-            and isinstance(first_value := metric_df[c].iloc[0], dict)
-            and first_value.get("_type") == Table.TYPE
-        ]
+        table_cols = [c for c in table_cols if any(is_table(x) for x in df[c])]
         has_tables = len(table_cols) > 0
 
         if not has_media and not has_tables:
-            gr.Markdown("*No media or tables found for this run*")
+            gr.Markdown(
+                """
+## No Media or Tables Available
+
+Media and tables will appear here once logged. To log media or tables:
+
+```python
+import trackio
+import numpy as np
+
+run = trackio.init(project="my-project")
+
+# Log an image (from numpy array, PIL Image, or file path)
+image = trackio.Image(np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8), caption="Sample")
+trackio.log({"my_image": image})
+
+# Log a table (from a pandas DataFrame)
+import pandas as pd
+df = pd.DataFrame({"col1": [1, 2], "col2": [3, 4]})
+trackio.log({"my_table": trackio.Table(dataframe=df)})
+```
+"""
+            )
             return
 
         if has_media:
@@ -146,7 +167,7 @@ with gr.Blocks() as media_page:
             with gr.Accordion(f"Tables ({len(table_cols)})", open=True):
                 with gr.Row(key="row"):
                     for metric_idx, metric_name in enumerate(table_cols):
-                        metric_df = df.dropna(subset=[metric_name])
+                        metric_df = df[df[metric_name].apply(is_table)]
                         if not metric_df.empty:
                             value = metric_df[metric_name]
                             first_value = value.iloc[0]
@@ -179,16 +200,27 @@ with gr.Blocks() as media_page:
                                             preserved_by_key=None,
                                         )
 
-                                        def get_table_at_index(index: int):
-                                            value = metric_df[metric_name]
-                                            processed_data = Table.to_display_format(
-                                                value.iloc[index - 1]["_value"]
-                                            )
-                                            df_ = pd.DataFrame(processed_data)
-                                            return gr.DataFrame(
-                                                df_,
-                                                label=f"{metric_name} (index {index})",
-                                            )
+                                        def make_table_renderer(
+                                            capture_df, capture_name
+                                        ):
+                                            def get_table_at_index(index: int):
+                                                value = capture_df[capture_name]
+                                                processed_data = (
+                                                    Table.to_display_format(
+                                                        value.iloc[index - 1]["_value"]
+                                                    )
+                                                )
+                                                df_ = pd.DataFrame(processed_data)
+                                                return gr.DataFrame(
+                                                    df_,
+                                                    label=f"{capture_name} (index {index})",
+                                                )
+
+                                            return get_table_at_index
+
+                                        get_table_at_index = make_table_renderer(
+                                            metric_df, metric_name
+                                        )
 
                                         s.input(
                                             get_table_at_index,

@@ -20,6 +20,17 @@ class SystemLogEntry(TypedDict, total=False):
     log_id: str | None
 
 
+class AlertEntry(TypedDict, total=False):
+    project: str
+    run: str
+    title: str
+    text: str | None
+    level: str
+    step: int | None
+    timestamp: str
+    alert_id: str | None
+
+
 class UploadEntry(TypedDict):
     project: str
     run: str | None

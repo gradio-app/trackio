@@ -3,11 +3,13 @@ import argparse
 from trackio import show, sync
 from trackio.cli_helpers import (
     error_exit,
+    format_alerts,
     format_json,
     format_list,
     format_metric_values,
     format_project_summary,
     format_run_summary,
+    format_snapshot,
     format_system_metric_names,
     format_system_metrics,
 )
@@ -263,6 +265,36 @@ def main():
         help="Output in JSON format",
     )
 
+    list_alerts_parser = list_subparsers.add_parser(
+        "alerts",
+        help="List alerts for a project or run",
+    )
+    list_alerts_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    list_alerts_parser.add_argument(
+        "--run",
+        required=False,
+        help="Run name (optional)",
+    )
+    list_alerts_parser.add_argument(
+        "--level",
+        required=False,
+        help="Filter by alert level (info, warn, error)",
+    )
+    list_alerts_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+    list_alerts_parser.add_argument(
+        "--since",
+        required=False,
+        help="Only show alerts after this ISO 8601 timestamp",
+    )
+
     list_reports_parser = list_subparsers.add_parser(
         "reports",
         help="List markdown reports for a project or run",
@@ -344,6 +376,74 @@ def main():
         help="Metric name",
     )
     get_metric_parser.add_argument(
+        "--step",
+        type=int,
+        required=False,
+        help="Get metric at exactly this step",
+    )
+    get_metric_parser.add_argument(
+        "--around",
+        type=int,
+        required=False,
+        help="Get metrics around this step (use with --window)",
+    )
+    get_metric_parser.add_argument(
+        "--at-time",
+        required=False,
+        help="Get metrics around this ISO 8601 timestamp (use with --window)",
+    )
+    get_metric_parser.add_argument(
+        "--window",
+        type=int,
+        required=False,
+        default=10,
+        help="Window size: ±steps for --around, ±seconds for --at-time (default: 10)",
+    )
+    get_metric_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
+    get_snapshot_parser = get_subparsers.add_parser(
+        "snapshot",
+        help="Get all metrics at/around a step or timestamp",
+    )
+    get_snapshot_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    get_snapshot_parser.add_argument(
+        "--run",
+        required=True,
+        help="Run name",
+    )
+    get_snapshot_parser.add_argument(
+        "--step",
+        type=int,
+        required=False,
+        help="Get all metrics at exactly this step",
+    )
+    get_snapshot_parser.add_argument(
+        "--around",
+        type=int,
+        required=False,
+        help="Get all metrics around this step (use with --window)",
+    )
+    get_snapshot_parser.add_argument(
+        "--at-time",
+        required=False,
+        help="Get all metrics around this ISO 8601 timestamp (use with --window)",
+    )
+    get_snapshot_parser.add_argument(
+        "--window",
+        type=int,
+        required=False,
+        default=10,
+        help="Window size: ±steps for --around, ±seconds for --at-time (default: 10)",
+    )
+    get_snapshot_parser.add_argument(
         "--json",
         action="store_true",
         help="Output in JSON format",
@@ -374,6 +474,36 @@ def main():
         help="Output in JSON format",
     )
 
+    get_alerts_parser = get_subparsers.add_parser(
+        "alerts",
+        help="Get alerts for a project or run",
+    )
+    get_alerts_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    get_alerts_parser.add_argument(
+        "--run",
+        required=False,
+        help="Run name (optional)",
+    )
+    get_alerts_parser.add_argument(
+        "--level",
+        required=False,
+        help="Filter by alert level (info, warn, error)",
+    )
+    get_alerts_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+    get_alerts_parser.add_argument(
+        "--since",
+        required=False,
+        help="Only show alerts after this ISO 8601 timestamp",
+    )
+
     get_report_parser = get_subparsers.add_parser(
         "report",
         help="Get markdown report entries for a run",
@@ -397,6 +527,55 @@ def main():
         "--json",
         action="store_true",
         help="Output in JSON format",
+    )
+
+    skills_parser = subparsers.add_parser(
+        "skills",
+        help="Manage Trackio skills for AI coding assistants",
+    )
+    skills_subparsers = skills_parser.add_subparsers(
+        dest="skills_action", required=True
+    )
+    skills_add_parser = skills_subparsers.add_parser(
+        "add",
+        help="Download and install the Trackio skill for an AI assistant",
+    )
+    skills_add_parser.add_argument(
+        "--cursor",
+        action="store_true",
+        help="Install for Cursor",
+    )
+    skills_add_parser.add_argument(
+        "--claude",
+        action="store_true",
+        help="Install for Claude Code",
+    )
+    skills_add_parser.add_argument(
+        "--codex",
+        action="store_true",
+        help="Install for Codex",
+    )
+    skills_add_parser.add_argument(
+        "--opencode",
+        action="store_true",
+        help="Install for OpenCode",
+    )
+    skills_add_parser.add_argument(
+        "--global",
+        dest="global_",
+        action="store_true",
+        help="Install globally (user-level) instead of in the current project directory",
+    )
+    skills_add_parser.add_argument(
+        "--dest",
+        type=str,
+        required=False,
+        help="Install into a custom destination (path to skills directory)",
+    )
+    skills_add_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing skill if it already exists",
     )
 
     args = parser.parse_args()
@@ -475,6 +654,30 @@ def main():
                 )
             else:
                 print(format_system_metric_names(system_metrics))
+        elif args.list_type == "alerts":
+            db_path = SQLiteStorage.get_project_db_path(args.project)
+            if not db_path.exists():
+                error_exit(f"Project '{args.project}' not found.")
+            alerts = SQLiteStorage.get_alerts(
+                args.project,
+                run_name=args.run,
+                level=args.level,
+                since=args.since,
+            )
+            if args.json:
+                print(
+                    format_json(
+                        {
+                            "project": args.project,
+                            "run": args.run,
+                            "level": args.level,
+                            "since": args.since,
+                            "alerts": alerts,
+                        }
+                    )
+                )
+            else:
+                print(format_alerts(alerts))
         elif args.list_type == "reports":
             db_path = SQLiteStorage.get_project_db_path(args.project)
             if not db_path.exists():
@@ -547,8 +750,15 @@ def main():
                 error_exit(
                     f"Metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
                 )
+            at_time = getattr(args, "at_time", None)
             values = SQLiteStorage.get_metric_values(
-                args.project, args.run, args.metric
+                args.project,
+                args.run,
+                args.metric,
+                step=args.step,
+                around_step=args.around,
+                at_time=at_time,
+                window=args.window,
             )
             if args.json:
                 print(
@@ -563,6 +773,43 @@ def main():
                 )
             else:
                 print(format_metric_values(values))
+        elif args.get_type == "snapshot":
+            db_path = SQLiteStorage.get_project_db_path(args.project)
+            if not db_path.exists():
+                error_exit(f"Project '{args.project}' not found.")
+            runs = SQLiteStorage.get_runs(args.project)
+            if args.run not in runs:
+                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
+            if not args.step and not args.around and not getattr(args, "at_time", None):
+                error_exit(
+                    "Provide --step, --around (with --window), or --at-time (with --window)."
+                )
+            at_time = getattr(args, "at_time", None)
+            snapshot = SQLiteStorage.get_snapshot(
+                args.project,
+                args.run,
+                step=args.step,
+                around_step=args.around,
+                at_time=at_time,
+                window=args.window,
+            )
+            if args.json:
+                result = {
+                    "project": args.project,
+                    "run": args.run,
+                    "metrics": snapshot,
+                }
+                if args.step is not None:
+                    result["step"] = args.step
+                if args.around is not None:
+                    result["around"] = args.around
+                    result["window"] = args.window
+                if at_time is not None:
+                    result["at_time"] = at_time
+                    result["window"] = args.window
+                print(format_json(result))
+            else:
+                print(format_snapshot(snapshot))
         elif args.get_type == "system-metric":
             db_path = SQLiteStorage.get_project_db_path(args.project)
             if not db_path.exists():
@@ -615,6 +862,30 @@ def main():
                     )
                 else:
                     print(format_system_metrics(system_metrics))
+        elif args.get_type == "alerts":
+            db_path = SQLiteStorage.get_project_db_path(args.project)
+            if not db_path.exists():
+                error_exit(f"Project '{args.project}' not found.")
+            alerts = SQLiteStorage.get_alerts(
+                args.project,
+                run_name=args.run,
+                level=args.level,
+                since=args.since,
+            )
+            if args.json:
+                print(
+                    format_json(
+                        {
+                            "project": args.project,
+                            "run": args.run,
+                            "level": args.level,
+                            "since": args.since,
+                            "alerts": alerts,
+                        }
+                    )
+                )
+            else:
+                print(format_alerts(alerts))
         elif args.get_type == "report":
             db_path = SQLiteStorage.get_project_db_path(args.project)
             if not db_path.exists():
@@ -651,8 +922,121 @@ def main():
                     if idx < len(reports):
                         output.append("-" * 80)
                 print("\n".join(output))
+    elif args.command == "skills":
+        if args.skills_action == "add":
+            _handle_skills_add(args)
     else:
         parser.print_help()
+
+
+def _handle_skills_add(args):
+    import os
+    import shutil
+    from pathlib import Path
+
+    try:
+        from huggingface_hub.cli.skills import (
+            CENTRAL_GLOBAL,
+            CENTRAL_LOCAL,
+            GLOBAL_TARGETS,
+            LOCAL_TARGETS,
+        )
+    except (ImportError, ModuleNotFoundError):
+        error_exit(
+            "The 'trackio skills' command requires huggingface_hub >= 1.4.0.\n"
+            "Please upgrade: pip install --upgrade huggingface_hub"
+        )
+
+    SKILL_ID = "trackio"
+    GITHUB_RAW = "https://raw.githubusercontent.com/gradio-app/trackio/main"
+    SKILL_PREFIX = ".agents/skills/trackio"
+    SKILL_FILES = [
+        "SKILL.md",
+        "alerts.md",
+        "logging_metrics.md",
+        "retrieving_metrics.md",
+    ]
+
+    if not (args.cursor or args.claude or args.codex or args.opencode or args.dest):
+        error_exit(
+            "Pick a destination via --cursor, --claude, --codex, --opencode, or --dest."
+        )
+
+    def download(url: str) -> str:
+        from huggingface_hub.utils import get_session
+
+        try:
+            response = get_session().get(url)
+            response.raise_for_status()
+        except Exception as e:
+            error_exit(
+                f"Failed to download {url}\n{e}\n\n"
+                "Make sure you have internet access. The skill files are fetched from "
+                "the Trackio GitHub repository."
+            )
+        return response.text
+
+    def remove_existing(path: Path, force: bool):
+        if not (path.exists() or path.is_symlink()):
+            return
+        if not force:
+            error_exit(
+                f"Skill already exists at {path}.\nRe-run with --force to overwrite."
+            )
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+    def install_to(skills_dir: Path, force: bool) -> Path:
+        skills_dir = skills_dir.expanduser().resolve()
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        dest = skills_dir / SKILL_ID
+        remove_existing(dest, force)
+        dest.mkdir()
+        for fname in SKILL_FILES:
+            content = download(f"{GITHUB_RAW}/{SKILL_PREFIX}/{fname}")
+            (dest / fname).write_text(content, encoding="utf-8")
+        return dest
+
+    def create_symlink(
+        agent_skills_dir: Path, central_skill_path: Path, force: bool
+    ) -> Path:
+        agent_skills_dir = agent_skills_dir.expanduser().resolve()
+        agent_skills_dir.mkdir(parents=True, exist_ok=True)
+        link_path = agent_skills_dir / SKILL_ID
+        remove_existing(link_path, force)
+        link_path.symlink_to(os.path.relpath(central_skill_path, agent_skills_dir))
+        return link_path
+
+    global_targets = {**GLOBAL_TARGETS, "cursor": Path("~/.cursor/skills")}
+    local_targets = {**LOCAL_TARGETS, "cursor": Path(".cursor/skills")}
+    targets_dict = global_targets if args.global_ else local_targets
+
+    if args.dest:
+        if args.cursor or args.claude or args.codex or args.opencode or args.global_:
+            error_exit("--dest cannot be combined with agent flags or --global.")
+        skill_dest = install_to(Path(args.dest), args.force)
+        print(f"Installed '{SKILL_ID}' to {skill_dest}")
+        return
+
+    agent_targets = []
+    if args.cursor:
+        agent_targets.append(targets_dict["cursor"])
+    if args.claude:
+        agent_targets.append(targets_dict["claude"])
+    if args.codex:
+        agent_targets.append(targets_dict["codex"])
+    if args.opencode:
+        agent_targets.append(targets_dict["opencode"])
+
+    central_path = CENTRAL_GLOBAL if args.global_ else CENTRAL_LOCAL
+    central_skill_path = install_to(central_path, args.force)
+    print(f"Installed '{SKILL_ID}' to central location: {central_skill_path}")
+
+    for agent_target in agent_targets:
+        link_path = create_symlink(agent_target, central_skill_path, args.force)
+        print(f"Created symlink: {link_path}")
 
 
 if __name__ == "__main__":

@@ -112,6 +112,46 @@ def format_system_metric_names(names: list[str]) -> str:
     return format_list(names, "System Metrics")
 
 
+def format_snapshot(snapshot: dict[str, list[dict]]) -> str:
+    """Format a metrics snapshot in human-readable format."""
+    if not snapshot:
+        return "No metrics found in the specified range."
+
+    output = []
+    for metric_name, values in sorted(snapshot.items()):
+        output.append(f"\n{metric_name}:")
+        output.append("  Step | Timestamp | Value")
+        output.append("  " + "-" * 48)
+        for v in values:
+            step = v.get("step", "N/A")
+            ts = v.get("timestamp", "N/A")
+            val = v.get("value", "N/A")
+            output.append(f"  {step} | {ts} | {val}")
+
+    return "\n".join(output)
+
+
+def format_alerts(alerts: list[dict]) -> str:
+    """Format alerts in human-readable format."""
+    if not alerts:
+        return "No alerts found."
+
+    output = [f"Found {len(alerts)} alert(s):\n"]
+    output.append("Timestamp | Run | Level | Title | Text | Step")
+    output.append("-" * 80)
+
+    for a in alerts:
+        ts = a.get("timestamp", "N/A")
+        run = a.get("run", "N/A")
+        level = a.get("level", "N/A").upper()
+        title = a.get("title", "")
+        text = a.get("text", "") or ""
+        step = a.get("step", "N/A")
+        output.append(f"{ts} | {run} | {level} | {title} | {text} | {step}")
+
+    return "\n".join(output)
+
+
 def error_exit(message: str, code: int = 1) -> None:
     """Print error message and exit."""
     print(f"Error: {message}", file=sys.stderr)

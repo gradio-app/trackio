@@ -274,3 +274,126 @@ def test_get_runs_returns_chronological_order(temp_dir):
 
     runs = SQLiteStorage.get_runs("proj")
     assert runs == ["run-z", "run-a", "run-m"]
+
+
+def test_rename_run(temp_dir):
+    project = "test_project"
+    old_name = "old_run"
+    new_name = "new_run"
+
+    config = {"param1": "value1", "_Created": "2023-01-01T00:00:00"}
+    metrics = [{"accuracy": 0.95, "loss": 0.1}]
+    SQLiteStorage.bulk_log(project, old_name, metrics, config=config)
+
+    assert SQLiteStorage.get_run_config(project, old_name) is not None
+    assert len(SQLiteStorage.get_logs(project, old_name)) > 0
+
+    SQLiteStorage.rename_run(project, old_name, new_name)
+
+    assert SQLiteStorage.get_run_config(project, old_name) is None
+    assert len(SQLiteStorage.get_logs(project, old_name)) == 0
+
+    assert SQLiteStorage.get_run_config(project, new_name) is not None
+    assert len(SQLiteStorage.get_logs(project, new_name)) > 0
+
+    new_logs = SQLiteStorage.get_logs(project, new_name)
+    assert new_logs[0]["accuracy"] == 0.95
+    assert new_logs[0]["loss"] == 0.1
+
+
+def test_rename_run_duplicate_name(temp_dir):
+    project = "test_project"
+    run1 = "run1"
+    run2 = "run2"
+
+    SQLiteStorage.bulk_log(project, run1, [{"a": 1}])
+    SQLiteStorage.bulk_log(project, run2, [{"b": 2}])
+
+    with pytest.raises(ValueError, match="already exists"):
+        SQLiteStorage.rename_run(project, run1, run2)
+
+    assert len(SQLiteStorage.get_logs(project, run1)) > 0
+    assert len(SQLiteStorage.get_logs(project, run2)) > 0
+
+
+def test_rename_run_with_media(temp_dir):
+    from trackio.utils import MEDIA_DIR
+
+    project = "test_project"
+    old_name = "old_run"
+    new_name = "new_run"
+
+    media_dir = MEDIA_DIR / project / old_name
+    media_dir.mkdir(parents=True, exist_ok=True)
+    test_file = media_dir / "test.txt"
+    test_file.write_text("test content")
+
+    metrics = [
+        {
+            "image": {
+                "_type": "trackio.image",
+                "file_path": f"{project}/{old_name}/test.txt",
+                "caption": "test",
+            }
+        }
+    ]
+    SQLiteStorage.bulk_log(project, old_name, metrics)
+
+    SQLiteStorage.rename_run(project, old_name, new_name)
+
+    new_media_dir = MEDIA_DIR / project / new_name
+    assert new_media_dir.exists()
+    assert (new_media_dir / "test.txt").exists()
+
+    old_media_dir = MEDIA_DIR / project / old_name
+    assert not old_media_dir.exists()
+
+    new_logs = SQLiteStorage.get_logs(project, new_name)
+    assert len(new_logs) > 0
+    assert "image" in new_logs[0]
+    assert new_logs[0]["image"]["file_path"].startswith(f"{project}/{new_name}/")
+
+
+def test_rename_run_nonexistent(temp_dir):
+    project = "test_project"
+    old_name = "nonexistent_run"
+    new_name = "new_run"
+
+    with pytest.raises(ValueError, match="does not exist"):
+        SQLiteStorage.rename_run(project, old_name, new_name)
+
+
+def test_rename_run_empty_name(temp_dir):
+    project = "test_project"
+    old_name = "old_run"
+
+    SQLiteStorage.bulk_log(project, old_name, [{"a": 1}])
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        SQLiteStorage.rename_run(project, old_name, "")
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        SQLiteStorage.rename_run(project, old_name, "   ")
+
+    assert len(SQLiteStorage.get_logs(project, old_name)) > 0
+
+
+def test_rename_run_with_system_metrics(temp_dir):
+    project = "test_project"
+    old_name = "old_run"
+    new_name = "new_run"
+
+    metrics = [{"accuracy": 0.95}]
+    SQLiteStorage.bulk_log(project, old_name, metrics)
+
+    system_metrics = [{"gpu_usage": 80.5}]
+    SQLiteStorage.bulk_log_system(project, old_name, system_metrics)
+
+    SQLiteStorage.rename_run(project, old_name, new_name)
+
+    assert len(SQLiteStorage.get_logs(project, new_name)) > 0
+    assert len(SQLiteStorage.get_system_logs(project, new_name)) > 0
+    assert len(SQLiteStorage.get_system_logs(project, old_name)) == 0
+
+    new_system_logs = SQLiteStorage.get_system_logs(project, new_name)
+    assert new_system_logs[0]["gpu_usage"] == 80.5

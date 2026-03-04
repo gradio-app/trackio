@@ -737,7 +737,12 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return None
 
 
-def generate_share_url(project: str, metrics: str, selected_runs: list = None) -> str:
+def generate_share_url(
+    project: str,
+    metrics: str,
+    selected_runs: list = None,
+    hide_headers: bool = False,
+) -> str:
     """Generate the shareable Space URL based on current settings."""
     space_host = os.environ.get("SPACE_HOST", "")
     if not space_host:
@@ -754,6 +759,8 @@ def generate_share_url(project: str, metrics: str, selected_runs: list = None) -
     if selected_runs:
         params["runs"] = ",".join(selected_runs)
 
+    if hide_headers:
+        params["accordion"] = "hidden"
     params["sidebar"] = "hidden"
     params["navbar"] = "hidden"
 
@@ -761,9 +768,14 @@ def generate_share_url(project: str, metrics: str, selected_runs: list = None) -
     return f"https://{space_host}?{query_string}"
 
 
-def generate_embed_code(project: str, metrics: str, selected_runs: list = None) -> str:
+def generate_embed_code(
+    project: str,
+    metrics: str,
+    selected_runs: list = None,
+    hide_headers: bool = False,
+) -> str:
     """Generate the embed iframe code based on current settings."""
-    embed_url = generate_share_url(project, metrics, selected_runs)
+    embed_url = generate_share_url(project, metrics, selected_runs, hide_headers)
     if not embed_url:
         return ""
 
