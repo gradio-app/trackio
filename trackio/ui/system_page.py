@@ -7,6 +7,7 @@ import trackio.utils as utils
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import fns
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
+from trackio.ui.components.html_accordion import HTMLAccordion
 from trackio.ui.helpers.run_selection import RunSelection
 
 
@@ -204,11 +205,11 @@ trackio.log_gpu()
                 else group_name
             )
 
-            with gr.Accordion(
+            with HTMLAccordion(
                 label=group_label,
                 open=True,
                 key=f"sys-accordion-{group_name}",
-                preserved_by_key=["value", "open"],
+                preserved_by_key=["open"],
             ):
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
@@ -268,11 +269,11 @@ trackio.log_gpu()
                             else subgroup_name
                         )
 
-                        with gr.Accordion(
+                        with HTMLAccordion(
                             label=subgroup_label,
                             open=True,
                             key=f"sys-accordion-{group_name}-{subgroup_name}",
-                            preserved_by_key=["value", "open"],
+                            preserved_by_key=["open"],
                         ):
                             with gr.Draggable(
                                 key=f"sys-row-{group_name}-{subgroup_name}",
