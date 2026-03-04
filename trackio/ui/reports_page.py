@@ -173,6 +173,7 @@ trackio.log({"training_report": trackio.Markdown(report)})
                 gr.Markdown(report.content)
 
     gr.Markdown("## Alerts")
+    alerts_placeholder = gr.Markdown(visible=False)
     alerts_df = gr.Dataframe(
         value=pd.DataFrame(),
         label="Alerts",
@@ -182,13 +183,35 @@ trackio.log({"training_report": trackio.Markdown(report)})
 
     def refresh_alerts(project, selected_run, level_filter):
         df = load_alerts(project, run_name=selected_run, level_filter=level_filter)
-        return gr.Dataframe(value=df, label=f"Alerts ({len(df)})")
+        if df.empty:
+            placeholder_text = """
+No alerts have been logged yet. To log alerts during training:
+
+```python
+import trackio
+
+run = trackio.init(project="my-project")
+
+# Log an alert at different severity levels
+trackio.alert("Low learning rate", level="info")
+trackio.alert("Loss spike detected", text="Loss jumped from 0.1 to 5.3", level="warn")
+trackio.alert("NaN loss", text="Training diverged at step 500", level="error")
+```
+"""
+            return (
+                gr.Markdown(value=placeholder_text, visible=True),
+                gr.Dataframe(value=df, visible=False, label="Alerts (0)"),
+            )
+        return (
+            gr.Markdown(visible=False),
+            gr.Dataframe(value=df, visible=True, label=f"Alerts ({len(df)})"),
+        )
 
     gr.on(
         [timer.tick, reports_page.load, runs_dropdown.change, level_filter_cb.change],
         fn=refresh_alerts,
         inputs=[project_dd, runs_dropdown, level_filter_cb],
-        outputs=alerts_df,
+        outputs=[alerts_placeholder, alerts_df],
         show_progress="hidden",
         api_visibility="private",
     )

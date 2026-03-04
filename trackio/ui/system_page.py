@@ -1,4 +1,4 @@
-"""The System Metrics page for the Trackio UI (GPU metrics, etc.)."""
+"""The System Metrics page for the Trackio UI (GPU, CPU, memory, etc.)."""
 
 import gradio as gr
 import pandas as pd
@@ -7,6 +7,7 @@ import trackio.utils as utils
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui import fns
 from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
+from trackio.ui.components.html_accordion import HTMLAccordion
 from trackio.ui.helpers.run_selection import RunSelection
 
 
@@ -136,20 +137,24 @@ with gr.Blocks() as system_page:
                     """
 ## No System Metrics Available
 
-System metrics (GPU) will appear here once logged. To enable automatic GPU logging:
+System metrics will appear here once logged. To enable automatic logging:
 
 ```python
 import trackio
 
-# GPU logging is auto-enabled when nvidia-ml-py is installed and a GPU is detected
+# Auto-enabled when hardware is detected (NVIDIA GPU or Apple Silicon)
 run = trackio.init(project="my-project")
 
 # Or explicitly enable it:
 run = trackio.init(project="my-project", auto_log_gpu=True)
 
-# You can also manually log GPU metrics:
+# You can also manually log system metrics:
 trackio.log_gpu()
 ```
+
+**Setup:**
+- **NVIDIA GPU:** `pip install trackio[gpu]` (requires `nvidia-ml-py`)
+- **Apple Silicon:** `pip install trackio[apple-gpu]` (requires `psutil`)
 """
                 )
             else:
@@ -200,11 +205,11 @@ trackio.log_gpu()
                 else group_name
             )
 
-            with gr.Accordion(
+            with HTMLAccordion(
                 label=group_label,
                 open=True,
                 key=f"sys-accordion-{group_name}",
-                preserved_by_key=["value", "open"],
+                preserved_by_key=["open"],
             ):
                 if group_data["direct_metrics"]:
                     with gr.Draggable(
@@ -264,11 +269,11 @@ trackio.log_gpu()
                             else subgroup_name
                         )
 
-                        with gr.Accordion(
+                        with HTMLAccordion(
                             label=subgroup_label,
                             open=True,
                             key=f"sys-accordion-{group_name}-{subgroup_name}",
-                            preserved_by_key=["value", "open"],
+                            preserved_by_key=["open"],
                         ):
                             with gr.Draggable(
                                 key=f"sys-row-{group_name}-{subgroup_name}",
