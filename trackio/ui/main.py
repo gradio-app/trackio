@@ -752,10 +752,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
             language="html",
             visible=bool(os.environ.get("SPACE_HOST")),
         )
-        show_headers_cb = gr.Checkbox(
-            label="Show section headers",
-            value=True,
-        )
         with gr.Group():
             run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
             run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
@@ -779,6 +775,10 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
         )
         log_scale_x_cb = gr.Checkbox(label="Log scale X-axis", value=False)
         log_scale_y_cb = gr.Checkbox(label="Log scale Y-axis", value=False)
+        show_headers_cb = gr.Checkbox(
+            label="Show section headers",
+            value=True,
+        )
         metric_filter_tb = gr.Textbox(
             label="Metric Filter (regex)",
             placeholder="e.g., loss|ndcg@10|gpu",

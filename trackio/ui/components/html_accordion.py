@@ -21,12 +21,16 @@ class HTMLAccordion(gr.HTML):
         """
 
         css_template = """
+        border: ${hidden ? 'none' : '1px solid var(--border-color-primary, #e5e7eb)'};
+        border-radius: 8px;
+        overflow: hidden;
+
         .accordion-header {
             display: ${hidden ? 'none' : 'flex'};
             align-items: center;
             cursor: pointer;
             user-select: none;
-            margin-bottom: 8px;
+            background: var(--background-fill-secondary, transparent);
         }
 
         .accordion-toggle {
@@ -36,7 +40,7 @@ class HTMLAccordion(gr.HTML):
             background: none;
             border: none;
             cursor: pointer;
-            padding: 4px 0;
+            padding: 10px 12px;
             width: 100%;
             text-align: left;
             color: var(--body-text-color);
@@ -58,28 +62,13 @@ class HTMLAccordion(gr.HTML):
         js_on_load = """
         const header = element.querySelector('.accordion-header');
         const arrow = element.querySelector('.accordion-arrow');
+        const headerParent = header ? header.parentElement : null;
         let isOpen = props.open !== undefined ? props.open : true;
 
         function getContentNodes() {
-            if (!header) {
-                return Array.from(element.children).filter((child) => child.tagName !== 'STYLE');
-            }
-            const parent = header.parentElement;
-            if (parent) {
-                const siblingNodes = Array.from(parent.children).filter((node) => {
-                    if (node === header) return false;
-                    if (node.tagName === 'STYLE') return false;
-                    if (node.contains(header)) return false;
-                    return true;
-                });
-                if (siblingNodes.length > 0) {
-                    return siblingNodes;
-                }
-            }
             return Array.from(element.children).filter((node) => {
-                if (node === header) return false;
+                if (node === headerParent) return false;
                 if (node.tagName === 'STYLE') return false;
-                if (node.contains(header)) return false;
                 return true;
             });
         }
@@ -88,8 +77,14 @@ class HTMLAccordion(gr.HTML):
             if (arrow) {
                 arrow.style.transform = isOpen ? 'rotate(90deg)' : 'rotate(0deg)';
             }
+            if (header) {
+                header.style.borderBottom = isOpen
+                    ? '1px solid var(--border-color-primary, #e5e7eb)'
+                    : 'none';
+            }
             for (const node of getContentNodes()) {
                 node.style.display = isOpen ? '' : 'none';
+                node.style.padding = '0 6px';
             }
         }
 
