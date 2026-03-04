@@ -31,6 +31,9 @@ with gr.Blocks() as run_detail_page:
         main_page_name=False,
     )
 
+    timer = gr.Timer(value=1)
+    fns.setup_alert_notifications(timer, project_dd)
+
     run_details = gr.Markdown(RUN_DETAILS_TEMPLATE)
 
     run_config = gr.JSON(label="Run Config")
