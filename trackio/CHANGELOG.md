@@ -1,5 +1,19 @@
 # trackio
 
+## 0.18.0
+
+### Features
+
+- [#435](https://github.com/gradio-app/trackio/pull/435) [`4a47112`](https://github.com/gradio-app/trackio/commit/4a471128e18a39e45fad48a67fd711c5ae9e4aed) - feat: allow hiding section header accordions.  Thanks @Saba9!
+- [#439](https://github.com/gradio-app/trackio/pull/439) [`18e9650`](https://github.com/gradio-app/trackio/commit/18e96503d5a3a7cf926e92782d457e23c19942bd) - Add alerts with webhooks, CLI, and documentation.  Thanks @abidlabs!
+- [#438](https://github.com/gradio-app/trackio/pull/438) [`0875ccd`](https://github.com/gradio-app/trackio/commit/0875ccd3d8a41b1376f64030f21cfe8cdcc73b05) - Add "share this view" functionality.  Thanks @qgallouedec!
+- [#409](https://github.com/gradio-app/trackio/pull/409) [`9282403`](https://github.com/gradio-app/trackio/commit/9282403d8896d48679b0f888208a7ba5bdd4271a) - Add Apple Silicon GPU and system monitoring support.  Thanks @znation!
+- [#434](https://github.com/gradio-app/trackio/pull/434) [`4193223`](https://github.com/gradio-app/trackio/commit/41932230a3a2e1c16405dba08ecba5a42f11d1a8) - fix: table slider crash.  Thanks @Saba9!
+
+### Fixes
+
+- [#441](https://github.com/gradio-app/trackio/pull/441) [`3a2d11d`](https://github.com/gradio-app/trackio/commit/3a2d11dab0b4b37c925abc30ef84b0e2910321ee) - preserve x-axis step when toggling run checkboxes.  Thanks @Saba9!
+
 ## 0.17.0
 
 ### Features
