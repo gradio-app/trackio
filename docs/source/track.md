@@ -189,28 +189,34 @@ Audio can be logged from a file path or a numpy array.
 - Values may be float or integer; floats are peak-normalized and converted to 16-bit PCM
 - `format` can be `"wav"` or `"mp3"` when logging from a numpy array (default `"wav"`)
 
-### Logging GPU metrics
+### Logging system metrics
 
-If you're training on NVIDIA GPUs, you can log GPU metrics (utilization, memory, temperature, power, etc.). This requires the `nvidia-ml-py` package, which is automatically installed as part of the `gpu` extra:
+Trackio can automatically log system metrics in the background. It supports both NVIDIA GPUs and Apple Silicon (M-series) Macs.
+
+**Installation:**
 
 ```bash
+# NVIDIA GPU monitoring
 pip install trackio[gpu]
+
+# Apple Silicon system monitoring
+pip install trackio[apple-gpu]
 ```
 
 **Automatic logging (default):**
 
-When `nvidia-ml-py` is installed and an NVIDIA GPU is detected, GPU metrics are logged automatically in the background (every 10 seconds by default):
+When the appropriate package is installed and compatible hardware is detected, system metrics are logged automatically in the background (every 10 seconds by default):
 
 ```python
 import trackio
 
-# GPU logging is auto-enabled when nvidia-ml-py is installed and GPU is detected
+# Auto-enabled when hardware is detected
 trackio.init(project="my_project")
 
 for step in range(100):
     # ... training code ...
     trackio.log({"loss": loss})
-# GPU metrics are logged automatically in the background
+# System metrics are logged automatically in the background
 
 trackio.finish()
 ```
@@ -227,7 +233,7 @@ trackio.init(project="my_project", auto_log_gpu=False)
 
 **Manual logging:**
 
-You can also log GPU metrics manually at specific times using [`log_gpu`]:
+You can also log system metrics manually at specific times using [`log_gpu`]:
 
 ```python
 import trackio
@@ -237,12 +243,12 @@ trackio.init(project="my_project", auto_log_gpu=False)
 for step in range(100):
     # ... training code ...
     trackio.log({"loss": loss})
-    trackio.log_gpu()  # Log GPU metrics at current time
+    trackio.log_gpu()  # Log system metrics at current time
 
 trackio.finish()
 ```
 
-**Logged metrics:**
+**NVIDIA GPU metrics:**
 
 Per-GPU metrics (`gpu/{i}/{metric}`):
 - `gpu/0/utilization` - GPU utilization %
@@ -273,6 +279,22 @@ Aggregated metrics:
 - `gpu/total_allocated_memory` - Total memory used across all GPUs in GiB
 - `gpu/total_power` - Total power draw across all GPUs
 - `gpu/max_temp` - Maximum temperature across all GPUs
+
+**Apple Silicon metrics:**
+
+- `cpu/utilization` - Overall CPU utilization %
+- `cpu/{i}/utilization` - Per-core CPU utilization %
+- `cpu/frequency` - Current CPU frequency in MHz
+- `cpu/frequency_max` - Maximum CPU frequency in MHz
+- `memory/used` - Memory used in GiB
+- `memory/total` - Total memory in GiB
+- `memory/available` - Available memory in GiB
+- `memory/percent` - Memory usage %
+- `swap/used` - Swap used in GiB
+- `swap/total` - Total swap in GiB
+- `swap/percent` - Swap usage %
+- `temp/{label}` - Temperature sensor readings in Celsius (if available)
+- `gpu/detected` - Whether an Apple GPU was detected (0/1)
 
 ## Finishing a Run
 

@@ -74,10 +74,16 @@ pip install -e .
 
 Trackio has optional dependencies for additional features:
 
-**GPU Monitoring** - For logging NVIDIA GPU metrics (utilization, memory, temperature, etc.):
+**GPU Monitoring (NVIDIA)** - For logging NVIDIA GPU metrics (utilization, memory, temperature, etc.):
 
 ```bash
 pip install trackio[gpu]
+```
+
+**System Monitoring (Apple Silicon)** - For logging CPU, memory, and system metrics on Apple M-series Macs:
+
+```bash
+pip install trackio[apple-gpu]
 ```
 
 **TensorBoard Import** - For importing TensorBoard event files:
