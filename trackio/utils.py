@@ -736,7 +736,12 @@ def get_sync_status(scheduler: "CommitScheduler | DummyCommitScheduler") -> int 
         return None
 
 
-def generate_embed_code(project: str, metrics: str, selected_runs: list = None) -> str:
+def generate_embed_code(
+    project: str,
+    metrics: str,
+    selected_runs: list = None,
+    hide_headers: bool = False,
+) -> str:
     """Generate the embed iframe code based on current settings."""
     space_host = os.environ.get("SPACE_HOST", "")
     if not space_host:
@@ -753,6 +758,9 @@ def generate_embed_code(project: str, metrics: str, selected_runs: list = None) 
     if selected_runs:
         runs_param = ",".join(selected_runs)
         params.append(f"runs={runs_param}")
+
+    if hide_headers:
+        params.append("accordion=hidden")
 
     params.append("sidebar=hidden")
     params.append("navbar=hidden")
