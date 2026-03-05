@@ -440,12 +440,25 @@ def get_metric_values(
     project: str,
     run: str,
     metric_name: str,
+    step: int | None = None,
+    around_step: int | None = None,
+    at_time: str | None = None,
+    window: int | None = None,
 ) -> list[dict]:
     """
     Get all values for a specific metric in a project/run.
     Returns a list of dictionaries with timestamp, step, and value.
+    Optionally filter by step, around_step, at_time, and window.
     """
-    return SQLiteStorage.get_metric_values(project, run, metric_name)
+    return SQLiteStorage.get_metric_values(
+        project,
+        run,
+        metric_name,
+        step=step,
+        around_step=around_step,
+        at_time=at_time,
+        window=window,
+    )
 
 
 def get_runs_for_project(
@@ -560,6 +573,31 @@ def get_run_summary(project: str, run: str) -> dict:
         "config": config,
         "last_step": last_step,
     }
+
+
+def get_system_metrics_for_run(project: str, run: str) -> list[str]:
+    return SQLiteStorage.get_all_system_metrics_for_run(project, run)
+
+
+def get_system_logs(project: str, run: str) -> list[dict]:
+    return SQLiteStorage.get_system_logs(project, run)
+
+
+def get_snapshot(
+    project: str,
+    run: str,
+    step: int | None = None,
+    around_step: int | None = None,
+    at_time: str | None = None,
+    window: int | None = None,
+) -> dict:
+    return SQLiteStorage.get_snapshot(
+        project, run, step=step, around_step=around_step, at_time=at_time, window=window
+    )
+
+
+def get_logs(project: str, run: str) -> list[dict]:
+    return SQLiteStorage.get_logs(project, run)
 
 
 def configure(request: gr.Request):
@@ -1018,6 +1056,22 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(
         fn=get_run_summary,
         api_name="get_run_summary",
+    )
+    gr.api(
+        fn=get_system_metrics_for_run,
+        api_name="get_system_metrics_for_run",
+    )
+    gr.api(
+        fn=get_system_logs,
+        api_name="get_system_logs",
+    )
+    gr.api(
+        fn=get_snapshot,
+        api_name="get_snapshot",
+    )
+    gr.api(
+        fn=get_logs,
+        api_name="get_logs",
     )
 
     def force_sync() -> bool:
