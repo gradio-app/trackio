@@ -1106,7 +1106,6 @@ def main():
 
 
 def _handle_skills_add(args):
-    import os
     import shutil
     from pathlib import Path
 
