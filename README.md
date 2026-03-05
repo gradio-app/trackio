@@ -292,6 +292,14 @@ To set up Trackio for development, clone this repo and run:
 pip install -e ".[dev,tensorboard]"
 ```
 
+## Forking Trackio
+
+Trackio is designed to be extremely forkable. It is written entirely in Python with a Gradio-based dashboard, so you can fork the repo, make changes to the source code (e.g. adding new elements to the dashboard, custom metrics, or new pages), and see those changes reflected immediately when running locally.
+
+Even better, if you deploy your Trackio dashboard to Hugging Face Spaces (by setting a `space_id` in `trackio.init()`), the Space UI will reflect your local version of Trackio — so any customizations you make to the Python source carry over to your hosted dashboard as well.
+
+To get started, follow the [Contributing Guide](#CONTRIBUTING.md) instructions to set up Trackio locally, then make your changes and run `trackio show` to preview them locally.
+
 ## Pronunciation
 
 Trackio is pronounced TRACK-yo, as in "track yo' experiments"
