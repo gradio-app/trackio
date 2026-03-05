@@ -173,18 +173,8 @@ trackio.log({"training_report": trackio.Markdown(report)})
                 gr.Markdown(report.content)
 
     gr.Markdown("## Alerts")
-    alerts_placeholder = gr.Markdown(visible=False)
-    alerts_df = gr.Dataframe(
-        value=pd.DataFrame(),
-        label="Alerts",
-        interactive=False,
-        wrap=True,
-    )
-
-    def refresh_alerts(project, selected_run, level_filter):
-        df = load_alerts(project, run_name=selected_run, level_filter=level_filter)
-        if df.empty:
-            placeholder_text = """
+    alerts_placeholder = gr.Markdown(
+        """
 No alerts have been logged yet. To log alerts during training:
 
 ```python
@@ -198,10 +188,21 @@ trackio.alert("Loss spike detected", text="Loss jumped from 0.1 to 5.3", level="
 trackio.alert("NaN loss", text="Training diverged at step 500", level="error")
 ```
 """
-            return (
-                gr.Markdown(value=placeholder_text, visible=True),
-                gr.Dataframe(value=df, visible=False, label="Alerts (0)"),
-            )
+    )
+    alerts_df = gr.Dataframe(
+        value=pd.DataFrame(),
+        label="Alerts",
+        interactive=False,
+        wrap=True,
+        visible=False,
+    )
+
+    def refresh_alerts(project, selected_run, level_filter, current_df):
+        df = load_alerts(project, run_name=selected_run, level_filter=level_filter)
+        if df.equals(current_df):
+            return gr.skip(), gr.skip()
+        if df.empty:
+            return gr.Markdown(visible=True), gr.Dataframe(value=df, visible=False)
         return (
             gr.Markdown(visible=False),
             gr.Dataframe(value=df, visible=True, label=f"Alerts ({len(df)})"),
@@ -210,7 +211,7 @@ trackio.alert("NaN loss", text="Training diverged at step 500", level="error")
     gr.on(
         [timer.tick, reports_page.load, runs_dropdown.change, level_filter_cb.change],
         fn=refresh_alerts,
-        inputs=[project_dd, runs_dropdown, level_filter_cb],
+        inputs=[project_dd, runs_dropdown, level_filter_cb, alerts_df],
         outputs=[alerts_placeholder, alerts_df],
         show_progress="hidden",
         api_visibility="private",
