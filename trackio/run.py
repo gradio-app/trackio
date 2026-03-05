@@ -150,7 +150,7 @@ class Run:
             or len(self._queued_alerts) > 0
         ):
             if not self._stop_flag.is_set():
-                time.sleep(BATCH_SEND_INTERVAL)
+                self._stop_flag.wait(timeout=BATCH_SEND_INTERVAL)
 
             with self._client_lock:
                 if self._queued_logs:
@@ -257,6 +257,7 @@ class Run:
             or len(self._queued_system_logs) > 0
             or len(self._queued_uploads) > 0
             or len(self._queued_alerts) > 0
+            or self._has_local_buffer
         ):
             if not self._stop_flag.is_set():
                 if consecutive_failures:
@@ -265,7 +266,9 @@ class Run:
                     )
                 else:
                     sleep_time = BATCH_SEND_INTERVAL
-                time.sleep(sleep_time)
+                self._stop_flag.wait(timeout=sleep_time)
+            elif self._has_local_buffer:
+                self._stop_flag.wait(timeout=BATCH_SEND_INTERVAL)
 
             with self._client_lock:
                 if self._client is None:
