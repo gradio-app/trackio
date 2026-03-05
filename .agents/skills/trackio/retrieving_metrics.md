@@ -1,6 +1,6 @@
 # Retrieving Metrics with Trackio CLI
 
-The `trackio` CLI provides direct terminal access to query Trackio experiment tracking data locally without needing to start the MCP server.
+The `trackio` CLI provides direct terminal access to query Trackio experiment tracking data without needing to start the MCP server. Commands work against local data by default, or against a remote HF Space when `--space` is provided.
 
 ## Quick Command Reference
 
@@ -18,6 +18,7 @@ The `trackio` CLI provides direct terminal access to query Trackio experiment tr
 | Get metric around step | `trackio get metric ... --metric <name> --around <N> --window <W>` |
 | Get all metrics snapshot | `trackio get snapshot --project <name> --run <name> --step <N>` |
 | Get system metrics | `trackio get system-metric --project <name> --run <name>` |
+| Query remote Space | `trackio list projects --space <space_id_or_url>` |
 | Show dashboard | `trackio show [--project <name>]` |
 | Sync to Space | `trackio sync --project <name> --space-id <space_id>` |
 
@@ -66,6 +67,17 @@ trackio get snapshot --project <name> --run <name> --at-time <ts> --window 60 --
 trackio get system-metric --project <name> --run <name>           # All system metrics
 trackio get system-metric --project <name> --run <name> --metric <name>  # Specific metric
 trackio get system-metric --project <name> --run <name> --json
+```
+
+### Remote Space Queries
+
+All `list` and `get` commands support querying a remote HF Space with `--space`:
+
+```bash
+trackio list projects --space user/my-space              # Space ID
+trackio list projects --space https://user-my-space.hf.space  # Space URL
+trackio get metric --project <name> --run <name> --metric loss --space user/my-space
+trackio list projects --space user/private-space --hf-token hf_xxx  # Private Space
 ```
 
 ### Dashboard Commands
@@ -185,6 +197,8 @@ All errors exit with non-zero status code and write to stderr.
 - `--run`: Run name (required for run-specific commands)
 - `--metric`: Metric name (required for metric-specific commands)
 - `--json`: Output in JSON format instead of human-readable
+- `--space`: HF Space ID (e.g. `user/space`) or Space URL to query remotely (for `list`/`get` commands)
+- `--hf-token`: HF token for accessing private Spaces (for `list`/`get` commands with `--space`)
 - `--step`: Exact step filter (for `get metric`, `get snapshot`)
 - `--around`: Center step for window filter (for `get metric`, `get snapshot`)
 - `--at-time`: Center ISO timestamp for window filter (for `get metric`, `get snapshot`)

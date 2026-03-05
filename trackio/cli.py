@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from trackio import show, sync
 from trackio.cli_helpers import (
@@ -16,6 +17,20 @@ from trackio.cli_helpers import (
 from trackio.markdown import Markdown
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.ui.main import get_project_summary, get_run_summary
+
+
+def _get_space(args):
+    return getattr(args, "space", None)
+
+
+def _get_remote(args):
+    from trackio.remote_client import RemoteClient
+
+    space = _get_space(args)
+    if not space:
+        return None
+    hf_token = getattr(args, "hf_token", None)
+    return RemoteClient(space, hf_token=hf_token)
 
 
 def _handle_status():
@@ -116,6 +131,16 @@ def _extract_reports(
 
 def main():
     parser = argparse.ArgumentParser(description="Trackio CLI")
+    parser.add_argument(
+        "--space",
+        required=False,
+        help="HF Space ID (e.g. 'user/space') or Space URL to query remotely.",
+    )
+    parser.add_argument(
+        "--hf-token",
+        required=False,
+        help="HF token for accessing private Spaces.",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     ui_parser = subparsers.add_parser(
@@ -580,6 +605,11 @@ def main():
 
     args = parser.parse_args()
 
+    if args.command in ("show", "status", "sync", "skills") and _get_space(args):
+        error_exit(
+            f"The '{args.command}' command does not support --space (remote mode)."
+        )
+
     if args.command == "show":
         color_palette = None
         if args.color_palette:
@@ -597,29 +627,43 @@ def main():
     elif args.command == "sync":
         _handle_sync(args)
     elif args.command == "list":
+        remote = _get_remote(args)
         if args.list_type == "projects":
-            projects = SQLiteStorage.get_projects()
+            if remote:
+                projects = remote.predict(api_name="/get_all_projects")
+            else:
+                projects = SQLiteStorage.get_projects()
             if args.json:
                 print(format_json({"projects": projects}))
             else:
                 print(format_list(projects, "Projects"))
         elif args.list_type == "runs":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
+            if remote:
+                runs = remote.predict(args.project, api_name="/get_runs_for_project")
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
             if args.json:
                 print(format_json({"project": args.project, "runs": runs}))
             else:
                 print(format_list(runs, f"Runs in '{args.project}'"))
         elif args.list_type == "metrics":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
-            if args.run not in runs:
-                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
-            metrics = SQLiteStorage.get_all_metrics_for_run(args.project, args.run)
+            if remote:
+                metrics = remote.predict(
+                    args.project, args.run, api_name="/get_metrics_for_run"
+                )
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
+                if args.run not in runs:
+                    error_exit(
+                        f"Run '{args.run}' not found in project '{args.project}'."
+                    )
+                metrics = SQLiteStorage.get_all_metrics_for_run(args.project, args.run)
             if args.json:
                 print(
                     format_json(
@@ -633,15 +677,22 @@ def main():
                     )
                 )
         elif args.list_type == "system-metrics":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
-            if args.run not in runs:
-                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
-            system_metrics = SQLiteStorage.get_all_system_metrics_for_run(
-                args.project, args.run
-            )
+            if remote:
+                system_metrics = remote.predict(
+                    args.project, args.run, api_name="/get_system_metrics_for_run"
+                )
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
+                if args.run not in runs:
+                    error_exit(
+                        f"Run '{args.run}' not found in project '{args.project}'."
+                    )
+                system_metrics = SQLiteStorage.get_all_system_metrics_for_run(
+                    args.project, args.run
+                )
             if args.json:
                 print(
                     format_json(
@@ -655,15 +706,24 @@ def main():
             else:
                 print(format_system_metric_names(system_metrics))
         elif args.list_type == "alerts":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            alerts = SQLiteStorage.get_alerts(
-                args.project,
-                run_name=args.run,
-                level=args.level,
-                since=args.since,
-            )
+            if remote:
+                alerts = remote.predict(
+                    args.project,
+                    args.run,
+                    args.level,
+                    args.since,
+                    api_name="/get_alerts",
+                )
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                alerts = SQLiteStorage.get_alerts(
+                    args.project,
+                    run_name=args.run,
+                    level=args.level,
+                    since=args.since,
+                )
             if args.json:
                 print(
                     format_json(
@@ -679,17 +739,23 @@ def main():
             else:
                 print(format_alerts(alerts))
         elif args.list_type == "reports":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
+            if remote:
+                runs = remote.predict(args.project, api_name="/get_runs_for_project")
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
             if args.run and args.run not in runs:
                 error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
 
             target_runs = [args.run] if args.run else runs
             all_reports = []
             for run_name in target_runs:
-                logs = SQLiteStorage.get_logs(args.project, run_name)
+                if remote:
+                    logs = remote.predict(args.project, run_name, api_name="/get_logs")
+                else:
+                    logs = SQLiteStorage.get_logs(args.project, run_name)
                 all_reports.extend(_extract_reports(run_name, logs))
 
             if args.json:
@@ -717,49 +783,74 @@ def main():
                 else:
                     print(format_list(report_lines, f"Reports in '{args.project}'"))
     elif args.command == "get":
+        remote = _get_remote(args)
         if args.get_type == "project":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            summary = get_project_summary(args.project)
+            if remote:
+                summary = remote.predict(args.project, api_name="/get_project_summary")
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                summary = get_project_summary(args.project)
             if args.json:
                 print(format_json(summary))
             else:
                 print(format_project_summary(summary))
         elif args.get_type == "run":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
-            if args.run not in runs:
-                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
-            summary = get_run_summary(args.project, args.run)
+            if remote:
+                summary = remote.predict(
+                    args.project, args.run, api_name="/get_run_summary"
+                )
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
+                if args.run not in runs:
+                    error_exit(
+                        f"Run '{args.run}' not found in project '{args.project}'."
+                    )
+                summary = get_run_summary(args.project, args.run)
             if args.json:
                 print(format_json(summary))
             else:
                 print(format_run_summary(summary))
         elif args.get_type == "metric":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
-            if args.run not in runs:
-                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
-            metrics = SQLiteStorage.get_all_metrics_for_run(args.project, args.run)
-            if args.metric not in metrics:
-                error_exit(
-                    f"Metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
-                )
             at_time = getattr(args, "at_time", None)
-            values = SQLiteStorage.get_metric_values(
-                args.project,
-                args.run,
-                args.metric,
-                step=args.step,
-                around_step=args.around,
-                at_time=at_time,
-                window=args.window,
-            )
+            if remote:
+                values = remote.predict(
+                    args.project,
+                    args.run,
+                    args.metric,
+                    args.step,
+                    args.around,
+                    at_time,
+                    args.window,
+                    api_name="/get_metric_values",
+                )
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
+                if args.run not in runs:
+                    error_exit(
+                        f"Run '{args.run}' not found in project '{args.project}'."
+                    )
+                metrics = SQLiteStorage.get_all_metrics_for_run(args.project, args.run)
+                if args.metric not in metrics:
+                    error_exit(
+                        f"Metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
+                    )
+                values = SQLiteStorage.get_metric_values(
+                    args.project,
+                    args.run,
+                    args.metric,
+                    step=args.step,
+                    around_step=args.around,
+                    at_time=at_time,
+                    window=args.window,
+                )
             if args.json:
                 print(
                     format_json(
@@ -774,25 +865,38 @@ def main():
             else:
                 print(format_metric_values(values))
         elif args.get_type == "snapshot":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
-            if args.run not in runs:
-                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
             if not args.step and not args.around and not getattr(args, "at_time", None):
                 error_exit(
                     "Provide --step, --around (with --window), or --at-time (with --window)."
                 )
             at_time = getattr(args, "at_time", None)
-            snapshot = SQLiteStorage.get_snapshot(
-                args.project,
-                args.run,
-                step=args.step,
-                around_step=args.around,
-                at_time=at_time,
-                window=args.window,
-            )
+            if remote:
+                snapshot = remote.predict(
+                    args.project,
+                    args.run,
+                    args.step,
+                    args.around,
+                    at_time,
+                    args.window,
+                    api_name="/get_snapshot",
+                )
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
+                if args.run not in runs:
+                    error_exit(
+                        f"Run '{args.run}' not found in project '{args.project}'."
+                    )
+                snapshot = SQLiteStorage.get_snapshot(
+                    args.project,
+                    args.run,
+                    step=args.step,
+                    around_step=args.around,
+                    at_time=at_time,
+                    window=args.window,
+                )
             if args.json:
                 result = {
                     "project": args.project,
@@ -811,67 +915,134 @@ def main():
             else:
                 print(format_snapshot(snapshot))
         elif args.get_type == "system-metric":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
-            if args.run not in runs:
-                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
-            if args.metric:
-                system_metrics = SQLiteStorage.get_system_logs(args.project, args.run)
-                all_system_metric_names = SQLiteStorage.get_all_system_metrics_for_run(
-                    args.project, args.run
+            if remote:
+                system_metrics = remote.predict(
+                    args.project, args.run, api_name="/get_system_logs"
                 )
-                if args.metric not in all_system_metric_names:
-                    error_exit(
-                        f"System metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
+                if args.metric:
+                    all_system_metric_names = remote.predict(
+                        args.project,
+                        args.run,
+                        api_name="/get_system_metrics_for_run",
                     )
-                filtered_metrics = [
-                    {
-                        k: v
-                        for k, v in entry.items()
-                        if k == "timestamp" or k == args.metric
-                    }
-                    for entry in system_metrics
-                    if args.metric in entry
-                ]
-                if args.json:
-                    print(
-                        format_json(
-                            {
-                                "project": args.project,
-                                "run": args.run,
-                                "metric": args.metric,
-                                "values": filtered_metrics,
-                            }
+                    if args.metric not in all_system_metric_names:
+                        error_exit(
+                            f"System metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
                         )
-                    )
+                    filtered_metrics = [
+                        {
+                            k: v
+                            for k, v in entry.items()
+                            if k == "timestamp" or k == args.metric
+                        }
+                        for entry in system_metrics
+                        if args.metric in entry
+                    ]
+                    if args.json:
+                        print(
+                            format_json(
+                                {
+                                    "project": args.project,
+                                    "run": args.run,
+                                    "metric": args.metric,
+                                    "values": filtered_metrics,
+                                }
+                            )
+                        )
+                    else:
+                        print(format_system_metrics(filtered_metrics))
                 else:
-                    print(format_system_metrics(filtered_metrics))
+                    if args.json:
+                        print(
+                            format_json(
+                                {
+                                    "project": args.project,
+                                    "run": args.run,
+                                    "system_metrics": system_metrics,
+                                }
+                            )
+                        )
+                    else:
+                        print(format_system_metrics(system_metrics))
             else:
-                system_metrics = SQLiteStorage.get_system_logs(args.project, args.run)
-                if args.json:
-                    print(
-                        format_json(
-                            {
-                                "project": args.project,
-                                "run": args.run,
-                                "system_metrics": system_metrics,
-                            }
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
+                if args.run not in runs:
+                    error_exit(
+                        f"Run '{args.run}' not found in project '{args.project}'."
+                    )
+                if args.metric:
+                    system_metrics = SQLiteStorage.get_system_logs(
+                        args.project, args.run
+                    )
+                    all_system_metric_names = (
+                        SQLiteStorage.get_all_system_metrics_for_run(
+                            args.project, args.run
                         )
                     )
+                    if args.metric not in all_system_metric_names:
+                        error_exit(
+                            f"System metric '{args.metric}' not found in run '{args.run}' of project '{args.project}'."
+                        )
+                    filtered_metrics = [
+                        {
+                            k: v
+                            for k, v in entry.items()
+                            if k == "timestamp" or k == args.metric
+                        }
+                        for entry in system_metrics
+                        if args.metric in entry
+                    ]
+                    if args.json:
+                        print(
+                            format_json(
+                                {
+                                    "project": args.project,
+                                    "run": args.run,
+                                    "metric": args.metric,
+                                    "values": filtered_metrics,
+                                }
+                            )
+                        )
+                    else:
+                        print(format_system_metrics(filtered_metrics))
                 else:
-                    print(format_system_metrics(system_metrics))
+                    system_metrics = SQLiteStorage.get_system_logs(
+                        args.project, args.run
+                    )
+                    if args.json:
+                        print(
+                            format_json(
+                                {
+                                    "project": args.project,
+                                    "run": args.run,
+                                    "system_metrics": system_metrics,
+                                }
+                            )
+                        )
+                    else:
+                        print(format_system_metrics(system_metrics))
         elif args.get_type == "alerts":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            alerts = SQLiteStorage.get_alerts(
-                args.project,
-                run_name=args.run,
-                level=args.level,
-                since=args.since,
-            )
+            if remote:
+                alerts = remote.predict(
+                    args.project,
+                    args.run,
+                    args.level,
+                    args.since,
+                    api_name="/get_alerts",
+                )
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                alerts = SQLiteStorage.get_alerts(
+                    args.project,
+                    run_name=args.run,
+                    level=args.level,
+                    since=args.since,
+                )
             if args.json:
                 print(
                     format_json(
@@ -887,14 +1058,19 @@ def main():
             else:
                 print(format_alerts(alerts))
         elif args.get_type == "report":
-            db_path = SQLiteStorage.get_project_db_path(args.project)
-            if not db_path.exists():
-                error_exit(f"Project '{args.project}' not found.")
-            runs = SQLiteStorage.get_runs(args.project)
-            if args.run not in runs:
-                error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
+            if remote:
+                logs = remote.predict(args.project, args.run, api_name="/get_logs")
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                runs = SQLiteStorage.get_runs(args.project)
+                if args.run not in runs:
+                    error_exit(
+                        f"Run '{args.run}' not found in project '{args.project}'."
+                    )
+                logs = SQLiteStorage.get_logs(args.project, args.run)
 
-            logs = SQLiteStorage.get_logs(args.project, args.run)
             reports = _extract_reports(args.run, logs, report_name=args.report)
             if not reports:
                 error_exit(
@@ -930,7 +1106,6 @@ def main():
 
 
 def _handle_skills_add(args):
-    import os
     import shutil
     from pathlib import Path
 

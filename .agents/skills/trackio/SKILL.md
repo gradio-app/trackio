@@ -53,6 +53,8 @@ Use the `trackio` command to query logged metrics and alerts:
 
 **Key concept**: Add `--json` for programmatic output suitable for automation and LLM agents.
 
+**Remote Spaces**: Add `--space <space_id_or_url>` to any `list`/`get` command to query a remote HF Space instead of local data. Use `--hf-token` for private Spaces.
+
 → See [retrieving_metrics.md](retrieving_metrics.md) for all commands, workflows, and JSON output formats.
 
 ## Minimal Logging Setup
@@ -71,6 +73,9 @@ trackio.finish()
 ```bash
 trackio list projects --json
 trackio get metric --project my-project --run my-run --metric loss --json
+
+# Query a remote Space
+trackio list projects --space username/my-space --json
 ```
 
 ## Autonomous ML Experiment Workflow

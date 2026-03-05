@@ -1,6 +1,29 @@
 # CLI Commands
 
-Trackio provides a comprehensive set of CLI commands that enable you to query project, run, and metric information locally without needing to start the MCP server. This is particularly useful for LLM agents and automation scripts. With structured JSON output and programmatic access to all experiment data, Trackio is designed to support autonomous ML experiments run by LLMs.
+Trackio provides a comprehensive set of CLI commands that enable you to query project, run, and metric information without needing to start the MCP server. Commands work against local data by default, or against a remote HF Space when `--space` is provided. This is particularly useful for LLM agents and automation scripts. With structured JSON output and programmatic access to all experiment data, Trackio is designed to support autonomous ML experiments run by LLMs.
+
+## Querying Remote Spaces
+
+All `list` and `get` commands support querying a remote Hugging Face Space instead of local data. Pass the `--space` flag with either a Space ID or full URL:
+
+```sh
+# Using a Space ID
+trackio list projects --space username/my-space
+
+# Using a Space URL
+trackio list projects --space https://username-my-space.hf.space
+
+# Works with any list/get command
+trackio get metric --project "my-project" --run "my-run" --metric "loss" --space username/my-space
+```
+
+For private Spaces, pass `--hf-token` or ensure you are logged in via `huggingface-cli login`:
+
+```sh
+trackio list projects --space username/private-space --hf-token hf_xxxxx
+```
+
+> **Note:** The `show`, `status`, `sync`, and `skills` commands are local-only and do not support `--space`.
 
 ## List Commands
 
@@ -291,6 +314,18 @@ trackio list reports --project "my-project" --run "my-run"
 
 # 10. Print report markdown in terminal
 trackio get report --project "my-project" --run "my-run" --report "training_report"
+```
+
+### Querying a Remote Space
+
+The same workflow works against a remote Space — just add `--space`:
+
+```sh
+# List projects on a remote Space
+trackio list projects --space username/my-space
+
+# Get metric values from a remote Space
+trackio get metric --project "my-project" --run "my-run" --metric "loss" --space username/my-space --json
 ```
 
 ## Use Cases
