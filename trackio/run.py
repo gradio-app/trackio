@@ -29,7 +29,7 @@ from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 from trackio.utils import _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
-MAX_BACKOFF = 30
+MAX_BACKOFF = 30.0
 
 
 class Run:
