@@ -180,9 +180,13 @@ trackio.log({"training_report": trackio.Markdown(report)})
         interactive=False,
         wrap=True,
     )
+    prev_alerts_len = gr.State(value=-1)
 
-    def refresh_alerts(project, selected_run, level_filter):
+    def refresh_alerts(project, selected_run, level_filter, prev_len):
         df = load_alerts(project, run_name=selected_run, level_filter=level_filter)
+        current_len = len(df)
+        if current_len == prev_len:
+            return gr.skip(), gr.skip(), prev_len
         if df.empty:
             placeholder_text = """
 No alerts have been logged yet. To log alerts during training:
@@ -201,17 +205,33 @@ trackio.alert("NaN loss", text="Training diverged at step 500", level="error")
             return (
                 gr.Markdown(value=placeholder_text, visible=True),
                 gr.Dataframe(value=df, visible=False, label="Alerts (0)"),
+                current_len,
             )
         return (
             gr.Markdown(visible=False),
             gr.Dataframe(value=df, visible=True, label=f"Alerts ({len(df)})"),
+            current_len,
         )
 
     gr.on(
-        [timer.tick, reports_page.load, runs_dropdown.change, level_filter_cb.change],
+        [reports_page.load, runs_dropdown.change, level_filter_cb.change],
+        fn=lambda: -1,
+        outputs=[prev_alerts_len],
+        show_progress="hidden",
+        api_visibility="private",
+    ).then(
         fn=refresh_alerts,
-        inputs=[project_dd, runs_dropdown, level_filter_cb],
-        outputs=[alerts_placeholder, alerts_df],
+        inputs=[project_dd, runs_dropdown, level_filter_cb, prev_alerts_len],
+        outputs=[alerts_placeholder, alerts_df, prev_alerts_len],
+        show_progress="hidden",
+        api_visibility="private",
+    )
+
+    gr.on(
+        [timer.tick],
+        fn=refresh_alerts,
+        inputs=[project_dd, runs_dropdown, level_filter_cb, prev_alerts_len],
+        outputs=[alerts_placeholder, alerts_df, prev_alerts_len],
         show_progress="hidden",
         api_visibility="private",
     )
