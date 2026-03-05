@@ -197,10 +197,12 @@ trackio.alert("NaN loss", text="Training diverged at step 500", level="error")
         visible=False,
     )
 
-    def refresh_alerts(project, selected_run, level_filter):
+    def refresh_alerts(project, selected_run, level_filter, current_df):
         df = load_alerts(project, run_name=selected_run, level_filter=level_filter)
-        if df.empty:
+        if df.equals(current_df):
             return gr.skip(), gr.skip()
+        if df.empty:
+            return gr.Markdown(visible=True), gr.Dataframe(value=df, visible=False)
         return (
             gr.Markdown(visible=False),
             gr.Dataframe(value=df, visible=True, label=f"Alerts ({len(df)})"),
@@ -209,7 +211,7 @@ trackio.alert("NaN loss", text="Training diverged at step 500", level="error")
     gr.on(
         [timer.tick, reports_page.load, runs_dropdown.change, level_filter_cb.change],
         fn=refresh_alerts,
-        inputs=[project_dd, runs_dropdown, level_filter_cb],
+        inputs=[project_dd, runs_dropdown, level_filter_cb, alerts_df],
         outputs=[alerts_placeholder, alerts_df],
         show_progress="hidden",
         api_visibility="private",
