@@ -173,22 +173,8 @@ trackio.log({"training_report": trackio.Markdown(report)})
                 gr.Markdown(report.content)
 
     gr.Markdown("## Alerts")
-    alerts_placeholder = gr.Markdown(visible=False)
-    alerts_df = gr.Dataframe(
-        value=pd.DataFrame(),
-        label="Alerts",
-        interactive=False,
-        wrap=True,
-    )
-    prev_alerts_len = gr.State(value=-1)
-
-    def refresh_alerts(project, selected_run, level_filter, prev_len):
-        df = load_alerts(project, run_name=selected_run, level_filter=level_filter)
-        current_len = len(df)
-        if current_len == prev_len:
-            return gr.skip(), gr.skip(), prev_len
-        if df.empty:
-            placeholder_text = """
+    alerts_placeholder = gr.Markdown(
+        """
 No alerts have been logged yet. To log alerts during training:
 
 ```python
@@ -202,36 +188,29 @@ trackio.alert("Loss spike detected", text="Loss jumped from 0.1 to 5.3", level="
 trackio.alert("NaN loss", text="Training diverged at step 500", level="error")
 ```
 """
-            return (
-                gr.Markdown(value=placeholder_text, visible=True),
-                gr.Dataframe(value=df, visible=False, label="Alerts (0)"),
-                current_len,
-            )
+    )
+    alerts_df = gr.Dataframe(
+        value=pd.DataFrame(),
+        label="Alerts",
+        interactive=False,
+        wrap=True,
+        visible=False,
+    )
+
+    def refresh_alerts(project, selected_run, level_filter):
+        df = load_alerts(project, run_name=selected_run, level_filter=level_filter)
+        if df.empty:
+            return gr.skip(), gr.skip()
         return (
             gr.Markdown(visible=False),
             gr.Dataframe(value=df, visible=True, label=f"Alerts ({len(df)})"),
-            current_len,
         )
 
     gr.on(
-        [reports_page.load, runs_dropdown.change, level_filter_cb.change],
-        fn=lambda: -1,
-        outputs=[prev_alerts_len],
-        show_progress="hidden",
-        api_visibility="private",
-    ).then(
+        [timer.tick, reports_page.load, runs_dropdown.change, level_filter_cb.change],
         fn=refresh_alerts,
-        inputs=[project_dd, runs_dropdown, level_filter_cb, prev_alerts_len],
-        outputs=[alerts_placeholder, alerts_df, prev_alerts_len],
-        show_progress="hidden",
-        api_visibility="private",
-    )
-
-    gr.on(
-        [timer.tick],
-        fn=refresh_alerts,
-        inputs=[project_dd, runs_dropdown, level_filter_cb, prev_alerts_len],
-        outputs=[alerts_placeholder, alerts_df, prev_alerts_len],
+        inputs=[project_dd, runs_dropdown, level_filter_cb],
+        outputs=[alerts_placeholder, alerts_df],
         show_progress="hidden",
         api_visibility="private",
     )
