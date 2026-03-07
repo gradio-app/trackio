@@ -89,14 +89,30 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     assert not errors, f"Worker errors: {errors}"
 
     verify_client = Client(test_space_id)
-    runs = verify_client.predict(project=project_name, api_name="/get_runs_for_project")
+    for _ in range(6):
+        runs = verify_client.predict(
+            project=project_name, api_name="/get_runs_for_project"
+        )
+        if len(runs) == num_threads:
+            break
+        time.sleep(5)
     assert len(runs) == num_threads, f"Expected {num_threads} runs, got {len(runs)}"
 
     total_logs = 0
     for run_name in runs:
-        summary = verify_client.predict(
-            project=project_name, run=run_name, api_name="/get_run_summary"
-        )
+        for attempt in range(3):
+            try:
+                summary = verify_client.predict(
+                    project=project_name,
+                    run=run_name,
+                    api_name="/get_run_summary",
+                )
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(5)
+                verify_client = Client(test_space_id)
         total_logs += summary["num_logs"]
         assert summary["num_logs"] == logs_per_thread, (
             f"Run {run_name}: expected {logs_per_thread} logs, got {summary['num_logs']}"

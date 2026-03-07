@@ -843,27 +843,32 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT timestamp, step, metrics
-                FROM metrics
-                WHERE run_name = ?
-                ORDER BY timestamp
-                """,
-                (run,),
-            )
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT timestamp, step, metrics
+                    FROM metrics
+                    WHERE run_name = ?
+                    ORDER BY timestamp
+                    """,
+                    (run,),
+                )
 
-            rows = cursor.fetchall()
-            results = []
-            for row in rows:
-                metrics = orjson.loads(row["metrics"])
-                metrics = deserialize_values(metrics)
-                metrics["timestamp"] = row["timestamp"]
-                metrics["step"] = row["step"]
-                results.append(metrics)
-            return results
+                rows = cursor.fetchall()
+                results = []
+                for row in rows:
+                    metrics = orjson.loads(row["metrics"])
+                    metrics = deserialize_values(metrics)
+                    metrics["timestamp"] = row["timestamp"]
+                    metrics["step"] = row["step"]
+                    results.append(metrics)
+                return results
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return []
+            raise
 
     @staticmethod
     def load_from_dataset():
@@ -919,17 +924,22 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT run_name
-                FROM metrics
-                GROUP BY run_name
-                ORDER BY MIN(timestamp) ASC
-                """,
-            )
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT run_name
+                    FROM metrics
+                    GROUP BY run_name
+                    ORDER BY MIN(timestamp) ASC
+                    """,
+                )
             return [row[0] for row in cursor.fetchall()]
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return []
+            raise
 
     @staticmethod
     def get_max_steps_for_runs(project: str) -> dict[str, int]:
@@ -938,21 +948,26 @@ class SQLiteStorage:
         if not db_path.exists():
             return {}
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT run_name, MAX(step) as max_step
-                FROM metrics
-                GROUP BY run_name
-                """
-            )
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT run_name, MAX(step) as max_step
+                    FROM metrics
+                    GROUP BY run_name
+                    """
+                )
 
-            results = {}
-            for row in cursor.fetchall():
-                results[row["run_name"]] = row["max_step"]
+                results = {}
+                for row in cursor.fetchall():
+                    results[row["run_name"]] = row["max_step"]
 
-            return results
+                return results
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return {}
+            raise
 
     @staticmethod
     def get_max_step_for_run(project: str, run: str) -> int | None:
@@ -961,11 +976,18 @@ class SQLiteStorage:
         if not db_path.exists():
             return None
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,))
-            result = cursor.fetchone()[0]
-            return result
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT MAX(step) FROM metrics WHERE run_name = ?", (run,)
+                )
+                result = cursor.fetchone()[0]
+                return result
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return None
+            raise
 
     @staticmethod
     def get_run_config(project: str, run: str) -> dict | None:
