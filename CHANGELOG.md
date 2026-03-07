@@ -1,5 +1,11 @@
 # trackio
 
+## 0.19.0
+
+### Features
+
+- [#444](https://github.com/gradio-app/trackio/pull/444) [`358f2a9`](https://github.com/gradio-app/trackio/commit/358f2a9ca238ee8b90b5a8c96220da287e0698fb) - Fix alerts placeholder flashing on reports page.  Thanks @abidlabs!
+
 ## 0.18.0
 
 ### Features
