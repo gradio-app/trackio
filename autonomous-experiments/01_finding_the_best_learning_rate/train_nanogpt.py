@@ -22,11 +22,15 @@ Optimizer choices (--optimizer):
 Data: FineWeb (pre-tokenized with GPT-2 tokenizer, auto-downloaded from HF Hub).
       Downloads ~1.8GB for 9 training shards (~900M tokens) + validation.
 
-Examples:
-  python train_nanogpt.py                              # default: Muon + compile
-  python train_nanogpt.py --optimizer adamw             # compare with AdamW
-  python train_nanogpt.py --max_steps 10000             # train longer
-  python train_nanogpt.py --batch_size 32 --no_compile  # debug without compile
+Run with Hugging Face Jobs like this:
+
+hf jobs uv run \
+    --flavor a100-large \
+    --timeout 10m \
+    --secrets HF_TOKEN \
+    --with torch \
+    --with numpy \
+    train_nanogpt.py
 """
 
 import glob
