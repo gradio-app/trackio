@@ -1,6 +1,33 @@
+import os
 import time
 
 import pytest
+from gradio_client import Client
+
+from trackio import deploy, utils
+
+
+@pytest.fixture(scope="session")
+def test_space_id():
+    space_id = os.environ.get("TEST_SPACE_ID")
+    if not space_id:
+        pytest.skip("TEST_SPACE_ID environment variable not set")
+    return space_id
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_space_ready(test_space_id):
+    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(test_space_id, None)
+    deploy.create_space_if_not_exists(space_id, None, dataset_id, None)
+
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        try:
+            Client(test_space_id, verbose=False)
+            return
+        except Exception:
+            time.sleep(10)
+    pytest.fail(f"Space {test_space_id} not ready after 5 minutes")
 
 
 @pytest.fixture
