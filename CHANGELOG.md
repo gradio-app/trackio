@@ -1,5 +1,12 @@
 # trackio
 
+## 0.19.0
+
+### Features
+
+- [#445](https://github.com/gradio-app/trackio/pull/445) [`cef4a58`](https://github.com/gradio-app/trackio/commit/cef4a583cb76f4091fc6c0e5783124ee84f8e243) - Add remote HF Space support to CLI.  Thanks @abidlabs!
+- [#444](https://github.com/gradio-app/trackio/pull/444) [`358f2a9`](https://github.com/gradio-app/trackio/commit/358f2a9ca238ee8b90b5a8c96220da287e0698fb) - Fix alerts placeholder flashing on reports page.  Thanks @abidlabs!
+
 ## 0.18.0
 
 ### Features
