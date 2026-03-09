@@ -43,6 +43,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 import trackio
 
 # =====================================================================
@@ -206,7 +207,9 @@ class Muon(torch.optim.Optimizer):
     """
 
     def __init__(self, params, lr=0.02, momentum=0.95, weight_decay=0.0, ns_steps=5):
-        defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay, ns_steps=ns_steps)
+        defaults = dict(
+            lr=lr, momentum=momentum, weight_decay=weight_decay, ns_steps=ns_steps
+        )
         super().__init__(params, defaults)
 
     @torch.no_grad()
@@ -279,7 +282,9 @@ class DataLoader:
         header = np.memmap(path, dtype=np.int32, mode="r", shape=(256,))
         if int(header[0]) == 20240520:
             num_tokens = int(header[2])
-            return np.memmap(path, dtype=np.uint16, mode="r", offset=256 * 4, shape=(num_tokens,))
+            return np.memmap(
+                path, dtype=np.uint16, mode="r", offset=256 * 4, shape=(num_tokens,)
+            )
         return np.memmap(path, dtype=np.uint16, mode="r")
 
     def __init__(self, data_dir, split, batch_size, seq_len, device, vocab_size):
@@ -298,7 +303,9 @@ class DataLoader:
         total_tokens = sum(len(s) for s in self.shards)
         print(f"  {split}: {len(files)} shard(s), {total_tokens / 1e6:.0f}M tokens")
 
-        sample_tokens = np.concatenate([s[: min(4096, len(s))] for s in self.shards[:2]])
+        sample_tokens = np.concatenate(
+            [s[: min(4096, len(s))] for s in self.shards[:2]]
+        )
         sample_max = int(sample_tokens.max()) if len(sample_tokens) > 0 else -1
         assert sample_max < self.vocab_size, (
             f"Token id {sample_max} exceeds vocab_size={self.vocab_size}. "
@@ -456,9 +463,7 @@ def build_optimizers(model, args):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Minimal NanoGPT training on FineWeb"
-    )
+    parser = argparse.ArgumentParser(description="Minimal NanoGPT training on FineWeb")
 
     parser.add_argument(
         "--optimizer",
@@ -467,9 +472,13 @@ def main():
         choices=["muon", "adamw"],
         help="Optimizer: muon (Muon+AdamW) or adamw (pure AdamW)",
     )
-    parser.add_argument("--learning_rate", type=float, default=None,
-                        help="Primary learning rate. Overrides --adam_lr for adamw, "
-                             "or both --muon_lr and --adam_lr (scaled) for muon.")
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=None,
+        help="Primary learning rate. Overrides --adam_lr for adamw, "
+        "or both --muon_lr and --adam_lr (scaled) for muon.",
+    )
     parser.add_argument("--muon_lr", type=float, default=0.02)
     parser.add_argument("--adam_lr", type=float, default=6e-4)
     parser.add_argument("--weight_decay", type=float, default=0.01)
@@ -495,8 +504,12 @@ def main():
     parser.add_argument("--log_interval", type=int, default=10)
     parser.add_argument("--heartbeat_seconds", type=int, default=30)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--run_name", type=str, default=None,
-                        help="Override the auto-generated Trackio run name.")
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default=None,
+        help="Override the auto-generated Trackio run name.",
+    )
 
     args = parser.parse_args()
 
@@ -580,8 +593,10 @@ def main():
     optimizers, set_lr = build_optimizers(model, args)
 
     tokens_per_step = args.batch_size * args.seq_len * args.grad_accum_steps
-    print(f"\nTraining:")
-    print(f"  Batch size: {args.batch_size} x {args.grad_accum_steps} accum = {args.batch_size * args.grad_accum_steps} effective")
+    print("\nTraining:")
+    print(
+        f"  Batch size: {args.batch_size} x {args.grad_accum_steps} accum = {args.batch_size * args.grad_accum_steps} effective"
+    )
     print(f"  Sequence length: {args.seq_len}")
     print(f"  Tokens/step: {tokens_per_step:,}")
     print(f"  Max steps: {args.max_steps}")
@@ -621,17 +636,28 @@ def main():
             dt = time.time() - t0
             tokens_seen = (step + 1) * tokens_per_step
             tps = tokens_seen / dt if dt > 0 else 0
-            trackio.log({"train_loss": loss_accum, "lr": current_lr, "tok_per_sec": tps, "step": step})
+            trackio.log(
+                {
+                    "train_loss": loss_accum,
+                    "lr": current_lr,
+                    "tok_per_sec": tps,
+                    "step": step,
+                }
+            )
             last_heartbeat_t = time.time()
-        elif args.heartbeat_seconds > 0 and (time.time() - last_heartbeat_t) >= args.heartbeat_seconds:
+        elif (
+            args.heartbeat_seconds > 0
+            and (time.time() - last_heartbeat_t) >= args.heartbeat_seconds
+        ):
             dt = time.time() - t0
-            pct = (step + 1) / args.max_steps * 100
             last_heartbeat_t = time.time()
 
         if step > 0 and step % args.eval_interval == 0:
             val_loss = evaluate(model, val_loader, args.eval_steps)
             best_val_loss = min(best_val_loss, val_loss)
-            trackio.log({"val_loss": val_loss, "best_val_loss": best_val_loss, "step": step})
+            trackio.log(
+                {"val_loss": val_loss, "best_val_loss": best_val_loss, "step": step}
+            )
             if prev_val_loss is not None and val_loss > prev_val_loss:
                 trackio.alert(
                     title="Val loss increasing",
@@ -656,7 +682,14 @@ def main():
 | Total tokens | {total_tokens / 1e6:.0f}M |
 | Throughput | {total_tokens / total_time / 1e3:.1f}K tok/s |
 """)
-    trackio.log({"val_loss": val_loss, "best_val_loss": best_val_loss, "step": args.max_steps, "report": report})
+    trackio.log(
+        {
+            "val_loss": val_loss,
+            "best_val_loss": best_val_loss,
+            "step": args.max_steps,
+            "report": report,
+        }
+    )
 
     trackio.finish()
 
