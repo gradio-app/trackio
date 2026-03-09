@@ -62,12 +62,25 @@ class HTMLAccordion(gr.HTML):
         js_on_load = """
         const header = element.querySelector('.accordion-header');
         const arrow = element.querySelector('.accordion-arrow');
-        const headerParent = header ? header.parentElement : null;
         let isOpen = props.open !== undefined ? props.open : true;
 
         function getContentNodes() {
+            if (!header) {
+                return Array.from(element.children).filter((child) => child.tagName !== 'STYLE');
+            }
+            const parent = element.parentElement;
+            if (parent) {
+                const siblingNodes = Array.from(parent.children).filter((node) => {
+                    if (node === element) return false;
+                    if (node.tagName === 'STYLE') return false;
+                    return true;
+                });
+                if (siblingNodes.length > 0) {
+                    return siblingNodes;
+                }
+            }
             return Array.from(element.children).filter((node) => {
-                if (node === headerParent) return false;
+                if (node === header) return false;
                 if (node.tagName === 'STYLE') return false;
                 return true;
             });
@@ -109,3 +122,11 @@ class HTMLAccordion(gr.HTML):
             apply_default_css=False,
             **kwargs,
         )
+
+    def __enter__(self):
+        self._content_group = gr.Group()
+        return self._content_group.__enter__()
+
+    def __exit__(self, exc_type=None, *args):
+        if hasattr(self, "_content_group"):
+            self._content_group.__exit__(exc_type, *args)
