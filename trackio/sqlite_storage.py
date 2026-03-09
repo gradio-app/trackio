@@ -380,6 +380,7 @@ class SQLiteStorage:
             and not f.endswith("_system.parquet")
             and not f.endswith("_configs.parquet")
         ]
+        imported_projects = {Path(name).stem for name in parquet_names}
         for pq_name in parquet_names:
             parquet_path = TRACKIO_DIR / pq_name
             db_path = parquet_path.with_suffix(DB_EXT)
@@ -413,6 +414,9 @@ class SQLiteStorage:
             parquet_path = TRACKIO_DIR / pq_name
             db_name = pq_name.replace("_system.parquet", DB_EXT)
             db_path = TRACKIO_DIR / db_name
+            project_name = db_path.stem
+            if project_name not in imported_projects and not db_path.exists():
+                continue
 
             df = pd.read_parquet(parquet_path)
             if "metrics" not in df.columns:
@@ -434,6 +438,9 @@ class SQLiteStorage:
             parquet_path = TRACKIO_DIR / pq_name
             db_name = pq_name.replace("_configs.parquet", DB_EXT)
             db_path = TRACKIO_DIR / db_name
+            project_name = db_path.stem
+            if project_name not in imported_projects and not db_path.exists():
+                continue
 
             df = pd.read_parquet(parquet_path)
             if "config" not in df.columns:
