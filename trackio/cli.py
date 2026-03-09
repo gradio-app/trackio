@@ -603,7 +603,20 @@ def main():
         help="Overwrite existing skill if it already exists",
     )
 
-    args = parser.parse_args()
+    args, unknown_args = parser.parse_known_args()
+    if unknown_args:
+        trailing_global_parser = argparse.ArgumentParser(add_help=False)
+        trailing_global_parser.add_argument("--space", required=False)
+        trailing_global_parser.add_argument("--hf-token", required=False)
+        trailing_globals, remaining_unknown = trailing_global_parser.parse_known_args(
+            unknown_args
+        )
+        if remaining_unknown:
+            parser.error(f"unrecognized arguments: {' '.join(remaining_unknown)}")
+        if trailing_globals.space is not None:
+            args.space = trailing_globals.space
+        if trailing_globals.hf_token is not None:
+            args.hf_token = trailing_globals.hf_token
 
     if args.command in ("show", "status", "sync", "skills") and _get_space(args):
         error_exit(
