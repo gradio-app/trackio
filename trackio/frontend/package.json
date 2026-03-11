@@ -1,0 +1,21 @@
+{
+  "name": "trackio-frontend",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "svelte": "^5.0.0",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "vega": "^5.30.0",
+    "vega-lite": "^5.21.0",
+    "vega-embed": "^6.26.0"
+  }
+}

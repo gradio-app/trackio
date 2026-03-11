@@ -61,6 +61,7 @@ trackio = "trackio.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["trackio"]
+artifacts = ["trackio/frontend/dist/**"]
 
 [tool.hatch.version]
 path = "trackio/package.json"
@@ -76,6 +77,7 @@ exclude = [
     "__pycache__",
     "build",
     "dist",
+    "trackio/frontend",
 ]
 
 # Same as Black.
