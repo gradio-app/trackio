@@ -36,7 +36,7 @@
 
 <div class="sidebar" class:collapsed={!open}>
   <button class="toggle-btn" onclick={toggleSidebar}>
-    {open ? "◀" : "▶"}
+    {open ? "‹" : "›"}
   </button>
 
   {#if open}
@@ -56,7 +56,7 @@
       </div>
 
       <div class="control-group">
-        <label class="label">Project</label>
+        <span class="label">Project</span>
         <select
           class="select"
           bind:value={selectedProject}
@@ -68,13 +68,15 @@
       </div>
 
       <div class="control-group">
-        <label class="label">Runs ({filteredRuns.length})</label>
-        <input
-          type="text"
-          class="input"
-          placeholder="Type to filter..."
-          bind:value={filterText}
-        />
+        <div class="group-box">
+          <span class="label">Runs ({filteredRuns.length})</span>
+          <input
+            type="text"
+            class="input"
+            placeholder="Type to filter..."
+            bind:value={filterText}
+          />
+        </div>
         <div class="checkbox-list">
           <ColoredCheckbox
             choices={filteredRuns}
@@ -89,25 +91,29 @@
       <div class="control-group">
         <label class="checkbox-label">
           <input type="checkbox" bind:checked={realtimeEnabled} />
-          Refresh metrics realtime
+          <span class="checkbox-text">Refresh metrics realtime</span>
         </label>
       </div>
 
       <div class="control-group">
-        <label class="label">Smoothing Factor: {smoothing}</label>
-        <input
-          type="range"
-          min="0"
-          max="20"
-          step="1"
-          bind:value={smoothing}
-          class="slider"
-        />
-        <span class="hint">{smoothing === 0 ? "no smoothing" : ""}</span>
+        <span class="label">Smoothing Factor</span>
+        <span class="info-text">0 = no smoothing</span>
+        <div class="slider-row">
+          <span class="slider-label">0</span>
+          <input
+            type="range"
+            min="0"
+            max="20"
+            step="1"
+            bind:value={smoothing}
+            class="slider"
+          />
+          <span class="slider-label">20</span>
+        </div>
       </div>
 
       <div class="control-group">
-        <label class="label">X-axis</label>
+        <span class="label">X-axis</span>
         <select class="select" bind:value={xAxis}>
           {#each availableXAxes as axis}
             <option value={axis}>{axis}</option>
@@ -118,26 +124,27 @@
       <div class="control-group">
         <label class="checkbox-label">
           <input type="checkbox" bind:checked={logScaleX} />
-          Log scale X-axis
+          <span class="checkbox-text">Log scale X-axis</span>
         </label>
       </div>
 
       <div class="control-group">
         <label class="checkbox-label">
           <input type="checkbox" bind:checked={logScaleY} />
-          Log scale Y-axis
+          <span class="checkbox-text">Log scale Y-axis</span>
         </label>
       </div>
 
       <div class="control-group">
         <label class="checkbox-label">
           <input type="checkbox" bind:checked={showHeaders} />
-          Show section headers
+          <span class="checkbox-text">Show section headers</span>
         </label>
       </div>
 
       <div class="control-group">
-        <label class="label">Metric Filter (regex)</label>
+        <span class="label">Metric Filter (regex)</span>
+        <span class="info-text">Filter metrics using regex patterns. Leave empty to show all metrics.</span>
         <input
           type="text"
           class="input"
@@ -151,8 +158,8 @@
 
 <style>
   .sidebar {
-    width: 280px;
-    min-width: 280px;
+    width: 290px;
+    min-width: 290px;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border-color);
     display: flex;
@@ -162,74 +169,95 @@
     transition: width 0.2s, min-width 0.2s;
   }
   .sidebar.collapsed {
-    width: 32px;
-    min-width: 32px;
+    width: 40px;
+    min-width: 40px;
   }
   .toggle-btn {
     position: absolute;
-    top: 8px;
-    right: 4px;
+    top: 12px;
+    right: 8px;
     z-index: 10;
     border: none;
-    background: var(--bg-tertiary);
+    background: none;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 4px 6px;
-    border-radius: var(--radius-sm);
-    font-size: 10px;
+    padding: 2px 8px;
+    font-size: 20px;
+    line-height: 1;
   }
   .toggle-btn:hover {
-    background: var(--border-color);
+    color: var(--text-primary);
   }
   .sidebar-content {
-    padding: 12px;
+    padding: 16px;
     overflow-y: auto;
     flex: 1;
-    padding-top: 32px;
+    padding-top: 16px;
   }
   .logo-section {
-    margin-bottom: 16px;
+    margin-bottom: 20px;
   }
   .logo {
     width: 80%;
     max-width: 200px;
   }
   .control-group {
-    margin-bottom: 12px;
+    margin-bottom: 16px;
+  }
+  .group-box {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 10px;
+    margin-bottom: 4px;
+  }
+  .group-box .label {
+    margin-bottom: 6px;
+  }
+  .group-box .input {
+    margin-top: 4px;
   }
   .label {
     display: block;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     color: var(--text-primary);
-    margin-bottom: 4px;
+    margin-bottom: 6px;
+  }
+  .info-text {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
   }
   .select {
     width: 100%;
-    padding: 6px 8px;
+    padding: 8px 10px;
     border: 1px solid var(--input-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     background: var(--input-bg);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: 14px;
+    appearance: auto;
   }
   .select:focus {
     outline: none;
     border-color: var(--input-focus);
+    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
   }
   .input {
     width: 100%;
-    padding: 6px 8px;
+    padding: 8px 10px;
     border: 1px solid var(--input-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     background: var(--input-bg);
     color: var(--text-primary);
-    font-size: 13px;
+    font-size: 14px;
     box-sizing: border-box;
   }
   .input:focus {
     outline: none;
     border-color: var(--input-focus);
+    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
   }
   .checkbox-list {
     max-height: 300px;
@@ -239,22 +267,39 @@
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 13px;
+    gap: 8px;
+    font-size: 14px;
     color: var(--text-primary);
     cursor: pointer;
+    padding: 2px 0;
+  }
+  .checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-color);
+    cursor: pointer;
+  }
+  .checkbox-text {
+    font-weight: 500;
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .slider-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 14px;
+    text-align: center;
   }
   .slider {
-    width: 100%;
+    flex: 1;
     accent-color: var(--accent-color);
-  }
-  .hint {
-    font-size: 11px;
-    color: var(--text-muted);
   }
   .divider {
     border: none;
     border-top: 1px solid var(--border-color);
-    margin: 12px 0;
+    margin: 16px 0;
   }
 </style>

@@ -17,14 +17,29 @@
   let container;
   let view;
 
+  let legendEntries = $derived.by(() => {
+    if (!colorField || !data || data.length === 0) return [];
+    const seen = new Set();
+    const entries = [];
+    for (const d of data) {
+      const name = d[colorField];
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        entries.push({ name, color: colorMap[name] || "#999" });
+      }
+    }
+    return entries;
+  });
+
   function buildSpec() {
     const hasColor =
       colorField && data.length > 0 && data[0].hasOwnProperty(colorField);
-    const runs = hasColor
+    const allRuns = hasColor
       ? [...new Set(data.map((d) => d[colorField]))]
       : [];
-    const colorDomain = runs;
-    const colorRange = runs.map(
+    const uniqueRuns = [...new Set(allRuns)];
+    const colorDomain = uniqueRuns;
+    const colorRange = uniqueRuns.map(
       (r) => colorMap[r] || "#999",
     );
 
@@ -79,6 +94,7 @@
                   field: colorField,
                   type: "nominal",
                   scale: { domain: colorDomain, range: colorRange },
+                  legend: null,
                 },
               }
             : {}),
@@ -103,6 +119,7 @@
                   field: colorField,
                   type: "nominal",
                   scale: { domain: colorDomain, range: colorRange },
+                  legend: null,
                 },
               }
             : {}),
@@ -139,10 +156,6 @@
           labelColor: "var(--text-secondary, #666)",
           titleColor: "var(--text-primary, #333)",
           gridColor: "var(--border-light, #eee)",
-        },
-        legend: {
-          labelColor: "var(--text-secondary, #666)",
-          titleColor: "var(--text-primary, #333)",
         },
         view: {
           stroke: "transparent",
@@ -181,6 +194,21 @@
     }
   }
 
+  function downloadData() {
+    if (!data || data.length === 0) return;
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safeName = (y || "data").replace(/\//g, "_");
+    a.download = `${safeName}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   $effect(() => {
     data;
     y;
@@ -204,7 +232,27 @@
 </script>
 
 <div class="plot-container">
+  <div class="plot-toolbar">
+    <button class="toolbar-btn" onclick={downloadData} title="Download data">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+    </button>
+  </div>
   <div class="plot" bind:this={container}></div>
+  {#if legendEntries.length > 0}
+    <div class="custom-legend">
+      <span class="legend-title">{colorField}</span>
+      {#each legendEntries as entry}
+        <span class="legend-item">
+          <span class="legend-dot" style="background: {entry.color}"></span>
+          <span class="legend-label">{entry.name}</span>
+        </span>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -214,8 +262,37 @@
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: 8px;
+    padding: 12px;
     overflow: hidden;
+    position: relative;
+  }
+  .plot-toolbar {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 4px;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .plot-container:hover .plot-toolbar {
+    opacity: 1;
+  }
+  .toolbar-btn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .toolbar-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
   }
   .plot {
     width: 100%;
@@ -228,5 +305,33 @@
   }
   .plot :global(.vega-embed:hover summary) {
     opacity: 1;
+  }
+  .custom-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 6px 0 0;
+    flex-wrap: wrap;
+  }
+  .legend-title {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .legend-label {
+    font-size: 11px;
+    color: var(--text-secondary);
   }
 </style>

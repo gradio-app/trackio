@@ -29,7 +29,7 @@
   let xLim = $state(null);
   let loading = $state(false);
 
-  let colorMap = $derived(buildColorMap(allRuns, smoothing));
+  let colorMap = $derived(buildColorMap(allRuns));
 
   let metricGroups = $derived.by(() => {
     let filtered = metricFilter
@@ -182,37 +182,39 @@
 
 <style>
   .metrics-page {
-    padding: 16px;
+    padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
   }
   .plot-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 16px;
   }
   .loading {
-    padding: 40px;
+    padding: 60px;
     text-align: center;
     color: var(--text-secondary);
     font-size: 14px;
   }
   .empty-state {
-    padding: 40px;
+    padding: 60px;
     text-align: center;
     color: var(--text-secondary);
   }
   .empty-state h2 {
     color: var(--text-primary);
     margin-bottom: 16px;
+    font-size: 18px;
   }
   .empty-state pre {
     display: inline-block;
     text-align: left;
-    background: var(--bg-secondary);
-    padding: 16px;
+    background: var(--bg-primary);
+    padding: 16px 20px;
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     font-size: 13px;
+    line-height: 1.6;
   }
 </style>

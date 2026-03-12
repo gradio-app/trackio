@@ -13,7 +13,7 @@
 {:else}
   <div class="accordion">
     <button class="accordion-header" onclick={toggle}>
-      <span class="arrow" class:rotated={open}>▶</span>
+      <span class="arrow" class:rotated={open}>▾</span>
       <span class="accordion-label">{label}</span>
     </button>
     {#if open}
@@ -26,9 +26,7 @@
 
 <style>
   .accordion {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    margin-bottom: 8px;
+    margin-bottom: 12px;
     overflow: hidden;
   }
   .accordion-hidden {
@@ -39,27 +37,29 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 8px 12px;
-    border: none;
-    background: var(--bg-secondary);
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
     color: var(--text-primary);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     text-align: left;
   }
   .accordion-header:hover {
-    background: var(--bg-tertiary);
+    background: var(--bg-secondary);
   }
   .arrow {
-    font-size: 10px;
+    font-size: 14px;
     transition: transform 0.15s;
-    color: var(--text-secondary);
+    color: var(--text-primary);
+    display: inline-block;
   }
-  .arrow.rotated {
-    transform: rotate(90deg);
+  .arrow:not(.rotated) {
+    transform: rotate(-90deg);
   }
   .accordion-body {
-    padding: 8px;
+    padding: 12px 0;
   }
 </style>

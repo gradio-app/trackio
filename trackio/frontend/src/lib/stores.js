@@ -142,16 +142,10 @@ export function getColorForIndex(i) {
   return DEFAULT_COLORS[i % DEFAULT_COLORS.length];
 }
 
-export function buildColorMap(runs, smoothing) {
+export function buildColorMap(runs) {
   const map = {};
   runs.forEach((run, i) => {
-    const base = getColorForIndex(i);
-    if (smoothing > 0) {
-      map[run] = base + "4D";
-      map[run + "_smoothed"] = base;
-    } else {
-      map[run] = base;
-    }
+    map[run] = getColorForIndex(i);
   });
   return map;
 }

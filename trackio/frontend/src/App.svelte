@@ -255,6 +255,6 @@
     flex: 1;
     overflow: hidden;
     display: flex;
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
   }
 </style>

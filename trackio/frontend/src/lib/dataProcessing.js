@@ -66,7 +66,7 @@ export function processRunData(
       data_type: "original",
     }));
     const smoothed = smoothData(rows, yCols, smoothingGranularity).map(
-      (r) => ({ ...r, run: runName + "_smoothed", data_type: "smoothed" }),
+      (r) => ({ ...r, run: runName, data_type: "smoothed" }),
     );
     return { rows: [...originals, ...smoothed], xColumn };
   }

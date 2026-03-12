@@ -19,7 +19,7 @@
     selectedRuns = runs.slice(0, 5);
   });
 
-  let colorMap = $derived(buildColorMap(selectedRuns, smoothing));
+  let colorMap = $derived(buildColorMap(selectedRuns));
 
   let metricGroups = $derived(groupMetricsByPrefix(metricNames));
   let groupNames = $derived(Object.keys(metricGroups));
