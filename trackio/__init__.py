@@ -696,18 +696,26 @@ def show(
         server_name=host,
     )
 
+    from trackio.frontend_server import mount_frontend
+
+    mount_frontend(app)
+
     base_url = share_url + "/" if share_url else url
+    trackio_url = base_url + "trackio/"
+    if project:
+        trackio_url += f"?project={project}"
     full_url = utils.get_full_url(
         base_url, project=project, write_token=demo.write_token, footer=footer
     )
 
     if not utils.is_in_notebook():
-        print(f"* Trackio UI launched at: {full_url}")
+        print(f"* Trackio UI launched at: {trackio_url}")
+        print(f"* Gradio API available at: {base_url}")
         if open_browser:
-            webbrowser.open(full_url)
+            webbrowser.open(trackio_url)
         block_thread = block_thread if block_thread is not None else True
     else:
-        utils.embed_url_in_notebook(full_url)
+        utils.embed_url_in_notebook(trackio_url)
         block_thread = block_thread if block_thread is not None else False
 
     if block_thread:
