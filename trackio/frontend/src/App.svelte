@@ -177,7 +177,7 @@
           {showHeaders}
         />
       {:else if currentPage === "system"}
-        <SystemMetrics project={selectedProject} {runs} />
+        <SystemMetrics project={selectedProject} {runs} {selectedRuns} {smoothing} />
       {:else if currentPage === "media"}
         <Media project={selectedProject} {runs} />
       {:else if currentPage === "reports"}
@@ -205,36 +205,10 @@
   :global(body) {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
       "Helvetica Neue", Arial, sans-serif;
-    background: var(--bg-primary, #fff);
-    color: var(--text-primary, #111);
+    background: var(--background-fill-primary, #fff);
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-md, 14px);
     -webkit-font-smoothing: antialiased;
-  }
-
-  :global(:root) {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f9fafb;
-    --bg-tertiary: #f3f4f6;
-    --bg-sidebar: #ffffff;
-    --text-primary: #111827;
-    --text-secondary: #6b7280;
-    --text-muted: #9ca3af;
-    --border-color: #e5e7eb;
-    --border-light: #f3f4f6;
-    --accent-color: #f97316;
-    --accent-hover: #ea580c;
-    --accent-light: #fff7ed;
-    --success-color: #10b981;
-    --error-color: #ef4444;
-    --warning-color: #f59e0b;
-    --info-color: #3b82f6;
-    --input-bg: #ffffff;
-    --input-border: #d1d5db;
-    --input-focus: #f97316;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
   }
 
   .app {

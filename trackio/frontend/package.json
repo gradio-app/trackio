@@ -14,8 +14,16 @@
     "vite": "^6.0.0"
   },
   "dependencies": {
+    "@gradio/atoms": "^0.22.2",
+    "@gradio/checkbox": "^0.6.4",
+    "@gradio/dropdown": "^0.11.5",
+    "@gradio/icons": "^0.15.1",
+    "@gradio/slider": "^0.7.7",
+    "@gradio/textbox": "^0.13.5",
+    "@gradio/theme": "^0.6.1",
+    "@gradio/utils": "^0.12.0",
     "vega": "^5.30.0",
-    "vega-lite": "^5.21.0",
-    "vega-embed": "^6.26.0"
+    "vega-embed": "^6.26.0",
+    "vega-lite": "^5.21.0"
   }
 }

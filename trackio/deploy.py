@@ -143,7 +143,18 @@ def deploy_as_space(
             repo_type="space",
             folder_path=trackio_path,
             path_in_repo="trackio",
-            ignore_patterns=["README.md"],
+            ignore_patterns=[
+                "README.md",
+                "frontend/node_modules/**",
+                "frontend/src/**",
+                "frontend/.gitignore",
+                "frontend/package.json",
+                "frontend/package-lock.json",
+                "frontend/vite.config.js",
+                "frontend/svelte.config.js",
+                "**/__pycache__/**",
+                "*.pyc",
+            ],
         )
 
     app_file_content = """import trackio

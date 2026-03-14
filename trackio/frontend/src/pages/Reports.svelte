@@ -1,4 +1,6 @@
 <script>
+  import Dropdown from "../components/Dropdown.svelte";
+  import GradioTable from "../components/GradioTable.svelte";
   import { getAlerts } from "../lib/api.js";
 
   let { project = null, runs = [] } = $props();
@@ -7,6 +9,8 @@
   let alerts = $state([]);
   let filterLevel = $state(null);
   let loading = $state(false);
+
+  let runChoices = $derived(["All runs", ...runs]);
 
   const BADGES = { info: "🔵", warn: "🟡", error: "🔴" };
 
@@ -18,7 +22,8 @@
 
     loading = true;
     try {
-      const data = await getAlerts(project, selectedRun, filterLevel, null);
+      const actualRun = selectedRun === "All runs" ? null : selectedRun;
+      const data = await getAlerts(project, actualRun, filterLevel, null);
       alerts = data || [];
     } catch (e) {
       console.error("Failed to load alerts:", e);
@@ -44,21 +49,32 @@
       return ts;
     }
   }
+
+  let tableHeaders = ["Level", "Run", "Title", "Text", "Step", "Time"];
+  let tableRows = $derived(
+    alerts.map(a => [
+      `${BADGES[a.level] || ""} ${a.level}`,
+      a.run || "",
+      a.title,
+      a.text || "",
+      a.step ?? "",
+      formatTimestamp(a.timestamp),
+    ])
+  );
 </script>
 
 <div class="reports-page">
   <div class="controls">
     <div class="control">
-      <label class="label">Run</label>
-      <select class="select" bind:value={selectedRun}>
-        <option value={null}>All runs</option>
-        {#each runs as run}
-          <option value={run}>{run}</option>
-        {/each}
-      </select>
+      <Dropdown
+        label="Run"
+        choices={runChoices}
+        bind:value={selectedRun}
+        filterable={true}
+      />
     </div>
     <div class="control">
-      <label class="label">Level</label>
+      <span class="block-title">Level</span>
       <div class="filter-pills">
         <button
           class="pill"
@@ -89,36 +105,16 @@
   {:else if alerts.length === 0}
     <div class="empty-state">No alerts found.</div>
   {:else}
-    <table class="alerts-table">
-      <thead>
-        <tr>
-          <th>Level</th>
-          <th>Run</th>
-          <th>Title</th>
-          <th>Text</th>
-          <th>Step</th>
-          <th>Time</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each alerts as alert}
-          <tr>
-            <td>{BADGES[alert.level] || ""} {alert.level}</td>
-            <td>{alert.run || ""}</td>
-            <td>{alert.title}</td>
-            <td>{alert.text || ""}</td>
-            <td>{alert.step ?? ""}</td>
-            <td>{formatTimestamp(alert.timestamp)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <GradioTable
+      headers={tableHeaders}
+      rows={tableRows}
+    />
   {/if}
 </div>
 
 <style>
   .reports-page {
-    padding: 16px;
+    padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
   }
@@ -132,63 +128,39 @@
   .control {
     min-width: 200px;
   }
-  .label {
+  .block-title {
     display: block;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-bottom: 4px;
-  }
-  .select {
-    width: 100%;
-    padding: 6px 8px;
-    border: 1px solid var(--input-border);
-    border-radius: var(--radius-sm);
-    background: var(--input-bg);
-    color: var(--text-primary);
-    font-size: 13px;
+    font-size: var(--block-title-text-size, 14px);
+    font-weight: var(--block-title-text-weight, 400);
+    color: var(--block-title-text-color, #6b7280);
+    margin-bottom: var(--spacing-lg, 8px);
   }
   .filter-pills {
     display: flex;
     gap: 4px;
   }
   .pill {
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-xxl, 22px);
     padding: 4px 12px;
-    font-size: 12px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
+    font-size: var(--text-sm, 12px);
+    background: var(--background-fill-secondary, #f9fafb);
+    color: var(--body-text-color-subdued, #6b7280);
     cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .pill:hover {
+    background: var(--neutral-100, #f3f4f6);
   }
   .pill.active {
-    background: var(--accent-color);
+    background: var(--color-accent, #f97316);
     color: white;
-    border-color: var(--accent-color);
-  }
-  .alerts-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  .alerts-table th,
-  .alerts-table td {
-    padding: 8px 12px;
-    border: 1px solid var(--border-color);
-    text-align: left;
-  }
-  .alerts-table th {
-    background: var(--bg-secondary);
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .alerts-table td {
-    color: var(--text-secondary);
+    border-color: var(--color-accent, #f97316);
   }
   .loading,
   .empty-state {
     padding: 40px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
 </style>

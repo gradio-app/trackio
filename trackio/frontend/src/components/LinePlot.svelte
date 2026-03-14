@@ -146,16 +146,16 @@
 
     return {
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      title: { text: title, fontSize: 13, color: "var(--text-primary, #333)" },
+      title: { text: title, fontSize: 13, color: "#374151" },
       width: "container",
       height: 250,
       layer: layers,
       config: {
         background: "transparent",
         axis: {
-          labelColor: "var(--text-secondary, #666)",
-          titleColor: "var(--text-primary, #333)",
-          gridColor: "var(--border-light, #eee)",
+          labelColor: "#6b7280",
+          titleColor: "#374151",
+          gridColor: "#f3f4f6",
         },
         view: {
           stroke: "transparent",
@@ -259,9 +259,9 @@
   .plot-container {
     min-width: 350px;
     flex: 1;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
+    background: var(--background-fill-primary, white);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
     padding: 12px;
     overflow: hidden;
     position: relative;
@@ -280,19 +280,19 @@
     opacity: 1;
   }
   .toolbar-btn {
-    border: 1px solid var(--border-color);
-    background: var(--bg-primary);
-    color: var(--text-secondary);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    background: var(--background-fill-primary, white);
+    color: var(--body-text-color-subdued, #6b7280);
     cursor: pointer;
     padding: 4px 6px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-sm, 4px);
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .toolbar-btn:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
+    background: var(--neutral-100, #f3f4f6);
+    color: var(--body-text-color, #1f2937);
   }
   .plot {
     width: 100%;
@@ -316,7 +316,7 @@
   }
   .legend-title {
     font-size: 11px;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #6b7280);
     font-weight: 600;
   }
   .legend-item {
@@ -332,6 +332,6 @@
   }
   .legend-label {
     font-size: 11px;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #6b7280);
   }
 </style>

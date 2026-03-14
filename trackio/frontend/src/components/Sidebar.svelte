@@ -1,5 +1,9 @@
 <script>
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
+  import Dropdown from "./Dropdown.svelte";
+  import GradioCheckbox from "./GradioCheckbox.svelte";
+  import GradioSlider from "./GradioSlider.svelte";
+  import GradioTextbox from "./GradioTextbox.svelte";
   import { DEFAULT_COLORS, getColorForIndex } from "../lib/stores.js";
 
   let {
@@ -36,7 +40,15 @@
 
 <div class="sidebar" class:collapsed={!open}>
   <button class="toggle-btn" onclick={toggleSidebar}>
-    {open ? "‹" : "›"}
+    {#if open}
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    {:else}
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    {/if}
   </button>
 
   {#if open}
@@ -56,25 +68,21 @@
       </div>
 
       <div class="control-group">
-        <span class="label">Project</span>
-        <select
-          class="select"
+        <Dropdown
+          label="Project"
+          choices={projects}
           bind:value={selectedProject}
-        >
-          {#each projects as project}
-            <option value={project}>{project}</option>
-          {/each}
-        </select>
+          filterable={true}
+        />
       </div>
 
       <div class="control-group">
         <div class="group-box">
-          <span class="label">Runs ({filteredRuns.length})</span>
-          <input
-            type="text"
-            class="input"
-            placeholder="Type to filter..."
+          <span class="block-title">Runs ({filteredRuns.length})</span>
+          <GradioTextbox
             bind:value={filterText}
+            placeholder="Type to filter..."
+            showLabel={false}
           />
         </div>
         <div class="checkbox-list">
@@ -89,65 +97,57 @@
       <hr class="divider" />
 
       <div class="control-group">
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={realtimeEnabled} />
-          <span class="checkbox-text">Refresh metrics realtime</span>
-        </label>
+        <GradioCheckbox
+          label="Refresh metrics realtime"
+          bind:checked={realtimeEnabled}
+        />
       </div>
 
       <div class="control-group">
-        <span class="label">Smoothing Factor</span>
-        <span class="info-text">0 = no smoothing</span>
-        <div class="slider-row">
-          <span class="slider-label">0</span>
-          <input
-            type="range"
-            min="0"
-            max="20"
-            step="1"
-            bind:value={smoothing}
-            class="slider"
-          />
-          <span class="slider-label">20</span>
-        </div>
+        <GradioSlider
+          label="Smoothing Factor"
+          info="0 = no smoothing"
+          bind:value={smoothing}
+          min={0}
+          max={20}
+          step={1}
+        />
       </div>
 
       <div class="control-group">
-        <span class="label">X-axis</span>
-        <select class="select" bind:value={xAxis}>
-          {#each availableXAxes as axis}
-            <option value={axis}>{axis}</option>
-          {/each}
-        </select>
+        <Dropdown
+          label="X-axis"
+          choices={availableXAxes}
+          bind:value={xAxis}
+          filterable={false}
+        />
       </div>
 
       <div class="control-group">
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={logScaleX} />
-          <span class="checkbox-text">Log scale X-axis</span>
-        </label>
+        <GradioCheckbox
+          label="Log scale X-axis"
+          bind:checked={logScaleX}
+        />
       </div>
 
       <div class="control-group">
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={logScaleY} />
-          <span class="checkbox-text">Log scale Y-axis</span>
-        </label>
+        <GradioCheckbox
+          label="Log scale Y-axis"
+          bind:checked={logScaleY}
+        />
       </div>
 
       <div class="control-group">
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={showHeaders} />
-          <span class="checkbox-text">Show section headers</span>
-        </label>
+        <GradioCheckbox
+          label="Show section headers"
+          bind:checked={showHeaders}
+        />
       </div>
 
       <div class="control-group">
-        <span class="label">Metric Filter (regex)</span>
-        <span class="info-text">Filter metrics using regex patterns. Leave empty to show all metrics.</span>
-        <input
-          type="text"
-          class="input"
+        <GradioTextbox
+          label="Metric Filter (regex)"
+          info="Filter metrics using regex patterns. Leave empty to show all metrics."
           placeholder="e.g., loss|ndcg@10|gpu"
           bind:value={metricFilter}
         />
@@ -160,8 +160,8 @@
   .sidebar {
     width: 290px;
     min-width: 290px;
-    background: var(--bg-sidebar);
-    border-right: 1px solid var(--border-color);
+    background: var(--background-fill-primary, white);
+    border-right: 1px solid var(--border-color-primary, #e5e7eb);
     display: flex;
     flex-direction: column;
     position: relative;
@@ -179,14 +179,18 @@
     z-index: 10;
     border: none;
     background: none;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #9ca3af);
     cursor: pointer;
-    padding: 2px 8px;
-    font-size: 20px;
-    line-height: 1;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm, 4px);
+    transition: color 0.15s, background-color 0.15s;
   }
   .toggle-btn:hover {
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
+    background-color: var(--background-fill-secondary, #f9fafb);
   }
   .sidebar-content {
     padding: 16px;
@@ -205,101 +209,26 @@
     margin-bottom: 16px;
   }
   .group-box {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
     padding: 10px;
     margin-bottom: 4px;
   }
-  .group-box .label {
-    margin-bottom: 6px;
-  }
-  .group-box .input {
-    margin-top: 4px;
-  }
-  .label {
+  .group-box .block-title {
     display: block;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-primary);
+    font-size: var(--block-title-text-size, 14px);
+    font-weight: var(--block-title-text-weight, 400);
+    color: var(--block-title-text-color, #6b7280);
     margin-bottom: 6px;
-  }
-  .info-text {
-    display: block;
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-  }
-  .select {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--input-border);
-    border-radius: var(--radius-md);
-    background: var(--input-bg);
-    color: var(--text-primary);
-    font-size: 14px;
-    appearance: auto;
-  }
-  .select:focus {
-    outline: none;
-    border-color: var(--input-focus);
-    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
-  }
-  .input {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--input-border);
-    border-radius: var(--radius-md);
-    background: var(--input-bg);
-    color: var(--text-primary);
-    font-size: 14px;
-    box-sizing: border-box;
-  }
-  .input:focus {
-    outline: none;
-    border-color: var(--input-focus);
-    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
   }
   .checkbox-list {
     max-height: 300px;
     overflow-y: auto;
     margin-top: 4px;
   }
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-    color: var(--text-primary);
-    cursor: pointer;
-    padding: 2px 0;
-  }
-  .checkbox-label input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent-color);
-    cursor: pointer;
-  }
-  .checkbox-text {
-    font-weight: 500;
-  }
-  .slider-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .slider-label {
-    font-size: 12px;
-    color: var(--text-muted);
-    min-width: 14px;
-    text-align: center;
-  }
-  .slider {
-    flex: 1;
-    accent-color: var(--accent-color);
-  }
   .divider {
     border: none;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--border-color-primary, #e5e7eb);
     margin: 16px 0;
   }
 </style>

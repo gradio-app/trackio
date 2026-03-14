@@ -1,3 +1,4 @@
+import "./lib/gradio-theme.css";
 import App from "./App.svelte";
 import { mount } from "svelte";
 

@@ -1,23 +1,21 @@
 <script>
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
-  import ColoredCheckbox from "../components/ColoredCheckbox.svelte";
   import { getSystemMetricsForRun, getSystemLogs } from "../lib/api.js";
   import { groupMetricsByPrefix, downsample } from "../lib/dataProcessing.js";
-  import { getColorForIndex, buildColorMap } from "../lib/stores.js";
+  import { buildColorMap } from "../lib/stores.js";
 
-  let { project = null, runs = [] } = $props();
+  let {
+    project = null,
+    runs = [],
+    selectedRuns = [],
+    smoothing = 5,
+  } = $props();
 
-  let selectedRuns = $state([]);
   let systemData = $state([]);
   let metricNames = $state([]);
-  let smoothing = $state(5);
   let xLim = $state(null);
   let loading = $state(false);
-
-  $effect(() => {
-    selectedRuns = runs.slice(0, 5);
-  });
 
   let colorMap = $derived(buildColorMap(selectedRuns));
 
@@ -54,11 +52,7 @@
             }
           });
 
-          if (smoothing > 0) {
-            allRows.push({ ...row, time: timeSeconds, run, data_type: "original" });
-          } else {
-            allRows.push({ ...row, time: timeSeconds, run, data_type: "original" });
-          }
+          allRows.push({ ...row, time: timeSeconds, run, data_type: "original" });
         });
       }
 
@@ -86,28 +80,6 @@
 </script>
 
 <div class="system-page">
-  <div class="controls">
-    <div class="run-selector">
-      <label class="label">Runs</label>
-      <ColoredCheckbox
-        choices={runs}
-        bind:selected={selectedRuns}
-        colors={runs.map((_, i) => getColorForIndex(i))}
-      />
-    </div>
-    <div class="smoothing-control">
-      <label class="label">Smoothing: {smoothing}</label>
-      <input
-        type="range"
-        min="0"
-        max="20"
-        step="1"
-        bind:value={smoothing}
-        class="slider"
-      />
-    </div>
-  </div>
-
   {#if loading && systemData.length === 0}
     <div class="loading">Loading system metrics...</div>
   {:else if systemData.length === 0}
@@ -141,31 +113,9 @@
 
 <style>
   .system-page {
-    padding: 16px;
+    padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
-  }
-  .controls {
-    display: flex;
-    gap: 24px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-  }
-  .run-selector {
-    max-width: 300px;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-  .label {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-    display: block;
-    margin-bottom: 4px;
-  }
-  .slider {
-    width: 200px;
-    accent-color: var(--accent-color);
   }
   .plot-grid {
     display: flex;
@@ -176,15 +126,15 @@
   .empty-state {
     padding: 40px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state pre {
     display: inline-block;
     text-align: left;
-    background: var(--bg-secondary);
+    background: var(--background-fill-secondary, #f9fafb);
     padding: 12px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg, 8px);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
     font-size: 13px;
   }
 </style>

@@ -65,10 +65,10 @@
     right: 16px;
     width: 380px;
     max-height: 400px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-md);
+    background: var(--background-fill-primary, white);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
+    box-shadow: var(--shadow-drop-lg);
     z-index: 1000;
     overflow: hidden;
     display: flex;
@@ -76,7 +76,7 @@
   }
   .alert-header {
     padding: 10px 12px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -84,32 +84,32 @@
   .alert-title {
     font-size: 13px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
   }
   .filter-pills {
     display: flex;
     gap: 4px;
   }
   .pill {
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-xxl, 22px);
     padding: 2px 8px;
     font-size: 11px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
+    background: var(--background-fill-secondary, #f9fafb);
+    color: var(--body-text-color-subdued, #6b7280);
     cursor: pointer;
   }
   .pill.active {
-    background: var(--accent-color);
+    background: var(--color-accent, #f97316);
     color: white;
-    border-color: var(--accent-color);
+    border-color: var(--color-accent, #f97316);
   }
   .alert-list {
     overflow-y: auto;
     flex: 1;
   }
   .alert-item {
-    border-bottom: 1px solid var(--border-light);
+    border-bottom: 1px solid var(--neutral-100, #f3f4f6);
   }
   .alert-row {
     display: flex;
@@ -121,23 +121,23 @@
     background: none;
     text-align: left;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--text-sm, 12px);
   }
   .alert-row:hover {
-    background: var(--bg-secondary);
+    background: var(--background-fill-secondary, #f9fafb);
   }
   .alert-text {
     flex: 1;
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
   }
   .alert-meta {
-    font-size: 10px;
-    color: var(--text-muted);
+    font-size: var(--text-xs, 10px);
+    color: var(--body-text-color-subdued, #9ca3af);
     white-space: nowrap;
   }
   .alert-detail {
     padding: 4px 12px 8px 32px;
-    font-size: 12px;
-    color: var(--text-secondary);
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
   }
 </style>

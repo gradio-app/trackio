@@ -58,13 +58,13 @@
 
 <style>
   .files-page {
-    padding: 16px;
+    padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
   }
   h2 {
-    color: var(--text-primary);
-    font-size: 18px;
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-xl, 22px);
     margin-bottom: 16px;
   }
   .file-list {
@@ -73,13 +73,14 @@
   }
   .file-list li {
     padding: 8px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
     margin-bottom: 4px;
   }
   .file-list a {
-    color: var(--accent-color);
+    color: var(--secondary-600, #2563eb);
     text-decoration: none;
+    font-size: var(--text-md, 14px);
   }
   .file-list a:hover {
     text-decoration: underline;
@@ -88,15 +89,15 @@
   .empty-state {
     padding: 40px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state pre {
     display: inline-block;
     text-align: left;
-    background: var(--bg-secondary);
+    background: var(--background-fill-secondary, #f9fafb);
     padding: 12px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg, 8px);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
     font-size: 13px;
   }
 </style>

@@ -1,4 +1,6 @@
 <script>
+  import Dropdown from "../components/Dropdown.svelte";
+  import GradioTable from "../components/GradioTable.svelte";
   import { getLogs, getRunsForProject, getMediaUrl } from "../lib/api.js";
 
   let { project = null, runs = [] } = $props();
@@ -79,12 +81,12 @@
 
 <div class="media-page">
   <div class="controls">
-    <label class="label">Run</label>
-    <select class="select" bind:value={selectedRun}>
-      {#each runs as run}
-        <option value={run}>{run}</option>
-      {/each}
-    </select>
+    <Dropdown
+      label="Run"
+      choices={runs}
+      bind:value={selectedRun}
+      filterable={true}
+    />
   </div>
 
   {#if loading}
@@ -145,37 +147,13 @@
       <section>
         <h3 class="section-title">Tables ({mediaItems.tables.length})</h3>
         {#each mediaItems.tables as tbl}
-          <div class="table-container">
-            <h4>{tbl.key} (step {tbl.step})</h4>
+          <div class="table-section">
             {#if tbl._value && tbl._value.length > 0}
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    {#each Object.keys(tbl._value[0]) as col}
-                      <th>{col}</th>
-                    {/each}
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each tbl._value as row}
-                    <tr>
-                      {#each Object.values(row) as cell}
-                        <td>
-                          {#if typeof cell === "object" && cell?._type?.startsWith("trackio.")}
-                            <img
-                              src={getFilePath(cell)}
-                              alt="media"
-                              class="table-media"
-                            />
-                          {:else}
-                            {cell ?? ""}
-                          {/if}
-                        </td>
-                      {/each}
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
+              <GradioTable
+                label="{tbl.key} (step {tbl.step})"
+                headers={Object.keys(tbl._value[0])}
+                rows={tbl._value.map(row => Object.values(row))}
+              />
             {/if}
           </div>
         {/each}
@@ -186,7 +164,7 @@
 
 <style>
   .media-page {
-    padding: 16px;
+    padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
   }
@@ -194,26 +172,10 @@
     margin-bottom: 16px;
     max-width: 300px;
   }
-  .label {
-    display: block;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-bottom: 4px;
-  }
-  .select {
-    width: 100%;
-    padding: 6px 8px;
-    border: 1px solid var(--input-border);
-    border-radius: var(--radius-sm);
-    background: var(--input-bg);
-    color: var(--text-primary);
-    font-size: 13px;
-  }
   .section-title {
-    font-size: 15px;
+    font-size: var(--text-lg, 16px);
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
     margin: 16px 0 8px;
   }
   .gallery {
@@ -222,10 +184,10 @@
     gap: 12px;
   }
   .gallery-item {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
     overflow: hidden;
-    background: var(--bg-secondary);
+    background: var(--background-fill-secondary, #f9fafb);
   }
   .gallery-item img,
   .gallery-item video {
@@ -234,13 +196,13 @@
   }
   .caption {
     padding: 4px 8px;
-    font-size: 12px;
-    color: var(--text-secondary);
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .step-label {
     padding: 4px 8px;
-    font-size: 11px;
-    color: var(--text-muted);
+    font-size: var(--text-xs, 10px);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .audio-list {
     display: flex;
@@ -252,49 +214,21 @@
     align-items: center;
     gap: 12px;
     padding: 8px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
   }
   .audio-label {
-    font-size: 12px;
-    color: var(--text-secondary);
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #9ca3af);
     min-width: 120px;
   }
-  .table-container {
+  .table-section {
     margin-bottom: 16px;
-  }
-  .table-container h4 {
-    font-size: 13px;
-    color: var(--text-primary);
-    margin-bottom: 8px;
-  }
-  .data-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
-  .data-table th,
-  .data-table td {
-    padding: 6px 10px;
-    border: 1px solid var(--border-color);
-    text-align: left;
-  }
-  .data-table th {
-    background: var(--bg-secondary);
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .data-table td {
-    color: var(--text-secondary);
-  }
-  .table-media {
-    max-width: 100px;
-    max-height: 60px;
   }
   .loading,
   .empty-state {
     padding: 40px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
 </style>

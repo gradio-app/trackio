@@ -1,5 +1,6 @@
 """Serves the built Svelte frontend alongside the Gradio API."""
 
+import re
 from pathlib import Path
 
 from starlette.responses import FileResponse, HTMLResponse
@@ -19,16 +20,13 @@ def mount_frontend(app):
         return
 
     index_html_content = index_html_path.read_text()
-    patched_html = index_html_content.replace(
-        "/trackio/assets/", "/trackio/assets/app/"
+    patched_html = re.sub(
+        r'/trackio/assets/(index-[^"]+)',
+        r"/trackio/assets/app/\1",
+        index_html_content,
     )
 
     async def serve_frontend(request):
-        path = request.path_params.get("path", "")
-        if path and not path.startswith("assets"):
-            file_path = FRONTEND_DIR / path
-            if file_path.exists() and file_path.is_file():
-                return FileResponse(str(file_path))
         return HTMLResponse(patched_html)
 
     frontend_app = Mount(

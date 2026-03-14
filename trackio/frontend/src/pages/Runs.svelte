@@ -1,4 +1,5 @@
 <script>
+  import GradioTable from "../components/GradioTable.svelte";
   import { getRunsForProject, getProjectSummary, getLogs } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
 
@@ -40,28 +41,16 @@
     loadRuns();
   });
 
-  function toggleSelect(i) {
-    const next = new Set(selectedIndices);
-    if (next.has(i)) {
-      next.delete(i);
-    } else {
-      next.add(i);
-    }
-    selectedIndices = next;
-  }
-
-  function toggleAll() {
-    if (selectedIndices.size === runsData.length) {
-      selectedIndices = new Set();
-    } else {
-      selectedIndices = new Set(runsData.map((_, i) => i));
-    }
-  }
-
-  function viewRunDetail(runName) {
+  function viewRunDetail(row) {
+    const runName = row[0];
     setQueryParam("selected_run", runName);
     navigateTo("run-detail");
   }
+
+  let tableHeaders = ["Run Name", "Steps", "Last Step"];
+  let tableRows = $derived(
+    runsData.map(r => [r.name, r.numSteps, r.lastStep])
+  );
 </script>
 
 <div class="runs-page">
@@ -70,97 +59,26 @@
   {:else if runsData.length === 0}
     <div class="empty-state">No runs found for this project.</div>
   {:else}
-    <table class="runs-table">
-      <thead>
-        <tr>
-          <th class="check-col">
-            <input
-              type="checkbox"
-              checked={selectedIndices.size === runsData.length}
-              onchange={toggleAll}
-            />
-          </th>
-          <th>Run Name</th>
-          <th>Steps</th>
-          <th>Last Step</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each runsData as run, i}
-          <tr class:selected={selectedIndices.has(i)}>
-            <td class="check-col">
-              <input
-                type="checkbox"
-                checked={selectedIndices.has(i)}
-                onchange={() => toggleSelect(i)}
-              />
-            </td>
-            <td>
-              <button
-                class="run-link"
-                onclick={() => viewRunDetail(run.name)}
-              >
-                {run.name}
-              </button>
-            </td>
-            <td>{run.numSteps}</td>
-            <td>{run.lastStep}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <GradioTable
+      headers={tableHeaders}
+      rows={tableRows}
+      selectable={true}
+      bind:selectedIndices
+      onrowclick={viewRunDetail}
+    />
   {/if}
 </div>
 
 <style>
   .runs-page {
-    padding: 16px;
+    padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
-  }
-  .runs-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  .runs-table th,
-  .runs-table td {
-    padding: 8px 12px;
-    border: 1px solid var(--border-color);
-    text-align: left;
-  }
-  .runs-table th {
-    background: var(--bg-secondary);
-    font-weight: 600;
-    color: var(--text-primary);
-    position: sticky;
-    top: 0;
-  }
-  .runs-table td {
-    color: var(--text-secondary);
-  }
-  .runs-table tr.selected {
-    background: var(--accent-light);
-  }
-  .check-col {
-    width: 40px;
-    text-align: center;
-  }
-  .run-link {
-    border: none;
-    background: none;
-    color: var(--accent-color);
-    cursor: pointer;
-    font-size: 13px;
-    padding: 0;
-  }
-  .run-link:hover {
-    text-decoration: underline;
   }
   .loading,
   .empty-state {
     padding: 40px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
 </style>

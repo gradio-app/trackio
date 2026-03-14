@@ -34,8 +34,8 @@
   .navbar {
     display: flex;
     align-items: stretch;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
+    background: var(--background-fill-primary, white);
     padding: 0;
     flex-shrink: 0;
     min-height: 44px;
@@ -52,8 +52,8 @@
     padding: 10px 16px;
     border: none;
     background: none;
-    color: var(--text-secondary);
-    font-size: 14px;
+    color: var(--body-text-color-subdued, #6b7280);
+    font-size: var(--text-md, 14px);
     cursor: pointer;
     white-space: nowrap;
     border-bottom: 2px solid transparent;
@@ -61,11 +61,11 @@
     font-weight: 400;
   }
   .nav-link:hover {
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
   }
   .nav-link.active {
-    color: var(--text-primary);
-    border-bottom-color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
+    border-bottom-color: var(--body-text-color, #1f2937);
     font-weight: 500;
   }
 </style>

@@ -194,26 +194,26 @@
   .loading {
     padding: 60px;
     text-align: center;
-    color: var(--text-secondary);
-    font-size: 14px;
+    color: var(--body-text-color-subdued, #9ca3af);
+    font-size: var(--text-md, 14px);
   }
   .empty-state {
     padding: 60px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state h2 {
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
     margin-bottom: 16px;
-    font-size: 18px;
+    font-size: var(--text-xl, 22px);
   }
   .empty-state pre {
     display: inline-block;
     text-align: left;
-    background: var(--bg-primary);
+    background: var(--background-fill-primary, white);
     padding: 16px 20px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg, 8px);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
     font-size: 13px;
     line-height: 1.6;
   }

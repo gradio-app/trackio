@@ -26,7 +26,12 @@ export async function callApi(apiName, params = {}) {
     if (lines[i].startsWith("event: complete")) {
       const dataLine = lines[i + 1];
       if (dataLine && dataLine.startsWith("data: ")) {
-        const parsed = JSON.parse(dataLine.slice(6));
+        const raw = dataLine.slice(6);
+        const sanitized = raw
+          .replace(/:\s*Infinity\b/g, ": null")
+          .replace(/:\s*-Infinity\b/g, ": null")
+          .replace(/:\s*NaN\b/g, ": null");
+        const parsed = JSON.parse(sanitized);
         return Array.isArray(parsed) ? parsed[0] : parsed;
       }
     }

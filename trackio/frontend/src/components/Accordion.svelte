@@ -38,22 +38,22 @@
     gap: 8px;
     width: 100%;
     padding: 10px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    font-size: 14px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--background-fill-primary, white);
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-md, 14px);
     font-weight: 600;
     cursor: pointer;
     text-align: left;
   }
   .accordion-header:hover {
-    background: var(--bg-secondary);
+    background: var(--background-fill-secondary, #f9fafb);
   }
   .arrow {
     font-size: 14px;
     transition: transform 0.15s;
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
     display: inline-block;
   }
   .arrow:not(.rotated) {

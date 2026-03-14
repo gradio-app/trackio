@@ -74,26 +74,26 @@
 
 <style>
   .run-detail-page {
-    padding: 16px;
+    padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
   }
   .detail-card {
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
+    background: var(--background-fill-primary, white);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
     padding: 24px;
     max-width: 800px;
   }
   .detail-card h2 {
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
     margin: 0 0 16px;
-    font-size: 20px;
+    font-size: var(--text-xl, 22px);
   }
   .detail-card h3 {
-    color: var(--text-primary);
+    color: var(--body-text-color, #1f2937);
     margin: 20px 0 8px;
-    font-size: 15px;
+    font-size: var(--text-lg, 16px);
   }
   .detail-grid {
     display: grid;
@@ -106,28 +106,28 @@
     gap: 2px;
   }
   .detail-label {
-    font-size: 11px;
+    font-size: var(--text-xs, 10px);
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--body-text-color-subdued, #9ca3af);
     text-transform: uppercase;
   }
   .detail-value {
-    font-size: 14px;
-    color: var(--text-primary);
+    font-size: var(--text-md, 14px);
+    color: var(--body-text-color, #1f2937);
   }
   .config-block {
-    background: var(--bg-secondary);
+    background: var(--background-fill-secondary, #f9fafb);
     padding: 12px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-    font-size: 12px;
-    color: var(--text-secondary);
+    border-radius: var(--radius-lg, 8px);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color, #1f2937);
     overflow-x: auto;
   }
   .loading,
   .empty-state {
     padding: 40px;
     text-align: center;
-    color: var(--text-secondary);
+    color: var(--body-text-color-subdued, #9ca3af);
   }
 </style>
