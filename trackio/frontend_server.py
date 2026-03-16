@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from starlette.responses import FileResponse, HTMLResponse
+from starlette.responses import FileResponse, HTMLResponse, RedirectResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -47,4 +47,12 @@ def mount_frontend(app):
         ],
     )
 
-    app.routes.insert(0, frontend_app)
+    async def redirect_root(request):
+        query_string = request.url.query
+        target = "/trackio/"
+        if query_string:
+            target += f"?{query_string}"
+        return RedirectResponse(url=target)
+
+    app.routes.insert(0, Route("/", endpoint=redirect_root))
+    app.routes.insert(1, frontend_app)

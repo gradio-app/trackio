@@ -22,29 +22,28 @@ def test_runs_plots_images_are_displayed(temp_dir):
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
-            page.set_default_timeout(1000)
-            page.goto(url)
+            page.set_default_timeout(5000)
+            page.goto(url + "trackio/")
+            page.wait_for_load_state("networkidle")
 
-            # The project name and run name should be displayed
-            locator = page.get_by_label("Project")
-            expect(locator).to_be_visible()
-            checkbox_label = page.locator("label.checkbox-label").filter(
-                has_text="test_run"
+            run_label = page.locator(".run-name", has_text="test_run")
+            expect(run_label).to_be_visible()
+
+            checkbox = run_label.locator("xpath=ancestor::label").locator(
+                "input[type='checkbox']"
             )
-            expect(checkbox_label).to_be_visible()
+            expect(checkbox).to_be_checked()
 
-            # Initially, two line plots should be displayed
             locator = page.locator(".vega-embed")
             expect(locator).to_have_count(2)
 
-            # But if we uncheck the run, the line plots should be hidden
-            checkbox_label.locator("input[type='checkbox']").uncheck()
+            checkbox.uncheck()
             locator = page.locator(".vega-embed")
             expect(locator).to_have_count(0)
 
-            # Navigate to media page and verify image is displayed
-            page.get_by_role("link", name="Media & Tables").click()
-            gallery = page.locator(".media-gallery")
+            page.locator(".nav-link", has_text="Media").click()
+            page.wait_for_load_state("networkidle")
+            gallery = page.locator(".gallery")
             expect(gallery).to_be_visible()
             gallery_images = gallery.locator("img")
             expect(gallery_images.first).to_be_visible()
