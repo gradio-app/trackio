@@ -731,3 +731,9 @@ class Run:
                     warnings.warn(
                         "Could not flush all logs within 30s. Some data may be buffered locally."
                     )
+            if SQLiteStorage.has_pending_data(self.project):
+                warnings.warn(
+                    f"* Some logs could not be sent to the Space (it may still be starting up). "
+                    f"They have been saved locally and will be sent automatically next time you call: "
+                    f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
+                )

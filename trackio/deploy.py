@@ -230,6 +230,23 @@ def create_space_if_not_exists(
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
     deploy_as_space(space_id, space_storage, dataset_id, private)
+    print("* Waiting for Space to be ready...")
+    _wait_until_space_running(space_id)
+
+
+def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
+    hf_api = huggingface_hub.HfApi()
+    start = time.time()
+    delay = 2
+    while time.time() - start < timeout:
+        try:
+            info = hf_api.space_info(space_id)
+            if info.runtime and info.runtime.stage == "RUNNING":
+                return
+        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
+            pass
+        time.sleep(delay)
+        delay = min(delay * 1.5, 15)
 
 
 def wait_until_space_exists(
