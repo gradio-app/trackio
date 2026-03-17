@@ -1470,6 +1470,15 @@ run_page.write_token = write_token
 run_detail_page.write_token = write_token
 files_page.write_token = write_token
 
+from trackio.frontend_server import mount_frontend
+
+
+async def _mount_frontend_on_startup():
+    mount_frontend(demo.app)
+
+
+demo.extra_startup_events.append(_mount_frontend_on_startup)
+
 if __name__ == "__main__":
     demo.launch(
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],

@@ -22,7 +22,7 @@
 
 Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking Python library built by Hugging Face 🤗. It is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
 
-For human users, Trackio also ships with a Gradio-based dashboard you can use to view metrics, media, tables, alerts, etc:
+For human users, Trackio ships with a dashboard (built with Svelte 5 and backed by a Gradio API server) you can use to view metrics, media, tables, alerts, etc:
 
 ![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
 
@@ -37,12 +37,12 @@ Trackio's main features:
 
 - **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id` in `trackio.init()`.
   - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
-  - Visualize experiments with a Gradio dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
+  - Visualize experiments with a Svelte-based dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
 
 - **Free**: Everything here, including hosting on Hugging Face, is free!
 
-Trackio is designed to be lightweight and _forkable_. It is written almost entirely in Python so that developers can easily fork the repository and add functionality that they care about.
+Trackio is designed to be lightweight and _forkable_. The backend is written in Python (with a Gradio API server) while the dashboard frontend is built with Svelte 5, making it easy for developers to fork the repository and add functionality that they care about.
 
 ## Installation
 
