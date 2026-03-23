@@ -55,96 +55,44 @@
     const smoothedData = data.filter((d) => d.data_type === "smoothed");
     const hasSmoothed = smoothedData.length > 0;
 
+    const xEnc = {
+      field: x,
+      type: "quantitative",
+      ...(xLim ? { scale: { domain: [xLim[0], xLim[1]] } } : {}),
+    };
+    const yEnc = { field: y, type: "quantitative" };
+    const colorEnc = hasColor
+      ? {
+          color: {
+            field: colorField,
+            type: "nominal",
+            scale: { domain: colorDomain, range: colorRange },
+            legend: null,
+          },
+        }
+      : {};
+
     const layers = [];
 
     if (hasSmoothed) {
       layers.push({
         data: { values: originalData },
         mark: { type: "line", strokeWidth: 1, opacity: 0.3, point: { size: 20, opacity: 0.3 } },
-        encoding: {
-          x: {
-            field: x,
-            type: "quantitative",
-            ...(xLim
-              ? { scale: { domain: [xLim[0], xLim[1]] } }
-              : {}),
-          },
-          y: { field: y, type: "quantitative" },
-          ...(hasColor
-            ? {
-                color: {
-                  field: colorField,
-                  type: "nominal",
-                  scale: { domain: colorDomain, range: colorRange },
-                  legend: null,
-                },
-              }
-            : {}),
-        },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        name: "original",
       });
       layers.push({
         data: { values: smoothedData },
         mark: { type: "line", strokeWidth: 2, point: { size: 20 } },
-        encoding: {
-          x: {
-            field: x,
-            type: "quantitative",
-            ...(xLim
-              ? { scale: { domain: [xLim[0], xLim[1]] } }
-              : {}),
-          },
-          y: { field: y, type: "quantitative" },
-          ...(hasColor
-            ? {
-                color: {
-                  field: colorField,
-                  type: "nominal",
-                  scale: { domain: colorDomain, range: colorRange },
-                  legend: null,
-                },
-              }
-            : {}),
-        },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        name: "plot",
       });
     } else {
       layers.push({
         data: { values: data },
         mark: { type: "line", strokeWidth: 2, point: { size: 20 } },
-        encoding: {
-          x: {
-            field: x,
-            type: "quantitative",
-            ...(xLim
-              ? { scale: { domain: [xLim[0], xLim[1]] } }
-              : {}),
-          },
-          y: { field: y, type: "quantitative" },
-          ...(hasColor
-            ? {
-                color: {
-                  field: colorField,
-                  type: "nominal",
-                  scale: { domain: colorDomain, range: colorRange },
-                  legend: null,
-                },
-              }
-            : {}),
-        },
-      });
-    }
-
-    if (onSelect) {
-      layers.push({
-        mark: "rule",
-        params: [
-          {
-            name: "brush",
-            select: { type: "interval", encodings: ["x"] },
-          },
-        ],
-        encoding: {
-          opacity: { value: 0 },
-        },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        name: "plot",
       });
     }
 
@@ -156,6 +104,21 @@
       width: "container",
       height: fullscreen ? window.innerHeight - 120 : 250,
       layer: layers,
+      ...(onSelect
+        ? {
+            params: [
+              {
+                name: "brush",
+                select: {
+                  type: "interval",
+                  encodings: ["x"],
+                  mark: { fill: "gray", fillOpacity: 0.3, stroke: "none" },
+                },
+                views: ["plot"],
+              },
+            ],
+          }
+        : {}),
       config: {
         background: "transparent",
         axis: {
@@ -165,6 +128,9 @@
         },
         view: {
           stroke: "transparent",
+        },
+        mark: {
+          cursor: onSelect ? "crosshair" : undefined,
         },
       },
       encoding: {
@@ -189,10 +155,18 @@
       view = result.view;
 
       if (onSelect) {
+        let lastSelectTime = 0;
+        let debounceTimer = null;
         result.view.addSignalListener("brush", (_, value) => {
-          if (value && value[x]) {
-            onSelect(value[x]);
-          }
+          if (Date.now() - lastSelectTime < 1000) return;
+          if (!value || Object.keys(value).length === 0) return;
+          clearTimeout(debounceTimer);
+          const range = value[Object.keys(value)[0]];
+          if (!range || range.length !== 2) return;
+          debounceTimer = setTimeout(() => {
+            lastSelectTime = Date.now();
+            onSelect(range);
+          }, 250);
         });
       }
     } catch (e) {

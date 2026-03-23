@@ -1,15 +1,11 @@
 <script>
-  import Dropdown from "../components/Dropdown.svelte";
   import { getAlerts } from "../lib/api.js";
 
-  let { project = null, runs = [] } = $props();
+  let { project = null, selectedRun = $bindable("All runs") } = $props();
 
-  let selectedRun = $state(null);
   let alerts = $state([]);
   let filterLevel = $state(null);
   let loading = $state(false);
-
-  let runChoices = $derived(["All runs", ...runs]);
 
   const BADGES = { info: "🔵", warn: "🟡", error: "🔴" };
 
@@ -64,14 +60,6 @@
 
 <div class="reports-page">
   <div class="controls">
-    <div class="control">
-      <Dropdown
-        label="Run"
-        choices={runChoices}
-        bind:value={selectedRun}
-        filterable={true}
-      />
-    </div>
     <div class="control">
       <span class="block-title">Level</span>
       <div class="filter-pills">

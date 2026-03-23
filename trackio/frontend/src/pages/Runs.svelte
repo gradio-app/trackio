@@ -1,9 +1,12 @@
 <script>
   import GradioTable from "../components/GradioTable.svelte";
-  import { getRunsForProject, getProjectSummary, getLogs, deleteRun, renameRun } from "../lib/api.js";
+  import { getProjectSummary, getLogs, deleteRun, renameRun } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
+  import { buildColorMap } from "../lib/stores.js";
 
-  let { project = null, onRunsChanged = null } = $props();
+  let { project = null, runs = [], onRunsChanged = null } = $props();
+
+  let runColorMap = $derived(buildColorMap(runs));
 
   let runsData = $state([]);
   let loading = $state(false);
@@ -131,9 +134,15 @@
                   onblur={() => submitRename(run.name)}
                 />
               {:else}
-                <button class="link-btn" onclick={() => { setQueryParam("selected_run", run.name); navigateTo("run-detail"); }}>
-                  {run.name}
-                </button>
+                <div class="run-name-with-dot">
+                  <span
+                    class="run-dot"
+                    style:background={runColorMap[run.name] ?? "#9ca3af"}
+                  ></span>
+                  <button class="link-btn" onclick={() => { setQueryParam("selected_run", run.name); navigateTo("run-detail"); }}>
+                    {run.name}
+                  </button>
+                </div>
               {/if}
             </td>
             <td>{run.numSteps}</td>
@@ -185,6 +194,18 @@
   }
   .run-name-cell {
     font-weight: 500;
+  }
+  .run-name-with-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+  }
+  .run-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
   .link-btn {
     background: none;

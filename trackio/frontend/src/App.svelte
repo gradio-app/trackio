@@ -29,6 +29,8 @@
   let showHeaders = $state(true);
   let filterText = $state("");
   let sidebarOpen = $state(true);
+  let mediaSelectedRun = $state(null);
+  let reportsSelectedRun = $state("All runs");
   let alerts = $state([]);
   let pollTimer = $state(null);
 
@@ -105,6 +107,25 @@
     refreshRuns();
   });
 
+  $effect(() => {
+    if (currentPage !== "media") return;
+    if (!selectedProject || runs.length === 0) return;
+    if (!mediaSelectedRun || !runs.includes(mediaSelectedRun)) {
+      mediaSelectedRun = runs[runs.length - 1];
+    }
+  });
+
+  $effect(() => {
+    if (currentPage !== "reports") return;
+    if (!selectedProject) return;
+    const valid =
+      reportsSelectedRun === "All runs" ||
+      (reportsSelectedRun && runs.includes(reportsSelectedRun));
+    if (!valid) {
+      reportsSelectedRun = "All runs";
+    }
+  });
+
   onMount(() => {
     const themeName = getQueryParam("theme") || detectSystemTheme();
     applyTheme(themeName);
@@ -137,7 +158,16 @@
 
   let showSidebar = $derived(
     currentPage === "metrics" ||
-    currentPage === "system"
+      currentPage === "system" ||
+      currentPage === "media" ||
+      currentPage === "reports" ||
+      currentPage === "runs" ||
+      currentPage === "run-detail" ||
+      currentPage === "files"
+  );
+
+  let sidebarVariant = $derived(
+    currentPage === "metrics" || currentPage === "system" ? "full" : "compact"
   );
 </script>
 
@@ -145,10 +175,14 @@
   {#if showSidebar}
     <Sidebar
       bind:open={sidebarOpen}
+      variant={sidebarVariant}
+      {currentPage}
       {projects}
       bind:selectedProject
       {runs}
       bind:selectedRuns
+      bind:mediaSelectedRun
+      bind:reportsSelectedRun
       bind:smoothing
       bind:xAxis
       bind:logScaleX
@@ -179,11 +213,11 @@
       {:else if currentPage === "system"}
         <SystemMetrics project={selectedProject} {runs} {selectedRuns} {smoothing} />
       {:else if currentPage === "media"}
-        <Media project={selectedProject} {runs} />
+        <Media project={selectedProject} bind:selectedRun={mediaSelectedRun} />
       {:else if currentPage === "reports"}
-        <Reports project={selectedProject} {runs} />
+        <Reports project={selectedProject} bind:selectedRun={reportsSelectedRun} />
       {:else if currentPage === "runs"}
-        <Runs project={selectedProject} onRunsChanged={refreshRuns} />
+        <Runs project={selectedProject} {runs} onRunsChanged={refreshRuns} />
       {:else if currentPage === "run-detail"}
         <RunDetail project={selectedProject} />
       {:else if currentPage === "files"}

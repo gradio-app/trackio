@@ -1,19 +1,11 @@
 <script>
-  import Dropdown from "../components/Dropdown.svelte";
   import GradioTable from "../components/GradioTable.svelte";
-  import { getLogs, getRunsForProject, getMediaUrl } from "../lib/api.js";
+  import { getLogs, getMediaUrl } from "../lib/api.js";
 
-  let { project = null, runs = [] } = $props();
+  let { project = null, selectedRun = $bindable(null) } = $props();
 
-  let selectedRun = $state(null);
   let mediaItems = $state({ images: [], videos: [], audios: [], tables: [] });
   let loading = $state(false);
-
-  $effect(() => {
-    if (runs.length > 0 && !selectedRun) {
-      selectedRun = runs[runs.length - 1];
-    }
-  });
 
   async function loadMedia() {
     if (!project || !selectedRun) {
@@ -80,15 +72,6 @@
 </script>
 
 <div class="media-page">
-  <div class="controls">
-    <Dropdown
-      label="Run"
-      choices={runs}
-      bind:value={selectedRun}
-      filterable={true}
-    />
-  </div>
-
   {#if loading}
     <div class="loading">Loading media...</div>
   {:else if mediaItems.images.length === 0 && mediaItems.videos.length === 0 && mediaItems.audios.length === 0 && mediaItems.tables.length === 0}
@@ -167,10 +150,6 @@
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
-  }
-  .controls {
-    margin-bottom: 16px;
-    max-width: 300px;
   }
   .section-title {
     font-size: var(--text-lg, 16px);

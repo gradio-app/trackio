@@ -1,17 +1,22 @@
 <script>
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
+  import ColoredRunRadioGroup from "./ColoredRunRadioGroup.svelte";
   import Dropdown from "./Dropdown.svelte";
   import GradioCheckbox from "./GradioCheckbox.svelte";
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
-  import { DEFAULT_COLORS, getColorForIndex } from "../lib/stores.js";
+  import { buildColorMap, getColorForIndex } from "../lib/stores.js";
 
   let {
     open = $bindable(true),
+    variant = "full",
+    currentPage = "metrics",
     projects = [],
     selectedProject = $bindable(null),
     runs = [],
     selectedRuns = $bindable([]),
+    mediaSelectedRun = $bindable(null),
+    reportsSelectedRun = $bindable(null),
     smoothing = $bindable(10),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
@@ -21,6 +26,11 @@
     showHeaders = $bindable(true),
     filterText = $bindable(""),
   } = $props();
+
+  let showCompactRunPicker = $derived(
+    variant === "compact" &&
+      (currentPage === "media" || currentPage === "reports"),
+  );
 
   let availableXAxes = $derived.by(() => {
     let axes = ["step", "time"];
@@ -36,6 +46,8 @@
       ? runs.filter((r) => r.toLowerCase().includes(filterText.toLowerCase()))
       : runs,
   );
+
+  let runColorMap = $derived(buildColorMap(runs));
 
   let latestOnly = $state(false);
 
@@ -87,88 +99,108 @@
         />
       </div>
 
-      <div class="section">
-        <div class="runs-header">
-          <span class="section-label">Runs ({filteredRuns.length})</span>
-          <label class="latest-toggle">
-            <span>Latest only</span>
-            <input
-              type="checkbox"
-              checked={latestOnly}
-              onchange={toggleLatestOnly}
+      {#if variant === "full"}
+        <div class="section">
+          <div class="runs-header">
+            <span class="section-label">Runs ({filteredRuns.length})</span>
+            <label class="latest-toggle">
+              <span>Latest only</span>
+              <input
+                type="checkbox"
+                checked={latestOnly}
+                onchange={toggleLatestOnly}
+              />
+            </label>
+          </div>
+          <GradioTextbox
+            bind:value={filterText}
+            placeholder="Type to filter..."
+            showLabel={false}
+          />
+          <div class="checkbox-list">
+            <ColoredCheckbox
+              choices={filteredRuns}
+              bind:selected={selectedRuns}
+              colors={filteredRuns.map(
+              (r) => runColorMap[r] ?? getColorForIndex(Math.max(0, runs.indexOf(r))),
+            )}
+              ontoggle={() => { latestOnly = false; }}
             />
-          </label>
+          </div>
         </div>
-        <GradioTextbox
-          bind:value={filterText}
-          placeholder="Type to filter..."
-          showLabel={false}
-        />
-        <div class="checkbox-list">
-          <ColoredCheckbox
-            choices={filteredRuns}
-            bind:selected={selectedRuns}
-            colors={filteredRuns.map((_, i) => getColorForIndex(i))}
-            ontoggle={() => { latestOnly = false; }}
+
+        <div class="section" style="margin-top: 8px;">
+          <GradioCheckbox
+            label="Refresh metrics realtime"
+            bind:checked={realtimeEnabled}
           />
         </div>
-      </div>
 
-      <div class="section" style="margin-top: 8px;">
-        <GradioCheckbox
-          label="Refresh metrics realtime"
-          bind:checked={realtimeEnabled}
-        />
-      </div>
+        <div class="section">
+          <GradioSlider
+            label="Smoothing Factor (0 = no smoothing)"
+            bind:value={smoothing}
+            min={0}
+            max={20}
+            step={1}
+          />
+        </div>
 
-      <div class="section">
-        <GradioSlider
-          label="Smoothing Factor (0 = no smoothing)"
-          bind:value={smoothing}
-          min={0}
-          max={20}
-          step={1}
-        />
-      </div>
+        <div class="section">
+          <Dropdown
+            label="X-axis"
+            choices={availableXAxes}
+            bind:value={xAxis}
+            filterable={false}
+          />
+        </div>
 
-      <div class="section">
-        <Dropdown
-          label="X-axis"
-          choices={availableXAxes}
-          bind:value={xAxis}
-          filterable={false}
-        />
-      </div>
+        <div class="section">
+          <GradioCheckbox
+            label="Log scale X-axis"
+            bind:checked={logScaleX}
+          />
+        </div>
 
-      <div class="section">
-        <GradioCheckbox
-          label="Log scale X-axis"
-          bind:checked={logScaleX}
-        />
-      </div>
+        <div class="section">
+          <GradioCheckbox
+            label="Log scale Y-axis"
+            bind:checked={logScaleY}
+          />
+        </div>
 
-      <div class="section">
-        <GradioCheckbox
-          label="Log scale Y-axis"
-          bind:checked={logScaleY}
-        />
-      </div>
+        <div class="section">
+          <GradioCheckbox
+            label="Show section headers"
+            bind:checked={showHeaders}
+          />
+        </div>
 
-      <div class="section">
-        <GradioCheckbox
-          label="Show section headers"
-          bind:checked={showHeaders}
-        />
-      </div>
-
-      <div class="section">
-        <GradioTextbox
-          label="Metric Filter (regex)"
-          info="Filter metrics using regex patterns. Leave empty to show all metrics."
-          placeholder="e.g., loss|ndcg@10|gpu"
-          bind:value={metricFilter}
-        />
-      </div>
+        <div class="section">
+          <GradioTextbox
+            label="Metric Filter (regex)"
+            info="Filter metrics using regex patterns. Leave empty to show all metrics."
+            placeholder="e.g., loss|ndcg@10|gpu"
+            bind:value={metricFilter}
+          />
+        </div>
+      {:else if showCompactRunPicker}
+        <div class="section">
+          <span class="section-label">Run</span>
+          {#if currentPage === "media"}
+            <ColoredRunRadioGroup
+              {runs}
+              bind:value={mediaSelectedRun}
+            />
+          {:else if currentPage === "reports"}
+            <ColoredRunRadioGroup
+              {runs}
+              bind:value={reportsSelectedRun}
+              includeAllOption={true}
+            />
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
 </div>

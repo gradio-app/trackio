@@ -3,7 +3,7 @@
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import { getSystemLogs } from "../lib/api.js";
-  import { groupMetricsByPrefix } from "../lib/dataProcessing.js";
+  import { groupMetricsByPrefix, downsample } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
 
   let {
@@ -157,10 +157,22 @@
     };
   });
 
+  function handlePlotSelect(range) {
+    if (range && range.length === 2) {
+      xLim = range;
+    }
+  }
+
+  function handleDoubleClick() {
+    xLim = null;
+  }
+
   function getPlotData(metric) {
-    return systemData.filter(
+    const relevant = systemData.filter(
       (r) => r[metric] != null && r[metric] !== undefined,
     );
+    const result = downsample(relevant, "time", metric, "run", xLim);
+    return result.data;
   }
 </script>
 
@@ -195,6 +207,8 @@
                 title={metric}
                 {colorMap}
                 {xLim}
+                onSelect={handlePlotSelect}
+                onDoubleClick={handleDoubleClick}
                 draggable={true}
                 ondragstart={(e) => handleDragStart(directKey, i, e)}
                 ondragover={(e) => handleDragOver(directKey, i, e)}
