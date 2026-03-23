@@ -187,9 +187,19 @@
   }
 
   function getPlotData(metric) {
-    const relevant = masterData.filter(
+    let relevant = masterData.filter(
       (r) => r[metric] != null && r[metric] !== undefined,
     );
+    if (xLim) {
+      const sorted = relevant.sort((a, b) => a[xColumn] - b[xColumn]);
+      let lo = 0;
+      let hi = sorted.length - 1;
+      while (lo < sorted.length && sorted[lo][xColumn] < xLim[0]) lo++;
+      while (hi >= 0 && sorted[hi][xColumn] > xLim[1]) hi--;
+      lo = Math.max(0, lo - 1);
+      hi = Math.min(sorted.length - 1, hi + 1);
+      relevant = sorted.slice(lo, hi + 1);
+    }
     const result = downsample(relevant, xColumn, metric, "run", xLim);
     return result.data;
   }

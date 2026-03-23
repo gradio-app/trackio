@@ -58,7 +58,7 @@
     const xEnc = {
       field: x,
       type: "quantitative",
-      ...(xLim ? { scale: { domain: [xLim[0], xLim[1]] } } : {}),
+      scale: { zero: false, ...(xLim ? { domain: [xLim[0], xLim[1]] } : {}) },
     };
     const yEnc = { field: y, type: "quantitative" };
     const colorEnc = hasColor
@@ -77,20 +77,20 @@
     if (hasSmoothed) {
       layers.push({
         data: { values: originalData },
-        mark: { type: "line", strokeWidth: 1, opacity: 0.3, point: { size: 20, opacity: 0.3 } },
+        mark: { type: "line", clip: true, strokeWidth: 1, opacity: 0.3, point: { size: 20, opacity: 0.3 } },
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "original",
       });
       layers.push({
         data: { values: smoothedData },
-        mark: { type: "line", strokeWidth: 2, point: { size: 20 } },
+        mark: { type: "line", clip: true, strokeWidth: 2, point: { size: 20 } },
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
     } else {
       layers.push({
         data: { values: data },
-        mark: { type: "line", strokeWidth: 2, point: { size: 20 } },
+        mark: { type: "line", clip: true, strokeWidth: 2, point: { size: 20 } },
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });

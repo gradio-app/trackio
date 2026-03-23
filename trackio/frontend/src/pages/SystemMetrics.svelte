@@ -168,9 +168,19 @@
   }
 
   function getPlotData(metric) {
-    const relevant = systemData.filter(
+    let relevant = systemData.filter(
       (r) => r[metric] != null && r[metric] !== undefined,
     );
+    if (xLim) {
+      const sorted = relevant.sort((a, b) => a["time"] - b["time"]);
+      let lo = 0;
+      let hi = sorted.length - 1;
+      while (lo < sorted.length && sorted[lo]["time"] < xLim[0]) lo++;
+      while (hi >= 0 && sorted[hi]["time"] > xLim[1]) hi--;
+      lo = Math.max(0, lo - 1);
+      hi = Math.min(sorted.length - 1, hi + 1);
+      relevant = sorted.slice(lo, hi + 1);
+    }
     const result = downsample(relevant, "time", metric, "run", xLim);
     return result.data;
   }
