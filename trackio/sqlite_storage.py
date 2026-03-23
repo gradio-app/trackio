@@ -844,7 +844,7 @@ class SQLiteStorage:
                 return False
 
     @staticmethod
-    def get_logs(project: str, run: str) -> list[dict]:
+    def get_logs(project: str, run: str, max_points: int = 1500) -> list[dict]:
         """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -864,6 +864,12 @@ class SQLiteStorage:
                 )
 
                 rows = cursor.fetchall()
+                if len(rows) > max_points:
+                    step = len(rows) / max_points
+                    indices = {int(i * step) for i in range(max_points)}
+                    indices.add(len(rows) - 1)
+                    rows = [rows[i] for i in sorted(indices)]
+
                 results = []
                 for row in rows:
                     metrics = orjson.loads(row["metrics"])

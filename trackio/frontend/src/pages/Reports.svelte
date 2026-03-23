@@ -1,6 +1,5 @@
 <script>
   import Dropdown from "../components/Dropdown.svelte";
-  import GradioTable from "../components/GradioTable.svelte";
   import { getAlerts } from "../lib/api.js";
 
   let { project = null, runs = [] } = $props();
@@ -105,10 +104,24 @@
   {:else if alerts.length === 0}
     <div class="empty-state">No alerts found.</div>
   {:else}
-    <GradioTable
-      headers={tableHeaders}
-      rows={tableRows}
-    />
+    <table class="alerts-table">
+      <thead>
+        <tr>
+          {#each tableHeaders as header}
+            <th>{header}</th>
+          {/each}
+        </tr>
+      </thead>
+      <tbody>
+        {#each tableRows as row}
+          <tr>
+            {#each row as cell}
+              <td>{cell}</td>
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    </table>
   {/if}
 </div>
 
@@ -162,5 +175,31 @@
     padding: 40px;
     text-align: center;
     color: var(--body-text-color-subdued, #9ca3af);
+  }
+  .alerts-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-md, 14px);
+  }
+  .alerts-table th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 2px solid var(--border-color-primary, #e5e7eb);
+    color: var(--body-text-color-subdued, #6b7280);
+    font-weight: 600;
+    font-size: var(--text-sm, 12px);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .alerts-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
+    color: var(--body-text-color, #1f2937);
+  }
+  .alerts-table tbody tr:nth-child(even) {
+    background: var(--table-even-background, #f9fafb);
+  }
+  .alerts-table tr:hover {
+    background: var(--background-fill-secondary, #f3f4f6);
   }
 </style>

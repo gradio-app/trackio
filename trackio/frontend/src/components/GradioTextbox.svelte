@@ -10,10 +10,10 @@
 
 <div class="textbox-container">
   {#if showLabel && label}
-    <span class="block-title">{label}</span>
+    <span class="label">{label}</span>
   {/if}
   {#if info}
-    <span class="block-info">{info}</span>
+    <span class="info">{info}</span>
   {/if}
   <div class="input-wrap">
     <input
@@ -28,38 +28,37 @@
   .textbox-container {
     width: 100%;
   }
-  .block-title {
+  .label {
     display: block;
-    font-size: var(--block-title-text-size, 14px);
-    font-weight: var(--block-title-text-weight, 400);
-    color: var(--block-title-text-color, #6b7280);
-    margin-bottom: var(--spacing-lg, 8px);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--body-text-color-subdued, #6b7280);
+    margin-bottom: 6px;
   }
-  .block-info {
+  .info {
     display: block;
-    font-size: var(--block-info-text-size, 12px);
-    color: var(--block-info-text-color, #9ca3af);
-    margin-bottom: var(--spacing-md, 6px);
+    font-size: 12px;
+    color: var(--body-text-color-subdued, #9ca3af);
+    margin-bottom: 4px;
   }
   .input-wrap {
     border-radius: var(--input-radius, 8px);
     background: var(--input-background-fill, white);
-    box-shadow: var(--input-shadow);
-    border: var(--input-border-width, 1px) solid var(--border-color-primary, #e5e7eb);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .input-wrap:focus-within {
-    box-shadow: var(--input-shadow-focus);
-    border-color: var(--input-border-color-focus, #93c5fd);
+    border-color: var(--input-border-color-focus, #fdba74);
+    box-shadow: 0 0 0 2px var(--primary-50, #fff7ed);
   }
   input {
     width: 100%;
-    padding: var(--input-padding, 10px);
+    padding: 7px 10px;
     outline: none;
     border: none;
     background: transparent;
     color: var(--body-text-color, #1f2937);
-    font-size: var(--input-text-size, 14px);
+    font-size: 13px;
     font-family: inherit;
     border-radius: var(--input-radius, 8px);
   }

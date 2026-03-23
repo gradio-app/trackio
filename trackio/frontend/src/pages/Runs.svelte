@@ -177,8 +177,11 @@
     border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
     color: var(--body-text-color, #1f2937);
   }
+  .runs-table tbody tr:nth-child(even) {
+    background: var(--table-even-background, #f9fafb);
+  }
   .runs-table tr:hover {
-    background: var(--background-fill-secondary, #f9fafb);
+    background: var(--background-fill-secondary, #f3f4f6);
   }
   .run-name-cell {
     font-weight: 500;

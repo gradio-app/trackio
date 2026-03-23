@@ -36,6 +36,17 @@
       ? runs.filter((r) => r.toLowerCase().includes(filterText.toLowerCase()))
       : runs,
   );
+
+  let latestOnly = $state(false);
+
+  function toggleLatestOnly() {
+    latestOnly = !latestOnly;
+    if (latestOnly && filteredRuns.length > 0) {
+      selectedRuns = [filteredRuns[filteredRuns.length - 1]];
+    } else if (!latestOnly) {
+      selectedRuns = [...filteredRuns];
+    }
+  }
 </script>
 
 <div class="sidebar" class:collapsed={!open}>
@@ -67,7 +78,7 @@
         </picture>
       </div>
 
-      <div class="control-group">
+      <div class="section">
         <Dropdown
           label="Project"
           choices={projects}
@@ -76,37 +87,43 @@
         />
       </div>
 
-      <div class="control-group">
-        <div class="group-box">
-          <span class="block-title">Runs ({filteredRuns.length})</span>
-          <GradioTextbox
-            bind:value={filterText}
-            placeholder="Type to filter..."
-            showLabel={false}
-          />
+      <div class="section">
+        <div class="runs-header">
+          <span class="section-label">Runs ({filteredRuns.length})</span>
+          <label class="latest-toggle">
+            <span>Latest only</span>
+            <input
+              type="checkbox"
+              checked={latestOnly}
+              onchange={toggleLatestOnly}
+            />
+          </label>
         </div>
+        <GradioTextbox
+          bind:value={filterText}
+          placeholder="Type to filter..."
+          showLabel={false}
+        />
         <div class="checkbox-list">
           <ColoredCheckbox
             choices={filteredRuns}
             bind:selected={selectedRuns}
             colors={filteredRuns.map((_, i) => getColorForIndex(i))}
+            ontoggle={() => { latestOnly = false; }}
           />
         </div>
       </div>
 
-      <hr class="divider" />
-
-      <div class="control-group">
+      <div class="section" style="margin-top: 8px;">
         <GradioCheckbox
           label="Refresh metrics realtime"
           bind:checked={realtimeEnabled}
         />
       </div>
 
-      <div class="control-group">
+      <div class="section">
         <GradioSlider
-          label="Smoothing Factor"
-          info="0 = no smoothing"
+          label="Smoothing Factor (0 = no smoothing)"
           bind:value={smoothing}
           min={0}
           max={20}
@@ -114,7 +131,7 @@
         />
       </div>
 
-      <div class="control-group">
+      <div class="section">
         <Dropdown
           label="X-axis"
           choices={availableXAxes}
@@ -123,28 +140,28 @@
         />
       </div>
 
-      <div class="control-group">
+      <div class="section">
         <GradioCheckbox
           label="Log scale X-axis"
           bind:checked={logScaleX}
         />
       </div>
 
-      <div class="control-group">
+      <div class="section">
         <GradioCheckbox
           label="Log scale Y-axis"
           bind:checked={logScaleY}
         />
       </div>
 
-      <div class="control-group">
+      <div class="section">
         <GradioCheckbox
           label="Show section headers"
           bind:checked={showHeaders}
         />
       </div>
 
-      <div class="control-group">
+      <div class="section">
         <GradioTextbox
           label="Metric Filter (regex)"
           info="Filter metrics using regex patterns. Leave empty to show all metrics."
@@ -196,7 +213,6 @@
     padding: 16px;
     overflow-y: auto;
     flex: 1;
-    padding-top: 16px;
   }
   .logo-section {
     margin-bottom: 20px;
@@ -205,30 +221,50 @@
     width: 80%;
     max-width: 200px;
   }
-  .control-group {
-    margin-bottom: 16px;
+  .section {
+    margin-bottom: 18px;
   }
-  .group-box {
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-lg, 8px);
-    padding: 10px;
-    margin-bottom: 4px;
+  .section-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--body-text-color-subdued, #6b7280);
   }
-  .group-box .block-title {
-    display: block;
-    font-size: var(--block-title-text-size, 14px);
-    font-weight: var(--block-title-text-weight, 400);
-    color: var(--block-title-text-color, #6b7280);
+  .runs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     margin-bottom: 6px;
+  }
+  .latest-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--body-text-color-subdued, #6b7280);
+    cursor: pointer;
+  }
+  .latest-toggle input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 1px solid var(--checkbox-border-color, #d1d5db);
+    border-radius: var(--checkbox-border-radius, 4px);
+    background-color: var(--checkbox-background-color, white);
+    box-shadow: var(--checkbox-shadow);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .latest-toggle input[type="checkbox"]:checked {
+    background-image: var(--checkbox-check);
+    background-color: var(--checkbox-background-color-selected, #f97316);
+    border-color: var(--checkbox-border-color-selected, #f97316);
   }
   .checkbox-list {
     max-height: 300px;
     overflow-y: auto;
-    margin-top: 4px;
-  }
-  .divider {
-    border: none;
-    border-top: 1px solid var(--border-color-primary, #e5e7eb);
-    margin: 16px 0;
+    margin-top: 8px;
   }
 </style>

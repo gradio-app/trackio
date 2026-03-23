@@ -38,31 +38,14 @@
 <div class="slider-wrap">
   <div class="head">
     {#if showLabel}
-      <span class="block-title">{label}</span>
+      <span class="label">{label}</span>
     {/if}
-    <div class="tab-like-container">
-      <input
-        type="number"
-        bind:value
-        {min}
-        {max}
-        {step}
-        onblur={clamp}
-      />
-      <button
-        class="reset-button"
-        onclick={resetValue}
-        aria-label="Reset to default value"
-      >
-        ↺
-      </button>
-    </div>
   </div>
   {#if info}
-    <span class="block-info">{info}</span>
+    <span class="info">{info}</span>
   {/if}
   <div class="slider-input-container">
-    <span class="min-value">{min}</span>
+    <span class="bound">{min}</span>
     <input
       type="range"
       bind:value
@@ -71,7 +54,7 @@
       {max}
       {step}
     />
-    <span class="max-value">{max}</span>
+    <span class="bound">{max}</span>
   </div>
 </div>
 
@@ -82,33 +65,28 @@
     width: 100%;
   }
   .head {
-    margin-bottom: var(--size-2, 8px);
+    margin-bottom: 4px;
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    flex-wrap: wrap;
+    align-items: center;
     width: 100%;
   }
-  .head > .block-title {
+  .label {
     flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--body-text-color-subdued, #6b7280);
   }
-  .block-title {
+  .info {
     display: block;
-    font-size: var(--block-title-text-size, 14px);
-    font-weight: var(--block-title-text-weight, 400);
-    color: var(--block-title-text-color, #6b7280);
-    margin-bottom: 2px;
-  }
-  .block-info {
-    display: block;
-    font-size: var(--block-info-text-size, 12px);
-    color: var(--block-info-text-color, #9ca3af);
-    margin-bottom: var(--spacing-md, 6px);
+    font-size: 12px;
+    color: var(--body-text-color-subdued, #9ca3af);
+    margin-bottom: 4px;
   }
   .slider-input-container {
     display: flex;
     align-items: center;
-    gap: var(--size-2, 8px);
+    gap: 6px;
   }
   input[type="range"] {
     -webkit-appearance: none;
@@ -121,109 +99,51 @@
     background: transparent;
   }
   input[type="range"]::-webkit-slider-runnable-track {
-    height: var(--size-2, 8px);
+    height: 6px;
     border-radius: var(--radius-xl, 12px);
     background: linear-gradient(
       to right,
-      var(--slider-color, #2563eb) var(--range_progress, 50%),
+      var(--slider-color, #f97316) var(--range_progress, 50%),
       var(--neutral-200, #e5e7eb) var(--range_progress, 50%)
     );
   }
   input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    height: var(--size-4, 16px);
-    width: var(--size-4, 16px);
+    height: 14px;
+    width: 14px;
     background-color: white;
     border-radius: 50%;
     margin-top: -4px;
     box-shadow:
-      0 0 0 1px rgba(247, 246, 246, 0.739),
-      1px 1px 4px rgba(0, 0, 0, 0.1);
+      0 0 0 1px rgba(0, 0, 0, 0.08),
+      0 1px 3px rgba(0, 0, 0, 0.12);
   }
   input[type="range"]::-moz-range-track {
-    height: var(--size-2, 8px);
+    height: 6px;
     background: var(--neutral-200, #e5e7eb);
     border-radius: var(--radius-xl, 12px);
   }
   input[type="range"]::-moz-range-thumb {
     appearance: none;
-    height: var(--size-4, 16px);
-    width: var(--size-4, 16px);
+    height: 14px;
+    width: 14px;
     background-color: white;
     border-radius: 50%;
     border: none;
     box-shadow:
-      0 0 0 1px rgba(247, 246, 246, 0.739),
-      1px 1px 4px rgba(0, 0, 0, 0.1);
+      0 0 0 1px rgba(0, 0, 0, 0.08),
+      0 1px 3px rgba(0, 0, 0, 0.12);
   }
   input[type="range"]::-moz-range-progress {
-    height: var(--size-2, 8px);
-    background-color: var(--slider-color, #2563eb);
+    height: 6px;
+    background-color: var(--slider-color, #f97316);
     border-radius: var(--radius-xl, 12px);
   }
-  .tab-like-container {
-    display: flex;
-    align-items: stretch;
-    border: 1px solid var(--input-border-color, #e5e7eb);
-    border-radius: var(--radius-sm, 4px);
-    overflow: hidden;
-    height: var(--size-6, 24px);
-  }
-  input[type="number"] {
-    display: block;
-    outline: none;
-    border: none;
-    border-radius: 0;
-    background: var(--input-background-fill, white);
-    padding: var(--size-1, 4px) var(--size-2, 8px);
-    height: 100%;
-    color: var(--body-text-color, #1f2937);
-    font-size: var(--text-sm, 12px);
-    line-height: var(--line-sm, 1.4);
-    text-align: center;
-    min-width: var(--size-14, 56px);
-    font-family: inherit;
-  }
-  input[type="number"]:focus {
-    box-shadow: inset 0 0 0 1px var(--color-accent, #f97316);
-    border-radius: 3px 0 0 3px;
-  }
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-  input[type="number"] {
-    -moz-appearance: textfield;
-  }
-  .reset-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: none;
-    border-left: 1px solid var(--input-border-color, #e5e7eb);
-    cursor: pointer;
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color, #1f2937);
-    padding: 0 var(--size-2, 8px);
-    min-width: var(--size-6, 24px);
-    transition: background-color 0.15s ease-in-out;
-  }
-  .reset-button:hover {
-    background-color: var(--background-fill-secondary, #f9fafb);
-  }
-  .min-value,
-  .max-value {
-    font-size: var(--text-sm, 12px);
+  .bound {
+    font-size: 11px;
     color: var(--body-text-color-subdued, #9ca3af);
-  }
-  .min-value {
-    margin-right: var(--size-0-5, 2px);
-  }
-  .max-value {
-    margin-left: var(--size-0-5, 2px);
-    margin-right: var(--size-0-5, 2px);
+    min-width: 12px;
+    text-align: center;
   }
 </style>

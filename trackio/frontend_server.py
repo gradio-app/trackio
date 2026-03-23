@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from starlette.responses import FileResponse, HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 

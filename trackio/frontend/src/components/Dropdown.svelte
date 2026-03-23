@@ -128,10 +128,10 @@
 
 <div class="dropdown-container">
   {#if showLabel}
-    <span class="block-title">{label}</span>
+    <span class="label">{label}</span>
   {/if}
   {#if info}
-    <span class="block-info">{info}</span>
+    <span class="info">{info}</span>
   {/if}
   <div class="wrap" class:focused={showOptions}>
     <div class="wrap-inner">
@@ -149,7 +149,7 @@
           placeholder={value === null ? "Select..." : ""}
         />
         <div class="icon-wrap">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M5.25 7.5L9 11.25L12.75 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
@@ -195,35 +195,35 @@
   .dropdown-container {
     width: 100%;
   }
-  .block-title {
+  .label {
     display: block;
-    font-size: var(--block-title-text-size, 14px);
-    font-weight: var(--block-title-text-weight, 400);
-    color: var(--block-title-text-color, #6b7280);
-    margin-bottom: var(--spacing-lg, 8px);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--body-text-color-subdued, #6b7280);
+    margin-bottom: 6px;
   }
-  .block-info {
+  .info {
     display: block;
-    font-size: var(--block-info-text-size, 12px);
-    color: var(--block-info-text-color, #9ca3af);
-    margin-bottom: var(--spacing-md, 6px);
+    font-size: 12px;
+    color: var(--body-text-color-subdued, #9ca3af);
+    margin-bottom: 4px;
   }
   .wrap {
     position: relative;
     border-radius: var(--input-radius, 8px);
     background: var(--input-background-fill, white);
-    box-shadow: var(--input-shadow);
-    border: var(--input-border-width, 1px) solid var(--border-color-primary, #e5e7eb);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
   .wrap.focused {
-    box-shadow: var(--input-shadow-focus);
-    border-color: var(--input-border-color-focus, #93c5fd);
+    border-color: var(--input-border-color-focus, #fdba74);
+    box-shadow: 0 0 0 2px var(--primary-50, #fff7ed);
   }
   .wrap-inner {
     display: flex;
     position: relative;
     align-items: center;
-    padding: var(--checkbox-label-padding, 6px 12px);
+    padding: 0 10px;
   }
   .secondary-wrap {
     display: flex;
@@ -231,14 +231,15 @@
     align-items: center;
   }
   input {
-    margin: var(--spacing-sm, 4px);
+    margin: 0;
     outline: none;
     border: none;
     background: inherit;
     width: 100%;
     color: var(--body-text-color, #1f2937);
-    font-size: var(--input-text-size, 14px);
+    font-size: 13px;
     font-family: inherit;
+    padding: 7px 0;
   }
   input::placeholder {
     color: var(--input-placeholder-color, #9ca3af);
@@ -247,21 +248,19 @@
     cursor: pointer;
   }
   .icon-wrap {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    right: var(--size-5, 20px);
-    color: var(--body-text-color, #1f2937);
-    width: var(--size-5, 20px);
+    color: var(--body-text-color-subdued, #9ca3af);
+    width: 16px;
+    flex-shrink: 0;
     pointer-events: none;
   }
   .options {
     position: fixed;
     z-index: var(--layer-top, 9999);
     margin: 0;
-    padding: 0;
-    box-shadow: var(--shadow-drop-lg);
-    border-radius: var(--container-radius, 8px);
+    padding: 4px 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    border-radius: var(--input-radius, 8px);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
     background: var(--background-fill-primary, white);
     min-width: fit-content;
     overflow: auto;
@@ -271,8 +270,8 @@
   .item {
     display: flex;
     cursor: pointer;
-    padding: var(--size-2, 8px);
-    font-size: var(--input-text-size, 14px);
+    padding: 6px 10px;
+    font-size: 13px;
     word-break: break-word;
   }
   .item:hover,
@@ -283,8 +282,9 @@
     font-weight: 500;
   }
   .check-mark {
-    padding-right: var(--size-1, 4px);
-    min-width: 18px;
+    padding-right: 6px;
+    min-width: 16px;
+    font-size: 12px;
   }
   .check-mark.hide {
     visibility: hidden;
