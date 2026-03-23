@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 import trackio.utils as utils
+from trackio.frontend_server import mount_frontend
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
@@ -1486,8 +1487,6 @@ demo.write_token = write_token
 run_page.write_token = write_token
 run_detail_page.write_token = write_token
 files_page.write_token = write_token
-
-from trackio.frontend_server import mount_frontend
 
 
 async def _mount_frontend_on_startup():
