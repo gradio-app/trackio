@@ -27,6 +27,9 @@
 <style>
   .accordion {
     margin-bottom: 12px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--background-fill-primary, white);
     overflow: hidden;
   }
   .accordion-hidden {
@@ -38,8 +41,7 @@
     gap: 8px;
     width: 100%;
     padding: 10px 14px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-lg, 8px);
+    border: none;
     background: var(--background-fill-primary, white);
     color: var(--body-text-color, #1f2937);
     font-size: var(--text-md, 14px);
@@ -60,6 +62,6 @@
     transform: rotate(-90deg);
   }
   .accordion-body {
-    padding: 12px 0;
+    padding: 0 14px 14px;
   }
 </style>

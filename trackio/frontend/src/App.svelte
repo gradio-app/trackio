@@ -183,7 +183,7 @@
       {:else if currentPage === "reports"}
         <Reports project={selectedProject} {runs} />
       {:else if currentPage === "runs"}
-        <Runs project={selectedProject} />
+        <Runs project={selectedProject} onRunsChanged={refreshRuns} />
       {:else if currentPage === "run-detail"}
         <RunDetail project={selectedProject} />
       {:else if currentPage === "files"}

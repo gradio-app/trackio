@@ -115,6 +115,16 @@ export async function getMetricValues(project, run, metricName) {
   return data;
 }
 
+export async function deleteRun(project, run) {
+  const data = await callApi("/delete_run", { project, run });
+  return data;
+}
+
+export async function renameRun(project, oldName, newName) {
+  const data = await callApi("/rename_run", { project, old_name: oldName, new_name: newName });
+  return data;
+}
+
 export function getAssetUrl(path) {
   return `${BASE}/gradio_api/file=${path}`;
 }

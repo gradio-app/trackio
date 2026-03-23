@@ -1,8 +1,9 @@
 <script>
+  import { onMount } from "svelte";
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
-  import { getSystemMetricsForRun, getSystemLogs } from "../lib/api.js";
-  import { groupMetricsByPrefix, downsample } from "../lib/dataProcessing.js";
+  import { getSystemLogs } from "../lib/api.js";
+  import { groupMetricsByPrefix } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
 
   let {
@@ -15,61 +16,145 @@
   let systemData = $state([]);
   let metricNames = $state([]);
   let xLim = $state(null);
-  let loading = $state(false);
+  let hasLoaded = $state(false);
+  let metricOrder = $state({});
+  let dragState = $state({ group: null, index: -1 });
+
+  let rawDataCache = new Map();
+  let refreshTimer = null;
 
   let colorMap = $derived(buildColorMap(selectedRuns));
 
   let metricGroups = $derived(groupMetricsByPrefix(metricNames));
   let groupNames = $derived(Object.keys(metricGroups));
 
-  async function loadData() {
+  function getOrderedMetrics(key, items) {
+    const order = metricOrder[key];
+    if (!order) return items;
+    const ordered = [];
+    for (const m of order) {
+      if (items.includes(m)) ordered.push(m);
+    }
+    for (const m of items) {
+      if (!ordered.includes(m)) ordered.push(m);
+    }
+    return ordered;
+  }
+
+  function handleDragStart(groupKey, index, e) {
+    dragState = { group: groupKey, index };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", "");
+  }
+
+  function handleDragOver(groupKey, index, e) {
+    if (dragState.group !== groupKey) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  function handleDrop(groupKey, index, metrics, e) {
+    e.preventDefault();
+    if (dragState.group !== groupKey || dragState.index === index) {
+      dragState = { group: null, index: -1 };
+      return;
+    }
+    const ordered = [...metrics];
+    const [moved] = ordered.splice(dragState.index, 1);
+    ordered.splice(index, 0, moved);
+    metricOrder = { ...metricOrder, [groupKey]: ordered };
+    dragState = { group: null, index: -1 };
+  }
+
+  function processFromCache() {
     if (!project || selectedRuns.length === 0) {
       systemData = [];
       metricNames = [];
       return;
     }
 
-    loading = true;
-    try {
-      const allRows = [];
-      const allMetrics = new Set();
+    const allRows = [];
+    const allMetrics = new Set();
 
-      for (const run of selectedRuns) {
-        const logs = await getSystemLogs(project, run);
-        if (!logs || logs.length === 0) continue;
+    for (const run of selectedRuns) {
+      const logs = rawDataCache.get(run);
+      if (!logs || logs.length === 0) continue;
 
-        const firstTs = new Date(logs[0].timestamp).getTime();
-        logs.forEach((row) => {
-          const timeSeconds =
-            (new Date(row.timestamp).getTime() - firstTs) / 1000;
-          Object.keys(row).forEach((k) => {
-            if (
-              typeof row[k] === "number" &&
-              k !== "step" &&
-              k !== "time"
-            ) {
-              allMetrics.add(k);
-            }
-          });
-
-          allRows.push({ ...row, time: timeSeconds, run, data_type: "original" });
+      const firstTs = new Date(logs[0].timestamp).getTime();
+      logs.forEach((row) => {
+        const timeSeconds = (new Date(row.timestamp).getTime() - firstTs) / 1000;
+        Object.keys(row).forEach((k) => {
+          if (typeof row[k] === "number" && k !== "step" && k !== "time") {
+            allMetrics.add(k);
+          }
         });
-      }
+        allRows.push({ ...row, time: timeSeconds, run, data_type: "original" });
+      });
+    }
 
-      metricNames = Array.from(allMetrics).sort();
-      systemData = allRows;
-    } catch (e) {
-      console.error("Failed to load system data:", e);
-    } finally {
-      loading = false;
+    metricNames = Array.from(allMetrics).sort();
+    systemData = allRows;
+  }
+
+  async function fetchNewRuns() {
+    if (!project || selectedRuns.length === 0) {
+      systemData = [];
+      metricNames = [];
+      hasLoaded = true;
+      return;
+    }
+
+    let fetched = false;
+    for (const run of selectedRuns) {
+      if (!rawDataCache.has(run)) {
+        const logs = await getSystemLogs(project, run);
+        rawDataCache.set(run, logs);
+        fetched = true;
+      }
+    }
+
+    if (fetched || !hasLoaded) {
+      processFromCache();
+    }
+    hasLoaded = true;
+  }
+
+  async function refreshCachedRuns() {
+    if (!project || selectedRuns.length === 0) return;
+
+    let changed = false;
+    for (const run of selectedRuns) {
+      const logs = await getSystemLogs(project, run);
+      const prev = rawDataCache.get(run);
+      if (!prev || logs.length !== prev.length) {
+        rawDataCache.set(run, logs);
+        changed = true;
+      }
+    }
+    if (changed) {
+      processFromCache();
     }
   }
 
   $effect(() => {
     project;
     selectedRuns;
+    rawDataCache = project ? rawDataCache : new Map();
+    fetchNewRuns();
+  });
+
+  $effect(() => {
     smoothing;
-    loadData();
+    if (hasLoaded) {
+      processFromCache();
+    }
+  });
+
+  onMount(() => {
+    refreshTimer = setInterval(refreshCachedRuns, 2000);
+    return () => {
+      if (refreshTimer) clearInterval(refreshTimer);
+    };
   });
 
   function getPlotData(metric) {
@@ -80,7 +165,7 @@
 </script>
 
 <div class="system-page">
-  {#if loading && systemData.length === 0}
+  {#if !hasLoaded}
     <div class="loading">Loading system metrics...</div>
   {:else if systemData.length === 0}
     <div class="empty-state">
@@ -90,9 +175,11 @@
   {:else}
     {#each groupNames as groupName}
       {@const group = metricGroups[groupName]}
+      {@const directKey = `sys:${groupName}`}
+      {@const orderedDirect = getOrderedMetrics(directKey, group.direct)}
       <Accordion label={groupName} open={true}>
         <div class="plot-grid">
-          {#each group.direct as metric}
+          {#each orderedDirect as metric, i}
             {@const plotData = getPlotData(metric)}
             {#if plotData.length > 0}
               <LinePlot
@@ -102,6 +189,10 @@
                 title={metric}
                 {colorMap}
                 {xLim}
+                draggable={true}
+                ondragstart={(e) => handleDragStart(directKey, i, e)}
+                ondragover={(e) => handleDragOver(directKey, i, e)}
+                ondrop={(e) => handleDrop(directKey, i, orderedDirect, e)}
               />
             {/if}
           {/each}

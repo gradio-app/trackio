@@ -600,6 +600,15 @@ def get_logs(project: str, run: str) -> list[dict]:
     return SQLiteStorage.get_logs(project, run)
 
 
+def delete_run(project: str, run: str) -> bool:
+    return SQLiteStorage.delete_run(project, run)
+
+
+def rename_run(project: str, old_name: str, new_name: str) -> bool:
+    SQLiteStorage.rename_run(project, old_name, new_name)
+    return True
+
+
 def configure(request: gr.Request):
     sidebar_param = request.query_params.get("sidebar")
     match sidebar_param:
@@ -1072,6 +1081,14 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(
         fn=get_logs,
         api_name="get_logs",
+    )
+    gr.api(
+        fn=delete_run,
+        api_name="delete_run",
+    )
+    gr.api(
+        fn=rename_run,
+        api_name="rename_run",
     )
 
     def force_sync() -> bool:
