@@ -1,6 +1,7 @@
 import json
 import secrets
 import subprocess
+import time
 
 
 def test_cli_remote_list_and_get(test_space_id):
@@ -14,14 +15,18 @@ def test_cli_remote_list_and_get(test_space_id):
     trackio.log({"loss": 0.3, "acc": 0.9})
     trackio.finish()
 
-    def cli(*args):
-        result = subprocess.run(
-            ["trackio", *args, "--space", test_space_id, "--json"],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, f"CLI failed: {result.stderr}"
-        return json.loads(result.stdout)
+    def cli(*args, retries=3):
+        for attempt in range(retries):
+            result = subprocess.run(
+                ["trackio", *args, "--space", test_space_id, "--json"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                return json.loads(result.stdout)
+            if attempt < retries - 1:
+                time.sleep(10)
+        assert False, f"CLI failed after {retries} attempts: {result.stderr}"
 
     projects = cli("list", "projects")
     assert project_name in projects["projects"]
