@@ -110,10 +110,7 @@ def deploy_as_space(
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
         readme_content = readme_content.replace("{GRADIO_VERSION}", gradio.__version__)
-        if is_source_install:
-            readme_content = readme_content.replace("{APP_FILE}", "trackio/ui/main.py")
-        else:
-            readme_content = readme_content.replace("{APP_FILE}", "app.py")
+        readme_content = readme_content.replace("{APP_FILE}", "app.py")
         readme_buffer = io.BytesIO(readme_content.encode("utf-8"))
         hf_api.upload_file(
             path_or_fileobj=readme_buffer,
