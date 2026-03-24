@@ -1,6 +1,7 @@
 export function getPageFromPath() {
-  const path = window.location.pathname.replace(/^\/trackio\/?/, "");
-  const clean = path.replace(/^\/+/, "").split("?")[0];
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const clean =
+    pathname === "/" ? "" : pathname.replace(/^\//, "").split("/")[0];
   switch (clean) {
     case "":
     case "metrics":
@@ -25,15 +26,15 @@ export function getPageFromPath() {
 export function navigateTo(page) {
   const params = new URLSearchParams(window.location.search);
   const pathMap = {
-    metrics: "/trackio/",
-    system: "/trackio/system",
-    media: "/trackio/media",
-    reports: "/trackio/reports",
-    runs: "/trackio/runs",
-    "run-detail": "/trackio/run",
-    files: "/trackio/files",
+    metrics: "/",
+    system: "/system",
+    media: "/media",
+    reports: "/reports",
+    runs: "/runs",
+    "run-detail": "/run",
+    files: "/files",
   };
-  const path = pathMap[page] || "/trackio/";
+  const path = pathMap[page] || "/";
   const search = params.toString();
   const url = search ? `${path}?${search}` : path;
   window.history.pushState({}, "", url);
