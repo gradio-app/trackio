@@ -1,13 +1,14 @@
-"""The main page for the Trackio UI."""
+"""The main API layer for the Trackio UI."""
 
 import os
 import re
 import secrets
 import shutil
+from functools import lru_cache
 from typing import Any
 
 import gradio as gr
-import numpy as np
+import huggingface_hub as hf
 import pandas as pd
 
 import trackio.utils as utils
@@ -15,280 +16,101 @@ from trackio.frontend_server import mount_frontend
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
-from trackio.ui import fns
-from trackio.ui.components.colored_checkbox import ColoredCheckboxGroup
-from trackio.ui.components.html_accordion import HTMLAccordion
-from trackio.ui.files import files_page
-from trackio.ui.helpers.run_selection import RunSelection
-from trackio.ui.media_page import media_page
-from trackio.ui.reports_page import reports_page
-from trackio.ui.run_detail import run_detail_page
-from trackio.ui.runs import run_page
-from trackio.ui.system_page import system_page
 
-INSTRUCTIONS_SPACES = """
-## Start logging with Trackio 🤗
-
-To start logging to this Trackio dashboard, first make sure you have the Trackio library installed. You can do this by running:
-
-```bash
-pip install trackio
-```
-
-Then, start logging to this Trackio dashboard by passing in the `space_id` to `trackio.init()`:
-
-```python
-import trackio
-trackio.init(project="my-project", space_id="{}")
-```
-
-Then call `trackio.log()` to log metrics.
-
-```python
-for i in range(10):
-    trackio.log({{"loss": 1/(i+1)}})
-```
-
-Finally, call `trackio.finish()` to finish the run.
-
-```python
-trackio.finish()
-```
-"""
-
-INSTRUCTIONS_LOCAL = """
-## Start logging with Trackio 🤗
- 
-You can create a new project by calling `trackio.init()`:
-
-```python
-import trackio
-trackio.init(project="my-project")
- ```
-
-Then call `trackio.log()` to log metrics.
-
-```python
-for i in range(10):
-    trackio.log({"loss": 1/(i+1)})
-```
-
-Finally, call `trackio.finish()` to finish the run.
-
-```python
-trackio.finish()
-```
-
-Read the [Trackio documentation](https://huggingface.co/docs/trackio/en/index) for more examples.
-"""
+HfApi = hf.HfApi()
 
 
-def generate_download_plot_js(metric_name: str) -> str:
-    """Generate JavaScript code for downloading plot data as JSON."""
-    safe_filename = metric_name.replace("/", "_").replace("\\", "_")
-    return f"""(data) => {{
-        const jsonStr = JSON.stringify(data.value, null, 2);
-        const blob = new Blob([jsonStr], {{type: 'application/json'}});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = '{safe_filename}.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        return [];
-    }}"""
+@lru_cache(maxsize=32)
+def check_hf_token_has_write_access(hf_token: str | None) -> None:
+    if os.getenv("SYSTEM") == "spaces":
+        if hf_token is None:
+            raise PermissionError(
+                "Expected a HF_TOKEN to be provided when logging to a Space"
+            )
+        who = HfApi.whoami(hf_token)
+        owner_name = os.getenv("SPACE_AUTHOR_NAME")
+        repo_name = os.getenv("SPACE_REPO_NAME")
+        orgs = [o["name"] for o in who["orgs"]]
+        if owner_name != who["name"] and owner_name not in orgs:
+            raise PermissionError(
+                "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
+            )
+        access_token = who["auth"]["accessToken"]
+        if access_token["role"] == "fineGrained":
+            matched = False
+            for item in access_token["fineGrained"]["scoped"]:
+                if (
+                    item["entity"]["type"] == "space"
+                    and item["entity"]["name"] == f"{owner_name}/{repo_name}"
+                    and "repo.write" in item["permissions"]
+                ):
+                    matched = True
+                    break
+                if (
+                    (
+                        item["entity"]["type"] == "user"
+                        or item["entity"]["type"] == "org"
+                    )
+                    and item["entity"]["name"] == owner_name
+                    and "repo.write" in item["permissions"]
+                ):
+                    matched = True
+                    break
+            if not matched:
+                raise PermissionError(
+                    "Expected the provided hf_token with fine grained permissions to provide write access to the space"
+                )
+        elif access_token["role"] != "write":
+            raise PermissionError(
+                "Expected the provided hf_token to provide write permissions"
+            )
+
+
+@lru_cache(maxsize=32)
+def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
+    if not os.getenv("SYSTEM") == "spaces":
+        return
+    if oauth_token is None:
+        raise PermissionError(
+            "Expected an oauth to be provided when logging to a Space"
+        )
+    who = HfApi.whoami(oauth_token)
+    user_name = who["name"]
+    owner_name = os.getenv("SPACE_AUTHOR_NAME")
+    if user_name == owner_name:
+        return
+    for org in who["orgs"]:
+        if org["name"] == owner_name and org["roleInOrg"] == "write":
+            return
+    raise PermissionError(
+        "Expected the oauth token to be the user owner of the space, or be a member of the org owner of the space"
+    )
+
+
+def check_write_access(request: gr.Request, write_token: str) -> bool:
+    cookies = request.headers.get("cookie", "")
+    if cookies:
+        for cookie in cookies.split(";"):
+            parts = cookie.strip().split("=")
+            if len(parts) == 2 and parts[0] == "trackio_write_token":
+                return parts[1] == write_token
+    if hasattr(request, "query_params") and request.query_params:
+        token = request.query_params.get("write_token")
+        return token == write_token
+    return False
 
 
 def upload_db_to_space(
     project: str, uploaded_db: gr.FileData, hf_token: str | None
 ) -> None:
-    """
-    Uploads the database of a local Trackio project to a Hugging Face Space.
-    """
-    fns.check_hf_token_has_write_access(hf_token)
+    check_hf_token_has_write_access(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
     shutil.copy(uploaded_db["path"], db_project_path)
 
 
-def get_available_metrics(project: str, runs: list[str]) -> list[str]:
-    """Get all available metrics across all runs for x-axis selection."""
-    if not project or not runs:
-        return ["step", "time"]
-
-    all_metrics = set()
-    for run in runs:
-        metrics = SQLiteStorage.get_logs(project, run)
-        if metrics:
-            df = pd.DataFrame(metrics)
-            numeric_cols = df.select_dtypes(include="number").columns
-            numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
-            all_metrics.update(numeric_cols)
-
-    all_metrics.add("step")
-    all_metrics.add("time")
-
-    sorted_metrics = utils.sort_metrics_by_prefix(list(all_metrics))
-
-    result = ["step", "time"]
-    for metric in sorted_metrics:
-        if metric not in result:
-            result.append(metric)
-
-    return result
-
-
-def load_run_data(
-    project: str | None,
-    run: str | None,
-    smoothing_granularity: int = 0,
-    x_axis: str = "step",
-    log_scale_x: bool = False,
-    log_scale_y: bool = False,
-) -> pd.DataFrame | None:
-    if not project or not run:
-        return None
-
-    logs = SQLiteStorage.get_logs(project, run)
-    if not logs:
-        return None
-
-    df = pd.DataFrame(logs)
-
-    if "step" not in df.columns:
-        df["step"] = range(len(df))
-
-    if x_axis == "time" and "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-        first_timestamp = df["timestamp"].min()
-        df["time"] = (df["timestamp"] - first_timestamp).dt.total_seconds()
-        x_column = "time"
-    elif x_axis == "step":
-        x_column = "step"
-    else:
-        x_column = x_axis
-
-    if log_scale_x and x_column in df.columns:
-        x_vals = df[x_column]
-        if (x_vals <= 0).any():
-            df[x_column] = np.log10(np.maximum(x_vals, 0) + 1)
-        else:
-            df[x_column] = np.log10(x_vals)
-
-    if log_scale_y:
-        numeric_cols = df.select_dtypes(include="number").columns
-        y_cols = [
-            c for c in numeric_cols if c not in utils.RESERVED_KEYS and c != x_column
-        ]
-        for y_col in y_cols:
-            if y_col in df.columns:
-                y_vals = df[y_col]
-                if (y_vals <= 0).any():
-                    df[y_col] = np.log10(np.maximum(y_vals, 0) + 1)
-                else:
-                    df[y_col] = np.log10(y_vals)
-
-    if smoothing_granularity > 0:
-        numeric_cols = df.select_dtypes(include="number").columns
-        numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
-
-        df_original = df.copy()
-        df_original["run"] = run
-        df_original["data_type"] = "original"
-
-        df_smoothed = df.copy()
-        window_size = max(3, min(smoothing_granularity, len(df)))
-        df_smoothed[numeric_cols] = (
-            df_smoothed[numeric_cols]
-            .rolling(window=window_size, center=True, min_periods=1)
-            .mean()
-        )
-        df_smoothed["run"] = f"{run}_smoothed"
-        df_smoothed["data_type"] = "smoothed"
-
-        combined_df = pd.concat([df_original, df_smoothed], ignore_index=True)
-        combined_df["x_axis"] = x_column
-        return combined_df
-    else:
-        df["run"] = run
-        df["data_type"] = "original"
-        df["x_axis"] = x_column
-        return df
-
-
-def refresh_runs(
-    project: str | None,
-    filter_text: str | None,
-    selection: RunSelection,
-    selected_runs_from_url: list[str] | None = None,
-):
-    if project is None:
-        runs: list[str] = []
-    else:
-        runs = fns.get_runs(project)
-        if filter_text:
-            runs = [r for r in runs if filter_text in r]
-
-    preferred = None
-    if selected_runs_from_url:
-        preferred = [r for r in runs if r in selected_runs_from_url]
-
-    did_change = selection.update_choices(runs, preferred)
-    return (
-        fns.run_checkbox_update(selection) if did_change else gr.skip(),
-        gr.Textbox(label=f"Runs ({len(runs)})"),
-        selection,
-    )
-
-
-def generate_share_fields(
-    project: str,
-    metrics: str,
-    selection: RunSelection,
-    show_headers: bool = True,
-) -> tuple[str, str]:
-    share_url = utils.generate_share_url(project, metrics, selection.selected)
-    embed_code = utils.generate_embed_code(
-        project, metrics, selection.selected, not show_headers
-    )
-    return share_url, embed_code
-
-
-def generate_embed(
-    project: str, metrics: str, selection: RunSelection, show_headers: bool = True
-) -> str:
-    return utils.generate_embed_code(
-        project, metrics, selection.selected, not show_headers
-    )
-
-
-def update_x_axis_choices(project, selection, current_x_axis="step"):
-    """Update x-axis dropdown choices based on available metrics."""
-    runs = selection.selected
-    available_metrics = get_available_metrics(project, runs)
-    value = current_x_axis if current_x_axis in available_metrics else "step"
-    return gr.Dropdown(
-        label="X-axis",
-        choices=available_metrics,
-        value=value,
-    )
-
-
-def toggle_timer(cb_value):
-    if cb_value:
-        return gr.Timer(active=True)
-    else:
-        return gr.Timer(active=False)
-
-
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
-    """
-    Uploads media files to a Trackio dashboard. Each entry in the list is a tuple of the project, run, and media file to be uploaded.
-    Also handles uplaoding project-level files to the project's files directory (if the run and step are not provided).
-    """
-    fns.check_hf_token_has_write_access(hf_token)
+    check_hf_token_has_write_access(hf_token)
     for upload in uploads:
         media_path = get_project_media_path(
             project=upload["project"],
@@ -306,12 +128,7 @@ def log(
     step: int | None,
     hf_token: str | None,
 ) -> None:
-    """
-    Note: this method is not used in the latest versions of Trackio (replaced by bulk_log) but
-    is kept for backwards compatibility for users who are connecting to a newer version of
-    a Trackio Spaces dashboard with an older version of Trackio installed locally.
-    """
-    fns.check_hf_token_has_write_access(hf_token)
+    check_hf_token_has_write_access(hf_token)
     SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
 
 
@@ -319,10 +136,7 @@ def bulk_log(
     logs: list[LogEntry],
     hf_token: str | None,
 ) -> None:
-    """
-    Logs a list of metrics to a Trackio dashboard. Each entry in the list is a dictionary of the project, run, a dictionary of metrics, and optionally, a step and config.
-    """
-    fns.check_hf_token_has_write_access(hf_token)
+    check_hf_token_has_write_access(hf_token)
 
     logs_by_run = {}
     for log_entry in logs:
@@ -356,10 +170,7 @@ def bulk_log_system(
     logs: list[SystemLogEntry],
     hf_token: str | None,
 ) -> None:
-    """
-    Logs system metrics (GPU, etc.) to a Trackio dashboard. These metrics use timestamps instead of steps.
-    """
-    fns.check_hf_token_has_write_access(hf_token)
+    check_hf_token_has_write_access(hf_token)
 
     logs_by_run = {}
     for log_entry in logs:
@@ -385,10 +196,7 @@ def bulk_alert(
     alerts: list[AlertEntry],
     hf_token: str | None,
 ) -> None:
-    """
-    Logs a list of alerts to a Trackio dashboard.
-    """
-    fns.check_hf_token_has_write_access(hf_token)
+    check_hf_token_has_write_access(hf_token)
 
     alerts_by_run: dict[tuple, dict] = {}
     for entry in alerts:
@@ -429,11 +237,6 @@ def get_alerts(
     level: str | None = None,
     since: str | None = None,
 ) -> list[dict]:
-    """
-    Get alerts for a project, optionally filtered by run, level, and timestamp.
-    Returns a list of alert dictionaries with timestamp, run, title, text, level, and step.
-    Pass `since` as an ISO 8601 timestamp to only return alerts after that time.
-    """
     return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
 
 
@@ -446,11 +249,6 @@ def get_metric_values(
     at_time: str | None = None,
     window: int | None = None,
 ) -> list[dict]:
-    """
-    Get all values for a specific metric in a project/run.
-    Returns a list of dictionaries with timestamp, step, and value.
-    Optionally filter by step, around_step, at_time, and window.
-    """
     return SQLiteStorage.get_metric_values(
         project,
         run,
@@ -462,41 +260,17 @@ def get_metric_values(
     )
 
 
-def get_runs_for_project(
-    project: str,
-) -> list[str]:
-    """
-    Get all runs for a given project.
-    Returns a list of run names.
-    """
+def get_runs_for_project(project: str) -> list[str]:
     return SQLiteStorage.get_runs(project)
 
 
-def get_metrics_for_run(
-    project: str,
-    run: str,
-) -> list[str]:
-    """
-    Get all metrics for a given project and run.
-    Returns a list of metric names.
-    """
+def get_metrics_for_run(project: str, run: str) -> list[str]:
     return SQLiteStorage.get_all_metrics_for_run(project, run)
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
-    """
-    Filter metrics using regex pattern.
-
-    Args:
-        metrics: List of metric names to filter
-        filter_pattern: Regex pattern to match against metric names
-
-    Returns:
-        List of metric names that match the pattern
-    """
     if not filter_pattern.strip():
         return metrics
-
     try:
         pattern = re.compile(filter_pattern, re.IGNORECASE)
         return [metric for metric in metrics if pattern.search(metric)]
@@ -507,23 +281,10 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
 
 
 def get_all_projects() -> list[str]:
-    """
-    Get all project names.
-    Returns a list of project names.
-    """
     return SQLiteStorage.get_projects()
 
 
 def get_project_summary(project: str) -> dict:
-    """
-    Get a summary of a project including number of runs and recent activity.
-
-    Args:
-        project: Project name
-
-    Returns:
-        Dictionary with project summary information
-    """
     runs = SQLiteStorage.get_runs(project)
     if not runs:
         return {"project": project, "num_runs": 0, "runs": [], "last_activity": None}
@@ -539,16 +300,6 @@ def get_project_summary(project: str) -> dict:
 
 
 def get_run_summary(project: str, run: str) -> dict:
-    """
-    Get a summary of a specific run including metrics and configuration.
-
-    Args:
-        project: Project name
-        run: Run name
-
-    Returns:
-        Dictionary with run summary information
-    """
     num_logs = SQLiteStorage.get_log_count(project, run)
     logs = SQLiteStorage.get_logs(project, run)
     metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
@@ -611,883 +362,43 @@ def rename_run(project: str, old_name: str, new_name: str) -> bool:
     return True
 
 
-def configure(request: gr.Request):
-    sidebar_param = request.query_params.get("sidebar")
-    match sidebar_param:
-        case "collapsed":
-            sidebar = gr.Sidebar(open=False, visible=True)
-        case "hidden":
-            sidebar = gr.Sidebar(open=False, visible=False)
-        case _:
-            sidebar = gr.Sidebar(open=True, visible=True)
-
-    metrics_param = request.query_params.get("metrics", "")
-    runs_param = request.query_params.get("runs", "")
-    selected_runs = runs_param.split(",") if runs_param else []
-    navbar_param = request.query_params.get("navbar")
-    x_min_param = request.query_params.get("xmin")
-    x_max_param = request.query_params.get("xmax")
-    x_min = float(x_min_param) if x_min_param is not None else None
-    x_max = float(x_max_param) if x_max_param is not None else None
-    smoothing_param = request.query_params.get("smoothing")
-    smoothing_value = int(smoothing_param) if smoothing_param is not None else 10
-
-    match navbar_param:
-        case "hidden":
-            navbar = gr.Navbar(visible=False)
-        case _:
-            navbar = gr.Navbar(visible=True)
-
-    show_headers_cb = gr.Checkbox(
-        value=request.query_params.get("accordion") != "hidden"
-    )
-
-    return (
-        [],
-        sidebar,
-        metrics_param,
-        selected_runs,
-        navbar,
-        [x_min, x_max],
-        smoothing_value,
-        show_headers_cb,
-    )
+def force_sync() -> bool:
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+    scheduler = SQLiteStorage.get_scheduler()
+    scheduler.trigger().result()
+    return True
 
 
-CSS = """
-.dark .caption-label { color: white; }
-.accent-link { font-weight: bold; }
-
-.media-gallery .fixed-height { min-height: 275px; }
-.media-group, .media-group > div { background: none; }
-.media-group .tabs { padding: 0.5em; }
-.media-tab { max-height: 500px; overflow-y: scroll; }
-.media-audio-accordion > button { 
-    border-bottom-width: 1px;
-    padding-bottom: 3px;
-}
-.media-audio-item {
-    border-width: 1px !important;
-    border-radius: 0.5em;
-}
-.media-audio-row {
-    gap: 0.25em;
-    margin-bottom: 0.25em;
-}
-
-.tab-like-container {
-    visibility: hidden;
-}
-
-/* Runs table styling - prevent text overflow and distortion */
-.dataframe table {
-    table-layout: fixed;
-    width: 100%;
-}
-.dataframe td, .dataframe th {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 8px 12px;
-}
-.dataframe td:hover, .dataframe th:hover {
-    overflow: visible;
-    white-space: normal;
-    word-wrap: break-word;
-    position: relative;
-    z-index: 10;
-}
-
-.vega-embed .role-legend-symbol path {
-    stroke-width: 0 !important;
-}
-
-.nav-holder {
-    border-bottom: 0px !important;
-}
-
-.html-container {
-    padding: 0 !important;
-}
-"""
-
-HEAD = """
-<script>
-new MutationObserver(function() {
-    document.querySelectorAll('.vega-embed .role-legend-symbol path').forEach(function(p) {
-        var s = p.style.stroke || p.getAttribute('stroke');
-        if (s && s !== 'none' && p.style.fill !== s) {
-            p.style.fill = s;
-        }
-    });
-}).observe(document.body, { childList: true, subtree: true });
-function setCookie(name, value, days) {
-    var expires = "";
-    if (days) {
-        var date = new Date();
-        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-        expires = "; expires=" + date.toUTCString();
-    }
-    document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax";
-}
-
-function getCookie(name) {
-    var nameEQ = name + "=";
-    var ca = document.cookie.split(';');
-    for(var i=0;i < ca.length;i++) {
-        var c = ca[i];
-        while (c.charAt(0)==' ') c = c.substring(1,c.length);
-        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
-    }
-    return null;
-}
-
-(async function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const writeToken = urlParams.get('write_token');
-    const footerParam = urlParams.get('footer');
-
-    if (writeToken) {
-        setCookie('trackio_write_token', writeToken, 7);
-
-        const inIframe = window.self !== window.top;
-        if (!inIframe) {
-            urlParams.delete('write_token');
-            const newUrl = window.location.pathname +
-                (urlParams.toString() ? '?' + urlParams.toString() : '') +
-                window.location.hash;
-            window.history.replaceState({}, document.title, newUrl);
-        }
-    }
-
-    if (footerParam === 'false') {
-        const style = document.createElement('style');
-        style.textContent = 'footer { display: none !important; }';
-        document.head.appendChild(style);
-    }
-
-    const inIframe = window.self !== window.top;
-    const isHfSpace = window.location.hostname.endsWith('.hf.space');
-
-    const waitForElement = function(selector) {
-        return new Promise(resolve => {
-            if (document.querySelector(selector)) {
-                return resolve(document.querySelector(selector));
-            }
-
-            const observer = new MutationObserver(mutations => {
-                if (document.querySelector(selector)) {
-                    observer.disconnect();
-                    resolve(document.querySelector(selector));
-                }
-            });
-
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-        });
-    };
-    if (isHfSpace && !inIframe) {
-        document.querySelector('gradio-app').style.paddingTop = '56px';
-        const spaceHeaderCollapseButton = await waitForElement('#space-header__collapse');
-        spaceHeaderCollapseButton.addEventListener('click', function() {
-            document.querySelector('gradio-app').style.paddingTop = '0px';
-        });
-    }
-})();
-</script>
-"""
-
+CSS = ""
+HEAD = ""
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 with gr.Blocks(title="Trackio Dashboard") as demo:
-    with gr.Sidebar(open=False) as sidebar:
-        logo = fns.create_logo()
-        project_dd = fns.create_project_dropdown()
-
-        with gr.Tabs(visible=bool(os.environ.get("SPACE_HOST"))):
-            with gr.Tab("Share"):
-                share_url = gr.Textbox(
-                    label="Share this view",
-                    max_lines=1,
-                    lines=1,
-                    interactive=False,
-                    buttons=["copy"],
-                )
-            with gr.Tab("Embed"):
-                embed_code = gr.Code(
-                    label="Embed this view",
-                    max_lines=2,
-                    lines=2,
-                    language="html",
-                )
-        with gr.Group():
-            run_tb = gr.Textbox(label="Runs", placeholder="Type to filter...")
-            run_group_by_dd = gr.Dropdown(label="Group by...", choices=[], value=None)
-            grouped_runs_panel = gr.Group(visible=False)
-        run_cb = ColoredCheckboxGroup(choices=[], colors=[], label="Runs")
-
-        gr.HTML("<hr>")
-        realtime_cb = gr.Checkbox(label="Refresh metrics realtime", value=True)
-        smoothing_slider = gr.Slider(
-            label="Smoothing Factor",
-            minimum=0,
-            maximum=20,
-            value=10,
-            step=1,
-            info="0 = no smoothing",
-        )
-        x_axis_dd = gr.Dropdown(
-            label="X-axis",
-            choices=["step", "time"],
-            value="step",
-        )
-        log_scale_x_cb = gr.Checkbox(label="Log scale X-axis", value=False)
-        log_scale_y_cb = gr.Checkbox(label="Log scale Y-axis", value=False)
-        show_headers_cb = gr.Checkbox(
-            label="Show section headers",
-            value=True,
-        )
-        metric_filter_tb = gr.Textbox(
-            label="Metric Filter (regex)",
-            placeholder="e.g., loss|ndcg@10|gpu",
-            value="",
-            info="Filter metrics using regex patterns. Leave empty to show all metrics.",
-        )
-
-    navbar = fns.create_navbar()
-    timer = gr.Timer(value=1)
-    fns.setup_alert_notifications(timer, project_dd)
-    metrics_subset = gr.State([])
-    selected_runs_from_url = gr.State([])
-    run_selection_state = gr.State(RunSelection())
-    x_lim = gr.State(None)
-
-    gr.on(
-        [demo.load],
-        fn=configure,
-        outputs=[
-            metrics_subset,
-            sidebar,
-            metric_filter_tb,
-            selected_runs_from_url,
-            navbar,
-            x_lim,
-            smoothing_slider,
-            show_headers_cb,
-        ],
-        queue=False,
-        api_visibility="private",
-    )
-    gr.on(
-        [demo.load],
-        fn=fns.get_projects,
-        outputs=project_dd,
-        show_progress="hidden",
-        queue=False,
-        api_visibility="private",
-    )
-    gr.on(
-        [timer.tick],
-        fn=refresh_runs,
-        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
-        outputs=[run_cb, run_tb, run_selection_state],
-        show_progress="hidden",
-        api_visibility="private",
-    )
-    gr.on(
-        [timer.tick],
-        fn=lambda: gr.Dropdown(info=fns.get_project_info()),
-        outputs=[project_dd],
-        show_progress="hidden",
-        api_visibility="private",
-    )
-    gr.on(
-        [demo.load, project_dd.change],
-        fn=refresh_runs,
-        inputs=[project_dd, run_tb, run_selection_state, selected_runs_from_url],
-        outputs=[run_cb, run_tb, run_selection_state],
-        show_progress="hidden",
-        queue=False,
-        api_visibility="private",
-    ).then(
-        fn=update_x_axis_choices,
-        inputs=[project_dd, run_selection_state],
-        outputs=x_axis_dd,
-        show_progress="hidden",
-        queue=False,
-        api_visibility="private",
-    ).then(
-        fn=generate_share_fields,
-        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
-        outputs=[share_url, embed_code],
-        show_progress="hidden",
-        api_visibility="private",
-        queue=False,
-    ).then(
-        fns.update_navbar_value,
-        inputs=[project_dd],
-        outputs=[navbar],
-        show_progress="hidden",
-        api_visibility="private",
-        queue=False,
-    ).then(
-        fn=fns.get_group_by_fields,
-        inputs=[project_dd],
-        outputs=[run_group_by_dd],
-        show_progress="hidden",
-        api_visibility="private",
-        queue=False,
-    )
-
-    gr.on(
-        [run_cb.input],
-        fn=update_x_axis_choices,
-        inputs=[project_dd, run_selection_state, x_axis_dd],
-        outputs=x_axis_dd,
-        show_progress="hidden",
-        queue=False,
-        api_visibility="private",
-    )
-    gr.on(
-        [metric_filter_tb.change, run_cb.change],
-        fn=generate_share_fields,
-        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
-        outputs=[share_url, embed_code],
-        show_progress="hidden",
-        api_visibility="private",
-        queue=False,
-    )
-
-    def toggle_group_view(group_by_dd):
-        return (
-            gr.CheckboxGroup(visible=not bool(group_by_dd)),
-            gr.Group(visible=bool(group_by_dd)),
-        )
-
-    gr.on(
-        [run_group_by_dd.change],
-        fn=toggle_group_view,
-        inputs=[run_group_by_dd],
-        outputs=[run_cb, grouped_runs_panel],
-        show_progress="hidden",
-        api_visibility="private",
-        queue=False,
-    )
-
-    realtime_cb.change(
-        fn=toggle_timer,
-        inputs=realtime_cb,
-        outputs=timer,
-        api_visibility="private",
-        queue=False,
-    )
-    run_cb.input(
-        fn=fns.handle_run_checkbox_change,
-        inputs=[run_cb, run_selection_state],
-        outputs=run_selection_state,
-        api_visibility="private",
-        queue=False,
-    ).then(
-        fn=generate_share_fields,
-        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
-        outputs=[share_url, embed_code],
-        show_progress="hidden",
-        api_visibility="private",
-        queue=False,
-    )
-    run_tb.input(
-        fn=refresh_runs,
-        inputs=[project_dd, run_tb, run_selection_state],
-        outputs=[run_cb, run_tb, run_selection_state],
-        api_visibility="private",
-        queue=False,
-        show_progress="hidden",
-    )
-
-    show_headers_cb.change(
-        fn=generate_embed,
-        inputs=[project_dd, metric_filter_tb, run_selection_state, show_headers_cb],
-        outputs=embed_code,
-        show_progress="hidden",
-        api_visibility="private",
-        queue=False,
-    )
-
-    gr.api(
-        fn=upload_db_to_space,
-        api_name="upload_db_to_space",
-    )
-    gr.api(
-        fn=bulk_upload_media,
-        api_name="bulk_upload_media",
-    )
-    gr.api(
-        fn=log,
-        api_name="log",
-    )
-    gr.api(
-        fn=bulk_log,
-        api_name="bulk_log",
-    )
-    gr.api(
-        fn=bulk_log_system,
-        api_name="bulk_log_system",
-    )
-    gr.api(
-        fn=bulk_alert,
-        api_name="bulk_alert",
-    )
-    gr.api(
-        fn=get_alerts,
-        api_name="get_alerts",
-    )
-    gr.api(
-        fn=get_metric_values,
-        api_name="get_metric_values",
-    )
-    gr.api(
-        fn=get_runs_for_project,
-        api_name="get_runs_for_project",
-    )
-    gr.api(
-        fn=get_metrics_for_run,
-        api_name="get_metrics_for_run",
-    )
-    gr.api(
-        fn=get_all_projects,
-        api_name="get_all_projects",
-    )
-    gr.api(
-        fn=get_project_summary,
-        api_name="get_project_summary",
-    )
-    gr.api(
-        fn=get_run_summary,
-        api_name="get_run_summary",
-    )
-    gr.api(
-        fn=get_system_metrics_for_run,
-        api_name="get_system_metrics_for_run",
-    )
-    gr.api(
-        fn=get_system_logs,
-        api_name="get_system_logs",
-    )
-    gr.api(
-        fn=get_snapshot,
-        api_name="get_snapshot",
-    )
-    gr.api(
-        fn=get_logs,
-        api_name="get_logs",
-    )
-    gr.api(
-        fn=delete_run,
-        api_name="delete_run",
-    )
-    gr.api(
-        fn=rename_run,
-        api_name="rename_run",
-    )
-
-    def force_sync() -> bool:
-        """Force an immediate sync of all data to the dataset."""
-        SQLiteStorage._dataset_import_attempted = True
-        SQLiteStorage.export_to_parquet()
-        scheduler = SQLiteStorage.get_scheduler()
-        scheduler.trigger().result()
-        return True
-
-    gr.api(
-        fn=force_sync,
-        api_name="force_sync",
-    )
-
-    last_steps = gr.State({})
-
-    def update_x_lim(select_data: gr.SelectData):
-        return select_data.index
-
-    def update_last_steps(project):
-        """Check the last step for each run to detect when new data is available."""
-        if not project:
-            return {}
-        return SQLiteStorage.get_max_steps_for_runs(project)
-
-    timer.tick(
-        fn=update_last_steps,
-        inputs=[project_dd],
-        outputs=last_steps,
-        show_progress="hidden",
-        api_visibility="private",
-    )
-
-    @gr.render(
-        triggers=[
-            demo.load,
-            run_cb.change,
-            last_steps.change,
-            smoothing_slider.change,
-            x_lim.change,
-            x_axis_dd.change,
-            log_scale_x_cb.change,
-            log_scale_y_cb.change,
-            metric_filter_tb.change,
-            show_headers_cb.change,
-        ],
-        inputs=[
-            project_dd,
-            run_cb,
-            smoothing_slider,
-            metrics_subset,
-            x_lim,
-            x_axis_dd,
-            log_scale_x_cb,
-            log_scale_y_cb,
-            metric_filter_tb,
-            run_selection_state,
-            show_headers_cb,
-        ],
-        show_progress="hidden",
-        queue=False,
-    )
-    def update_dashboard(
-        project,
-        runs,
-        smoothing_granularity,
-        metrics_subset,
-        x_lim_value,
-        x_axis,
-        log_scale_x,
-        log_scale_y,
-        metric_filter,
-        selection,
-        show_headers,
-    ):
-        dfs = []
-        original_runs = runs.copy()
-
-        for run in runs:
-            df = load_run_data(
-                project, run, smoothing_granularity, x_axis, log_scale_x, log_scale_y
-            )
-            if df is not None:
-                dfs.append(df)
-
-        if dfs:
-            if smoothing_granularity > 0:
-                original_dfs = []
-                smoothed_dfs = []
-                for df in dfs:
-                    original_data = df[df["data_type"] == "original"]
-                    smoothed_data = df[df["data_type"] == "smoothed"]
-                    if not original_data.empty:
-                        original_dfs.append(original_data)
-                    if not smoothed_data.empty:
-                        smoothed_dfs.append(smoothed_data)
-
-                all_dfs = original_dfs + smoothed_dfs
-                master_df = (
-                    pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
-                )
-
-            else:
-                master_df = pd.concat(dfs, ignore_index=True)
-        else:
-            master_df = pd.DataFrame()
-
-        if master_df.empty:
-            if not SQLiteStorage.get_projects():
-                if space_id := utils.get_space():
-                    gr.Markdown(INSTRUCTIONS_SPACES.format(space_id))
-                else:
-                    gr.Markdown(INSTRUCTIONS_LOCAL)
-            else:
-                gr.Markdown("*Waiting for runs to appear...*")
-            return
-
-        x_column = "step"
-        if dfs and not dfs[0].empty and "x_axis" in dfs[0].columns:
-            x_column = dfs[0]["x_axis"].iloc[0]
-
-        numeric_cols = master_df.select_dtypes(include="number").columns
-        numeric_cols = [c for c in numeric_cols if c not in utils.RESERVED_KEYS]
-        if x_column and x_column in numeric_cols:
-            numeric_cols.remove(x_column)
-
-        if metrics_subset:
-            numeric_cols = [c for c in numeric_cols if c in metrics_subset]
-
-        if metric_filter and metric_filter.strip():
-            numeric_cols = filter_metrics_by_regex(list(numeric_cols), metric_filter)
-
-        ordered_groups, nested_metric_groups = utils.order_metrics_by_plot_preference(
-            list(numeric_cols)
-        )
-        all_runs = selection.choices if selection else original_runs
-        color_map = utils.get_color_mapping(all_runs, smoothing_granularity > 0)
-
-        metric_idx = 0
-        for group_name in ordered_groups:
-            group_data = nested_metric_groups[group_name]
-
-            total_plot_count = sum(
-                1
-                for m in group_data["direct_metrics"]
-                if not master_df.dropna(subset=[m]).empty
-            ) + sum(
-                sum(1 for m in metrics if not master_df.dropna(subset=[m]).empty)
-                for metrics in group_data["subgroups"].values()
-            )
-            group_label = (
-                f"{group_name} ({total_plot_count})"
-                if total_plot_count > 0
-                else group_name
-            )
-
-            with HTMLAccordion(
-                label=group_label,
-                open=True,
-                hidden=not show_headers,
-                key=f"accordion-{group_name}",
-                preserved_by_key=["open"],
-            ):
-                if group_data["direct_metrics"]:
-                    with gr.Draggable(
-                        key=f"row-{group_name}-direct", orientation="row"
-                    ):
-                        for metric_name in group_data["direct_metrics"]:
-                            metric_df = master_df.dropna(subset=[metric_name])
-                            color = "run" if "run" in metric_df.columns else None
-                            downsampled_df, updated_x_lim = utils.downsample(
-                                metric_df,
-                                x_column,
-                                metric_name,
-                                color,
-                                x_lim_value,
-                            )
-                            if not metric_df.empty:
-                                download_btn = gr.Button("📄")
-                                plot = gr.LinePlot(
-                                    downsampled_df,
-                                    x=x_column,
-                                    y=metric_name,
-                                    y_title=metric_name.split("/")[-1],
-                                    color=color,
-                                    color_map=color_map,
-                                    colors_in_legend=original_runs,
-                                    title=metric_name,
-                                    key=f"plot-{metric_idx}",
-                                    preserved_by_key=None,
-                                    buttons=[download_btn, "fullscreen", "export"],
-                                    x_lim=updated_x_lim,
-                                    min_width=400,
-                                )
-                                download_btn.click(
-                                    None,
-                                    inputs=[plot],
-                                    outputs=[],
-                                    js=generate_download_plot_js(metric_name),
-                                )
-                                plot.select(
-                                    update_x_lim,
-                                    outputs=x_lim,
-                                    key=f"select-{metric_idx}",
-                                )
-                                plot.double_click(
-                                    lambda: None,
-                                    outputs=x_lim,
-                                    key=f"double-{metric_idx}",
-                                )
-                            metric_idx += 1
-
-                if group_data["subgroups"]:
-                    for subgroup_name in sorted(group_data["subgroups"].keys()):
-                        subgroup_metrics = group_data["subgroups"][subgroup_name]
-
-                        subgroup_plot_count = sum(
-                            1
-                            for m in subgroup_metrics
-                            if not master_df.dropna(subset=[m]).empty
-                        )
-                        subgroup_label = (
-                            f"{subgroup_name} ({subgroup_plot_count})"
-                            if subgroup_plot_count > 0
-                            else subgroup_name
-                        )
-
-                        with HTMLAccordion(
-                            label=subgroup_label,
-                            open=True,
-                            hidden=not show_headers,
-                            key=f"accordion-{group_name}-{subgroup_name}",
-                            preserved_by_key=["open"],
-                        ):
-                            with gr.Draggable(
-                                key=f"row-{group_name}-{subgroup_name}",
-                                orientation="row",
-                            ):
-                                for metric_name in subgroup_metrics:
-                                    metric_df = master_df.dropna(subset=[metric_name])
-                                    color = (
-                                        "run" if "run" in metric_df.columns else None
-                                    )
-                                    downsampled_df, updated_x_lim = utils.downsample(
-                                        metric_df,
-                                        x_column,
-                                        metric_name,
-                                        color,
-                                        x_lim_value,
-                                    )
-                                    if not metric_df.empty:
-                                        download_btn = gr.Button("📄")
-                                        plot = gr.LinePlot(
-                                            downsampled_df,
-                                            x=x_column,
-                                            y=metric_name,
-                                            y_title=metric_name.split("/")[-1],
-                                            color=color,
-                                            color_map=color_map,
-                                            colors_in_legend=original_runs,
-                                            title=metric_name,
-                                            key=f"plot-{metric_idx}",
-                                            preserved_by_key=None,
-                                            buttons=[
-                                                download_btn,
-                                                "fullscreen",
-                                                "export",
-                                            ],
-                                            x_lim=updated_x_lim,
-                                            min_width=400,
-                                        )
-                                        download_btn.click(
-                                            None,
-                                            inputs=[plot],
-                                            outputs=[],
-                                            js=generate_download_plot_js(metric_name),
-                                        )
-                                        plot.select(
-                                            update_x_lim,
-                                            outputs=x_lim,
-                                            key=f"select-{metric_idx}",
-                                        )
-                                        plot.double_click(
-                                            lambda: None,
-                                            outputs=x_lim,
-                                            key=f"double-{metric_idx}",
-                                        )
-                                    metric_idx += 1
-
-    with grouped_runs_panel:
-
-        @gr.render(
-            triggers=[
-                demo.load,
-                project_dd.change,
-                run_group_by_dd.change,
-                run_tb.input,
-                run_selection_state.change,
-                last_steps.change,
-            ],
-            inputs=[project_dd, run_group_by_dd, run_tb, run_selection_state],
-            show_progress="hidden",
-            queue=False,
-        )
-        def render_grouped_runs(project, group_key, filter_text, selection):
-            if not group_key:
-                return
-            selection = selection or RunSelection()
-            groups = fns.group_runs_by_config(project, group_key, filter_text)
-
-            for label, runs in groups.items():
-                ordered_current = utils.ordered_subset(runs, selection.selected)
-
-                with gr.Group():
-                    show_group_cb = gr.Checkbox(
-                        label="Show/Hide",
-                        value=bool(ordered_current),
-                        key=f"show-cb-{group_key}-{label}",
-                        preserved_by_key=["value"],
-                    )
-
-                    with gr.Accordion(
-                        f"{label} ({len(runs)})",
-                        open=False,
-                        key=f"accordion-{group_key}-{label}",
-                        preserved_by_key=["open"],
-                    ):
-                        color_palette = utils.get_color_palette()
-                        choice_indices = {
-                            run: i for i, run in enumerate(selection.choices)
-                        }
-                        colors = [
-                            color_palette[
-                                choice_indices.get(run, 0) % len(color_palette)
-                            ]
-                            for run in runs
-                        ]
-                        group_cb = ColoredCheckboxGroup(
-                            choices=runs,
-                            value=ordered_current,
-                            colors=colors,
-                            label=f"Runs ({len(runs)})",
-                            key=f"group-cb-{group_key}-{label}",
-                            preserved_by_key=None,
-                        )
-
-                        gr.on(
-                            [group_cb.input],
-                            fn=fns.handle_group_checkbox_change,
-                            inputs=[
-                                group_cb,
-                                run_selection_state,
-                                gr.State(runs),
-                            ],
-                            outputs=[
-                                run_selection_state,
-                                run_cb,
-                            ],
-                            show_progress="hidden",
-                            api_visibility="private",
-                            queue=False,
-                        )
-
-                        gr.on(
-                            [show_group_cb.change],
-                            fn=fns.handle_group_toggle,
-                            inputs=[
-                                show_group_cb,
-                                run_selection_state,
-                                gr.State(runs),
-                            ],
-                            outputs=[run_selection_state, run_cb],
-                            show_progress="hidden",
-                            api_visibility="private",
-                            queue=False,
-                        )
-
-
-with demo.route("System", show_in_navbar=False):
-    system_page.render()
-with demo.route("Media", show_in_navbar=False):
-    media_page.render()
-with demo.route("Reports", show_in_navbar=False):
-    reports_page.render()
-with demo.route("Runs", show_in_navbar=False):
-    run_page.render()
-with demo.route("Run", show_in_navbar=False):
-    run_detail_page.render()
-with demo.route("Files", show_in_navbar=False):
-    files_page.render()
+    gr.api(fn=upload_db_to_space, api_name="upload_db_to_space")
+    gr.api(fn=bulk_upload_media, api_name="bulk_upload_media")
+    gr.api(fn=log, api_name="log")
+    gr.api(fn=bulk_log, api_name="bulk_log")
+    gr.api(fn=bulk_log_system, api_name="bulk_log_system")
+    gr.api(fn=bulk_alert, api_name="bulk_alert")
+    gr.api(fn=get_alerts, api_name="get_alerts")
+    gr.api(fn=get_metric_values, api_name="get_metric_values")
+    gr.api(fn=get_runs_for_project, api_name="get_runs_for_project")
+    gr.api(fn=get_metrics_for_run, api_name="get_metrics_for_run")
+    gr.api(fn=get_all_projects, api_name="get_all_projects")
+    gr.api(fn=get_project_summary, api_name="get_project_summary")
+    gr.api(fn=get_run_summary, api_name="get_run_summary")
+    gr.api(fn=get_system_metrics_for_run, api_name="get_system_metrics_for_run")
+    gr.api(fn=get_system_logs, api_name="get_system_logs")
+    gr.api(fn=get_snapshot, api_name="get_snapshot")
+    gr.api(fn=get_logs, api_name="get_logs")
+    gr.api(fn=delete_run, api_name="delete_run")
+    gr.api(fn=rename_run, api_name="rename_run")
+    gr.api(fn=force_sync, api_name="force_sync")
 
 write_token = secrets.token_urlsafe(32)
 demo.write_token = write_token
-run_page.write_token = write_token
-run_detail_page.write_token = write_token
-files_page.write_token = write_token
 
 
 async def _mount_frontend_on_startup():
@@ -1499,9 +410,6 @@ demo.extra_startup_events.append(_mount_frontend_on_startup)
 if __name__ == "__main__":
     demo.launch(
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
-        footer_links=["gradio", "settings"],
         show_error=True,
         ssr_mode=False,
-        head=HEAD,
-        css=CSS,
     )
