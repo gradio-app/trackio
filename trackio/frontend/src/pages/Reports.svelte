@@ -3,26 +3,31 @@
 
   let { project = null, selectedRun = $bindable("All runs") } = $props();
 
-  let alerts = $state([]);
+  let allAlerts = $state([]);
   let filterLevel = $state(null);
   let loading = $state(false);
 
   const BADGES = { info: "🔵", warn: "🟡", error: "🔴" };
 
+  let alerts = $derived.by(() => {
+    if (!filterLevel) return allAlerts;
+    return allAlerts.filter((a) => a.level === filterLevel);
+  });
+
   async function loadAlerts() {
     if (!project) {
-      alerts = [];
+      allAlerts = [];
       return;
     }
 
     loading = true;
     try {
       const actualRun = selectedRun === "All runs" ? null : selectedRun;
-      const data = await getAlerts(project, actualRun, filterLevel, null);
-      alerts = data || [];
+      const data = await getAlerts(project, actualRun, null, null);
+      allAlerts = data || [];
     } catch (e) {
       console.error("Failed to load alerts:", e);
-      alerts = [];
+      allAlerts = [];
     } finally {
       loading = false;
     }
@@ -31,7 +36,6 @@
   $effect(() => {
     project;
     selectedRun;
-    filterLevel;
     loadAlerts();
   });
 
@@ -59,37 +63,39 @@
 </script>
 
 <div class="reports-page">
-  <div class="controls">
-    <div class="control">
-      <span class="block-title">Level</span>
-      <div class="filter-pills">
-        <button
-          class="pill"
-          class:active={filterLevel === null}
-          onclick={() => (filterLevel = null)}>All</button
-        >
-        <button
-          class="pill"
-          class:active={filterLevel === "info"}
-          onclick={() => (filterLevel = "info")}>Info</button
-        >
-        <button
-          class="pill"
-          class:active={filterLevel === "warn"}
-          onclick={() => (filterLevel = "warn")}>Warn</button
-        >
-        <button
-          class="pill"
-          class:active={filterLevel === "error"}
-          onclick={() => (filterLevel = "error")}>Error</button
-        >
+  {#if !loading && allAlerts.length > 0}
+    <div class="controls">
+      <div class="control">
+        <span class="block-title">Level</span>
+        <div class="filter-pills">
+          <button
+            class="pill"
+            class:active={filterLevel === null}
+            onclick={() => (filterLevel = null)}>All</button
+          >
+          <button
+            class="pill"
+            class:active={filterLevel === "info"}
+            onclick={() => (filterLevel = "info")}>Info</button
+          >
+          <button
+            class="pill"
+            class:active={filterLevel === "warn"}
+            onclick={() => (filterLevel = "warn")}>Warn</button
+          >
+          <button
+            class="pill"
+            class:active={filterLevel === "error"}
+            onclick={() => (filterLevel = "error")}>Error</button
+          >
+        </div>
       </div>
     </div>
-  </div>
+  {/if}
 
   {#if loading}
     <div class="loading">Loading alerts...</div>
-  {:else if alerts.length === 0}
+  {:else if allAlerts.length === 0}
     <div class="empty-state">
       <h2>No alerts yet</h2>
       <p>
@@ -97,7 +103,12 @@
         alert panel, and can optionally POST to a webhook configured in <code>trackio.init()</code>.
       </p>
       <pre><code>{'import trackio\nfrom trackio import AlertLevel\n\ntrackio.init(project="my-project")\ntrackio.alert("Low validation loss", text="Consider saving a checkpoint.", level=AlertLevel.INFO)\ntrackio.alert("NaNs detected", level=AlertLevel.ERROR)'}</code></pre>
-      <p>Use <code>AlertLevel.INFO</code>, <code>AlertLevel.WARN</code>, or <code>AlertLevel.ERROR</code>. Filter by level with the pills above.</p>
+      <p>Use <code>AlertLevel.INFO</code>, <code>AlertLevel.WARN</code>, or <code>AlertLevel.ERROR</code>.</p>
+    </div>
+  {:else if alerts.length === 0}
+    <div class="empty-state">
+      <h2>No alerts for this level</h2>
+      <p>Try another level or choose <strong>All</strong>.</p>
     </div>
   {:else}
     <table class="alerts-table">
