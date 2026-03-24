@@ -1,4 +1,5 @@
 import secrets
+import time
 
 import huggingface_hub
 from gradio_client import Client
@@ -70,7 +71,16 @@ def test_runs_data_persisted_after_restart(test_space_id):
         test_space_id, "TRACKIO_TEST_RESTART", secrets.token_urlsafe(8)
     )
 
-    client = Client(test_space_id)
+    time.sleep(10)
+    deadline = time.time() + 300
+    client = None
+    while time.time() < deadline:
+        try:
+            client = Client(test_space_id, verbose=False)
+            break
+        except Exception:
+            time.sleep(10)
+    assert client is not None, "Space did not come back up after restart"
 
     headers, rows, run_names = client.predict(
         project=project_name, api_name="/get_runs_data"
