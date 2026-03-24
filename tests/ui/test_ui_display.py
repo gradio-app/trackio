@@ -23,7 +23,7 @@ def test_runs_plots_images_are_displayed(temp_dir):
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url + "trackio/")
+            page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
 
             run_label = page.locator(".run-name", has_text="test_run")
@@ -67,7 +67,7 @@ def test_latest_only_selects_last_run(temp_dir):
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url + "trackio/")
+            page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
 
             checkboxes = page.locator(".checkbox-item input[type='checkbox']")
@@ -100,7 +100,7 @@ def test_navbar_page_navigation(temp_dir):
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url + "trackio/")
+            page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
 
             expect(page.locator(".metrics-page")).to_be_visible()
@@ -136,7 +136,7 @@ def test_runs_table_shows_run_data(temp_dir):
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url + "trackio/")
+            page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
 
             page.locator(".nav-link", has_text="Runs").click()
@@ -169,7 +169,7 @@ def test_multiple_runs_display_multiple_plots(temp_dir):
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url + "trackio/")
+            page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
 
             run_items = page.locator(".checkbox-item")
@@ -178,8 +178,8 @@ def test_multiple_runs_display_multiple_plots(temp_dir):
             plots = page.locator(".vega-embed")
             expect(plots).to_have_count(2)
 
-            runs_label = page.locator(".section-label")
-            expect(runs_label).to_contain_text("Runs (2)")
+            runs_label = page.get_by_text("Runs (2)", exact=True)
+            expect(runs_label).to_be_visible()
 
             browser.close()
     finally:

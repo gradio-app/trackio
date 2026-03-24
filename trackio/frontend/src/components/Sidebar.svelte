@@ -43,9 +43,7 @@
 
   let loginHref = $derived.by(() => {
     navTick;
-    const target =
-      window.location.pathname + window.location.search || "/trackio/";
-    return `${window.location.origin}/login/huggingface?_target_url=${encodeURIComponent(target)}`;
+    return `${window.location.origin}/oauth/hf/start`;
   });
 
   let showCompactRunPicker = $derived(
@@ -102,10 +100,10 @@
         <picture>
           <source
             media="(prefers-color-scheme: dark)"
-            srcset="/trackio/assets/trackio_logo_type_dark_transparent.png"
+            srcset="/static/trackio/trackio_logo_type_dark_transparent.png"
           />
           <img
-            src="/trackio/assets/trackio_logo_type_light_transparent.png"
+            src="/static/trackio/trackio_logo_type_light_transparent.png"
             alt="Trackio"
             class="logo"
           />

@@ -96,11 +96,12 @@ def _cleanup_current_run():
 
 
 def _get_demo():
-    # Lazy import to avoid initializing Gradio Blocks (and FastAPI) at import time,
+    # Lazy import to avoid initializing the Gradio Server (and FastAPI) at import time,
     # which causes import lock errors for libraries that just `import trackio`.
-    from trackio.ui.main import CSS, HEAD, demo
+    from trackio.ui import main as ui_main
 
-    return demo, CSS, HEAD
+    ui_main.prepare_demo_for_launch()
+    return ui_main.demo, ui_main.CSS, ui_main.HEAD
 
 
 def init(
@@ -701,21 +702,24 @@ def show(
     mount_frontend(app)
 
     base_url = share_url + "/" if share_url else url
-    trackio_url = base_url + "trackio/"
+    dashboard_url = base_url.rstrip("/") + "/"
     if project:
-        trackio_url += f"?project={project}"
+        dashboard_url += f"?project={project}"
     full_url = utils.get_full_url(
-        base_url, project=project, write_token=demo.write_token, footer=footer
+        base_url.rstrip("/"),
+        project=project,
+        write_token=demo.write_token,
+        footer=footer,
     )
 
     if not utils.is_in_notebook():
-        print(f"* Trackio UI launched at: {trackio_url}")
+        print(f"* Trackio UI launched at: {dashboard_url}")
         print(f"* Gradio API available at: {base_url}")
         if open_browser:
-            webbrowser.open(trackio_url)
+            webbrowser.open(dashboard_url)
         block_thread = block_thread if block_thread is not None else True
     else:
-        utils.embed_url_in_notebook(trackio_url)
+        utils.embed_url_in_notebook(dashboard_url)
         block_thread = block_thread if block_thread is not None else False
 
     if block_thread:
