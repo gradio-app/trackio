@@ -1,11 +1,16 @@
 const BASE = window.__trackio_base || "";
 
+function getOauthSessionHeader() {
+  const sid = sessionStorage.getItem("trackio_oauth_session");
+  return sid ? { "x-trackio-oauth-session": sid } : {};
+}
+
 export async function callApi(apiName, params = {}) {
   const url = `${BASE}/gradio_api/call${apiName}`;
   const resp = await fetch(url, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...getOauthSessionHeader() },
     body: JSON.stringify({ data: Object.values(params) }),
   });
   if (!resp.ok) {

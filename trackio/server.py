@@ -29,24 +29,24 @@ OAUTH_CALLBACK_PATH = "/login/callback"
 OAUTH_START_PATH = "/oauth/hf/start"
 
 
-def _hf_access_token_from_cookies(request: gr.Request) -> str | None:
-    cookie_header = request.headers.get("cookie", "")
-    print(
-        f"[OAUTH DEBUG] cookie header present: {bool(cookie_header)}, length: {len(cookie_header)}"
-    )
+def _hf_access_token(request: gr.Request) -> str | None:
+    session_id = None
+    try:
+        session_id = request.headers.get("x-trackio-oauth-session")
+    except (AttributeError, TypeError):
+        pass
+    if session_id and session_id in _oauth_sessions:
+        return _oauth_sessions[session_id]
+    cookie_header = ""
+    try:
+        cookie_header = request.headers.get("cookie", "")
+    except (AttributeError, TypeError):
+        pass
     if cookie_header:
-        cookie_names = [
-            c.strip().split("=", 1)[0] for c in cookie_header.split(";") if "=" in c
-        ]
-        print(f"[OAUTH DEBUG] cookie names: {cookie_names}")
         for cookie in cookie_header.split(";"):
             parts = cookie.strip().split("=", 1)
             if len(parts) == 2 and parts[0] == "trackio_hf_access_token":
-                print(
-                    f"[OAUTH DEBUG] found trackio_hf_access_token, length: {len(parts[1])}"
-                )
                 return parts[1] or None
-    print("[OAUTH DEBUG] trackio_hf_access_token NOT found in cookies")
     return None
 
 
@@ -91,26 +91,18 @@ def oauth_hf_start(request: Request):
 
 
 def oauth_hf_callback(request: Request):
-    print("[OAUTH DEBUG] callback hit")
     client_id = os.getenv("OAUTH_CLIENT_ID")
     client_secret = os.getenv("OAUTH_CLIENT_SECRET")
     err = "/?oauth_error=1"
     if not client_id or not client_secret:
-        print(
-            f"[OAUTH DEBUG] missing client_id={bool(client_id)} client_secret={bool(client_secret)}"
-        )
         return RedirectResponse(url=err, status_code=302)
     got_state = request.query_params.get("state")
     code = request.query_params.get("code")
     state_valid = got_state in _pending_oauth_states if got_state else False
-    print(
-        f"[OAUTH DEBUG] state_valid={state_valid} code={bool(code)}"
-    )
     if not state_valid or not code:
         return RedirectResponse(url=err, status_code=302)
     _pending_oauth_states.discard(got_state)
     redirect_uri = _oauth_redirect_uri(request)
-    print(f"[OAUTH DEBUG] redirect_uri for token exchange: {redirect_uri}")
     auth_b64 = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     try:
         with httpx.Client() as client:
@@ -126,14 +118,12 @@ def oauth_hf_callback(request: Request):
             )
             token_resp.raise_for_status()
         access_token = token_resp.json()["access_token"]
-        print(
-            f"[OAUTH DEBUG] token exchange SUCCESS, token length: {len(access_token)}"
-        )
-    except Exception as e:
-        print(f"[OAUTH DEBUG] token exchange FAILED: {e}")
+    except Exception:
         return RedirectResponse(url=err, status_code=302)
+    session_id = secrets.token_urlsafe(32)
+    _oauth_sessions[session_id] = access_token
     on_spaces = os.getenv("SYSTEM") == "spaces"
-    resp = RedirectResponse(url="/", status_code=302)
+    resp = RedirectResponse(url=f"/?oauth_session={session_id}", status_code=302)
     resp.set_cookie(
         key="trackio_hf_access_token",
         value=access_token,
@@ -143,7 +133,18 @@ def oauth_hf_callback(request: Request):
         path="/",
         secure=on_spaces,
     )
-    print("[OAUTH DEBUG] cookie set, redirecting to /")
+    return resp
+
+
+def oauth_logout(request: Request):
+    on_spaces = os.getenv("SYSTEM") == "spaces"
+    resp = RedirectResponse(url="/", status_code=302)
+    resp.delete_cookie(
+        "trackio_hf_access_token",
+        path="/",
+        samesite="none" if on_spaces else "lax",
+        secure=on_spaces,
+    )
     return resp
 
 
@@ -230,7 +231,7 @@ def check_write_access(request: gr.Request, token: str) -> bool:
 def assert_can_mutate_runs(request: gr.Request) -> None:
     if os.getenv("SYSTEM") != "spaces":
         return
-    hf_tok = _hf_access_token_from_cookies(request)
+    hf_tok = _hf_access_token(request)
     if hf_tok is not None:
         try:
             check_oauth_token_has_write_access(hf_tok)
@@ -246,25 +247,17 @@ def assert_can_mutate_runs(request: gr.Request) -> None:
 
 
 def get_run_mutation_status(request: gr.Request) -> dict[str, Any]:
-    print(f"[OAUTH DEBUG] get_run_mutation_status called, SYSTEM={os.getenv('SYSTEM')}")
     if os.getenv("SYSTEM") != "spaces":
-        print("[OAUTH DEBUG] not on spaces, returning local")
         return {"spaces": False, "allowed": True, "auth": "local"}
-    hf_tok = _hf_access_token_from_cookies(request)
-    print(f"[OAUTH DEBUG] hf_tok present: {hf_tok is not None}")
+    hf_tok = _hf_access_token(request)
     if hf_tok is not None:
         try:
             check_oauth_token_has_write_access(hf_tok)
-            print("[OAUTH DEBUG] oauth check passed, returning allowed=True")
             return {"spaces": True, "allowed": True, "auth": "oauth"}
-        except PermissionError as e:
-            print(f"[OAUTH DEBUG] oauth check FAILED: {e}")
+        except PermissionError:
             return {"spaces": True, "allowed": False, "auth": "oauth_insufficient"}
-    has_write = check_write_access(request, write_token)
-    print(f"[OAUTH DEBUG] write_token check: {has_write}")
-    if has_write:
+    if check_write_access(request, write_token):
         return {"spaces": True, "allowed": True, "auth": "write_token"}
-    print("[OAUTH DEBUG] returning allowed=False, auth=none")
     return {"spaces": True, "allowed": False, "auth": "none"}
 
 
@@ -557,6 +550,7 @@ def make_trackio_server() -> TrackioServer:
     server = TrackioServer(title="Trackio Dashboard")
     server.add_api_route(OAUTH_START_PATH, oauth_hf_start, methods=["GET"])
     server.add_api_route(OAUTH_CALLBACK_PATH, oauth_hf_callback, methods=["GET"])
+    server.add_api_route("/oauth/logout", oauth_logout, methods=["GET"])
     server.api(fn=get_run_mutation_status, name="get_run_mutation_status")
     server.api(fn=upload_db_to_space, name="upload_db_to_space")
     server.api(fn=bulk_upload_media, name="bulk_upload_media")

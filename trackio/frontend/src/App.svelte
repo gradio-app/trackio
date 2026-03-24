@@ -133,30 +133,38 @@
     }, 1000);
   }
 
-  function applyWriteTokenFromUrl() {
+  function applyUrlTokens() {
     const params = new URLSearchParams(window.location.search);
+    let changed = false;
     const wt = params.get("write_token");
-    if (!wt) return;
-    const maxAge = 60 * 60 * 24 * 7;
-    document.cookie = `trackio_write_token=${encodeURIComponent(wt)}; path=/; max-age=${maxAge}; SameSite=Lax`;
-    params.delete("write_token");
-    const q = params.toString();
-    const path = window.location.pathname + (q ? `?${q}` : "");
-    window.history.replaceState({}, "", path);
+    if (wt) {
+      const maxAge = 60 * 60 * 24 * 7;
+      document.cookie = `trackio_write_token=${encodeURIComponent(wt)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+      params.delete("write_token");
+      changed = true;
+    }
+    const oauthSession = params.get("oauth_session");
+    if (oauthSession) {
+      sessionStorage.setItem("trackio_oauth_session", oauthSession);
+      params.delete("oauth_session");
+      changed = true;
+    }
+    if (changed) {
+      const q = params.toString();
+      const path = window.location.pathname + (q ? `?${q}` : "");
+      window.history.replaceState({}, "", path);
+    }
   }
 
   async function refreshMutationAccess() {
     try {
       const s = await getRunMutationStatus();
-      console.log("[OAUTH DEBUG] mutation status response:", JSON.stringify(s));
       mutationStatus = {
         spaces: !!s.spaces,
         allowed: !!s.allowed,
         auth: s.auth ?? "none",
       };
-      console.log("[OAUTH DEBUG] mutationStatus set to:", JSON.stringify(mutationStatus));
-    } catch (e) {
-      console.error("[OAUTH DEBUG] mutation status fetch failed:", e);
+    } catch {
       mutationStatus = { spaces: false, allowed: true, auth: "local" };
     }
   }
@@ -238,7 +246,7 @@
       applyLockedProject();
     });
 
-    applyWriteTokenFromUrl();
+    applyUrlTokens();
     refreshMutationAccess();
     startMutationPolling();
     window.addEventListener("focus", refreshMutationAccess);
