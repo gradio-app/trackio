@@ -17,12 +17,12 @@ from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
-from trackio.frontend_server import mount_frontend
 from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
 from trackio.deploy import sync
+from trackio.frontend_server import mount_frontend
 from trackio.gpu import gpu_available
 from trackio.gpu import log_gpu as _log_nvidia_gpu
 from trackio.histogram import Histogram
@@ -710,4 +710,4 @@ def show(
 
     if block_thread:
         utils.block_main_thread_until_keyboard_interrupt()
-    return TupleNoPrint((demo, url, share_url, full_url))
+    return TupleNoPrint((server, url, share_url, full_url))

@@ -15,8 +15,8 @@ from trackio.cli_helpers import (
     format_system_metrics,
 )
 from trackio.markdown import Markdown
-from trackio.sqlite_storage import SQLiteStorage
 from trackio.server import get_project_summary, get_run_summary
+from trackio.sqlite_storage import SQLiteStorage
 
 
 def _get_space(args):

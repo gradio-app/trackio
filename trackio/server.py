@@ -17,7 +17,6 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 import trackio.utils as utils
-from trackio.frontend_server import mount_frontend
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
@@ -542,4 +541,3 @@ def make_trackio_server() -> TrackioServer:
     server.api(fn=force_sync, name="force_sync")
     server.write_token = write_token
     return server
-
