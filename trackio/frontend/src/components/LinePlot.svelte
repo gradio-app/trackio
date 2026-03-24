@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import embed from "vega-embed";
 
   let {
@@ -11,16 +11,17 @@
     title = "",
     xLim = null,
     onSelect = null,
-    onDoubleClick = null,
+    onResetZoom = null,
     draggable = false,
     ondragstart = null,
     ondragover = null,
     ondrop = null,
   } = $props();
 
-  let container;
-  let plotContainer;
-  let view;
+  let container = $state(null);
+  let plotContainer = $state(null);
+  let fullscreenHost = $state(null);
+  let view = $state(null);
   let fullscreen = $state(false);
 
   let legendEntries = $derived.by(() => {
@@ -102,7 +103,8 @@
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
       title: { text: title, fontSize: 13, color: "#374151" },
       width: "container",
-      height: fullscreen ? window.innerHeight - 120 : 250,
+      height: fullscreen ? "container" : 250,
+      autosize: { type: "fit", contains: "padding" },
       layer: layers,
       ...(onSelect
         ? {
@@ -140,6 +142,7 @@
   }
 
   async function render() {
+    await tick();
     if (!container || !data || data.length === 0 || !y) return;
 
     const spec = buildSpec();
@@ -147,12 +150,16 @@
     try {
       if (view) {
         view.finalize();
+        view = null;
       }
       const result = await embed(container, spec, {
         actions: false,
         renderer: "svg",
       });
       view = result.view;
+      requestAnimationFrame(() => {
+        result.view.resize();
+      });
 
       if (onSelect) {
         let lastSelectTime = 0;
@@ -217,18 +224,77 @@
     }
   }
 
-  function toggleFullscreen() {
-    fullscreen = !fullscreen;
-    if (fullscreen) {
-      document.body.style.overflow = "hidden";
-    } else {
+  function requestFullscreenEl(el) {
+    if (!el) return Promise.reject(new Error("no element"));
+    const req =
+      el.requestFullscreen ||
+      el.webkitRequestFullscreen ||
+      el.mozRequestFullScreen ||
+      el.msRequestFullscreen;
+    if (!req) return Promise.reject(new Error("no fullscreen"));
+    return req.call(el);
+  }
+
+  function exitFullscreenDoc() {
+    const exit =
+      document.exitFullscreen ||
+      document.webkitExitFullscreen ||
+      document.mozCancelFullScreen ||
+      document.msExitFullscreen;
+    if (exit) return exit.call(document);
+    return Promise.resolve();
+  }
+
+  async function enterFullscreen() {
+    fullscreen = true;
+    document.body.style.overflow = "hidden";
+    await tick();
+    await tick();
+    try {
+      await requestFullscreenEl(fullscreenHost);
+      await tick();
+      view?.resize();
+    } catch {
       document.body.style.overflow = "";
+      fullscreen = false;
+    }
+  }
+
+  async function leaveFullscreen() {
+    try {
+      await exitFullscreenDoc();
+    } catch {
+    }
+    document.body.style.overflow = "";
+    fullscreen = false;
+  }
+
+  async function toggleFullscreen() {
+    if (fullscreen) {
+      await leaveFullscreen();
+    } else {
+      await enterFullscreen();
+    }
+  }
+
+  function onFullscreenChange() {
+    const active =
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement;
+    if (!active && fullscreen) {
+      document.body.style.overflow = "";
+      fullscreen = false;
+    }
+    if (active && fullscreen) {
+      tick().then(() => view?.resize());
     }
   }
 
   function handleKeydown(e) {
     if (e.key === "Escape" && fullscreen) {
-      toggleFullscreen();
+      leaveFullscreen();
     }
   }
 
@@ -240,16 +306,31 @@
     xLim;
     title;
     fullscreen;
+    container;
     render();
   });
 
-  onMount(() => {
-    if (onDoubleClick) {
-      container?.addEventListener("dblclick", () => {
-        onDoubleClick();
+  $effect(() => {
+    if (!container) return;
+    const ro = new ResizeObserver(() => {
+      queueMicrotask(() => {
+        view?.resize();
       });
-    }
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  });
+
+  onMount(() => {
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    document.addEventListener("mozfullscreenchange", onFullscreenChange);
+    document.addEventListener("MSFullscreenChange", onFullscreenChange);
     return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+      document.removeEventListener("mozfullscreenchange", onFullscreenChange);
+      document.removeEventListener("MSFullscreenChange", onFullscreenChange);
       if (view) view.finalize();
       document.body.style.overflow = "";
     };
@@ -262,52 +343,6 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-{#if fullscreen}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus -->
-  <div class="fullscreen-overlay" role="button" tabindex="-1" onclick={toggleFullscreen} onkeydown={handleKeydown}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="fullscreen-content" onclick={(e) => e.stopPropagation()}>
-      <div class="fullscreen-toolbar">
-        <button class="toolbar-btn" onclick={downloadCSV} title="Download CSV">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" onclick={downloadImage} title="Download image">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
-        </button>
-        <button class="toolbar-btn" onclick={toggleFullscreen} title="Exit fullscreen">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="4 14 10 14 10 20"/>
-            <polyline points="20 10 14 10 14 4"/>
-            <line x1="14" y1="10" x2="21" y2="3"/>
-            <line x1="3" y1="21" x2="10" y2="14"/>
-          </svg>
-        </button>
-      </div>
-      <div class="plot fullscreen-plot" bind:this={container}></div>
-      {#if legendEntries.length > 0}
-        <div class="custom-legend">
-          <span class="legend-title">{colorField}</span>
-          {#each legendEntries as entry}
-            <span class="legend-item">
-              <span class="legend-dot" style="background: {entry.color}"></span>
-              <span class="legend-label">{entry.name}</span>
-            </span>
-          {/each}
-        </div>
-      {/if}
-    </div>
-  </div>
-{/if}
-
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="plot-container"
@@ -319,7 +354,13 @@
   ondrop={draggable ? ondrop : undefined}
 >
   <div class="plot-toolbar">
-    <button class="toolbar-btn" onclick={downloadCSV} title="Download CSV">
+    <button
+      type="button"
+      class="toolbar-btn"
+      onclick={downloadCSV}
+      title="Download this plot’s data as a CSV file"
+      aria-label="Download this plot’s data as a CSV file"
+    >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
         <polyline points="14 2 14 8 20 8"/>
@@ -327,14 +368,26 @@
         <line x1="16" y1="17" x2="8" y2="17"/>
       </svg>
     </button>
-    <button class="toolbar-btn" onclick={downloadImage} title="Download image">
+    <button
+      type="button"
+      class="toolbar-btn"
+      onclick={downloadImage}
+      title="Download this chart as a PNG image"
+      aria-label="Download this chart as a PNG image"
+    >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
         <circle cx="8.5" cy="8.5" r="1.5"/>
         <polyline points="21 15 16 10 5 21"/>
       </svg>
     </button>
-    <button class="toolbar-btn" onclick={toggleFullscreen} title="Fullscreen">
+    <button
+      type="button"
+      class="toolbar-btn"
+      onclick={toggleFullscreen}
+      title="Open this chart in the browser’s fullscreen mode"
+      aria-label="Open this chart in the browser’s fullscreen mode"
+    >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="15 3 21 3 21 9"/>
         <polyline points="9 21 3 21 3 15"/>
@@ -344,7 +397,11 @@
     </button>
   </div>
   {#if draggable}
-    <div class="drag-handle" title="Drag to reorder">
+    <div
+      class="drag-handle"
+      title="Drag to reorder this plot in the list"
+      aria-label="Drag to reorder this plot in the list"
+    >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
         <circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/>
         <circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/>
@@ -353,7 +410,25 @@
     </div>
   {/if}
   {#if !fullscreen}
-    <div class="plot" bind:this={container}></div>
+    <div class="plot-chart-wrap">
+      <div class="plot" bind:this={container}></div>
+      {#if xLim && onResetZoom}
+        <button
+          type="button"
+          class="reset-zoom-btn"
+          onclick={(e) => {
+            e.stopPropagation();
+            onResetZoom();
+          }}
+          title="Reset horizontal zoom: show the full range on the x-axis"
+          aria-label="Reset horizontal zoom: show the full range on the x-axis"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12h16M4 12l3-3M4 12l3 3M20 12l-3-3M20 12l-3 3"/>
+          </svg>
+        </button>
+      {/if}
+    </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend">
         <span class="legend-title">{colorField}</span>
@@ -367,6 +442,86 @@
     {/if}
   {/if}
 </div>
+
+{#if fullscreen}
+  <div class="fullscreen-host" bind:this={fullscreenHost}>
+    <div class="fullscreen-toolbar">
+      <button
+        type="button"
+        class="toolbar-btn"
+        onclick={downloadCSV}
+        title="Download this plot’s data as a CSV file"
+        aria-label="Download this plot’s data as a CSV file"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="toolbar-btn"
+        onclick={downloadImage}
+        title="Download this chart as a PNG image"
+        aria-label="Download this chart as a PNG image"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="toolbar-btn"
+        onclick={() => leaveFullscreen()}
+        title="Exit fullscreen and return to the metrics view"
+        aria-label="Exit fullscreen and return to the metrics view"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="4 14 10 14 10 20"/>
+          <polyline points="20 10 14 10 14 4"/>
+          <line x1="14" y1="10" x2="21" y2="3"/>
+          <line x1="3" y1="21" x2="10" y2="14"/>
+        </svg>
+      </button>
+    </div>
+    <div class="fullscreen-chart-wrap">
+      <div class="plot-chart-wrap plot-chart-wrap--fs">
+        <div class="plot fullscreen-plot" bind:this={container}></div>
+        {#if xLim && onResetZoom}
+          <button
+            type="button"
+            class="reset-zoom-btn"
+            onclick={(e) => {
+              e.stopPropagation();
+              onResetZoom();
+            }}
+            title="Reset horizontal zoom: show the full range on the x-axis"
+            aria-label="Reset horizontal zoom: show the full range on the x-axis"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12h16M4 12l3-3M4 12l3 3M20 12l-3-3M20 12l-3 3"/>
+            </svg>
+          </button>
+        {/if}
+      </div>
+    </div>
+    {#if legendEntries.length > 0}
+      <div class="custom-legend fullscreen-legend">
+        <span class="legend-title">{colorField}</span>
+        {#each legendEntries as entry}
+          <span class="legend-item">
+            <span class="legend-dot" style="background: {entry.color}"></span>
+            <span class="legend-label">{entry.name}</span>
+          </span>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/if}
 
 <style>
   .plot-container {
@@ -392,6 +547,7 @@
     margin: 0;
     border: none;
     overflow: hidden;
+    pointer-events: none;
   }
   .drag-handle {
     position: absolute;
@@ -436,6 +592,46 @@
     background: var(--neutral-100, #f3f4f6);
     color: var(--body-text-color, #1f2937);
   }
+  .plot-chart-wrap {
+    position: relative;
+    width: 100%;
+  }
+  .plot-chart-wrap--fs {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .reset-zoom-btn {
+    position: absolute;
+    bottom: 1px;
+    right: 1px;
+    z-index: 6;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    min-width: 52px;
+    padding: 5px 12px 5px 10px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #334155;
+    cursor: pointer;
+    opacity: 0.92;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+    box-shadow: none;
+  }
+  .reset-zoom-btn:hover {
+    opacity: 1;
+    color: #0f172a;
+    background: rgba(226, 232, 240, 0.85);
+  }
+  .reset-zoom-btn svg {
+    display: block;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.95));
+  }
   .plot {
     width: 100%;
   }
@@ -445,37 +641,58 @@
   .plot :global(.vega-embed summary) {
     display: none;
   }
-  .fullscreen-overlay {
+  .fullscreen-host {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
     z-index: 10000;
+    box-sizing: border-box;
     display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .fullscreen-content {
+    flex-direction: column;
     background: var(--background-fill-primary, white);
-    border-radius: var(--radius-lg, 8px);
-    padding: 20px;
-    width: 90vw;
-    max-height: 90vh;
-    overflow: auto;
-    position: relative;
+    padding: 12px;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .fullscreen-host:fullscreen {
+    width: 100%;
+    height: 100%;
+  }
+  .fullscreen-host:-webkit-full-screen {
+    width: 100%;
+    height: 100%;
   }
   .fullscreen-toolbar {
-    position: absolute;
-    top: 12px;
-    right: 12px;
+    flex-shrink: 0;
     display: flex;
+    justify-content: flex-end;
     gap: 4px;
     z-index: 5;
   }
+  .fullscreen-chart-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .fullscreen-legend {
+    flex-shrink: 0;
+  }
   .fullscreen-plot {
+    flex: 1;
+    min-height: 0;
     width: 100%;
+    overflow: hidden;
   }
   .fullscreen-plot :global(.vega-embed) {
     width: 100% !important;
+    height: 100% !important;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .fullscreen-plot :global(.vega-embed .vega-view) {
+    flex: 1;
+    min-height: 0;
   }
   .fullscreen-plot :global(.vega-embed summary) {
     display: none;

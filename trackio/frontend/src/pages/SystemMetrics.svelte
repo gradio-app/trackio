@@ -163,7 +163,7 @@
     }
   }
 
-  function handleDoubleClick() {
+  function handleResetZoom() {
     xLim = null;
   }
 
@@ -218,7 +218,7 @@
                 {colorMap}
                 {xLim}
                 onSelect={handlePlotSelect}
-                onDoubleClick={handleDoubleClick}
+                onResetZoom={handleResetZoom}
                 draggable={true}
                 ondragstart={(e) => handleDragStart(directKey, i, e)}
                 ondragover={(e) => handleDragOver(directKey, i, e)}
