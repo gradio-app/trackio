@@ -51,10 +51,23 @@ jobs:
         uv pip install --system -e .[dev,tensorboard,spaces] --prerelease=allow
         uv pip install --system pytest --prerelease=allow
 
+    - name: Set up Node.js
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Build frontend
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd trackio/frontend
+        npm ci
+        npm run build
+
     - name: Install Playwright
       run: |
-        playwright install
-        
+        playwright install chromium
+
     - name: Run backend unit tests
       run: |
         pytest --deselect=tests/ui --deselect=tests/e2e-spaces
