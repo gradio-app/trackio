@@ -193,14 +193,15 @@ If you are hosting your Trackio dashboard on Spaces, then you can embed the url 
 
 Supported query parameters:
 
-- `project`: (string) Filter the dashboard to show only a specific project
-- `metrics`: (comma-separated list) Filter the dashboard to show only specific metrics, e.g. `train_loss,train_accuracy`
-- `sidebar`: (string: one of "hidden" or "collapsed"). If "hidden", then the sidebar will not be visible. If "collapsed", the sidebar will be in a collapsed state initially but the user will be able to open it. Otherwise, by default, the sidebar is shown in an open and visible state.
-- `footer`: (string: "false"). When set to "false", hides the Gradio footer. By default, the footer is visible.
-- `xmin`: (number) Set the initial minimum value for the x-axis limits across all metric plots.
-- `xmax`: (number) Set the initial maximum value for the x-axis limits across all metric plots.
+- `project`: (string) Open the dashboard on this project only. The project picker is hidden and the selection cannot be changed while this parameter is present (useful for embeds). The alias `selected_project` is accepted for the same behavior.
+- `metrics`: (comma-separated list) Show only metrics whose names match exactly (after splitting on commas), e.g. `train_loss,train_accuracy`. Applied as the metrics filter on the Metrics page.
+- `sidebar`: (string) One of `hidden`, `collapsed`, or omitted (default). **`hidden`** removes the sidebar entirely (full-width content; no rail). **`collapsed`** starts with the sidebar collapsed to the narrow rail; the user can expand it. By default the sidebar is open.
+- `footer`: (string: "false"). When set to "false", hides the Gradio footer (Gradio-hosted Spaces). By default, the footer is visible.
+- `xmin` / `xmax`: (numbers, use both together) Set the initial horizontal zoom range on the Metrics plots (shared x-axis window). Both must be valid numbers with `xmin < xmax`.
 - `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
 - `accordion`: (string: "hidden"). When set to "hidden", hides the section header accordions around metric groups. By default, section headers are visible.
+- `theme`: (string) Dashboard theme, e.g. `light` or `dark` (see theme behavior in the app).
+- `write_token`: (string) One-time token written to a cookie for write access on Hugging Face Spaces deployments; stripped from the URL after load.
 
 ## Alerts
 

@@ -34,6 +34,8 @@
   let showHeaders = $state(true);
   let filterText = $state("");
   let sidebarOpen = $state(true);
+  let sidebarHidden = $state(false);
+  let urlTick = $state(0);
   let mediaSelectedRun = $state(null);
   let reportsSelectedRun = $state("All runs");
   let alerts = $state([]);
@@ -50,16 +52,28 @@
     navigateTo(page);
   }
 
+  function lockedProjectName() {
+    return getQueryParam("project") || getQueryParam("selected_project");
+  }
+
+  function applyLockedProject() {
+    const locked = lockedProjectName();
+    if (locked && projects.includes(locked)) {
+      selectedProject = locked;
+    }
+  }
+
   async function refreshProjects() {
     try {
       const data = await getAllProjects();
       projects = data || [];
       if (projects.length > 0 && !selectedProject) {
-        const paramProject = getQueryParam("project") || getQueryParam("selected_project");
+        const paramProject = lockedProjectName();
         selectedProject = paramProject && projects.includes(paramProject)
           ? paramProject
           : projects[0];
       }
+      applyLockedProject();
     } catch (e) {
       console.error("Failed to load projects:", e);
     }
@@ -179,17 +193,45 @@
     applyTheme(themeName);
 
     const sidebarParam = getQueryParam("sidebar");
-    if (sidebarParam === "collapsed" || sidebarParam === "hidden") {
+    if (sidebarParam === "hidden") {
+      sidebarHidden = true;
       sidebarOpen = false;
+    } else if (sidebarParam === "collapsed") {
+      sidebarHidden = false;
+      sidebarOpen = false;
+    } else {
+      sidebarHidden = false;
     }
 
     const smoothingParam = getQueryParam("smoothing");
-    if (smoothingParam) smoothing = parseInt(smoothingParam);
+    if (smoothingParam) {
+      const s = parseInt(smoothingParam, 10);
+      if (!Number.isNaN(s)) smoothing = s;
+    }
+
+    const metricsParam = getQueryParam("metrics");
+    if (metricsParam) {
+      const parts = metricsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      if (parts.length) {
+        metricFilter = parts
+          .map((p) => {
+            const esc = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            return `^${esc}$`;
+          })
+          .join("|");
+      }
+    }
+
+    if (getQueryParam("accordion") === "hidden") {
+      showHeaders = false;
+    }
 
     currentPage = getPageFromPath();
 
     window.addEventListener("popstate", () => {
       currentPage = getPageFromPath();
+      urlTick++;
+      applyLockedProject();
     });
 
     applyWriteTokenFromUrl();
@@ -211,6 +253,18 @@
     };
   });
 
+  let projectLocked = $derived.by(() => {
+    urlTick;
+    const n = lockedProjectName();
+    return !!(n && projects.includes(n));
+  });
+
+  $effect(() => {
+    projects;
+    urlTick;
+    if (projectLocked) applyLockedProject();
+  });
+
   let showSidebar = $derived(
     currentPage === "metrics" ||
       currentPage === "system" ||
@@ -227,7 +281,7 @@
 </script>
 
 <div class="app">
-  {#if showSidebar}
+  {#if showSidebar && !sidebarHidden}
     <Sidebar
       bind:open={sidebarOpen}
       variant={sidebarVariant}
@@ -236,6 +290,7 @@
       runMutationAllowed={mutationStatus.allowed}
       mutationAuth={mutationStatus.auth}
       {projects}
+      projectLocked={projectLocked}
       bind:selectedProject
       {runs}
       bind:selectedRuns

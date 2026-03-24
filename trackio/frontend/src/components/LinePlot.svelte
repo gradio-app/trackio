@@ -619,6 +619,7 @@
     color: #334155;
     cursor: pointer;
     opacity: 0.92;
+    transform: translateY(6px);
     transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
     box-shadow: none;
   }
@@ -626,6 +627,7 @@
     opacity: 1;
     color: #0f172a;
     background: rgba(226, 232, 240, 0.85);
+    transform: translateY(6px);
   }
   .reset-zoom-btn svg {
     display: block;

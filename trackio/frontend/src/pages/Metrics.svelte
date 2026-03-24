@@ -1,5 +1,6 @@
 <script>
   import { onMount } from "svelte";
+  import { getQueryParam } from "../lib/router.js";
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import { getLogs } from "../lib/api.js";
@@ -170,6 +171,15 @@
   });
 
   onMount(() => {
+    const xMin = getQueryParam("xmin");
+    const xMax = getQueryParam("xmax");
+    if (xMin != null && xMin !== "" && xMax != null && xMax !== "") {
+      const lo = parseFloat(xMin);
+      const hi = parseFloat(xMax);
+      if (!Number.isNaN(lo) && !Number.isNaN(hi) && lo < hi) {
+        xLim = [lo, hi];
+      }
+    }
     refreshTimer = setInterval(refreshCachedRuns, 1000);
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
