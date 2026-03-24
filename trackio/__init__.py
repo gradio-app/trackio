@@ -677,9 +677,6 @@ def show(
     mount_frontend(server)
 
     _, url, share_url = server.launch(
-        css=CSS,
-        head=HEAD,
-        footer_links=["gradio", "settings"] + (["api"] if _mcp_server else []),
         quiet=True,
         inline=False,
         prevent_thread_lock=True,
@@ -697,7 +694,7 @@ def show(
     full_url = utils.get_full_url(
         base_url.rstrip("/"),
         project=project,
-        write_token=demo.write_token,
+        write_token=server.write_token,
         footer=footer,
     )
 
