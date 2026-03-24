@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
+  import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getSystemLogs } from "../lib/api.js";
   import { groupMetricsByPrefix, downsample } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
@@ -11,6 +12,7 @@
     runs = [],
     selectedRuns = [],
     smoothing = 5,
+    appBootstrapReady = false,
   } = $props();
 
   let systemData = $state([]);
@@ -97,11 +99,20 @@
   }
 
   async function fetchNewRuns() {
+    if (!appBootstrapReady) {
+      hasLoaded = false;
+      return;
+    }
     if (!project || selectedRuns.length === 0) {
       systemData = [];
       metricNames = [];
       hasLoaded = true;
       return;
+    }
+
+    const needFetch = selectedRuns.some((r) => !rawDataCache.has(r));
+    if (needFetch) {
+      hasLoaded = false;
     }
 
     let fetched = false;
@@ -139,6 +150,7 @@
   $effect(() => {
     project;
     selectedRuns;
+    appBootstrapReady;
     rawDataCache = project ? rawDataCache : new Map();
     fetchNewRuns();
   });
@@ -187,8 +199,20 @@
 </script>
 
 <div class="system-page">
-  {#if !hasLoaded}
-    <div class="loading">Loading system metrics...</div>
+  {#if !appBootstrapReady || !hasLoaded}
+    <LoadingTrackio />
+  {:else if !project}
+    <div class="empty-state">
+      <h2>No projects</h2>
+      <p>
+        Create a project by calling <code>trackio.init(project="…")</code> in your training script.
+      </p>
+    </div>
+  {:else if selectedRuns.length === 0}
+    <div class="empty-state">
+      <h2>No run selected</h2>
+      <p>Select one or more runs in the sidebar.</p>
+    </div>
   {:else if systemData.length === 0}
     <div class="empty-state">
       <h2>No System Metrics Available</h2>
@@ -237,16 +261,12 @@
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
   }
   .plot-grid {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-  }
-  .loading {
-    padding: 40px;
-    text-align: center;
-    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state {
     max-width: 640px;

@@ -3,6 +3,7 @@
   import { getQueryParam } from "../lib/router.js";
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
+  import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getLogs } from "../lib/api.js";
   import {
     processRunData,
@@ -23,6 +24,7 @@
     logScaleY = false,
     metricFilter = "",
     showHeaders = true,
+    appBootstrapReady = false,
   } = $props();
 
   let masterData = $state([]);
@@ -114,11 +116,20 @@
   }
 
   async function fetchNewRuns() {
+    if (!appBootstrapReady) {
+      hasLoaded = false;
+      return;
+    }
     if (!project || selectedRuns.length === 0) {
       masterData = [];
       metrics = [];
       hasLoaded = true;
       return;
+    }
+
+    const needFetch = selectedRuns.some((r) => !rawDataCache.has(r));
+    if (needFetch) {
+      hasLoaded = false;
     }
 
     let fetched = false;
@@ -156,6 +167,7 @@
   $effect(() => {
     project;
     selectedRuns;
+    appBootstrapReady;
     rawDataCache = project ? rawDataCache : new Map();
     fetchNewRuns();
   });
@@ -216,8 +228,20 @@
 </script>
 
 <div class="metrics-page">
-  {#if !hasLoaded}
-    <div class="loading">Loading metrics...</div>
+  {#if !appBootstrapReady || !hasLoaded}
+    <LoadingTrackio />
+  {:else if !project}
+    <div class="empty-state">
+      <h2>No projects</h2>
+      <p>
+        Create a project by calling <code>trackio.init(project="…")</code> in your training script.
+      </p>
+    </div>
+  {:else if selectedRuns.length === 0}
+    <div class="empty-state">
+      <h2>No run selected</h2>
+      <p>Select one or more runs in the sidebar.</p>
+    </div>
   {:else if masterData.length === 0}
     <div class="empty-state">
       <h2>Start logging with Trackio</h2>
@@ -307,17 +331,12 @@
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
   }
   .plot-grid {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
-  }
-  .loading {
-    padding: 60px;
-    text-align: center;
-    color: var(--body-text-color-subdued, #9ca3af);
-    font-size: var(--text-md, 14px);
   }
   .empty-state {
     max-width: 640px;

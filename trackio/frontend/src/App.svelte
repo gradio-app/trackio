@@ -46,6 +46,7 @@
     auth: "local",
   });
   let mutationPollTimer = $state(null);
+  let appBootstrapReady = $state(false);
 
   function handleNavigate(page) {
     currentPage = page;
@@ -239,10 +240,17 @@
     startMutationPolling();
     window.addEventListener("focus", refreshMutationAccess);
 
-    refreshProjects().then(() => {
-      refreshRuns();
-      refreshAlerts();
-    });
+    (async () => {
+      try {
+        await refreshProjects();
+        await refreshRuns();
+        await refreshAlerts();
+      } catch (e) {
+        console.error("Failed to load projects:", e);
+      } finally {
+        appBootstrapReady = true;
+      }
+    })();
 
     startPolling();
 
@@ -322,9 +330,16 @@
           {logScaleY}
           {metricFilter}
           {showHeaders}
+          {appBootstrapReady}
         />
       {:else if currentPage === "system"}
-        <SystemMetrics project={selectedProject} {runs} {selectedRuns} {smoothing} />
+        <SystemMetrics
+          project={selectedProject}
+          {runs}
+          {selectedRuns}
+          {smoothing}
+          {appBootstrapReady}
+        />
       {:else if currentPage === "media"}
         <Media project={selectedProject} bind:selectedRun={mediaSelectedRun} />
       {:else if currentPage === "reports"}
