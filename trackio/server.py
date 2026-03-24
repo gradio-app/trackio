@@ -31,11 +31,16 @@ OAUTH_START_PATH = "/oauth/hf/start"
 
 def _hf_access_token_from_cookies(request: gr.Request) -> str | None:
     cookie_header = request.headers.get("cookie", "")
+    print(f"[OAUTH DEBUG] cookie header present: {bool(cookie_header)}, length: {len(cookie_header)}")
     if cookie_header:
+        cookie_names = [c.strip().split("=", 1)[0] for c in cookie_header.split(";") if "=" in c]
+        print(f"[OAUTH DEBUG] cookie names: {cookie_names}")
         for cookie in cookie_header.split(";"):
             parts = cookie.strip().split("=", 1)
             if len(parts) == 2 and parts[0] == "trackio_hf_access_token":
+                print(f"[OAUTH DEBUG] found trackio_hf_access_token, length: {len(parts[1])}")
                 return parts[1] or None
+    print("[OAUTH DEBUG] trackio_hf_access_token NOT found in cookies")
     return None
 
 
@@ -85,17 +90,21 @@ def oauth_hf_start(request: Request):
 
 
 def oauth_hf_callback(request: Request):
+    print("[OAUTH DEBUG] callback hit")
     client_id = os.getenv("OAUTH_CLIENT_ID")
     client_secret = os.getenv("OAUTH_CLIENT_SECRET")
     err = "/?oauth_error=1"
     if not client_id or not client_secret:
+        print(f"[OAUTH DEBUG] missing client_id={bool(client_id)} client_secret={bool(client_secret)}")
         return RedirectResponse(url=err, status_code=302)
     stored = request.cookies.get("trackio_oauth_state")
     got_state = request.query_params.get("state")
     code = request.query_params.get("code")
+    print(f"[OAUTH DEBUG] stored_state={bool(stored)} got_state={bool(got_state)} code={bool(code)} states_match={stored == got_state}")
     if not stored or not got_state or stored != got_state or not code:
         return RedirectResponse(url=err, status_code=302)
     redirect_uri = _oauth_redirect_uri(request)
+    print(f"[OAUTH DEBUG] redirect_uri for token exchange: {redirect_uri}")
     auth_b64 = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     try:
         with httpx.Client() as client:
@@ -111,7 +120,9 @@ def oauth_hf_callback(request: Request):
             )
             token_resp.raise_for_status()
         access_token = token_resp.json()["access_token"]
-    except Exception:
+        print(f"[OAUTH DEBUG] token exchange SUCCESS, token length: {len(access_token)}")
+    except Exception as e:
+        print(f"[OAUTH DEBUG] token exchange FAILED: {e}")
         return RedirectResponse(url=err, status_code=302)
     resp = RedirectResponse(url="/", status_code=302)
     resp.delete_cookie("trackio_oauth_state", path="/")
@@ -124,6 +135,7 @@ def oauth_hf_callback(request: Request):
         path="/",
         secure=os.getenv("SYSTEM") == "spaces",
     )
+    print("[OAUTH DEBUG] cookie set, redirecting to /")
     return resp
 
 
@@ -226,17 +238,25 @@ def assert_can_mutate_runs(request: gr.Request) -> None:
 
 
 def get_run_mutation_status(request: gr.Request) -> dict[str, Any]:
+    print(f"[OAUTH DEBUG] get_run_mutation_status called, SYSTEM={os.getenv('SYSTEM')}")
     if os.getenv("SYSTEM") != "spaces":
+        print("[OAUTH DEBUG] not on spaces, returning local")
         return {"spaces": False, "allowed": True, "auth": "local"}
     hf_tok = _hf_access_token_from_cookies(request)
+    print(f"[OAUTH DEBUG] hf_tok present: {hf_tok is not None}")
     if hf_tok is not None:
         try:
             check_oauth_token_has_write_access(hf_tok)
+            print("[OAUTH DEBUG] oauth check passed, returning allowed=True")
             return {"spaces": True, "allowed": True, "auth": "oauth"}
-        except PermissionError:
+        except PermissionError as e:
+            print(f"[OAUTH DEBUG] oauth check FAILED: {e}")
             return {"spaces": True, "allowed": False, "auth": "oauth_insufficient"}
-    if check_write_access(request, write_token):
+    has_write = check_write_access(request, write_token)
+    print(f"[OAUTH DEBUG] write_token check: {has_write}")
+    if has_write:
         return {"spaces": True, "allowed": True, "auth": "write_token"}
+    print("[OAUTH DEBUG] returning allowed=False, auth=none")
     return {"spaces": True, "allowed": False, "auth": "none"}
 
 
@@ -456,6 +476,8 @@ def get_run_summary(project: str, run: str) -> dict:
 
     df = pd.DataFrame(logs)
     config = logs[0].get("config") if logs else None
+    if config is None:
+        config = SQLiteStorage.get_run_config(project, run)
     last_step = int(df["step"].max()) if "step" in df.columns else len(logs) - 1
 
     return {

@@ -148,12 +148,15 @@
   async function refreshMutationAccess() {
     try {
       const s = await getRunMutationStatus();
+      console.log("[OAUTH DEBUG] mutation status response:", JSON.stringify(s));
       mutationStatus = {
         spaces: !!s.spaces,
         allowed: !!s.allowed,
         auth: s.auth ?? "none",
       };
-    } catch {
+      console.log("[OAUTH DEBUG] mutationStatus set to:", JSON.stringify(mutationStatus));
+    } catch (e) {
+      console.error("[OAUTH DEBUG] mutation status fetch failed:", e);
       mutationStatus = { spaces: false, allowed: true, auth: "local" };
     }
   }
