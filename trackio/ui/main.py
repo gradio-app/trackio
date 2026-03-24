@@ -426,7 +426,8 @@ HEAD = ""
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 with gr.Blocks(title="Trackio Dashboard") as demo:
-    gr.LoginButton(visible=False)
+    if os.getenv("SYSTEM") == "spaces":
+        gr.LoginButton(visible=False)
     gr.api(fn=get_run_mutation_status, api_name="get_run_mutation_status")
     gr.api(fn=upload_db_to_space, api_name="upload_db_to_space")
     gr.api(fn=bulk_upload_media, api_name="bulk_upload_media")

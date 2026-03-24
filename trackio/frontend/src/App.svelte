@@ -115,7 +115,7 @@
       if (!realtimeEnabled) return;
       await refreshRuns();
       await refreshAlerts();
-    }, 2000);
+    }, 1000);
   }
 
   function applyWriteTokenFromUrl() {

@@ -151,7 +151,7 @@
   });
 
   onMount(() => {
-    refreshTimer = setInterval(refreshCachedRuns, 2000);
+    refreshTimer = setInterval(refreshCachedRuns, 1000);
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
     };
