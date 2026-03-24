@@ -549,6 +549,7 @@ def get_run_summary(project: str, run: str) -> dict:
     Returns:
         Dictionary with run summary information
     """
+    num_logs = SQLiteStorage.get_log_count(project, run)
     logs = SQLiteStorage.get_logs(project, run)
     metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
 
@@ -564,12 +565,12 @@ def get_run_summary(project: str, run: str) -> dict:
 
     df = pd.DataFrame(logs)
     config = logs[0].get("config") if logs else None
-    last_step = df["step"].max() if "step" in df.columns else len(logs) - 1
+    last_step = int(df["step"].max()) if "step" in df.columns else len(logs) - 1
 
     return {
         "project": project,
         "run": run,
-        "num_logs": len(logs),
+        "num_logs": num_logs,
         "metrics": metrics,
         "config": config,
         "last_step": last_step,

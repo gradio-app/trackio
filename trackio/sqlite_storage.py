@@ -844,6 +844,24 @@ class SQLiteStorage:
                 return False
 
     @staticmethod
+    def get_log_count(project: str, run: str) -> int:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return 0
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT COUNT(*) FROM metrics WHERE run_name = ?",
+                    (run,),
+                )
+                return cursor.fetchone()[0]
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return 0
+            raise
+
+    @staticmethod
     def get_logs(project: str, run: str, max_points: int = 1500) -> list[dict]:
         """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)

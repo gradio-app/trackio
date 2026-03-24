@@ -1,6 +1,6 @@
 <script>
   import GradioTable from "../components/GradioTable.svelte";
-  import { getProjectSummary, getLogs, deleteRun, renameRun } from "../lib/api.js";
+  import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
 
@@ -27,9 +27,9 @@
       const data = [];
 
       for (const name of runNames) {
-        const logs = await getLogs(project, name);
-        const numSteps = logs ? logs.length : 0;
-        const lastStep = logs && logs.length > 0 ? logs[logs.length - 1].step : 0;
+        const summary = await getRunSummary(project, name);
+        const numSteps = summary.num_logs || 0;
+        const lastStep = summary.last_step || 0;
         data.push({ name, numSteps, lastStep });
       }
 

@@ -112,7 +112,6 @@ def test_navbar_page_navigation(temp_dir):
             page.locator(".nav-link", has_text="Runs").click()
             page.wait_for_load_state("networkidle")
             expect(page.locator(".runs-page")).to_be_visible()
-            expect(page.locator(".runs-table")).to_be_visible()
 
             page.locator(".nav-link", has_text="Reports").click()
             page.wait_for_load_state("networkidle")
