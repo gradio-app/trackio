@@ -96,15 +96,6 @@ def _cleanup_current_run():
             pass
 
 
-def _get_demo():
-    # Lazy import to avoid initializing the Gradio Server (and FastAPI) at import time,
-    # which causes import lock errors for libraries that just `import trackio`.
-    from trackio.ui import main as ui_main
-
-    ui_main.prepare_demo_for_launch()
-    return ui_main.demo, ui_main.CSS, ui_main.HEAD
-
-
 def init(
     project: str,
     name: str | None = None,
@@ -670,8 +661,6 @@ def show(
             `share_url`: The public share URL of the dashboard.
             `full_url`: The full URL of the dashboard including the write token (will use the public share URL if launched publicly, otherwise the local URL).
     """
-    demo, CSS, HEAD = _get_demo()
-
     if color_palette is not None:
         os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
 
@@ -685,7 +674,7 @@ def show(
 
     mount_frontend(demo)
 
-    app, url, share_url = demo.launch(
+    app, url, share_url = app.launch(
         css=CSS,
         head=HEAD,
         footer_links=["gradio", "settings"] + (["api"] if _mcp_server else []),
@@ -696,7 +685,6 @@ def show(
         allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
         mcp_server=_mcp_server,
         theme=theme,
-        ssr_mode=False,
         server_name=host,
     )
 

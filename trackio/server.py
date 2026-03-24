@@ -543,21 +543,3 @@ def _make_trackio_server() -> TrackioServer:
     server.write_token = write_token
     return server
 
-
-def prepare_demo_for_launch() -> None:
-    global demo
-    if demo.blocks is not None:
-        demo.close()
-        demo = _make_trackio_server()
-
-
-demo = _make_trackio_server()
-
-if __name__ == "__main__":
-    prepare_demo_for_launch()
-    mount_frontend(demo)
-    demo.launch(
-        allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
-        show_error=True,
-        ssr_mode=False,
-    )
