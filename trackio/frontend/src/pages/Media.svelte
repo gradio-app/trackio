@@ -1,5 +1,6 @@
 <script>
   import GradioTable from "../components/GradioTable.svelte";
+  import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getLogs, getMediaUrl } from "../lib/api.js";
 
   let { project = null, selectedRun = $bindable(null) } = $props();
@@ -73,7 +74,7 @@
 
 <div class="media-page">
   {#if loading}
-    <div class="loading">Loading media...</div>
+    <LoadingTrackio />
   {:else if mediaItems.images.length === 0 && mediaItems.videos.length === 0 && mediaItems.audios.length === 0 && mediaItems.tables.length === 0}
     <div class="empty-state">
       {#if !project}
@@ -217,12 +218,6 @@
   }
   .table-section {
     margin-bottom: 16px;
-  }
-  .loading {
-    padding: 60px;
-    text-align: center;
-    color: var(--body-text-color-subdued, #9ca3af);
-    font-size: var(--text-md, 14px);
   }
   .empty-state {
     max-width: 640px;

@@ -35,6 +35,10 @@ def _hf_access_token_from_cookies(request: gr.Request) -> str | None:
 
 
 def _oauth_redirect_uri(request: Request) -> str:
+    space_host = os.getenv("SPACE_HOST")
+    if space_host:
+        space_host = space_host.split(",")[0]
+        return f"https://{space_host}{OAUTH_CALLBACK_PATH}"
     return str(request.base_url).rstrip("/") + OAUTH_CALLBACK_PATH
 
 

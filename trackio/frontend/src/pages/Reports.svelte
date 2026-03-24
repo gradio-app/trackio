@@ -1,4 +1,5 @@
 <script>
+  import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getAlerts } from "../lib/api.js";
 
   let { project = null, selectedRun = $bindable("All runs") } = $props();
@@ -94,7 +95,7 @@
   {/if}
 
   {#if loading}
-    <div class="loading">Loading alerts...</div>
+    <LoadingTrackio />
   {:else if allAlerts.length === 0}
     <div class="empty-state">
       <h2>No alerts yet</h2>
@@ -176,11 +177,6 @@
     background: var(--color-accent, #f97316);
     color: white;
     border-color: var(--color-accent, #f97316);
-  }
-  .loading {
-    padding: 40px;
-    text-align: center;
-    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state {
     max-width: 640px;

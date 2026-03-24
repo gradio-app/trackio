@@ -1,5 +1,6 @@
 <script>
   import GradioTable from "../components/GradioTable.svelte";
+  import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
@@ -103,7 +104,7 @@
 
 <div class="runs-page">
   {#if loading}
-    <div class="loading">Loading runs...</div>
+    <LoadingTrackio />
   {:else if runsData.length === 0}
     <div class="empty-state">
       <h2>No runs in this project</h2>
@@ -185,11 +186,6 @@
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
-  }
-  .loading {
-    padding: 40px;
-    text-align: center;
-    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state {
     max-width: 640px;

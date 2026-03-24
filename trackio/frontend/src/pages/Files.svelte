@@ -1,4 +1,5 @@
 <script>
+  import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getMediaUrl } from "../lib/api.js";
 
   let { project = null } = $props();
@@ -37,7 +38,7 @@
 
 <div class="files-page">
   {#if loading}
-    <div class="loading">Loading files...</div>
+    <LoadingTrackio />
   {:else if files.length === 0}
     <div class="empty-state">
       <h2>No project files yet</h2>
@@ -88,12 +89,6 @@
   }
   .file-list a:hover {
     text-decoration: underline;
-  }
-  .loading {
-    padding: 60px;
-    text-align: center;
-    color: var(--body-text-color-subdued, #9ca3af);
-    font-size: var(--text-md, 14px);
   }
   .empty-state {
     max-width: 640px;

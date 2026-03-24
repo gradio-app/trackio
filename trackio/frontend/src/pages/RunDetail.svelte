@@ -1,4 +1,5 @@
 <script>
+  import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getRunSummary, getMetricsForRun } from "../lib/api.js";
   import { getQueryParam } from "../lib/router.js";
 
@@ -37,7 +38,7 @@
 
 <div class="run-detail-page">
   {#if loading}
-    <div class="loading">Loading run details...</div>
+    <LoadingTrackio />
   {:else if !summary}
     <div class="empty-state">
       <h2>Open a run</h2>
@@ -131,11 +132,6 @@
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color, #1f2937);
     overflow-x: auto;
-  }
-  .loading {
-    padding: 40px;
-    text-align: center;
-    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state {
     max-width: 640px;

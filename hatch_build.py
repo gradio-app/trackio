@@ -1,9 +1,17 @@
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+
+
+def _run_npm(args: list[str], cwd: str) -> None:
+    if sys.platform == "win32":
+        subprocess.run(["cmd", "/c", "npm", *args], cwd=cwd, check=True)
+    else:
+        subprocess.run(["npm", *args], cwd=cwd, check=True)
 
 
 class CustomBuildHook(BuildHookInterface):
@@ -33,13 +41,5 @@ class CustomBuildHook(BuildHookInterface):
                 "only if dist/ was produced another way."
             )
 
-        subprocess.run(
-            ["npm", "ci"],
-            cwd=str(frontend),
-            check=True,
-        )
-        subprocess.run(
-            ["npm", "run", "build"],
-            cwd=str(frontend),
-            check=True,
-        )
+        _run_npm(["ci"], str(frontend))
+        _run_npm(["run", "build"], str(frontend))
