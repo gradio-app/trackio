@@ -129,12 +129,19 @@
           </div>
         </div>
 
-        <div class="section" style="margin-top: 8px;">
+        <span class="section-label">Display Settings</span>
+
+        <div class="section">
           <GradioCheckbox
             label="Refresh metrics realtime"
             bind:checked={realtimeEnabled}
           />
+          <GradioCheckbox
+            label="Show section headers"
+            bind:checked={showHeaders}
+          />
         </div>
+
 
         <div class="section">
           <GradioSlider
@@ -153,28 +160,16 @@
             bind:value={xAxis}
             filterable={false}
           />
-        </div>
-
-        <div class="section">
           <GradioCheckbox
             label="Log scale X-axis"
             bind:checked={logScaleX}
           />
-        </div>
-
-        <div class="section">
           <GradioCheckbox
             label="Log scale Y-axis"
             bind:checked={logScaleY}
           />
         </div>
 
-        <div class="section">
-          <GradioCheckbox
-            label="Show section headers"
-            bind:checked={showHeaders}
-          />
-        </div>
 
         <div class="section">
           <GradioTextbox

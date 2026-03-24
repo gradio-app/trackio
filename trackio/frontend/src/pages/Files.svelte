@@ -36,16 +36,20 @@
 </script>
 
 <div class="files-page">
-  <h2>Files</h2>
   {#if loading}
     <div class="loading">Loading files...</div>
   {:else if files.length === 0}
     <div class="empty-state">
-      <p>No files found for this project.</p>
-      <p>Upload files using:</p>
-      <pre><code>trackio.save("my_file.py")</code></pre>
+      <h2>No project files yet</h2>
+      <p>
+        Files are stored at the <strong>project</strong> level (not tied to a single run). After
+        <code>trackio.init()</code>, copy artifacts into the project with <code>trackio.save()</code>:
+      </p>
+      <pre><code>{'import trackio\n\ntrackio.init(project="my-project")\ntrackio.save("config.yaml")\ntrackio.save("checkpoints/*.pt")'}</code></pre>
+      <p>Paths can be a single file or a glob. Saved files will list here for download.</p>
     </div>
   {:else}
+    <h2>Files</h2>
     <ul class="file-list">
       {#each files as file}
         <li>
@@ -85,19 +89,42 @@
   .file-list a:hover {
     text-decoration: underline;
   }
-  .loading,
-  .empty-state {
-    padding: 40px;
+  .loading {
+    padding: 60px;
     text-align: center;
     color: var(--body-text-color-subdued, #9ca3af);
+    font-size: var(--text-md, 14px);
+  }
+  .empty-state {
+    max-width: 640px;
+    padding: 40px 24px;
+    color: var(--body-text-color, #1f2937);
+  }
+  .empty-state h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .empty-state p {
+    margin: 12px 0 8px;
+    color: var(--body-text-color-subdued, #6b7280);
   }
   .empty-state pre {
-    display: inline-block;
-    text-align: left;
     background: var(--background-fill-secondary, #f9fafb);
-    padding: 12px;
+    padding: 16px;
     border-radius: var(--radius-lg, 8px);
     border: 1px solid var(--border-color-primary, #e5e7eb);
     font-size: 13px;
+    overflow-x: auto;
+  }
+  .empty-state code {
+    background: var(--background-fill-secondary, #f0f0f0);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm, 4px);
+    font-size: 13px;
+  }
+  .empty-state pre code {
+    background: none;
+    padding: 0;
   }
 </style>

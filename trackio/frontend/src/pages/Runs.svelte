@@ -94,7 +94,12 @@
   {#if loading}
     <div class="loading">Loading runs...</div>
   {:else if runsData.length === 0}
-    <div class="empty-state">No runs found for this project.</div>
+    <div class="empty-state">
+      <h2>No runs in this project</h2>
+      <p>Runs are created when you call <code>trackio.init()</code> and log at least one step. Example:</p>
+      <pre><code>{'import trackio\ntrackio.init(project="my-project")\nfor i in range(10):\n    trackio.log({"loss": 1 / (i + 1)})\ntrackio.finish()'}</code></pre>
+      <p>Refresh this page or wait for the dashboard to poll; new runs appear in the table with step counts.</p>
+    </div>
   {:else}
     <table class="runs-table">
       <thead>
@@ -160,11 +165,42 @@
     overflow-y: auto;
     flex: 1;
   }
-  .loading,
-  .empty-state {
+  .loading {
     padding: 40px;
     text-align: center;
     color: var(--body-text-color-subdued, #9ca3af);
+  }
+  .empty-state {
+    max-width: 640px;
+    padding: 40px 24px;
+    color: var(--body-text-color, #1f2937);
+  }
+  .empty-state h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .empty-state p {
+    margin: 12px 0 8px;
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .empty-state pre {
+    background: var(--background-fill-secondary, #f9fafb);
+    padding: 16px;
+    border-radius: var(--radius-lg, 8px);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    font-size: 13px;
+    overflow-x: auto;
+  }
+  .empty-state code {
+    background: var(--background-fill-secondary, #f0f0f0);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm, 4px);
+    font-size: 13px;
+  }
+  .empty-state pre code {
+    background: none;
+    padding: 0;
   }
   .runs-table {
     width: 100%;

@@ -90,7 +90,15 @@
   {#if loading}
     <div class="loading">Loading alerts...</div>
   {:else if alerts.length === 0}
-    <div class="empty-state">No alerts found.</div>
+    <div class="empty-state">
+      <h2>No alerts yet</h2>
+      <p>
+        Alerts are recorded when your training script calls <code>trackio.alert()</code>. They appear here and in the
+        alert panel, and can optionally POST to a webhook configured in <code>trackio.init()</code>.
+      </p>
+      <pre><code>{'import trackio\nfrom trackio import AlertLevel\n\ntrackio.init(project="my-project")\ntrackio.alert("Low validation loss", text="Consider saving a checkpoint.", level=AlertLevel.INFO)\ntrackio.alert("NaNs detected", level=AlertLevel.ERROR)'}</code></pre>
+      <p>Use <code>AlertLevel.INFO</code>, <code>AlertLevel.WARN</code>, or <code>AlertLevel.ERROR</code>. Filter by level with the pills above.</p>
+    </div>
   {:else}
     <table class="alerts-table">
       <thead>
@@ -158,11 +166,42 @@
     color: white;
     border-color: var(--color-accent, #f97316);
   }
-  .loading,
-  .empty-state {
+  .loading {
     padding: 40px;
     text-align: center;
     color: var(--body-text-color-subdued, #9ca3af);
+  }
+  .empty-state {
+    max-width: 640px;
+    padding: 40px 24px;
+    color: var(--body-text-color, #1f2937);
+  }
+  .empty-state h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .empty-state p {
+    margin: 12px 0 8px;
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .empty-state pre {
+    background: var(--background-fill-secondary, #f9fafb);
+    padding: 16px;
+    border-radius: var(--radius-lg, 8px);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    font-size: 13px;
+    overflow-x: auto;
+  }
+  .empty-state code {
+    background: var(--background-fill-secondary, #f0f0f0);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm, 4px);
+    font-size: 13px;
+  }
+  .empty-state pre code {
+    background: none;
+    padding: 0;
   }
   .alerts-table {
     width: 100%;
