@@ -49,7 +49,7 @@ jobs:
         
     - name: Install Python dependencies
       run: |
-        uv pip install --system -e .[dev,tensorboard,spaces] --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
+        uv pip install --system -e '.[dev,tensorboard,spaces]' --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
         uv pip install --system pytest --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
 
     - name: Set up Node.js
@@ -71,12 +71,14 @@ jobs:
         "${{ steps.setup-python.outputs.python-path }}" -m playwright install chromium
 
     - name: Run backend unit tests
+      shell: bash
       run: |
-        pytest --deselect=tests/ui --deselect=tests/e2e-spaces
+        "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces
 
     - name: Run ui/ux interaction tests
       if: matrix.os == 'ubuntu-latest'
+      shell: bash
       run: |
-        pytest tests/ui 
+        "${{ steps.setup-python.outputs.python-path }}" -m pytest tests/ui
 
     

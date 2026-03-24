@@ -17,6 +17,7 @@ from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
+from trackio.frontend_server import mount_frontend
 from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
@@ -682,6 +683,8 @@ def show(
         else os.environ.get("GRADIO_MCP_SERVER", "False") == "True"
     )
 
+    mount_frontend(demo)
+
     app, url, share_url = demo.launch(
         css=CSS,
         head=HEAD,
@@ -696,10 +699,6 @@ def show(
         ssr_mode=False,
         server_name=host,
     )
-
-    from trackio.frontend_server import mount_frontend
-
-    mount_frontend(app)
 
     base_url = share_url + "/" if share_url else url
     dashboard_url = base_url.rstrip("/") + "/"

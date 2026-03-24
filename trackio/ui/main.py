@@ -555,9 +555,9 @@ demo = _make_trackio_server()
 
 if __name__ == "__main__":
     prepare_demo_for_launch()
-    app, _, _ = demo.launch(
+    mount_frontend(demo)
+    demo.launch(
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
         show_error=True,
         ssr_mode=False,
     )
-    mount_frontend(app)
