@@ -1,9 +1,3 @@
-def __getattr__(name: str):
-    if name == "demo":
-        import trackio.ui.main as ui_main
-
-        return ui_main.demo
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
+from trackio.ui.main import demo
 
 __all__ = ["demo"]

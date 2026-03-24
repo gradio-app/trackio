@@ -1,20 +1,15 @@
 """The main API layer for the Trackio UI."""
 
-import base64
 import os
 import re
 import secrets
 import shutil
 from functools import lru_cache
 from typing import Any
-from urllib.parse import urlencode
 
 import gradio as gr
-import httpx
 import huggingface_hub as hf
 import pandas as pd
-from starlette.requests import Request
-from starlette.responses import RedirectResponse
 
 import trackio.utils as utils
 from trackio.frontend_server import mount_frontend
@@ -25,98 +20,6 @@ from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 HfApi = hf.HfApi()
 
 write_token = secrets.token_urlsafe(32)
-
-OAUTH_CALLBACK_PATH = "/login/callback"
-OAUTH_START_PATH = "/oauth/hf/start"
-
-
-def _hf_access_token_from_cookies(request: gr.Request) -> str | None:
-    tok = request.cookies.get("trackio_hf_access_token")
-    return tok or None
-
-
-def _oauth_redirect_uri(request: Request) -> str:
-    return str(request.base_url).rstrip("/") + OAUTH_CALLBACK_PATH
-
-
-class TrackioServer(gr.Server):
-    def close(self, verbose: bool = True) -> None:
-        if self.blocks is None:
-            return
-        if self.blocks.is_running:
-            self.blocks.close(verbose=verbose)
-
-
-def oauth_hf_start(request: Request):
-    client_id = os.getenv("OAUTH_CLIENT_ID")
-    if not client_id:
-        return RedirectResponse(url="/", status_code=302)
-    state = secrets.token_urlsafe(32)
-    redirect_uri = _oauth_redirect_uri(request)
-    scope = os.getenv("OAUTH_SCOPES", "openid profile").strip()
-    url = "https://huggingface.co/oauth/authorize?" + urlencode(
-        {
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": scope,
-            "state": state,
-        }
-    )
-    resp = RedirectResponse(url=url, status_code=302)
-    resp.set_cookie(
-        key="trackio_oauth_state",
-        value=state,
-        httponly=True,
-        samesite="lax",
-        max_age=600,
-        path="/",
-        secure=os.getenv("SYSTEM") == "spaces",
-    )
-    return resp
-
-
-def oauth_hf_callback(request: Request):
-    client_id = os.getenv("OAUTH_CLIENT_ID")
-    client_secret = os.getenv("OAUTH_CLIENT_SECRET")
-    err = "/?oauth_error=1"
-    if not client_id or not client_secret:
-        return RedirectResponse(url=err, status_code=302)
-    stored = request.cookies.get("trackio_oauth_state")
-    got_state = request.query_params.get("state")
-    code = request.query_params.get("code")
-    if not stored or not got_state or stored != got_state or not code:
-        return RedirectResponse(url=err, status_code=302)
-    redirect_uri = _oauth_redirect_uri(request)
-    auth_b64 = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-    try:
-        with httpx.Client() as client:
-            token_resp = client.post(
-                "https://huggingface.co/oauth/token",
-                headers={"Authorization": f"Basic {auth_b64}"},
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": client_id,
-                },
-            )
-            token_resp.raise_for_status()
-        access_token = token_resp.json()["access_token"]
-    except Exception:
-        return RedirectResponse(url=err, status_code=302)
-    resp = RedirectResponse(url="/", status_code=302)
-    resp.delete_cookie("trackio_oauth_state", path="/")
-    resp.set_cookie(
-        key="trackio_hf_access_token",
-        value=access_token,
-        httponly=True,
-        samesite="lax",
-        max_age=86400 * 30,
-        path="/",
-        secure=os.getenv("SYSTEM") == "spaces",
-    )
-    return resp
 
 
 @lru_cache(maxsize=32)
@@ -199,13 +102,14 @@ def check_write_access(request: gr.Request, token: str) -> bool:
     return False
 
 
-def assert_can_mutate_runs(request: gr.Request) -> None:
+def assert_can_mutate_runs(
+    request: gr.Request, oauth_token: gr.OAuthToken | None
+) -> None:
     if os.getenv("SYSTEM") != "spaces":
         return
-    hf_tok = _hf_access_token_from_cookies(request)
-    if hf_tok is not None:
+    if oauth_token is not None:
         try:
-            check_oauth_token_has_write_access(hf_tok)
+            check_oauth_token_has_write_access(oauth_token.token)
         except PermissionError as e:
             raise gr.Error(str(e)) from e
         return
@@ -217,13 +121,14 @@ def assert_can_mutate_runs(request: gr.Request) -> None:
     )
 
 
-def get_run_mutation_status(request: gr.Request) -> dict[str, Any]:
+def get_run_mutation_status(
+    request: gr.Request, oauth_token: gr.OAuthToken | None
+) -> dict[str, Any]:
     if os.getenv("SYSTEM") != "spaces":
         return {"spaces": False, "allowed": True, "auth": "local"}
-    hf_tok = _hf_access_token_from_cookies(request)
-    if hf_tok is not None:
+    if oauth_token is not None:
         try:
-            check_oauth_token_has_write_access(hf_tok)
+            check_oauth_token_has_write_access(oauth_token.token)
             return {"spaces": True, "allowed": True, "auth": "oauth"}
         except PermissionError:
             return {"spaces": True, "allowed": False, "auth": "oauth_insufficient"}
@@ -485,18 +390,24 @@ def get_logs(project: str, run: str) -> list[dict]:
     return SQLiteStorage.get_logs(project, run)
 
 
-def delete_run(request: gr.Request, project: str, run: str) -> bool:
-    assert_can_mutate_runs(request)
+def delete_run(
+    request: gr.Request,
+    oauth_token: gr.OAuthToken | None,
+    project: str,
+    run: str,
+) -> bool:
+    assert_can_mutate_runs(request, oauth_token)
     return SQLiteStorage.delete_run(project, run)
 
 
 def rename_run(
     request: gr.Request,
+    oauth_token: gr.OAuthToken | None,
     project: str,
     old_name: str,
     new_name: str,
 ) -> bool:
-    assert_can_mutate_runs(request)
+    assert_can_mutate_runs(request, oauth_token)
     SQLiteStorage.rename_run(project, old_name, new_name)
     return True
 
@@ -514,50 +425,43 @@ HEAD = ""
 
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
+with gr.Blocks(title="Trackio Dashboard") as demo:
+    if os.getenv("SYSTEM") == "spaces":
+        gr.LoginButton(visible=False)
+    gr.api(fn=get_run_mutation_status, api_name="get_run_mutation_status")
+    gr.api(fn=upload_db_to_space, api_name="upload_db_to_space")
+    gr.api(fn=bulk_upload_media, api_name="bulk_upload_media")
+    gr.api(fn=log, api_name="log")
+    gr.api(fn=bulk_log, api_name="bulk_log")
+    gr.api(fn=bulk_log_system, api_name="bulk_log_system")
+    gr.api(fn=bulk_alert, api_name="bulk_alert")
+    gr.api(fn=get_alerts, api_name="get_alerts")
+    gr.api(fn=get_metric_values, api_name="get_metric_values")
+    gr.api(fn=get_runs_for_project, api_name="get_runs_for_project")
+    gr.api(fn=get_metrics_for_run, api_name="get_metrics_for_run")
+    gr.api(fn=get_all_projects, api_name="get_all_projects")
+    gr.api(fn=get_project_summary, api_name="get_project_summary")
+    gr.api(fn=get_run_summary, api_name="get_run_summary")
+    gr.api(fn=get_system_metrics_for_run, api_name="get_system_metrics_for_run")
+    gr.api(fn=get_system_logs, api_name="get_system_logs")
+    gr.api(fn=get_snapshot, api_name="get_snapshot")
+    gr.api(fn=get_logs, api_name="get_logs")
+    gr.api(fn=delete_run, api_name="delete_run")
+    gr.api(fn=rename_run, api_name="rename_run")
+    gr.api(fn=force_sync, api_name="force_sync")
 
-def _make_trackio_server() -> TrackioServer:
-    server = TrackioServer(title="Trackio Dashboard")
-    server.add_api_route(OAUTH_START_PATH, oauth_hf_start, methods=["GET"])
-    server.add_api_route(OAUTH_CALLBACK_PATH, oauth_hf_callback, methods=["GET"])
-    server.api(fn=get_run_mutation_status, name="get_run_mutation_status")
-    server.api(fn=upload_db_to_space, name="upload_db_to_space")
-    server.api(fn=bulk_upload_media, name="bulk_upload_media")
-    server.api(fn=log, name="log")
-    server.api(fn=bulk_log, name="bulk_log")
-    server.api(fn=bulk_log_system, name="bulk_log_system")
-    server.api(fn=bulk_alert, name="bulk_alert")
-    server.api(fn=get_alerts, name="get_alerts")
-    server.api(fn=get_metric_values, name="get_metric_values")
-    server.api(fn=get_runs_for_project, name="get_runs_for_project")
-    server.api(fn=get_metrics_for_run, name="get_metrics_for_run")
-    server.api(fn=get_all_projects, name="get_all_projects")
-    server.api(fn=get_project_summary, name="get_project_summary")
-    server.api(fn=get_run_summary, name="get_run_summary")
-    server.api(fn=get_system_metrics_for_run, name="get_system_metrics_for_run")
-    server.api(fn=get_system_logs, name="get_system_logs")
-    server.api(fn=get_snapshot, name="get_snapshot")
-    server.api(fn=get_logs, name="get_logs")
-    server.api(fn=delete_run, name="delete_run")
-    server.api(fn=rename_run, name="rename_run")
-    server.api(fn=force_sync, name="force_sync")
-    server.write_token = write_token
-    return server
+demo.write_token = write_token
 
 
-def prepare_demo_for_launch() -> None:
-    global demo
-    if demo.blocks is not None:
-        demo.close()
-        demo = _make_trackio_server()
+async def _mount_frontend_on_startup():
+    mount_frontend(demo.app)
 
 
-demo = _make_trackio_server()
+demo.extra_startup_events.append(_mount_frontend_on_startup)
 
 if __name__ == "__main__":
-    prepare_demo_for_launch()
-    app, _, _ = demo.launch(
+    demo.launch(
         allowed_paths=[utils.TRACKIO_LOGO_DIR, utils.TRACKIO_DIR],
         show_error=True,
         ssr_mode=False,
     )
-    mount_frontend(app)
