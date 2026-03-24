@@ -30,8 +30,13 @@ OAUTH_START_PATH = "/oauth/hf/start"
 
 
 def _hf_access_token_from_cookies(request: gr.Request) -> str | None:
-    tok = request.cookies.get("trackio_hf_access_token")
-    return tok or None
+    cookie_header = request.headers.get("cookie", "")
+    if cookie_header:
+        for cookie in cookie_header.split(";"):
+            parts = cookie.strip().split("=", 1)
+            if len(parts) == 2 and parts[0] == "trackio_hf_access_token":
+                return parts[1] or None
+    return None
 
 
 def _oauth_redirect_uri(request: Request) -> str:

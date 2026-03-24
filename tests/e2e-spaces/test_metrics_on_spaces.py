@@ -82,10 +82,13 @@ def test_runs_data_persisted_after_restart(test_space_id):
             time.sleep(10)
     assert client is not None, "Space did not come back up after restart"
 
-    headers, rows, run_names = client.predict(
-        project=project_name, api_name="/get_runs_data"
-    )
-
+    run_names = client.predict(project=project_name, api_name="/get_runs_for_project")
     assert run_name in run_names
-    assert any("0.001" in str(row) for row in rows)
-    assert any("10" in str(row) for row in rows)
+
+    summary = client.predict(
+        project=project_name, run=run_name, api_name="/get_run_summary"
+    )
+    cfg = summary.get("config") or {}
+    lr = cfg.get("learning_rate")
+    assert lr is not None and abs(float(lr) - 0.001) < 1e-6
+    assert cfg.get("epochs") == 10

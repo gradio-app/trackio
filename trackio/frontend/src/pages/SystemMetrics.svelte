@@ -110,11 +110,6 @@
       return;
     }
 
-    const needFetch = selectedRuns.some((r) => !rawDataCache.has(r));
-    if (needFetch) {
-      hasLoaded = false;
-    }
-
     let fetched = false;
     for (const run of selectedRuns) {
       if (!rawDataCache.has(run)) {

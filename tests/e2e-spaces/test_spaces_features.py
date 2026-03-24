@@ -9,6 +9,23 @@ import trackio
 from trackio import gpu
 
 
+def _predict_run_summary(test_space_id: str, project_name: str, run_name: str):
+    deadline = time.time() + 120
+    last_err: Exception | None = None
+    while time.time() < deadline:
+        try:
+            client = Client(test_space_id, verbose=False)
+            return client.predict(
+                project=project_name, run=run_name, api_name="/get_run_summary"
+            )
+        except Exception as e:
+            last_err = e
+            time.sleep(3)
+    if last_err is None:
+        raise TimeoutError("get_run_summary timed out")
+    raise last_err
+
+
 def test_config_persisted_on_spaces(test_space_id, wait_for_client):
     project_name = f"test_config_{secrets.token_urlsafe(8)}"
     run_name = "config_run"
@@ -64,10 +81,7 @@ def test_system_metrics_on_spaces(test_space_id, wait_for_client):
             time.sleep(1)
             trackio.finish()
 
-    client = Client(test_space_id)
-    summary = client.predict(
-        project=project_name, run=run_name, api_name="/get_run_summary"
-    )
+    summary = _predict_run_summary(test_space_id, project_name, run_name)
     assert summary["num_logs"] >= 1
 
 
