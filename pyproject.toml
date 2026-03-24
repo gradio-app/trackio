@@ -59,6 +59,8 @@ spaces = [
 [project.scripts]
 trackio = "trackio.cli:main"
 
+[tool.hatch.build.hooks.custom]
+
 [tool.hatch.build.targets.wheel]
 packages = ["trackio"]
 artifacts = ["trackio/frontend/dist/**"]

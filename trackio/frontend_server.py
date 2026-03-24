@@ -1,5 +1,6 @@
 """Serves the built Svelte frontend alongside the Gradio API."""
 
+import logging
 import re
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from starlette.staticfiles import StaticFiles
 
 FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 ASSETS_DIR = Path(__file__).parent / "assets"
+
+_logger = logging.getLogger(__name__)
 
 _SPA_SEGMENTS = (
     "metrics",
@@ -23,10 +26,19 @@ _SPA_SEGMENTS = (
 
 def mount_frontend(app):
     if not FRONTEND_DIR.exists():
+        _logger.warning(
+            "Trackio dashboard UI was not mounted: %s is missing. "
+            "Build the frontend with `npm ci && npm run build` in trackio/frontend.",
+            FRONTEND_DIR,
+        )
         return
 
     index_html_path = FRONTEND_DIR / "index.html"
     if not index_html_path.exists():
+        _logger.warning(
+            "Trackio dashboard UI was not mounted: %s is missing.",
+            index_html_path,
+        )
         return
 
     index_html_content = index_html_path.read_text()

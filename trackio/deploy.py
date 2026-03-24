@@ -138,6 +138,14 @@ def deploy_as_space(
     huggingface_hub.utils.disable_progress_bars()
 
     if is_source_install:
+        dist_index = (
+            Path(trackio.__file__).resolve().parent / "frontend" / "dist" / "index.html"
+        )
+        if not dist_index.is_file():
+            raise ValueError(
+                "The Trackio frontend build is missing. From the repository root run "
+                "`cd trackio/frontend && npm ci && npm run build`, then deploy again."
+            )
         hf_api.upload_folder(
             repo_id=space_id,
             repo_type="space",
