@@ -31,14 +31,20 @@ OAUTH_START_PATH = "/oauth/hf/start"
 
 def _hf_access_token_from_cookies(request: gr.Request) -> str | None:
     cookie_header = request.headers.get("cookie", "")
-    print(f"[OAUTH DEBUG] cookie header present: {bool(cookie_header)}, length: {len(cookie_header)}")
+    print(
+        f"[OAUTH DEBUG] cookie header present: {bool(cookie_header)}, length: {len(cookie_header)}"
+    )
     if cookie_header:
-        cookie_names = [c.strip().split("=", 1)[0] for c in cookie_header.split(";") if "=" in c]
+        cookie_names = [
+            c.strip().split("=", 1)[0] for c in cookie_header.split(";") if "=" in c
+        ]
         print(f"[OAUTH DEBUG] cookie names: {cookie_names}")
         for cookie in cookie_header.split(";"):
             parts = cookie.strip().split("=", 1)
             if len(parts) == 2 and parts[0] == "trackio_hf_access_token":
-                print(f"[OAUTH DEBUG] found trackio_hf_access_token, length: {len(parts[1])}")
+                print(
+                    f"[OAUTH DEBUG] found trackio_hf_access_token, length: {len(parts[1])}"
+                )
                 return parts[1] or None
     print("[OAUTH DEBUG] trackio_hf_access_token NOT found in cookies")
     return None
@@ -95,12 +101,16 @@ def oauth_hf_callback(request: Request):
     client_secret = os.getenv("OAUTH_CLIENT_SECRET")
     err = "/?oauth_error=1"
     if not client_id or not client_secret:
-        print(f"[OAUTH DEBUG] missing client_id={bool(client_id)} client_secret={bool(client_secret)}")
+        print(
+            f"[OAUTH DEBUG] missing client_id={bool(client_id)} client_secret={bool(client_secret)}"
+        )
         return RedirectResponse(url=err, status_code=302)
     stored = request.cookies.get("trackio_oauth_state")
     got_state = request.query_params.get("state")
     code = request.query_params.get("code")
-    print(f"[OAUTH DEBUG] stored_state={bool(stored)} got_state={bool(got_state)} code={bool(code)} states_match={stored == got_state}")
+    print(
+        f"[OAUTH DEBUG] stored_state={bool(stored)} got_state={bool(got_state)} code={bool(code)} states_match={stored == got_state}"
+    )
     if not stored or not got_state or stored != got_state or not code:
         return RedirectResponse(url=err, status_code=302)
     redirect_uri = _oauth_redirect_uri(request)
@@ -120,7 +130,9 @@ def oauth_hf_callback(request: Request):
             )
             token_resp.raise_for_status()
         access_token = token_resp.json()["access_token"]
-        print(f"[OAUTH DEBUG] token exchange SUCCESS, token length: {len(access_token)}")
+        print(
+            f"[OAUTH DEBUG] token exchange SUCCESS, token length: {len(access_token)}"
+        )
     except Exception as e:
         print(f"[OAUTH DEBUG] token exchange FAILED: {e}")
         return RedirectResponse(url=err, status_code=302)
