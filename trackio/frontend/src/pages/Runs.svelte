@@ -4,7 +4,15 @@
   import { navigateTo, setQueryParam } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
 
-  let { project = null, runs = [], onRunsChanged = null } = $props();
+  let {
+    project = null,
+    runs = [],
+    onRunsChanged = null,
+    spacesMode = false,
+    runMutationAllowed = true,
+  } = $props();
+
+  let canMutateRuns = $derived(!spacesMode || runMutationAllowed);
 
   let runColorMap = $derived(buildColorMap(runs));
 
@@ -53,6 +61,7 @@
   }
 
   async function handleDelete(runName) {
+    if (!canMutateRuns) return;
     if (!confirm(`Delete run "${runName}"? This cannot be undone.`)) return;
     try {
       await deleteRun(project, runName);
@@ -64,11 +73,13 @@
   }
 
   function startRename(index, currentName) {
+    if (!canMutateRuns) return;
     renamingIndex = index;
     renameValue = currentName;
   }
 
   async function submitRename(oldName) {
+    if (!canMutateRuns) return;
     const newName = renameValue.trim();
     if (!newName || newName === oldName) {
       renamingIndex = -1;
@@ -114,12 +125,22 @@
         {#each runsData as run, i}
           <tr>
             <td class="actions-cell">
-              <button class="action-btn" title="Rename" onclick={() => startRename(i, run.name)}>
+              <button
+                class="action-btn"
+                title={canMutateRuns ? "Rename" : "Sign in with Hugging Face (write access) to rename runs"}
+                disabled={!canMutateRuns}
+                onclick={() => startRename(i, run.name)}
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
                 </svg>
               </button>
-              <button class="action-btn delete-btn" title="Delete" onclick={() => handleDelete(run.name)}>
+              <button
+                class="action-btn delete-btn"
+                title={canMutateRuns ? "Delete" : "Sign in with Hugging Face (write access) to delete runs"}
+                disabled={!canMutateRuns}
+                onclick={() => handleDelete(run.name)}
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"/>
                   <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
@@ -287,5 +308,10 @@
     color: #dc2626;
     border-color: #fecaca;
     background: #fef2f2;
+  }
+  .action-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 </style>

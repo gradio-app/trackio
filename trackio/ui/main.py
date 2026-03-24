@@ -19,6 +19,8 @@ from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 
 HfApi = hf.HfApi()
 
+write_token = secrets.token_urlsafe(32)
+
 
 @lru_cache(maxsize=32)
 def check_hf_token_has_write_access(hf_token: str | None) -> None:
@@ -87,17 +89,52 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
     )
 
 
-def check_write_access(request: gr.Request, write_token: str) -> bool:
+def check_write_access(request: gr.Request, token: str) -> bool:
     cookies = request.headers.get("cookie", "")
     if cookies:
         for cookie in cookies.split(";"):
             parts = cookie.strip().split("=")
             if len(parts) == 2 and parts[0] == "trackio_write_token":
-                return parts[1] == write_token
+                return parts[1] == token
     if hasattr(request, "query_params") and request.query_params:
-        token = request.query_params.get("write_token")
-        return token == write_token
+        qp = request.query_params.get("write_token")
+        return qp == token
     return False
+
+
+def assert_can_mutate_runs(
+    request: gr.Request, oauth_token: gr.OAuthToken | None
+) -> None:
+    if os.getenv("SYSTEM") != "spaces":
+        return
+    if oauth_token is not None:
+        try:
+            check_oauth_token_has_write_access(oauth_token.token)
+        except PermissionError as e:
+            raise gr.Error(str(e)) from e
+        return
+    if check_write_access(request, write_token):
+        return
+    raise gr.Error(
+        "Sign in with Hugging Face to delete or rename runs. You need write access to this Space, "
+        "or open the dashboard using a link that includes the write_token query parameter."
+    )
+
+
+def get_run_mutation_status(
+    request: gr.Request, oauth_token: gr.OAuthToken | None
+) -> dict[str, Any]:
+    if os.getenv("SYSTEM") != "spaces":
+        return {"spaces": False, "allowed": True, "auth": "local"}
+    if oauth_token is not None:
+        try:
+            check_oauth_token_has_write_access(oauth_token.token)
+            return {"spaces": True, "allowed": True, "auth": "oauth"}
+        except PermissionError:
+            return {"spaces": True, "allowed": False, "auth": "oauth_insufficient"}
+    if check_write_access(request, write_token):
+        return {"spaces": True, "allowed": True, "auth": "write_token"}
+    return {"spaces": True, "allowed": False, "auth": "none"}
 
 
 def upload_db_to_space(
@@ -353,11 +390,24 @@ def get_logs(project: str, run: str) -> list[dict]:
     return SQLiteStorage.get_logs(project, run)
 
 
-def delete_run(project: str, run: str) -> bool:
+def delete_run(
+    request: gr.Request,
+    oauth_token: gr.OAuthToken | None,
+    project: str,
+    run: str,
+) -> bool:
+    assert_can_mutate_runs(request, oauth_token)
     return SQLiteStorage.delete_run(project, run)
 
 
-def rename_run(project: str, old_name: str, new_name: str) -> bool:
+def rename_run(
+    request: gr.Request,
+    oauth_token: gr.OAuthToken | None,
+    project: str,
+    old_name: str,
+    new_name: str,
+) -> bool:
+    assert_can_mutate_runs(request, oauth_token)
     SQLiteStorage.rename_run(project, old_name, new_name)
     return True
 
@@ -376,6 +426,8 @@ HEAD = ""
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 with gr.Blocks(title="Trackio Dashboard") as demo:
+    gr.LoginButton(visible=False)
+    gr.api(fn=get_run_mutation_status, api_name="get_run_mutation_status")
     gr.api(fn=upload_db_to_space, api_name="upload_db_to_space")
     gr.api(fn=bulk_upload_media, api_name="bulk_upload_media")
     gr.api(fn=log, api_name="log")
@@ -397,7 +449,6 @@ with gr.Blocks(title="Trackio Dashboard") as demo:
     gr.api(fn=rename_run, api_name="rename_run")
     gr.api(fn=force_sync, api_name="force_sync")
 
-write_token = secrets.token_urlsafe(32)
 demo.write_token = write_token
 
 

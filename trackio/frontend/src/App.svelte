@@ -10,7 +10,12 @@
   import Runs from "./pages/Runs.svelte";
   import RunDetail from "./pages/RunDetail.svelte";
   import Files from "./pages/Files.svelte";
-  import { getAllProjects, getRunsForProject, getAlerts } from "./lib/api.js";
+  import {
+    getAllProjects,
+    getRunsForProject,
+    getAlerts,
+    getRunMutationStatus,
+  } from "./lib/api.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
   import { applyTheme, detectSystemTheme } from "./lib/theme.js";
   import { DEFAULT_COLORS, getColorForIndex } from "./lib/stores.js";
@@ -33,6 +38,12 @@
   let reportsSelectedRun = $state("All runs");
   let alerts = $state([]);
   let pollTimer = $state(null);
+  let mutationStatus = $state({
+    spaces: false,
+    allowed: true,
+    auth: "local",
+  });
+  let mutationPollTimer = $state(null);
 
   function handleNavigate(page) {
     currentPage = page;
@@ -52,6 +63,11 @@
     } catch (e) {
       console.error("Failed to load projects:", e);
     }
+  }
+
+  async function refreshRunsAndMutation() {
+    await refreshRuns();
+    await refreshMutationAccess();
   }
 
   async function refreshRuns() {
@@ -102,6 +118,38 @@
     }, 2000);
   }
 
+  function applyWriteTokenFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const wt = params.get("write_token");
+    if (!wt) return;
+    const maxAge = 60 * 60 * 24 * 7;
+    document.cookie = `trackio_write_token=${encodeURIComponent(wt)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    params.delete("write_token");
+    const q = params.toString();
+    const path = window.location.pathname + (q ? `?${q}` : "");
+    window.history.replaceState({}, "", path);
+  }
+
+  async function refreshMutationAccess() {
+    try {
+      const s = await getRunMutationStatus();
+      mutationStatus = {
+        spaces: !!s.spaces,
+        allowed: !!s.allowed,
+        auth: s.auth ?? "none",
+      };
+    } catch {
+      mutationStatus = { spaces: false, allowed: true, auth: "local" };
+    }
+  }
+
+  function startMutationPolling() {
+    if (mutationPollTimer) clearInterval(mutationPollTimer);
+    mutationPollTimer = setInterval(() => {
+      refreshMutationAccess();
+    }, 15000);
+  }
+
   $effect(() => {
     selectedProject;
     refreshRuns();
@@ -144,6 +192,11 @@
       currentPage = getPageFromPath();
     });
 
+    applyWriteTokenFromUrl();
+    refreshMutationAccess();
+    startMutationPolling();
+    window.addEventListener("focus", refreshMutationAccess);
+
     refreshProjects().then(() => {
       refreshRuns();
       refreshAlerts();
@@ -153,6 +206,8 @@
 
     return () => {
       if (pollTimer) clearInterval(pollTimer);
+      if (mutationPollTimer) clearInterval(mutationPollTimer);
+      window.removeEventListener("focus", refreshMutationAccess);
     };
   });
 
@@ -177,6 +232,9 @@
       bind:open={sidebarOpen}
       variant={sidebarVariant}
       {currentPage}
+      spacesMode={mutationStatus.spaces}
+      runMutationAllowed={mutationStatus.allowed}
+      mutationAuth={mutationStatus.auth}
       {projects}
       bind:selectedProject
       {runs}
@@ -217,7 +275,13 @@
       {:else if currentPage === "reports"}
         <Reports project={selectedProject} bind:selectedRun={reportsSelectedRun} />
       {:else if currentPage === "runs"}
-        <Runs project={selectedProject} {runs} onRunsChanged={refreshRuns} />
+        <Runs
+          project={selectedProject}
+          {runs}
+          onRunsChanged={refreshRunsAndMutation}
+          spacesMode={mutationStatus.spaces}
+          runMutationAllowed={mutationStatus.allowed}
+        />
       {:else if currentPage === "run-detail"}
         <RunDetail project={selectedProject} />
       {:else if currentPage === "files"}

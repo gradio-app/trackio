@@ -4,6 +4,7 @@ export async function callApi(apiName, params = {}) {
   const url = `${BASE}/gradio_api/call${apiName}`;
   const resp = await fetch(url, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data: Object.values(params) }),
   });
@@ -13,9 +14,9 @@ export async function callApi(apiName, params = {}) {
   const json = await resp.json();
   const eventId = json.event_id;
 
-  const dataResp = await fetch(
-    `${BASE}/gradio_api/call${apiName}/${eventId}`,
-  );
+  const dataResp = await fetch(`${BASE}/gradio_api/call${apiName}/${eventId}`, {
+    credentials: "include",
+  });
   if (!dataResp.ok) {
     throw new Error(`API result ${apiName} failed: ${dataResp.status}`);
   }
@@ -115,13 +116,22 @@ export async function getMetricValues(project, run, metricName) {
   return data;
 }
 
+export async function getRunMutationStatus() {
+  const data = await callApi("/get_run_mutation_status", {});
+  return data;
+}
+
 export async function deleteRun(project, run) {
   const data = await callApi("/delete_run", { project, run });
   return data;
 }
 
 export async function renameRun(project, oldName, newName) {
-  const data = await callApi("/rename_run", { project, old_name: oldName, new_name: newName });
+  const data = await callApi("/rename_run", {
+    project,
+    old_name: oldName,
+    new_name: newName,
+  });
   return data;
 }
 

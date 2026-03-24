@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from "svelte";
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
   import ColoredRunRadioGroup from "./ColoredRunRadioGroup.svelte";
   import Dropdown from "./Dropdown.svelte";
@@ -25,7 +26,27 @@
     realtimeEnabled = $bindable(true),
     showHeaders = $bindable(true),
     filterText = $bindable(""),
+    spacesMode = false,
+    runMutationAllowed = true,
+    mutationAuth = "local",
   } = $props();
+
+  let navTick = $state(0);
+
+  onMount(() => {
+    const bump = () => {
+      navTick++;
+    };
+    window.addEventListener("popstate", bump);
+    return () => window.removeEventListener("popstate", bump);
+  });
+
+  let loginHref = $derived.by(() => {
+    navTick;
+    const target =
+      window.location.pathname + window.location.search || "/trackio/";
+    return `${window.location.origin}/login/huggingface?_target_url=${encodeURIComponent(target)}`;
+  });
 
   let showCompactRunPicker = $derived(
     variant === "compact" &&
@@ -76,6 +97,7 @@
 
   {#if open}
     <div class="sidebar-content">
+      <div class="sidebar-scroll">
       <div class="logo-section">
         <picture>
           <source
@@ -196,6 +218,22 @@
           {/if}
         </div>
       {/if}
+      </div>
+
+      {#if spacesMode && !runMutationAllowed}
+        <div class="oauth-footer">
+          {#if mutationAuth === "oauth_insufficient"}
+            <p class="oauth-line oauth-warn">
+              Signed in, but this account does not have write access to this Space.
+            </p>
+          {:else}
+            <a class="hf-login-btn" href={loginHref}>Sign in with Hugging Face</a>
+            <p class="oauth-hint">
+              Required to delete or rename runs (Space owner or collaborator with write access).
+            </p>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -238,8 +276,55 @@
   }
   .sidebar-content {
     padding: 16px;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar-scroll {
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
+  }
+  .oauth-footer {
+    flex-shrink: 0;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color-primary, #e5e7eb);
+  }
+  .oauth-line {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .oauth-warn {
+    color: var(--body-text-color, #92400e);
+  }
+  .hf-login-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+    background: var(--color-accent, #f97316);
+    border-radius: var(--radius-lg, 8px);
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+  .hf-login-btn:hover {
+    filter: brightness(1.05);
+  }
+  .oauth-hint {
+    margin: 8px 0 0;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .logo-section {
     margin-bottom: 20px;
