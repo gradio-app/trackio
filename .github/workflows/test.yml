@@ -12,6 +12,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     
     steps:
     - uses: actions/checkout@v3
@@ -71,13 +74,11 @@ jobs:
         "${{ steps.setup-python.outputs.python-path }}" -m playwright install chromium
 
     - name: Run backend unit tests
-      shell: bash
       run: |
         "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces
 
     - name: Run ui/ux interaction tests
       if: matrix.os == 'ubuntu-latest'
-      shell: bash
       run: |
         "${{ steps.setup-python.outputs.python-path }}" -m pytest tests/ui
 
