@@ -515,7 +515,7 @@ HEAD = ""
 gr.set_static_paths(paths=[utils.MEDIA_DIR])
 
 
-def _make_trackio_server() -> TrackioServer:
+def make_trackio_server() -> TrackioServer:
     server = TrackioServer(title="Trackio Dashboard")
     server.add_api_route(OAUTH_START_PATH, oauth_hf_start, methods=["GET"])
     server.add_api_route(OAUTH_CALLBACK_PATH, oauth_hf_callback, methods=["GET"])

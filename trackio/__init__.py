@@ -35,6 +35,7 @@ from trackio.media import (
     get_project_media_path,
 )
 from trackio.run import Run
+from trackio.server import make_trackio_server
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import UploadEntry
@@ -672,9 +673,10 @@ def show(
         else os.environ.get("GRADIO_MCP_SERVER", "False") == "True"
     )
 
-    mount_frontend(demo)
+    server = make_trackio_server()
+    mount_frontend(server)
 
-    app, url, share_url = app.launch(
+    _, url, share_url = server.launch(
         css=CSS,
         head=HEAD,
         footer_links=["gradio", "settings"] + (["api"] if _mcp_server else []),
