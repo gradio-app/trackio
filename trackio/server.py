@@ -198,7 +198,7 @@ def check_write_access(request: gr.Request, token: str) -> bool:
     cookies = request.headers.get("cookie", "")
     if cookies:
         for cookie in cookies.split(";"):
-            parts = cookie.strip().split("=")
+            parts = cookie.strip().split("=", 1)
             if len(parts) == 2 and parts[0] == "trackio_write_token":
                 return parts[1] == token
     if hasattr(request, "query_params") and request.query_params:
