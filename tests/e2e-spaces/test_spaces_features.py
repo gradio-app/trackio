@@ -9,21 +9,31 @@ import trackio
 from trackio import gpu
 
 
-def _predict_run_summary(test_space_id: str, project_name: str, run_name: str):
+def _predict_run_summary(
+    test_space_id: str,
+    project_name: str,
+    run_name: str,
+    *,
+    min_num_logs: int = 0,
+):
     deadline = time.time() + 120
     last_err: Exception | None = None
     while time.time() < deadline:
         try:
             client = Client(test_space_id, verbose=False)
-            return client.predict(
+            summary = client.predict(
                 project=project_name, run=run_name, api_name="/get_run_summary"
             )
+            if summary["num_logs"] >= min_num_logs:
+                return summary
+            last_err = None
+            time.sleep(3)
         except Exception as e:
             last_err = e
             time.sleep(3)
-    if last_err is None:
-        raise TimeoutError("get_run_summary timed out")
-    raise last_err
+    if last_err is not None:
+        raise last_err
+    raise TimeoutError("get_run_summary timed out before logs appeared")
 
 
 def test_config_persisted_on_spaces(test_space_id, wait_for_client):
@@ -81,7 +91,9 @@ def test_system_metrics_on_spaces(test_space_id, wait_for_client):
             time.sleep(1)
             trackio.finish()
 
-    summary = _predict_run_summary(test_space_id, project_name, run_name)
+    summary = _predict_run_summary(
+        test_space_id, project_name, run_name, min_num_logs=1
+    )
     assert summary["num_logs"] >= 1
 
 
@@ -102,9 +114,8 @@ def test_image_upload_on_spaces(test_space_id, wait_for_client, temp_dir):
     trackio.log({"loss": 0.5, "sample": image})
     trackio.finish()
 
-    client = Client(test_space_id)
-    summary = client.predict(
-        project=project_name, run=run_name, api_name="/get_run_summary"
+    summary = _predict_run_summary(
+        test_space_id, project_name, run_name, min_num_logs=1
     )
     assert summary["num_logs"] == 1
     assert "loss" in summary["metrics"]

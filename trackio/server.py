@@ -66,11 +66,16 @@ class TrackioServer(gr.Server):
             self.blocks.close(verbose=verbose)
 
 
+_pending_oauth_states: set[str] = set()
+_oauth_sessions: dict[str, str] = {}
+
+
 def oauth_hf_start(request: Request):
     client_id = os.getenv("OAUTH_CLIENT_ID")
     if not client_id:
         return RedirectResponse(url="/", status_code=302)
     state = secrets.token_urlsafe(32)
+    _pending_oauth_states.add(state)
     redirect_uri = _oauth_redirect_uri(request)
     scope = os.getenv("OAUTH_SCOPES", "openid profile").strip()
     url = "https://huggingface.co/oauth/authorize?" + urlencode(
@@ -82,17 +87,7 @@ def oauth_hf_start(request: Request):
             "state": state,
         }
     )
-    resp = RedirectResponse(url=url, status_code=302)
-    resp.set_cookie(
-        key="trackio_oauth_state",
-        value=state,
-        httponly=True,
-        samesite="lax",
-        max_age=600,
-        path="/",
-        secure=os.getenv("SYSTEM") == "spaces",
-    )
-    return resp
+    return RedirectResponse(url=url, status_code=302)
 
 
 def oauth_hf_callback(request: Request):
@@ -105,14 +100,15 @@ def oauth_hf_callback(request: Request):
             f"[OAUTH DEBUG] missing client_id={bool(client_id)} client_secret={bool(client_secret)}"
         )
         return RedirectResponse(url=err, status_code=302)
-    stored = request.cookies.get("trackio_oauth_state")
     got_state = request.query_params.get("state")
     code = request.query_params.get("code")
+    state_valid = got_state in _pending_oauth_states if got_state else False
     print(
-        f"[OAUTH DEBUG] stored_state={bool(stored)} got_state={bool(got_state)} code={bool(code)} states_match={stored == got_state}"
+        f"[OAUTH DEBUG] state_valid={state_valid} code={bool(code)}"
     )
-    if not stored or not got_state or stored != got_state or not code:
+    if not state_valid or not code:
         return RedirectResponse(url=err, status_code=302)
+    _pending_oauth_states.discard(got_state)
     redirect_uri = _oauth_redirect_uri(request)
     print(f"[OAUTH DEBUG] redirect_uri for token exchange: {redirect_uri}")
     auth_b64 = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
@@ -136,16 +132,16 @@ def oauth_hf_callback(request: Request):
     except Exception as e:
         print(f"[OAUTH DEBUG] token exchange FAILED: {e}")
         return RedirectResponse(url=err, status_code=302)
+    on_spaces = os.getenv("SYSTEM") == "spaces"
     resp = RedirectResponse(url="/", status_code=302)
-    resp.delete_cookie("trackio_oauth_state", path="/")
     resp.set_cookie(
         key="trackio_hf_access_token",
         value=access_token,
         httponly=True,
-        samesite="lax",
+        samesite="none" if on_spaces else "lax",
         max_age=86400 * 30,
         path="/",
-        secure=os.getenv("SYSTEM") == "spaces",
+        secure=on_spaces,
     )
     print("[OAUTH DEBUG] cookie set, redirecting to /")
     return resp
