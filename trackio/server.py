@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import shutil
+import time
 from functools import lru_cache
 from typing import Any
 from urllib.parse import urlencode
@@ -35,7 +36,10 @@ def _hf_access_token(request: gr.Request) -> str | None:
     except (AttributeError, TypeError):
         pass
     if session_id and session_id in _oauth_sessions:
-        return _oauth_sessions[session_id]
+        token, created = _oauth_sessions[session_id]
+        if time.monotonic() - created <= _OAUTH_SESSION_TTL:
+            return token
+        del _oauth_sessions[session_id]
     cookie_header = ""
     try:
         cookie_header = request.headers.get("cookie", "")
@@ -65,16 +69,33 @@ class TrackioServer(gr.Server):
             self.blocks.close(verbose=verbose)
 
 
-_pending_oauth_states: set[str] = set()
-_oauth_sessions: dict[str, str] = {}
+_OAUTH_STATE_TTL = 86400
+_OAUTH_SESSION_TTL = 86400 * 30
+_pending_oauth_states: dict[str, float] = {}
+_oauth_sessions: dict[str, tuple[str, float]] = {}
+
+
+def _evict_expired_oauth():
+    now = time.monotonic()
+    expired_states = [
+        k for k, t in _pending_oauth_states.items() if now - t > _OAUTH_STATE_TTL
+    ]
+    for k in expired_states:
+        del _pending_oauth_states[k]
+    expired_sessions = [
+        k for k, (_, t) in _oauth_sessions.items() if now - t > _OAUTH_SESSION_TTL
+    ]
+    for k in expired_sessions:
+        del _oauth_sessions[k]
 
 
 def oauth_hf_start(request: Request):
     client_id = os.getenv("OAUTH_CLIENT_ID")
     if not client_id:
         return RedirectResponse(url="/", status_code=302)
+    _evict_expired_oauth()
     state = secrets.token_urlsafe(32)
-    _pending_oauth_states.add(state)
+    _pending_oauth_states[state] = time.monotonic()
     redirect_uri = _oauth_redirect_uri(request)
     scope = os.getenv("OAUTH_SCOPES", "openid profile").strip()
     url = "https://huggingface.co/oauth/authorize?" + urlencode(
@@ -97,10 +118,11 @@ def oauth_hf_callback(request: Request):
         return RedirectResponse(url=err, status_code=302)
     got_state = request.query_params.get("state")
     code = request.query_params.get("code")
-    state_valid = got_state in _pending_oauth_states if got_state else False
-    if not state_valid or not code:
+    if not got_state or got_state not in _pending_oauth_states or not code:
         return RedirectResponse(url=err, status_code=302)
-    _pending_oauth_states.discard(got_state)
+    state_created = _pending_oauth_states.pop(got_state)
+    if time.monotonic() - state_created > _OAUTH_STATE_TTL:
+        return RedirectResponse(url=err, status_code=302)
     redirect_uri = _oauth_redirect_uri(request)
     auth_b64 = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     try:
@@ -120,7 +142,7 @@ def oauth_hf_callback(request: Request):
     except Exception:
         return RedirectResponse(url=err, status_code=302)
     session_id = secrets.token_urlsafe(32)
-    _oauth_sessions[session_id] = access_token
+    _oauth_sessions[session_id] = (access_token, time.monotonic())
     on_spaces = os.getenv("SYSTEM") == "spaces"
     resp = RedirectResponse(url=f"/?oauth_session={session_id}", status_code=302)
     resp.set_cookie(

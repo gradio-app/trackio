@@ -31,14 +31,14 @@
     try {
       const summary = await getProjectSummary(project);
       const runNames = summary.runs || [];
-      const data = [];
-
-      for (const name of runNames) {
-        const summary = await getRunSummary(project, name);
-        const numSteps = summary.num_logs || 0;
-        const lastStep = summary.last_step || 0;
-        data.push({ name, numSteps, lastStep });
-      }
+      const summaries = await Promise.all(
+        runNames.map((name) => getRunSummary(project, name)),
+      );
+      const data = summaries.map((s, i) => ({
+        name: runNames[i],
+        numSteps: s.num_logs || 0,
+        lastStep: s.last_step || 0,
+      }));
 
       runsData = data;
     } catch (e) {
