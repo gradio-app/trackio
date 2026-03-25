@@ -1,6 +1,10 @@
 <script>
-  import { isDark } from "../lib/theme.js";
-  const logoSrc = isDark()
+  import { isDark, detectSystemTheme } from "../lib/theme.js";
+  const dark =
+    isDark() ||
+    new URLSearchParams(window.location.search).get("__theme") === "dark" ||
+    detectSystemTheme() === "dark";
+  const logoSrc = dark
     ? "/static/trackio/trackio_logo_dark.png"
     : "/static/trackio/trackio_logo_light.png";
 </script>

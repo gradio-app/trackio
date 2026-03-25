@@ -21,6 +21,8 @@
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
   import { applyTheme, detectSystemTheme } from "./lib/theme.js";
 
+  applyTheme(getQueryParam("__theme") || detectSystemTheme());
+
   let currentPage = $state("metrics");
   let projects = $state([]);
   let selectedProject = $state(null);
@@ -204,9 +206,6 @@
   });
 
   onMount(() => {
-    const themeName = getQueryParam("__theme") || detectSystemTheme();
-    applyTheme(themeName);
-
     const sidebarParam = getQueryParam("sidebar");
     if (sidebarParam === "hidden") {
       sidebarHidden = true;

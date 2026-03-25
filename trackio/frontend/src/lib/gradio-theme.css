@@ -72,8 +72,8 @@
 
 	--background-fill-primary: white;
 	--background-fill-secondary: var(--neutral-50);
-	--body-text-color: var(--neutral-800);
-	--body-text-color-subdued: var(--neutral-400);
+	--body-text-color: var(--neutral-900);
+	--body-text-color-subdued: var(--neutral-600);
 	--border-color-primary: var(--neutral-200);
 	--color-accent: var(--primary-500);
 	--color-accent-soft: var(--primary-50);
