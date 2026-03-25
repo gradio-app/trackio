@@ -1,5 +1,11 @@
 # trackio
 
+## 0.20.0
+
+### Features
+
+- [#450](https://github.com/gradio-app/trackio/pull/450) [`b0571ef`](https://github.com/gradio-app/trackio/commit/b0571ef6207a1ce346696f858ad2b7b584dd194f) - Use Svelte source for Gradio components directly in Trackio dashboard.  Thanks @abidlabs!
+
 ## 0.19.0
 
 ### Features
