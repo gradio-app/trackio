@@ -110,10 +110,7 @@ def deploy_as_space(
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
         readme_content = readme_content.replace("{GRADIO_VERSION}", gradio.__version__)
-        if is_source_install:
-            readme_content = readme_content.replace("{APP_FILE}", "trackio/ui/main.py")
-        else:
-            readme_content = readme_content.replace("{APP_FILE}", "app.py")
+        readme_content = readme_content.replace("{APP_FILE}", "app.py")
         readme_buffer = io.BytesIO(readme_content.encode("utf-8"))
         hf_api.upload_file(
             path_or_fileobj=readme_buffer,
@@ -138,12 +135,31 @@ def deploy_as_space(
     huggingface_hub.utils.disable_progress_bars()
 
     if is_source_install:
+        dist_index = (
+            Path(trackio.__file__).resolve().parent / "frontend" / "dist" / "index.html"
+        )
+        if not dist_index.is_file():
+            raise ValueError(
+                "The Trackio frontend build is missing. From the repository root run "
+                "`cd trackio/frontend && npm ci && npm run build`, then deploy again."
+            )
         hf_api.upload_folder(
             repo_id=space_id,
             repo_type="space",
             folder_path=trackio_path,
             path_in_repo="trackio",
-            ignore_patterns=["README.md"],
+            ignore_patterns=[
+                "README.md",
+                "frontend/node_modules/**",
+                "frontend/src/**",
+                "frontend/.gitignore",
+                "frontend/package.json",
+                "frontend/package-lock.json",
+                "frontend/vite.config.js",
+                "frontend/svelte.config.js",
+                "**/__pycache__/**",
+                "*.pyc",
+            ],
         )
 
     app_file_content = """import trackio
@@ -219,6 +235,23 @@ def create_space_if_not_exists(
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
     deploy_as_space(space_id, space_storage, dataset_id, private)
+    print("* Waiting for Space to be ready...")
+    _wait_until_space_running(space_id)
+
+
+def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
+    hf_api = huggingface_hub.HfApi()
+    start = time.time()
+    delay = 2
+    while time.time() - start < timeout:
+        try:
+            info = hf_api.space_info(space_id)
+            if info.runtime and info.runtime.stage == "RUNNING":
+                return
+        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
+            pass
+        time.sleep(delay)
+        delay = min(delay * 1.5, 15)
 
 
 def wait_until_space_exists(

@@ -20,9 +20,9 @@
 
 </div>
 
-Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking Python library built by Hugging Face 🤗. It is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
+Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face 🤗. The **logging API, storage, and server** are implemented in **Python**; the **dashboard** is a **Svelte 5** single-page app served alongside a **Gradio** API server, with several UI controls built from **Gradio’s component source** (sliders, checkboxes, etc.) for consistency with the Gradio ecosystem. Trackio is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
 
-For human users, Trackio also ships with a Gradio-based dashboard you can use to view metrics, media, tables, alerts, etc:
+For human users, Trackio ships with that dashboard so you can view metrics, media, tables, alerts, etc.:
 
 ![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
 
@@ -37,12 +37,12 @@ Trackio's main features:
 
 - **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id` in `trackio.init()`.
   - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
-  - Visualize experiments with a Gradio dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
+  - Visualize experiments with a **Svelte 5** dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
 
 - **Free**: Everything here, including hosting on Hugging Face, is free!
 
-Trackio is designed to be lightweight and _forkable_. It is written almost entirely in Python so that developers can easily fork the repository and add functionality that they care about.
+Trackio is designed to be lightweight and _forkable_: **Python** for the backend and API, **Svelte 5** for the dashboard, and **Gradio component** code where UI widgets need to match Gradio behavior—so developers can fork the repository and extend either side.
 
 ## Installation
 
@@ -193,14 +193,15 @@ If you are hosting your Trackio dashboard on Spaces, then you can embed the url 
 
 Supported query parameters:
 
-- `project`: (string) Filter the dashboard to show only a specific project
-- `metrics`: (comma-separated list) Filter the dashboard to show only specific metrics, e.g. `train_loss,train_accuracy`
-- `sidebar`: (string: one of "hidden" or "collapsed"). If "hidden", then the sidebar will not be visible. If "collapsed", the sidebar will be in a collapsed state initially but the user will be able to open it. Otherwise, by default, the sidebar is shown in an open and visible state.
-- `footer`: (string: "false"). When set to "false", hides the Gradio footer. By default, the footer is visible.
-- `xmin`: (number) Set the initial minimum value for the x-axis limits across all metric plots.
-- `xmax`: (number) Set the initial maximum value for the x-axis limits across all metric plots.
+- `project`: (string) Open the dashboard on this project only. The project picker is hidden and the selection cannot be changed while this parameter is present (useful for embeds). The alias `selected_project` is accepted for the same behavior.
+- `metrics`: (comma-separated list) Show only metrics whose names match exactly (after splitting on commas), e.g. `train_loss,train_accuracy`. Applied as the metrics filter on the Metrics page.
+- `sidebar`: (string) One of `hidden`, `collapsed`, or omitted (default). **`hidden`** removes the sidebar entirely (full-width content; no rail). **`collapsed`** starts with the sidebar collapsed to the narrow rail; the user can expand it. By default the sidebar is open.
+- `footer`: (string: "false"). When set to "false", hides the Gradio footer (Gradio-hosted Spaces). By default, the footer is visible.
+- `xmin` / `xmax`: (numbers, use both together) Set the initial horizontal zoom range on the Metrics plots (shared x-axis window). Both must be valid numbers with `xmin < xmax`.
 - `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
 - `accordion`: (string: "hidden"). When set to "hidden", hides the section header accordions around metric groups. By default, section headers are visible.
+- `theme`: (string) Dashboard theme, e.g. `light` or `dark` (see theme behavior in the app).
+- `write_token`: (string) One-time token written to a cookie for write access on Hugging Face Spaces deployments; stripped from the URL after load.
 
 ## Alerts
 
@@ -294,9 +295,9 @@ pip install -e ".[dev,tensorboard]"
 
 ## Forking Trackio
 
-Trackio is designed to be extremely forkable. It is written entirely in Python with a Gradio-based dashboard, so you can fork the repo, make changes to the source code (e.g. adding new elements to the dashboard, custom metrics, or new pages), and see those changes reflected immediately when running locally.
+Trackio is designed to be extremely forkable. The codebase is **not** Python-only: the **backend** lives in Python (SQLite, Gradio API, CLI), and the **dashboard** is **Svelte 5** under `trackio/frontend/` (with a production build bundled into the Python package). UI controls that mirror Gradio are implemented using **Gradio’s component source** as a starting point. You can fork the repo, change Python, frontend, or both (e.g. new dashboard pages, metrics, API routes), and see updates when running locally after installing in editable mode and rebuilding the frontend where needed.
 
-Even better, if you deploy your Trackio dashboard to Hugging Face Spaces (by setting a `space_id` in `trackio.init()`), the Space UI will reflect your local version of Trackio — so any customizations you make to the Python source carry over to your hosted dashboard as well.
+If you deploy your Trackio dashboard to Hugging Face Spaces (by setting a `space_id` in `trackio.init()`), the Space UI reflects **your** checkout of Trackio—including any changes to the Python backend and the built Svelte assets.
 
 To get started, follow the [Contributing Guide](#CONTRIBUTING.md) instructions to set up Trackio locally, then make your changes and run `trackio show` to preview them locally.
 

@@ -844,7 +844,44 @@ class SQLiteStorage:
                 return False
 
     @staticmethod
-    def get_logs(project: str, run: str) -> list[dict]:
+    def get_log_count(project: str, run: str) -> int:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return 0
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT COUNT(*) FROM metrics WHERE run_name = ?",
+                    (run,),
+                )
+                return cursor.fetchone()[0]
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return 0
+            raise
+
+    @staticmethod
+    def get_last_step(project: str, run: str) -> int | None:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT MAX(step) FROM metrics WHERE run_name = ?",
+                    (run,),
+                )
+                row = cursor.fetchone()
+                return row[0] if row and row[0] is not None else None
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return None
+            raise
+
+    @staticmethod
+    def get_logs(project: str, run: str, max_points: int | None = None) -> list[dict]:
         """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -864,6 +901,12 @@ class SQLiteStorage:
                 )
 
                 rows = cursor.fetchall()
+                if max_points is not None and len(rows) > max_points:
+                    step = len(rows) / max_points
+                    indices = {int(i * step) for i in range(max_points)}
+                    indices.add(len(rows) - 1)
+                    rows = [rows[i] for i in sorted(indices)]
+
                 results = []
                 for row in rows:
                     metrics = orjson.loads(row["metrics"])

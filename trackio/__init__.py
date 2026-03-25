@@ -22,6 +22,7 @@ from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
 from trackio.deploy import sync
+from trackio.frontend_server import mount_frontend
 from trackio.gpu import gpu_available
 from trackio.gpu import log_gpu as _log_nvidia_gpu
 from trackio.histogram import Histogram
@@ -34,6 +35,7 @@ from trackio.media import (
     get_project_media_path,
 )
 from trackio.run import Run
+from trackio.server import make_trackio_server
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import UploadEntry
@@ -93,14 +95,6 @@ def _cleanup_current_run():
             run.finish()
         except Exception:
             pass
-
-
-def _get_demo():
-    # Lazy import to avoid initializing Gradio Blocks (and FastAPI) at import time,
-    # which causes import lock errors for libraries that just `import trackio`.
-    from trackio.ui.main import CSS, HEAD, demo
-
-    return demo, CSS, HEAD
 
 
 def init(
@@ -668,8 +662,6 @@ def show(
             `share_url`: The public share URL of the dashboard.
             `full_url`: The full URL of the dashboard including the write token (will use the public share URL if launched publicly, otherwise the local URL).
     """
-    demo, CSS, HEAD = _get_demo()
-
     if color_palette is not None:
         os.environ["TRACKIO_COLOR_PALETTE"] = ",".join(color_palette)
 
@@ -681,10 +673,10 @@ def show(
         else os.environ.get("GRADIO_MCP_SERVER", "False") == "True"
     )
 
-    app, url, share_url = demo.launch(
-        css=CSS,
-        head=HEAD,
-        footer_links=["gradio", "settings"] + (["api"] if _mcp_server else []),
+    server = make_trackio_server()
+    mount_frontend(server)
+
+    _, url, share_url = server.launch(
         quiet=True,
         inline=False,
         prevent_thread_lock=True,
@@ -692,24 +684,30 @@ def show(
         allowed_paths=[TRACKIO_LOGO_DIR, TRACKIO_DIR],
         mcp_server=_mcp_server,
         theme=theme,
-        ssr_mode=False,
         server_name=host,
     )
 
     base_url = share_url + "/" if share_url else url
+    dashboard_url = base_url.rstrip("/") + "/"
+    if project:
+        dashboard_url += f"?project={project}"
     full_url = utils.get_full_url(
-        base_url, project=project, write_token=demo.write_token, footer=footer
+        base_url.rstrip("/"),
+        project=project,
+        write_token=server.write_token,
+        footer=footer,
     )
 
     if not utils.is_in_notebook():
-        print(f"* Trackio UI launched at: {full_url}")
+        print(f"* Trackio UI launched at: {dashboard_url}")
+        print(f"* Gradio API available at: {base_url}")
         if open_browser:
-            webbrowser.open(full_url)
+            webbrowser.open(dashboard_url)
         block_thread = block_thread if block_thread is not None else True
     else:
-        utils.embed_url_in_notebook(full_url)
+        utils.embed_url_in_notebook(dashboard_url)
         block_thread = block_thread if block_thread is not None else False
 
     if block_thread:
         utils.block_main_thread_until_keyboard_interrupt()
-    return TupleNoPrint((demo, url, share_url, full_url))
+    return TupleNoPrint((server, url, share_url, full_url))

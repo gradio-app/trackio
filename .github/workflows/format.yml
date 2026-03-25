@@ -29,4 +29,19 @@ jobs:
         
     - name: Check code with ruff
       run: |
-        ruff check . 
+        ruff check .
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install frontend dependencies
+      run: |
+        cd trackio/frontend
+        npm ci
+
+    - name: Lint frontend
+      run: |
+        cd trackio/frontend
+        npm run lint

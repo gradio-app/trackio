@@ -2,7 +2,7 @@
 
 from unittest.mock import Mock
 
-from trackio.ui.runs import check_write_access_runs
+from trackio.server import check_write_access as check_write_access_runs
 
 
 def test_check_write_access():

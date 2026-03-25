@@ -148,7 +148,15 @@ def test_local_buffer_flushed_after_recovery(test_space_id, temp_dir, wait_for_c
     time.sleep(10)
     trackio.finish()
 
-    verify_client = Client(test_space_id)
+    verify_client = None
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        try:
+            verify_client = Client(test_space_id, verbose=False)
+            break
+        except Exception:
+            time.sleep(10)
+    assert verify_client is not None, "Could not connect to Space"
     summary = verify_client.predict(
         project=project_name, run=run_name, api_name="/get_run_summary"
     )

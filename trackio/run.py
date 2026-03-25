@@ -271,6 +271,19 @@ class Run:
 
             with self._client_lock:
                 if self._client is None:
+                    if self._stop_flag.is_set():
+                        if self._queued_logs:
+                            self._persist_logs_locally(self._queued_logs)
+                            self._queued_logs.clear()
+                        if self._queued_system_logs:
+                            self._persist_system_logs_locally(self._queued_system_logs)
+                            self._queued_system_logs.clear()
+                        if self._queued_uploads:
+                            self._persist_uploads_locally(self._queued_uploads)
+                            self._queued_uploads.clear()
+                        if self._queued_alerts:
+                            self._write_alerts_to_sqlite(self._queued_alerts)
+                            self._queued_alerts.clear()
                     return
 
                 failed = False
@@ -718,3 +731,9 @@ class Run:
                     warnings.warn(
                         "Could not flush all logs within 30s. Some data may be buffered locally."
                     )
+            if SQLiteStorage.has_pending_data(self.project):
+                warnings.warn(
+                    f"* Some logs could not be sent to the Space (it may still be starting up). "
+                    f"They have been saved locally and will be sent automatically next time you call: "
+                    f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
+                )

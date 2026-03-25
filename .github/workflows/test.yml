@@ -12,11 +12,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     
     steps:
     - uses: actions/checkout@v3
     
     - name: Set up Python
+      id: setup-python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
@@ -48,20 +52,34 @@ jobs:
         
     - name: Install Python dependencies
       run: |
-        uv pip install --system -e .[dev,tensorboard,spaces] --prerelease=allow
-        uv pip install --system pytest --prerelease=allow
+        uv pip install --system -e '.[dev,tensorboard,spaces]' --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
+        uv pip install --system pytest --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
+
+    - name: Set up Node.js
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Build frontend
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd trackio/frontend
+        npm ci
+        npm run build
 
     - name: Install Playwright
+      if: matrix.os == 'ubuntu-latest'
       run: |
-        playwright install
-        
+        "${{ steps.setup-python.outputs.python-path }}" -m playwright install chromium
+
     - name: Run backend unit tests
       run: |
-        pytest --deselect=tests/ui --deselect=tests/e2e-spaces
+        "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces
 
     - name: Run ui/ux interaction tests
       if: matrix.os == 'ubuntu-latest'
       run: |
-        pytest tests/ui 
+        "${{ steps.setup-python.outputs.python-path }}" -m pytest tests/ui
 
     
