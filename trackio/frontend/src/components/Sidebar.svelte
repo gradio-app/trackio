@@ -7,6 +7,7 @@
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
+  import { isDark } from "../lib/theme.js";
 
   let {
     open = $bindable(true),
@@ -99,17 +100,11 @@
     <div class="sidebar-content">
       <div class="sidebar-scroll">
       <div class="logo-section">
-        <picture>
-          <source
-            media="(prefers-color-scheme: dark)"
-            srcset={logoUrls.dark}
-          />
-          <img
-            src={logoUrls.light}
-            alt="Trackio"
-            class="logo"
-          />
-        </picture>
+        <img
+          src={isDark() ? logoUrls.dark : logoUrls.light}
+          alt="Trackio"
+          class="logo"
+        />
       </div>
 
       <div class="section">

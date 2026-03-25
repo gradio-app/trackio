@@ -3,7 +3,7 @@ from trackio.run import Run
 from trackio.table import Table
 
 
-def test_get_settings_default_values(self, monkeypatch):
+def test_get_settings_default_values(monkeypatch):
     monkeypatch.delenv("TRACKIO_LOGO_LIGHT_URL", raising=False)
     monkeypatch.delenv("TRACKIO_LOGO_DARK_URL", raising=False)
     monkeypatch.delenv("TRACKIO_COLOR_PALETTE", raising=False)
@@ -19,7 +19,7 @@ def test_get_settings_default_values(self, monkeypatch):
     assert result["table_truncate_length"] == 250
 
 
-def test_custom_logos(self, monkeypatch):
+def test_custom_logos(monkeypatch):
     monkeypatch.setenv("TRACKIO_LOGO_LIGHT_URL", "https://example.com/light.png")
     monkeypatch.setenv("TRACKIO_LOGO_DARK_URL", "https://example.com/dark.png")
     result = utils.get_logo_urls()
@@ -27,7 +27,7 @@ def test_custom_logos(self, monkeypatch):
     assert result["dark"] == "https://example.com/dark.png"
 
 
-def test_truncate_length_in_table_display(self, monkeypatch):
+def test_truncate_length_in_table_display(monkeypatch):
     monkeypatch.setenv("TRACKIO_TABLE_TRUNCATE_LENGTH", "10")
     long_text = "A" * 50
     table_data = [{"col": long_text}]
@@ -36,7 +36,7 @@ def test_truncate_length_in_table_display(self, monkeypatch):
     assert long_text != result[0]["col"]
 
 
-def test_truncate_length_short_text_not_truncated(self, monkeypatch):
+def test_truncate_length_short_text_not_truncated(monkeypatch):
     monkeypatch.setenv("TRACKIO_TABLE_TRUNCATE_LENGTH", "100")
     short_text = "hello"
     table_data = [{"col": short_text}]
@@ -44,7 +44,7 @@ def test_truncate_length_short_text_not_truncated(self, monkeypatch):
     assert result[0]["col"] == short_text
 
 
-def test_webhook_url_from_env(self, monkeypatch, temp_dir):
+def test_webhook_url_from_env(monkeypatch, temp_dir):
     monkeypatch.setenv("TRACKIO_WEBHOOK_URL", "https://hooks.slack.com/test")
     monkeypatch.delenv("TRACKIO_WEBHOOK_MIN_LEVEL", raising=False)
     run = Run(

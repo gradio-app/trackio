@@ -55,14 +55,20 @@ const darkOverrides = {
 export function applyTheme(themeName) {
   const root = document.documentElement;
   if (themeName === "dark") {
+    root.dataset.theme = "dark";
     Object.entries(darkOverrides).forEach(([key, value]) => {
       root.style.setProperty(key, value);
     });
   } else {
+    delete root.dataset.theme;
     Object.keys(darkOverrides).forEach((key) => {
       root.style.removeProperty(key);
     });
   }
+}
+
+export function isDark() {
+  return document.documentElement.dataset.theme === "dark";
 }
 
 export function detectSystemTheme() {

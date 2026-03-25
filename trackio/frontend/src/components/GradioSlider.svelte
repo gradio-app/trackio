@@ -100,14 +100,15 @@
   input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    height: 14px;
-    width: 14px;
-    background-color: var(--background-fill-primary, white);
+    height: 16px;
+    width: 16px;
+    background-color: var(--slider-color, #f97316);
+    border: 2px solid var(--background-fill-primary, white);
     border-radius: 50%;
-    margin-top: -4px;
+    margin-top: -5px;
     box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.08),
-      0 1px 3px rgba(0, 0, 0, 0.12);
+      0 0 0 1px var(--border-color-primary, rgba(0, 0, 0, 0.08)),
+      0 1px 3px rgba(0, 0, 0, 0.2);
   }
   input[type="range"]::-moz-range-track {
     height: 6px;
@@ -116,14 +117,14 @@
   }
   input[type="range"]::-moz-range-thumb {
     appearance: none;
-    height: 14px;
-    width: 14px;
-    background-color: var(--background-fill-primary, white);
+    height: 16px;
+    width: 16px;
+    background-color: var(--slider-color, #f97316);
+    border: 2px solid var(--background-fill-primary, white);
     border-radius: 50%;
-    border: none;
     box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.08),
-      0 1px 3px rgba(0, 0, 0, 0.12);
+      0 0 0 1px var(--border-color-primary, rgba(0, 0, 0, 0.08)),
+      0 1px 3px rgba(0, 0, 0, 0.2);
   }
   input[type="range"]::-moz-range-progress {
     height: 6px;

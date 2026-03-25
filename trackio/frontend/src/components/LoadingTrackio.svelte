@@ -1,28 +1,17 @@
+<script>
+  import { isDark } from "../lib/theme.js";
+  const logoSrc = isDark()
+    ? "/static/trackio/trackio_logo_dark.png"
+    : "/static/trackio/trackio_logo_light.png";
+</script>
+
 <div class="trackio-loading" role="status" aria-live="polite">
   <div class="logo-stack">
-    <picture class="logo-base">
-      <source
-        media="(prefers-color-scheme: dark)"
-        srcset="/static/trackio/trackio_logo_dark.png"
-      />
-      <img
-        src="/static/trackio/trackio_logo_light.png"
-        alt=""
-        class="logo-img"
-      />
-    </picture>
+    <div class="logo-base">
+      <img src={logoSrc} alt="" class="logo-img" />
+    </div>
     <div class="logo-overlay" aria-hidden="true">
-      <picture>
-        <source
-          media="(prefers-color-scheme: dark)"
-          srcset="/static/trackio/trackio_logo_dark.png"
-        />
-        <img
-          src="/static/trackio/trackio_logo_light.png"
-          alt=""
-          class="logo-img logo-img--gray"
-        />
-      </picture>
+      <img src={logoSrc} alt="" class="logo-img logo-img--gray" />
     </div>
   </div>
   <span class="sr-only">Loading</span>
