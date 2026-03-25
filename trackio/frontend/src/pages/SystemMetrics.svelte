@@ -9,7 +9,6 @@
 
   let {
     project = null,
-    runs = [],
     selectedRuns = [],
     smoothing = 5,
     appBootstrapReady = false,

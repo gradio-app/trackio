@@ -1,6 +1,6 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getMediaUrl } from "../lib/api.js";
+  import { getMediaUrl, getProjectFiles } from "../lib/api.js";
 
   let { project = null } = $props();
 
@@ -14,16 +14,8 @@
     }
     loading = true;
     try {
-      const resp = await fetch(
-        `/gradio_api/call/get_logs`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: [project, "__files__"] }),
-        },
-      );
-      files = [];
-    } catch (e) {
+      files = await getProjectFiles(project);
+    } catch {
       files = [];
     } finally {
       loading = false;

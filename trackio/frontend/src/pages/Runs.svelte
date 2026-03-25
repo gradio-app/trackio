@@ -1,5 +1,4 @@
 <script>
-  import GradioTable from "../components/GradioTable.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
@@ -19,7 +18,6 @@
 
   let runsData = $state([]);
   let loading = $state(false);
-  let selectedIndices = $state(new Set());
   let renamingIndex = $state(-1);
   let renameValue = $state("");
 
@@ -54,12 +52,6 @@
     project;
     loadRuns();
   });
-
-  function viewRunDetail(row) {
-    const runName = row[0];
-    setQueryParam("selected_run", runName);
-    navigateTo("run-detail");
-  }
 
   async function handleDelete(runName) {
     if (!canMutateRuns) return;

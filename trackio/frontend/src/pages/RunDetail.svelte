@@ -1,6 +1,6 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getRunSummary, getMetricsForRun } from "../lib/api.js";
+  import { getRunSummary } from "../lib/api.js";
   import { getQueryParam } from "../lib/router.js";
 
   let { project = null } = $props();

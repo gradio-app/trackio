@@ -6,7 +6,6 @@
     selectedIndices = $bindable(new Set()),
     onrowclick = null,
     label = "",
-    renderCell = null,
   } = $props();
 
   let sortCol = $state(null);

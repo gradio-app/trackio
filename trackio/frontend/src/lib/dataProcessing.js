@@ -19,12 +19,12 @@ export function processRunData(
 
   let rows = logs.map((row) => ({ ...row }));
 
-  if (!rows[0].hasOwnProperty("step")) {
+  if (!Object.hasOwn(rows[0], "step")) {
     rows.forEach((r, i) => (r.step = i));
   }
 
   let xColumn = "step";
-  if (xAxis === "time" && rows[0].hasOwnProperty("timestamp")) {
+  if (xAxis === "time" && Object.hasOwn(rows[0], "timestamp")) {
     const firstTs = new Date(rows[0].timestamp).getTime();
     rows.forEach((r) => {
       r.time = (new Date(r.timestamp).getTime() - firstTs) / 1000;
@@ -120,7 +120,7 @@ export function downsample(data, x, y, colorField, xLim) {
   if (!data || data.length === 0) return { data, xLim };
 
   const columns = [x, y];
-  if (colorField && data[0].hasOwnProperty(colorField)) {
+  if (colorField && Object.hasOwn(data[0], colorField)) {
     columns.push(colorField);
   }
 

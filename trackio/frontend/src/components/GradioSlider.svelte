@@ -1,6 +1,4 @@
 <script>
-  import { tick } from "svelte";
-
   let {
     label = "Slider",
     info = "",
@@ -12,7 +10,6 @@
   } = $props();
 
   let rangeInput;
-  const initialValue = value;
 
   let percentage = $derived.by(() => {
     if (value > max) return 100;
@@ -26,13 +23,6 @@
     }
   });
 
-  function resetValue() {
-    value = initialValue;
-  }
-
-  function clamp() {
-    value = Math.min(Math.max(value, min), max);
-  }
 </script>
 
 <div class="slider-wrap">

@@ -1,5 +1,3 @@
-import { getAllProjects, getRunsForProject, getLogs } from "./api.js";
-
 export function createDashboardState() {
   let projects = $state([]);
   let selectedProject = $state(null);

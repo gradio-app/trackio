@@ -18,7 +18,6 @@
   } from "./lib/api.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
   import { applyTheme, detectSystemTheme } from "./lib/theme.js";
-  import { DEFAULT_COLORS, getColorForIndex } from "./lib/stores.js";
 
   let currentPage = $state("metrics");
   let projects = $state([]);
@@ -100,7 +99,6 @@
         const prevSelected = new Set(selectedRuns);
         runs = newRuns;
 
-        const newEntries = newRuns.filter((r) => !prevSelected.has(r) && prevSelected.size === 0);
         const kept = selectedRuns.filter((r) => newRunNames.has(r));
 
         if (kept.length === 0 && selectedRuns.length === 0) {
@@ -346,7 +344,6 @@
       {:else if currentPage === "system"}
         <SystemMetrics
           project={selectedProject}
-          {runs}
           {selectedRuns}
           {smoothing}
           {appBootstrapReady}

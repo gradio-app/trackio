@@ -40,7 +40,7 @@
 
   function buildSpec() {
     const hasColor =
-      colorField && data.length > 0 && data[0].hasOwnProperty(colorField);
+      colorField && data.length > 0 && Object.hasOwn(data[0], colorField);
     const allRuns = hasColor
       ? [...new Set(data.map((d) => d[colorField]))]
       : [];

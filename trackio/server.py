@@ -12,7 +12,6 @@ from urllib.parse import urlencode
 import gradio as gr
 import httpx
 import huggingface_hub as hf
-import pandas as pd
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
@@ -462,10 +461,7 @@ def get_project_summary(project: str) -> dict:
 
 def get_run_summary(project: str, run: str) -> dict:
     num_logs = SQLiteStorage.get_log_count(project, run)
-    logs = SQLiteStorage.get_logs(project, run)
-    metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
-
-    if not logs:
+    if num_logs == 0:
         return {
             "project": project,
             "run": run,
@@ -475,11 +471,9 @@ def get_run_summary(project: str, run: str) -> dict:
             "last_step": None,
         }
 
-    df = pd.DataFrame(logs)
-    config = logs[0].get("config") if logs else None
-    if config is None:
-        config = SQLiteStorage.get_run_config(project, run)
-    last_step = int(df["step"].max()) if "step" in df.columns else len(logs) - 1
+    metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
+    config = SQLiteStorage.get_run_config(project, run)
+    last_step = SQLiteStorage.get_last_step(project, run)
 
     return {
         "project": project,
@@ -513,7 +507,24 @@ def get_snapshot(
 
 
 def get_logs(project: str, run: str) -> list[dict]:
-    return SQLiteStorage.get_logs(project, run)
+    return SQLiteStorage.get_logs(project, run, max_points=1500)
+
+
+def get_project_files(project: str) -> list[dict]:
+    files_dir = utils.MEDIA_DIR / project / "files"
+    if not files_dir.exists():
+        return []
+    results = []
+    for file_path in sorted(files_dir.rglob("*")):
+        if file_path.is_file():
+            relative = file_path.relative_to(files_dir)
+            results.append(
+                {
+                    "name": str(relative),
+                    "path": str(file_path),
+                }
+            )
+    return results
 
 
 def delete_run(request: gr.Request, project: str, run: str) -> bool:
@@ -569,6 +580,7 @@ def make_trackio_server() -> TrackioServer:
     server.api(fn=get_system_logs, name="get_system_logs")
     server.api(fn=get_snapshot, name="get_snapshot")
     server.api(fn=get_logs, name="get_logs")
+    server.api(fn=get_project_files, name="get_project_files")
     server.api(fn=delete_run, name="delete_run")
     server.api(fn=rename_run, name="rename_run")
     server.api(fn=force_sync, name="force_sync")
