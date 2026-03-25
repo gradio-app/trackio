@@ -121,6 +121,11 @@ export async function getMetricValues(project, run, metricName) {
   return data;
 }
 
+export async function getSettings() {
+  const data = await callApi("/get_settings");
+  return data;
+}
+
 export async function getProjectFiles(project) {
   const data = await callApi("/get_project_files", { project });
   return data;

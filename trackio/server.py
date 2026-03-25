@@ -532,6 +532,21 @@ def get_logs(project: str, run: str) -> list[dict]:
     return SQLiteStorage.get_logs(project, run, max_points=1500)
 
 
+def get_settings() -> dict:
+    return {
+        "logo_urls": utils.get_logo_urls(),
+        "color_palette": utils.get_color_palette(),
+        "plot_order": [
+            item.strip()
+            for item in os.environ.get("TRACKIO_PLOT_ORDER", "").split(",")
+            if item.strip()
+        ],
+        "table_truncate_length": int(
+            os.environ.get("TRACKIO_TABLE_TRUNCATE_LENGTH", "250")
+        ),
+    }
+
+
 def get_project_files(project: str) -> list[dict]:
     files_dir = utils.MEDIA_DIR / project / "files"
     if not files_dir.exists():
@@ -602,6 +617,7 @@ def make_trackio_server() -> TrackioServer:
     server.api(fn=get_system_logs, name="get_system_logs")
     server.api(fn=get_snapshot, name="get_snapshot")
     server.api(fn=get_logs, name="get_logs")
+    server.api(fn=get_settings, name="get_settings")
     server.api(fn=get_project_files, name="get_project_files")
     server.api(fn=delete_run, name="delete_run")
     server.api(fn=rename_run, name="rename_run")

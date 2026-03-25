@@ -230,8 +230,11 @@
     border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
     color: var(--body-text-color, #1f2937);
   }
+  .alerts-table tbody tr:nth-child(odd) {
+    background: var(--table-odd-background-fill, var(--background-fill-primary, white));
+  }
   .alerts-table tbody tr:nth-child(even) {
-    background: var(--table-even-background, #f9fafb);
+    background: var(--table-even-background-fill, var(--background-fill-secondary, #f9fafb));
   }
   .alerts-table tr:hover {
     background: var(--background-fill-secondary, #f3f4f6);

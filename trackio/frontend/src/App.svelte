@@ -15,7 +15,9 @@
     getRunsForProject,
     getAlerts,
     getRunMutationStatus,
+    getSettings,
   } from "./lib/api.js";
+  import { setColorPalette } from "./lib/stores.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
   import { applyTheme, detectSystemTheme } from "./lib/theme.js";
 
@@ -46,6 +48,9 @@
   });
   let mutationPollTimer = $state(null);
   let appBootstrapReady = $state(false);
+  let logoUrls = $state({ light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" });
+  let plotOrder = $state([]);
+  let tableTruncateLength = $state(250);
 
   function handleNavigate(page) {
     currentPage = page;
@@ -199,7 +204,7 @@
   });
 
   onMount(() => {
-    const themeName = getQueryParam("theme") || detectSystemTheme();
+    const themeName = getQueryParam("__theme") || detectSystemTheme();
     applyTheme(themeName);
 
     const sidebarParam = getQueryParam("sidebar");
@@ -251,6 +256,17 @@
 
     (async () => {
       try {
+        try {
+          const settings = await getSettings();
+          if (settings) {
+            if (settings.logo_urls) logoUrls = settings.logo_urls;
+            if (settings.color_palette) setColorPalette(settings.color_palette);
+            if (settings.plot_order) plotOrder = settings.plot_order;
+            if (settings.table_truncate_length) tableTruncateLength = settings.table_truncate_length;
+          }
+        } catch {
+          // settings endpoint may not be available
+        }
         await refreshProjects();
         await refreshRuns();
         await refreshAlerts();
@@ -321,6 +337,7 @@
       bind:realtimeEnabled
       bind:showHeaders
       bind:filterText
+      {logoUrls}
     />
   {/if}
 
@@ -340,6 +357,7 @@
           {metricFilter}
           {showHeaders}
           {appBootstrapReady}
+          {plotOrder}
         />
       {:else if currentPage === "system"}
         <SystemMetrics
@@ -349,7 +367,7 @@
           {appBootstrapReady}
         />
       {:else if currentPage === "media"}
-        <Media project={selectedProject} bind:selectedRun={mediaSelectedRun} />
+        <Media project={selectedProject} bind:selectedRun={mediaSelectedRun} {tableTruncateLength} />
       {:else if currentPage === "reports"}
         <Reports project={selectedProject} bind:selectedRun={reportsSelectedRun} />
       {:else if currentPage === "runs"}

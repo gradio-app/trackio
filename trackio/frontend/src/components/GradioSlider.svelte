@@ -102,7 +102,7 @@
     appearance: none;
     height: 14px;
     width: 14px;
-    background-color: white;
+    background-color: var(--background-fill-primary, white);
     border-radius: 50%;
     margin-top: -4px;
     box-shadow:
@@ -118,7 +118,7 @@
     appearance: none;
     height: 14px;
     width: 14px;
-    background-color: white;
+    background-color: var(--background-fill-primary, white);
     border-radius: 50%;
     border: none;
     box-shadow:

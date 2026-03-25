@@ -1,116 +1,68 @@
-export const themes = {
-  default: {
-    "--bg-primary": "#ffffff",
-    "--bg-secondary": "#f9fafb",
-    "--bg-tertiary": "#f3f4f6",
-    "--bg-sidebar": "#ffffff",
-    "--text-primary": "#111827",
-    "--text-secondary": "#6b7280",
-    "--text-muted": "#9ca3af",
-    "--border-color": "#e5e7eb",
-    "--border-light": "#f3f4f6",
-    "--accent-color": "#f97316",
-    "--accent-hover": "#ea580c",
-    "--accent-light": "#fff7ed",
-    "--success-color": "#10b981",
-    "--error-color": "#ef4444",
-    "--warning-color": "#f59e0b",
-    "--info-color": "#3b82f6",
-    "--input-bg": "#ffffff",
-    "--input-border": "#d1d5db",
-    "--input-focus": "#f97316",
-    "--shadow-sm": "0 1px 2px rgba(0,0,0,0.05)",
-    "--shadow-md": "0 4px 6px -1px rgba(0,0,0,0.1)",
-    "--radius-sm": "6px",
-    "--radius-md": "8px",
-    "--radius-lg": "12px",
-  },
-  dark: {
-    "--bg-primary": "#111827",
-    "--bg-secondary": "#1f2937",
-    "--bg-tertiary": "#374151",
-    "--bg-sidebar": "#1f2937",
-    "--text-primary": "#f9fafb",
-    "--text-secondary": "#d1d5db",
-    "--text-muted": "#9ca3af",
-    "--border-color": "#374151",
-    "--border-light": "#1f2937",
-    "--accent-color": "#f97316",
-    "--accent-hover": "#fb923c",
-    "--accent-light": "#1c1917",
-    "--success-color": "#34d399",
-    "--error-color": "#f87171",
-    "--warning-color": "#fbbf24",
-    "--info-color": "#60a5fa",
-    "--input-bg": "#374151",
-    "--input-border": "#4b5563",
-    "--input-focus": "#f97316",
-    "--shadow-sm": "0 1px 2px rgba(0,0,0,0.3)",
-    "--shadow-md": "0 4px 6px -1px rgba(0,0,0,0.4)",
-    "--radius-sm": "6px",
-    "--radius-md": "8px",
-    "--radius-lg": "12px",
-  },
-  soft: {
-    "--bg-primary": "#fefefe",
-    "--bg-secondary": "#f8f9fc",
-    "--bg-tertiary": "#eef1f6",
-    "--bg-sidebar": "#f8f9fc",
-    "--text-primary": "#2d3748",
-    "--text-secondary": "#718096",
-    "--text-muted": "#a0aec0",
-    "--border-color": "#e2e8f0",
-    "--border-light": "#edf2f7",
-    "--accent-color": "#6366f1",
-    "--accent-hover": "#4f46e5",
-    "--accent-light": "#eef2ff",
-    "--success-color": "#10b981",
-    "--error-color": "#ef4444",
-    "--warning-color": "#f59e0b",
-    "--info-color": "#3b82f6",
-    "--input-bg": "#ffffff",
-    "--input-border": "#cbd5e0",
-    "--input-focus": "#6366f1",
-    "--shadow-sm": "0 1px 3px rgba(0,0,0,0.04)",
-    "--shadow-md": "0 4px 6px -1px rgba(0,0,0,0.06)",
-    "--radius-sm": "8px",
-    "--radius-md": "10px",
-    "--radius-lg": "16px",
-  },
-  citrus: {
-    "--bg-primary": "#fffef5",
-    "--bg-secondary": "#fefce8",
-    "--bg-tertiary": "#fef9c3",
-    "--bg-sidebar": "#fefce8",
-    "--text-primary": "#1c1917",
-    "--text-secondary": "#57534e",
-    "--text-muted": "#a8a29e",
-    "--border-color": "#e7e5e4",
-    "--border-light": "#f5f5f4",
-    "--accent-color": "#65a30d",
-    "--accent-hover": "#4d7c0f",
-    "--accent-light": "#f7fee7",
-    "--success-color": "#22c55e",
-    "--error-color": "#ef4444",
-    "--warning-color": "#eab308",
-    "--info-color": "#0ea5e9",
-    "--input-bg": "#ffffff",
-    "--input-border": "#d6d3d1",
-    "--input-focus": "#65a30d",
-    "--shadow-sm": "0 1px 2px rgba(0,0,0,0.05)",
-    "--shadow-md": "0 4px 6px -1px rgba(0,0,0,0.1)",
-    "--radius-sm": "6px",
-    "--radius-md": "8px",
-    "--radius-lg": "12px",
-  },
+const darkOverrides = {
+  "--neutral-50": "#fafafa",
+  "--neutral-100": "#f4f4f5",
+  "--neutral-200": "#e4e4e7",
+  "--neutral-300": "#d4d4d8",
+  "--neutral-400": "#bbbbc2",
+  "--neutral-500": "#71717a",
+  "--neutral-600": "#52525b",
+  "--neutral-700": "#3f3f46",
+  "--neutral-800": "#27272a",
+  "--neutral-900": "#18181b",
+  "--neutral-950": "#0f0f11",
+
+  "--background-fill-primary": "#0f0f11",
+  "--background-fill-secondary": "#18181b",
+  "--body-text-color": "#f4f4f5",
+  "--body-text-color-subdued": "#bbbbc2",
+  "--border-color-primary": "#3f3f46",
+  "--color-accent": "#f97316",
+  "--color-accent-soft": "#3f3f46",
+
+  "--input-background-fill": "#27272a",
+  "--input-background-fill-focus": "#f97316",
+  "--input-border-color": "#3f3f46",
+  "--input-border-color-focus": "#3f3f46",
+  "--input-placeholder-color": "#71717a",
+  "--input-shadow": "none",
+  "--input-shadow-focus": "none",
+
+  "--checkbox-background-color": "#27272a",
+  "--checkbox-background-color-focus": "#27272a",
+  "--checkbox-background-color-hover": "#27272a",
+  "--checkbox-background-color-selected": "#f97316",
+  "--checkbox-border-color": "#3f3f46",
+  "--checkbox-border-color-focus": "#f97316",
+  "--checkbox-border-color-hover": "#52525b",
+  "--checkbox-border-color-selected": "#f97316",
+
+  "--table-even-background-fill": "#0f0f11",
+  "--table-odd-background-fill": "#18181b",
+
+  "--slider-color": "#f97316",
+
+  "--shadow-drop": "rgba(0,0,0,0.15) 0px 1px 2px 0px",
+  "--shadow-drop-lg":
+    "0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.2)",
+  "--shadow-inset": "rgba(0,0,0,0.15) 0px 2px 4px 0px inset",
+
+  "--block-title-text-color": "#bbbbc2",
+  "--block-info-text-color": "#71717a",
+
+  "--primary-50": "#3f3f46",
 };
 
 export function applyTheme(themeName) {
-  const vars = themes[themeName] || themes.default;
   const root = document.documentElement;
-  Object.entries(vars).forEach(([key, value]) => {
-    root.style.setProperty(key, value);
-  });
+  if (themeName === "dark") {
+    Object.entries(darkOverrides).forEach(([key, value]) => {
+      root.style.setProperty(key, value);
+    });
+  } else {
+    Object.keys(darkOverrides).forEach((key) => {
+      root.style.removeProperty(key);
+    });
+  }
 }
 
 export function detectSystemTheme() {

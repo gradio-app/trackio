@@ -202,7 +202,7 @@ export function downsample(data, x, y, colorField, xLim) {
   return { data: result, xLim: updatedXLim };
 }
 
-export function groupMetricsByPrefix(metrics) {
+export function groupMetricsByPrefix(metrics, plotOrder = []) {
   const noPrefix = [];
   const withPrefix = {};
 
@@ -224,18 +224,78 @@ export function groupMetricsByPrefix(metrics) {
     }
   });
 
+  function sortMetrics(items) {
+    if (!plotOrder || plotOrder.length === 0) return items.sort();
+    const ordered = [];
+    const remaining = [...items];
+    for (const pattern of plotOrder) {
+      for (let i = remaining.length - 1; i >= 0; i--) {
+        if (matchesPattern(remaining[i], pattern)) {
+          ordered.push(remaining[i]);
+          remaining.splice(i, 1);
+        }
+      }
+    }
+    remaining.sort();
+    return [...ordered, ...remaining];
+  }
+
+  function matchesPattern(metric, pattern) {
+    if (pattern === metric) return true;
+    if (pattern.endsWith("/*") && metric.startsWith(pattern.slice(0, -1))) return true;
+    if (pattern.includes("*")) {
+      const re = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
+      return re.test(metric);
+    }
+    return false;
+  }
+
+  function getGroupPriority(groupName) {
+    if (!plotOrder || plotOrder.length === 0) return Infinity;
+    for (let i = 0; i < plotOrder.length; i++) {
+      const patternGroup = plotOrder[i].includes("/") ? plotOrder[i].split("/")[0] : "charts";
+      if (patternGroup === groupName) return i;
+    }
+    return Infinity;
+  }
+
   const groups = {};
   if (noPrefix.length > 0) {
-    groups["charts"] = { direct: noPrefix.sort(), subgroups: {} };
+    groups["charts"] = { direct: sortMetrics(noPrefix), subgroups: {} };
   }
-  Object.keys(withPrefix)
-    .sort()
-    .forEach((prefix) => {
-      const g = withPrefix[prefix];
-      g.direct.sort();
-      Object.keys(g.subgroups).forEach((s) => g.subgroups[s].sort());
-      groups[prefix] = g;
+
+  const prefixKeys = Object.keys(withPrefix);
+  prefixKeys.sort((a, b) => {
+    const pa = getGroupPriority(a);
+    const pb = getGroupPriority(b);
+    if (pa !== pb) return pa - pb;
+    return a.localeCompare(b);
+  });
+
+  prefixKeys.forEach((prefix) => {
+    const g = withPrefix[prefix];
+    g.direct = sortMetrics(g.direct);
+    Object.keys(g.subgroups).forEach((s) => {
+      g.subgroups[s] = sortMetrics(g.subgroups[s]);
     });
+    groups[prefix] = g;
+  });
+
+  if ("charts" in groups) {
+    const chartsPriority = getGroupPriority("charts");
+    if (chartsPriority < Infinity) {
+      const entries = Object.entries(groups);
+      entries.sort(([a], [b]) => {
+        const pa = a === "charts" ? chartsPriority : getGroupPriority(a);
+        const pb = b === "charts" ? chartsPriority : getGroupPriority(b);
+        if (pa !== pb) return pa - pb;
+        return a.localeCompare(b);
+      });
+      const sorted = {};
+      entries.forEach(([k, v]) => { sorted[k] = v; });
+      return sorted;
+    }
+  }
 
   return groups;
 }

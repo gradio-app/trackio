@@ -136,8 +136,16 @@ export const DEFAULT_COLORS = [
   "#06B6D4",
 ];
 
+let _colorPalette = DEFAULT_COLORS;
+
+export function setColorPalette(palette) {
+  if (Array.isArray(palette) && palette.length > 0) {
+    _colorPalette = palette;
+  }
+}
+
 export function getColorForIndex(i) {
-  return DEFAULT_COLORS[i % DEFAULT_COLORS.length];
+  return _colorPalette[i % _colorPalette.length];
 }
 
 export function buildColorMap(runs) {

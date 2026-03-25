@@ -30,6 +30,7 @@
     runMutationAllowed = true,
     mutationAuth = "local",
     projectLocked = false,
+    logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
   } = $props();
 
   let navTick = $state(0);
@@ -101,10 +102,10 @@
         <picture>
           <source
             media="(prefers-color-scheme: dark)"
-            srcset="/static/trackio/trackio_logo_type_dark_transparent.png"
+            srcset={logoUrls.dark}
           />
           <img
-            src="/static/trackio/trackio_logo_type_light_transparent.png"
+            src={logoUrls.light}
             alt="Trackio"
             class="logo"
           />

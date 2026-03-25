@@ -25,6 +25,7 @@
     metricFilter = "",
     showHeaders = true,
     appBootstrapReady = false,
+    plotOrder = [],
   } = $props();
 
   let masterData = $state([]);
@@ -44,7 +45,7 @@
     let filtered = metricFilter
       ? filterMetricsByRegex(metrics, metricFilter)
       : metrics;
-    return groupMetricsByPrefix(filtered);
+    return groupMetricsByPrefix(filtered, plotOrder);
   });
 
   let groupNames = $derived(Object.keys(metricGroups));

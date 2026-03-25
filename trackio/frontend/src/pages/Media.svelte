@@ -3,7 +3,7 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getLogs, getMediaUrl } from "../lib/api.js";
 
-  let { project = null, selectedRun = $bindable(null) } = $props();
+  let { project = null, selectedRun = $bindable(null), tableTruncateLength = 250 } = $props();
 
   let mediaItems = $state({ images: [], videos: [], audios: [], tables: [] });
   let loading = $state(false);
@@ -150,7 +150,11 @@
               <GradioTable
                 label="{tbl.key} (step {tbl.step})"
                 headers={Object.keys(tbl._value[0])}
-                rows={tbl._value.map(row => Object.values(row))}
+                rows={tbl._value.map(row => Object.values(row).map(v =>
+                  typeof v === "string" && v.length > tableTruncateLength
+                    ? v.slice(0, tableTruncateLength) + "…"
+                    : v
+                ))}
               />
             {/if}
           </div>

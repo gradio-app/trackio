@@ -38,6 +38,14 @@
     return entries;
   });
 
+  function cssVar(name, fallback) {
+    return (
+      getComputedStyle(document.documentElement)
+        .getPropertyValue(name)
+        .trim() || fallback
+    );
+  }
+
   function buildSpec() {
     const hasColor =
       colorField && data.length > 0 && Object.hasOwn(data[0], colorField);
@@ -101,7 +109,11 @@
 
     return {
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      title: { text: title, fontSize: 13, color: "#374151" },
+      title: {
+        text: title,
+        fontSize: 13,
+        color: cssVar("--body-text-color", "#374151"),
+      },
       width: "container",
       height: fullscreen ? "container" : 250,
       autosize: { type: "fit", contains: "padding" },
@@ -124,9 +136,9 @@
       config: {
         background: "transparent",
         axis: {
-          labelColor: "#6b7280",
-          titleColor: "#374151",
-          gridColor: "#f3f4f6",
+          labelColor: cssVar("--body-text-color-subdued", "#6b7280"),
+          titleColor: cssVar("--body-text-color", "#374151"),
+          gridColor: cssVar("--border-color-primary", "#f3f4f6"),
         },
         view: {
           stroke: "transparent",
@@ -616,7 +628,7 @@
     border: none;
     border-radius: 4px;
     background: transparent;
-    color: #334155;
+    color: var(--body-text-color-subdued, #334155);
     cursor: pointer;
     opacity: 0.92;
     transform: translateY(6px);
@@ -625,8 +637,8 @@
   }
   .reset-zoom-btn:hover {
     opacity: 1;
-    color: #0f172a;
-    background: rgba(226, 232, 240, 0.85);
+    color: var(--body-text-color, #0f172a);
+    background: var(--background-fill-secondary, rgba(226, 232, 240, 0.85));
     transform: translateY(6px);
   }
   .reset-zoom-btn svg {
