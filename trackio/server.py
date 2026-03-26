@@ -551,6 +551,7 @@ def get_settings() -> dict:
         "table_truncate_length": int(
             os.environ.get("TRACKIO_TABLE_TRUNCATE_LENGTH", "250")
         ),
+        "media_dir": str(utils.MEDIA_DIR),
     }
 
 
@@ -566,6 +567,7 @@ def get_project_files(project: str) -> list[dict]:
                 {
                     "name": str(relative),
                     "path": str(file_path),
+                    "size": file_path.stat().st_size,
                 }
             )
     return results

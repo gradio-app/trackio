@@ -41,6 +41,7 @@ def test_runs_plots_images_are_displayed(temp_dir):
             locator = page.locator(".vega-embed")
             expect(locator).to_have_count(0)
 
+            checkbox.check()
             page.locator(".nav-link", has_text="Media").click()
             page.wait_for_load_state("networkidle")
             gallery = page.locator(".gallery")

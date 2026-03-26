@@ -4,6 +4,7 @@ const BASE = window.__trackio_base || "";
 
 let _staticMode = null;
 let _staticModePromise = null;
+let _mediaDir = "";
 
 async function _detectStaticMode() {
   try {
@@ -183,12 +184,21 @@ export async function renameRun(project, oldName, newName) {
   });
 }
 
+export function setMediaDir(dir) {
+  _mediaDir = dir ? dir + "/" : "";
+}
+
 export function getAssetUrl(path) {
   if (_staticMode) return staticApi.getAssetUrl(path);
-  return `${BASE}/gradio_api/file=${path}`;
+  return `${BASE}/gradio_api/file=${_mediaDir}${path}`;
 }
 
 export function getMediaUrl(path) {
+  if (_staticMode) return staticApi.getMediaUrl(path);
+  return `${BASE}/gradio_api/file=${_mediaDir}${path}`;
+}
+
+export function getFileUrl(path) {
   if (_staticMode) return staticApi.getMediaUrl(path);
   return `${BASE}/gradio_api/file=${path}`;
 }
@@ -196,4 +206,9 @@ export function getMediaUrl(path) {
 export async function getReadOnlySource() {
   if (await isStaticMode()) return staticApi.getReadOnlySource();
   return null;
+}
+
+export async function fetchMediaBlob(path) {
+  if (_staticMode) return staticApi.fetchMediaBlob(path);
+  return getMediaUrl(path);
 }

@@ -1,7 +1,6 @@
 <script>
   import { onMount } from "svelte";
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
-  import ColoredRunRadioGroup from "./ColoredRunRadioGroup.svelte";
   import Dropdown from "./Dropdown.svelte";
   import GradioCheckbox from "./GradioCheckbox.svelte";
   import GradioSlider from "./GradioSlider.svelte";
@@ -17,8 +16,6 @@
     selectedProject = $bindable(null),
     runs = [],
     selectedRuns = $bindable([]),
-    mediaSelectedRun = $bindable(null),
-    reportsSelectedRun = $bindable(null),
     smoothing = $bindable(10),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
@@ -50,10 +47,6 @@
     return `${window.location.origin}/oauth/hf/start`;
   });
 
-  let showCompactRunPicker = $derived(
-    variant === "compact" &&
-      (currentPage === "media" || currentPage === "reports"),
-  );
 
   let availableXAxes = $derived.by(() => {
     let axes = ["step", "time"];
@@ -201,22 +194,6 @@
             placeholder="e.g., loss|ndcg@10|gpu"
             bind:value={metricFilter}
           />
-        </div>
-      {:else if showCompactRunPicker}
-        <div class="section">
-          <span class="section-label">Run</span>
-          {#if currentPage === "media"}
-            <ColoredRunRadioGroup
-              {runs}
-              bind:value={mediaSelectedRun}
-            />
-          {:else if currentPage === "reports"}
-            <ColoredRunRadioGroup
-              {runs}
-              bind:value={reportsSelectedRun}
-              includeAllOption={true}
-            />
-          {/if}
         </div>
       {/if}
       </div>

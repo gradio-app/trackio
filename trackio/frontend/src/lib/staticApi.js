@@ -6,6 +6,7 @@ let systemData = null;
 let configsData = null;
 let runsData = null;
 let settingsData = null;
+let fileListData = null;
 
 function datasetUrl(filename) {
   return `https://huggingface.co/datasets/${config.dataset_id}/resolve/main/${filename}`;
@@ -84,15 +85,7 @@ const STRUCTURAL_KEYS = new Set([
 
 function parseRows(raw) {
   if (!raw || raw.length === 0) return { rows: [], columns: [] };
-  const columns = Object.keys(raw[0]);
-  const rows = raw.map((r) => {
-    const obj = {};
-    for (const col of columns) {
-      obj[col] = r[col];
-    }
-    return obj;
-  });
-  return { rows, columns };
+  return { rows: raw, columns: Object.keys(raw[0]) };
 }
 
 export async function getAllProjects() {
@@ -293,7 +286,25 @@ export async function getSettings() {
 }
 
 export async function getProjectFiles() {
-  return [];
+  if (fileListData) return fileListData;
+  const resp = await fetch(
+    `https://huggingface.co/api/datasets/${config.dataset_id}`,
+    { headers: authHeaders() },
+  );
+  if (!resp.ok) {
+    fileListData = [];
+    return fileListData;
+  }
+  const info = await resp.json();
+  const siblings = Array.isArray(info?.siblings) ? info.siblings : [];
+  fileListData = siblings
+    .map((entry) => entry?.rfilename)
+    .filter((name) => typeof name === "string" && name.startsWith("media/files/"))
+    .map((name) => ({
+      name: name.split("/").at(-1) ?? name,
+      path: name.slice("media/".length),
+    }));
+  return fileListData;
 }
 
 export async function getRunMutationStatus() {
@@ -308,10 +319,34 @@ export async function renameRun() {
   throw new Error("Not supported in static mode");
 }
 
+function stripProjectPrefix(path) {
+  if (config.project && path.startsWith(config.project + "/")) {
+    return path.slice(config.project.length + 1);
+  }
+  return path;
+}
+
+const blobCache = new Map();
+
+export async function fetchMediaBlob(path) {
+  const relative = stripProjectPrefix(path);
+  const url = datasetUrl(`media/${relative}`);
+  if (blobCache.has(url)) return blobCache.get(url);
+
+  const resp = await fetch(url, { headers: authHeaders() });
+  if (!resp.ok) return url;
+  const blob = await resp.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  blobCache.set(url, blobUrl);
+  return blobUrl;
+}
+
 export function getAssetUrl(path) {
-  return datasetUrl(`media/${path}`);
+  const relative = stripProjectPrefix(path);
+  return datasetUrl(`media/${relative}`);
 }
 
 export function getMediaUrl(path) {
-  return datasetUrl(`media/${path}`);
+  const relative = stripProjectPrefix(path);
+  return datasetUrl(`media/${relative}`);
 }

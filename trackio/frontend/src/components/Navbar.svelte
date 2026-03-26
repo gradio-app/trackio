@@ -5,7 +5,7 @@
     { id: "metrics", label: "Metrics" },
     { id: "system", label: "System Metrics" },
     { id: "media", label: "Media & Tables" },
-    { id: "reports", label: "Reports" },
+    { id: "reports", label: "Alerts & Reports" },
     { id: "runs", label: "Runs" },
     { id: "files", label: "Files" },
   ];
