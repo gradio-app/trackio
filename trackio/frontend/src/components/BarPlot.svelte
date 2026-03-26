@@ -4,14 +4,10 @@
 
   let {
     data = [],
-    x = "step",
     y = "",
     colorField = "run",
     colorMap = {},
     title = "",
-    xLim = null,
-    onSelect = null,
-    onResetZoom = null,
     draggable = false,
     ondragstart = null,
     ondragover = null,
@@ -38,6 +34,18 @@
     return entries;
   });
 
+  function getBarData() {
+    const runValues = new Map();
+    for (const d of data) {
+      if (d.data_type === "smoothed") continue;
+      const run = d[colorField];
+      if (run && d[y] != null) {
+        runValues.set(run, d[y]);
+      }
+    }
+    return Array.from(runValues, ([run, value]) => ({ run, value }));
+  }
+
   function cssVar(name, fallback) {
     return (
       getComputedStyle(document.documentElement)
@@ -46,64 +54,9 @@
     );
   }
 
-  function buildSpec() {
-    const hasColor =
-      colorField && data.length > 0 && Object.hasOwn(data[0], colorField);
-    const allRuns = hasColor
-      ? [...new Set(data.map((d) => d[colorField]))]
-      : [];
-    const uniqueRuns = [...new Set(allRuns)];
-    const colorDomain = uniqueRuns;
-    const colorRange = uniqueRuns.map(
-      (r) => colorMap[r] || "#999",
-    );
-
-    const originalData = data.filter(
-      (d) => d.data_type === "original" || !d.data_type,
-    );
-    const smoothedData = data.filter((d) => d.data_type === "smoothed");
-    const hasSmoothed = smoothedData.length > 0;
-
-    const xEnc = {
-      field: x,
-      type: "quantitative",
-      scale: { zero: false, ...(xLim ? { domain: [xLim[0], xLim[1]] } : {}) },
-    };
-    const yEnc = { field: y, type: "quantitative" };
-    const colorEnc = hasColor
-      ? {
-          color: {
-            field: colorField,
-            type: "nominal",
-            scale: { domain: colorDomain, range: colorRange },
-            legend: null,
-          },
-        }
-      : {};
-
-    const layers = [];
-
-    if (hasSmoothed) {
-      layers.push({
-        data: { values: originalData },
-        mark: { type: "line", clip: true, strokeWidth: 1, opacity: 0.3, point: { size: 20, opacity: 0.3 } },
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
-        name: "original",
-      });
-      layers.push({
-        data: { values: smoothedData },
-        mark: { type: "line", clip: true, strokeWidth: 2, point: { size: 20 } },
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
-        name: "plot",
-      });
-    } else {
-      layers.push({
-        data: { values: data },
-        mark: { type: "line", clip: true, strokeWidth: 2, point: { size: 20 } },
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
-        name: "plot",
-      });
-    }
+  function buildSpec(barData) {
+    const runs = barData.map((d) => d.run);
+    const colorRange = runs.map((r) => colorMap[r] || "#999");
 
     const yTitle = y.includes("/") ? y.split("/").pop() : y;
 
@@ -117,22 +70,40 @@
       width: "container",
       height: fullscreen ? "container" : 250,
       autosize: { type: "fit", contains: "padding" },
-      layer: layers,
-      ...(onSelect
-        ? {
-            params: [
-              {
-                name: "brush",
-                select: {
-                  type: "interval",
-                  encodings: ["x"],
-                  mark: { fill: "gray", fillOpacity: 0.3, stroke: "none" },
-                },
-                views: ["plot"],
-              },
-            ],
-          }
-        : {}),
+      data: { values: barData },
+      mark: {
+        type: "bar",
+        cornerRadiusTopLeft: 3,
+        cornerRadiusTopRight: 3,
+      },
+      encoding: {
+        x: {
+          field: "run",
+          type: "nominal",
+          sort: runs,
+          axis: {
+            labelAngle: runs.length > 4 ? -45 : 0,
+            labelLimit: 120,
+          },
+          title: null,
+        },
+        y: {
+          field: "value",
+          type: "quantitative",
+          title: yTitle,
+          scale: { zero: true },
+        },
+        color: {
+          field: "run",
+          type: "nominal",
+          scale: { domain: runs, range: colorRange },
+          legend: null,
+        },
+        tooltip: [
+          { field: "run", type: "nominal", title: "Run" },
+          { field: "value", type: "quantitative", title: yTitle },
+        ],
+      },
       config: {
         background: "transparent",
         axis: {
@@ -143,12 +114,6 @@
         view: {
           stroke: "transparent",
         },
-        mark: {
-          cursor: onSelect ? "crosshair" : undefined,
-        },
-      },
-      encoding: {
-        y: { title: yTitle },
       },
     };
   }
@@ -157,7 +122,10 @@
     await tick();
     if (!container || !data || data.length === 0 || !y) return;
 
-    const spec = buildSpec();
+    const barData = getBarData();
+    if (barData.length === 0) return;
+
+    const spec = buildSpec(barData);
 
     try {
       if (view) {
@@ -172,43 +140,23 @@
       requestAnimationFrame(() => {
         result.view.resize();
       });
-
-      if (onSelect) {
-        let lastSelectTime = 0;
-        let debounceTimer = null;
-        result.view.addSignalListener("brush", (_, value) => {
-          if (Date.now() - lastSelectTime < 1000) return;
-          if (!value || Object.keys(value).length === 0) return;
-          clearTimeout(debounceTimer);
-          const range = value[Object.keys(value)[0]];
-          if (!range || range.length !== 2) return;
-          debounceTimer = setTimeout(() => {
-            lastSelectTime = Date.now();
-            onSelect(range);
-          }, 250);
-        });
-      }
     } catch (e) {
       console.error("Vega render error:", e);
     }
   }
 
   function downloadCSV() {
-    if (!data || data.length === 0) return;
-    const originals = data.filter((d) => d.data_type === "original" || !d.data_type);
-    if (originals.length === 0) return;
-
-    const cols = Object.keys(originals[0]).filter((k) => k !== "data_type");
-    const header = cols.map((c) => /[,"]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c).join(",");
-    const rows = originals.map((row) =>
-      cols.map((c) => {
-        const v = row[c];
-        if (v == null) return "";
-        if (typeof v === "string" && (v.includes(",") || v.includes('"')))
-          return `"${v.replace(/"/g, '""')}"`;
-        return v;
-      }).join(","),
-    );
+    const barData = getBarData();
+    if (barData.length === 0) return;
+    const yHeader = /[,"]/.test(y) ? `"${y.replace(/"/g, '""')}"` : y;
+    const header = "run," + yHeader;
+    const rows = barData.map((row) => {
+      const run =
+        typeof row.run === "string" && (row.run.includes(",") || row.run.includes('"'))
+          ? `"${row.run.replace(/"/g, '""')}"`
+          : row.run;
+      return `${run},${row.value}`;
+    });
     const csv = [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -313,9 +261,7 @@
   $effect(() => {
     data;
     y;
-    x;
     colorMap;
-    xLim;
     title;
     fullscreen;
     container;
@@ -357,7 +303,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="plot-container"
+  class="plot-container bar-plot"
   class:hidden-plot={fullscreen}
   bind:this={plotContainer}
   draggable={draggable ? "true" : undefined}
@@ -370,8 +316,8 @@
       type="button"
       class="toolbar-btn"
       onclick={downloadCSV}
-      title="Download this plot’s data as a CSV file"
-      aria-label="Download this plot’s data as a CSV file"
+      title="Download this plot's data as a CSV file"
+      aria-label="Download this plot's data as a CSV file"
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
@@ -397,8 +343,8 @@
       type="button"
       class="toolbar-btn"
       onclick={toggleFullscreen}
-      title="Open this chart in the browser’s fullscreen mode"
-      aria-label="Open this chart in the browser’s fullscreen mode"
+      title="Open this chart in the browser's fullscreen mode"
+      aria-label="Open this chart in the browser's fullscreen mode"
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="15 3 21 3 21 9"/>
@@ -424,22 +370,6 @@
   {#if !fullscreen}
     <div class="plot-chart-wrap">
       <div class="plot" bind:this={container}></div>
-      {#if xLim && onResetZoom}
-        <button
-          type="button"
-          class="reset-zoom-btn"
-          onclick={(e) => {
-            e.stopPropagation();
-            onResetZoom();
-          }}
-          title="Reset horizontal zoom: show the full range on the x-axis"
-          aria-label="Reset horizontal zoom: show the full range on the x-axis"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 12h16M4 12l3-3M4 12l3 3M20 12l-3-3M20 12l-3 3"/>
-          </svg>
-        </button>
-      {/if}
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend">
@@ -462,8 +392,8 @@
         type="button"
         class="toolbar-btn"
         onclick={downloadCSV}
-        title="Download this plot’s data as a CSV file"
-        aria-label="Download this plot’s data as a CSV file"
+        title="Download this plot's data as a CSV file"
+        aria-label="Download this plot's data as a CSV file"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
@@ -503,22 +433,6 @@
     <div class="fullscreen-chart-wrap">
       <div class="plot-chart-wrap plot-chart-wrap--fs">
         <div class="plot fullscreen-plot" bind:this={container}></div>
-        {#if xLim && onResetZoom}
-          <button
-            type="button"
-            class="reset-zoom-btn"
-            onclick={(e) => {
-              e.stopPropagation();
-              onResetZoom();
-            }}
-            title="Reset horizontal zoom: show the full range on the x-axis"
-            aria-label="Reset horizontal zoom: show the full range on the x-axis"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 12h16M4 12l3-3M4 12l3 3M20 12l-3-3M20 12l-3 3"/>
-            </svg>
-          </button>
-        {/if}
       </div>
     </div>
     {#if legendEntries.length > 0}
@@ -613,38 +527,6 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-  }
-  .reset-zoom-btn {
-    position: absolute;
-    bottom: 1px;
-    right: 1px;
-    z-index: 6;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0;
-    min-width: 52px;
-    padding: 5px 12px 5px 10px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--body-text-color-subdued, #334155);
-    cursor: pointer;
-    opacity: 0.92;
-    transform: translateY(6px);
-    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
-    box-shadow: none;
-  }
-  .reset-zoom-btn:hover {
-    opacity: 1;
-    color: var(--body-text-color, #0f172a);
-    background: var(--background-fill-secondary, rgba(226, 232, 240, 0.85));
-    transform: translateY(6px);
-  }
-  .reset-zoom-btn svg {
-    display: block;
-    flex-shrink: 0;
-    filter: drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.95));
   }
   .plot {
     width: 100%;
