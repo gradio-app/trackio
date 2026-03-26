@@ -82,14 +82,6 @@ const STRUCTURAL_KEYS = new Set([
   "created_at",
 ]);
 
-function rowToObj(row, columns) {
-  const obj = {};
-  for (let i = 0; i < columns.length; i++) {
-    obj[columns[i]] = row[i];
-  }
-  return obj;
-}
-
 function parseRows(raw) {
   if (!raw || raw.length === 0) return { rows: [], columns: [] };
   const columns = Object.keys(raw[0]);

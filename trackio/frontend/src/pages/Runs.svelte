@@ -8,7 +8,6 @@
     project = null,
     runs = [],
     onRunsChanged = null,
-    spacesMode = false,
     runMutationAllowed = true,
   } = $props();
 

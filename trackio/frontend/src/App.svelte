@@ -389,7 +389,6 @@
           project={selectedProject}
           {runs}
           onRunsChanged={refreshRunsAndMutation}
-          spacesMode={mutationStatus.spaces}
           runMutationAllowed={mutationStatus.allowed}
         />
       {:else if currentPage === "run-detail"}
