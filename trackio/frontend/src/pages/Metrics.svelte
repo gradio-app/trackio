@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { getQueryParam } from "../lib/router.js";
   import LinePlot from "../components/LinePlot.svelte";
+  import BarPlot from "../components/BarPlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getLogs } from "../lib/api.js";
@@ -221,6 +222,22 @@
     const result = downsample(relevant, xColumn, metric, "run", xLim);
     return result.data;
   }
+
+  function isSinglePoint(metric) {
+    const originals = masterData.filter(
+      (r) => (r.data_type === "original" || !r.data_type) && r[metric] != null,
+    );
+    const countPerRun = new Map();
+    for (const r of originals) {
+      const run = r.run;
+      countPerRun.set(run, (countPerRun.get(run) || 0) + 1);
+    }
+    if (countPerRun.size === 0) return false;
+    for (const count of countPerRun.values()) {
+      if (count > 1) return false;
+    }
+    return true;
+  }
 </script>
 
 <div class="metrics-page">
@@ -266,21 +283,35 @@
           <div class="plot-grid">
             {#each orderedDirect as metric, i}
               {@const plotData = getPlotData(metric)}
+              {@const useBar = isSinglePoint(metric)}
               {#if plotData.length > 0}
-                <LinePlot
-                  data={plotData}
-                  x={xColumn}
-                  y={metric}
-                  title={metric}
-                  {colorMap}
-                  {xLim}
-                  onSelect={handlePlotSelect}
-                  onResetZoom={handleResetZoom}
-                  draggable={true}
-                  ondragstart={(e) => handleDragStart(directKey, i, e)}
-                  ondragover={(e) => handleDragOver(directKey, i, e)}
-                  ondrop={(e) => handleDrop(directKey, i, orderedDirect, e)}
-                />
+                {#if useBar}
+                  <BarPlot
+                    data={plotData}
+                    y={metric}
+                    title={metric}
+                    {colorMap}
+                    draggable={true}
+                    ondragstart={(e) => handleDragStart(directKey, i, e)}
+                    ondragover={(e) => handleDragOver(directKey, i, e)}
+                    ondrop={(e) => handleDrop(directKey, i, orderedDirect, e)}
+                  />
+                {:else}
+                  <LinePlot
+                    data={plotData}
+                    x={xColumn}
+                    y={metric}
+                    title={metric}
+                    {colorMap}
+                    {xLim}
+                    onSelect={handlePlotSelect}
+                    onResetZoom={handleResetZoom}
+                    draggable={true}
+                    ondragstart={(e) => handleDragStart(directKey, i, e)}
+                    ondragover={(e) => handleDragOver(directKey, i, e)}
+                    ondrop={(e) => handleDrop(directKey, i, orderedDirect, e)}
+                  />
+                {/if}
               {/if}
             {/each}
           </div>
@@ -297,21 +328,35 @@
             <div class="plot-grid">
               {#each orderedSub as metric, i}
                 {@const plotData = getPlotData(metric)}
+                {@const useBar = isSinglePoint(metric)}
                 {#if plotData.length > 0}
-                  <LinePlot
-                    data={plotData}
-                    x={xColumn}
-                    y={metric}
-                    title={metric}
-                    {colorMap}
-                    {xLim}
-                    onSelect={handlePlotSelect}
-                    onResetZoom={handleResetZoom}
-                    draggable={true}
-                    ondragstart={(e) => handleDragStart(subKey, i, e)}
-                    ondragover={(e) => handleDragOver(subKey, i, e)}
-                    ondrop={(e) => handleDrop(subKey, i, orderedSub, e)}
-                  />
+                  {#if useBar}
+                    <BarPlot
+                      data={plotData}
+                      y={metric}
+                      title={metric}
+                      {colorMap}
+                      draggable={true}
+                      ondragstart={(e) => handleDragStart(subKey, i, e)}
+                      ondragover={(e) => handleDragOver(subKey, i, e)}
+                      ondrop={(e) => handleDrop(subKey, i, orderedSub, e)}
+                    />
+                  {:else}
+                    <LinePlot
+                      data={plotData}
+                      x={xColumn}
+                      y={metric}
+                      title={metric}
+                      {colorMap}
+                      {xLim}
+                      onSelect={handlePlotSelect}
+                      onResetZoom={handleResetZoom}
+                      draggable={true}
+                      ondragstart={(e) => handleDragStart(subKey, i, e)}
+                      ondragover={(e) => handleDragOver(subKey, i, e)}
+                      ondrop={(e) => handleDrop(subKey, i, orderedSub, e)}
+                    />
+                  {/if}
                 {/if}
               {/each}
             </div>
