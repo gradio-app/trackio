@@ -16,6 +16,7 @@
     getAlerts,
     getRunMutationStatus,
     getSettings,
+    getReadOnlySource,
     isStaticMode,
   } from "./lib/api.js";
   import { setColorPalette } from "./lib/stores.js";
@@ -54,6 +55,7 @@
   let logoUrls = $state({ light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" });
   let plotOrder = $state([]);
   let tableTruncateLength = $state(250);
+  let readOnlySource = $state(null);
 
   function handleNavigate(page) {
     currentPage = page;
@@ -261,6 +263,7 @@
       } else {
         realtimeEnabled = false;
         mutationStatus = { spaces: false, allowed: false, auth: "static" };
+        readOnlySource = await getReadOnlySource();
       }
 
       try {
@@ -332,6 +335,7 @@
       spacesMode={mutationStatus.spaces}
       runMutationAllowed={mutationStatus.allowed}
       mutationAuth={mutationStatus.auth}
+      {readOnlySource}
       {projects}
       projectLocked={projectLocked}
       bind:selectedProject

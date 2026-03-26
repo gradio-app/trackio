@@ -22,6 +22,13 @@ export async function initialize(cfg) {
   config = cfg;
 }
 
+export function getReadOnlySource() {
+  if (!config || config.mode !== "static" || !config.dataset_id) return null;
+  return {
+    url: `https://huggingface.co/datasets/${config.dataset_id}`,
+  };
+}
+
 async function getMetricsData() {
   if (metricsData) return metricsData;
   metricsData = await readParquet(datasetUrl("metrics.parquet"), authHeaders());
@@ -45,7 +52,7 @@ async function getConfigsData() {
 
 async function getRunsJson() {
   if (runsData) return runsData;
-  const resp = await fetch(datasetUrl("runs.json"), authHeaders());
+  const resp = await fetch(datasetUrl("runs.json"), { headers: authHeaders() });
   if (!resp.ok) {
     runsData = [];
     return runsData;
@@ -56,7 +63,7 @@ async function getRunsJson() {
 
 async function getSettingsJson() {
   if (settingsData) return settingsData;
-  const resp = await fetch(datasetUrl("settings.json"), authHeaders());
+  const resp = await fetch(datasetUrl("settings.json"), { headers: authHeaders() });
   if (!resp.ok) {
     settingsData = {};
     return settingsData;

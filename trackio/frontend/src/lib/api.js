@@ -192,3 +192,8 @@ export function getMediaUrl(path) {
   if (_staticMode) return staticApi.getMediaUrl(path);
   return `${BASE}/gradio_api/file=${path}`;
 }
+
+export async function getReadOnlySource() {
+  if (await isStaticMode()) return staticApi.getReadOnlySource();
+  return null;
+}

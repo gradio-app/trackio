@@ -27,6 +27,30 @@ SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 
 
+def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1.5):
+    delay = initial_delay
+    for attempt in range(1, retries + 1):
+        try:
+            return fn()
+        except ReadTimeout:
+            if attempt == retries:
+                raise
+            print(
+                f"* {op_name} timed out (attempt {attempt}/{retries}). Retrying in {delay:.1f}s..."
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 12)
+        except HfHubHTTPError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status is None or status < 500 or attempt == retries:
+                raise
+            print(
+                f"* {op_name} failed with HTTP {status} (attempt {attempt}/{retries}). Retrying in {delay:.1f}s..."
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 12)
+
+
 def _get_source_install_dependencies() -> str:
     """Get trackio dependencies from pyproject.toml for source installs."""
     trackio_path = files("trackio")
@@ -463,10 +487,13 @@ def upload_dataset_for_static(
             dest = output_dir / "media"
             shutil.copytree(media_dir, dest)
 
-        hf_api.upload_folder(
-            repo_id=dataset_id,
-            repo_type="dataset",
-            folder_path=str(output_dir),
+        _retry_hf_write(
+            "Dataset upload",
+            lambda: hf_api.upload_folder(
+                repo_id=dataset_id,
+                repo_type="dataset",
+                folder_path=str(output_dir),
+            ),
         )
 
     print(f"* Dataset uploaded: https://huggingface.co/datasets/{dataset_id}")
@@ -507,11 +534,14 @@ def deploy_as_static_space(
             raise ValueError(f"Failed to create Space: {e}")
 
     readme_content = "---\nsdk: static\npinned: false\ntags:\n - trackio\n---\n"
-    hf_api.upload_file(
-        path_or_fileobj=io.BytesIO(readme_content.encode("utf-8")),
-        path_in_repo="README.md",
-        repo_id=space_id,
-        repo_type="space",
+    _retry_hf_write(
+        "Static Space README upload",
+        lambda: hf_api.upload_file(
+            path_or_fileobj=io.BytesIO(readme_content.encode("utf-8")),
+            path_in_repo="README.md",
+            repo_id=space_id,
+            repo_type="space",
+        ),
     )
 
     trackio_path = files("trackio")
@@ -524,10 +554,13 @@ def deploy_as_static_space(
             "`cd trackio/frontend && npm ci && npm run build`, then deploy again."
         )
 
-    hf_api.upload_folder(
-        repo_id=space_id,
-        repo_type="space",
-        folder_path=str(dist_dir),
+    _retry_hf_write(
+        "Static Space frontend upload",
+        lambda: hf_api.upload_folder(
+            repo_id=space_id,
+            repo_type="space",
+            folder_path=str(dist_dir),
+        ),
     )
 
     import json as json_mod
@@ -541,20 +574,26 @@ def deploy_as_static_space(
     if hf_token and private:
         config["hf_token"] = hf_token
 
-    hf_api.upload_file(
-        path_or_fileobj=io.BytesIO(json_mod.dumps(config).encode("utf-8")),
-        path_in_repo="config.json",
-        repo_id=space_id,
-        repo_type="space",
+    _retry_hf_write(
+        "Static Space config upload",
+        lambda: hf_api.upload_file(
+            path_or_fileobj=io.BytesIO(json_mod.dumps(config).encode("utf-8")),
+            path_in_repo="config.json",
+            repo_id=space_id,
+            repo_type="space",
+        ),
     )
 
     assets_dir = Path(trackio.__file__).resolve().parent / "assets"
     if assets_dir.is_dir():
-        hf_api.upload_folder(
-            repo_id=space_id,
-            repo_type="space",
-            folder_path=str(assets_dir),
-            path_in_repo="assets",
+        _retry_hf_write(
+            "Static Space assets upload",
+            lambda: hf_api.upload_folder(
+                repo_id=space_id,
+                repo_type="space",
+                folder_path=str(assets_dir),
+                path_in_repo="assets",
+            ),
         )
 
     print(f"* Static Space deployed: {SPACE_URL.format(space_id=space_id)}")

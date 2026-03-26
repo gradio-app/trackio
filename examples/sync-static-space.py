@@ -17,7 +17,7 @@ import random
 
 import trackio
 
-PROJECT = "sync-demo"
+PROJECT = f"sync-demo-{random.randint(100000, 999999)}"
 EPOCHS = 15
 
 
@@ -28,7 +28,9 @@ def fake_loss(epoch, max_epochs):
 
 def fake_accuracy(epoch, max_epochs):
     progress = epoch / max_epochs
-    return min(0.95, 0.9 / (1 + math.exp(-6 * (progress - 0.5))) + random.gauss(0, 0.05))
+    return min(
+        0.95, 0.9 / (1 + math.exp(-6 * (progress - 0.5))) + random.gauss(0, 0.05)
+    )
 
 
 for run_idx in range(3):
@@ -38,13 +40,14 @@ for run_idx in range(3):
         config={"lr": 0.001 * (run_idx + 1), "epochs": EPOCHS},
     )
     for epoch in range(EPOCHS):
-        trackio.log({
-            "train/loss": round(fake_loss(epoch, EPOCHS), 4),
-            "train/accuracy": round(fake_accuracy(epoch, EPOCHS), 4),
-            "val/loss": round(fake_loss(epoch, EPOCHS) * 1.1, 4),
-        })
-
-trackio.finish()
+        trackio.log(
+            {
+                "train/loss": round(fake_loss(epoch, EPOCHS), 4),
+                "train/accuracy": round(fake_accuracy(epoch, EPOCHS), 4),
+                "val/loss": round(fake_loss(epoch, EPOCHS) * 1.1, 4),
+            }
+        )
+    trackio.finish()
 
 space_id = trackio.sync(project=PROJECT)
 print(f"Dashboard: https://huggingface.co/spaces/{space_id}")

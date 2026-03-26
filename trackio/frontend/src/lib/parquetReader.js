@@ -2,6 +2,15 @@ import { parquetRead } from "hyparquet";
 
 const cache = new Map();
 
+function coerceBigInts(row) {
+  const out = {};
+  for (const key in row) {
+    const v = row[key];
+    out[key] = typeof v === "bigint" ? Number(v) : v;
+  }
+  return out;
+}
+
 export async function readParquet(url, headers = {}) {
   if (cache.has(url)) return cache.get(url);
 
@@ -18,8 +27,9 @@ export async function readParquet(url, headers = {}) {
   let rows = [];
   await parquetRead({
     file: buffer,
+    rowFormat: "object",
     onComplete: (data) => {
-      rows = data;
+      rows = data.map(coerceBigInts);
     },
   });
 

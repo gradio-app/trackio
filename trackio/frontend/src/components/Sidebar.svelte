@@ -30,6 +30,7 @@
     spacesMode = false,
     runMutationAllowed = true,
     mutationAuth = "local",
+    readOnlySource = null,
     projectLocked = false,
     logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
   } = $props();
@@ -220,7 +221,14 @@
       {/if}
       </div>
 
-      {#if spacesMode && !runMutationAllowed}
+      {#if readOnlySource}
+        <div class="readonly-footer">
+          <span class="readonly-badge">READ ONLY</span>
+          <a class="readonly-link" href={readOnlySource.url} target="_blank" rel="noopener noreferrer">
+            Source: {readOnlySource.url}
+          </a>
+        </div>
+      {:else if spacesMode && !runMutationAllowed}
         <div class="oauth-footer">
           {#if mutationAuth === "oauth_insufficient"}
             <p class="oauth-line oauth-warn">
@@ -299,6 +307,39 @@
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid var(--border-color-primary, #e5e7eb);
+  }
+  .readonly-footer {
+    flex-shrink: 0;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color-primary, #e5e7eb);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .readonly-badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: var(--body-text-color-subdued, #6b7280);
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .readonly-link {
+    font-size: 12px;
+    color: var(--body-text-color-subdued, #6b7280);
+    text-decoration: none;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .readonly-link:hover {
+    color: var(--body-text-color, #1f2937);
+    text-decoration: underline;
   }
   .oauth-line {
     margin: 0;
