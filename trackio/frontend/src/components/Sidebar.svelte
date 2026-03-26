@@ -57,6 +57,15 @@
     open = !open;
   }
 
+  function setIndeterminate(node, value) {
+    node.indeterminate = value;
+    return {
+      update(newValue) {
+        node.indeterminate = newValue;
+      },
+    };
+  }
+
   let filteredRuns = $derived(
     filterText
       ? runs.filter((r) => r.toLowerCase().includes(filterText.toLowerCase()))
@@ -118,7 +127,23 @@
       {#if variant === "full"}
         <div class="section">
           <div class="runs-header">
-            <span class="section-label">Runs ({filteredRuns.length})</span>
+            <label class="select-all-label">
+              <input
+                type="checkbox"
+                class="select-all-cb"
+                checked={selectedRuns.length === filteredRuns.length && filteredRuns.length > 0}
+                use:setIndeterminate={selectedRuns.length > 0 && selectedRuns.length < filteredRuns.length}
+                onchange={() => {
+                  if (selectedRuns.length === filteredRuns.length) {
+                    selectedRuns = [];
+                  } else {
+                    selectedRuns = [...filteredRuns];
+                  }
+                  latestOnly = false;
+                }}
+              />
+              <span class="section-label">Runs ({filteredRuns.length})</span>
+            </label>
             <label class="latest-toggle">
               <span>Latest only</span>
               <input
@@ -145,56 +170,56 @@
           </div>
         </div>
 
-        <span class="section-label">Display Settings</span>
+        {#if currentPage === "metrics" || currentPage === "system"}
+          <span class="section-label">Display Settings</span>
 
-        <div class="section">
-          <GradioCheckbox
-            label="Refresh metrics realtime"
-            bind:checked={realtimeEnabled}
-          />
-          <GradioCheckbox
-            label="Show section headers"
-            bind:checked={showHeaders}
-          />
-        </div>
+          <div class="section">
+            <GradioCheckbox
+              label="Refresh metrics realtime"
+              bind:checked={realtimeEnabled}
+            />
+            <GradioCheckbox
+              label="Show section headers"
+              bind:checked={showHeaders}
+            />
+          </div>
 
+          <div class="section">
+            <GradioSlider
+              label="Smoothing Factor (0 = no smoothing)"
+              bind:value={smoothing}
+              min={0}
+              max={20}
+              step={1}
+            />
+          </div>
 
-        <div class="section">
-          <GradioSlider
-            label="Smoothing Factor (0 = no smoothing)"
-            bind:value={smoothing}
-            min={0}
-            max={20}
-            step={1}
-          />
-        </div>
+          <div class="section">
+            <Dropdown
+              label="X-axis"
+              choices={availableXAxes}
+              bind:value={xAxis}
+              filterable={false}
+            />
+            <GradioCheckbox
+              label="Log scale X-axis"
+              bind:checked={logScaleX}
+            />
+            <GradioCheckbox
+              label="Log scale Y-axis"
+              bind:checked={logScaleY}
+            />
+          </div>
 
-        <div class="section">
-          <Dropdown
-            label="X-axis"
-            choices={availableXAxes}
-            bind:value={xAxis}
-            filterable={false}
-          />
-          <GradioCheckbox
-            label="Log scale X-axis"
-            bind:checked={logScaleX}
-          />
-          <GradioCheckbox
-            label="Log scale Y-axis"
-            bind:checked={logScaleY}
-          />
-        </div>
-
-
-        <div class="section">
-          <GradioTextbox
-            label="Metric Filter"
-            info="Filter metrics using regex patterns. Leave empty to show all metrics."
-            placeholder="e.g., loss|ndcg@10|gpu"
-            bind:value={metricFilter}
-          />
-        </div>
+          <div class="section">
+            <GradioTextbox
+              label="Metric Filter"
+              info="Filter metrics using regex patterns. Leave empty to show all metrics."
+              placeholder="e.g., loss|ndcg@10|gpu"
+              bind:value={metricFilter}
+            />
+          </div>
+        {/if}
       {/if}
       </div>
 
@@ -403,6 +428,38 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 6px;
+  }
+  .select-all-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+  .select-all-cb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--checkbox-border-color, #d1d5db);
+    border-radius: var(--checkbox-border-radius, 4px);
+    background-color: var(--checkbox-background-color, white);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .select-all-cb:checked {
+    background-color: var(--checkbox-background-color-selected, var(--color-accent, #f97316));
+    border-color: var(--checkbox-background-color-selected, var(--color-accent, #f97316));
+    background-image: var(--checkbox-check);
+  }
+  .select-all-cb:indeterminate {
+    background-color: var(--checkbox-background-color-selected, var(--color-accent, #f97316));
+    border-color: var(--checkbox-background-color-selected, var(--color-accent, #f97316));
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='3' y='7' width='10' height='2' rx='1'/%3E%3C/svg%3E");
+    background-size: 12px;
+    background-position: center;
+    background-repeat: no-repeat;
   }
   .latest-toggle {
     display: flex;
