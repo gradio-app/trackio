@@ -148,7 +148,8 @@
   function downloadCSV() {
     const barData = getBarData();
     if (barData.length === 0) return;
-    const header = "run," + y;
+    const yHeader = /[,"]/.test(y) ? `"${y.replace(/"/g, '""')}"` : y;
+    const header = "run," + yHeader;
     const rows = barData.map((row) => {
       const run =
         typeof row.run === "string" && (row.run.includes(",") || row.run.includes('"'))

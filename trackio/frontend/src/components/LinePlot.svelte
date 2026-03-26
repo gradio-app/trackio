@@ -199,7 +199,7 @@
     if (originals.length === 0) return;
 
     const cols = Object.keys(originals[0]).filter((k) => k !== "data_type");
-    const header = cols.join(",");
+    const header = cols.map((c) => /[,"]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c).join(",");
     const rows = originals.map((row) =>
       cols.map((c) => {
         const v = row[c];

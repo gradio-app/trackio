@@ -32,6 +32,7 @@
   let masterData = $state([]);
   let xColumn = $state("step");
   let metrics = $state([]);
+  let singlePointMetrics = $state(new Set());
   let xLim = $state(null);
   let hasLoaded = $state(false);
   let metricOrder = $state({});
@@ -115,6 +116,23 @@
       (c) => c !== xColumn && c !== "run" && c !== "data_type" && c !== "x_axis",
     );
     metrics = cols;
+
+    const countPerRunMetric = new Map();
+    for (const r of originals) {
+      const run = r.run;
+      for (const col of cols) {
+        if (r[col] == null) continue;
+        const key = `${col}\0${run}`;
+        countPerRunMetric.set(key, (countPerRunMetric.get(key) || 0) + 1);
+      }
+    }
+    const sp = new Set(cols);
+    for (const [key, count] of countPerRunMetric) {
+      if (count > 1) {
+        sp.delete(key.split("\0")[0]);
+      }
+    }
+    singlePointMetrics = sp;
   }
 
   async function fetchNewRuns() {
@@ -223,21 +241,6 @@
     return result.data;
   }
 
-  function isSinglePoint(metric) {
-    const originals = masterData.filter(
-      (r) => (r.data_type === "original" || !r.data_type) && r[metric] != null,
-    );
-    const countPerRun = new Map();
-    for (const r of originals) {
-      const run = r.run;
-      countPerRun.set(run, (countPerRun.get(run) || 0) + 1);
-    }
-    if (countPerRun.size === 0) return false;
-    for (const count of countPerRun.values()) {
-      if (count > 1) return false;
-    }
-    return true;
-  }
 </script>
 
 <div class="metrics-page">
@@ -283,7 +286,7 @@
           <div class="plot-grid">
             {#each orderedDirect as metric, i}
               {@const plotData = getPlotData(metric)}
-              {@const useBar = isSinglePoint(metric)}
+              {@const useBar = singlePointMetrics.has(metric)}
               {#if plotData.length > 0}
                 {#if useBar}
                   <BarPlot
@@ -328,7 +331,7 @@
             <div class="plot-grid">
               {#each orderedSub as metric, i}
                 {@const plotData = getPlotData(metric)}
-                {@const useBar = isSinglePoint(metric)}
+                {@const useBar = singlePointMetrics.has(metric)}
                 {#if plotData.length > 0}
                   {#if useBar}
                     <BarPlot
