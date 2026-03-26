@@ -1,7 +1,6 @@
 import json
 import logging
 import ssl
-import urllib.error
 import urllib.request
 from enum import Enum
 
