@@ -1,3 +1,4 @@
+import json as json_mod
 import os
 import shutil
 import sqlite3
@@ -26,6 +27,7 @@ from trackio.utils import (
     MEDIA_DIR,
     TRACKIO_DIR,
     deserialize_values,
+    get_color_palette,
     serialize_values,
 )
 
@@ -339,13 +341,13 @@ class SQLiteStorage:
         """
         Exports a single project's data as Parquet + JSON files for static Space deployment.
         """
-        import json as json_mod
-
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             raise FileNotFoundError(f"No database found for project '{project}'")
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        aux_dir = output_dir / "aux"
+        aux_dir.mkdir(parents=True, exist_ok=True)
 
         metrics_df = SQLiteStorage._read_table(db_path, "metrics")
         if not metrics_df.empty:
@@ -355,12 +357,12 @@ class SQLiteStorage:
         sys_df = SQLiteStorage._read_table(db_path, "system_metrics")
         if not sys_df.empty:
             flat = SQLiteStorage._flatten_json_column(sys_df.copy(), "metrics")
-            flat.to_parquet(output_dir / "system_metrics.parquet")
+            flat.to_parquet(aux_dir / "system_metrics.parquet")
 
         configs_df = SQLiteStorage._read_table(db_path, "configs")
         if not configs_df.empty:
             flat = SQLiteStorage._flatten_json_column(configs_df.copy(), "config")
-            flat.to_parquet(output_dir / "configs.parquet")
+            flat.to_parquet(aux_dir / "configs.parquet")
 
         runs = SQLiteStorage.get_runs(project)
         runs_meta = []
@@ -376,8 +378,6 @@ class SQLiteStorage:
             )
         with open(output_dir / "runs.json", "w") as f:
             json_mod.dump(runs_meta, f)
-
-        from trackio.utils import get_color_palette
 
         settings = {
             "color_palette": get_color_palette(),

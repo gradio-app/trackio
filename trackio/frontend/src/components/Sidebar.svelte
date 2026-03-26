@@ -196,7 +196,7 @@
 
         <div class="section">
           <GradioTextbox
-            label="Metric Filter (regex)"
+            label="Metric Filter"
             info="Filter metrics using regex patterns. Leave empty to show all metrics."
             placeholder="e.g., loss|ndcg@10|gpu"
             bind:value={metricFilter}
@@ -224,8 +224,8 @@
       {#if readOnlySource}
         <div class="readonly-footer">
           <span class="readonly-badge">READ ONLY</span>
-          <a class="readonly-link" href={readOnlySource.url} target="_blank" rel="noopener noreferrer">
-            Source: {readOnlySource.url}
+          Source: <a class="readonly-link" href={readOnlySource.url} target="_blank" rel="noopener noreferrer">
+            {readOnlySource.url}
           </a>
         </div>
       {:else if spacesMode && !runMutationAllowed}

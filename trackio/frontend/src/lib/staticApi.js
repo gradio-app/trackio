@@ -38,7 +38,7 @@ async function getMetricsData() {
 async function getSystemData() {
   if (systemData) return systemData;
   systemData = await readParquet(
-    datasetUrl("system_metrics.parquet"),
+    datasetUrl("aux/system_metrics.parquet"),
     authHeaders(),
   );
   return systemData;
@@ -46,7 +46,7 @@ async function getSystemData() {
 
 async function getConfigsData() {
   if (configsData) return configsData;
-  configsData = await readParquet(datasetUrl("configs.parquet"), authHeaders());
+  configsData = await readParquet(datasetUrl("aux/configs.parquet"), authHeaders());
   return configsData;
 }
 

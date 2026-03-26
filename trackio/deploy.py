@@ -1,6 +1,8 @@
 import importlib.metadata
 import io
+import json as json_mod
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -21,7 +23,11 @@ from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.utils import get_or_create_project_hash, preprocess_space_and_dataset_ids
+from trackio.utils import (
+    MEDIA_DIR,
+    get_or_create_project_hash,
+    preprocess_space_and_dataset_ids,
+)
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
@@ -478,12 +484,8 @@ def upload_dataset_for_static(
         output_dir = Path(tmp_dir)
         SQLiteStorage.export_for_static_space(project, output_dir)
 
-        from trackio.utils import MEDIA_DIR
-
         media_dir = MEDIA_DIR / project
         if media_dir.exists():
-            import shutil
-
             dest = output_dir / "media"
             shutil.copytree(media_dir, dest)
 
@@ -562,8 +564,6 @@ def deploy_as_static_space(
             folder_path=str(dist_dir),
         ),
     )
-
-    import json as json_mod
 
     config = {
         "mode": "static",

@@ -59,7 +59,6 @@ __all__ = [
     "log",
     "log_system",
     "log_gpu",
-    "log_apple_gpu",
     "finish",
     "alert",
     "AlertLevel",
