@@ -160,6 +160,7 @@ def test_multiple_runs_display_multiple_plots(temp_dir):
         trackio.init(project="test_multi", name=f"run-{i}")
         for j in range(5):
             trackio.log(metrics={"loss": 0.1 * (j + 1), "acc": 0.9 - 0.1 * j})
+        trackio.log(metrics={"val_loss": 0.05 * (i + 1)})
         trackio.finish()
 
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
@@ -176,7 +177,15 @@ def test_multiple_runs_display_multiple_plots(temp_dir):
             expect(run_items).to_have_count(2)
 
             plots = page.locator(".vega-embed")
-            expect(plots).to_have_count(2)
+            expect(plots).to_have_count(3)
+
+            line_marks = page.locator(".vega-embed .mark-line.role-mark")
+            expect(line_marks.first).to_be_visible()
+
+            bar_plots = page.locator(".bar-plot")
+            expect(bar_plots).to_have_count(1)
+            bar_vega = bar_plots.first.locator(".vega-embed")
+            expect(bar_vega).to_be_visible()
 
             runs_label = page.get_by_text("Runs (2)", exact=True)
             expect(runs_label).to_be_visible()
