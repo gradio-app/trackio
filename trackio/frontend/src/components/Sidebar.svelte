@@ -224,7 +224,7 @@
       {#if readOnlySource}
         <div class="readonly-footer">
           <span class="readonly-badge">READ ONLY</span>
-          Source: <a class="readonly-link" href={readOnlySource.url} target="_blank" rel="noopener noreferrer">
+          <a class="readonly-link" href={readOnlySource.url} target="_blank" rel="noopener noreferrer">
             {readOnlySource.url}
           </a>
         </div>
