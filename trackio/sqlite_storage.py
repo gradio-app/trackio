@@ -377,7 +377,7 @@ class SQLiteStorage:
         with open(output_dir / "runs.json", "w") as f:
             json_mod.dump(runs_meta, f)
 
-        from trackio.utils import get_color_palette, get_logo_urls
+        from trackio.utils import get_color_palette
 
         settings = {
             "color_palette": get_color_palette(),
