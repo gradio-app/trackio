@@ -12,7 +12,7 @@
     runMutationAllowed = true,
   } = $props();
 
-  let canMutateRuns = $derived(!spacesMode || runMutationAllowed);
+  let canMutateRuns = $derived(runMutationAllowed);
 
   let runColorMap = $derived(buildColorMap(runs));
 
