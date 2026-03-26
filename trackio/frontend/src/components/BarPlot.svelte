@@ -34,8 +34,7 @@
     return entries;
   });
 
-  let barData = $derived.by(() => {
-    if (!data || data.length === 0 || !y) return [];
+  function getBarData() {
     const runValues = new Map();
     for (const d of data) {
       if (d.data_type === "smoothed") continue;
@@ -45,7 +44,7 @@
       }
     }
     return Array.from(runValues, ([run, value]) => ({ run, value }));
-  });
+  }
 
   function cssVar(name, fallback) {
     return (
@@ -55,7 +54,7 @@
     );
   }
 
-  function buildSpec() {
+  function buildSpec(barData) {
     const runs = barData.map((d) => d.run);
     const colorRange = runs.map((r) => colorMap[r] || "#999");
 
@@ -74,7 +73,6 @@
       data: { values: barData },
       mark: {
         type: "bar",
-        clip: true,
         cornerRadiusTopLeft: 3,
         cornerRadiusTopRight: 3,
       },
@@ -93,6 +91,7 @@
           field: "value",
           type: "quantitative",
           title: yTitle,
+          scale: { zero: true },
         },
         color: {
           field: "run",
@@ -121,9 +120,12 @@
 
   async function render() {
     await tick();
-    if (!container || !barData || barData.length === 0 || !y) return;
+    if (!container || !data || data.length === 0 || !y) return;
 
-    const spec = buildSpec();
+    const barData = getBarData();
+    if (barData.length === 0) return;
+
+    const spec = buildSpec(barData);
 
     try {
       if (view) {
@@ -144,7 +146,8 @@
   }
 
   function downloadCSV() {
-    if (!barData || barData.length === 0) return;
+    const barData = getBarData();
+    if (barData.length === 0) return;
     const header = "run," + y;
     const rows = barData.map((row) => {
       const run =
