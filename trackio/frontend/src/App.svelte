@@ -360,9 +360,9 @@
           {appBootstrapReady}
         />
       {:else if currentPage === "media"}
-        <Media project={selectedProject} {selectedRuns} {runs} {tableTruncateLength} />
+        <Media project={selectedProject} {selectedRuns} {tableTruncateLength} />
       {:else if currentPage === "reports"}
-        <Reports project={selectedProject} {selectedRuns} {runs} />
+        <Reports project={selectedProject} {selectedRuns} />
       {:else if currentPage === "runs"}
         <Runs
           project={selectedProject}

@@ -3,7 +3,7 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getLogs, getMediaUrl, isStaticMode, fetchMediaBlob } from "../lib/api.js";
 
-  let { project = null, selectedRuns = [], runs = [], tableTruncateLength = 250 } = $props();
+  let { project = null, selectedRuns = [], tableTruncateLength = 250 } = $props();
 
   let mediaItems = $state({ images: [], videos: [], audios: [], tables: [] });
   let loading = $state(false);

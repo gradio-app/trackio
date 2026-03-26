@@ -2,7 +2,7 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getAlerts, getLogs } from "../lib/api.js";
 
-  let { project = null, selectedRuns = [], runs = [] } = $props();
+  let { project = null, selectedRuns = [] } = $props();
 
   let allAlerts = $state([]);
   let markdownReports = $state([]);
