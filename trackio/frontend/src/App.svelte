@@ -16,6 +16,7 @@
     getAlerts,
     getRunMutationStatus,
     getSettings,
+    isStaticMode,
   } from "./lib/api.js";
   import { setColorPalette } from "./lib/stores.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
@@ -249,11 +250,19 @@
     });
 
     applyUrlTokens();
-    refreshMutationAccess();
-    startMutationPolling();
-    window.addEventListener("focus", refreshMutationAccess);
 
     (async () => {
+      const staticMode = await isStaticMode();
+
+      if (!staticMode) {
+        refreshMutationAccess();
+        startMutationPolling();
+        window.addEventListener("focus", refreshMutationAccess);
+      } else {
+        realtimeEnabled = false;
+        mutationStatus = { spaces: false, allowed: false, auth: "static" };
+      }
+
       try {
         try {
           const settings = await getSettings();
@@ -274,9 +283,11 @@
       } finally {
         appBootstrapReady = true;
       }
-    })();
 
-    startPolling();
+      if (!staticMode) {
+        startPolling();
+      }
+    })();
 
     return () => {
       if (pollTimer) clearInterval(pollTimer);
