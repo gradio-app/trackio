@@ -1,5 +1,12 @@
 # trackio
 
+## 0.20.1
+
+### Features
+
+- [#454](https://github.com/gradio-app/trackio/pull/454) [`22881db`](https://github.com/gradio-app/trackio/commit/22881dbbbb6b81197a00a19853771007093d61e4) - Bar chart single point.  Thanks @abidlabs!
+- [#455](https://github.com/gradio-app/trackio/pull/455) [`f8db51a`](https://github.com/gradio-app/trackio/commit/f8db51a20ca61ef703f3f2c2ee1ebd9c4f239cf2) - Adds a static Trackio mode via `trackio.sync(sdk="static")` and support for the `TRACKIO_SPACE_ID` environment variable.  Thanks @abidlabs!
+
 ## 0.20.0
 
 ### Features
