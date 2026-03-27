@@ -1,7 +1,6 @@
 <script>
   import { onMount } from "svelte";
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
-  import ColoredRunRadioGroup from "./ColoredRunRadioGroup.svelte";
   import Dropdown from "./Dropdown.svelte";
   import GradioCheckbox from "./GradioCheckbox.svelte";
   import GradioSlider from "./GradioSlider.svelte";
@@ -17,8 +16,6 @@
     selectedProject = $bindable(null),
     runs = [],
     selectedRuns = $bindable([]),
-    mediaSelectedRun = $bindable(null),
-    reportsSelectedRun = $bindable(null),
     smoothing = $bindable(10),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
@@ -30,6 +27,7 @@
     spacesMode = false,
     runMutationAllowed = true,
     mutationAuth = "local",
+    readOnlySource = null,
     projectLocked = false,
     logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
   } = $props();
@@ -49,10 +47,6 @@
     return `${window.location.origin}/oauth/hf/start`;
   });
 
-  let showCompactRunPicker = $derived(
-    variant === "compact" &&
-      (currentPage === "media" || currentPage === "reports"),
-  );
 
   let availableXAxes = $derived.by(() => {
     let axes = ["step", "time"];
@@ -61,6 +55,15 @@
 
   function toggleSidebar() {
     open = !open;
+  }
+
+  function setIndeterminate(node, value) {
+    node.indeterminate = value;
+    return {
+      update(newValue) {
+        node.indeterminate = newValue;
+      },
+    };
   }
 
   let filteredRuns = $derived(
@@ -124,7 +127,23 @@
       {#if variant === "full"}
         <div class="section">
           <div class="runs-header">
-            <span class="section-label">Runs ({filteredRuns.length})</span>
+            <label class="select-all-label">
+              <input
+                type="checkbox"
+                class="select-all-cb"
+                checked={selectedRuns.length === filteredRuns.length && filteredRuns.length > 0}
+                use:setIndeterminate={selectedRuns.length > 0 && selectedRuns.length < filteredRuns.length}
+                onchange={() => {
+                  if (selectedRuns.length === filteredRuns.length) {
+                    selectedRuns = [];
+                  } else {
+                    selectedRuns = [...filteredRuns];
+                  }
+                  latestOnly = false;
+                }}
+              />
+              <span class="section-label">Runs ({filteredRuns.length})</span>
+            </label>
             <label class="latest-toggle">
               <span>Latest only</span>
               <input
@@ -151,76 +170,67 @@
           </div>
         </div>
 
-        <span class="section-label">Display Settings</span>
+        {#if currentPage === "metrics" || currentPage === "system"}
+          <span class="section-label">Display Settings</span>
 
-        <div class="section">
-          <GradioCheckbox
-            label="Refresh metrics realtime"
-            bind:checked={realtimeEnabled}
-          />
-          <GradioCheckbox
-            label="Show section headers"
-            bind:checked={showHeaders}
-          />
-        </div>
-
-
-        <div class="section">
-          <GradioSlider
-            label="Smoothing Factor (0 = no smoothing)"
-            bind:value={smoothing}
-            min={0}
-            max={20}
-            step={1}
-          />
-        </div>
-
-        <div class="section">
-          <Dropdown
-            label="X-axis"
-            choices={availableXAxes}
-            bind:value={xAxis}
-            filterable={false}
-          />
-          <GradioCheckbox
-            label="Log scale X-axis"
-            bind:checked={logScaleX}
-          />
-          <GradioCheckbox
-            label="Log scale Y-axis"
-            bind:checked={logScaleY}
-          />
-        </div>
-
-
-        <div class="section">
-          <GradioTextbox
-            label="Metric Filter (regex)"
-            info="Filter metrics using regex patterns. Leave empty to show all metrics."
-            placeholder="e.g., loss|ndcg@10|gpu"
-            bind:value={metricFilter}
-          />
-        </div>
-      {:else if showCompactRunPicker}
-        <div class="section">
-          <span class="section-label">Run</span>
-          {#if currentPage === "media"}
-            <ColoredRunRadioGroup
-              {runs}
-              bind:value={mediaSelectedRun}
+          <div class="section">
+            <GradioCheckbox
+              label="Refresh metrics realtime"
+              bind:checked={realtimeEnabled}
             />
-          {:else if currentPage === "reports"}
-            <ColoredRunRadioGroup
-              {runs}
-              bind:value={reportsSelectedRun}
-              includeAllOption={true}
+            <GradioCheckbox
+              label="Show section headers"
+              bind:checked={showHeaders}
             />
-          {/if}
-        </div>
+          </div>
+
+          <div class="section">
+            <GradioSlider
+              label="Smoothing Factor (0 = no smoothing)"
+              bind:value={smoothing}
+              min={0}
+              max={20}
+              step={1}
+            />
+          </div>
+
+          <div class="section">
+            <Dropdown
+              label="X-axis"
+              choices={availableXAxes}
+              bind:value={xAxis}
+              filterable={false}
+            />
+            <GradioCheckbox
+              label="Log scale X-axis"
+              bind:checked={logScaleX}
+            />
+            <GradioCheckbox
+              label="Log scale Y-axis"
+              bind:checked={logScaleY}
+            />
+          </div>
+
+          <div class="section">
+            <GradioTextbox
+              label="Metric Filter"
+              info="Filter metrics using regex patterns. Leave empty to show all metrics."
+              placeholder="e.g., loss|ndcg@10|gpu"
+              bind:value={metricFilter}
+            />
+          </div>
+        {/if}
       {/if}
       </div>
 
-      {#if spacesMode && !runMutationAllowed}
+      {#if readOnlySource}
+        <div class="readonly-footer">
+          <span class="readonly-badge">READ ONLY</span>
+          <a class="readonly-link" href={readOnlySource.url} target="_blank" rel="noopener noreferrer">
+            {readOnlySource.url}
+          </a>
+        </div>
+      {:else if spacesMode && !runMutationAllowed}
         <div class="oauth-footer">
           {#if mutationAuth === "oauth_insufficient"}
             <p class="oauth-line oauth-warn">
@@ -299,6 +309,39 @@
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid var(--border-color-primary, #e5e7eb);
+  }
+  .readonly-footer {
+    flex-shrink: 0;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color-primary, #e5e7eb);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .readonly-badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: var(--body-text-color-subdued, #6b7280);
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .readonly-link {
+    font-size: 12px;
+    color: var(--body-text-color-subdued, #6b7280);
+    text-decoration: none;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .readonly-link:hover {
+    color: var(--body-text-color, #1f2937);
+    text-decoration: underline;
   }
   .oauth-line {
     margin: 0;
@@ -385,6 +428,38 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 6px;
+  }
+  .select-all-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+  .select-all-cb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--checkbox-border-color, #d1d5db);
+    border-radius: var(--checkbox-border-radius, 4px);
+    background-color: var(--checkbox-background-color, white);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .select-all-cb:checked {
+    background-color: var(--checkbox-background-color-selected, var(--color-accent, #f97316));
+    border-color: var(--checkbox-background-color-selected, var(--color-accent, #f97316));
+    background-image: var(--checkbox-check);
+  }
+  .select-all-cb:indeterminate {
+    background-color: var(--checkbox-background-color-selected, var(--color-accent, #f97316));
+    border-color: var(--checkbox-background-color-selected, var(--color-accent, #f97316));
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='3' y='7' width='10' height='2' rx='1'/%3E%3C/svg%3E");
+    background-size: 12px;
+    background-position: center;
+    background-repeat: no-repeat;
   }
   .latest-toggle {
     display: flex;

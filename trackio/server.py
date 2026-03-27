@@ -251,7 +251,12 @@ def check_write_access(request: gr.Request, token: str) -> bool:
 
 def assert_can_mutate_runs(request: gr.Request) -> None:
     if os.getenv("SYSTEM") != "spaces":
-        return
+        if check_write_access(request, write_token):
+            return
+        raise gr.Error(
+            "A write_token is required to delete or rename runs. "
+            "Open the dashboard using the link that includes the write_token query parameter."
+        )
     hf_tok = _hf_access_token(request)
     if hf_tok is not None:
         try:
@@ -269,7 +274,9 @@ def assert_can_mutate_runs(request: gr.Request) -> None:
 
 def get_run_mutation_status(request: gr.Request) -> dict[str, Any]:
     if os.getenv("SYSTEM") != "spaces":
-        return {"spaces": False, "allowed": True, "auth": "local"}
+        if check_write_access(request, write_token):
+            return {"spaces": False, "allowed": True, "auth": "local"}
+        return {"spaces": False, "allowed": False, "auth": "none"}
     hf_tok = _hf_access_token(request)
     if hf_tok is not None:
         try:
@@ -544,6 +551,7 @@ def get_settings() -> dict:
         "table_truncate_length": int(
             os.environ.get("TRACKIO_TABLE_TRUNCATE_LENGTH", "250")
         ),
+        "media_dir": str(utils.MEDIA_DIR),
     }
 
 
@@ -559,6 +567,7 @@ def get_project_files(project: str) -> list[dict]:
                 {
                     "name": str(relative),
                     "path": str(file_path),
+                    "size": file_path.stat().st_size,
                 }
             )
     return results

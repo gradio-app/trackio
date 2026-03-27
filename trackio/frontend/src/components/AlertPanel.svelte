@@ -4,6 +4,7 @@
   const BADGES = { info: "🔵", warn: "🟡", error: "🔴" };
   let expanded = $state({});
   let filterLevel = $state(null);
+  let collapsed = $state(false);
 
   let filtered = $derived(
     filterLevel ? alerts.filter((a) => a.level === filterLevel) : alerts,
@@ -15,32 +16,38 @@
 </script>
 
 {#if alerts.length > 0}
-  <div class="alert-panel">
-    <div class="alert-header">
+  <div class="alert-panel" class:collapsed>
+    <div class="alert-header" role="button" tabindex="0" onclick={() => (collapsed = !collapsed)} onkeydown={(e) => e.key === "Enter" && (collapsed = !collapsed)}>
       <span class="alert-title">Alerts ({alerts.length})</span>
-      <div class="filter-pills">
-        <button
-          class="pill"
-          class:active={filterLevel === null}
-          onclick={() => (filterLevel = null)}>All</button
-        >
-        <button
-          class="pill"
-          class:active={filterLevel === "info"}
-          onclick={() => (filterLevel = "info")}>🔵 Info</button
-        >
-        <button
-          class="pill"
-          class:active={filterLevel === "warn"}
-          onclick={() => (filterLevel = "warn")}>🟡 Warn</button
-        >
-        <button
-          class="pill"
-          class:active={filterLevel === "error"}
-          onclick={() => (filterLevel = "error")}>🔴 Error</button
-        >
-      </div>
+      {#if !collapsed}
+        <div class="filter-pills" onclick={(e) => e.stopPropagation()}>
+          <button
+            class="pill"
+            class:active={filterLevel === null}
+            onclick={() => (filterLevel = null)}>All</button
+          >
+          <button
+            class="pill"
+            class:active={filterLevel === "info"}
+            onclick={() => (filterLevel = "info")}>🔵 Info</button
+          >
+          <button
+            class="pill"
+            class:active={filterLevel === "warn"}
+            onclick={() => (filterLevel = "warn")}>🟡 Warn</button
+          >
+          <button
+            class="pill"
+            class:active={filterLevel === "error"}
+            onclick={() => (filterLevel = "error")}>🔴 Error</button
+          >
+        </div>
+      {/if}
+      <svg class="collapse-icon" class:rotated={collapsed} width="14" height="14" viewBox="0 0 16 16" fill="none">
+        <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
     </div>
+    {#if !collapsed}
     <div class="alert-list">
       {#each filtered as alert, i}
         <div class="alert-item" class:expanded={expanded[i]}>
@@ -55,6 +62,7 @@
         </div>
       {/each}
     </div>
+    {/if}
   </div>
 {/if}
 
@@ -74,12 +82,31 @@
     display: flex;
     flex-direction: column;
   }
+  .alert-panel.collapsed {
+    max-height: none;
+  }
   .alert-header {
     padding: 10px 12px;
+    border: none;
     border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
+    background: none;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    cursor: pointer;
+    gap: 8px;
+  }
+  .alert-panel.collapsed .alert-header {
+    border-bottom: none;
+  }
+  .collapse-icon {
+    color: var(--body-text-color-subdued, #9ca3af);
+    flex-shrink: 0;
+    transition: transform 0.15s;
+  }
+  .collapse-icon.rotated {
+    transform: rotate(-90deg);
   }
   .alert-title {
     font-size: 13px;

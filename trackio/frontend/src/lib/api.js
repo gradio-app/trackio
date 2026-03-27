@@ -1,4 +1,37 @@
+import * as staticApi from "./staticApi.js";
+
 const BASE = window.__trackio_base || "";
+
+let _staticMode = null;
+let _staticModePromise = null;
+let _mediaDir = "";
+
+async function _detectStaticMode() {
+  try {
+    const resp = await fetch(`${BASE}/config.json`);
+    if (resp.ok) {
+      const cfg = await resp.json();
+      if (cfg.mode === "static") {
+        await staticApi.initialize(cfg);
+        return true;
+      }
+    }
+  } catch {
+    // not static mode
+  }
+  return false;
+}
+
+export async function isStaticMode() {
+  if (_staticMode !== null) return _staticMode;
+  if (!_staticModePromise) {
+    _staticModePromise = _detectStaticMode().then((result) => {
+      _staticMode = result;
+      return result;
+    });
+  }
+  return _staticModePromise;
+}
 
 function getOauthSessionHeader() {
   const sid = sessionStorage.getItem("trackio_oauth_session");
@@ -52,52 +85,53 @@ export async function callApi(apiName, params = {}) {
 }
 
 export async function getAllProjects() {
-  const data = await callApi("/get_all_projects");
-  return data;
+  if (await isStaticMode()) return staticApi.getAllProjects();
+  return await callApi("/get_all_projects");
 }
 
 export async function getRunsForProject(project) {
-  const data = await callApi("/get_runs_for_project", { project });
-  return data;
+  if (await isStaticMode()) return staticApi.getRunsForProject(project);
+  return await callApi("/get_runs_for_project", { project });
 }
 
 export async function getMetricsForRun(project, run) {
-  const data = await callApi("/get_metrics_for_run", { project, run });
-  return data;
+  if (await isStaticMode()) return staticApi.getMetricsForRun(project, run);
+  return await callApi("/get_metrics_for_run", { project, run });
 }
 
 export async function getLogs(project, run) {
-  const data = await callApi("/get_logs", { project, run });
-  return data;
+  if (await isStaticMode()) return staticApi.getLogs(project, run);
+  return await callApi("/get_logs", { project, run });
 }
 
 export async function getProjectSummary(project) {
-  const data = await callApi("/get_project_summary", { project });
-  return data;
+  if (await isStaticMode()) return staticApi.getProjectSummary(project);
+  return await callApi("/get_project_summary", { project });
 }
 
 export async function getRunSummary(project, run) {
-  const data = await callApi("/get_run_summary", { project, run });
-  return data;
+  if (await isStaticMode()) return staticApi.getRunSummary(project, run);
+  return await callApi("/get_run_summary", { project, run });
 }
 
 export async function getAlerts(project, run, level, since) {
-  const data = await callApi("/get_alerts", { project, run, level, since });
-  return data;
+  if (await isStaticMode()) return staticApi.getAlerts(project, run, level, since);
+  return await callApi("/get_alerts", { project, run, level, since });
 }
 
 export async function getSystemMetricsForRun(project, run) {
-  const data = await callApi("/get_system_metrics_for_run", { project, run });
-  return data;
+  if (await isStaticMode()) return staticApi.getSystemMetricsForRun(project, run);
+  return await callApi("/get_system_metrics_for_run", { project, run });
 }
 
 export async function getSystemLogs(project, run) {
-  const data = await callApi("/get_system_logs", { project, run });
-  return data;
+  if (await isStaticMode()) return staticApi.getSystemLogs(project, run);
+  return await callApi("/get_system_logs", { project, run });
 }
 
 export async function getSnapshot(project, run, step) {
-  const data = await callApi("/get_snapshot", {
+  if (await isStaticMode()) return staticApi.getSnapshot(project, run, step);
+  return await callApi("/get_snapshot", {
     project,
     run,
     step,
@@ -105,11 +139,12 @@ export async function getSnapshot(project, run, step) {
     at_time: null,
     window: null,
   });
-  return data;
 }
 
 export async function getMetricValues(project, run, metricName) {
-  const data = await callApi("/get_metric_values", {
+  if (await isStaticMode())
+    return staticApi.getMetricValues(project, run, metricName);
+  return await callApi("/get_metric_values", {
     project,
     run,
     metric_name: metricName,
@@ -118,42 +153,62 @@ export async function getMetricValues(project, run, metricName) {
     at_time: null,
     window: null,
   });
-  return data;
 }
 
 export async function getSettings() {
-  const data = await callApi("/get_settings");
-  return data;
+  if (await isStaticMode()) return staticApi.getSettings();
+  return await callApi("/get_settings");
 }
 
 export async function getProjectFiles(project) {
-  const data = await callApi("/get_project_files", { project });
-  return data;
+  if (await isStaticMode()) return staticApi.getProjectFiles(project);
+  return await callApi("/get_project_files", { project });
 }
 
 export async function getRunMutationStatus() {
-  const data = await callApi("/get_run_mutation_status", {});
-  return data;
+  if (await isStaticMode()) return staticApi.getRunMutationStatus();
+  return await callApi("/get_run_mutation_status", {});
 }
 
 export async function deleteRun(project, run) {
-  const data = await callApi("/delete_run", { project, run });
-  return data;
+  if (await isStaticMode()) return staticApi.deleteRun(project, run);
+  return await callApi("/delete_run", { project, run });
 }
 
 export async function renameRun(project, oldName, newName) {
-  const data = await callApi("/rename_run", {
+  if (await isStaticMode()) return staticApi.renameRun(project, oldName, newName);
+  return await callApi("/rename_run", {
     project,
     old_name: oldName,
     new_name: newName,
   });
-  return data;
+}
+
+export function setMediaDir(dir) {
+  _mediaDir = dir ? dir + "/" : "";
 }
 
 export function getAssetUrl(path) {
-  return `${BASE}/gradio_api/file=${path}`;
+  if (_staticMode) return staticApi.getAssetUrl(path);
+  return `${BASE}/gradio_api/file=${_mediaDir}${path}`;
 }
 
 export function getMediaUrl(path) {
+  if (_staticMode) return staticApi.getMediaUrl(path);
+  return `${BASE}/gradio_api/file=${_mediaDir}${path}`;
+}
+
+export function getFileUrl(path) {
+  if (_staticMode) return staticApi.getMediaUrl(path);
   return `${BASE}/gradio_api/file=${path}`;
+}
+
+export async function getReadOnlySource() {
+  if (await isStaticMode()) return staticApi.getReadOnlySource();
+  return null;
+}
+
+export async function fetchMediaBlob(path) {
+  if (_staticMode) return staticApi.fetchMediaBlob(path);
+  return getMediaUrl(path);
 }

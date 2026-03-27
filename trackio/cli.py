@@ -101,6 +101,7 @@ def _handle_sync(args):
             space_id=space_id,
             private=args.private,
             force=args.force,
+            sdk=args.sdk,
         )
 
 
@@ -217,6 +218,12 @@ def main():
         "--force",
         action="store_true",
         help="Overwrite the existing database without prompting for confirmation.",
+    )
+    sync_parser.add_argument(
+        "--sdk",
+        choices=["gradio", "static"],
+        default="gradio",
+        help="The type of Space to deploy. 'gradio' (default) deploys a live Gradio server. 'static' deploys a static Space that reads from an HF Dataset.",
     )
 
     list_parser = subparsers.add_parser(

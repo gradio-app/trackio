@@ -16,6 +16,9 @@
     getAlerts,
     getRunMutationStatus,
     getSettings,
+    getReadOnlySource,
+    isStaticMode,
+    setMediaDir,
   } from "./lib/api.js";
   import { setColorPalette } from "./lib/stores.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
@@ -39,8 +42,6 @@
   let sidebarOpen = $state(true);
   let sidebarHidden = $state(false);
   let urlTick = $state(0);
-  let mediaSelectedRun = $state(null);
-  let reportsSelectedRun = $state("All runs");
   let alerts = $state([]);
   let pollTimer = $state(null);
   let mutationStatus = $state({
@@ -53,6 +54,7 @@
   let logoUrls = $state({ light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" });
   let plotOrder = $state([]);
   let tableTruncateLength = $state(250);
+  let readOnlySource = $state(null);
 
   function handleNavigate(page) {
     currentPage = page;
@@ -186,25 +188,6 @@
     refreshRuns();
   });
 
-  $effect(() => {
-    if (currentPage !== "media") return;
-    if (!selectedProject || runs.length === 0) return;
-    if (!mediaSelectedRun || !runs.includes(mediaSelectedRun)) {
-      mediaSelectedRun = runs[runs.length - 1];
-    }
-  });
-
-  $effect(() => {
-    if (currentPage !== "reports") return;
-    if (!selectedProject) return;
-    const valid =
-      reportsSelectedRun === "All runs" ||
-      (reportsSelectedRun && runs.includes(reportsSelectedRun));
-    if (!valid) {
-      reportsSelectedRun = "All runs";
-    }
-  });
-
   onMount(() => {
     const sidebarParam = getQueryParam("sidebar");
     if (sidebarParam === "hidden") {
@@ -249,11 +232,20 @@
     });
 
     applyUrlTokens();
-    refreshMutationAccess();
-    startMutationPolling();
-    window.addEventListener("focus", refreshMutationAccess);
 
     (async () => {
+      const staticMode = await isStaticMode();
+
+      if (!staticMode) {
+        refreshMutationAccess();
+        startMutationPolling();
+        window.addEventListener("focus", refreshMutationAccess);
+      } else {
+        realtimeEnabled = false;
+        mutationStatus = { spaces: false, allowed: false, auth: "static" };
+        readOnlySource = await getReadOnlySource();
+      }
+
       try {
         try {
           const settings = await getSettings();
@@ -262,6 +254,7 @@
             if (settings.color_palette) setColorPalette(settings.color_palette);
             if (settings.plot_order) plotOrder = settings.plot_order;
             if (settings.table_truncate_length) tableTruncateLength = settings.table_truncate_length;
+            if (settings.media_dir) setMediaDir(settings.media_dir);
           }
         } catch {
           // settings endpoint may not be available
@@ -274,9 +267,11 @@
       } finally {
         appBootstrapReady = true;
       }
-    })();
 
-    startPolling();
+      if (!staticMode) {
+        startPolling();
+      }
+    })();
 
     return () => {
       if (pollTimer) clearInterval(pollTimer);
@@ -308,7 +303,7 @@
   );
 
   let sidebarVariant = $derived(
-    currentPage === "metrics" || currentPage === "system" ? "full" : "compact"
+    currentPage === "runs" || currentPage === "files" ? "compact" : "full"
   );
 </script>
 
@@ -321,13 +316,12 @@
       spacesMode={mutationStatus.spaces}
       runMutationAllowed={mutationStatus.allowed}
       mutationAuth={mutationStatus.auth}
+      {readOnlySource}
       {projects}
       projectLocked={projectLocked}
       bind:selectedProject
       {runs}
       bind:selectedRuns
-      bind:mediaSelectedRun
-      bind:reportsSelectedRun
       bind:smoothing
       bind:xAxis
       bind:logScaleX
@@ -366,15 +360,14 @@
           {appBootstrapReady}
         />
       {:else if currentPage === "media"}
-        <Media project={selectedProject} bind:selectedRun={mediaSelectedRun} {tableTruncateLength} />
+        <Media project={selectedProject} {selectedRuns} {tableTruncateLength} />
       {:else if currentPage === "reports"}
-        <Reports project={selectedProject} bind:selectedRun={reportsSelectedRun} />
+        <Reports project={selectedProject} {selectedRuns} />
       {:else if currentPage === "runs"}
         <Runs
           project={selectedProject}
           {runs}
           onRunsChanged={refreshRunsAndMutation}
-          spacesMode={mutationStatus.spaces}
           runMutationAllowed={mutationStatus.allowed}
         />
       {:else if currentPage === "run-detail"}

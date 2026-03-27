@@ -452,7 +452,7 @@ class CausalSelfAttention(nn.Module):
         )
 
     def forward(self, x, ve, cos_sin, window_size):
-        B, T, C = x.size()
+        B, T, _ = x.size()
         q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
         k = self.c_k(x).view(B, T, self.n_kv_head, self.head_dim)
         v = self.c_v(x).view(B, T, self.n_kv_head, self.head_dim)
@@ -706,7 +706,7 @@ class GPT(nn.Module):
         return optimizer
 
     def forward(self, idx, targets=None, reduction="mean"):
-        B, T = idx.size()
+        _, T = idx.size()
         assert T <= self.cos.size(1)
         cos_sin = self.cos[:, :T], self.sin[:, :T]
         x = self.transformer.wte(idx)

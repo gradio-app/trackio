@@ -1,3 +1,4 @@
+import json as json_mod
 import os
 import shutil
 import sqlite3
@@ -26,6 +27,7 @@ from trackio.utils import (
     MEDIA_DIR,
     TRACKIO_DIR,
     deserialize_values,
+    get_color_palette,
     serialize_values,
 )
 
@@ -260,6 +262,49 @@ class SQLiteStorage:
         return db_path
 
     @staticmethod
+    def _flatten_json_column(df: pd.DataFrame, col: str) -> pd.DataFrame:
+        if df.empty:
+            return df
+        expanded = df[col].copy()
+        expanded = pd.DataFrame(
+            expanded.apply(
+                lambda x: deserialize_values(orjson.loads(x))
+            ).values.tolist(),
+            index=df.index,
+        )
+        df = df.drop(columns=[col])
+        for c in expanded.columns:
+            df[c] = expanded[c]
+        return df
+
+    @staticmethod
+    def _read_table(db_path: Path, table: str) -> pd.DataFrame:
+        try:
+            with sqlite3.connect(str(db_path)) as conn:
+                return pd.read_sql(f"SELECT * FROM {table}", conn)
+        except Exception:
+            return pd.DataFrame()
+
+    @staticmethod
+    def _flatten_and_write_parquet(
+        db_path: Path, table: str, json_col: str, parquet_path: Path
+    ) -> None:
+        if (
+            parquet_path.exists()
+            and db_path.stat().st_mtime <= parquet_path.stat().st_mtime
+        ):
+            return
+        df = SQLiteStorage._read_table(db_path, table)
+        if df.empty:
+            return
+        df = SQLiteStorage._flatten_json_column(df, json_col)
+        df.to_parquet(
+            parquet_path,
+            write_page_index=True,
+            use_content_defined_chunking=True,
+        )
+
+    @staticmethod
     def export_to_parquet():
         """
         Exports all projects' DB files as Parquet under the same path but with extension ".parquet".
@@ -275,81 +320,75 @@ class SQLiteStorage:
         db_names = [f for f in all_paths if f.endswith(DB_EXT)]
         for db_name in db_names:
             db_path = TRACKIO_DIR / db_name
-            parquet_path = db_path.with_suffix(".parquet")
-            system_parquet_path = db_path.with_suffix("") / ""
-            system_parquet_path = TRACKIO_DIR / (db_path.stem + "_system.parquet")
-            configs_parquet_path = TRACKIO_DIR / (db_path.stem + "_configs.parquet")
-            if (not parquet_path.exists()) or (
-                db_path.stat().st_mtime > parquet_path.stat().st_mtime
-            ):
-                with sqlite3.connect(str(db_path)) as conn:
-                    df = pd.read_sql("SELECT * FROM metrics", conn)
-                if not df.empty:
-                    metrics = df["metrics"].copy()
-                    metrics = pd.DataFrame(
-                        metrics.apply(
-                            lambda x: deserialize_values(orjson.loads(x))
-                        ).values.tolist(),
-                        index=df.index,
-                    )
-                    del df["metrics"]
-                    for col in metrics.columns:
-                        df[col] = metrics[col]
-                    df.to_parquet(
-                        parquet_path,
-                        write_page_index=True,
-                        use_content_defined_chunking=True,
-                    )
+            SQLiteStorage._flatten_and_write_parquet(
+                db_path, "metrics", "metrics", db_path.with_suffix(".parquet")
+            )
+            SQLiteStorage._flatten_and_write_parquet(
+                db_path,
+                "system_metrics",
+                "metrics",
+                TRACKIO_DIR / (db_path.stem + "_system.parquet"),
+            )
+            SQLiteStorage._flatten_and_write_parquet(
+                db_path,
+                "configs",
+                "config",
+                TRACKIO_DIR / (db_path.stem + "_configs.parquet"),
+            )
 
-            if (not system_parquet_path.exists()) or (
-                db_path.stat().st_mtime > system_parquet_path.stat().st_mtime
-            ):
-                with sqlite3.connect(str(db_path)) as conn:
-                    try:
-                        sys_df = pd.read_sql("SELECT * FROM system_metrics", conn)
-                    except Exception:
-                        sys_df = pd.DataFrame()
-                if not sys_df.empty:
-                    sys_metrics = sys_df["metrics"].copy()
-                    sys_metrics = pd.DataFrame(
-                        sys_metrics.apply(
-                            lambda x: deserialize_values(orjson.loads(x))
-                        ).values.tolist(),
-                        index=sys_df.index,
-                    )
-                    del sys_df["metrics"]
-                    for col in sys_metrics.columns:
-                        sys_df[col] = sys_metrics[col]
-                    sys_df.to_parquet(
-                        system_parquet_path,
-                        write_page_index=True,
-                        use_content_defined_chunking=True,
-                    )
+    @staticmethod
+    def export_for_static_space(project: str, output_dir: Path) -> None:
+        """
+        Exports a single project's data as Parquet + JSON files for static Space deployment.
+        """
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            raise FileNotFoundError(f"No database found for project '{project}'")
 
-            if (not configs_parquet_path.exists()) or (
-                db_path.stat().st_mtime > configs_parquet_path.stat().st_mtime
-            ):
-                with sqlite3.connect(str(db_path)) as conn:
-                    try:
-                        configs_df = pd.read_sql("SELECT * FROM configs", conn)
-                    except Exception:
-                        configs_df = pd.DataFrame()
-                if not configs_df.empty:
-                    config_data = configs_df["config"].copy()
-                    config_data = pd.DataFrame(
-                        config_data.apply(
-                            lambda x: deserialize_values(orjson.loads(x))
-                        ).values.tolist(),
-                        index=configs_df.index,
-                    )
-                    del configs_df["config"]
-                    for col in config_data.columns:
-                        configs_df[col] = config_data[col]
-                    configs_df.to_parquet(
-                        configs_parquet_path,
-                        write_page_index=True,
-                        use_content_defined_chunking=True,
-                    )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        aux_dir = output_dir / "aux"
+        aux_dir.mkdir(parents=True, exist_ok=True)
+
+        metrics_df = SQLiteStorage._read_table(db_path, "metrics")
+        if not metrics_df.empty:
+            flat = SQLiteStorage._flatten_json_column(metrics_df.copy(), "metrics")
+            flat.to_parquet(output_dir / "metrics.parquet")
+
+        sys_df = SQLiteStorage._read_table(db_path, "system_metrics")
+        if not sys_df.empty:
+            flat = SQLiteStorage._flatten_json_column(sys_df.copy(), "metrics")
+            flat.to_parquet(aux_dir / "system_metrics.parquet")
+
+        configs_df = SQLiteStorage._read_table(db_path, "configs")
+        if not configs_df.empty:
+            flat = SQLiteStorage._flatten_json_column(configs_df.copy(), "config")
+            flat.to_parquet(aux_dir / "configs.parquet")
+
+        runs = SQLiteStorage.get_runs(project)
+        runs_meta = []
+        for run_name in runs:
+            last_step = SQLiteStorage.get_last_step(project, run_name)
+            log_count = SQLiteStorage.get_log_count(project, run_name)
+            runs_meta.append(
+                {
+                    "name": run_name,
+                    "last_step": last_step,
+                    "log_count": log_count,
+                }
+            )
+        with open(output_dir / "runs.json", "w") as f:
+            json_mod.dump(runs_meta, f)
+
+        settings = {
+            "color_palette": get_color_palette(),
+            "plot_order": [
+                item.strip()
+                for item in os.environ.get("TRACKIO_PLOT_ORDER", "").split(",")
+                if item.strip()
+            ],
+        }
+        with open(output_dir / "settings.json", "w") as f:
+            json_mod.dump(settings, f)
 
     @staticmethod
     def _cleanup_wal_sidecars(db_path: Path) -> None:

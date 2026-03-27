@@ -85,9 +85,9 @@
             >
               <div class="th-inner">
                 <span>{header}</span>
-                {#if sortCol === header}
-                  <span class="sort-arrow">{sortDir === "asc" ? "↑" : "↓"}</span>
-                {/if}
+                <span class="sort-arrow" class:visible={sortCol === header}>
+                  {sortCol === header ? (sortDir === "asc" ? "↑" : "↓") : "↑"}
+                </span>
               </div>
             </th>
           {/each}
@@ -197,6 +197,10 @@
   .sort-arrow {
     font-size: 10px;
     color: var(--body-text-color-subdued, #9ca3af);
+    visibility: hidden;
+  }
+  .sort-arrow.visible {
+    visibility: visible;
   }
   td {
     padding: var(--size-2, 8px);

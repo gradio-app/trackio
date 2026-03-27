@@ -1,22 +1,28 @@
 <script>
   import GradioTable from "../components/GradioTable.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getLogs, getMediaUrl } from "../lib/api.js";
+  import { getLogs, getMediaUrl, isStaticMode, fetchMediaBlob } from "../lib/api.js";
 
-  let { project = null, selectedRun = $bindable(null), tableTruncateLength = 250 } = $props();
+  let { project = null, selectedRuns = [], tableTruncateLength = 250 } = $props();
 
   let mediaItems = $state({ images: [], videos: [], audios: [], tables: [] });
   let loading = $state(false);
 
   async function loadMedia() {
-    if (!project || !selectedRun) {
+    if (!project || selectedRuns.length === 0) {
       mediaItems = { images: [], videos: [], audios: [], tables: [] };
       return;
     }
 
     loading = true;
     try {
-      const logs = await getLogs(project, selectedRun);
+      const runsToLoad = selectedRuns;
+      const allLogs = [];
+      for (const run of runsToLoad) {
+        const logs = await getLogs(project, run);
+        if (logs) allLogs.push(...logs.map((l) => ({ ...l, _run: run })));
+      }
+      const logs = allLogs;
       const images = [];
       const videos = [];
       const audios = [];
@@ -50,6 +56,23 @@
         });
       }
 
+      if (await isStaticMode()) {
+        const resolveAll = (items) =>
+          Promise.all(
+            items.map(async (item) => {
+              if (item.file_path) {
+                item._resolvedUrl = await fetchMediaBlob(item.file_path);
+              }
+              return item;
+            }),
+          );
+        await Promise.all([
+          resolveAll(images),
+          resolveAll(videos),
+          resolveAll(audios),
+        ]);
+      }
+
       mediaItems = { images, videos, audios, tables };
     } catch (e) {
       console.error("Failed to load media:", e);
@@ -60,14 +83,13 @@
 
   $effect(() => {
     project;
-    selectedRun;
+    selectedRuns;
     loadMedia();
   });
 
   function getFilePath(item) {
-    if (item.file_path) {
-      return getMediaUrl(item.file_path);
-    }
+    if (item._resolvedUrl) return item._resolvedUrl;
+    if (item.file_path) return getMediaUrl(item.file_path);
     return "";
   }
 </script>
@@ -80,9 +102,9 @@
       {#if !project}
         <h2>Select a project</h2>
         <p>Pick a project in the sidebar to browse media and tables for a run.</p>
-      {:else if !selectedRun}
-        <h2>No run selected</h2>
-        <p>Start a run with Trackio, then choose it in the sidebar under <strong>Run</strong>.</p>
+      {:else if selectedRuns.length === 0}
+        <h2>No runs selected</h2>
+        <p>Select runs in the sidebar to browse media and tables.</p>
         <pre><code>{'import trackio\ntrackio.init(project="my-project")\ntrackio.log({"loss": 0.5})\ntrackio.finish()'}</code></pre>
       {:else}
         <h2>No media or tables in this run</h2>
