@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Adds a readonly (static) Trackio mode (includes a BREAKING change: `trackio.sync()` will now output readonly Spaces by default)
+feat:Adds a static Trackio mode via `trackio.sync(sdk="static")` and support for the `TRACKIO_SPACE_ID` environment variable

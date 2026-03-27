@@ -132,7 +132,8 @@ def init(
             `"username/reponame"` or `"orgname/reponame"`, or just `"reponame"` in which
             case the Space will be created in the currently-logged-in Hugging Face
             user's namespace. If the Space does not exist, it will be created. If the
-            Space already exists, the project will be logged to it.
+            Space already exists, the project will be logged to it. Can also be set
+            via the `TRACKIO_SPACE_ID` environment variable.
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
@@ -192,6 +193,7 @@ def init(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
+    space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     try:

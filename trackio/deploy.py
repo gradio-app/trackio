@@ -605,7 +605,7 @@ def sync(
     private: bool | None = None,
     force: bool = False,
     run_in_background: bool = False,
-    read_only: bool = True,
+    sdk: str = "gradio",
     dataset_id: str | None = None,
 ) -> str:
     """
@@ -626,14 +626,17 @@ def sync(
         run_in_background (`bool`, *optional*, defaults to `False`):
             If `True`, the Space creation and database upload will be run in a background thread.
             If `False`, all the steps will be run synchronously.
-        read_only (`bool`, *optional*, defaults to `True`):
-            If `True`, deploys a static Space that reads from an HF Dataset (no server needed).
-            If `False`, deploys a Gradio Space with a live server.
+        sdk (`str`, *optional*, defaults to `"gradio"`):
+            The type of Space to deploy. `"gradio"` deploys a Gradio Space with a live
+            server. `"static"` deploys a static Space that reads from an HF Dataset
+            (no server needed).
         dataset_id (`str`, *optional*):
             The ID of the HF Dataset for static mode. Auto-generated from space_id if not provided.
     Returns:
         `str`: The Space ID of the synced project.
     """
+    if sdk not in ("gradio", "static"):
+        raise ValueError(f"sdk must be 'gradio' or 'static', got '{sdk}'")
     if space_id is None:
         space_id = SQLiteStorage.get_space_id(project)
     if space_id is None:
@@ -641,7 +644,7 @@ def sync(
     space_id, dataset_id = preprocess_space_and_dataset_ids(space_id, dataset_id)
 
     def _do_sync():
-        if read_only:
+        if sdk == "static":
             upload_dataset_for_static(project, dataset_id, private=private)
             hf_token = huggingface_hub.utils.get_token() if private else None
             deploy_as_static_space(
