@@ -20,9 +20,9 @@
 
 </div>
 
-Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face 🤗. The **logging API, storage, and server** are implemented in **Python**; the **dashboard** is a **Svelte 5** single-page app served alongside a **Gradio** API server, with several UI controls built from **Gradio’s component source** (sliders, checkboxes, etc.) for consistency with the Gradio ecosystem. Trackio is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
+Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face 🤗. Trackio is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
 
-For human users, Trackio ships with that dashboard so you can view metrics, media, tables, alerts, etc.:
+For human users, Trackio ships with a Gradio-based dashboard so you can view metrics, media, tables, alerts, etc.:
 
 ![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
 
