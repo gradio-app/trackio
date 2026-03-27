@@ -287,12 +287,13 @@
             {#each orderedDirect as metric, i}
               {@const plotData = getPlotData(metric)}
               {@const useBar = singlePointMetrics.has(metric)}
+              {@const directTitle = showHeaders ? metric.split("/").slice(1).join("/") || metric : metric}
               {#if plotData.length > 0}
                 {#if useBar}
                   <BarPlot
                     data={plotData}
                     y={metric}
-                    title={metric}
+                    title={directTitle}
                     {colorMap}
                     draggable={true}
                     ondragstart={(e) => handleDragStart(directKey, i, e)}
@@ -304,7 +305,7 @@
                     data={plotData}
                     x={xColumn}
                     y={metric}
-                    title={metric}
+                    title={directTitle}
                     {colorMap}
                     {xLim}
                     onSelect={handlePlotSelect}
@@ -332,12 +333,13 @@
               {#each orderedSub as metric, i}
                 {@const plotData = getPlotData(metric)}
                 {@const useBar = singlePointMetrics.has(metric)}
+                {@const subTitle = showHeaders ? metric.split("/").slice(2).join("/") || metric : metric}
                 {#if plotData.length > 0}
                   {#if useBar}
                     <BarPlot
                       data={plotData}
                       y={metric}
-                      title={metric}
+                      title={subTitle}
                       {colorMap}
                       draggable={true}
                       ondragstart={(e) => handleDragStart(subKey, i, e)}
@@ -349,7 +351,7 @@
                       data={plotData}
                       x={xColumn}
                       y={metric}
-                      title={metric}
+                      title={subTitle}
                       {colorMap}
                       {xLim}
                       onSelect={handlePlotSelect}
