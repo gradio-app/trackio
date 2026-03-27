@@ -6,6 +6,7 @@ import trackio as wandb
 STEPS = 12000
 SPIKE_STEP = 8000
 
+
 # LR schedule: warmup, then a bump at SPIKE_STEP
 def get_learning_rate(step):
     if step < 1000:
@@ -69,7 +70,7 @@ def get_loss(step):
 
 
 wandb.init(
-    project=f"spike-demo",
+    project="spike-demo",
     name="run-0",
     config=dict(
         total_steps=STEPS,
