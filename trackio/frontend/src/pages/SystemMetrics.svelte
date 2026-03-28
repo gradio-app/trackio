@@ -4,7 +4,7 @@
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getSystemLogs } from "../lib/api.js";
-  import { groupMetricsByPrefix, downsample } from "../lib/dataProcessing.js";
+  import { groupMetricsByPrefix, computeMetricPlotData } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
 
   let {
@@ -28,6 +28,15 @@
 
   let metricGroups = $derived(groupMetricsByPrefix(metricNames));
   let groupNames = $derived(Object.keys(metricGroups));
+
+  let plotDataByMetric = $derived.by(() => {
+    const map = new Map();
+    const lim = xLim;
+    for (const m of metricNames) {
+      map.set(m, computeMetricPlotData(systemData, "time", m, lim));
+    }
+    return map;
+  });
 
   function getOrderedMetrics(key, items) {
     const order = metricOrder[key];
@@ -173,23 +182,6 @@
     xLim = null;
   }
 
-  function getPlotData(metric) {
-    let relevant = systemData.filter(
-      (r) => r[metric] != null && r[metric] !== undefined,
-    );
-    if (xLim) {
-      const sorted = relevant.sort((a, b) => a["time"] - b["time"]);
-      let lo = 0;
-      let hi = sorted.length - 1;
-      while (lo < sorted.length && sorted[lo]["time"] < xLim[0]) lo++;
-      while (hi >= 0 && sorted[hi]["time"] > xLim[1]) hi--;
-      lo = Math.max(0, lo - 1);
-      hi = Math.min(sorted.length - 1, hi + 1);
-      relevant = sorted.slice(lo, hi + 1);
-    }
-    const result = downsample(relevant, "time", metric, "run", xLim);
-    return result.data;
-  }
 </script>
 
 <div class="system-page">
@@ -226,7 +218,7 @@
       <Accordion label={groupName} open={true}>
         <div class="plot-grid">
           {#each orderedDirect as metric, i}
-            {@const plotData = getPlotData(metric)}
+            {@const plotData = plotDataByMetric.get(metric) ?? []}
             {#if plotData.length > 0}
               <LinePlot
                 data={plotData}

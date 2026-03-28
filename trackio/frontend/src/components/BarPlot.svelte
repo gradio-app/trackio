@@ -34,6 +34,21 @@
     return entries;
   });
 
+  let colorSpecKey = $derived.by(() => {
+    if (!colorField || !data || data.length === 0) return "";
+    const seen = new Set();
+    const parts = [];
+    for (const d of data) {
+      const name = d[colorField];
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        parts.push(`${name}:${colorMap[name] ?? "#999"}`);
+      }
+    }
+    parts.sort();
+    return parts.join("|");
+  });
+
   function getBarData() {
     const runValues = new Map();
     for (const d of data) {
@@ -134,7 +149,7 @@
       }
       const result = await embed(container, spec, {
         actions: false,
-        renderer: "svg",
+        renderer: "canvas",
       });
       view = result.view;
       requestAnimationFrame(() => {
@@ -172,7 +187,7 @@
   async function downloadImage() {
     if (!view) return;
     try {
-      const url = await view.toImageURL("png", 2);
+      const url = await view.toImageURL("png", 4);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${(y || "chart").replace(/\//g, "_")}.png`;
@@ -261,7 +276,7 @@
   $effect(() => {
     data;
     y;
-    colorMap;
+    colorSpecKey;
     title;
     fullscreen;
     container;

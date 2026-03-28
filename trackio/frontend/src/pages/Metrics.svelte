@@ -11,7 +11,7 @@
     getMetricColumns,
     groupMetricsByPrefix,
     filterMetricsByRegex,
-    downsample,
+    computeMetricPlotData,
   } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
 
@@ -51,6 +51,24 @@
   });
 
   let groupNames = $derived(Object.keys(metricGroups));
+
+  let plotDataByMetric = $derived.by(() => {
+    const map = new Map();
+    const md = masterData;
+    const xc = xColumn;
+    const lim = xLim;
+    for (const g of Object.values(metricGroups)) {
+      for (const m of g.direct) {
+        if (!map.has(m)) map.set(m, computeMetricPlotData(md, xc, m, lim));
+      }
+      for (const sub of Object.values(g.subgroups)) {
+        for (const m of sub) {
+          if (!map.has(m)) map.set(m, computeMetricPlotData(md, xc, m, lim));
+        }
+      }
+    }
+    return map;
+  });
 
   function getOrderedMetrics(key, items) {
     const order = metricOrder[key];
@@ -223,24 +241,6 @@
     xLim = null;
   }
 
-  function getPlotData(metric) {
-    let relevant = masterData.filter(
-      (r) => r[metric] != null && r[metric] !== undefined,
-    );
-    if (xLim) {
-      const sorted = relevant.sort((a, b) => a[xColumn] - b[xColumn]);
-      let lo = 0;
-      let hi = sorted.length - 1;
-      while (lo < sorted.length && sorted[lo][xColumn] < xLim[0]) lo++;
-      while (hi >= 0 && sorted[hi][xColumn] > xLim[1]) hi--;
-      lo = Math.max(0, lo - 1);
-      hi = Math.min(sorted.length - 1, hi + 1);
-      relevant = sorted.slice(lo, hi + 1);
-    }
-    const result = downsample(relevant, xColumn, metric, "run", xLim);
-    return result.data;
-  }
-
 </script>
 
 <div class="metrics-page">
@@ -285,7 +285,7 @@
         {#if orderedDirect.length > 0}
           <div class="plot-grid">
             {#each orderedDirect as metric, i}
-              {@const plotData = getPlotData(metric)}
+              {@const plotData = plotDataByMetric.get(metric) ?? []}
               {@const useBar = singlePointMetrics.has(metric)}
               {@const directTitle = showHeaders ? metric.split("/").slice(1).join("/") || metric : metric}
               {#if plotData.length > 0}
@@ -331,7 +331,7 @@
           >
             <div class="plot-grid">
               {#each orderedSub as metric, i}
-                {@const plotData = getPlotData(metric)}
+                {@const plotData = plotDataByMetric.get(metric) ?? []}
                 {@const useBar = singlePointMetrics.has(metric)}
                 {@const subTitle = showHeaders ? metric.split("/").slice(2).join("/") || metric : metric}
                 {#if plotData.length > 0}

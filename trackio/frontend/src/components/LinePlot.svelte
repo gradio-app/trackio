@@ -38,6 +38,21 @@
     return entries;
   });
 
+  let colorSpecKey = $derived.by(() => {
+    if (!colorField || !data || data.length === 0) return "";
+    const seen = new Set();
+    const parts = [];
+    for (const d of data) {
+      const name = d[colorField];
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        parts.push(`${name}:${colorMap[name] ?? "#999"}`);
+      }
+    }
+    parts.sort();
+    return parts.join("|");
+  });
+
   function cssVar(name, fallback) {
     return (
       getComputedStyle(document.documentElement)
@@ -83,23 +98,30 @@
 
     const layers = [];
 
+    const lineMark = (extra = {}) => ({
+      type: "line",
+      clip: false,
+      strokeWidth: 2,
+      ...extra,
+    });
+
     if (hasSmoothed) {
       layers.push({
         data: { values: originalData },
-        mark: { type: "line", clip: true, strokeWidth: 1, opacity: 0.3, point: { size: 20, opacity: 0.3 } },
+        mark: lineMark({ strokeWidth: 1, opacity: 0.3 }),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "original",
       });
       layers.push({
         data: { values: smoothedData },
-        mark: { type: "line", clip: true, strokeWidth: 2, point: { size: 20 } },
+        mark: lineMark(),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
     } else {
       layers.push({
         data: { values: data },
-        mark: { type: "line", clip: true, strokeWidth: 2, point: { size: 20 } },
+        mark: lineMark(),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
@@ -166,7 +188,7 @@
       }
       const result = await embed(container, spec, {
         actions: false,
-        renderer: "svg",
+        renderer: "canvas",
       });
       view = result.view;
       requestAnimationFrame(() => {
@@ -224,7 +246,7 @@
   async function downloadImage() {
     if (!view) return;
     try {
-      const url = await view.toImageURL("png", 2);
+      const url = await view.toImageURL("png", 4);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${(y || "chart").replace(/\//g, "_")}.png`;
@@ -314,7 +336,7 @@
     data;
     y;
     x;
-    colorMap;
+    colorSpecKey;
     xLim;
     title;
     fullscreen;
