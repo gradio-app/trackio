@@ -41,11 +41,7 @@ def _readme_linked_hub_yaml(dataset_id: str | None) -> str:
     return ""
 
 
-def _space_app_py_content(bucket_id: str | None) -> str:
-    if bucket_id is None:
-        return "import trackio\ntrackio.show()\n"
-    path = Path(files("trackio")) / "space_bucket_app.py"
-    return path.read_text(encoding="utf-8")
+_SPACE_APP_PY = "import trackio\ntrackio.show()\n"
 
 
 def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1.5):
@@ -185,15 +181,6 @@ def deploy_as_space(
         repo_type="space",
     )
 
-    if bucket_id is not None:
-        packages_buffer = io.BytesIO(b"nfs-common\n")
-        hf_api.upload_file(
-            path_or_fileobj=packages_buffer,
-            path_in_repo="packages.txt",
-            repo_id=space_id,
-            repo_type="space",
-        )
-
     huggingface_hub.utils.disable_progress_bars()
 
     if is_source_install:
@@ -224,7 +211,7 @@ def deploy_as_space(
             ],
         )
 
-    app_file_content = _space_app_py_content(bucket_id)
+    app_file_content = _SPACE_APP_PY
     app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
     hf_api.upload_file(
         path_or_fileobj=app_file_buffer,
@@ -237,7 +224,6 @@ def deploy_as_space(
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if bucket_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_BUCKET_ID", bucket_id)
-        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
     elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
@@ -595,8 +581,7 @@ def deploy_as_static_space(
 
     linked = _readme_linked_hub_yaml(dataset_id)
     readme_content = (
-        "---\nsdk: static\npinned: false\ntags:\n - trackio\n"
-        f"{linked}---\n"
+        f"---\nsdk: static\npinned: false\ntags:\n - trackio\n{linked}---\n"
     )
     _retry_hf_write(
         "Static Space README upload",

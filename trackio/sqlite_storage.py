@@ -121,6 +121,7 @@ class SQLiteStorage:
         Initialize the SQLite database with required tables.
         Returns the database path.
         """
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
@@ -512,7 +513,9 @@ class SQLiteStorage:
             dataset_id = os.environ.get("TRACKIO_DATASET_ID")
             space_repo_name = os.environ.get("SPACE_REPO_NAME")
             if bucket_id is not None:
-                scheduler = DummyCommitScheduler()
+                from trackio.bucket_storage import BucketSyncScheduler
+
+                scheduler = BucketSyncScheduler(bucket_id)
             elif dataset_id is not None and space_repo_name is not None:
                 scheduler = CommitScheduler(
                     repo_id=dataset_id,
@@ -887,6 +890,7 @@ class SQLiteStorage:
 
     @staticmethod
     def get_log_count(project: str, run: str) -> int:
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return 0
@@ -966,6 +970,13 @@ class SQLiteStorage:
     def load_from_dataset():
         bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
         if bucket_id is not None:
+            if not SQLiteStorage._dataset_import_attempted:
+                from trackio.bucket_storage import download_bucket_to_trackio_dir
+
+                try:
+                    download_bucket_to_trackio_dir(bucket_id)
+                except Exception:
+                    pass
             SQLiteStorage._dataset_import_attempted = True
             return
         dataset_id = os.environ.get("TRACKIO_DATASET_ID")
@@ -997,12 +1008,16 @@ class SQLiteStorage:
         SQLiteStorage._dataset_import_attempted = True
 
     @staticmethod
+    def _ensure_hub_loaded():
+        if not SQLiteStorage._dataset_import_attempted:
+            SQLiteStorage.load_from_dataset()
+
+    @staticmethod
     def get_projects() -> list[str]:
         """
         Get list of all projects by scanning the database files in the trackio directory.
         """
-        if not SQLiteStorage._dataset_import_attempted:
-            SQLiteStorage.load_from_dataset()
+        SQLiteStorage._ensure_hub_loaded()
 
         projects: set[str] = set()
         if not TRACKIO_DIR.exists():
@@ -1016,6 +1031,7 @@ class SQLiteStorage:
     @staticmethod
     def get_runs(project: str) -> list[str]:
         """Get list of all runs for a project, ordered by creation time."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []

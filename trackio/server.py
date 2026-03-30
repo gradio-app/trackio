@@ -591,6 +591,8 @@ def rename_run(
 
 def force_sync() -> bool:
     if os.environ.get("TRACKIO_BUCKET_ID"):
+        scheduler = SQLiteStorage.get_scheduler()
+        scheduler.trigger().result()
         return True
     SQLiteStorage._dataset_import_attempted = True
     SQLiteStorage.export_to_parquet()
