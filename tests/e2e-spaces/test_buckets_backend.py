@@ -22,3 +22,5 @@ def test_space_readme_mounts_hf_bucket_to_trackio_data(test_space_id):
     assert "hf_mount" in readme
     assert f"hf://buckets/{bucket_id}" in readme
     assert "/data/trackio" in readme
+    assert "buckets:" in readme
+    assert f" - {bucket_id}" in readme

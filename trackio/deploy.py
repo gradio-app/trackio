@@ -34,6 +34,15 @@ SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 
 
+def _readme_linked_hub_yaml(dataset_id: str | None, bucket_id: str | None) -> str:
+    parts = []
+    if dataset_id is not None:
+        parts.append(f"datasets:\n - {dataset_id}\n")
+    if bucket_id is not None:
+        parts.append(f"buckets:\n - {bucket_id}\n")
+    return "".join(parts)
+
+
 def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1.5):
     delay = initial_delay
     for attempt in range(1, retries + 1):
@@ -147,6 +156,9 @@ def deploy_as_space(
         readme_content = f.read()
         readme_content = readme_content.replace("{GRADIO_VERSION}", gradio.__version__)
         readme_content = readme_content.replace("{APP_FILE}", "app.py")
+        readme_content = readme_content.replace(
+            "{LINKED_HUB_METADATA}", _readme_linked_hub_yaml(dataset_id, bucket_id)
+        )
         if bucket_id is not None:
             bucket_mount = (
                 f"hf_mount:\n - src: hf://buckets/{bucket_id}\n   dst: /data/trackio\n"
@@ -557,7 +569,11 @@ def deploy_as_static_space(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    readme_content = "---\nsdk: static\npinned: false\ntags:\n - trackio\n---\n"
+    linked = _readme_linked_hub_yaml(dataset_id, bucket_id)
+    readme_content = (
+        "---\nsdk: static\npinned: false\ntags:\n - trackio\n"
+        f"{linked}---\n"
+    )
     _retry_hf_write(
         "Static Space README upload",
         lambda: hf_api.upload_file(

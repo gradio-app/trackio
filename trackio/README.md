@@ -4,7 +4,7 @@ sdk_version: {GRADIO_VERSION}
 app_file: {APP_FILE}
 tags:
  - trackio
-hf_oauth: true
+{LINKED_HUB_METADATA}hf_oauth: true
 hf_oauth_scopes:
  - write-repos
 {BUCKET_MOUNT}---
