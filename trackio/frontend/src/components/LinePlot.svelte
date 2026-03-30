@@ -1,6 +1,8 @@
 <script>
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
+  import * as vega from "vega";
+  import { buildColorSpecKey } from "../lib/dataProcessing.js";
 
   let {
     data = [],
@@ -10,6 +12,7 @@
     colorMap = {},
     title = "",
     xLim = null,
+    yExtent = undefined,
     onSelect = null,
     onResetZoom = null,
     draggable = false,
@@ -23,6 +26,9 @@
   let fullscreenHost = $state(null);
   let view = $state(null);
   let fullscreen = $state(false);
+
+  let lastStructuralKey = null;
+  let lastHasSmoothed = false;
 
   let legendEntries = $derived.by(() => {
     if (!colorField || !data || data.length === 0) return [];
@@ -38,12 +44,29 @@
     return entries;
   });
 
+  let colorSpecKey = $derived(buildColorSpecKey(data, colorField, colorMap));
+
   function cssVar(name, fallback) {
     return (
       getComputedStyle(document.documentElement)
         .getPropertyValue(name)
         .trim() || fallback
     );
+  }
+
+  function splitData() {
+    const originalData = data.filter(
+      (d) => d.data_type === "original" || !d.data_type,
+    );
+    const smoothedData = data.filter((d) => d.data_type === "smoothed");
+    return { originalData, smoothedData, hasSmoothed: smoothedData.length > 0 };
+  }
+
+  function computeXDomain(originalData) {
+    const xVals = originalData.map((d) => d[x]).filter((v) => v != null);
+    if (xLim) return [xLim[0], xLim[1]];
+    if (xVals.length > 0) return [Math.min(...xVals), Math.max(...xVals)];
+    return undefined;
   }
 
   function buildSpec() {
@@ -58,18 +81,20 @@
       (r) => colorMap[r] || "#999",
     );
 
-    const originalData = data.filter(
-      (d) => d.data_type === "original" || !d.data_type,
-    );
-    const smoothedData = data.filter((d) => d.data_type === "smoothed");
-    const hasSmoothed = smoothedData.length > 0;
+    const { originalData, smoothedData, hasSmoothed } = splitData();
+    lastHasSmoothed = hasSmoothed;
+    const xDomain = computeXDomain(originalData);
 
     const xEnc = {
       field: x,
       type: "quantitative",
-      scale: { zero: false, ...(xLim ? { domain: [xLim[0], xLim[1]] } : {}) },
+      scale: { zero: false, ...(xDomain ? { domain: xDomain } : {}) },
     };
-    const yEnc = { field: y, type: "quantitative" };
+    const yEnc = {
+      field: y,
+      type: "quantitative",
+      ...(yExtent ? { scale: { domain: yExtent } } : {}),
+    };
     const colorEnc = hasColor
       ? {
           color: {
@@ -83,23 +108,30 @@
 
     const layers = [];
 
+    const lineMark = (extra = {}) => ({
+      type: "line",
+      clip: true,
+      strokeWidth: 2,
+      ...extra,
+    });
+
     if (hasSmoothed) {
       layers.push({
-        data: { values: originalData },
-        mark: { type: "line", clip: true, strokeWidth: 1, opacity: 0.3, point: { size: 20, opacity: 0.3 } },
+        data: { name: "data_original", values: originalData },
+        mark: lineMark({ strokeWidth: 1, opacity: 0.3 }),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "original",
       });
       layers.push({
-        data: { values: smoothedData },
-        mark: { type: "line", clip: true, strokeWidth: 2, point: { size: 20 } },
+        data: { name: "data_smoothed", values: smoothedData },
+        mark: lineMark(),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
     } else {
       layers.push({
-        data: { values: data },
-        mark: { type: "line", clip: true, strokeWidth: 2, point: { size: 20 } },
+        data: { name: "data_plot", values: data },
+        mark: lineMark(),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
@@ -153,7 +185,43 @@
     };
   }
 
-  async function render() {
+  function getStructuralKey() {
+    const { originalData } = splitData();
+    const xDomain = computeXDomain(originalData);
+    const xKey = xDomain ? `${xDomain[0]},${xDomain[1]}` : "auto";
+    const yKey = yExtent ? `${yExtent[0]},${yExtent[1]}` : "auto";
+    return `${y}\0${x}\0${colorSpecKey}\0${title}\0${fullscreen}\0${!!onSelect}\0${xKey}\0${yKey}`;
+  }
+
+  function replaceDataset(v, name, newData) {
+    const cs = vega.changeset().remove(vega.truthy).insert(newData);
+    v.change(name, cs);
+  }
+
+  function tryIncrementalUpdate() {
+    if (!view) return false;
+
+    const { originalData, smoothedData, hasSmoothed } = splitData();
+
+    if (hasSmoothed !== lastHasSmoothed) return false;
+
+    try {
+      if (hasSmoothed) {
+        replaceDataset(view, "data_original", originalData);
+        replaceDataset(view, "data_smoothed", smoothedData);
+      } else {
+        replaceDataset(view, "data_plot", data);
+      }
+
+      view.run();
+      lastHasSmoothed = hasSmoothed;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function fullRender() {
     await tick();
     if (!container || !data || data.length === 0 || !y) return;
 
@@ -166,9 +234,10 @@
       }
       const result = await embed(container, spec, {
         actions: false,
-        renderer: "svg",
+        renderer: "canvas",
       });
       view = result.view;
+      lastStructuralKey = getStructuralKey();
       requestAnimationFrame(() => {
         result.view.resize();
       });
@@ -191,6 +260,17 @@
     } catch (e) {
       console.error("Vega render error:", e);
     }
+  }
+
+  async function render() {
+    if (!container || !data || data.length === 0 || !y) return;
+
+    const structuralKey = getStructuralKey();
+    if (view && structuralKey === lastStructuralKey) {
+      if (tryIncrementalUpdate()) return;
+    }
+
+    await fullRender();
   }
 
   function downloadCSV() {
@@ -224,7 +304,7 @@
   async function downloadImage() {
     if (!view) return;
     try {
-      const url = await view.toImageURL("png", 2);
+      const url = await view.toImageURL("png", 4);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${(y || "chart").replace(/\//g, "_")}.png`;
@@ -314,8 +394,9 @@
     data;
     y;
     x;
-    colorMap;
+    colorSpecKey;
     xLim;
+    yExtent;
     title;
     fullscreen;
     container;

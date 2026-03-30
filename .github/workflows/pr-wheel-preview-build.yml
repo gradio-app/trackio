@@ -1,0 +1,73 @@
+name: PR wheel preview build
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-wheel-build-${{ github.event.pull_request.number }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: trackio/frontend/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd trackio/frontend
+          npm ci
+          npm run build
+
+      - name: Install build
+        run: python -m pip install build
+
+      - name: Build wheel
+        env:
+          SKIP_FRONTEND_BUILD: "1"
+        run: python -m build -w
+
+      - name: Write metadata
+        run: |
+          python3 << 'PY'
+          import json
+          from pathlib import Path
+
+          wheels = sorted(Path("dist").glob("trackio-*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"expected one trackio wheel, got {[p.name for p in wheels]}")
+          meta = {
+              "pr_number": ${{ github.event.pull_request.number }},
+              "sha": "${{ github.event.pull_request.head.sha }}",
+              "wheel_basename": wheels[0].name,
+          }
+          Path("output.json").write_text(json.dumps(meta))
+          PY
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: trackio-wheel
+          path: dist/*.whl
+
+      - name: Upload metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-wheel-preview-metadata
+          path: output.json
