@@ -17,8 +17,10 @@ def test_space_id():
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_space_ready(test_space_id):
-    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(test_space_id, None)
-    deploy.create_space_if_not_exists(space_id, None, dataset_id, None)
+    space_id, dataset_id, bucket_id = utils.preprocess_space_and_dataset_ids(
+        test_space_id, None
+    )
+    deploy.create_space_if_not_exists(space_id, None, dataset_id, bucket_id, None)
 
     deadline = time.time() + 300
     while time.time() < deadline:

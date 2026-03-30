@@ -507,12 +507,13 @@ class SQLiteStorage:
         with SQLiteStorage._scheduler_lock:
             if SQLiteStorage._current_scheduler is not None:
                 return SQLiteStorage._current_scheduler
+            bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
             hf_token = os.environ.get("HF_TOKEN")
             dataset_id = os.environ.get("TRACKIO_DATASET_ID")
             space_repo_name = os.environ.get("SPACE_REPO_NAME")
-            if dataset_id is None or space_repo_name is None:
+            if bucket_id is not None:
                 scheduler = DummyCommitScheduler()
-            else:
+            elif dataset_id is not None and space_repo_name is not None:
                 scheduler = CommitScheduler(
                     repo_id=dataset_id,
                     repo_type="dataset",
@@ -528,6 +529,8 @@ class SQLiteStorage:
                     token=hf_token,
                     on_before_commit=SQLiteStorage.export_to_parquet,
                 )
+            else:
+                scheduler = DummyCommitScheduler()
             SQLiteStorage._current_scheduler = scheduler
             return scheduler
 
@@ -961,6 +964,10 @@ class SQLiteStorage:
 
     @staticmethod
     def load_from_dataset():
+        bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
+        if bucket_id is not None:
+            SQLiteStorage._dataset_import_attempted = True
+            return
         dataset_id = os.environ.get("TRACKIO_DATASET_ID")
         space_repo_name = os.environ.get("SPACE_REPO_NAME")
         if dataset_id is not None and space_repo_name is not None:
