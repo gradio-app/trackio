@@ -27,6 +27,7 @@
     showHeaders = true,
     appBootstrapReady = false,
     plotOrder = [],
+    metricColumns = $bindable([]),
   } = $props();
 
   let masterData = $state([]);
@@ -134,6 +135,7 @@
       (c) => c !== xColumn && c !== "run" && c !== "data_type" && c !== "x_axis",
     );
     metrics = cols;
+    metricColumns = cols;
 
     const countPerRunMetric = new Map();
     for (const r of originals) {
