@@ -185,6 +185,15 @@ def deploy_as_space(
         repo_type="space",
     )
 
+    if bucket_id is not None:
+        packages_buffer = io.BytesIO(b"nfs-common\n")
+        hf_api.upload_file(
+            path_or_fileobj=packages_buffer,
+            path_in_repo="packages.txt",
+            repo_id=space_id,
+            repo_type="space",
+        )
+
     huggingface_hub.utils.disable_progress_bars()
 
     if is_source_install:
