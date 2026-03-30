@@ -16,6 +16,7 @@ else:
     import tomli as tomllib
 
 import gradio
+import httpx
 import huggingface_hub
 from gradio_client import Client, handle_file
 from httpx import ReadTimeout
@@ -34,13 +35,17 @@ SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 
 
-def _readme_linked_hub_yaml(dataset_id: str | None, bucket_id: str | None) -> str:
-    parts = []
+def _readme_linked_hub_yaml(dataset_id: str | None) -> str:
     if dataset_id is not None:
-        parts.append(f"datasets:\n - {dataset_id}\n")
-    if bucket_id is not None:
-        parts.append(f"buckets:\n - {bucket_id}\n")
-    return "".join(parts)
+        return f"datasets:\n - {dataset_id}\n"
+    return ""
+
+
+def _space_app_py_content(bucket_id: str | None) -> str:
+    if bucket_id is None:
+        return "import trackio\ntrackio.show()\n"
+    path = Path(files("trackio")) / "space_bucket_app.py"
+    return path.read_text(encoding="utf-8")
 
 
 def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1.5):
@@ -157,15 +162,8 @@ def deploy_as_space(
         readme_content = readme_content.replace("{GRADIO_VERSION}", gradio.__version__)
         readme_content = readme_content.replace("{APP_FILE}", "app.py")
         readme_content = readme_content.replace(
-            "{LINKED_HUB_METADATA}", _readme_linked_hub_yaml(dataset_id, bucket_id)
+            "{LINKED_HUB_METADATA}", _readme_linked_hub_yaml(dataset_id)
         )
-        if bucket_id is not None:
-            bucket_mount = (
-                f"hf_mount:\n - src: hf://buckets/{bucket_id}\n   dst: /data/trackio\n"
-            )
-        else:
-            bucket_mount = ""
-        readme_content = readme_content.replace("{BUCKET_MOUNT}", bucket_mount)
         readme_buffer = io.BytesIO(readme_content.encode("utf-8"))
         hf_api.upload_file(
             path_or_fileobj=readme_buffer,
@@ -217,8 +215,7 @@ def deploy_as_space(
             ],
         )
 
-    app_file_content = """import trackio
-trackio.show()"""
+    app_file_content = _space_app_py_content(bucket_id)
     app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
     hf_api.upload_file(
         path_or_fileobj=app_file_buffer,
@@ -231,6 +228,7 @@ trackio.show()"""
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if bucket_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_BUCKET_ID", bucket_id)
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
     elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
@@ -307,15 +305,32 @@ def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
     hf_api = huggingface_hub.HfApi()
     start = time.time()
     delay = 2
+    request_timeout = 45.0
+    failure_stages = frozenset(
+        ("NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR")
+    )
     while time.time() - start < timeout:
         try:
-            info = hf_api.space_info(space_id)
-            if info.runtime and info.runtime.stage == "RUNNING":
-                return
-        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
+            info = hf_api.space_info(space_id, timeout=request_timeout)
+            if info.runtime:
+                stage = str(info.runtime.stage)
+                if stage in failure_stages:
+                    raise RuntimeError(
+                        f"Space {space_id} entered terminal stage {stage}. "
+                        "Fix README.md or app files; see build logs on the Hub."
+                    )
+                if stage == "RUNNING":
+                    return
+        except RuntimeError:
+            raise
+        except (huggingface_hub.utils.HfHubHTTPError, httpx.RequestError):
             pass
         time.sleep(delay)
         delay = min(delay * 1.5, 15)
+    raise TimeoutError(
+        f"Space {space_id} did not reach RUNNING within {timeout}s. "
+        "Check status and build logs on the Hub."
+    )
 
 
 def wait_until_space_exists(
@@ -337,7 +352,7 @@ def wait_until_space_exists(
         try:
             hf_api.space_info(space_id)
             return
-        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
+        except (huggingface_hub.utils.HfHubHTTPError, httpx.RequestError):
             time.sleep(delay)
             delay = min(delay * 2, 60)
     raise TimeoutError("Waiting for space to exist took longer than expected")
@@ -569,7 +584,7 @@ def deploy_as_static_space(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    linked = _readme_linked_hub_yaml(dataset_id, bucket_id)
+    linked = _readme_linked_hub_yaml(dataset_id)
     readme_content = (
         "---\nsdk: static\npinned: false\ntags:\n - trackio\n"
         f"{linked}---\n"

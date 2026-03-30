@@ -7,4 +7,4 @@ tags:
 {LINKED_HUB_METADATA}hf_oauth: true
 hf_oauth_scopes:
  - write-repos
-{BUCKET_MOUNT}---
+---

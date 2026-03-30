@@ -134,9 +134,8 @@ def _get_trackio_dir() -> Path:
         return Path("/data/trackio")
     if os.environ.get("TRACKIO_DIR"):
         return Path(os.environ.get("TRACKIO_DIR"))
-    bucket_mount = Path("/data/trackio")
-    if os.environ.get("TRACKIO_BUCKET_ID") and bucket_mount.exists():
-        return bucket_mount
+    if os.environ.get("TRACKIO_BUCKET_ID"):
+        return Path("/data/trackio")
     return Path(HF_HOME) / "trackio"
 
 
