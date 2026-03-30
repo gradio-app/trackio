@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
+  import * as vega from "vega";
   import { buildColorSpecKey } from "../lib/dataProcessing.js";
 
   let {
@@ -26,6 +27,9 @@
   let view = $state(null);
   let fullscreen = $state(false);
 
+  let lastStructuralKey = null;
+  let lastHasSmoothed = false;
+
   let legendEntries = $derived.by(() => {
     if (!colorField || !data || data.length === 0) return [];
     const seen = new Set();
@@ -50,6 +54,21 @@
     );
   }
 
+  function splitData() {
+    const originalData = data.filter(
+      (d) => d.data_type === "original" || !d.data_type,
+    );
+    const smoothedData = data.filter((d) => d.data_type === "smoothed");
+    return { originalData, smoothedData, hasSmoothed: smoothedData.length > 0 };
+  }
+
+  function computeXDomain(originalData) {
+    const xVals = originalData.map((d) => d[x]).filter((v) => v != null);
+    if (xLim) return [xLim[0], xLim[1]];
+    if (xVals.length > 0) return [Math.min(...xVals), Math.max(...xVals)];
+    return undefined;
+  }
+
   function buildSpec() {
     const hasColor =
       colorField && data.length > 0 && Object.hasOwn(data[0], colorField);
@@ -62,18 +81,9 @@
       (r) => colorMap[r] || "#999",
     );
 
-    const originalData = data.filter(
-      (d) => d.data_type === "original" || !d.data_type,
-    );
-    const smoothedData = data.filter((d) => d.data_type === "smoothed");
-    const hasSmoothed = smoothedData.length > 0;
-
-    const xVals = originalData.map((d) => d[x]).filter((v) => v != null);
-    const xDomain = xLim
-      ? [xLim[0], xLim[1]]
-      : xVals.length > 0
-        ? [Math.min(...xVals), Math.max(...xVals)]
-        : undefined;
+    const { originalData, smoothedData, hasSmoothed } = splitData();
+    lastHasSmoothed = hasSmoothed;
+    const xDomain = computeXDomain(originalData);
 
     const xEnc = {
       field: x,
@@ -107,20 +117,20 @@
 
     if (hasSmoothed) {
       layers.push({
-        data: { values: originalData },
+        data: { name: "data_original", values: originalData },
         mark: lineMark({ strokeWidth: 1, opacity: 0.3 }),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "original",
       });
       layers.push({
-        data: { values: smoothedData },
+        data: { name: "data_smoothed", values: smoothedData },
         mark: lineMark(),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
     } else {
       layers.push({
-        data: { values: data },
+        data: { name: "data_plot", values: data },
         mark: lineMark(),
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
@@ -175,7 +185,43 @@
     };
   }
 
-  async function render() {
+  function getStructuralKey() {
+    const { originalData } = splitData();
+    const xDomain = computeXDomain(originalData);
+    const xKey = xDomain ? `${xDomain[0]},${xDomain[1]}` : "auto";
+    const yKey = yExtent ? `${yExtent[0]},${yExtent[1]}` : "auto";
+    return `${y}\0${x}\0${colorSpecKey}\0${title}\0${fullscreen}\0${!!onSelect}\0${xKey}\0${yKey}`;
+  }
+
+  function replaceDataset(v, name, newData) {
+    const cs = vega.changeset().remove(vega.truthy).insert(newData);
+    v.change(name, cs);
+  }
+
+  function tryIncrementalUpdate() {
+    if (!view) return false;
+
+    const { originalData, smoothedData, hasSmoothed } = splitData();
+
+    if (hasSmoothed !== lastHasSmoothed) return false;
+
+    try {
+      if (hasSmoothed) {
+        replaceDataset(view, "data_original", originalData);
+        replaceDataset(view, "data_smoothed", smoothedData);
+      } else {
+        replaceDataset(view, "data_plot", data);
+      }
+
+      view.run();
+      lastHasSmoothed = hasSmoothed;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function fullRender() {
     await tick();
     if (!container || !data || data.length === 0 || !y) return;
 
@@ -191,6 +237,7 @@
         renderer: "canvas",
       });
       view = result.view;
+      lastStructuralKey = getStructuralKey();
       requestAnimationFrame(() => {
         result.view.resize();
       });
@@ -213,6 +260,17 @@
     } catch (e) {
       console.error("Vega render error:", e);
     }
+  }
+
+  async function render() {
+    if (!container || !data || data.length === 0 || !y) return;
+
+    const structuralKey = getStructuralKey();
+    if (view && structuralKey === lastStructuralKey) {
+      if (tryIncrementalUpdate()) return;
+    }
+
+    await fullRender();
   }
 
   function downloadCSV() {
