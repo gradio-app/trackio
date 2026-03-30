@@ -22,6 +22,7 @@ from httpx import ReadTimeout
 from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
+from trackio.bucket_storage import create_bucket_if_not_exists, upload_project_to_bucket
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
@@ -140,8 +141,6 @@ def deploy_as_space(
     is_source_install = _is_trackio_installed_from_source()
 
     if bucket_id is not None:
-        from trackio.bucket_storage import create_bucket_if_not_exists
-
         create_bucket_if_not_exists(bucket_id, private=private)
 
     with open(Path(trackio_path, "README.md"), "r") as f:
@@ -689,11 +688,6 @@ def sync(
                     hf_token=hf_token,
                 )
             elif bucket_id is not None:
-                from trackio.bucket_storage import (
-                    create_bucket_if_not_exists,
-                    upload_project_to_bucket,
-                )
-
                 create_bucket_if_not_exists(bucket_id, private=private)
                 upload_project_to_bucket(project, bucket_id)
                 print(
@@ -709,11 +703,6 @@ def sync(
                 )
         else:
             if bucket_id is not None:
-                from trackio.bucket_storage import (
-                    create_bucket_if_not_exists,
-                    upload_project_to_bucket,
-                )
-
                 create_bucket_if_not_exists(bucket_id, private=private)
                 upload_project_to_bucket(project, bucket_id)
                 print(

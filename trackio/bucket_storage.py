@@ -1,7 +1,9 @@
 import sqlite3
-from pathlib import Path
 
 import huggingface_hub
+
+from trackio.sqlite_storage import SQLiteStorage
+from trackio.utils import MEDIA_DIR, TRACKIO_DIR
 
 
 def create_bucket_if_not_exists(bucket_id: str, private: bool | None = None) -> None:
@@ -9,9 +11,6 @@ def create_bucket_if_not_exists(bucket_id: str, private: bool | None = None) -> 
 
 
 def upload_project_to_bucket(project: str, bucket_id: str) -> None:
-    from trackio.sqlite_storage import SQLiteStorage
-    from trackio.utils import MEDIA_DIR, TRACKIO_DIR
-
     db_path = SQLiteStorage.get_project_db_path(project)
     if not db_path.exists():
         raise FileNotFoundError(f"No database found for project '{project}'")
