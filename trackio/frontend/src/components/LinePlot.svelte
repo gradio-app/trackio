@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
+  import { buildColorSpecKey } from "../lib/dataProcessing.js";
 
   let {
     data = [],
@@ -38,20 +39,7 @@
     return entries;
   });
 
-  let colorSpecKey = $derived.by(() => {
-    if (!colorField || !data || data.length === 0) return "";
-    const seen = new Set();
-    const parts = [];
-    for (const d of data) {
-      const name = d[colorField];
-      if (name && !seen.has(name)) {
-        seen.add(name);
-        parts.push(`${name}:${colorMap[name] ?? "#999"}`);
-      }
-    }
-    parts.sort();
-    return parts.join("|");
-  });
+  let colorSpecKey = $derived(buildColorSpecKey(data, colorField, colorMap));
 
   function cssVar(name, fallback) {
     return (
@@ -79,12 +67,28 @@
     const smoothedData = data.filter((d) => d.data_type === "smoothed");
     const hasSmoothed = smoothedData.length > 0;
 
+    const xVals = originalData.map((d) => d[x]).filter((v) => v != null);
+    const xDomain = xLim
+      ? [xLim[0], xLim[1]]
+      : xVals.length > 0
+        ? [Math.min(...xVals), Math.max(...xVals)]
+        : undefined;
+
+    const yVals = originalData.map((d) => d[y]).filter((v) => v != null);
+    const yDomain = hasSmoothed && yVals.length > 0
+      ? [Math.min(...yVals), Math.max(...yVals)]
+      : undefined;
+
     const xEnc = {
       field: x,
       type: "quantitative",
-      scale: { zero: false, ...(xLim ? { domain: [xLim[0], xLim[1]] } : {}) },
+      scale: { zero: false, ...(xDomain ? { domain: xDomain } : {}) },
     };
-    const yEnc = { field: y, type: "quantitative" };
+    const yEnc = {
+      field: y,
+      type: "quantitative",
+      ...(yDomain ? { scale: { domain: yDomain } } : {}),
+    };
     const colorEnc = hasColor
       ? {
           color: {
@@ -100,7 +104,7 @@
 
     const lineMark = (extra = {}) => ({
       type: "line",
-      clip: false,
+      clip: true,
       strokeWidth: 2,
       ...extra,
     });

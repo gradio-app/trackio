@@ -130,7 +130,23 @@ export function computeMetricPlotData(masterData, xColumn, metric, xLim) {
     hi = Math.min(sorted.length - 1, hi + 1);
     relevant = sorted.slice(lo, hi + 1);
   }
-  return downsample(relevant, xColumn, metric, "run", xLim).data;
+  const originals = relevant.filter(
+    (r) => r.data_type === "original" || !r.data_type,
+  );
+  let yExtent = undefined;
+  if (originals.length > 0) {
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    for (const r of originals) {
+      const v = r[metric];
+      if (v != null) {
+        if (v < yMin) yMin = v;
+        if (v > yMax) yMax = v;
+      }
+    }
+    if (yMin !== Infinity) yExtent = [yMin, yMax];
+  }
+  return { data: downsample(relevant, xColumn, metric, "run", xLim).data, yExtent };
 }
 
 function downsampleImpl(data, x, y, colorField, xLim) {
@@ -343,6 +359,21 @@ export function groupMetricsByPrefix(metrics, plotOrder = []) {
   }
 
   return groups;
+}
+
+export function buildColorSpecKey(data, colorField, colorMap) {
+  if (!colorField || !data || data.length === 0) return "";
+  const seen = new Set();
+  const parts = [];
+  for (const d of data) {
+    const name = d[colorField];
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      parts.push(`${name}:${colorMap[name] ?? "#999"}`);
+    }
+  }
+  parts.sort();
+  return parts.join("|");
 }
 
 export function filterMetricsByRegex(metrics, pattern) {

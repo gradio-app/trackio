@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
+  import { buildColorSpecKey } from "../lib/dataProcessing.js";
 
   let {
     data = [],
@@ -34,20 +35,7 @@
     return entries;
   });
 
-  let colorSpecKey = $derived.by(() => {
-    if (!colorField || !data || data.length === 0) return "";
-    const seen = new Set();
-    const parts = [];
-    for (const d of data) {
-      const name = d[colorField];
-      if (name && !seen.has(name)) {
-        seen.add(name);
-        parts.push(`${name}:${colorMap[name] ?? "#999"}`);
-      }
-    }
-    parts.sort();
-    return parts.join("|");
-  });
+  let colorSpecKey = $derived(buildColorSpecKey(data, colorField, colorMap));
 
   function getBarData() {
     const runValues = new Map();
