@@ -102,6 +102,8 @@ def _handle_sync(args):
             private=args.private,
             force=args.force,
             sdk=args.sdk,
+            dataset_id=args.dataset_id,
+            space_mode=args.space_mode,
         )
 
 
@@ -191,7 +193,9 @@ def main():
 
     sync_parser = subparsers.add_parser(
         "sync",
-        help="Sync a local project's database to a Hugging Face Space. If the Space does not exist, it will be created.",
+        help="Sync a local project to a Hugging Face Space, or convert between Gradio and static Spaces. "
+        "Uses the Space SDK detected on the Hub unless --space-mode is set. "
+        "Converting Gradio to static requires the live Space to run a Trackio version with push_static_dataset_from_space.",
     )
     sync_parser.add_argument(
         "--project",
@@ -223,7 +227,19 @@ def main():
         "--sdk",
         choices=["gradio", "static"],
         default="gradio",
-        help="The type of Space to deploy. 'gradio' (default) deploys a live Gradio server. 'static' deploys a static Space that reads from an HF Dataset.",
+        help="Target Space type: 'gradio' (live server) or 'static' (dataset-backed). If this differs from the Space on the Hub, sync performs a conversion.",
+    )
+    sync_parser.add_argument(
+        "--space-mode",
+        choices=["auto", "gradio", "static"],
+        default="auto",
+        help="When auto (default), the current Space SDK is read from the Hub. Use gradio or static only if detection fails.",
+    )
+    sync_parser.add_argument(
+        "--dataset-id",
+        required=False,
+        default=None,
+        help="HF Dataset ID for static mode or conversion (defaults to {space}-dataset from --space-id).",
     )
 
     list_parser = subparsers.add_parser(

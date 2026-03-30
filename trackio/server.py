@@ -5,14 +5,17 @@ import os
 import re
 import secrets
 import shutil
+import tempfile
 import time
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 import gradio as gr
 import httpx
 import huggingface_hub as hf
+from huggingface_hub.errors import HfHubHTTPError
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
@@ -298,15 +301,60 @@ def upload_db_to_space(
     shutil.copy(uploaded_db["path"], db_project_path)
 
 
+def push_static_dataset_from_space(
+    project: str, dataset_id: str, hf_token: str | None
+) -> None:
+    check_hf_token_has_write_access(hf_token)
+    tok = hf_token or hf.utils.get_token()
+    if not tok:
+        raise PermissionError("A Hugging Face token is required to push a dataset.")
+    hf_api = hf.HfApi(token=tok)
+    try:
+        hf.create_repo(
+            dataset_id,
+            repo_type="dataset",
+            exist_ok=True,
+            token=tok,
+        )
+    except HfHubHTTPError as e:
+        if e.response is not None and e.response.status_code in (401, 403):
+            hf.login(add_to_git_credential=False, token=tok)
+            hf.create_repo(
+                dataset_id,
+                repo_type="dataset",
+                exist_ok=True,
+                token=tok,
+            )
+        else:
+            raise
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_dir = Path(tmp_dir)
+        SQLiteStorage.export_for_static_space(project, output_dir)
+        media_dir = utils.MEDIA_DIR / project
+        if media_dir.exists():
+            shutil.copytree(media_dir, output_dir / "media")
+        hf_api.upload_folder(
+            repo_id=dataset_id,
+            repo_type="dataset",
+            folder_path=str(output_dir),
+            token=tok,
+        )
+
+
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     check_hf_token_has_write_access(hf_token)
     for upload in uploads:
-        media_path = get_project_media_path(
+        base = get_project_media_path(
             project=upload["project"],
             run=upload["run"],
             step=upload["step"],
-            relative_path=upload["relative_path"],
         )
+        rel = upload.get("relative_path")
+        if rel:
+            media_path = Path(base) / rel
+            media_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            media_path = Path(base)
         shutil.copy(upload["uploaded_file"]["path"], media_path)
 
 
@@ -610,6 +658,7 @@ def make_trackio_server() -> TrackioServer:
     server.add_api_route("/oauth/logout", oauth_logout, methods=["GET"])
     server.api(fn=get_run_mutation_status, name="get_run_mutation_status")
     server.api(fn=upload_db_to_space, name="upload_db_to_space")
+    server.api(fn=push_static_dataset_from_space, name="push_static_dataset_from_space")
     server.api(fn=bulk_upload_media, name="bulk_upload_media")
     server.api(fn=log, name="log")
     server.api(fn=bulk_log, name="bulk_log")

@@ -116,6 +116,136 @@ class SQLiteStorage:
         return TRACKIO_DIR / filename
 
     @staticmethod
+    def _apply_schema(cursor: sqlite3.Cursor) -> None:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                run_name TEXT NOT NULL,
+                step INTEGER NOT NULL,
+                metrics TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_name TEXT NOT NULL,
+                config TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(run_name)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_metrics_run_step
+            ON metrics(run_name, step)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_configs_run_name
+            ON configs(run_name)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
+            ON metrics(run_name, timestamp)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS system_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                run_name TEXT NOT NULL,
+                metrics TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
+            ON system_metrics(run_name, timestamp)
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS project_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pending_uploads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                space_id TEXT NOT NULL,
+                run_name TEXT,
+                step INTEGER,
+                file_path TEXT NOT NULL,
+                relative_path TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                run_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                text TEXT,
+                level TEXT NOT NULL DEFAULT 'warn',
+                step INTEGER,
+                alert_id TEXT
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_alerts_run
+            ON alerts(run_name)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_alerts_timestamp
+            ON alerts(timestamp)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_alert_id
+            ON alerts(alert_id) WHERE alert_id IS NOT NULL
+            """
+        )
+
+        for table in ("metrics", "system_metrics"):
+            for col in ("log_id TEXT", "space_id TEXT"):
+                try:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
+            cursor.execute(
+                f"""CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_log_id
+                ON {table}(log_id) WHERE log_id IS NOT NULL"""
+            )
+            cursor.execute(
+                f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
+                ON {table}(space_id) WHERE space_id IS NOT NULL"""
+            )
+
+    @staticmethod
     def init_db(project: str) -> Path:
         """
         Initialize the SQLite database with required tables.
@@ -130,135 +260,141 @@ class SQLiteStorage:
                 conn.execute("PRAGMA temp_store = MEMORY")
                 conn.execute("PRAGMA cache_size = -20000")
                 cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS metrics (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        run_name TEXT NOT NULL,
-                        step INTEGER NOT NULL,
-                        metrics TEXT NOT NULL
-                    )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS configs (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        run_name TEXT NOT NULL,
-                        config TEXT NOT NULL,
-                        created_at TEXT NOT NULL,
-                        UNIQUE(run_name)
-                    )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_metrics_run_step
-                    ON metrics(run_name, step)
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_configs_run_name
-                    ON configs(run_name)
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
-                    ON metrics(run_name, timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS system_metrics (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        run_name TEXT NOT NULL,
-                        metrics TEXT NOT NULL
-                    )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
-                    ON system_metrics(run_name, timestamp)
-                    """
-                )
-
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS project_metadata (
-                        key TEXT PRIMARY KEY,
-                        value TEXT NOT NULL
-                    )
-                    """
-                )
-
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS pending_uploads (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        space_id TEXT NOT NULL,
-                        run_name TEXT,
-                        step INTEGER,
-                        file_path TEXT NOT NULL,
-                        relative_path TEXT,
-                        created_at TEXT NOT NULL
-                    )
-                    """
-                )
-
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS alerts (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        run_name TEXT NOT NULL,
-                        title TEXT NOT NULL,
-                        text TEXT,
-                        level TEXT NOT NULL DEFAULT 'warn',
-                        step INTEGER,
-                        alert_id TEXT
-                    )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_alerts_run
-                    ON alerts(run_name)
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_alerts_timestamp
-                    ON alerts(timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_alert_id
-                    ON alerts(alert_id) WHERE alert_id IS NOT NULL
-                    """
-                )
-
-                for table in ("metrics", "system_metrics"):
-                    for col in ("log_id TEXT", "space_id TEXT"):
-                        try:
-                            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
-                        except sqlite3.OperationalError:
-                            pass
-                    cursor.execute(
-                        f"""CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_log_id
-                        ON {table}(log_id) WHERE log_id IS NOT NULL"""
-                    )
-                    cursor.execute(
-                        f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
-                        ON {table}(space_id) WHERE space_id IS NOT NULL"""
-                    )
-
+                SQLiteStorage._apply_schema(cursor)
                 conn.commit()
+        return db_path
+
+    @staticmethod
+    def init_db_at_path(project: str, db_path: Path) -> Path:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+            conn.execute("PRAGMA temp_store = MEMORY")
+            conn.execute("PRAGMA cache_size = -20000")
+            cursor = conn.cursor()
+            SQLiteStorage._apply_schema(cursor)
+            conn.commit()
+        return db_path
+
+    @staticmethod
+    def import_project_from_static_dataset_layout(
+        dataset_root: Path, project: str, db_path: Path
+    ) -> Path:
+        SQLiteStorage.init_db_at_path(project, db_path)
+        metrics_parquet = dataset_root / "metrics.parquet"
+        sys_parquet = dataset_root / "aux" / "system_metrics.parquet"
+        cfg_parquet = dataset_root / "aux" / "configs.parquet"
+
+        metrics_structural = {
+            "id",
+            "timestamp",
+            "run_name",
+            "step",
+            "log_id",
+            "space_id",
+        }
+        system_structural = {
+            "id",
+            "timestamp",
+            "run_name",
+            "log_id",
+            "space_id",
+        }
+        config_structural = {"id", "run_name", "created_at"}
+
+        def _cell_ok(v) -> bool:
+            if v is None:
+                return False
+            try:
+                if pd.isna(v):
+                    return False
+            except (ValueError, TypeError):
+                pass
+            return True
+
+        with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            cursor = conn.cursor()
+            if metrics_parquet.is_file():
+                df = pd.read_parquet(metrics_parquet)
+                if not df.empty:
+                    for _, row in df.iterrows():
+                        d = row.to_dict()
+                        payload = {
+                            k: v
+                            for k, v in d.items()
+                            if k not in metrics_structural and _cell_ok(v)
+                        }
+                        ts = d["timestamp"]
+                        rn = d["run_name"]
+                        st = int(d["step"])
+                        lid = d.get("log_id")
+                        sid = d.get("space_id")
+                        if not _cell_ok(lid):
+                            lid = None
+                        if not _cell_ok(sid):
+                            sid = None
+                        metrics_json = orjson.dumps(serialize_values(payload))
+                        cursor.execute(
+                            """
+                            INSERT INTO metrics
+                            (timestamp, run_name, step, metrics, log_id, space_id)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (ts, rn, st, metrics_json, lid, sid),
+                        )
+
+            if sys_parquet.is_file():
+                df = pd.read_parquet(sys_parquet)
+                if not df.empty:
+                    for _, row in df.iterrows():
+                        d = row.to_dict()
+                        payload = {
+                            k: v
+                            for k, v in d.items()
+                            if k not in system_structural and _cell_ok(v)
+                        }
+                        ts = d["timestamp"]
+                        rn = d["run_name"]
+                        lid = d.get("log_id")
+                        sid = d.get("space_id")
+                        if not _cell_ok(lid):
+                            lid = None
+                        if not _cell_ok(sid):
+                            sid = None
+                        metrics_json = orjson.dumps(serialize_values(payload))
+                        cursor.execute(
+                            """
+                            INSERT INTO system_metrics
+                            (timestamp, run_name, metrics, log_id, space_id)
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (ts, rn, metrics_json, lid, sid),
+                        )
+
+            if cfg_parquet.is_file():
+                df = pd.read_parquet(cfg_parquet)
+                if not df.empty:
+                    for _, row in df.iterrows():
+                        d = row.to_dict()
+                        payload = {
+                            k: v
+                            for k, v in d.items()
+                            if k not in config_structural and _cell_ok(v)
+                        }
+                        rn = d["run_name"]
+                        ca = d["created_at"]
+                        config_json = orjson.dumps(serialize_values(payload))
+                        cursor.execute(
+                            """
+                            INSERT OR REPLACE INTO configs
+                            (run_name, config, created_at)
+                            VALUES (?, ?, ?)
+                            """,
+                            (rn, config_json, ca),
+                        )
+
+            conn.commit()
         return db_path
 
     @staticmethod

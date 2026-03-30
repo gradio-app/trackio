@@ -2,6 +2,7 @@ import importlib.metadata
 import io
 import json as json_mod
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -9,6 +10,7 @@ import threading
 import time
 from importlib.resources import files
 from pathlib import Path
+from typing import Literal
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -31,6 +33,96 @@ from trackio.utils import (
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
+
+
+def detect_space_sdk(space_id: str) -> str | None:
+    hf_api = huggingface_hub.HfApi()
+    try:
+        info = hf_api.space_info(space_id)
+        if info.sdk:
+            s = info.sdk.lower()
+            if s in ("gradio", "static"):
+                return s
+    except (RepositoryNotFoundError, HfHubHTTPError, ReadTimeout):
+        pass
+    try:
+        readme_path = huggingface_hub.hf_hub_download(
+            repo_id=space_id, filename="README.md", repo_type="space"
+        )
+        text = Path(readme_path).read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"(?m)^sdk:\s*(\S+)", text)
+        if m:
+            s = m.group(1).lower().strip().strip("'\"")
+            if s in ("gradio", "static"):
+                return s
+    except Exception:
+        pass
+    cfg = fetch_space_config_json(space_id)
+    if cfg and cfg.get("mode") == "static":
+        return "static"
+    return None
+
+
+def fetch_space_config_json(space_id: str) -> dict | None:
+    try:
+        p = huggingface_hub.hf_hub_download(
+            repo_id=space_id, filename="config.json", repo_type="space"
+        )
+        with open(p, encoding="utf-8") as f:
+            return json_mod.load(f)
+    except Exception:
+        return None
+
+
+def _safe_delete_space_path(
+    hf_api: huggingface_hub.HfApi, space_id: str, path: str
+) -> None:
+    try:
+        _retry_hf_write(
+            f"Delete {path}",
+            lambda: hf_api.delete_file(
+                path_in_repo=path, repo_id=space_id, repo_type="space"
+            ),
+        )
+    except HfHubHTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            return
+        raise
+    except Exception:
+        pass
+
+
+def _safe_delete_space_folder(
+    hf_api: huggingface_hub.HfApi, space_id: str, path: str
+) -> None:
+    try:
+        _retry_hf_write(
+            f"Delete folder {path}",
+            lambda: hf_api.delete_folder(
+                path_in_repo=path, repo_id=space_id, repo_type="space"
+            ),
+        )
+    except HfHubHTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            return
+        raise
+    except Exception:
+        pass
+
+
+def remove_gradio_files_from_space(space_id: str) -> None:
+    hf_api = huggingface_hub.HfApi()
+    _safe_delete_space_path(hf_api, space_id, "app.py")
+    _safe_delete_space_path(hf_api, space_id, "requirements.txt")
+    _safe_delete_space_folder(hf_api, space_id, "trackio")
+
+
+def remove_static_files_from_space(space_id: str) -> None:
+    hf_api = huggingface_hub.HfApi()
+    _safe_delete_space_path(hf_api, space_id, "config.json")
+    _safe_delete_space_path(hf_api, space_id, "index.html")
+    for name in ("assets", "_app"):
+        _safe_delete_space_folder(hf_api, space_id, name)
 
 
 def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1.5):
@@ -310,7 +402,12 @@ def wait_until_space_exists(
     raise TimeoutError("Waiting for space to exist took longer than expected")
 
 
-def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None:
+def upload_db_to_space(
+    project: str,
+    space_id: str,
+    force: bool = False,
+    db_path: Path | None = None,
+) -> None:
     """
     Uploads the database of a local Trackio project to a Hugging Face Space.
 
@@ -325,8 +422,10 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
         force (`bool`, *optional*, defaults to `False`):
             If `True`, overwrites the existing database without prompting. If `False`,
             prompts for confirmation.
+        db_path (`Path`, *optional*):
+            If set, uploads this file instead of the default project database path.
     """
-    db_path = SQLiteStorage.get_project_db_path(project)
+    db_path = db_path or SQLiteStorage.get_project_db_path(project)
     client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
 
     if not force:
@@ -347,9 +446,114 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
     client.predict(
         api_name="/upload_db_to_space",
         project=project,
-        uploaded_db=handle_file(db_path),
+        uploaded_db=handle_file(str(db_path)),
         hf_token=huggingface_hub.utils.get_token(),
     )
+
+
+def push_static_dataset_from_gradio_space(
+    project: str, space_id: str, dataset_id: str
+) -> None:
+    print(
+        f"* Pushing dataset export from Space to {dataset_id} (requires Trackio with push_static_dataset_from_space API on the Space)..."
+    )
+    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 180})
+    hf_token = huggingface_hub.utils.get_token()
+    client.predict(
+        api_name="/push_static_dataset_from_space",
+        project=project,
+        dataset_id=dataset_id,
+        hf_token=hf_token,
+    )
+
+
+def upload_media_tree_to_space(project: str, space_id: str, media_root: Path) -> None:
+    if not media_root.is_dir():
+        return
+    uploads = []
+    for run_dir in sorted(media_root.iterdir()):
+        if not run_dir.is_dir():
+            continue
+        run_name = run_dir.name
+        for step_dir in sorted(run_dir.iterdir()):
+            if not step_dir.is_dir():
+                continue
+            try:
+                step = int(step_dir.name)
+            except ValueError:
+                continue
+            for fp in step_dir.rglob("*"):
+                if fp.is_file():
+                    rel = fp.relative_to(step_dir)
+                    uploads.append(
+                        {
+                            "project": project,
+                            "run": run_name,
+                            "step": step,
+                            "relative_path": str(rel),
+                            "uploaded_file": handle_file(str(fp)),
+                        }
+                    )
+    if not uploads:
+        return
+    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 120})
+    hf_token = huggingface_hub.utils.get_token()
+    batch_size = 40
+    for i in range(0, len(uploads), batch_size):
+        batch = uploads[i : i + batch_size]
+        print(
+            f"* Uploading media files: {min(i + batch_size, len(uploads))}/{len(uploads)}..."
+        )
+        client.predict(api_name="/bulk_upload_media", uploads=batch, hf_token=hf_token)
+
+
+def _convert_gradio_space_to_static(
+    project: str,
+    space_id: str,
+    dataset_id: str,
+    private: bool | None,
+) -> None:
+    push_static_dataset_from_gradio_space(project, space_id, dataset_id)
+    remove_gradio_files_from_space(space_id)
+    hf_token = huggingface_hub.utils.get_token() if private else None
+    deploy_as_static_space(
+        space_id,
+        dataset_id,
+        project,
+        private=private,
+        hf_token=hf_token,
+    )
+
+
+def _convert_static_space_to_gradio(
+    project: str,
+    space_id: str,
+    dataset_id: str,
+    private: bool | None,
+    force: bool,
+) -> None:
+    tmp_root = Path(tempfile.mkdtemp())
+    try:
+        tok = huggingface_hub.utils.get_token()
+        huggingface_hub.snapshot_download(
+            repo_id=dataset_id,
+            repo_type="dataset",
+            local_dir=str(tmp_root),
+            token=tok,
+        )
+        tmp_db = tmp_root / SQLiteStorage.get_project_db_filename(project)
+        SQLiteStorage.import_project_from_static_dataset_layout(
+            tmp_root, project, tmp_db
+        )
+        remove_static_files_from_space(space_id)
+        deploy_as_space(space_id, None, dataset_id, private)
+        print("* Waiting for Space to rebuild as Gradio...")
+        _wait_until_space_running(space_id)
+        upload_db_to_space(project, space_id, force=force, db_path=tmp_db)
+        media_root = tmp_root / "media"
+        upload_media_tree_to_space(project, space_id, media_root)
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 SYNC_BATCH_SIZE = 500
@@ -607,6 +811,7 @@ def sync(
     run_in_background: bool = False,
     sdk: str = "gradio",
     dataset_id: str | None = None,
+    space_mode: Literal["auto", "gradio", "static"] = "auto",
 ) -> str:
     """
     Syncs a local Trackio project's database to a Hugging Face Space.
@@ -632,6 +837,10 @@ def sync(
             (no server needed).
         dataset_id (`str`, *optional*):
             The ID of the HF Dataset for static mode. Auto-generated from space_id if not provided.
+        space_mode (`str`, *optional*, defaults to `"auto"`):
+            How to determine the Space's current SDK when deciding whether to convert.
+            `"auto"` uses the Hub (`space_info`, README, or `config.json`). Use `"gradio"`
+            or `"static"` only if auto-detection fails.
     Returns:
         `str`: The Space ID of the synced project.
     """
@@ -644,19 +853,85 @@ def sync(
     space_id, dataset_id = preprocess_space_and_dataset_ids(space_id, dataset_id)
 
     def _do_sync():
-        if sdk == "static":
-            upload_dataset_for_static(project, dataset_id, private=private)
-            hf_token = huggingface_hub.utils.get_token() if private else None
-            deploy_as_static_space(
-                space_id,
-                dataset_id,
-                project,
-                private=private,
-                hf_token=hf_token,
-            )
+        repo_exists = False
+        try:
+            huggingface_hub.repo_info(space_id, repo_type="space")
+            repo_exists = True
+        except RepositoryNotFoundError:
+            pass
+        except HfHubHTTPError:
+            repo_exists = True
+
+        if space_mode == "auto":
+            current = detect_space_sdk(space_id) if repo_exists else None
+        elif space_mode == "gradio":
+            current = "gradio"
         else:
-            sync_incremental(project, space_id, private=private, pending_only=False)
-        SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+            current = "static"
+
+        if repo_exists and current is None:
+            raise ValueError(
+                "Could not detect this Space's SDK. Pass space_mode='gradio' or space_mode='static'."
+            )
+        if current is not None and current not in ("gradio", "static"):
+            raise ValueError(
+                f"Unsupported Space SDK for conversion: {current}. Only gradio and static are supported."
+            )
+
+        if not repo_exists:
+            if sdk == "static":
+                upload_dataset_for_static(project, dataset_id, private=private)
+                hf_tok = huggingface_hub.utils.get_token() if private else None
+                deploy_as_static_space(
+                    space_id,
+                    dataset_id,
+                    project,
+                    private=private,
+                    hf_token=hf_tok,
+                )
+            else:
+                sync_incremental(project, space_id, private=private, pending_only=False)
+            SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+            return
+
+        if current == sdk:
+            if sdk == "static":
+                upload_dataset_for_static(project, dataset_id, private=private)
+                hf_tok = huggingface_hub.utils.get_token() if private else None
+                deploy_as_static_space(
+                    space_id,
+                    dataset_id,
+                    project,
+                    private=private,
+                    hf_token=hf_tok,
+                )
+            else:
+                sync_incremental(project, space_id, private=private, pending_only=False)
+            SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+            return
+
+        if current == "gradio" and sdk == "static":
+            _convert_gradio_space_to_static(project, space_id, dataset_id, private)
+            SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+            return
+
+        if current == "static" and sdk == "gradio":
+            cfg = fetch_space_config_json(space_id)
+            resolved_dataset_id = dataset_id
+            if cfg and cfg.get("dataset_id"):
+                resolved_dataset_id = cfg["dataset_id"]
+            if not resolved_dataset_id:
+                raise ValueError(
+                    "dataset_id is required to convert a static Space to Gradio "
+                    "(no dataset_id in Space config.json)."
+                )
+            _convert_static_space_to_gradio(
+                project, space_id, resolved_dataset_id, private, force
+            )
+            SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+            return
+
+        raise ValueError(f"Unsupported conversion from {current!r} to {sdk!r}")
 
     if run_in_background:
         threading.Thread(target=_do_sync).start()
