@@ -1,0 +1,75 @@
+name: PR wheel preview deploy
+
+on:
+  workflow_run:
+    workflows: ["PR wheel preview build"]
+    types:
+      - completed
+
+concurrency:
+  group: pr-wheel-deploy-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      pr_number: ${{ steps.meta.outputs.pr_number }}
+      sha: ${{ steps.meta.outputs.sha }}
+      wheel_basename: ${{ steps.meta.outputs.wheel_basename }}
+    steps:
+      - name: Download metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-wheel-preview-metadata
+          path: metadata
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Download wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: trackio-wheel
+          path: wheel
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Parse metadata
+        id: meta
+        run: |
+          echo "pr_number=$(jq -r .pr_number metadata/output.json)" >> $GITHUB_OUTPUT
+          echo "sha=$(jq -r .sha metadata/output.json)" >> $GITHUB_OUTPUT
+          echo "wheel_basename=$(jq -r .wheel_basename metadata/output.json)" >> $GITHUB_OUTPUT
+
+      - name: Install hf CLI
+        run: curl -LsSf https://hf.co/cli/install.sh | bash
+
+      - name: Upload wheel to Hugging Face bucket
+        env:
+          HF_TOKEN: ${{ secrets.HF_PYPI_PREVIEWS_TOKEN }}
+        run: |
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          wheel_file=$(find wheel -maxdepth 1 -type f -name "*.whl" -print -quit)
+          hf buckets cp "$wheel_file" "hf://buckets/trackio/trackio-wheels/${{ steps.meta.outputs.sha }}/"
+
+  comment:
+    needs: deploy
+    if: needs.deploy.result == 'success'
+    uses: ./.github/workflows/comment-queue.yml
+    secrets:
+      gh_token: ${{ secrets.COMMENT_BOT_TOKEN }}
+    with:
+      pr_number: ${{ needs.deploy.outputs.pr_number }}
+      tag: trackio-pr-wheel
+      message: trackio-wheel~success~null
+      additional_text: |
+        **Install Trackio from this PR (includes built frontend)**
+
+        ```bash
+        pip install "https://huggingface.co/buckets/trackio/trackio-wheels/resolve/${{ needs.deploy.outputs.sha }}/${{ needs.deploy.outputs.wheel_basename }}"
+        ```
