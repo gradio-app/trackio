@@ -1,5 +1,12 @@
 # trackio
 
+## 0.20.2
+
+### Features
+
+- [#464](https://github.com/gradio-app/trackio/pull/464) [`c89ebb3`](https://github.com/gradio-app/trackio/commit/c89ebb3b50f695bc7f16cbc6f46dce86f79a01e9) - Improve rendering of curves.  Thanks @abidlabs!
+- [#462](https://github.com/gradio-app/trackio/pull/462) [`9160b78`](https://github.com/gradio-app/trackio/commit/9160b78ff6f258f0b87a4f34a24e7d0b5dfbf2fb) - Refactor plot title to display only the metric name without the path.  Thanks @qgallouedec!
+
 ## 0.20.1
 
 ### Features
