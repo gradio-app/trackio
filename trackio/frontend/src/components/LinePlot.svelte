@@ -11,6 +11,7 @@
     colorMap = {},
     title = "",
     xLim = null,
+    yExtent = undefined,
     onSelect = null,
     onResetZoom = null,
     draggable = false,
@@ -74,11 +75,6 @@
         ? [Math.min(...xVals), Math.max(...xVals)]
         : undefined;
 
-    const yVals = originalData.map((d) => d[y]).filter((v) => v != null);
-    const yDomain = hasSmoothed && yVals.length > 0
-      ? [Math.min(...yVals), Math.max(...yVals)]
-      : undefined;
-
     const xEnc = {
       field: x,
       type: "quantitative",
@@ -87,7 +83,7 @@
     const yEnc = {
       field: y,
       type: "quantitative",
-      ...(yDomain ? { scale: { domain: yDomain } } : {}),
+      ...(yExtent ? { scale: { domain: yExtent } } : {}),
     };
     const colorEnc = hasColor
       ? {
@@ -342,6 +338,7 @@
     x;
     colorSpecKey;
     xLim;
+    yExtent;
     title;
     fullscreen;
     container;

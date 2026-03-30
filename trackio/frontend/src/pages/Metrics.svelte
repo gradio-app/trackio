@@ -285,7 +285,9 @@
         {#if orderedDirect.length > 0}
           <div class="plot-grid">
             {#each orderedDirect as metric, i}
-              {@const plotData = plotDataByMetric.get(metric) ?? []}
+              {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
+              {@const plotData = plotResult.data}
+              {@const yExtent = plotResult.yExtent}
               {@const useBar = singlePointMetrics.has(metric)}
               {@const directTitle = showHeaders ? metric.split("/").slice(1).join("/") || metric : metric}
               {#if plotData.length > 0}
@@ -308,6 +310,7 @@
                     title={directTitle}
                     {colorMap}
                     {xLim}
+                    {yExtent}
                     onSelect={handlePlotSelect}
                     onResetZoom={handleResetZoom}
                     draggable={true}
@@ -331,7 +334,9 @@
           >
             <div class="plot-grid">
               {#each orderedSub as metric, i}
-                {@const plotData = plotDataByMetric.get(metric) ?? []}
+                {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
+                {@const plotData = plotResult.data}
+                {@const yExtent = plotResult.yExtent}
                 {@const useBar = singlePointMetrics.has(metric)}
                 {@const subTitle = showHeaders ? metric.split("/").slice(2).join("/") || metric : metric}
                 {#if plotData.length > 0}
@@ -354,6 +359,7 @@
                       title={subTitle}
                       {colorMap}
                       {xLim}
+                      {yExtent}
                       onSelect={handlePlotSelect}
                       onResetZoom={handleResetZoom}
                       draggable={true}

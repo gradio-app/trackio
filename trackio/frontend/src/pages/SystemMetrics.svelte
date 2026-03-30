@@ -218,7 +218,9 @@
       <Accordion label={groupName} open={true}>
         <div class="plot-grid">
           {#each orderedDirect as metric, i}
-            {@const plotData = plotDataByMetric.get(metric) ?? []}
+            {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
+            {@const plotData = plotResult.data}
+            {@const yExtent = plotResult.yExtent}
             {#if plotData.length > 0}
               <LinePlot
                 data={plotData}
@@ -227,6 +229,7 @@
                 title={metric}
                 {colorMap}
                 {xLim}
+                {yExtent}
                 onSelect={handlePlotSelect}
                 onResetZoom={handleResetZoom}
                 draggable={true}
