@@ -180,8 +180,8 @@ def test_multiple_runs_display_multiple_plots(temp_dir):
             plots = page.locator(".vega-embed")
             expect(plots).to_have_count(3)
 
-            line_marks = page.locator(".vega-embed .mark-line.role-mark")
-            expect(line_marks.first).to_be_visible()
+            canvases = page.locator(".vega-embed canvas")
+            expect(canvases.first).to_be_visible()
 
             bar_plots = page.locator(".bar-plot")
             expect(bar_plots).to_have_count(1)
