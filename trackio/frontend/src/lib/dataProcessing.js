@@ -116,9 +116,40 @@ export function getMetricColumns(rows) {
   return getNumericColumns(rows).filter((c) => !RESERVED_KEYS.includes(c));
 }
 
-export function downsample(data, x, y, colorField, xLim) {
-  if (!data || data.length === 0) return { data, xLim };
+export function computeMetricPlotData(masterData, xColumn, metric, xLim) {
+  let relevant = masterData.filter(
+    (r) => r[metric] != null && r[metric] !== undefined,
+  );
+  if (xLim) {
+    const sorted = relevant.sort((a, b) => a[xColumn] - b[xColumn]);
+    let lo = 0;
+    let hi = sorted.length - 1;
+    while (lo < sorted.length && sorted[lo][xColumn] < xLim[0]) lo++;
+    while (hi >= 0 && sorted[hi][xColumn] > xLim[1]) hi--;
+    lo = Math.max(0, lo - 1);
+    hi = Math.min(sorted.length - 1, hi + 1);
+    relevant = sorted.slice(lo, hi + 1);
+  }
+  const originals = relevant.filter(
+    (r) => r.data_type === "original" || !r.data_type,
+  );
+  let yExtent = undefined;
+  if (originals.length > 0) {
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    for (const r of originals) {
+      const v = r[metric];
+      if (v != null) {
+        if (v < yMin) yMin = v;
+        if (v > yMax) yMax = v;
+      }
+    }
+    if (yMin !== Infinity) yExtent = [yMin, yMax];
+  }
+  return { data: downsample(relevant, xColumn, metric, "run", xLim).data, yExtent };
+}
 
+function downsampleImpl(data, x, y, colorField, xLim) {
   const columns = [x, y];
   if (colorField && Object.hasOwn(data[0], colorField)) {
     columns.push(colorField);
@@ -200,6 +231,36 @@ export function downsample(data, x, y, colorField, xLim) {
 
   result.sort((a, b) => (a[x] || 0) - (b[x] || 0));
   return { data: result, xLim: updatedXLim };
+}
+
+export function downsample(data, x, y, colorField, xLim) {
+  if (!data || data.length === 0) return { data, xLim };
+
+  const splitByDataType =
+    data.some((r) => r.data_type) &&
+    colorField &&
+    data[0] &&
+    Object.hasOwn(data[0], colorField);
+
+  if (splitByDataType) {
+    const chunks = new Map();
+    for (const r of data) {
+      const key = `${r[colorField] ?? "__default"}\0${r.data_type ?? "original"}`;
+      if (!chunks.has(key)) chunks.set(key, []);
+      chunks.get(key).push(r);
+    }
+    const merged = [];
+    let mergedXLim = xLim;
+    for (const chunk of chunks.values()) {
+      const out = downsampleImpl(chunk, x, y, colorField, xLim);
+      merged.push(...out.data);
+      mergedXLim = out.xLim;
+    }
+    merged.sort((a, b) => (a[x] || 0) - (b[x] || 0));
+    return { data: merged, xLim: mergedXLim };
+  }
+
+  return downsampleImpl(data, x, y, colorField, xLim);
 }
 
 export function groupMetricsByPrefix(metrics, plotOrder = []) {
@@ -298,6 +359,21 @@ export function groupMetricsByPrefix(metrics, plotOrder = []) {
   }
 
   return groups;
+}
+
+export function buildColorSpecKey(data, colorField, colorMap) {
+  if (!colorField || !data || data.length === 0) return "";
+  const seen = new Set();
+  const parts = [];
+  for (const d of data) {
+    const name = d[colorField];
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      parts.push(`${name}:${colorMap[name] ?? "#999"}`);
+    }
+  }
+  parts.sort();
+  return parts.join("|");
 }
 
 export function filterMetricsByRegex(metrics, pattern) {
