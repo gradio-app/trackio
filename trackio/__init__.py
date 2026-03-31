@@ -85,6 +85,7 @@ Audio = TrackioAudio
 config = {}
 
 _atexit_registered = False
+_projects_notified_auto_log_hw: set[str] = set()
 
 
 def _cleanup_current_run():
@@ -232,8 +233,9 @@ def init(
 
         if bucket_id is not None:
             os.environ["TRACKIO_BUCKET_ID"] = bucket_id
+            bucket_url = f"https://huggingface.co/buckets/{bucket_id}"
             print(
-                f"* Trackio metrics will be synced to Hugging Face Bucket: {bucket_id}"
+                f"* Trackio metrics will be synced to Hugging Face Bucket: {bucket_url}"
             )
         elif dataset_id is not None:
             os.environ["TRACKIO_DATASET_ID"] = dataset_id
@@ -282,10 +284,15 @@ def init(
         nvidia_available = gpu_available()
         apple_available = apple_gpu_available()
         auto_log_gpu = nvidia_available or apple_available
-        if nvidia_available:
-            print("* NVIDIA GPU detected, enabling automatic GPU metrics logging")
-        elif apple_available:
-            print("* Apple Silicon detected, enabling automatic system metrics logging")
+        if project not in _projects_notified_auto_log_hw:
+            if nvidia_available:
+                print("* NVIDIA GPU detected, enabling automatic GPU metrics logging")
+            elif apple_available:
+                print(
+                    "* Apple Silicon detected, enabling automatic system metrics logging"
+                )
+            if nvidia_available or apple_available:
+                _projects_notified_auto_log_hw.add(project)
 
     run = Run(
         url=url,

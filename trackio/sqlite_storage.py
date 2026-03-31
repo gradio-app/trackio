@@ -33,6 +33,24 @@ from trackio.utils import (
 
 DB_EXT = ".db"
 
+_JOURNAL_MODE_WHITELIST = frozenset(
+    {"wal", "delete", "truncate", "persist", "memory", "off"}
+)
+
+
+def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
+    override = os.environ.get("TRACKIO_SQLITE_JOURNAL_MODE", "").strip().lower()
+    if override in _JOURNAL_MODE_WHITELIST:
+        journal = override.upper()
+    elif os.environ.get("SYSTEM") == "spaces":
+        journal = "DELETE"
+    else:
+        journal = "WAL"
+    conn.execute(f"PRAGMA journal_mode = {journal}")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA temp_store = MEMORY")
+    conn.execute("PRAGMA cache_size = -20000")
+
 
 class ProcessLock:
     """A file-based lock that works across processes using fcntl (Unix) or msvcrt (Windows)."""
@@ -81,16 +99,7 @@ class SQLiteStorage:
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path), timeout=30.0)
-        # Keep WAL for concurrency + performance on many small writes
-        conn.execute("PRAGMA journal_mode = WAL")
-        # ---- Minimal perf tweaks for many tiny transactions ----
-        # NORMAL = fsync at critical points only (safer than OFF, much faster than FULL)
-        conn.execute("PRAGMA synchronous = NORMAL")
-        # Keep temp data in memory to avoid disk hits during small writes
-        conn.execute("PRAGMA temp_store = MEMORY")
-        # Give SQLite a bit more room for cache (negative = KB, engine-managed)
-        conn.execute("PRAGMA cache_size = -20000")
-        # --------------------------------------------------------
+        _configure_sqlite_pragmas(conn)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -126,10 +135,7 @@ class SQLiteStorage:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
             with sqlite3.connect(str(db_path), timeout=30.0) as conn:
-                conn.execute("PRAGMA journal_mode = WAL")
-                conn.execute("PRAGMA synchronous = NORMAL")
-                conn.execute("PRAGMA temp_store = MEMORY")
-                conn.execute("PRAGMA cache_size = -20000")
+                _configure_sqlite_pragmas(conn)
                 cursor = conn.cursor()
                 cursor.execute(
                     """

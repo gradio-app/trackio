@@ -22,7 +22,11 @@ def create_bucket_if_not_exists(bucket_id: str, private: bool | None = None) -> 
 
 def download_bucket_to_trackio_dir(bucket_id: str) -> None:
     TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
-    sync_bucket(source=f"hf://buckets/{bucket_id}", dest=str(TRACKIO_DIR))
+    sync_bucket(
+        source=f"hf://buckets/{bucket_id}",
+        dest=str(TRACKIO_DIR),
+        quiet=True,
+    )
 
 
 def upload_project_to_bucket(project: str, bucket_id: str) -> None:

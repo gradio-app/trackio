@@ -80,7 +80,7 @@ def test_attach_adds_volume_when_empty():
     assert vols[0]["type"] == "bucket"
     assert vols[0]["source"] == "u/bucket"
     assert vols[0]["mountPath"] == "/data"
-    assert vols[0]["readOnly"] is False
+    assert "readOnly" not in vols[0]
 
 
 def test_attach_noop_same_mount():

@@ -105,7 +105,8 @@ def attach_bucket_volume(
             if v.get("type") != "bucket" or v.get("source") != bucket_id:
                 continue
             same_mount = v.get("mountPath") == mount_path
-            same_ro = bool(v.get("readOnly")) == read_only
+            existing_ro = bool(v.get("readOnly"))
+            same_ro = existing_ro == read_only
             if same_mount and same_ro:
                 return False
         raise SpaceBucketConflictError(
@@ -116,8 +117,9 @@ def attach_bucket_volume(
         "type": "bucket",
         "source": bucket_id,
         "mountPath": mount_path,
-        "readOnly": read_only,
     }
+    if read_only:
+        new_vol["readOnly"] = True
     set_space_volumes(space_id, existing + [new_vol], token=token)
     return True
 
