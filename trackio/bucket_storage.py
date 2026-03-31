@@ -58,15 +58,22 @@ def _download_db_from_bucket(project: str, bucket_id: str) -> bool:
         return False
 
 
-def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
+def _local_db_has_data(project: str) -> bool:
     db_path = SQLiteStorage.get_project_db_path(project)
-    local_db_empty = not db_path.exists() or db_path.stat().st_size == 0
-    if not local_db_empty:
-        with sqlite3.connect(str(db_path)) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
-            local_db_empty = count == 0
+    if not db_path.exists() or db_path.stat().st_size == 0:
+        return False
+    conn = sqlite3.connect(str(db_path), timeout=5.0)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
+        return count > 0
+    except Exception:
+        return False
+    finally:
+        conn.close()
 
-    if local_db_empty:
+
+def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
+    if not _local_db_has_data(project):
         _download_db_from_bucket(project, bucket_id)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
