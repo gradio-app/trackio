@@ -23,7 +23,11 @@ from httpx import ReadTimeout
 from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
-from trackio.bucket_storage import create_bucket_if_not_exists, upload_project_to_bucket
+from trackio.bucket_storage import (
+    create_bucket_if_not_exists,
+    upload_project_to_bucket,
+    upload_project_to_bucket_for_static,
+)
 from trackio.space_volumes import (
     attach_bucket_volume,
 )
@@ -734,6 +738,20 @@ def sync(
 
     def _do_sync():
         if sdk == "static":
+            try:
+                info = huggingface_hub.HfApi().space_info(space_id)
+                if info.sdk == "gradio":
+                    if not force:
+                        answer = input(
+                            f"Space '{space_id}' is currently a Gradio Space. "
+                            f"Convert to static? [y/N] "
+                        )
+                        if answer.lower() not in ("y", "yes"):
+                            print("Aborted.")
+                            return
+            except RepositoryNotFoundError:
+                pass
+
             if dataset_id is not None:
                 upload_dataset_for_static(project, dataset_id, private=private)
                 hf_token = huggingface_hub.utils.get_token() if private else None
@@ -746,7 +764,7 @@ def sync(
                 )
             elif bucket_id is not None:
                 create_bucket_if_not_exists(bucket_id, private=private)
-                upload_project_to_bucket(project, bucket_id)
+                upload_project_to_bucket_for_static(project, bucket_id)
                 print(
                     f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
                 )

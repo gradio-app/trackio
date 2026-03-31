@@ -1,4 +1,7 @@
+import shutil
 import sqlite3
+import tempfile
+from pathlib import Path
 
 import huggingface_hub
 from huggingface_hub import sync_bucket
@@ -38,3 +41,21 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
                 files_to_add.append((str(media_file), str(rel)))
 
     huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
+
+
+def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_dir = Path(tmp_dir)
+        SQLiteStorage.export_for_static_space(project, output_dir)
+
+        media_dir = MEDIA_DIR / project
+        if media_dir.exists():
+            shutil.copytree(media_dir, output_dir / "media")
+
+        files_to_add = []
+        for f in output_dir.rglob("*"):
+            if f.is_file():
+                rel = f.relative_to(output_dir)
+                files_to_add.append((str(f), str(rel)))
+
+        huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
