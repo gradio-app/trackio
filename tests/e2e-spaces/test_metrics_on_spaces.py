@@ -89,7 +89,9 @@ def test_runs_data_persisted_after_restart(test_space_id):
     deadline = time.time() + 300
     while time.time() < deadline:
         try:
-            run_names = client.predict(project=project_name, api_name="/get_runs_for_project")
+            run_names = client.predict(
+                project=project_name, api_name="/get_runs_for_project"
+            )
             if run_name in run_names:
                 break
         except Exception:
@@ -109,7 +111,11 @@ def test_runs_data_persisted_after_restart(test_space_id):
             )
             cfg = summary.get("config") or {}
             lr = cfg.get("learning_rate")
-            if lr is not None and abs(float(lr) - 0.001) < 1e-6 and cfg.get("epochs") == 10:
+            if (
+                lr is not None
+                and abs(float(lr) - 0.001) < 1e-6
+                and cfg.get("epochs") == 10
+            ):
                 break
         except Exception:
             pass

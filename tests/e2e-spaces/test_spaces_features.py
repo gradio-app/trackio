@@ -1,5 +1,6 @@
 import secrets
 import time
+
 import numpy as np
 import pytest
 from gradio_client import Client
