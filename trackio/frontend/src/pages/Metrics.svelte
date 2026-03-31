@@ -326,55 +326,57 @@
           </div>
         {/if}
 
-        {#each Object.entries(group.subgroups) as [subName, subMetrics]}
-          {@const subKey = `${groupName}:${subName}`}
-          {@const orderedSub = getOrderedMetrics(subKey, subMetrics)}
-          <Accordion
-            label="{subName} ({subMetrics.length})"
-            open={true}
-            hidden={!showHeaders}
-          >
-            <div class="plot-grid">
-              {#each orderedSub as metric, i}
-                {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
-                {@const plotData = plotResult.data}
-                {@const yExtent = plotResult.yExtent}
-                {@const useBar = singlePointMetrics.has(metric)}
-                {@const subTitle = showHeaders ? metric.split("/").slice(2).join("/") || metric : metric}
-                {#if plotData.length > 0}
-                  {#if useBar}
-                    <BarPlot
-                      data={plotData}
-                      y={metric}
-                      title={subTitle}
-                      {colorMap}
-                      draggable={true}
-                      ondragstart={(e) => handleDragStart(subKey, i, e)}
-                      ondragover={(e) => handleDragOver(subKey, i, e)}
-                      ondrop={(e) => handleDrop(subKey, i, orderedSub, e)}
-                    />
-                  {:else}
-                    <LinePlot
-                      data={plotData}
-                      x={xColumn}
-                      y={metric}
-                      title={subTitle}
-                      {colorMap}
-                      {xLim}
-                      {yExtent}
-                      onSelect={handlePlotSelect}
-                      onResetZoom={handleResetZoom}
-                      draggable={true}
-                      ondragstart={(e) => handleDragStart(subKey, i, e)}
-                      ondragover={(e) => handleDragOver(subKey, i, e)}
-                      ondrop={(e) => handleDrop(subKey, i, orderedSub, e)}
-                    />
+        <div class="subgroup-list">
+          {#each Object.entries(group.subgroups) as [subName, subMetrics]}
+            {@const subKey = `${groupName}:${subName}`}
+            {@const orderedSub = getOrderedMetrics(subKey, subMetrics)}
+            <Accordion
+              label="{subName} ({subMetrics.length})"
+              open={true}
+              hidden={!showHeaders}
+            >
+              <div class="plot-grid">
+                {#each orderedSub as metric, i}
+                  {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
+                  {@const plotData = plotResult.data}
+                  {@const yExtent = plotResult.yExtent}
+                  {@const useBar = singlePointMetrics.has(metric)}
+                  {@const subTitle = showHeaders ? metric.split("/").slice(2).join("/") || metric : metric}
+                  {#if plotData.length > 0}
+                    {#if useBar}
+                      <BarPlot
+                        data={plotData}
+                        y={metric}
+                        title={subTitle}
+                        {colorMap}
+                        draggable={true}
+                        ondragstart={(e) => handleDragStart(subKey, i, e)}
+                        ondragover={(e) => handleDragOver(subKey, i, e)}
+                        ondrop={(e) => handleDrop(subKey, i, orderedSub, e)}
+                      />
+                    {:else}
+                      <LinePlot
+                        data={plotData}
+                        x={xColumn}
+                        y={metric}
+                        title={subTitle}
+                        {colorMap}
+                        {xLim}
+                        {yExtent}
+                        onSelect={handlePlotSelect}
+                        onResetZoom={handleResetZoom}
+                        draggable={true}
+                        ondragstart={(e) => handleDragStart(subKey, i, e)}
+                        ondragover={(e) => handleDragOver(subKey, i, e)}
+                        ondrop={(e) => handleDrop(subKey, i, orderedSub, e)}
+                      />
+                    {/if}
                   {/if}
-                {/if}
-              {/each}
-            </div>
-          </Accordion>
-        {/each}
+                {/each}
+              </div>
+            </Accordion>
+          {/each}
+        </div>
       </Accordion>
     {/each}
   {/if}
@@ -391,6 +393,9 @@
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
+  }
+  .subgroup-list {
+    margin-top: 16px;
   }
   .empty-state {
     max-width: 640px;
