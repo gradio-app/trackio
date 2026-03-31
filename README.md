@@ -163,11 +163,10 @@ from trackio.deploy import create_space_if_not_exists
 create_space_if_not_exists(
     "username/my-trackio-space",
     create_bucket_if_missing=True,
-    bucket_mount_path="/data",
 )
 ```
 
-This uses the Hub `PUT /api/spaces/.../volumes` API and sets the Space variable `TRACKIO_DIR` to `{mount_path}/trackio`. Your token needs permission to update Space configuration. Do not combine this with `dataset_id` on the same deploy. For an existing Space, call `trackio.space_volumes.attach_bucket_volume(...)` directly.
+This uses the Hub `PUT /api/spaces/.../volumes` API and sets the Space variable `TRACKIO_DIR` to `/data/trackio`. Your token needs permission to update Space configuration. Do not combine this with `dataset_id` on the same deploy. For an existing Space, call `trackio.space_volumes.attach_bucket_volume(...)` directly.
 
 ## Syncing Offline Projects to Spaces
 
