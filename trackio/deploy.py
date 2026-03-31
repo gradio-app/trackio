@@ -241,17 +241,16 @@ def deploy_as_space(
 
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
-    trackio_dir = "/data/trackio"
     if resolved_bucket is not None:
         changed = attach_bucket_volume(
             space_id,
             resolved_bucket,
-            mount_path=trackio_dir,
+            mount_path="/data",
             read_only=bucket_read_only,
         )
-        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", trackio_dir)
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
         if changed:
-            print(f"* Attached bucket {resolved_bucket} at {trackio_dir!r}")
+            print(f"* Attached bucket {resolved_bucket} at '/data'")
     elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
