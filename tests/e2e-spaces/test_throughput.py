@@ -78,7 +78,10 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
         t.start()
 
     for t in threads:
-        t.join(timeout=120)
+        t.join(timeout=180)
+
+    alive_threads = [idx for idx, t in enumerate(threads) if t.is_alive()]
+    assert not alive_threads, f"Threads did not finish before timeout: {alive_threads}"
 
     wall_time = time.time() - t0
     print(
@@ -89,12 +92,15 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     assert not errors, f"Worker errors: {errors}"
 
     verify_client = Client(test_space_id)
-    for _ in range(6):
-        runs = verify_client.predict(
-            project=project_name, api_name="/get_runs_for_project"
-        )
-        if len(runs) == num_threads:
-            break
+    runs = []
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        try:
+            runs = verify_client.predict(project=project_name, api_name="/get_runs_for_project")
+            if len(runs) == num_threads:
+                break
+        except Exception:
+            verify_client = Client(test_space_id, verbose=False)
         time.sleep(5)
     assert len(runs) == num_threads, f"Expected {num_threads} runs, got {len(runs)}"
 
