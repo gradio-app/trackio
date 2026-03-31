@@ -49,5 +49,5 @@ for run_idx in range(3):
         )
     trackio.finish()
 
-space_id = trackio.sync(project=PROJECT)
+space_id = trackio.sync(project=PROJECT, sdk="static")
 print(f"Dashboard: https://huggingface.co/spaces/{space_id}")

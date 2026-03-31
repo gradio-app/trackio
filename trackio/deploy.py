@@ -9,6 +9,7 @@ import threading
 import time
 from importlib.resources import files
 from pathlib import Path
+from typing import Literal
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -691,7 +692,7 @@ def sync(
     private: bool | None = None,
     force: bool = False,
     run_in_background: bool = False,
-    sdk: str = "gradio",
+    sdk: Literal["gradio", "static"] = "gradio",
     dataset_id: str | None = None,
     bucket_id: str | None = None,
 ) -> str:
@@ -716,7 +717,7 @@ def sync(
         sdk (`str`, *optional*, defaults to `"gradio"`):
             The type of Space to deploy. `"gradio"` deploys a Gradio Space with a live
             server. `"static"` deploys a static Space that reads from an HF Dataset
-            (no server needed).
+            or HF Bucket (no server needed).
         dataset_id (`str`, *optional*):
             The ID of the HF Dataset to sync to. When provided, uses the legacy
             Dataset backend instead of Buckets.

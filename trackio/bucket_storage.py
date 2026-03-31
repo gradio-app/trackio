@@ -18,7 +18,7 @@ def download_bucket_to_trackio_dir(bucket_id: str) -> None:
     TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
     sync_bucket(
         source=f"hf://buckets/{bucket_id}",
-        dest=str(TRACKIO_DIR),
+        dest=str(TRACKIO_DIR.parent),
         quiet=True,
     )
 
@@ -31,14 +31,14 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
     with sqlite3.connect(str(db_path), timeout=30.0) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
-    files_to_add = [(str(db_path), db_path.name)]
+    files_to_add = [(str(db_path), f"trackio/{db_path.name}")]
 
     media_dir = MEDIA_DIR / project
     if media_dir.exists():
         for media_file in media_dir.rglob("*"):
             if media_file.is_file():
                 rel = media_file.relative_to(TRACKIO_DIR)
-                files_to_add.append((str(media_file), str(rel)))
+                files_to_add.append((str(media_file), f"trackio/{rel}"))
 
     huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
 

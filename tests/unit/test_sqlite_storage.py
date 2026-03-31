@@ -397,3 +397,29 @@ def test_rename_run_with_system_metrics(temp_dir):
 
     new_system_logs = SQLiteStorage.get_system_logs(project, new_name)
     assert new_system_logs[0]["gpu_usage"] == 80.5
+
+
+def test_bucket_upload_paths_match_mount_layout(temp_dir):
+    project = "proj_bucket"
+    SQLiteStorage.log(project=project, run="run1", metrics={"loss": 0.5})
+
+    media_dir = Path(temp_dir) / "media" / project
+    media_dir.mkdir(parents=True)
+    (media_dir / "img.png").write_bytes(b"fake")
+
+    db_path = SQLiteStorage.get_project_db_path(project)
+    files_to_add = [(str(db_path), f"trackio/{db_path.name}")]
+    for media_file in media_dir.rglob("*"):
+        if media_file.is_file():
+            rel = media_file.relative_to(Path(temp_dir))
+            files_to_add.append((str(media_file), f"trackio/{rel}"))
+
+    mount_point = Path("/data")
+    trackio_dir = mount_point / "trackio"
+    for local_path, remote_path in files_to_add:
+        mounted = mount_point / remote_path
+        assert str(mounted).startswith(str(trackio_dir)), (
+            f"Bucket path {remote_path!r} would mount at {mounted}, "
+            f"outside TRACKIO_DIR={trackio_dir}"
+        )
+        assert Path(local_path).exists()
