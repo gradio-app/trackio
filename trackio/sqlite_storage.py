@@ -33,6 +33,24 @@ from trackio.utils import (
 
 DB_EXT = ".db"
 
+_JOURNAL_MODE_WHITELIST = frozenset(
+    {"wal", "delete", "truncate", "persist", "memory", "off"}
+)
+
+
+def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
+    override = os.environ.get("TRACKIO_SQLITE_JOURNAL_MODE", "").strip().lower()
+    if override in _JOURNAL_MODE_WHITELIST:
+        journal = override.upper()
+    elif os.environ.get("SYSTEM") == "spaces":
+        journal = "DELETE"
+    else:
+        journal = "WAL"
+    conn.execute(f"PRAGMA journal_mode = {journal}")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA temp_store = MEMORY")
+    conn.execute("PRAGMA cache_size = -20000")
+
 
 class ProcessLock:
     """A file-based lock that works across processes using fcntl (Unix) or msvcrt (Windows)."""
@@ -81,16 +99,7 @@ class SQLiteStorage:
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
         conn = sqlite3.connect(str(db_path), timeout=30.0)
-        # Keep WAL for concurrency + performance on many small writes
-        conn.execute("PRAGMA journal_mode = WAL")
-        # ---- Minimal perf tweaks for many tiny transactions ----
-        # NORMAL = fsync at critical points only (safer than OFF, much faster than FULL)
-        conn.execute("PRAGMA synchronous = NORMAL")
-        # Keep temp data in memory to avoid disk hits during small writes
-        conn.execute("PRAGMA temp_store = MEMORY")
-        # Give SQLite a bit more room for cache (negative = KB, engine-managed)
-        conn.execute("PRAGMA cache_size = -20000")
-        # --------------------------------------------------------
+        _configure_sqlite_pragmas(conn)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -121,14 +130,12 @@ class SQLiteStorage:
         Initialize the SQLite database with required tables.
         Returns the database path.
         """
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
             with sqlite3.connect(str(db_path), timeout=30.0) as conn:
-                conn.execute("PRAGMA journal_mode = WAL")
-                conn.execute("PRAGMA synchronous = NORMAL")
-                conn.execute("PRAGMA temp_store = MEMORY")
-                conn.execute("PRAGMA cache_size = -20000")
+                _configure_sqlite_pragmas(conn)
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -510,9 +517,7 @@ class SQLiteStorage:
             hf_token = os.environ.get("HF_TOKEN")
             dataset_id = os.environ.get("TRACKIO_DATASET_ID")
             space_repo_name = os.environ.get("SPACE_REPO_NAME")
-            if dataset_id is None or space_repo_name is None:
-                scheduler = DummyCommitScheduler()
-            else:
+            if dataset_id is not None and space_repo_name is not None:
                 scheduler = CommitScheduler(
                     repo_id=dataset_id,
                     repo_type="dataset",
@@ -528,6 +533,8 @@ class SQLiteStorage:
                     token=hf_token,
                     on_before_commit=SQLiteStorage.export_to_parquet,
                 )
+            else:
+                scheduler = DummyCommitScheduler()
             SQLiteStorage._current_scheduler = scheduler
             return scheduler
 
@@ -884,6 +891,7 @@ class SQLiteStorage:
 
     @staticmethod
     def get_log_count(project: str, run: str) -> int:
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return 0
@@ -961,6 +969,17 @@ class SQLiteStorage:
 
     @staticmethod
     def load_from_dataset():
+        bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
+        if bucket_id is not None:
+            if not SQLiteStorage._dataset_import_attempted:
+                from trackio.bucket_storage import download_bucket_to_trackio_dir
+
+                try:
+                    download_bucket_to_trackio_dir(bucket_id)
+                except Exception:
+                    pass
+            SQLiteStorage._dataset_import_attempted = True
+            return
         dataset_id = os.environ.get("TRACKIO_DATASET_ID")
         space_repo_name = os.environ.get("SPACE_REPO_NAME")
         if dataset_id is not None and space_repo_name is not None:
@@ -990,12 +1009,16 @@ class SQLiteStorage:
         SQLiteStorage._dataset_import_attempted = True
 
     @staticmethod
+    def _ensure_hub_loaded():
+        if not SQLiteStorage._dataset_import_attempted:
+            SQLiteStorage.load_from_dataset()
+
+    @staticmethod
     def get_projects() -> list[str]:
         """
         Get list of all projects by scanning the database files in the trackio directory.
         """
-        if not SQLiteStorage._dataset_import_attempted:
-            SQLiteStorage.load_from_dataset()
+        SQLiteStorage._ensure_hub_loaded()
 
         projects: set[str] = set()
         if not TRACKIO_DIR.exists():
@@ -1009,6 +1032,7 @@ class SQLiteStorage:
     @staticmethod
     def get_runs(project: str) -> list[str]:
         """Get list of all runs for a project, ordered by creation time."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []

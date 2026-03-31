@@ -2,9 +2,11 @@ import secrets
 import time
 
 import huggingface_hub
+import pytest
 from gradio_client import Client
 
 import trackio
+from trackio import utils
 
 
 def test_basic_logging(test_space_id):
@@ -92,3 +94,60 @@ def test_runs_data_persisted_after_restart(test_space_id):
     lr = cfg.get("learning_rate")
     assert lr is not None and abs(float(lr) - 0.001) < 1e-6
     assert cfg.get("epochs") == 10
+
+
+def test_bucket_space_preserves_logged_metrics_after_restart(test_space_id):
+    _, dataset_id, bucket_id = utils.preprocess_space_and_dataset_ids(
+        test_space_id, None, None
+    )
+    if dataset_id is not None or bucket_id is None:
+        pytest.skip("Requires a Space deployed with bucket backend (no dataset_id).")
+
+    project_name = f"test_bucket_persist_{secrets.token_urlsafe(8)}"
+    run_name = "metrics_run"
+
+    trackio.init(project=project_name, name=run_name, space_id=test_space_id)
+    trackio.log(metrics={"loss": 0.42, "acc": 0.88})
+    trackio.finish()
+
+    client = Client(test_space_id)
+    client.predict(api_name="/force_sync")
+
+    huggingface_hub.add_space_variable(
+        test_space_id, "TRACKIO_TEST_RESTART", secrets.token_urlsafe(8)
+    )
+
+    time.sleep(10)
+    deadline = time.time() + 300
+    client = None
+    while time.time() < deadline:
+        try:
+            client = Client(test_space_id, verbose=False)
+            break
+        except Exception:
+            time.sleep(10)
+    assert client is not None, "Space did not come back up after restart"
+
+    summary = client.predict(
+        project=project_name, run=run_name, api_name="/get_run_summary"
+    )
+    assert summary["num_logs"] == 1
+    assert "loss" in summary["metrics"] and "acc" in summary["metrics"]
+
+    loss_values = client.predict(
+        project=project_name,
+        run=run_name,
+        metric_name="loss",
+        api_name="/get_metric_values",
+    )
+    assert len(loss_values) == 1
+    assert abs(float(loss_values[0]["value"]) - 0.42) < 1e-6
+
+    acc_values = client.predict(
+        project=project_name,
+        run=run_name,
+        metric_name="acc",
+        api_name="/get_metric_values",
+    )
+    assert len(acc_values) == 1
+    assert abs(float(acc_values[0]["value"]) - 0.88) < 1e-6

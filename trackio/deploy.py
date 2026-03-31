@@ -16,12 +16,17 @@ else:
     import tomli as tomllib
 
 import gradio
+import httpx
 import huggingface_hub
 from gradio_client import Client, handle_file
 from httpx import ReadTimeout
 from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
+from trackio.bucket_storage import create_bucket_if_not_exists, upload_project_to_bucket
+from trackio.space_volumes import (
+    attach_bucket_volume,
+)
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
@@ -31,6 +36,17 @@ from trackio.utils import (
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
+_BOLD_ORANGE = "\033[1m\033[38;5;208m"
+_RESET = "\033[0m"
+
+
+def _readme_linked_hub_yaml(dataset_id: str | None) -> str:
+    if dataset_id is not None:
+        return f"datasets:\n - {dataset_id}\n"
+    return ""
+
+
+_SPACE_APP_PY = "import trackio\ntrackio.show()\n"
 
 
 def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1.5):
@@ -99,12 +115,18 @@ def deploy_as_space(
     space_id: str,
     space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
+    bucket_id: str | None = None,
     private: bool | None = None,
 ):
     if (
         os.getenv("SYSTEM") == "spaces"
     ):  # in case a repo with this function is uploaded to spaces
         return
+
+    if dataset_id is not None and bucket_id is not None:
+        raise ValueError(
+            "Cannot use bucket volume options together with dataset_id; use one persistence mode."
+        )
 
     trackio_path = files("trackio")
 
@@ -138,10 +160,16 @@ def deploy_as_space(
     # Make sure necessary dependencies are installed by creating a requirements.txt.
     is_source_install = _is_trackio_installed_from_source()
 
+    if bucket_id is not None:
+        create_bucket_if_not_exists(bucket_id, private=private)
+
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
         readme_content = readme_content.replace("{GRADIO_VERSION}", gradio.__version__)
         readme_content = readme_content.replace("{APP_FILE}", "app.py")
+        readme_content = readme_content.replace(
+            "{LINKED_HUB_METADATA}", _readme_linked_hub_yaml(dataset_id)
+        )
         readme_buffer = io.BytesIO(readme_content.encode("utf-8"))
         hf_api.upload_file(
             path_or_fileobj=readme_buffer,
@@ -193,8 +221,7 @@ def deploy_as_space(
             ],
         )
 
-    app_file_content = """import trackio
-trackio.show()"""
+    app_file_content = _SPACE_APP_PY
     app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
     hf_api.upload_file(
         path_or_fileobj=app_file_buffer,
@@ -205,7 +232,16 @@ trackio.show()"""
 
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
-    if dataset_id is not None:
+    if bucket_id is not None:
+        changed = attach_bucket_volume(
+            space_id,
+            bucket_id,
+            mount_path="/data",
+        )
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
+        if changed:
+            print(f"* Attached bucket {bucket_id} at '/data'")
+    elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
         huggingface_hub.add_space_variable(
@@ -226,6 +262,7 @@ def create_space_if_not_exists(
     space_id: str,
     space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
+    bucket_id: str | None = None,
     private: bool | None = None,
 ) -> None:
     """
@@ -238,6 +275,9 @@ def create_space_if_not_exists(
             Choice of persistent storage tier for the Space.
         dataset_id (`str`, *optional*):
             The ID of the Dataset to add to the Space as a space variable.
+        bucket_id (`str`, *optional*):
+            Full Hub bucket id (`namespace/name`) to attach via the Hub volumes API (platform mount).
+            Sets `TRACKIO_DIR` to the mount path; do not combine with `dataset_id`.
         private (`bool`, *optional*):
             Whether to make the Space private. If `None` (default), the repo will be
             public unless the organization's default is private. This value is ignored
@@ -251,9 +291,15 @@ def create_space_if_not_exists(
         raise ValueError(
             f"Invalid dataset ID: {dataset_id}. Must be in the format: username/datasetname or orgname/datasetname."
         )
+    if bucket_id is not None and "/" not in bucket_id:
+        raise ValueError(
+            f"Invalid bucket ID: {bucket_id}. Must be in the format: username/bucketname or orgname/bucketname."
+        )
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
-        print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
+        print(
+            f"* Found existing space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
+        )
         return
     except RepositoryNotFoundError:
         pass
@@ -264,8 +310,16 @@ def create_space_if_not_exists(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, space_storage, dataset_id, private)
+    print(
+        f"* Creating new space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
+    )
+    deploy_as_space(
+        space_id,
+        space_storage,
+        dataset_id,
+        bucket_id,
+        private,
+    )
     print("* Waiting for Space to be ready...")
     _wait_until_space_running(space_id)
 
@@ -274,15 +328,32 @@ def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
     hf_api = huggingface_hub.HfApi()
     start = time.time()
     delay = 2
+    request_timeout = 45.0
+    failure_stages = frozenset(
+        ("NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR")
+    )
     while time.time() - start < timeout:
         try:
-            info = hf_api.space_info(space_id)
-            if info.runtime and info.runtime.stage == "RUNNING":
-                return
-        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
+            info = hf_api.space_info(space_id, timeout=request_timeout)
+            if info.runtime:
+                stage = str(info.runtime.stage)
+                if stage in failure_stages:
+                    raise RuntimeError(
+                        f"Space {space_id} entered terminal stage {stage}. "
+                        "Fix README.md or app files; see build logs on the Hub."
+                    )
+                if stage == "RUNNING":
+                    return
+        except RuntimeError:
+            raise
+        except (huggingface_hub.utils.HfHubHTTPError, httpx.RequestError):
             pass
         time.sleep(delay)
         delay = min(delay * 1.5, 15)
+    raise TimeoutError(
+        f"Space {space_id} did not reach RUNNING within {timeout}s. "
+        "Check status and build logs on the Hub."
+    )
 
 
 def wait_until_space_exists(
@@ -304,7 +375,7 @@ def wait_until_space_exists(
         try:
             hf_api.space_info(space_id)
             return
-        except (huggingface_hub.utils.HfHubHTTPError, ReadTimeout):
+        except (huggingface_hub.utils.HfHubHTTPError, httpx.RequestError):
             time.sleep(delay)
             delay = min(delay * 2, 60)
     raise TimeoutError("Waiting for space to exist took longer than expected")
@@ -450,7 +521,9 @@ def sync_incremental(
                 )
 
     SQLiteStorage.set_project_metadata(project, "space_id", space_id)
-    print(f"* Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
+    print(
+        f"* Synced successfully to space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
+    )
 
 
 def upload_dataset_for_static(
@@ -503,8 +576,9 @@ def upload_dataset_for_static(
 
 def deploy_as_static_space(
     space_id: str,
-    dataset_id: str,
+    dataset_id: str | None,
     project: str,
+    bucket_id: str | None = None,
     private: bool | None = None,
     hf_token: str | None = None,
 ) -> None:
@@ -535,7 +609,10 @@ def deploy_as_static_space(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    readme_content = "---\nsdk: static\npinned: false\ntags:\n - trackio\n---\n"
+    linked = _readme_linked_hub_yaml(dataset_id)
+    readme_content = (
+        f"---\nsdk: static\npinned: false\ntags:\n - trackio\n{linked}---\n"
+    )
     _retry_hf_write(
         "Static Space README upload",
         lambda: hf_api.upload_file(
@@ -567,10 +644,13 @@ def deploy_as_static_space(
 
     config = {
         "mode": "static",
-        "dataset_id": dataset_id,
         "project": project,
         "private": bool(private),
     }
+    if bucket_id is not None:
+        config["bucket_id"] = bucket_id
+    if dataset_id is not None:
+        config["dataset_id"] = dataset_id
     if hf_token and private:
         config["hf_token"] = hf_token
 
@@ -596,7 +676,9 @@ def deploy_as_static_space(
             ),
         )
 
-    print(f"* Static Space deployed: {SPACE_URL.format(space_id=space_id)}")
+    print(
+        f"* Static Space deployed: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
+    )
 
 
 def sync(
@@ -607,6 +689,7 @@ def sync(
     run_in_background: bool = False,
     sdk: str = "gradio",
     dataset_id: str | None = None,
+    bucket_id: str | None = None,
 ) -> str:
     """
     Syncs a local Trackio project's database to a Hugging Face Space.
@@ -631,7 +714,11 @@ def sync(
             server. `"static"` deploys a static Space that reads from an HF Dataset
             (no server needed).
         dataset_id (`str`, *optional*):
-            The ID of the HF Dataset for static mode. Auto-generated from space_id if not provided.
+            The ID of the HF Dataset to sync to. When provided, uses the legacy
+            Dataset backend instead of Buckets.
+        bucket_id (`str`, *optional*):
+            The ID of the HF Bucket to sync to. By default, a bucket is auto-generated
+            from the space_id. Set `dataset_id` to use the legacy Dataset backend instead.
     Returns:
         `str`: The Space ID of the synced project.
     """
@@ -641,21 +728,48 @@ def sync(
         space_id = SQLiteStorage.get_space_id(project)
     if space_id is None:
         space_id = f"{project}-{get_or_create_project_hash(project)}"
-    space_id, dataset_id = preprocess_space_and_dataset_ids(space_id, dataset_id)
+    space_id, dataset_id, bucket_id = preprocess_space_and_dataset_ids(
+        space_id, dataset_id, bucket_id
+    )
 
     def _do_sync():
         if sdk == "static":
-            upload_dataset_for_static(project, dataset_id, private=private)
-            hf_token = huggingface_hub.utils.get_token() if private else None
-            deploy_as_static_space(
-                space_id,
-                dataset_id,
-                project,
-                private=private,
-                hf_token=hf_token,
-            )
+            if dataset_id is not None:
+                upload_dataset_for_static(project, dataset_id, private=private)
+                hf_token = huggingface_hub.utils.get_token() if private else None
+                deploy_as_static_space(
+                    space_id,
+                    dataset_id,
+                    project,
+                    private=private,
+                    hf_token=hf_token,
+                )
+            elif bucket_id is not None:
+                create_bucket_if_not_exists(bucket_id, private=private)
+                upload_project_to_bucket(project, bucket_id)
+                print(
+                    f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
+                )
+                deploy_as_static_space(
+                    space_id,
+                    None,
+                    project,
+                    bucket_id=bucket_id,
+                    private=private,
+                    hf_token=huggingface_hub.utils.get_token() if private else None,
+                )
         else:
-            sync_incremental(project, space_id, private=private, pending_only=False)
+            if bucket_id is not None:
+                create_bucket_if_not_exists(bucket_id, private=private)
+                upload_project_to_bucket(project, bucket_id)
+                print(
+                    f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
+                )
+                create_space_if_not_exists(
+                    space_id, bucket_id=bucket_id, private=private
+                )
+            else:
+                sync_incremental(project, space_id, private=private, pending_only=False)
         SQLiteStorage.set_project_metadata(project, "space_id", space_id)
 
     if run_in_background:

@@ -132,7 +132,7 @@ def persistent_storage_enabled() -> bool:
 def _get_trackio_dir() -> Path:
     if persistent_storage_enabled():
         return Path("/data/trackio")
-    elif os.environ.get("TRACKIO_DIR"):
+    if os.environ.get("TRACKIO_DIR"):
         return Path(os.environ.get("TRACKIO_DIR"))
     return Path(HF_HOME) / "trackio"
 
@@ -428,10 +428,14 @@ def print_dashboard_instructions(project: str) -> None:
 
 
 def preprocess_space_and_dataset_ids(
-    space_id: str | None, dataset_id: str | None
-) -> tuple[str | None, str | None]:
+    space_id: str | None,
+    dataset_id: str | None,
+    bucket_id: str | None = None,
+) -> tuple[str | None, str | None, str | None]:
     """
-    Preprocesses the Space and Dataset names to ensure they are valid "username/space_id" or "username/dataset_id" format.
+    Preprocesses the Space, Dataset, and Bucket names to ensure they are valid
+    "username/name" format. When space_id is provided and neither dataset_id nor
+    bucket_id is explicitly set, auto-generates a bucket_id (default backend).
     """
     if space_id is not None and "/" not in space_id:
         username = _get_default_namespace()
@@ -439,9 +443,12 @@ def preprocess_space_and_dataset_ids(
     if dataset_id is not None and "/" not in dataset_id:
         username = _get_default_namespace()
         dataset_id = f"{username}/{dataset_id}"
-    if space_id is not None and dataset_id is None:
-        dataset_id = f"{space_id}-dataset"
-    return space_id, dataset_id
+    if bucket_id is not None and "/" not in bucket_id:
+        username = _get_default_namespace()
+        bucket_id = f"{username}/{bucket_id}"
+    if space_id is not None and dataset_id is None and bucket_id is None:
+        bucket_id = f"{space_id}-bucket"
+    return space_id, dataset_id, bucket_id
 
 
 def fibo():
