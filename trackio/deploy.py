@@ -37,6 +37,8 @@ from trackio.utils import (
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
+_BOLD_ORANGE = "\033[1m\033[38;5;208m"
+_RESET = "\033[0m"
 
 
 def _readme_linked_hub_yaml(dataset_id: str | None) -> str:
@@ -317,7 +319,9 @@ def create_space_if_not_exists(
         )
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
-        print(f"* Found existing space: {SPACE_URL.format(space_id=space_id)}")
+        print(
+            f"* Found existing space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
+        )
         return
     except RepositoryNotFoundError:
         pass
@@ -328,7 +332,9 @@ def create_space_if_not_exists(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
+    print(
+        f"* Creating new space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
+    )
     deploy_as_space(
         space_id,
         space_storage,
@@ -540,7 +546,9 @@ def sync_incremental(
                 )
 
     SQLiteStorage.set_project_metadata(project, "space_id", space_id)
-    print(f"* Synced successfully to space: {SPACE_URL.format(space_id=space_id)}")
+    print(
+        f"* Synced successfully to space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
+    )
 
 
 def upload_dataset_for_static(
@@ -693,7 +701,9 @@ def deploy_as_static_space(
             ),
         )
 
-    print(f"* Static Space deployed: {SPACE_URL.format(space_id=space_id)}")
+    print(
+        f"* Static Space deployed: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
+    )
 
 
 def sync(

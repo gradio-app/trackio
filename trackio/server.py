@@ -1,11 +1,15 @@
 """The main API layer for the Trackio UI."""
 
 import base64
+import logging
 import os
 import re
 import secrets
 import shutil
+import sqlite3
+import threading
 import time
+from collections import deque
 from functools import lru_cache
 from typing import Any
 from urllib.parse import urlencode
@@ -22,6 +26,66 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 
 HfApi = hf.HfApi()
+
+logger = logging.getLogger("trackio")
+
+_write_queue: deque[tuple[str, Any]] = deque()
+_flush_thread: threading.Thread | None = None
+_flush_lock = threading.Lock()
+_FLUSH_INTERVAL = 2.0
+_MAX_RETRIES = 30
+
+
+def _enqueue_write(kind: str, payload: Any) -> None:
+    _write_queue.append((kind, payload))
+    _ensure_flush_thread()
+
+
+def _ensure_flush_thread() -> None:
+    global _flush_thread
+    with _flush_lock:
+        if _flush_thread is not None and _flush_thread.is_alive():
+            return
+        _flush_thread = threading.Thread(target=_flush_loop, daemon=True)
+        _flush_thread.start()
+
+
+def _flush_loop() -> None:
+    retries = 0
+    while _write_queue and retries < _MAX_RETRIES:
+        kind, payload = _write_queue[0]
+        try:
+            if kind == "bulk_log":
+                SQLiteStorage.bulk_log(**payload)
+            elif kind == "bulk_log_system":
+                SQLiteStorage.bulk_log_system(**payload)
+            elif kind == "bulk_alert":
+                SQLiteStorage.bulk_alert(**payload)
+            _write_queue.popleft()
+            retries = 0
+        except sqlite3.OperationalError as e:
+            msg = str(e).lower()
+            if "disk i/o error" in msg or "readonly" in msg:
+                retries += 1
+                logger.warning(
+                    "write queue: flush failed (%s), retry %d/%d",
+                    e,
+                    retries,
+                    _MAX_RETRIES,
+                )
+                time.sleep(min(_FLUSH_INTERVAL * retries, 15.0))
+            else:
+                logger.error("write queue: non-retryable error (%s), dropping entry", e)
+                _write_queue.popleft()
+                retries = 0
+    if _write_queue:
+        logger.error(
+            "write queue: giving up after %d retries, %d entries dropped",
+            _MAX_RETRIES,
+            len(_write_queue),
+        )
+        _write_queue.clear()
+
 
 write_token = secrets.token_urlsafe(32)
 
@@ -345,7 +409,7 @@ def bulk_log(
 
     for (project, run), data in logs_by_run.items():
         has_log_ids = any(lid is not None for lid in data["log_ids"])
-        SQLiteStorage.bulk_log(
+        payload = dict(
             project=project,
             run=run,
             metrics_list=data["metrics"],
@@ -353,6 +417,10 @@ def bulk_log(
             config=data["config"],
             log_ids=data["log_ids"] if has_log_ids else None,
         )
+        try:
+            SQLiteStorage.bulk_log(**payload)
+        except sqlite3.OperationalError:
+            _enqueue_write("bulk_log", payload)
 
 
 def bulk_log_system(
@@ -372,13 +440,17 @@ def bulk_log_system(
 
     for (project, run), data in logs_by_run.items():
         has_log_ids = any(lid is not None for lid in data["log_ids"])
-        SQLiteStorage.bulk_log_system(
+        payload = dict(
             project=project,
             run=run,
             metrics_list=data["metrics"],
             timestamps=data["timestamps"],
             log_ids=data["log_ids"] if has_log_ids else None,
         )
+        try:
+            SQLiteStorage.bulk_log_system(**payload)
+        except sqlite3.OperationalError:
+            _enqueue_write("bulk_log_system", payload)
 
 
 def bulk_alert(
@@ -408,7 +480,7 @@ def bulk_alert(
 
     for (project, run), data in alerts_by_run.items():
         has_alert_ids = any(aid is not None for aid in data["alert_ids"])
-        SQLiteStorage.bulk_alert(
+        payload = dict(
             project=project,
             run=run,
             titles=data["titles"],
@@ -418,6 +490,10 @@ def bulk_alert(
             timestamps=data["timestamps"],
             alert_ids=data["alert_ids"] if has_alert_ids else None,
         )
+        try:
+            SQLiteStorage.bulk_alert(**payload)
+        except sqlite3.OperationalError:
+            _enqueue_write("bulk_alert", payload)
 
 
 def get_alerts(

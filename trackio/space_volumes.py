@@ -41,28 +41,6 @@ def get_space_volumes(
     return list(vols) if vols else []
 
 
-def create_bucket(
-    namespace: str,
-    short_name: str,
-    *,
-    private: bool = True,
-    token: str | None = None,
-) -> None:
-    t = _token(token)
-    base = ENDPOINT.rstrip("/")
-    url = f"{base}/api/buckets/{namespace}/{short_name}"
-    headers = {"Authorization": f"Bearer {t}"}
-    r = get_session().post(
-        url,
-        headers=headers,
-        json={"private": private},
-        timeout=60.0,
-    )
-    if r.status_code == 409:
-        return
-    hf_raise_for_status(r)
-
-
 def set_space_volumes(
     space_id: str,
     volumes: list[dict[str, Any]],

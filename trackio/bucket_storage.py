@@ -6,8 +6,6 @@ from huggingface_hub import sync_bucket
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import MEDIA_DIR, TRACKIO_DIR
 
-DB_EXT = ".db"
-
 
 def create_bucket_if_not_exists(bucket_id: str, private: bool | None = None) -> None:
     huggingface_hub.create_bucket(bucket_id, private=private or False, exist_ok=True)
@@ -40,14 +38,3 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
                 files_to_add.append((str(media_file), str(rel)))
 
     huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
-
-
-def upload_all_projects_to_bucket(bucket_id: str) -> None:
-    if not TRACKIO_DIR.exists():
-        return
-    for db_file in TRACKIO_DIR.glob(f"*{DB_EXT}"):
-        project = db_file.stem
-        try:
-            upload_project_to_bucket(project, bucket_id)
-        except FileNotFoundError:
-            continue
