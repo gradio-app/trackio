@@ -100,21 +100,3 @@ def attach_bucket_volume(
         new_vol["readOnly"] = True
     set_space_volumes(space_id, existing + [new_vol], token=token)
     return True
-
-
-def resolve_bucket_id_for_deploy(
-    space_id: str,
-    *,
-    bucket_id: str | None,
-    create_bucket_if_missing: bool,
-    bucket_short_name: str | None,
-) -> str | None:
-    if bucket_id is not None:
-        return bucket_id
-    if not create_bucket_if_missing:
-        return None
-    namespace, repo = space_id.split("/", 1)
-    short = bucket_short_name if bucket_short_name else f"{repo}-storage"
-    if "/" in short:
-        short = short.split("/")[-1]
-    return f"{namespace}/{short}"
