@@ -121,7 +121,6 @@ def deploy_as_space(
     bucket_short_name: str | None = None,
     bucket_mount_path: str = "/data",
     bucket_read_only: bool = False,
-    bucket_private: bool = True,
 ):
     if (
         os.getenv("SYSTEM") == "spaces"
@@ -284,7 +283,6 @@ def create_space_if_not_exists(
     bucket_short_name: str | None = None,
     bucket_mount_path: str = "/data",
     bucket_read_only: bool = False,
-    bucket_private: bool = True,
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist.
@@ -311,8 +309,6 @@ def create_space_if_not_exists(
             Container mount path for the bucket (default `'/data'`).
         bucket_read_only (`bool`, *optional*):
             Mount the bucket read-only.
-        bucket_private (`bool`, *optional*):
-            When creating a new bucket via the Hub API, whether it is private.
     """
     if "/" not in space_id:
         raise ValueError(
@@ -350,7 +346,6 @@ def create_space_if_not_exists(
         bucket_short_name=bucket_short_name,
         bucket_mount_path=bucket_mount_path,
         bucket_read_only=bucket_read_only,
-        bucket_private=bucket_private,
     )
     print("* Waiting for Space to be ready...")
     _wait_until_space_running(space_id)

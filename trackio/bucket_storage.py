@@ -1,17 +1,10 @@
-import atexit
-import logging
 import sqlite3
-import threading
-import time
-from concurrent.futures import Future
 
 import huggingface_hub
-from huggingface_hub import HfApi, sync_bucket
+from huggingface_hub import sync_bucket
 
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import MEDIA_DIR, TRACKIO_DIR
-
-logger = logging.getLogger(__name__)
 
 DB_EXT = ".db"
 
@@ -58,43 +51,3 @@ def upload_all_projects_to_bucket(bucket_id: str) -> None:
             upload_project_to_bucket(project, bucket_id)
         except FileNotFoundError:
             continue
-
-
-class BucketSyncScheduler:
-    def __init__(self, bucket_id: str, every: float = 5.0) -> None:
-        self.bucket_id = bucket_id
-        self.every = every
-        self.lock = threading.Lock()
-        self._api = HfApi(token=huggingface_hub.utils.get_token())
-        self._stopped = False
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-        atexit.register(self._atexit_upload)
-
-    def _run(self) -> None:
-        while not self._stopped:
-            time.sleep(self.every * 60)
-            if self._stopped:
-                break
-            try:
-                self._push()
-            except Exception as e:
-                logger.error("Bucket background upload failed: %s", e)
-
-    def _push(self) -> None:
-        with self.lock:
-            upload_all_projects_to_bucket(self.bucket_id)
-
-    def _atexit_upload(self) -> None:
-        if self._stopped:
-            return
-        try:
-            self._push()
-        except Exception as e:
-            logger.error("Bucket exit upload failed: %s", e)
-
-    def trigger(self) -> Future:
-        return self._api.run_as_future(self._push)
-
-    def stop(self) -> None:
-        self._stopped = True

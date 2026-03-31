@@ -514,15 +514,10 @@ class SQLiteStorage:
         with SQLiteStorage._scheduler_lock:
             if SQLiteStorage._current_scheduler is not None:
                 return SQLiteStorage._current_scheduler
-            bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
             hf_token = os.environ.get("HF_TOKEN")
             dataset_id = os.environ.get("TRACKIO_DATASET_ID")
             space_repo_name = os.environ.get("SPACE_REPO_NAME")
-            if bucket_id is not None:
-                from trackio.bucket_storage import BucketSyncScheduler
-
-                scheduler = BucketSyncScheduler(bucket_id)
-            elif dataset_id is not None and space_repo_name is not None:
+            if dataset_id is not None and space_repo_name is not None:
                 scheduler = CommitScheduler(
                     repo_id=dataset_id,
                     repo_type="dataset",

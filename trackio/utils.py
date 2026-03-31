@@ -448,8 +448,6 @@ def preprocess_space_and_dataset_ids(
         bucket_id = f"{username}/{bucket_id}"
     if space_id is not None and dataset_id is None and bucket_id is None:
         bucket_id = f"{space_id}-bucket"
-    if dataset_id is not None and bucket_id is None:
-        pass
     return space_id, dataset_id, bucket_id
 
 

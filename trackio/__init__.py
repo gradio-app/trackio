@@ -249,7 +249,12 @@ def init(
                 utils.print_dashboard_instructions(project)
         else:
             deploy.create_space_if_not_exists(
-                space_id, space_storage, dataset_id, bucket_id, private
+                space_id,
+                space_storage,
+                dataset_id,
+                bucket_id,
+                private,
+                create_bucket_if_missing=True,
             )
             user_name, space_name = space_id.split("/")
             space_url = deploy.SPACE_HOST_URL.format(
