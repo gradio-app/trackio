@@ -153,7 +153,6 @@ trackio.init(project="my-project", space_id="username/space_id")
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
 
-
 ## Syncing Offline Projects to Spaces
 
 If you've been tracking experiments locally and want to move them to Hugging Face Spaces for sharing or collaboration, use the `sync` function:
