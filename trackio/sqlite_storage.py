@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,6 +99,8 @@ class SQLiteStorage:
     _dataset_import_attempted = False
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
+    _init_db_locks: dict[str, Lock] = {}
+    _init_db_meta_lock = Lock()
 
     @staticmethod
     def _get_connection(db_path: Path) -> sqlite3.Connection:
@@ -128,13 +131,12 @@ class SQLiteStorage:
         return TRACKIO_DIR / filename
 
     @staticmethod
-    def _init_db_tables(db_path: Path, project: str) -> None:
-        with SQLiteStorage._get_process_lock(project):
-            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
-                _configure_sqlite_pragmas(conn)
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
+    def _init_db_tables(db_path: Path, project: str, checkpoint: bool = False) -> None:
+        with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            _configure_sqlite_pragmas(conn)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
@@ -143,9 +145,9 @@ class SQLiteStorage:
                         metrics TEXT NOT NULL
                     )
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE TABLE IF NOT EXISTS configs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_name TEXT NOT NULL,
@@ -154,27 +156,27 @@ class SQLiteStorage:
                         UNIQUE(run_name)
                     )
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_step
                     ON metrics(run_name, step)
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE INDEX IF NOT EXISTS idx_configs_run_name
                     ON configs(run_name)
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
                     ON metrics(run_name, timestamp)
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE TABLE IF NOT EXISTS system_metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
@@ -182,25 +184,25 @@ class SQLiteStorage:
                         metrics TEXT NOT NULL
                     )
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
                     ON system_metrics(run_name, timestamp)
                     """
-                )
+            )
 
-                cursor.execute(
-                    """
+            cursor.execute(
+                """
                     CREATE TABLE IF NOT EXISTS project_metadata (
                         key TEXT PRIMARY KEY,
                         value TEXT NOT NULL
                     )
                     """
-                )
+            )
 
-                cursor.execute(
-                    """
+            cursor.execute(
+                """
                     CREATE TABLE IF NOT EXISTS pending_uploads (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         space_id TEXT NOT NULL,
@@ -211,10 +213,10 @@ class SQLiteStorage:
                         created_at TEXT NOT NULL
                     )
                     """
-                )
+            )
 
-                cursor.execute(
-                    """
+            cursor.execute(
+                """
                     CREATE TABLE IF NOT EXISTS alerts (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         timestamp TEXT NOT NULL,
@@ -226,75 +228,117 @@ class SQLiteStorage:
                         alert_id TEXT
                     )
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE INDEX IF NOT EXISTS idx_alerts_run
                     ON alerts(run_name)
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE INDEX IF NOT EXISTS idx_alerts_timestamp
                     ON alerts(timestamp)
                     """
-                )
-                cursor.execute(
-                    """
+            )
+            cursor.execute(
+                """
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_alert_id
                     ON alerts(alert_id) WHERE alert_id IS NOT NULL
                     """
+            )
+
+            for table in ("metrics", "system_metrics"):
+                for col in ("log_id TEXT", "space_id TEXT"):
+                    try:
+                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+                    except sqlite3.OperationalError:
+                        pass
+                cursor.execute(
+                    f"""CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_log_id
+                        ON {table}(log_id) WHERE log_id IS NOT NULL"""
+                )
+                cursor.execute(
+                    f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
+                        ON {table}(space_id) WHERE space_id IS NOT NULL"""
                 )
 
-                for table in ("metrics", "system_metrics"):
-                    for col in ("log_id TEXT", "space_id TEXT"):
-                        try:
-                            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
-                        except sqlite3.OperationalError:
-                            pass
-                    cursor.execute(
-                        f"""CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_log_id
-                        ON {table}(log_id) WHERE log_id IS NOT NULL"""
-                    )
-                    cursor.execute(
-                        f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
-                        ON {table}(space_id) WHERE space_id IS NOT NULL"""
-                    )
-
-                conn.commit()
+            conn.commit()
+            if checkpoint:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     @staticmethod
-    def init_db(project: str, _retries: int = 10, _delay: float = 1.0) -> Path:
+    def _copy_db_to_mount(
+        src: Path, dst: Path, retries: int = 20, delay: float = 1.0
+    ) -> None:
+        for attempt in range(retries):
+            try:
+                shutil.copy2(str(src), str(dst))
+                with sqlite3.connect(str(dst), timeout=5.0) as conn:
+                    conn.execute("SELECT count(*) FROM sqlite_master")
+                logger.info(
+                    "init_db: copied new db to %s (attempt %d/%d, size=%d)",
+                    dst,
+                    attempt + 1,
+                    retries,
+                    dst.stat().st_size,
+                )
+                return
+            except (OSError, sqlite3.OperationalError) as e:
+                if attempt >= retries - 1:
+                    raise
+                logger.warning(
+                    "init_db: copy to mount failed (%s), attempt %d/%d, retrying in %.1fs",
+                    e,
+                    attempt + 1,
+                    retries,
+                    delay,
+                )
+                time.sleep(delay)
+                delay = min(delay * 2, 10.0)
+
+    @staticmethod
+    def _get_init_lock(project: str) -> Lock:
+        with SQLiteStorage._init_db_meta_lock:
+            if project not in SQLiteStorage._init_db_locks:
+                SQLiteStorage._init_db_locks[project] = Lock()
+            return SQLiteStorage._init_db_locks[project]
+
+    @staticmethod
+    def init_db(project: str) -> Path:
         """
         Initialize the SQLite database with required tables.
-        Retries on transient I/O errors (e.g. FUSE mount not yet ready).
         Returns the database path.
         """
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        for attempt in range(_retries):
+
+        with SQLiteStorage._get_init_lock(project):
+            if db_path.exists() and db_path.stat().st_size > 0:
+                try:
+                    SQLiteStorage._init_db_tables(db_path, project)
+                    return db_path
+                except sqlite3.OperationalError as e:
+                    logger.warning(
+                        "init_db: existing db at %s failed (%s), recreating via tmp",
+                        db_path,
+                        e,
+                    )
+
+            fd, tmp_str = tempfile.mkstemp(suffix=".db")
+            os.close(fd)
+            tmp_path = Path(tmp_str)
             try:
-                SQLiteStorage._init_db_tables(db_path, project)
-                return db_path
-            except sqlite3.OperationalError as e:
-                msg = str(e).lower()
-                is_transient = "disk i/o error" in msg or "readonly" in msg
-                if not is_transient or attempt >= _retries - 1:
-                    raise
-                logger.warning(
-                    "init_db failed (%s), retrying in %.1fs",
-                    e,
-                    _delay,
+                logger.info(
+                    "init_db: creating new db in %s for project=%s",
+                    tmp_path,
+                    project,
                 )
-                if db_path.exists() and db_path.stat().st_size == 0:
-                    try:
-                        with open(db_path, "wb"):
-                            pass
-                    except OSError:
-                        pass
-                time.sleep(_delay)
-                _delay = min(_delay * 2, 10.0)
+                SQLiteStorage._init_db_tables(tmp_path, project, checkpoint=True)
+                SQLiteStorage._copy_db_to_mount(tmp_path, db_path)
+            finally:
+                tmp_path.unlink(missing_ok=True)
         return db_path
 
     @staticmethod
