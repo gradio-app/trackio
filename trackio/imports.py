@@ -132,7 +132,9 @@ def import_csv(
     )
     print(f"* Metrics found: {', '.join(metrics_list[0].keys())}")
 
-    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
+    space_id, dataset_id, _ = utils.preprocess_space_and_dataset_ids(
+        space_id, dataset_id
+    )
     if dataset_id is not None:
         os.environ["TRACKIO_DATASET_ID"] = dataset_id
         print(f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}")
@@ -286,7 +288,9 @@ def import_tf_events(
     print(f"* Total imported events: {total_imported}")
     print(f"* Created runs: {', '.join(imported_runs)}")
 
-    space_id, dataset_id = utils.preprocess_space_and_dataset_ids(space_id, dataset_id)
+    space_id, dataset_id, _ = utils.preprocess_space_and_dataset_ids(
+        space_id, dataset_id
+    )
     if dataset_id is not None:
         os.environ["TRACKIO_DATASET_ID"] = dataset_id
         print(f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}")

@@ -85,6 +85,7 @@ Audio = TrackioAudio
 config = {}
 
 _atexit_registered = False
+_projects_notified_auto_log_hw: set[str] = set()
 
 
 def _cleanup_current_run():
@@ -103,6 +104,7 @@ def init(
     space_id: str | None = None,
     space_storage: SpaceStorage | None = None,
     dataset_id: str | None = None,
+    bucket_id: str | None = None,
     config: dict | None = None,
     resume: str = "never",
     settings: Any = None,
@@ -137,13 +139,18 @@ def init(
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
-            If a `space_id` is provided, a persistent Hugging Face Dataset will be
-            created and the metrics will be synced to it every 5 minutes. Specify a
-            Dataset with name like `"username/datasetname"` or `"orgname/datasetname"`,
-            or `"datasetname"` (uses currently-logged-in Hugging Face user's namespace),
-            or `None` (uses the same name as the Space but with the `"_dataset"`
-            suffix). If the Dataset does not exist, it will be created. If the Dataset
-            already exists, the project will be appended to it.
+            If provided, uses the legacy Hugging Face Dataset backend for metric
+            persistence (metrics are exported to Parquet and committed every 5 minutes).
+            Specify a Dataset with name like `"username/datasetname"` or
+            `"orgname/datasetname"`, or `"datasetname"` (uses currently-logged-in
+            Hugging Face user's namespace). Cannot be used together with `bucket_id`.
+        bucket_id (`str`, *optional*):
+            The ID of the Hugging Face Bucket to use for metric persistence. By default,
+            when a `space_id` is provided and neither `dataset_id` nor `bucket_id` is
+            explicitly set, a bucket is auto-generated from the space_id. Buckets provide
+            S3-like storage without git overhead - the SQLite database is stored directly
+            via `hf-mount` in the Space. Specify a Bucket with name like
+            `"username/bucketname"` or just `"bucketname"`.
         config (`dict`, *optional*):
             A dictionary of configuration options. Provided for compatibility with
             `wandb.init()`.
@@ -194,11 +201,14 @@ def init(
         )
 
     space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
+    bucket_id = bucket_id or os.environ.get("TRACKIO_BUCKET_ID")
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
+    if dataset_id is not None and bucket_id is not None:
+        raise ValueError("Cannot provide both `dataset_id` and `bucket_id`.")
     try:
-        space_id, dataset_id = utils.preprocess_space_and_dataset_ids(
-            space_id, dataset_id
+        space_id, dataset_id, bucket_id = utils.preprocess_space_and_dataset_ids(
+            space_id, dataset_id, bucket_id
         )
     except LocalTokenNotFoundError as e:
         raise LocalTokenNotFoundError(
@@ -221,7 +231,13 @@ def init(
     ):
         print(f"* Trackio project initialized: {project}")
 
-        if dataset_id is not None:
+        if bucket_id is not None:
+            os.environ["TRACKIO_BUCKET_ID"] = bucket_id
+            bucket_url = f"https://huggingface.co/buckets/{bucket_id}"
+            print(
+                f"* Trackio metrics will be synced to Hugging Face Bucket: {bucket_url}"
+            )
+        elif dataset_id is not None:
             os.environ["TRACKIO_DATASET_ID"] = dataset_id
             print(
                 f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}"
@@ -233,13 +249,19 @@ def init(
                 utils.print_dashboard_instructions(project)
         else:
             deploy.create_space_if_not_exists(
-                space_id, space_storage, dataset_id, private
+                space_id,
+                space_storage,
+                dataset_id,
+                bucket_id,
+                private,
             )
             user_name, space_name = space_id.split("/")
             space_url = deploy.SPACE_HOST_URL.format(
                 user_name=user_name, space_name=space_name
             )
-            print(f"* View dashboard by going to: {space_url}")
+            print(
+                f"* View dashboard by going to: {deploy._BOLD_ORANGE}{space_url}{deploy._RESET}"
+            )
             if utils.is_in_notebook() and embed:
                 utils.embed_url_in_notebook(space_url)
     context_vars.current_project.set(project)
@@ -268,10 +290,15 @@ def init(
         nvidia_available = gpu_available()
         apple_available = apple_gpu_available()
         auto_log_gpu = nvidia_available or apple_available
-        if nvidia_available:
-            print("* NVIDIA GPU detected, enabling automatic GPU metrics logging")
-        elif apple_available:
-            print("* Apple Silicon detected, enabling automatic system metrics logging")
+        if project not in _projects_notified_auto_log_hw:
+            if nvidia_available:
+                print("* NVIDIA GPU detected, enabling automatic GPU metrics logging")
+            elif apple_available:
+                print(
+                    "* Apple Silicon detected, enabling automatic system metrics logging"
+                )
+            if nvidia_available or apple_available:
+                _projects_notified_auto_log_hw.add(project)
 
     run = Run(
         url=url,
