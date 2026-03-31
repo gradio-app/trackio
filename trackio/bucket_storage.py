@@ -43,7 +43,32 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
     huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
 
 
+def _download_db_from_bucket(project: str, bucket_id: str) -> bool:
+    db_filename = SQLiteStorage.get_project_db_filename(project)
+    remote_path = f"trackio/{db_filename}"
+    local_path = SQLiteStorage.get_project_db_path(project)
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        huggingface_hub.download_bucket_files(
+            bucket_id,
+            files=[(remote_path, str(local_path))],
+        )
+        return local_path.exists()
+    except Exception:
+        return False
+
+
 def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
+    db_path = SQLiteStorage.get_project_db_path(project)
+    local_db_empty = not db_path.exists() or db_path.stat().st_size == 0
+    if not local_db_empty:
+        with sqlite3.connect(str(db_path)) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
+            local_db_empty = count == 0
+
+    if local_db_empty:
+        _download_db_from_bucket(project, bucket_id)
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = Path(tmp_dir)
         SQLiteStorage.export_for_static_space(project, output_dir)

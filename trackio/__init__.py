@@ -259,9 +259,6 @@ def init(
             space_url = deploy.SPACE_HOST_URL.format(
                 user_name=user_name, space_name=space_name
             )
-            print(
-                f"* View dashboard by going to: {deploy._BOLD_ORANGE}{space_url}{deploy._RESET}"
-            )
             if utils.is_in_notebook() and embed:
                 utils.embed_url_in_notebook(space_url)
     context_vars.current_project.set(project)
