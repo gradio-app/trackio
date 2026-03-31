@@ -9,9 +9,6 @@ from pathlib import Path
 from threading import Lock
 
 logger = logging.getLogger("trackio")
-if not logger.handlers:
-    logging.basicConfig()
-    logger.setLevel(logging.INFO)
 
 try:
     import fcntl
@@ -49,17 +46,10 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     if override in _JOURNAL_MODE_WHITELIST:
         journal = override.upper()
     elif os.environ.get("SYSTEM") == "spaces":
-        journal = "DELETE"
+        journal = "MEMORY"
     else:
         journal = "WAL"
-    result = conn.execute(f"PRAGMA journal_mode = {journal}").fetchone()
-    logger.info(
-        "SQLite pragmas: requested journal_mode=%s, actual=%s, SYSTEM=%s, TRACKIO_DIR=%s",
-        journal,
-        result[0] if result else "unknown",
-        os.environ.get("SYSTEM"),
-        os.environ.get("TRACKIO_DIR"),
-    )
+    conn.execute(f"PRAGMA journal_mode = {journal}")
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA temp_store = MEMORY")
     conn.execute("PRAGMA cache_size = -20000")
@@ -274,44 +264,37 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
-    def _wait_for_writable_dir(
-        directory: Path, retries: int = 10, delay: float = 1.0
-    ) -> None:
-        probe = directory / ".trackio_probe"
-        for attempt in range(retries):
-            try:
-                probe.write_bytes(b"ok")
-                probe.unlink(missing_ok=True)
-                return
-            except OSError as e:
-                logger.warning(
-                    "mount not ready: attempt %d/%d (%s), retrying in %.1fs",
-                    attempt + 1,
-                    retries,
-                    e,
-                    delay,
-                )
-                time.sleep(delay)
-                delay = min(delay * 2, 10.0)
-        raise OSError(f"Directory {directory} is not writable after {retries} attempts")
-
-    @staticmethod
-    def init_db(project: str) -> Path:
+    def init_db(project: str, _retries: int = 10, _delay: float = 1.0) -> Path:
         """
         Initialize the SQLite database with required tables.
+        Retries on transient I/O errors (e.g. FUSE mount not yet ready).
         Returns the database path.
         """
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        SQLiteStorage._wait_for_writable_dir(db_path.parent)
-        logger.info(
-            "init_db: project=%s, db_path=%s, db_exists=%s",
-            project,
-            db_path,
-            db_path.exists(),
-        )
-        SQLiteStorage._init_db_tables(db_path, project)
+        for attempt in range(_retries):
+            try:
+                SQLiteStorage._init_db_tables(db_path, project)
+                return db_path
+            except sqlite3.OperationalError as e:
+                msg = str(e).lower()
+                is_transient = "disk i/o error" in msg or "readonly" in msg
+                if not is_transient or attempt >= _retries - 1:
+                    raise
+                logger.warning(
+                    "init_db failed (%s), retrying in %.1fs",
+                    e,
+                    _delay,
+                )
+                if db_path.exists() and db_path.stat().st_size == 0:
+                    try:
+                        with open(db_path, "wb"):
+                            pass
+                    except OSError:
+                        pass
+                time.sleep(_delay)
+                _delay = min(_delay * 2, 10.0)
         return db_path
 
     @staticmethod
