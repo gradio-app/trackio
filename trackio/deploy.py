@@ -24,6 +24,10 @@ from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
 from trackio.bucket_storage import create_bucket_if_not_exists, upload_project_to_bucket
+from trackio.space_volumes import (
+    attach_bucket_volume,
+    resolve_bucket_id_for_deploy,
+)
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
@@ -112,11 +116,28 @@ def deploy_as_space(
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
+    *,
+    create_bucket_if_missing: bool = False,
+    bucket_short_name: str | None = None,
+    bucket_mount_path: str = "/data",
+    bucket_read_only: bool = False,
+    bucket_private: bool = True,
 ):
     if (
         os.getenv("SYSTEM") == "spaces"
     ):  # in case a repo with this function is uploaded to spaces
         return
+
+    resolved_bucket = resolve_bucket_id_for_deploy(
+        space_id,
+        bucket_id=bucket_id,
+        create_bucket_if_missing=create_bucket_if_missing,
+        bucket_short_name=bucket_short_name,
+    )
+    if dataset_id is not None and resolved_bucket is not None:
+        raise ValueError(
+            "Cannot use bucket volume options together with dataset_id; use one persistence mode."
+        )
 
     trackio_path = files("trackio")
 
@@ -150,8 +171,8 @@ def deploy_as_space(
     # Make sure necessary dependencies are installed by creating a requirements.txt.
     is_source_install = _is_trackio_installed_from_source()
 
-    if bucket_id is not None:
-        create_bucket_if_not_exists(bucket_id, private=private)
+    if resolved_bucket is not None:
+        create_bucket_if_not_exists(resolved_bucket, private=private)
 
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
@@ -222,8 +243,19 @@ def deploy_as_space(
 
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
-    if bucket_id is not None:
-        huggingface_hub.add_space_variable(space_id, "TRACKIO_BUCKET_ID", bucket_id)
+    if resolved_bucket is not None:
+        changed = attach_bucket_volume(
+            space_id,
+            resolved_bucket,
+            mount_path=bucket_mount_path,
+            read_only=bucket_read_only,
+        )
+        trackio_dir = f"{bucket_mount_path.rstrip('/')}/trackio"
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", trackio_dir)
+        if changed:
+            print(
+                f"* Attached bucket {resolved_bucket} at {bucket_mount_path!r}; TRACKIO_DIR={trackio_dir!r}"
+            )
     elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
@@ -247,6 +279,12 @@ def create_space_if_not_exists(
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
+    *,
+    create_bucket_if_missing: bool = False,
+    bucket_short_name: str | None = None,
+    bucket_mount_path: str = "/data",
+    bucket_read_only: bool = False,
+    bucket_private: bool = True,
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist.
@@ -259,11 +297,22 @@ def create_space_if_not_exists(
         dataset_id (`str`, *optional*):
             The ID of the Dataset to add to the Space as a space variable.
         bucket_id (`str`, *optional*):
-            The ID of the Bucket to mount to the Space for storage.
+            Full Hub bucket id (`namespace/name`) to attach via the Hub volumes API (platform mount).
+            Sets `TRACKIO_DIR` under the mount path; do not combine with `dataset_id`.
         private (`bool`, *optional*):
             Whether to make the Space private. If `None` (default), the repo will be
             public unless the organization's default is private. This value is ignored
             if the repo already exists.
+        create_bucket_if_missing (`bool`, *optional*):
+            If `True`, create a bucket named `{space_repo}-storage` under the Space owner before attach.
+        bucket_short_name (`str`, *optional*):
+            Short bucket name when using `create_bucket_if_missing` (no namespace prefix).
+        bucket_mount_path (`str`, *optional*):
+            Container mount path for the bucket (default `'/data'`).
+        bucket_read_only (`bool`, *optional*):
+            Mount the bucket read-only.
+        bucket_private (`bool`, *optional*):
+            When creating a new bucket via the Hub API, whether it is private.
     """
     if "/" not in space_id:
         raise ValueError(
@@ -291,7 +340,18 @@ def create_space_if_not_exists(
             raise ValueError(f"Failed to create Space: {e}")
 
     print(f"* Creating new space: {SPACE_URL.format(space_id=space_id)}")
-    deploy_as_space(space_id, space_storage, dataset_id, bucket_id, private)
+    deploy_as_space(
+        space_id,
+        space_storage,
+        dataset_id,
+        bucket_id,
+        private,
+        create_bucket_if_missing=create_bucket_if_missing,
+        bucket_short_name=bucket_short_name,
+        bucket_mount_path=bucket_mount_path,
+        bucket_read_only=bucket_read_only,
+        bucket_private=bucket_private,
+    )
     print("* Waiting for Space to be ready...")
     _wait_until_space_running(space_id)
 

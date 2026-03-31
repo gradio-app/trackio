@@ -4,6 +4,14 @@ import time
 
 import trackio as wandb
 
+# Optional: attach an HF Storage Bucket when creating the Space (Hub volumes API + TRACKIO_DIR):
+#   trackio.deploy.create_space_if_not_exists(
+#       "username/my-space",
+#       create_bucket_if_missing=True,
+#       bucket_mount_path="/data",
+#   )
+# Or use trackio.space_volumes.attach_bucket_volume on an existing Space.
+
 EPOCHS = 20
 PROJECT_ID = random.randint(100000, 999999)
 
