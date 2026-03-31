@@ -153,20 +153,6 @@ trackio.init(project="my-project", space_id="username/space_id")
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
 
-### HF Storage Buckets (persistent disk on Spaces)
-
-To attach a [Hub Storage Bucket](https://huggingface.co/docs/hub/storage-buckets) the same way as the Space settings UI (platform-managed volume mount), use `trackio.space_volumes` or pass options to `trackio.deploy.create_space_if_not_exists`:
-
-```py
-from trackio.deploy import create_space_if_not_exists
-
-create_space_if_not_exists(
-    "username/my-trackio-space",
-    create_bucket_if_missing=True,
-)
-```
-
-This uses the Hub `PUT /api/spaces/.../volumes` API and sets the Space variable `TRACKIO_DIR` to `/data/trackio`. Your token needs permission to update Space configuration. Do not combine this with `dataset_id` on the same deploy. For an existing Space, call `trackio.space_volumes.attach_bucket_volume(...)` directly.
 
 ## Syncing Offline Projects to Spaces
 
