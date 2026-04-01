@@ -24,6 +24,7 @@
     realtimeEnabled = $bindable(true),
     showHeaders = $bindable(true),
     filterText = $bindable(""),
+    metricColumns = [],
     spacesMode = false,
     runMutationAllowed = true,
     mutationAuth = "local",
@@ -49,7 +50,7 @@
 
 
   let availableXAxes = $derived.by(() => {
-    let axes = ["step", "time"];
+    let axes = ["step", "time", ...metricColumns];
     return axes;
   });
 

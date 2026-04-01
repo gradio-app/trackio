@@ -39,6 +39,7 @@
   let realtimeEnabled = $state(true);
   let showHeaders = $state(true);
   let filterText = $state("");
+  let metricColumns = $state([]);
   let sidebarOpen = $state(true);
   let sidebarHidden = $state(false);
   let urlTick = $state(0);
@@ -330,6 +331,7 @@
       bind:realtimeEnabled
       bind:showHeaders
       bind:filterText
+      {metricColumns}
       {logoUrls}
     />
   {/if}
@@ -351,6 +353,7 @@
           {showHeaders}
           {appBootstrapReady}
           {plotOrder}
+          bind:metricColumns
         />
       {:else if currentPage === "system"}
         <SystemMetrics

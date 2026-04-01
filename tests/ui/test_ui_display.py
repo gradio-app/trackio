@@ -25,6 +25,8 @@ def test_runs_plots_images_are_displayed(temp_dir):
             page.set_default_timeout(5000)
             page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
+            nav_links = page.locator(".nav-link")
+            expect(nav_links).to_have_count(6)
 
             run_label = page.locator(".run-name", has_text="test_run")
             expect(run_label).to_be_visible()
@@ -42,7 +44,7 @@ def test_runs_plots_images_are_displayed(temp_dir):
             expect(locator).to_have_count(0)
 
             checkbox.check()
-            page.locator(".nav-link", has_text="Media").click()
+            page.get_by_role("button", name="Media & Tables", exact=True).click()
             page.wait_for_load_state("networkidle")
             gallery = page.locator(".gallery")
             expect(gallery).to_be_visible()
@@ -103,18 +105,20 @@ def test_navbar_page_navigation(temp_dir):
             page.set_default_timeout(5000)
             page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
+            nav_links = page.locator(".nav-link")
+            expect(nav_links).to_have_count(6)
 
             expect(page.locator(".metrics-page")).to_be_visible()
 
-            page.locator(".nav-link", has_text="System Metrics").click()
+            page.get_by_role("button", name="System Metrics", exact=True).click()
             page.wait_for_load_state("networkidle")
             expect(page.locator(".system-page")).to_be_visible()
 
-            page.locator(".nav-link", has_text="Runs").click()
+            page.get_by_role("button", name="Runs", exact=True).click()
             page.wait_for_load_state("networkidle")
             expect(page.locator(".runs-page")).to_be_visible()
 
-            page.locator(".nav-link", has_text="Reports").click()
+            page.get_by_role("button", name="Alerts & Reports", exact=True).click()
             page.wait_for_load_state("networkidle")
             expect(page.locator(".reports-page")).to_be_visible()
 
@@ -140,7 +144,9 @@ def test_runs_table_shows_run_data(temp_dir):
             page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
 
-            page.locator(".nav-link", has_text="Runs").click()
+            nav_links = page.locator(".nav-link")
+            expect(nav_links).to_have_count(6)
+            page.get_by_role("button", name="Runs", exact=True).click()
             page.wait_for_load_state("networkidle")
 
             table = page.locator(".runs-table")
