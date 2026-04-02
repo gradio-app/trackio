@@ -29,9 +29,6 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
-from trackio.space_volumes import (
-    attach_bucket_volume,
-)
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
@@ -238,14 +235,27 @@ def deploy_as_space(
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if bucket_id is not None:
-        changed = attach_bucket_volume(
-            space_id,
-            bucket_id,
-            mount_path="/data",
+        from huggingface_hub import Volume
+
+        runtime = hf_api.get_space_runtime(space_id)
+        existing = list(runtime.volumes) if runtime.volumes else []
+        already_mounted = any(
+            v.type == "bucket" and v.source == bucket_id and v.mount_path == "/data"
+            for v in existing
         )
-        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
-        if changed:
+        if not already_mounted:
+            non_bucket = [
+                v
+                for v in existing
+                if not (v.type == "bucket" and v.source == bucket_id)
+            ]
+            hf_api.set_space_volumes(
+                space_id,
+                non_bucket
+                + [Volume(type="bucket", source=bucket_id, mount_path="/data")],
+            )
             print(f"* Attached bucket {bucket_id} at '/data'")
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
     elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
