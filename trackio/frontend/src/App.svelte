@@ -181,7 +181,7 @@
     if (mutationPollTimer) clearInterval(mutationPollTimer);
     mutationPollTimer = setInterval(() => {
       refreshMutationAccess();
-    }, 15000);
+    }, 120000);
   }
 
   $effect(() => {

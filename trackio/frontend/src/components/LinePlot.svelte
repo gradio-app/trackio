@@ -112,32 +112,38 @@
       type: "line",
       clip: true,
       strokeWidth: 2,
+      point: { size: 20, ...(extra.point || {}) },
       ...extra,
     });
+
+    const yTitle = y.includes("/") ? y.split("/").pop() : y;
+    const tooltipEnc = [
+      { field: colorField, type: "nominal", title: "Run" },
+      { field: x, type: "quantitative", title: x },
+      { field: y, type: "quantitative", title: yTitle },
+    ];
 
     if (hasSmoothed) {
       layers.push({
         data: { name: "data_original", values: originalData },
-        mark: lineMark({ strokeWidth: 1, opacity: 0.3 }),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        mark: lineMark({ strokeWidth: 1, opacity: 0.3, point: { size: 20, opacity: 0.3 } }),
+        encoding: { x: xEnc, y: yEnc, ...colorEnc, tooltip: tooltipEnc },
         name: "original",
       });
       layers.push({
         data: { name: "data_smoothed", values: smoothedData },
         mark: lineMark(),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc, tooltip: tooltipEnc },
         name: "plot",
       });
     } else {
       layers.push({
         data: { name: "data_plot", values: data },
         mark: lineMark(),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc, tooltip: tooltipEnc },
         name: "plot",
       });
     }
-
-    const yTitle = y.includes("/") ? y.split("/").pop() : y;
 
     return {
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
