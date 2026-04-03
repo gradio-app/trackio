@@ -112,7 +112,6 @@
       type: "line",
       clip: true,
       strokeWidth: 2,
-      point: { size: 20, ...(extra.point || {}) },
       ...extra,
     });
 
@@ -123,26 +122,54 @@
       { field: y, type: "quantitative", title: yTitle },
     ];
 
+    const hoverParams = [{
+      name: "hover",
+      select: { type: "point", on: "pointerover", nearest: true, clear: "pointerout" },
+    }];
+
+    const hoverPointLayer = (dataSpec, layerName) => ({
+      ...dataSpec,
+      mark: { type: "circle", clip: true, size: 60, opacity: 0 },
+      encoding: {
+        x: xEnc,
+        y: yEnc,
+        ...colorEnc,
+        tooltip: tooltipEnc,
+        opacity: {
+          condition: { param: "hover", empty: false, value: 1 },
+          value: 0,
+        },
+      },
+      params: hoverParams,
+      name: layerName,
+    });
+
     if (hasSmoothed) {
       layers.push({
         data: { name: "data_original", values: originalData },
-        mark: lineMark({ strokeWidth: 1, opacity: 0.3, point: { size: 20, opacity: 0.3 } }),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc, tooltip: tooltipEnc },
+        mark: lineMark({ strokeWidth: 1, opacity: 0.3 }),
+        encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "original",
       });
       layers.push({
         data: { name: "data_smoothed", values: smoothedData },
         mark: lineMark(),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc, tooltip: tooltipEnc },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
+      layers.push(
+        hoverPointLayer({ data: { name: "data_smoothed", values: smoothedData } }, "hover_points"),
+      );
     } else {
       layers.push({
         data: { name: "data_plot", values: data },
         mark: lineMark(),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc, tooltip: tooltipEnc },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
+      layers.push(
+        hoverPointLayer({ data: { name: "data_plot", values: data } }, "hover_points"),
+      );
     }
 
     return {
