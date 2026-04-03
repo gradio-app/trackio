@@ -105,7 +105,7 @@ This run logs:
     trackio.log({"reports/summary": trackio.Markdown(report_md)})
     trackio.finish()
 
-    space_id = trackio.sync(project=PROJECT)
+    space_id = trackio.sync(project=PROJECT, sdk="static")
     print(f"Dashboard: https://huggingface.co/spaces/{space_id}")
 
 

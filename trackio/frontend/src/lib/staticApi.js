@@ -8,7 +8,10 @@ let runsData = null;
 let settingsData = null;
 let fileListData = null;
 
-function datasetUrl(filename) {
+function resolveUrl(filename) {
+  if (config.bucket_id) {
+    return `https://huggingface.co/buckets/${config.bucket_id}/resolve/${filename}`;
+  }
   return `https://huggingface.co/datasets/${config.dataset_id}/resolve/main/${filename}`;
 }
 
@@ -24,7 +27,13 @@ export async function initialize(cfg) {
 }
 
 export function getReadOnlySource() {
-  if (!config || config.mode !== "static" || !config.dataset_id) return null;
+  if (!config || config.mode !== "static") return null;
+  if (config.bucket_id) {
+    return {
+      url: `https://huggingface.co/buckets/${config.bucket_id}`,
+    };
+  }
+  if (!config.dataset_id) return null;
   return {
     url: `https://huggingface.co/datasets/${config.dataset_id}`,
   };
@@ -32,14 +41,14 @@ export function getReadOnlySource() {
 
 async function getMetricsData() {
   if (metricsData) return metricsData;
-  metricsData = await readParquet(datasetUrl("metrics.parquet"), authHeaders());
+  metricsData = await readParquet(resolveUrl("metrics.parquet"), authHeaders());
   return metricsData;
 }
 
 async function getSystemData() {
   if (systemData) return systemData;
   systemData = await readParquet(
-    datasetUrl("aux/system_metrics.parquet"),
+    resolveUrl("aux/system_metrics.parquet"),
     authHeaders(),
   );
   return systemData;
@@ -47,13 +56,13 @@ async function getSystemData() {
 
 async function getConfigsData() {
   if (configsData) return configsData;
-  configsData = await readParquet(datasetUrl("aux/configs.parquet"), authHeaders());
+  configsData = await readParquet(resolveUrl("aux/configs.parquet"), authHeaders());
   return configsData;
 }
 
 async function getRunsJson() {
   if (runsData) return runsData;
-  const resp = await fetch(datasetUrl("runs.json"), { headers: authHeaders() });
+  const resp = await fetch(resolveUrl("runs.json"), { headers: authHeaders() });
   if (!resp.ok) {
     runsData = [];
     return runsData;
@@ -64,7 +73,7 @@ async function getRunsJson() {
 
 async function getSettingsJson() {
   if (settingsData) return settingsData;
-  const resp = await fetch(datasetUrl("settings.json"), { headers: authHeaders() });
+  const resp = await fetch(resolveUrl("settings.json"), { headers: authHeaders() });
   if (!resp.ok) {
     settingsData = {};
     return settingsData;
@@ -287,6 +296,26 @@ export async function getSettings() {
 
 export async function getProjectFiles() {
   if (fileListData) return fileListData;
+
+  if (config.bucket_id) {
+    const resp = await fetch(
+      `https://huggingface.co/api/buckets/${config.bucket_id}/tree?prefix=media/files/&recursive=true`,
+      { headers: authHeaders() },
+    );
+    if (!resp.ok) {
+      fileListData = [];
+      return fileListData;
+    }
+    const entries = await resp.json();
+    fileListData = (Array.isArray(entries) ? entries : [])
+      .filter((e) => e.type === "file")
+      .map((e) => ({
+        name: e.path.split("/").at(-1) ?? e.path,
+        path: e.path.slice("media/".length),
+      }));
+    return fileListData;
+  }
+
   const resp = await fetch(
     `https://huggingface.co/api/datasets/${config.dataset_id}`,
     { headers: authHeaders() },
@@ -330,7 +359,7 @@ const blobCache = new Map();
 
 export async function fetchMediaBlob(path) {
   const relative = stripProjectPrefix(path);
-  const url = datasetUrl(`media/${relative}`);
+  const url = resolveUrl(`media/${relative}`);
   if (blobCache.has(url)) return blobCache.get(url);
 
   const resp = await fetch(url, { headers: authHeaders() });
@@ -343,10 +372,10 @@ export async function fetchMediaBlob(path) {
 
 export function getAssetUrl(path) {
   const relative = stripProjectPrefix(path);
-  return datasetUrl(`media/${relative}`);
+  return resolveUrl(`media/${relative}`);
 }
 
 export function getMediaUrl(path) {
   const relative = stripProjectPrefix(path);
-  return datasetUrl(`media/${relative}`);
+  return resolveUrl(`media/${relative}`);
 }

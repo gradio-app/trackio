@@ -9,6 +9,7 @@ import threading
 import time
 from importlib.resources import files
 from pathlib import Path
+from typing import Literal
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -20,12 +21,14 @@ import httpx
 import huggingface_hub
 from gradio_client import Client, handle_file
 from httpx import ReadTimeout
+from huggingface_hub import Volume
 from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
-from trackio.bucket_storage import create_bucket_if_not_exists, upload_project_to_bucket
-from trackio.space_volumes import (
-    attach_bucket_volume,
+from trackio.bucket_storage import (
+    create_bucket_if_not_exists,
+    upload_project_to_bucket,
+    upload_project_to_bucket_for_static,
 )
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
@@ -233,14 +236,25 @@ def deploy_as_space(
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if bucket_id is not None:
-        changed = attach_bucket_volume(
-            space_id,
-            bucket_id,
-            mount_path="/data",
+        runtime = hf_api.get_space_runtime(space_id)
+        existing = list(runtime.volumes) if runtime.volumes else []
+        already_mounted = any(
+            v.type == "bucket" and v.source == bucket_id and v.mount_path == "/data"
+            for v in existing
         )
-        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
-        if changed:
+        if not already_mounted:
+            non_bucket = [
+                v
+                for v in existing
+                if not (v.type == "bucket" and v.source == bucket_id)
+            ]
+            hf_api.set_space_volumes(
+                space_id,
+                non_bucket
+                + [Volume(type="bucket", source=bucket_id, mount_path="/data")],
+            )
             print(f"* Attached bucket {bucket_id} at '/data'")
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
     elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
@@ -687,7 +701,7 @@ def sync(
     private: bool | None = None,
     force: bool = False,
     run_in_background: bool = False,
-    sdk: str = "gradio",
+    sdk: Literal["gradio", "static"] = "gradio",
     dataset_id: str | None = None,
     bucket_id: str | None = None,
 ) -> str:
@@ -712,7 +726,7 @@ def sync(
         sdk (`str`, *optional*, defaults to `"gradio"`):
             The type of Space to deploy. `"gradio"` deploys a Gradio Space with a live
             server. `"static"` deploys a static Space that reads from an HF Dataset
-            (no server needed).
+            or HF Bucket (no server needed).
         dataset_id (`str`, *optional*):
             The ID of the HF Dataset to sync to. When provided, uses the legacy
             Dataset backend instead of Buckets.
@@ -734,6 +748,20 @@ def sync(
 
     def _do_sync():
         if sdk == "static":
+            try:
+                info = huggingface_hub.HfApi().space_info(space_id)
+                if info.sdk == "gradio":
+                    if not force:
+                        answer = input(
+                            f"Space '{space_id}' is currently a Gradio Space. "
+                            f"Convert to static? [y/N] "
+                        )
+                        if answer.lower() not in ("y", "yes"):
+                            print("Aborted.")
+                            return
+            except RepositoryNotFoundError:
+                pass
+
             if dataset_id is not None:
                 upload_dataset_for_static(project, dataset_id, private=private)
                 hf_token = huggingface_hub.utils.get_token() if private else None
@@ -746,7 +774,7 @@ def sync(
                 )
             elif bucket_id is not None:
                 create_bucket_if_not_exists(bucket_id, private=private)
-                upload_project_to_bucket(project, bucket_id)
+                upload_project_to_bucket_for_static(project, bucket_id)
                 print(
                     f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
                 )
