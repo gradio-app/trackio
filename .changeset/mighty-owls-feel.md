@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:frontend fixes
+feat:Restores tooltips to line plots and fixes the call to /wh
