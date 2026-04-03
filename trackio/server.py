@@ -282,6 +282,7 @@ def check_hf_token_has_write_access(hf_token: str | None) -> None:
 _oauth_write_cache: dict[str, tuple[bool, float]] = {}
 _OAUTH_WRITE_CACHE_TTL = 300
 
+
 def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
     if not os.getenv("SYSTEM") == "spaces":
         return
