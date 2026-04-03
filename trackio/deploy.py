@@ -21,6 +21,7 @@ import httpx
 import huggingface_hub
 from gradio_client import Client, handle_file
 from httpx import ReadTimeout
+from huggingface_hub import Volume
 from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
@@ -235,8 +236,6 @@ def deploy_as_space(
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if bucket_id is not None:
-        from huggingface_hub import Volume
-
         runtime = hf_api.get_space_runtime(space_id)
         existing = list(runtime.volumes) if runtime.volumes else []
         already_mounted = any(
