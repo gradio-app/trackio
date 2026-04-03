@@ -140,13 +140,13 @@
     const countPerRunMetric = new Map();
     for (const r of originals) {
       const run = r.run;
-      for (const col of metricColumns) {
+      for (const col of cols) {
         if (r[col] == null) continue;
         const key = `${col}\0${run}`;
         countPerRunMetric.set(key, (countPerRunMetric.get(key) || 0) + 1);
       }
     }
-    const sp = new Set(metricColumns);
+    const sp = new Set(cols);
     for (const [key, count] of countPerRunMetric) {
       if (count > 1) {
         sp.delete(key.split("\0")[0]);

@@ -121,14 +121,24 @@ export function computeMetricPlotData(masterData, xColumn, metric, xLim) {
     (r) => r[metric] != null && r[metric] !== undefined,
   );
   if (xLim) {
-    const sorted = relevant.sort((a, b) => a[xColumn] - b[xColumn]);
-    let lo = 0;
-    let hi = sorted.length - 1;
-    while (lo < sorted.length && sorted[lo][xColumn] < xLim[0]) lo++;
-    while (hi >= 0 && sorted[hi][xColumn] > xLim[1]) hi--;
-    lo = Math.max(0, lo - 1);
-    hi = Math.min(sorted.length - 1, hi + 1);
-    relevant = sorted.slice(lo, hi + 1);
+    const groups = new Map();
+    for (const r of relevant) {
+      const key = `${r.run || ""}\0${r.data_type || "original"}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    }
+    const filtered = [];
+    for (const [, rows] of groups) {
+      rows.sort((a, b) => a[xColumn] - b[xColumn]);
+      let lo = 0;
+      let hi = rows.length - 1;
+      while (lo < rows.length && rows[lo][xColumn] < xLim[0]) lo++;
+      while (hi >= 0 && rows[hi][xColumn] > xLim[1]) hi--;
+      lo = Math.max(0, lo - 1);
+      hi = Math.min(rows.length - 1, hi + 1);
+      filtered.push(...rows.slice(lo, hi + 1));
+    }
+    relevant = filtered;
   }
   const originals = relevant.filter(
     (r) => r.data_type === "original" || !r.data_type,
