@@ -27,6 +27,7 @@
     showHeaders = true,
     appBootstrapReady = false,
     plotOrder = [],
+    // eslint-disable-next-line no-useless-assignment -- bindable out-prop to parent
     metricColumns = $bindable([]),
   } = $props();
 
