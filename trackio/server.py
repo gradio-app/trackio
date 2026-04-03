@@ -279,7 +279,10 @@ def check_hf_token_has_write_access(hf_token: str | None) -> None:
             )
 
 
-@lru_cache(maxsize=32)
+_oauth_write_cache: dict[str, tuple[bool, float]] = {}
+_OAUTH_WRITE_CACHE_TTL = 300
+
+
 def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
     if not os.getenv("SYSTEM") == "spaces":
         return
@@ -287,14 +290,27 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
         raise PermissionError(
             "Expected an oauth to be provided when logging to a Space"
         )
+    now = time.monotonic()
+    cached = _oauth_write_cache.get(oauth_token)
+    if cached is not None:
+        allowed, ts = cached
+        if now - ts < _OAUTH_WRITE_CACHE_TTL:
+            if not allowed:
+                raise PermissionError(
+                    "Expected the oauth token to be the user owner of the space, or be a member of the org owner of the space"
+                )
+            return
     who = HfApi.whoami(oauth_token)
     user_name = who["name"]
     owner_name = os.getenv("SPACE_AUTHOR_NAME")
     if user_name == owner_name:
+        _oauth_write_cache[oauth_token] = (True, now)
         return
     for org in who["orgs"]:
         if org["name"] == owner_name and org["roleInOrg"] == "write":
+            _oauth_write_cache[oauth_token] = (True, now)
             return
+    _oauth_write_cache[oauth_token] = (False, now)
     raise PermissionError(
         "Expected the oauth token to be the user owner of the space, or be a member of the org owner of the space"
     )

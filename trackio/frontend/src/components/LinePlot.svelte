@@ -115,6 +115,35 @@
       ...extra,
     });
 
+    const yTitle = y.includes("/") ? y.split("/").pop() : y;
+    const tooltipEnc = [
+      { field: colorField, type: "nominal", title: "Run" },
+      { field: x, type: "quantitative", title: x },
+      { field: y, type: "quantitative", title: yTitle },
+    ];
+
+    const hoverParams = [{
+      name: "hover",
+      select: { type: "point", on: "pointerover", nearest: true, clear: "pointerout" },
+    }];
+
+    const hoverPointLayer = (dataSpec, layerName) => ({
+      ...dataSpec,
+      mark: { type: "circle", clip: true, size: 60, opacity: 0 },
+      encoding: {
+        x: xEnc,
+        y: yEnc,
+        ...colorEnc,
+        tooltip: tooltipEnc,
+        opacity: {
+          condition: { param: "hover", empty: false, value: 1 },
+          value: 0,
+        },
+      },
+      params: hoverParams,
+      name: layerName,
+    });
+
     if (hasSmoothed) {
       layers.push({
         data: { name: "data_original", values: originalData },
@@ -128,6 +157,9 @@
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
+      layers.push(
+        hoverPointLayer({ data: { name: "data_smoothed", values: smoothedData } }, "hover_points"),
+      );
     } else {
       layers.push({
         data: { name: "data_plot", values: data },
@@ -135,9 +167,10 @@
         encoding: { x: xEnc, y: yEnc, ...colorEnc },
         name: "plot",
       });
+      layers.push(
+        hoverPointLayer({ data: { name: "data_plot", values: data } }, "hover_points"),
+      );
     }
-
-    const yTitle = y.includes("/") ? y.split("/").pop() : y;
 
     return {
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
