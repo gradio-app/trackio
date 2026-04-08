@@ -1,4 +1,3 @@
-import gc
 import multiprocessing
 import os
 import platform
@@ -43,10 +42,18 @@ def test_get_projects_and_runs(temp_dir):
     assert "run1" in runs
 
 
+def test_storage_connection_context_closes_connection(temp_dir):
+    db_path = SQLiteStorage.init_db("proj1")
+    with SQLiteStorage._get_connection(db_path) as conn:
+        conn.execute("SELECT 1").fetchone()
+    # Confirming that Trackio's _get_connection() closes the connection on exiting the context manager.
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        conn.execute("SELECT 1")
+
+
 def test_delete_run(temp_dir):
     project = "test_project"
     run_name = "test_run"
-
     config = {"param1": "value1", "_Created": "2023-01-01T00:00:00"}
     metrics = [{"accuracy": 0.95, "loss": 0.1}]
     SQLiteStorage.bulk_log(project, run_name, metrics, config=config)
@@ -74,15 +81,9 @@ def test_import_export(temp_dir):
             metrics_before[proj] = {}
         for run in SQLiteStorage.get_runs(proj):
             metrics_before[proj][run] = SQLiteStorage.get_logs(proj, run)
-
-    # there might be open connections from previous test, hence closing them
-    gc.collect()
-    [conn.close() for conn in gc.get_objects() if isinstance(conn, sqlite3.Connection)]
-    # clear existing SQLite data
     os.unlink(db_path_1)
     os.unlink(db_path_2)
 
-    # import from parquet, compare copies
     SQLiteStorage.import_from_parquet()
     metrics_after = {}
     for proj in SQLiteStorage.get_projects():
@@ -110,13 +111,6 @@ def _worker_using_sqlite_storage(
 
         trackio.utils.TRACKIO_DIR = Path(temp_dir)
         trackio.sqlite_storage.TRACKIO_DIR = Path(temp_dir)
-
-    def aggressive_get_connection(db_path):
-        conn = sqlite3.connect(str(db_path), timeout=0.01)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    SQLiteStorage._get_connection = aggressive_get_connection
 
     if sync_start_time:
         while time.time() < sync_start_time:

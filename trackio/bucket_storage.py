@@ -28,7 +28,9 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
     if not db_path.exists():
         raise FileNotFoundError(f"No database found for project '{project}'")
 
-    with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+    with SQLiteStorage._get_connection(
+        db_path, configure_pragmas=False, row_factory=None
+    ) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     files_to_add = [(str(db_path), f"trackio/{db_path.name}")]
