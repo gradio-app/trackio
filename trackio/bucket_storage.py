@@ -1,5 +1,4 @@
 import shutil
-import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -11,7 +10,7 @@ from trackio.utils import MEDIA_DIR, TRACKIO_DIR
 
 
 def create_bucket_if_not_exists(bucket_id: str, private: bool | None = None) -> None:
-    huggingface_hub.create_bucket(bucket_id, private=private or False, exist_ok=True)
+    huggingface_hub.create_bucket(bucket_id, private=private, exist_ok=True)
 
 
 def download_bucket_to_trackio_dir(bucket_id: str) -> None:
@@ -64,14 +63,14 @@ def _local_db_has_data(project: str) -> bool:
     db_path = SQLiteStorage.get_project_db_path(project)
     if not db_path.exists() or db_path.stat().st_size == 0:
         return False
-    conn = sqlite3.connect(str(db_path), timeout=5.0)
     try:
-        count = conn.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
-        return count > 0
+        with SQLiteStorage._get_connection(
+            db_path, configure_pragmas=False, row_factory=None
+        ) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
+            return count > 0
     except Exception:
         return False
-    finally:
-        conn.close()
 
 
 def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
