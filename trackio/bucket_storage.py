@@ -44,10 +44,12 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
     huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
 
 
-def _download_db_from_bucket(project: str, bucket_id: str) -> bool:
+def _download_db_from_bucket(
+    project: str, bucket_id: str, dest_path: Path | None = None
+) -> bool:
     db_filename = SQLiteStorage.get_project_db_filename(project)
     remote_path = f"trackio/{db_filename}"
-    local_path = SQLiteStorage.get_project_db_path(project)
+    local_path = dest_path or SQLiteStorage.get_project_db_path(project)
     local_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         huggingface_hub.download_bucket_files(
@@ -73,16 +75,19 @@ def _local_db_has_data(project: str) -> bool:
         return False
 
 
-def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
-    if not _local_db_has_data(project):
-        _download_db_from_bucket(project, bucket_id)
-
+def _export_and_upload_static(
+    project: str,
+    dest_bucket_id: str,
+    db_path: Path,
+    media_dir: Path | None = None,
+) -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = Path(tmp_dir)
-        SQLiteStorage.export_for_static_space(project, output_dir)
+        SQLiteStorage.export_for_static_space(
+            project, output_dir, db_path_override=db_path
+        )
 
-        media_dir = MEDIA_DIR / project
-        if media_dir.exists():
+        if media_dir and media_dir.exists():
             shutil.copytree(media_dir, output_dir / "media")
 
         files_to_add = []
@@ -91,4 +96,54 @@ def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
                 rel = f.relative_to(output_dir)
                 files_to_add.append((str(f), str(rel)))
 
-        huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
+        huggingface_hub.batch_bucket_files(dest_bucket_id, add=files_to_add)
+
+
+def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
+    if not _local_db_has_data(project):
+        _download_db_from_bucket(project, bucket_id)
+
+    db_path = SQLiteStorage.get_project_db_path(project)
+    _export_and_upload_static(project, bucket_id, db_path, MEDIA_DIR / project)
+
+
+def export_from_bucket_for_static(
+    source_bucket_id: str,
+    dest_bucket_id: str,
+    project: str,
+) -> None:
+    with tempfile.TemporaryDirectory() as work_dir:
+        work_path = Path(work_dir)
+        db_path = work_path / SQLiteStorage.get_project_db_filename(project)
+
+        if not _download_db_from_bucket(project, source_bucket_id, dest_path=db_path):
+            raise FileNotFoundError(
+                f"Could not download database for project '{project}' "
+                f"from bucket '{source_bucket_id}'."
+            )
+
+        media_dest = work_path / "media"
+        source_media_prefix = f"trackio/media/{project}/"
+        try:
+            media_files = huggingface_hub.list_bucket_files(source_bucket_id)
+            media_to_download = [
+                f for f in media_files if f.startswith(source_media_prefix)
+            ]
+            if media_to_download:
+                media_dest.mkdir(parents=True, exist_ok=True)
+                dl_pairs = []
+                for remote_path in media_to_download:
+                    rel = remote_path[len(source_media_prefix) :]
+                    local_file = media_dest / rel
+                    local_file.parent.mkdir(parents=True, exist_ok=True)
+                    dl_pairs.append((remote_path, str(local_file)))
+                huggingface_hub.download_bucket_files(source_bucket_id, files=dl_pairs)
+        except Exception:
+            pass
+
+        _export_and_upload_static(
+            project,
+            dest_bucket_id,
+            db_path,
+            media_dest if media_dest.exists() else None,
+        )

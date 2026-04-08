@@ -9,7 +9,6 @@ import threading
 import time
 from importlib.resources import files
 from pathlib import Path
-from typing import Literal
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -27,6 +26,7 @@ from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 import trackio
 from trackio.bucket_storage import (
     create_bucket_if_not_exists,
+    export_from_bucket_for_static,
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
@@ -701,13 +701,13 @@ def sync(
     private: bool | None = None,
     force: bool = False,
     run_in_background: bool = False,
-    sdk: Literal["gradio", "static"] = "gradio",
+    sdk: str = "gradio",
     dataset_id: str | None = None,
     bucket_id: str | None = None,
 ) -> str:
     """
     Syncs a local Trackio project's database to a Hugging Face Space.
-    If the Space does not exist, it will be created.
+    If the Space does not exist, it will be created. Local data is never deleted.
 
     Args:
         project (`str`): The name of the project to upload.
@@ -746,21 +746,18 @@ def sync(
     )
 
     def _do_sync():
-        if sdk == "static":
-            try:
-                info = huggingface_hub.HfApi().space_info(space_id)
-                if info.sdk == "gradio":
-                    if not force:
-                        answer = input(
-                            f"Space '{space_id}' is currently a Gradio Space. "
-                            f"Convert to static? [y/N] "
-                        )
-                        if answer.lower() not in ("y", "yes"):
-                            print("Aborted.")
-                            return
-            except RepositoryNotFoundError:
-                pass
+        try:
+            info = huggingface_hub.HfApi().space_info(space_id)
+            existing_sdk = info.sdk
+            if existing_sdk and existing_sdk != sdk:
+                raise ValueError(
+                    f"Space '{space_id}' is a '{existing_sdk}' Space but sdk='{sdk}' was requested. "
+                    f"The sdk must match the existing Space type."
+                )
+        except RepositoryNotFoundError:
+            pass
 
+        if sdk == "static":
             if dataset_id is not None:
                 upload_dataset_for_static(project, dataset_id, private=private)
                 hf_token = huggingface_hub.utils.get_token() if private else None
@@ -804,3 +801,90 @@ def sync(
     else:
         _do_sync()
     return space_id
+
+
+def _get_source_bucket(space_id: str) -> str:
+    hf_api = huggingface_hub.HfApi()
+    runtime = hf_api.get_space_runtime(space_id)
+    volumes = list(runtime.volumes) if runtime.volumes else []
+    for v in volumes:
+        if v.type == "bucket" and v.mount_path == "/data":
+            return v.source
+    raise ValueError(
+        f"Space '{space_id}' has no bucket mounted at '/data'. "
+        f"freeze() requires the source Space to use bucket storage."
+    )
+
+
+def freeze(
+    space_id: str,
+    project: str,
+    new_space_id: str | None = None,
+    private: bool | None = None,
+    bucket_id: str | None = None,
+) -> str:
+    """
+    Creates a new static Hugging Face Space containing a read-only snapshot of
+    the data for the specified project from the source Gradio Space. The data is
+    read from the bucket attached to the source Space, so it always reflects the
+    remote state. The original Space is not modified.
+
+    Args:
+        space_id (`str`):
+            The ID of the source Gradio Space (e.g., `"username/my-space"`).
+            Must be a Gradio Space with a bucket mounted at `/data`.
+        project (`str`):
+            The name of the project whose data to include in the frozen Space.
+        new_space_id (`str`, *optional*):
+            The ID for the new static Space. If not provided, defaults to
+            `"{space_id}_static"`.
+        private (`bool`, *optional*):
+            Whether to make the new Space private. If None (default), the repo
+            will be public unless the organization's default is private.
+        bucket_id (`str`, *optional*):
+            The ID of the HF Bucket for the new static Space's data storage.
+            If not provided, one is auto-generated from the new Space ID.
+
+    Returns:
+        `str`: The Space ID of the newly created static Space.
+    """
+    if "/" not in space_id:
+        raise ValueError(
+            f"space_id must be a full Gradio Space ID (e.g. 'username/space'): {space_id}"
+        )
+
+    try:
+        info = huggingface_hub.HfApi().space_info(space_id)
+        if info.sdk != "gradio":
+            raise ValueError(
+                f"Space '{space_id}' is not a Gradio Space (sdk='{info.sdk}'). "
+                f"freeze() requires a Gradio Space as the source."
+            )
+    except RepositoryNotFoundError:
+        raise ValueError(
+            f"Space '{space_id}' not found. Provide an existing Gradio Space ID."
+        )
+
+    source_bucket_id = _get_source_bucket(space_id)
+    print(f"* Reading project data from bucket: {source_bucket_id}")
+
+    if new_space_id is None:
+        new_space_id = f"{space_id}_static"
+    new_space_id, _dataset_id, bucket_id = preprocess_space_and_dataset_ids(
+        new_space_id, None, bucket_id
+    )
+
+    create_bucket_if_not_exists(bucket_id, private=private)
+    export_from_bucket_for_static(source_bucket_id, bucket_id, project)
+    print(
+        f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
+    )
+    deploy_as_static_space(
+        new_space_id,
+        None,
+        project,
+        bucket_id=bucket_id,
+        private=private,
+        hf_token=huggingface_hub.utils.get_token() if private else None,
+    )
+    return new_space_id
