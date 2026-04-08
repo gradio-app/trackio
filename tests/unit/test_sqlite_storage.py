@@ -45,10 +45,8 @@ def test_get_projects_and_runs(temp_dir):
 
 def test_storage_connection_context_closes_connection(temp_dir):
     db_path = SQLiteStorage.init_db("proj1")
-
     with SQLiteStorage._get_connection(db_path) as conn:
         conn.execute("SELECT 1").fetchone()
-
     # Confirming that Trackio's _get_connection() closes the connection on exiting the context manager.
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         conn.execute("SELECT 1")
@@ -57,7 +55,6 @@ def test_storage_connection_context_closes_connection(temp_dir):
 def test_delete_run(temp_dir):
     project = "test_project"
     run_name = "test_run"
-
     config = {"param1": "value1", "_Created": "2023-01-01T00:00:00"}
     metrics = [{"accuracy": 0.95, "loss": 0.1}]
     SQLiteStorage.bulk_log(project, run_name, metrics, config=config)
@@ -85,12 +82,9 @@ def test_import_export(temp_dir):
             metrics_before[proj] = {}
         for run in SQLiteStorage.get_runs(proj):
             metrics_before[proj][run] = SQLiteStorage.get_logs(proj, run)
-
-    # clear existing SQLite data
     os.unlink(db_path_1)
     os.unlink(db_path_2)
 
-    # import from parquet, compare copies
     SQLiteStorage.import_from_parquet()
     metrics_after = {}
     for proj in SQLiteStorage.get_projects():
