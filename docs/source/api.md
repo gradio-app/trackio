@@ -32,6 +32,10 @@
 
 [[autodoc]] sync
 
+## freeze
+
+[[autodoc]] freeze
+
 ## delete_project
 
 [[autodoc]] delete_project

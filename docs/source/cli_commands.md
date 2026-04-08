@@ -23,7 +23,59 @@ For private Spaces, pass `--hf-token` or ensure you are logged in via `huggingfa
 trackio list projects --space username/private-space --hf-token hf_xxxxx
 ```
 
-> **Note:** The `show`, `status`, `sync`, and `skills` commands are local-only and do not support `--space`.
+> **Note:** The `show`, `status`, `sync`, `freeze`, and `skills` commands are local-only and do not support `--space`.
+
+## Sync Command
+
+Upload a local project to a Hugging Face Space:
+
+```sh
+trackio sync --project "my-project" --space-id "username/space_id"
+```
+
+Deploy as a static Space (reads from an HF Bucket, no server needed):
+
+```sh
+trackio sync --project "my-project" --space-id "username/space_id" --sdk static
+```
+
+Sync all projects that have unsynced data to their configured Spaces:
+
+```sh
+trackio sync --all
+```
+
+| Flag | Description |
+|------|-------------|
+| `--project` | The name of the project to sync (required unless `--all` is used) |
+| `--space-id` | The HF Space ID to sync to (e.g. `username/space_id`). If not provided, uses the previously-configured Space |
+| `--all` | Sync all projects with unsynced data |
+| `--sdk` | `gradio` (default) for a live server, or `static` for a read-only bucket-backed Space |
+| `--private` | Make the Space private if creating a new one |
+| `--force` | Overwrite the existing database without prompting |
+
+## Freeze Command
+
+Create a read-only static Space snapshot from a live Gradio Space:
+
+```sh
+trackio freeze --space-id "username/my-space" --project "my-project"
+```
+
+Specify a custom destination Space:
+
+```sh
+trackio freeze --space-id "username/my-space" --project "my-project" --new-space-id "username/my-snapshot"
+```
+
+| Flag | Description |
+|------|-------------|
+| `--space-id` | The source Gradio Space ID (required) |
+| `--project` | The project to freeze (required) |
+| `--new-space-id` | The destination static Space ID. Defaults to `{space_id}_static` |
+| `--private` | Make the new static Space private |
+
+> **Note:** The source must be a Gradio Space with a bucket mounted at `/data`. If the destination Space already exists and is not a Trackio static Space, `freeze` will refuse to overwrite it.
 
 ## List Commands
 

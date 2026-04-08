@@ -124,22 +124,19 @@ def export_from_bucket_for_static(
 
         media_dest = work_path / "media"
         source_media_prefix = f"trackio/media/{project}/"
-        try:
-            media_files = huggingface_hub.list_bucket_files(source_bucket_id)
-            media_to_download = [
-                f for f in media_files if f.startswith(source_media_prefix)
-            ]
-            if media_to_download:
-                media_dest.mkdir(parents=True, exist_ok=True)
-                dl_pairs = []
-                for remote_path in media_to_download:
-                    rel = remote_path[len(source_media_prefix) :]
-                    local_file = media_dest / rel
-                    local_file.parent.mkdir(parents=True, exist_ok=True)
-                    dl_pairs.append((remote_path, str(local_file)))
-                huggingface_hub.download_bucket_files(source_bucket_id, files=dl_pairs)
-        except Exception:
-            pass
+        media_files = huggingface_hub.list_bucket_files(source_bucket_id)
+        media_to_download = [
+            f for f in media_files if f.startswith(source_media_prefix)
+        ]
+        if media_to_download:
+            media_dest.mkdir(parents=True, exist_ok=True)
+            dl_pairs = []
+            for remote_path in media_to_download:
+                rel = remote_path[len(source_media_prefix) :]
+                local_file = media_dest / rel
+                local_file.parent.mkdir(parents=True, exist_ok=True)
+                dl_pairs.append((remote_path, str(local_file)))
+            huggingface_hub.download_bucket_files(source_bucket_id, files=dl_pairs)
 
         _export_and_upload_static(
             project,

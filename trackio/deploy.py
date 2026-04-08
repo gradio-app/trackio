@@ -874,6 +874,19 @@ def freeze(
         new_space_id, None, bucket_id
     )
 
+    hf_api = huggingface_hub.HfApi()
+    try:
+        dest_info = hf_api.space_info(new_space_id)
+        tags = dest_info.tags or []
+        if dest_info.sdk != "static" or "trackio" not in tags:
+            raise ValueError(
+                f"Space '{new_space_id}' already exists and is not a Trackio static Space "
+                f"(sdk='{dest_info.sdk}', tags={tags}). Choose a different new_space_id "
+                f"or delete the existing Space first."
+            )
+    except RepositoryNotFoundError:
+        pass
+
     create_bucket_if_not_exists(bucket_id, private=private)
     export_from_bucket_for_static(source_bucket_id, bucket_id, project)
     print(
