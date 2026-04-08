@@ -5,7 +5,6 @@ import random
 import sqlite3
 import tempfile
 import time
-from contextlib import contextmanager
 from pathlib import Path
 
 import orjson
@@ -112,18 +111,6 @@ def _worker_using_sqlite_storage(
 
         trackio.utils.TRACKIO_DIR = Path(temp_dir)
         trackio.sqlite_storage.TRACKIO_DIR = Path(temp_dir)
-
-    @contextmanager
-    def aggressive_get_connection(db_path, **kwargs):
-        conn = sqlite3.connect(str(db_path), timeout=0.01)
-        try:
-            conn.row_factory = sqlite3.Row
-            with conn:
-                yield conn
-        finally:
-            conn.close()
-
-    SQLiteStorage._get_connection = staticmethod(aggressive_get_connection)
 
     if sync_start_time:
         while time.time() < sync_start_time:
