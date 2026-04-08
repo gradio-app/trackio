@@ -1,4 +1,3 @@
-import gc
 import multiprocessing
 import os
 import platform
@@ -50,7 +49,7 @@ def test_storage_connection_context_closes_connection(temp_dir):
     with SQLiteStorage._get_connection(db_path) as conn:
         conn.execute("SELECT 1").fetchone()
 
-    # Unlike sqlite3's built-in context manager, Trackio's _get_connection() must close on exit.
+    # Confirming that Trackio's _get_connection() closes the connection on exiting the context manager.
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         conn.execute("SELECT 1")
 
@@ -87,9 +86,6 @@ def test_import_export(temp_dir):
         for run in SQLiteStorage.get_runs(proj):
             metrics_before[proj][run] = SQLiteStorage.get_logs(proj, run)
 
-    # there might be open connections from previous test, hence closing them
-    gc.collect()
-    [conn.close() for conn in gc.get_objects() if isinstance(conn, sqlite3.Connection)]
     # clear existing SQLite data
     os.unlink(db_path_1)
     os.unlink(db_path_2)

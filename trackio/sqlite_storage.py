@@ -149,9 +149,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
-            with SQLiteStorage._get_connection(
-                db_path, timeout=30.0, configure_pragmas=True, row_factory=None
-            ) as conn:
+            with SQLiteStorage._get_connection(db_path, row_factory=None) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -470,7 +468,7 @@ class SQLiteStorage:
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
             with SQLiteStorage._get_connection(
-                db_path, timeout=30.0, configure_pragmas=False, row_factory=None
+                db_path, configure_pragmas=False, row_factory=None
             ) as conn:
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
                 conn.commit()
@@ -496,7 +494,7 @@ class SQLiteStorage:
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
             with SQLiteStorage._get_connection(
-                db_path, timeout=30.0, configure_pragmas=False, row_factory=None
+                db_path, configure_pragmas=False, row_factory=None
             ) as conn:
                 df.to_sql("system_metrics", conn, if_exists="replace", index=False)
                 conn.commit()
@@ -524,7 +522,7 @@ class SQLiteStorage:
                 ]
 
             with SQLiteStorage._get_connection(
-                db_path, timeout=30.0, configure_pragmas=False, row_factory=None
+                db_path, configure_pragmas=False, row_factory=None
             ) as conn:
                 df.to_sql("configs", conn, if_exists="replace", index=False)
                 conn.commit()

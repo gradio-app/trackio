@@ -29,7 +29,7 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
         raise FileNotFoundError(f"No database found for project '{project}'")
 
     with SQLiteStorage._get_connection(
-        db_path, timeout=30.0, configure_pragmas=False, row_factory=None
+        db_path, configure_pragmas=False, row_factory=None
     ) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
