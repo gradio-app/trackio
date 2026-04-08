@@ -1,5 +1,16 @@
 # trackio
 
+## 0.21.0
+
+### Features
+
+- [#467](https://github.com/gradio-app/trackio/pull/467) [`f357deb`](https://github.com/gradio-app/trackio/commit/f357debf78957e4c1f2b901bee4f77cf397298b4) - Allow logged metrics as x-axis choices.  Thanks @abidlabs!
+- [#474](https://github.com/gradio-app/trackio/pull/474) [`655673d`](https://github.com/gradio-app/trackio/commit/655673d4c6b7c8b7ee8f87f2589f2dbbc3d2ef91) - Fix file descriptor leak from `sqlite3.connect`.  Thanks @abidlabs!
+- [#470](https://github.com/gradio-app/trackio/pull/470) [`bea8c9d`](https://github.com/gradio-app/trackio/commit/bea8c9dcae0b59d071b6c779c97ee525c9bbf6e7) - Restores tooltips to line plots and fixes the call to uses TTL instead of OAuth.  Thanks @abidlabs!
+- [#471](https://github.com/gradio-app/trackio/pull/471) [`246fce0`](https://github.com/gradio-app/trackio/commit/246fce0a01619e1c2c538c67b3e460883334d500) - Deprecate dataset backend in favor of buckets.  Thanks @abidlabs!
+- [#465](https://github.com/gradio-app/trackio/pull/465) [`3e11174`](https://github.com/gradio-app/trackio/commit/3e1117438bb8168b802245a33059affa558ae519) - Use HF buckets as backend.  Thanks @abidlabs!
+- [#469](https://github.com/gradio-app/trackio/pull/469) [`915d170`](https://github.com/gradio-app/trackio/commit/915d17045133172b59195acfdcc70709229668aa) - Make static Spaces work with Buckets and also allow conversion from Gradio SDK to Static Spaces.  Thanks @abidlabs!
+
 ## 0.20.2
 
 ### Features
