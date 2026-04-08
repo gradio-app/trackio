@@ -135,7 +135,9 @@ def init(
             case the Space will be created in the currently-logged-in Hugging Face
             user's namespace. If the Space does not exist, it will be created. If the
             Space already exists, the project will be logged to it. Can also be set
-            via the `TRACKIO_SPACE_ID` environment variable.
+            via the `TRACKIO_SPACE_ID` environment variable. You cannot log to a
+            Space that has been **frozen** (converted to the static SDK); use
+            ``trackio.sync(..., sdk="static")`` only after you are done logging.
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
@@ -210,6 +212,9 @@ def init(
         raise LocalTokenNotFoundError(
             f"You must be logged in to Hugging Face locally when `space_id` is provided to deploy to a Space. {e}"
         ) from e
+
+    if space_id is not None:
+        deploy.raise_if_space_is_frozen_for_logging(space_id)
 
     url = context_vars.current_server.get()
 
