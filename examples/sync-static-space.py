@@ -1,13 +1,14 @@
 """
-Example: Log some fake training data, then sync to a static HF Space.
+Example: Log training data locally, sync to a static Space, then log more and sync again.
 
 Usage:
     python examples/sync-static-space.py
 
 This will:
-1. Log a few runs of fake training metrics locally
-2. Call trackio.sync() which uploads the local project to an HF Bucket
-   and deploys a static dashboard Space (no running server needed)
+1. Log an initial run of fake training metrics locally
+2. Sync to a static HF Space (uploads to an HF Bucket, no server needed)
+3. Log a second run with more data
+4. Sync again -- the static Space now contains both runs
 
 Set HF_TOKEN or run `huggingface-cli login` first.
 """
@@ -21,33 +22,29 @@ PROJECT = f"sync-demo-{random.randint(100000, 999999)}"
 EPOCHS = 15
 
 
-def fake_loss(epoch, max_epochs):
+def fake_metrics(epoch, max_epochs):
     progress = epoch / max_epochs
-    return max(0.05, 2.5 * math.exp(-3 * progress) + random.gauss(0, 0.2))
+    loss = max(0.05, 2.5 * math.exp(-3 * progress) + random.gauss(0, 0.1))
+    acc = min(0.95, 0.9 / (1 + math.exp(-6 * (progress - 0.5))) + random.gauss(0, 0.03))
+    return round(loss, 4), round(acc, 4)
 
 
-def fake_accuracy(epoch, max_epochs):
-    progress = epoch / max_epochs
-    return min(
-        0.95, 0.9 / (1 + math.exp(-6 * (progress - 0.5))) + random.gauss(0, 0.05)
-    )
+trackio.init(project=PROJECT, name="run-0", config={"lr": 0.001, "epochs": EPOCHS})
+for epoch in range(EPOCHS):
+    loss, acc = fake_metrics(epoch, EPOCHS)
+    trackio.log({"train/loss": loss, "train/accuracy": acc})
+trackio.finish()
 
-
-for run_idx in range(3):
-    trackio.init(
-        project=PROJECT,
-        name=f"run-{run_idx}",
-        config={"lr": 0.001 * (run_idx + 1), "epochs": EPOCHS},
-    )
-    for epoch in range(EPOCHS):
-        trackio.log(
-            {
-                "train/loss": round(fake_loss(epoch, EPOCHS), 4),
-                "train/accuracy": round(fake_accuracy(epoch, EPOCHS), 4),
-                "val/loss": round(fake_loss(epoch, EPOCHS) * 1.1, 4),
-            }
-        )
-    trackio.finish()
-
+print("First run complete. Syncing to a static Space...")
 space_id = trackio.sync(project=PROJECT, sdk="static")
 print(f"Dashboard: https://huggingface.co/spaces/{space_id}")
+
+trackio.init(project=PROJECT, name="run-1", config={"lr": 0.003, "epochs": EPOCHS})
+for epoch in range(EPOCHS):
+    loss, acc = fake_metrics(epoch, EPOCHS)
+    trackio.log({"train/loss": loss, "train/accuracy": acc})
+trackio.finish()
+
+print("Second run complete. Syncing again...")
+trackio.sync(project=PROJECT, sdk="static")
+print("Static Space updated with both runs.")
