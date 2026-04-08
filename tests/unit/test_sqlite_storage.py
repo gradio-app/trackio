@@ -6,6 +6,7 @@ import random
 import sqlite3
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import orjson
@@ -49,6 +50,7 @@ def test_storage_connection_context_closes_connection(temp_dir):
     with SQLiteStorage._get_connection(db_path) as conn:
         conn.execute("SELECT 1").fetchone()
 
+    # Unlike sqlite3's built-in context manager, Trackio's _get_connection() must close on exit.
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         conn.execute("SELECT 1")
 
@@ -121,12 +123,17 @@ def _worker_using_sqlite_storage(
         trackio.utils.TRACKIO_DIR = Path(temp_dir)
         trackio.sqlite_storage.TRACKIO_DIR = Path(temp_dir)
 
-    def aggressive_get_connection(db_path):
+    @contextmanager
+    def aggressive_get_connection(db_path, **kwargs):
         conn = sqlite3.connect(str(db_path), timeout=0.01)
-        conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
-    SQLiteStorage._get_connection = aggressive_get_connection
+    SQLiteStorage._get_connection = staticmethod(aggressive_get_connection)
 
     if sync_start_time:
         while time.time() < sync_start_time:

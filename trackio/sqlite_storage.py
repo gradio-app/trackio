@@ -53,6 +53,7 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA temp_store = MEMORY")
     conn.execute("PRAGMA cache_size = -20000")
 
+
 class ProcessLock:
     """A file-based lock that works across processes using fcntl (Unix) or msvcrt (Windows)."""
 
