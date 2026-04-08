@@ -6,7 +6,7 @@ from pathlib import Path
 import huggingface_hub
 from huggingface_hub import sync_bucket
 
-from trackio.sqlite_storage import SQLiteStorage, _open_sqlite_connection
+from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import MEDIA_DIR, TRACKIO_DIR
 
 
@@ -28,7 +28,7 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
     if not db_path.exists():
         raise FileNotFoundError(f"No database found for project '{project}'")
 
-    with _open_sqlite_connection(
+    with SQLiteStorage._get_connection(
         db_path, timeout=30.0, configure_pragmas=False, row_factory=None
     ) as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")

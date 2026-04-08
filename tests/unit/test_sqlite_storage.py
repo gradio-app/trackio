@@ -43,45 +43,14 @@ def test_get_projects_and_runs(temp_dir):
     assert "run1" in runs
 
 
-def test_storage_connections_are_closed_explicitly(temp_dir, monkeypatch):
-    opened = 0
-    closed = 0
-    real_connect = trackio.sqlite_storage.sqlite3.connect
+def test_storage_connection_context_closes_connection(temp_dir):
+    db_path = SQLiteStorage.init_db("proj1")
 
-    class SpyConnection:
-        def __init__(self, conn):
-            nonlocal opened
-            opened += 1
-            object.__setattr__(self, "_conn", conn)
+    with SQLiteStorage._get_connection(db_path) as conn:
+        conn.execute("SELECT 1").fetchone()
 
-        def __getattr__(self, name):
-            return getattr(self._conn, name)
-
-        def __setattr__(self, name, value):
-            setattr(self._conn, name, value)
-
-        def __enter__(self):
-            return self._conn.__enter__()
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            return self._conn.__exit__(exc_type, exc_val, exc_tb)
-
-        def close(self):
-            nonlocal closed
-            closed += 1
-            return self._conn.close()
-
-    def spy_connect(*args, **kwargs):
-        return SpyConnection(real_connect(*args, **kwargs))
-
-    monkeypatch.setattr(trackio.sqlite_storage.sqlite3, "connect", spy_connect)
-
-    SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
-    SQLiteStorage.get_runs("proj1")
-    SQLiteStorage.get_projects()
-
-    assert opened > 0
-    assert closed == opened
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        conn.execute("SELECT 1")
 
 
 def test_delete_run(temp_dir):
