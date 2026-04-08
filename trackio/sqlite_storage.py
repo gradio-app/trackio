@@ -3,6 +3,8 @@ import os
 import shutil
 import sqlite3
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -52,6 +54,26 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA cache_size = -20000")
 
 
+@contextmanager
+def _open_sqlite_connection(
+    db_path: Path,
+    *,
+    timeout: float = 30.0,
+    configure_pragmas: bool = True,
+    row_factory=sqlite3.Row,
+) -> Iterator[sqlite3.Connection]:
+    conn = sqlite3.connect(str(db_path), timeout=timeout)
+    try:
+        if configure_pragmas:
+            _configure_sqlite_pragmas(conn)
+        if row_factory is not None:
+            conn.row_factory = row_factory
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 class ProcessLock:
     """A file-based lock that works across processes using fcntl (Unix) or msvcrt (Windows)."""
 
@@ -97,11 +119,8 @@ class SQLiteStorage:
     _scheduler_lock = Lock()
 
     @staticmethod
-    def _get_connection(db_path: Path) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(db_path), timeout=30.0)
-        _configure_sqlite_pragmas(conn)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _get_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
+        return _open_sqlite_connection(db_path)
 
     @staticmethod
     def _get_process_lock(project: str) -> ProcessLock:
@@ -134,8 +153,9 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
-            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
-                _configure_sqlite_pragmas(conn)
+            with _open_sqlite_connection(
+                db_path, timeout=30.0, configure_pragmas=True, row_factory=None
+            ) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -287,7 +307,9 @@ class SQLiteStorage:
     @staticmethod
     def _read_table(db_path: Path, table: str) -> pd.DataFrame:
         try:
-            with sqlite3.connect(str(db_path)) as conn:
+            with _open_sqlite_connection(
+                db_path, timeout=5.0, configure_pragmas=False, row_factory=None
+            ) as conn:
                 return pd.read_sql(f"SELECT * FROM {table}", conn)
         except Exception:
             return pd.DataFrame()
@@ -451,7 +473,9 @@ class SQLiteStorage:
                 metrics = orjson.loads(metrics.to_json(orient="records"))
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
-            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            with _open_sqlite_connection(
+                db_path, timeout=30.0, configure_pragmas=False, row_factory=None
+            ) as conn:
                 df.to_sql("metrics", conn, if_exists="replace", index=False)
                 conn.commit()
 
@@ -475,7 +499,9 @@ class SQLiteStorage:
                 metrics = orjson.loads(metrics.to_json(orient="records"))
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
-            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            with _open_sqlite_connection(
+                db_path, timeout=30.0, configure_pragmas=False, row_factory=None
+            ) as conn:
                 df.to_sql("system_metrics", conn, if_exists="replace", index=False)
                 conn.commit()
 
@@ -501,7 +527,9 @@ class SQLiteStorage:
                     orjson.dumps(serialize_values(row)) for row in config_data
                 ]
 
-            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            with _open_sqlite_connection(
+                db_path, timeout=30.0, configure_pragmas=False, row_factory=None
+            ) as conn:
                 df.to_sql("configs", conn, if_exists="replace", index=False)
                 conn.commit()
 
@@ -1048,7 +1076,7 @@ class SQLiteStorage:
                     ORDER BY MIN(timestamp) ASC
                     """,
                 )
-            return [row[0] for row in cursor.fetchall()]
+                return [row[0] for row in cursor.fetchall()]
         except sqlite3.OperationalError as e:
             if "no such table: metrics" in str(e):
                 return []
