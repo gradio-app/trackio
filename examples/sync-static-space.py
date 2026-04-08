@@ -6,7 +6,7 @@ Usage:
 
 This will:
 1. Log a few runs of fake training metrics locally
-2. Call trackio.sync() which exports data as Parquet to an HF Dataset
+2. Call trackio.sync() which uploads the local project to an HF Bucket
    and deploys a static dashboard Space (no running server needed)
 
 Set HF_TOKEN or run `huggingface-cli login` first.

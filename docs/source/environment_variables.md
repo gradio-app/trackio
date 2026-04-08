@@ -106,18 +106,9 @@ export TRACKIO_WEBHOOK_MIN_LEVEL="warn"
 
 With `warn`, only `WARN` and `ERROR` alerts are sent to webhook URLs.
 
-### `TRACKIO_DATASET_ID`
-
-Sets the Hugging Face Dataset ID where logs will be stored when running on Hugging Face Spaces. If not provided, the dataset name will be set automatically when deploying to Spaces.
-
-
-```bash
-export TRACKIO_DATASET_ID="username/dataset_name"
-```
-
 ### `HF_TOKEN`
 
-Your Hugging Face authentication token. Required for creating Spaces and Datasets on Hugging Face. Set this locally when deploying to Spaces from your machine. Must have `write` permissions for the namespace that you are deploying the Trackio dashboard.
+Your Hugging Face authentication token. Required for creating Spaces and Buckets on Hugging Face. Set this locally when deploying to Spaces from your machine. Must have `write` permissions for the namespace that you are deploying the Trackio dashboard.
 
 ```bash
 export HF_TOKEN="hf_xxxxxxxxxxxxx"

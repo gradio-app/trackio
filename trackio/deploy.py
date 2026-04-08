@@ -288,10 +288,10 @@ def create_space_if_not_exists(
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier for the Space.
         dataset_id (`str`, *optional*):
-            The ID of the Dataset to add to the Space as a space variable.
+            Deprecated. Use `bucket_id` instead.
         bucket_id (`str`, *optional*):
             Full Hub bucket id (`namespace/name`) to attach via the Hub volumes API (platform mount).
-            Sets `TRACKIO_DIR` to the mount path; do not combine with `dataset_id`.
+            Sets `TRACKIO_DIR` to the mount path.
         private (`bool`, *optional*):
             Whether to make the Space private. If `None` (default), the repo will be
             public unless the organization's default is private. This value is ignored
@@ -725,14 +725,13 @@ def sync(
             If `False`, all the steps will be run synchronously.
         sdk (`str`, *optional*, defaults to `"gradio"`):
             The type of Space to deploy. `"gradio"` deploys a Gradio Space with a live
-            server. `"static"` deploys a static Space that reads from an HF Dataset
-            or HF Bucket (no server needed).
+            server. `"static"` deploys a static Space that reads from an HF Bucket
+            (no server needed).
         dataset_id (`str`, *optional*):
-            The ID of the HF Dataset to sync to. When provided, uses the legacy
-            Dataset backend instead of Buckets.
+            Deprecated. Use `bucket_id` instead.
         bucket_id (`str`, *optional*):
             The ID of the HF Bucket to sync to. By default, a bucket is auto-generated
-            from the space_id. Set `dataset_id` to use the legacy Dataset backend instead.
+            from the space_id.
     Returns:
         `str`: The Space ID of the synced project.
     """

@@ -223,7 +223,7 @@ def main():
         "--sdk",
         choices=["gradio", "static"],
         default="gradio",
-        help="The type of Space to deploy. 'gradio' (default) deploys a live Gradio server. 'static' deploys a static Space that reads from an HF Dataset.",
+        help="The type of Space to deploy. 'gradio' (default) deploys a live Gradio server. 'static' deploys a static Space that reads from an HF Bucket.",
     )
 
     list_parser = subparsers.add_parser(

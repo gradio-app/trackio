@@ -42,16 +42,7 @@ def import_csv(
             Space does not exist, it will be created. If the Space already exists, the
             project will be logged to it.
         dataset_id (`str`, *optional*):
-            If provided, a persistent Hugging Face Dataset will be created and the
-            metrics will be synced to it every 5 minutes. Should be a complete Dataset
-            name like `"username/datasetname"` or `"orgname/datasetname"`, or just
-            `"datasetname"` in which case the Dataset will be created in the
-            currently-logged-in Hugging Face user's namespace. If the Dataset does not
-            exist, it will be created. If the Dataset already exists, the project will
-            be appended to it. If not provided, the metrics will be logged to a local
-            SQLite database, unless a `space_id` is provided, in which case a Dataset
-            will be automatically created with the same name as the Space but with the
-            `"_dataset"` suffix.
+            Deprecated. Use `bucket_id` instead.
         private (`bool`, *optional*):
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored
@@ -182,16 +173,7 @@ def import_tf_events(
             Space does not exist, it will be created. If the Space already exists, the
             project will be logged to it.
         dataset_id (`str`, *optional*):
-            If provided, a persistent Hugging Face Dataset will be created and the
-            metrics will be synced to it every 5 minutes. Should be a complete Dataset
-            name like `"username/datasetname"` or `"orgname/datasetname"`, or just
-            `"datasetname"` in which case the Dataset will be created in the
-            currently-logged-in Hugging Face user's namespace. If the Dataset does not
-            exist, it will be created. If the Dataset already exists, the project will
-            be appended to it. If not provided, the metrics will be logged to a local
-            SQLite database, unless a `space_id` is provided, in which case a Dataset
-            will be automatically created with the same name as the Space but with the
-            `"_dataset"` suffix.
+            Deprecated. Use `bucket_id` instead.
         private (`bool`, *optional*):
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored
