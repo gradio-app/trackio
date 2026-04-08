@@ -3,6 +3,7 @@ import os
 import re
 import secrets
 import time
+import warnings
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -433,13 +434,19 @@ def preprocess_space_and_dataset_ids(
     bucket_id: str | None = None,
 ) -> tuple[str | None, str | None, str | None]:
     """
-    Preprocesses the Space, Dataset, and Bucket names to ensure they are valid
-    "username/name" format. When space_id is provided and neither dataset_id nor
-    bucket_id is explicitly set, auto-generates a bucket_id (default backend).
+    Preprocesses the Space and Bucket names to ensure they are valid
+    "username/name" format. When space_id is provided and bucket_id is not
+    explicitly set, auto-generates a bucket_id.
     """
     if space_id is not None and "/" not in space_id:
         username = _get_default_namespace()
         space_id = f"{username}/{space_id}"
+    if dataset_id is not None:
+        warnings.warn(
+            "`dataset_id` is deprecated. Use `bucket_id` instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
     if dataset_id is not None and "/" not in dataset_id:
         username = _get_default_namespace()
         dataset_id = f"{username}/{dataset_id}"

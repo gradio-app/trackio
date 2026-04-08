@@ -139,15 +139,11 @@ def init(
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
-            If provided, uses the legacy Hugging Face Dataset backend for metric
-            persistence (metrics are exported to Parquet and committed every 5 minutes).
-            Specify a Dataset with name like `"username/datasetname"` or
-            `"orgname/datasetname"`, or `"datasetname"` (uses currently-logged-in
-            Hugging Face user's namespace). Cannot be used together with `bucket_id`.
+            Deprecated. Use `bucket_id` instead.
         bucket_id (`str`, *optional*):
             The ID of the Hugging Face Bucket to use for metric persistence. By default,
-            when a `space_id` is provided and neither `dataset_id` nor `bucket_id` is
-            explicitly set, a bucket is auto-generated from the space_id. Buckets provide
+            when a `space_id` is provided and `bucket_id` is not explicitly set, a
+            bucket is auto-generated from the space_id. Buckets provide
             S3-like storage without git overhead - the SQLite database is stored directly
             via `hf-mount` in the Space. Specify a Bucket with name like
             `"username/bucketname"` or just `"bucketname"`.
