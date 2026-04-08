@@ -36,8 +36,12 @@ Trackio's main features:
   and keep your existing logging code.
 
 - **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id` in `trackio.init()`.
-  - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
+  - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, synced to a **Hugging Face Bucket** mounted on the Space)
   - Visualize experiments with a **Svelte 5** dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
+
+### Freezing a Space
+
+After a training run, you can **freeze** the Space: convert it from a live **Gradio** Space to a **static** Space that reads metrics from your HF Bucket (no Gradio server, read-only dashboard). In Python, call `trackio.sync(project, space_id=..., sdk="static", force=True)`. You cannot log new metrics to a frozen Space; use another `space_id` or a new Gradio Space for the next run. If you call `trackio.init(space_id=...)` against a frozen Space, Trackio raises a clear error.
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
 
 - **Free**: Everything here, including hosting on Hugging Face, is free!
