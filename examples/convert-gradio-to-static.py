@@ -21,6 +21,7 @@ EPOCHS = 10
 for run in range(2):
     trackio.init(
         project=PROJECT,
+        space_id=PROJECT,
         name=f"run-{run}",
         config={"epochs": EPOCHS, "lr": 0.001 * (run + 1), "batch_size": 32},
     )
@@ -39,10 +40,7 @@ for run in range(2):
         )
     trackio.finish()
 
-print("Training complete. Syncing to a Gradio Space...")
-space_id = trackio.sync(project=PROJECT)
-print(f"Live dashboard: https://huggingface.co/spaces/{space_id}")
 
 print("Freezing a static snapshot from the Gradio Space...")
-static_space_id = trackio.freeze(space_id=space_id, project=PROJECT)
+static_space_id = trackio.freeze(space_id=f"{PROJECT}-static", project=PROJECT)
 print(f"Static snapshot: https://huggingface.co/spaces/{static_space_id}")

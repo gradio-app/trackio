@@ -240,7 +240,7 @@ def check_hf_token_has_write_access(hf_token: str | None) -> None:
             raise PermissionError(
                 "Expected a HF_TOKEN to be provided when logging to a Space"
             )
-        who = HfApi.whoami(hf_token)
+        who = HfApi().whoami(hf_token, cache=True)
         owner_name = os.getenv("SPACE_AUTHOR_NAME")
         repo_name = os.getenv("SPACE_REPO_NAME")
         orgs = [o["name"] for o in who["orgs"]]
