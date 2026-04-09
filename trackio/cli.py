@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from trackio import show, sync
+from trackio import freeze, show, sync
 from trackio.cli_helpers import (
     error_exit,
     format_alerts,
@@ -224,6 +224,31 @@ def main():
         choices=["gradio", "static"],
         default="gradio",
         help="The type of Space to deploy. 'gradio' (default) deploys a live Gradio server. 'static' deploys a static Space that reads from an HF Bucket.",
+    )
+
+    freeze_parser = subparsers.add_parser(
+        "freeze",
+        help="Create a new static Space snapshot from a project's data.",
+    )
+    freeze_parser.add_argument(
+        "--space-id",
+        required=True,
+        help="The source Gradio Space ID (e.g. username/space_id).",
+    )
+    freeze_parser.add_argument(
+        "--project",
+        required=True,
+        help="The name of the project to freeze.",
+    )
+    freeze_parser.add_argument(
+        "--new-space-id",
+        required=False,
+        help="The Space ID for the new static Space. Defaults to {space_id}_static.",
+    )
+    freeze_parser.add_argument(
+        "--private",
+        action="store_true",
+        help="Make the new static Space private.",
     )
 
     list_parser = subparsers.add_parser(
@@ -625,7 +650,9 @@ def main():
         if trailing_globals.hf_token is not None:
             args.hf_token = trailing_globals.hf_token
 
-    if args.command in ("show", "status", "sync", "skills") and _get_space(args):
+    if args.command in ("show", "status", "sync", "freeze", "skills") and _get_space(
+        args
+    ):
         error_exit(
             f"The '{args.command}' command does not support --space (remote mode)."
         )
@@ -646,6 +673,13 @@ def main():
         _handle_status()
     elif args.command == "sync":
         _handle_sync(args)
+    elif args.command == "freeze":
+        freeze(
+            space_id=args.space_id,
+            project=args.project,
+            new_space_id=args.new_space_id,
+            private=args.private,
+        )
     elif args.command == "list":
         remote = _get_remote(args)
         if args.list_type == "projects":

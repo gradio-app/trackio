@@ -360,11 +360,20 @@ class SQLiteStorage:
             )
 
     @staticmethod
-    def export_for_static_space(project: str, output_dir: Path) -> None:
+    def export_for_static_space(
+        project: str, output_dir: Path, db_path_override: Path | None = None
+    ) -> None:
         """
         Exports a single project's data as Parquet + JSON files for static Space deployment.
+
+        Args:
+            project: The project name.
+            output_dir: Directory to write the exported files to.
+            db_path_override: If provided, read from this DB file instead of the
+                default local project path. Useful when exporting from a downloaded
+                remote database.
         """
-        db_path = SQLiteStorage.get_project_db_path(project)
+        db_path = db_path_override or SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             raise FileNotFoundError(f"No database found for project '{project}'")
 
@@ -387,18 +396,24 @@ class SQLiteStorage:
             flat = SQLiteStorage._flatten_json_column(configs_df.copy(), "config")
             flat.to_parquet(aux_dir / "configs.parquet")
 
-        runs = SQLiteStorage.get_runs(project)
-        runs_meta = []
-        for run_name in runs:
-            last_step = SQLiteStorage.get_last_step(project, run_name)
-            log_count = SQLiteStorage.get_log_count(project, run_name)
-            runs_meta.append(
-                {
-                    "name": run_name,
-                    "last_step": last_step,
-                    "log_count": log_count,
-                }
-            )
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """SELECT run_name, MAX(step) as last_step, COUNT(*) as log_count
+                    FROM metrics GROUP BY run_name ORDER BY MIN(timestamp) ASC"""
+                )
+                rows = cursor.fetchall()
+                runs_meta = [
+                    {
+                        "name": row["run_name"],
+                        "last_step": row["last_step"],
+                        "log_count": row["log_count"],
+                    }
+                    for row in rows
+                ]
+        except sqlite3.OperationalError:
+            runs_meta = []
         with open(output_dir / "runs.json", "w") as f:
             json_mod.dump(runs_meta, f)
 
@@ -1770,7 +1785,7 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 placeholders = ",".join("?" * len(ids))
                 conn.execute(
-                    f"DELETE FROM {table} WHERE id IN ({placeholders})",
+                    f"UPDATE {table} SET space_id = NULL WHERE id IN ({placeholders})",
                     ids,
                 )
                 conn.commit()

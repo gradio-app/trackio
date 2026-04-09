@@ -5,7 +5,6 @@ import secrets
 import time
 import warnings
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
@@ -925,9 +924,4 @@ def _get_default_namespace() -> str:
     This function uses caching to avoid repeated API calls to /whoami-v2.
     """
     token = huggingface_hub.get_token()
-    return _cached_whoami(token)["name"]
-
-
-@lru_cache(maxsize=32)
-def _cached_whoami(token: str | None) -> dict:
-    return huggingface_hub.whoami(token=token)
+    return huggingface_hub.whoami(token=token, cache=True)["name"]

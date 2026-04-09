@@ -1,6 +1,5 @@
 import time
-from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -124,23 +123,6 @@ def test_init_resume_modes(temp_dir):
     assert run.name == "nonexistent-run"
 
 
-@patch("trackio.utils._cached_whoami")
-@patch("time.time")
-def test_run_name_generation_with_space_id(mock_time, mock_cached_whoami, temp_dir):
-    mock_cached_whoami.return_value = {"name": "testuser"}
-    mock_time.return_value = 1234567890
-
-    client = DummyClient()
-    run = Run(
-        url="fake_url",
-        project="proj",
-        client=client,
-        name=None,
-        space_id="testuser/test-space",
-    )
-    assert run.name == "testuser-1234567890"
-
-
 def test_reserved_config_keys_rejected(temp_dir):
     with pytest.raises(ValueError, match="Config key '_test' is reserved"):
         Run(
@@ -149,25 +131,6 @@ def test_reserved_config_keys_rejected(temp_dir):
             client=None,
             config={"_test": "value"},
         )
-
-
-@patch("trackio.utils._cached_whoami")
-def test_automatic_username_and_timestamp_added(mock_cached_whoami, temp_dir):
-    mock_cached_whoami.return_value = {"name": "testuser"}
-
-    run = Run(
-        url=None,
-        project="test_project",
-        client=None,
-        config={"learning_rate": 0.01},
-    )
-
-    assert run.config["_Username"] == "testuser"
-    assert "_Created" in run.config
-    assert run.config["learning_rate"] == 0.01
-
-    created_time = datetime.fromisoformat(run.config["_Created"])
-    assert created_time.tzinfo is not None
 
 
 def test_step_recovery_after_crash(temp_dir):

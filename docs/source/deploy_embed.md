@@ -18,6 +18,61 @@ trackio.init(project="my-project", space_id="username/space_id")
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
 
+## Syncing Local Projects to Spaces
+
+If you've been logging locally and want to upload your data to a Space after the fact, use `sync`:
+
+```py
+trackio.sync(project="my-project", space_id="username/space_id")
+```
+
+Or from the CLI:
+
+```sh
+trackio sync --project "my-project" --space-id "username/space_id"
+```
+
+By default, `sync` deploys a **Gradio Space** with a live server. You can also deploy a **static Space** that reads from an HF Bucket (no server needed):
+
+```py
+trackio.sync(project="my-project", space_id="username/space_id", sdk="static")
+```
+
+```sh
+trackio sync --project "my-project" --space-id "username/space_id" --sdk static
+```
+
+Static Spaces are lightweight and free — they serve a read-only dashboard backed by Parquet files in an HF Bucket.
+
+## Freezing a Space Snapshot
+
+If you have a live Gradio Space and want to create a read-only static snapshot of a project's data, use `freeze`:
+
+```py
+trackio.freeze(space_id="username/my-space", project="my-project")
+```
+
+Or from the CLI:
+
+```sh
+trackio freeze --space-id "username/my-space" --project "my-project"
+```
+
+This creates a new static Space (by default named `{space_id}_static`) containing a snapshot of the project's data from the source Space's bucket. The original Space is not modified.
+
+You can customize the destination:
+
+```py
+trackio.freeze(
+    space_id="username/my-space",
+    project="my-project",
+    new_space_id="username/my-snapshot",
+    private=True,
+)
+```
+
+> **Note:** `freeze()` requires the source to be a Gradio Space with a bucket mounted at `/data`. If the destination Space already exists and is not a Trackio static Space, `freeze()` will refuse to overwrite it.
+
 ## Embedding a Trackio Dashboard
 
 One of the reasons we created `trackio` was to make it easy to embed live dashboards on websites, blog posts, or anywhere else you can embed a website.

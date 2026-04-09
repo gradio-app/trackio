@@ -235,12 +235,25 @@ def oauth_logout(request: Request):
 
 @lru_cache(maxsize=32)
 def check_hf_token_has_write_access(hf_token: str | None) -> None:
+    """
+    Checks if the provided hf_token has write access to the space. If it does not
+    have write access, a PermissionError is raised. Otherwise, the function returns None.
+
+    The function is cached in two separate caches to avoid unnecessary API calls to /whoami-v2 which is heavily rate-limited:
+    - A cache of the whoami response for the hf_token using .whoami(token=hf_token, cache=True).
+    - This entire function is cached using @lru_cache(maxsize=32).
+    """
     if os.getenv("SYSTEM") == "spaces":
         if hf_token is None:
             raise PermissionError(
                 "Expected a HF_TOKEN to be provided when logging to a Space"
             )
-        who = HfApi.whoami(hf_token)
+        space_token = os.getenv("HF_TOKEN")
+        if space_token and hf_token == space_token:
+            # If the HF_TOKEN is the same as the space token, we can assume that the user has write access.
+            # This avoids unnecessary API calls to /whoami-v2 which is heavily rate-limited.
+            return
+        who = HfApi.whoami(token=hf_token, cache=True)
         owner_name = os.getenv("SPACE_AUTHOR_NAME")
         repo_name = os.getenv("SPACE_REPO_NAME")
         orgs = [o["name"] for o in who["orgs"]]
@@ -300,7 +313,7 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
                     "Expected the oauth token to be the user owner of the space, or be a member of the org owner of the space"
                 )
             return
-    who = HfApi.whoami(oauth_token)
+    who = HfApi.whoami(oauth_token, cache=True)
     user_name = who["name"]
     owner_name = os.getenv("SPACE_AUTHOR_NAME")
     if user_name == owner_name:
