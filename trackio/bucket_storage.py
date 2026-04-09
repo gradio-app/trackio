@@ -13,6 +13,15 @@ def create_bucket_if_not_exists(bucket_id: str, private: bool | None = None) -> 
     huggingface_hub.create_bucket(bucket_id, private=private, exist_ok=True)
 
 
+def _list_bucket_file_paths(bucket_id: str, prefix: str | None = None) -> list[str]:
+    items = huggingface_hub.list_bucket_tree(bucket_id, prefix=prefix, recursive=True)
+    return [
+        item.path
+        for item in items
+        if getattr(item, "type", None) == "file" and getattr(item, "path", None)
+    ]
+
+
 def download_bucket_to_trackio_dir(bucket_id: str) -> None:
     TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
     sync_bucket(
@@ -124,10 +133,9 @@ def export_from_bucket_for_static(
 
         media_dest = work_path / "media"
         source_media_prefix = f"trackio/media/{project}/"
-        media_files = huggingface_hub.list_bucket_files(source_bucket_id)
-        media_to_download = [
-            f for f in media_files if f.startswith(source_media_prefix)
-        ]
+        media_to_download = _list_bucket_file_paths(
+            source_bucket_id, prefix=source_media_prefix
+        )
         if media_to_download:
             media_dest.mkdir(parents=True, exist_ok=True)
             dl_pairs = []

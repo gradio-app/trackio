@@ -91,6 +91,26 @@ def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1
             delay = min(delay * 2, 12)
 
 
+def _get_space_volumes(space_id: str) -> list[Volume]:
+    """
+    Return mounted volumes for a Space.
+
+    `HfApi.get_space_runtime()` does not always populate `volumes`, even when the
+    mount exists. Fall back to `space_info().runtime.volumes`, which currently
+    carries the volume metadata for running Spaces.
+    """
+    hf_api = huggingface_hub.HfApi()
+    runtime = hf_api.get_space_runtime(space_id)
+    if runtime.volumes:
+        return list(runtime.volumes)
+
+    info = hf_api.space_info(space_id)
+    if info.runtime and info.runtime.volumes:
+        return list(info.runtime.volumes)
+
+    return []
+
+
 def _get_source_install_dependencies() -> str:
     """Get trackio dependencies from pyproject.toml for source installs."""
     trackio_path = files("trackio")
@@ -251,8 +271,7 @@ def deploy_as_space(
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if bucket_id is not None:
-        runtime = hf_api.get_space_runtime(space_id)
-        existing = list(runtime.volumes) if runtime.volumes else []
+        existing = _get_space_volumes(space_id)
         already_mounted = any(
             v.type == "bucket" and v.source == bucket_id and v.mount_path == "/data"
             for v in existing
@@ -824,9 +843,7 @@ def sync(
 
 
 def _get_source_bucket(space_id: str) -> str:
-    hf_api = huggingface_hub.HfApi()
-    runtime = hf_api.get_space_runtime(space_id)
-    volumes = list(runtime.volumes) if runtime.volumes else []
+    volumes = _get_space_volumes(space_id)
     for v in volumes:
         if v.type == "bucket" and v.mount_path == "/data":
             return v.source
