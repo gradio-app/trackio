@@ -5,6 +5,7 @@ This demonstrates the full Gradio -> freeze flow:
 1. Log training metrics locally
 2. Sync the project to a live Gradio Space
 3. Freeze the Gradio Space into a read-only static Space (no server needed)
+4. Keep the frozen Space as a point-in-time snapshot that will not auto-update
 
 Usage:
     python examples/convert-gradio-to-static.py
@@ -46,3 +47,4 @@ static_space_id = trackio.freeze(
     space_id=PROJECT, project=PROJECT, new_space_id=f"{PROJECT}_static"
 )
 print(f"Static snapshot: https://huggingface.co/spaces/{static_space_id}")
+print("Future metrics synced to the Gradio Space will not appear here unless you freeze again.")

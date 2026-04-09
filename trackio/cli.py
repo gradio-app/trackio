@@ -228,7 +228,7 @@ def main():
 
     freeze_parser = subparsers.add_parser(
         "freeze",
-        help="Create a new static Space snapshot from a project's data.",
+        help="Create a one-time static Space snapshot from a project's data.",
     )
     freeze_parser.add_argument(
         "--space-id",
@@ -238,7 +238,7 @@ def main():
     freeze_parser.add_argument(
         "--project",
         required=True,
-        help="The name of the project to freeze.",
+        help="The name of the project to freeze into a static snapshot.",
     )
     freeze_parser.add_argument(
         "--new-space-id",

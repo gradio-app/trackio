@@ -76,6 +76,7 @@ trackio freeze --space-id "username/my-space" --project "my-project" --new-space
 | `--private` | Make the new static Space private |
 
 > **Note:** The source must be a Gradio Space with a bucket mounted at `/data`. If the destination Space already exists and is not a Trackio static Space, `freeze` will refuse to overwrite it.
+> The frozen Space is a snapshot. Later metrics synced to the original Gradio Space do not appear in the frozen static Space unless you run `freeze` again.
 
 ## List Commands
 
@@ -416,4 +417,3 @@ trackio list runs --project "my-project" --json | jq '.runs[] | select(startswit
 # Export to file
 trackio get run --project "my-project" --run "my-run" --json > run_summary.json
 ```
-

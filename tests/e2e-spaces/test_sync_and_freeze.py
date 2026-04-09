@@ -144,6 +144,17 @@ def test_sync_gradio_then_freeze_to_static(test_space_id, temp_dir):
         assert "loss" in df.columns
         assert "acc" in df.columns
         assert sorted(df["loss"].tolist()) == [0.1, 0.3, 0.5]
+
+        trackio.init(project=project_name, name=run_name)
+        trackio.log({"loss": 0.05, "acc": 0.95})
+        trackio.log({"loss": 0.02, "acc": 0.97})
+        trackio.finish()
+
+        deploy.sync(project=project_name, space_id=test_space_id)
+
+        frozen_df_after_source_update = _download_parquet_from_bucket(frozen_bucket_id)
+        assert len(frozen_df_after_source_update) == 3
+        assert sorted(frozen_df_after_source_update["loss"].tolist()) == [0.1, 0.3, 0.5]
     finally:
         _cleanup_space(frozen_space_id)
         _cleanup_bucket(frozen_bucket_id)
