@@ -43,6 +43,21 @@ _BOLD_ORANGE = "\033[1m\033[38;5;208m"
 _RESET = "\033[0m"
 
 
+def raise_if_space_is_frozen_for_logging(space_id: str) -> None:
+    try:
+        info = huggingface_hub.HfApi().space_info(space_id)
+    except RepositoryNotFoundError:
+        return
+    if getattr(info, "sdk", None) == "static":
+        raise RuntimeError(
+            f"Cannot log to Hugging Face Space '{space_id}' because it has been frozen "
+            f"(it uses the static SDK: a read-only dashboard with no live Trackio server).\n\n"
+            f"Use a different space_id for training, or create a new Gradio Trackio Space. "
+            f"Freezing converts a live Gradio Space to static after a run; a frozen Space "
+            f'cannot accept new logs. See trackio.sync(..., sdk="static") in the Trackio docs.'
+        )
+
+
 def _readme_linked_hub_yaml(dataset_id: str | None) -> str:
     if dataset_id is not None:
         return f"datasets:\n - {dataset_id}\n"
@@ -709,6 +724,11 @@ def sync(
     Syncs a local Trackio project's database to a Hugging Face Space.
     If the Space does not exist, it will be created. Local data is never deleted.
 
+    **Freezing:** Passing ``sdk="static"`` *freezes* the Space: it converts a live Gradio
+    Space into a static Space backed by an HF Bucket (read-only dashboard, no Gradio
+    server). You cannot log new metrics to a frozen Space; use a different ``space_id``
+    or a new Gradio Space for further training runs.
+
     Args:
         project (`str`): The name of the project to upload.
         space_id (`str`, *optional*): The ID of the Space to upload to (e.g., `"username/space_id"`).
@@ -725,7 +745,7 @@ def sync(
             If `False`, all the steps will be run synchronously.
         sdk (`str`, *optional*, defaults to `"gradio"`):
             The type of Space to deploy. `"gradio"` deploys a Gradio Space with a live
-            server. `"static"` deploys a static Space that reads from an HF Bucket
+            server. `"static"` freezes the Space: deploys a static Space that reads from an HF Bucket
             (no server needed).
         dataset_id (`str`, *optional*):
             Deprecated. Use `bucket_id` instead.
