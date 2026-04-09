@@ -743,10 +743,10 @@ def sync(
     Syncs a local Trackio project's database to a Hugging Face Space.
     If the Space does not exist, it will be created. Local data is never deleted.
 
-    **Freezing:** Passing ``sdk="static"`` *freezes* the Space: it converts a live Gradio
-    Space into a static Space backed by an HF Bucket (read-only dashboard, no Gradio
-    server). You cannot log new metrics to a frozen Space; use a different ``space_id``
-    or a new Gradio Space for further training runs.
+    **Freezing:** Passing ``sdk="static"`` deploys a static Space backed by an HF Bucket
+    (read-only dashboard, no Gradio server). You can sync the same project again later to
+    refresh that static Space. If you want a one-time snapshot of an existing Gradio Space,
+    use ``freeze()`` instead.
 
     Args:
         project (`str`): The name of the project to upload.
@@ -863,8 +863,9 @@ def freeze(
     """
     Creates a new static Hugging Face Space containing a read-only snapshot of
     the data for the specified project from the source Gradio Space. The data is
-    read from the bucket attached to the source Space, so it always reflects the
-    remote state. The original Space is not modified.
+    read from the bucket attached to the source Space at freeze time. The original
+    Space is not modified, and the new static Space does not automatically reflect
+    metrics uploaded to the original Gradio Space after the freeze completes.
 
     Args:
         space_id (`str`):

@@ -128,4 +128,4 @@ trackio.sync(project="my-project", space_id="username/space_id")
 </hfoption>
 </hfoptions>
 
-This will create the Space if it does not already exist, and upload all runs and associated data to the Space. You can also sync to a lightweight static Space with `sdk="static"`, or create a read-only snapshot of a live Space with [`freeze`](deploy_embed.md#freezing-a-space-snapshot). See the [Deploy and Embed Dashboards](deploy_embed.md) page for more details.
+This will create the Space if it does not already exist, and upload all runs and associated data to the Space. You can also sync to a lightweight static Space with `sdk="static"`, or create a read-only snapshot of a live Space with [`freeze`](deploy_embed.md#freezing-a-space-snapshot). A frozen Space is a point-in-time snapshot and will not pick up later metrics from the original Gradio Space unless you freeze again. See the [Deploy and Embed Dashboards](deploy_embed.md) page for more details.
