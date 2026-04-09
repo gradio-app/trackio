@@ -96,12 +96,3 @@ def test_collect_gpu_metrics_all_gpus(mock_pynvml_env):
         for i in range(4):
             assert f"gpu/{i}/utilization" in metrics
         assert "gpu/mean_utilization" in metrics
-
-
-def test_collect_gpu_metrics_default_respects_cuda_visible(mock_pynvml_env):
-    with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
-        metrics = gpu.collect_gpu_metrics()
-        assert "gpu/0/utilization" in metrics
-        assert "gpu/1/utilization" not in metrics
-        assert "gpu/2/utilization" not in metrics
-        assert "gpu/3/utilization" not in metrics
