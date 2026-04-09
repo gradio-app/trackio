@@ -189,6 +189,24 @@
     xLim = null;
   }
 
+  const metricUnits = {
+    utilization: "%",
+    mean_utilization: "%",
+    allocated_memory: "GiB",
+    total_allocated_memory: "GiB",
+    power: "W",
+    total_power: "W",
+    temp: "°C",
+    max_temp: "°C",
+  };
+
+  function metricTitle(metric, sliceFrom = 1) {
+    const name = metric.split("/").slice(sliceFrom).join("/") || metric;
+    const suffix = metric.split("/").pop();
+    const unit = metricUnits[suffix];
+    return unit ? `${name} (${unit})` : name;
+  }
+
 </script>
 
 <div class="system-page">
@@ -234,7 +252,7 @@
                   data={plotData}
                   x="time"
                   y={metric}
-                  title={metric.split("/").slice(1).join("/") || metric}
+                  title={metricTitle(metric, 1)}
                   {colorMap}
                   {xLim}
                   {yExtent}
@@ -269,7 +287,7 @@
                         data={plotData}
                         x="time"
                         y={metric}
-                        title={metric.split("/").slice(2).join("/") || metric}
+                        title={metricTitle(metric, 2)}
                         {colorMap}
                         {xLim}
                         {yExtent}

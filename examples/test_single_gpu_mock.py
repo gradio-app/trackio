@@ -14,7 +14,9 @@ from trackio import gpu
 mock_pynvml = MagicMock()
 mock_pynvml.nvmlDeviceGetCount.return_value = 1
 mock_pynvml.nvmlDeviceGetHandleByIndex.side_effect = lambda i: f"handle_{i}"
-mock_pynvml.nvmlDeviceGetUtilizationRates.return_value = SimpleNamespace(gpu=72, memory=45)
+mock_pynvml.nvmlDeviceGetUtilizationRates.return_value = SimpleNamespace(
+    gpu=72, memory=45
+)
 mock_pynvml.nvmlDeviceGetMemoryInfo.return_value = SimpleNamespace(
     used=6 * (1024**3), total=16 * (1024**3)
 )
