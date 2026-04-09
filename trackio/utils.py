@@ -925,9 +925,4 @@ def _get_default_namespace() -> str:
     This function uses caching to avoid repeated API calls to /whoami-v2.
     """
     token = huggingface_hub.get_token()
-    return _cached_whoami(token)["name"]
-
-
-@lru_cache(maxsize=32)
-def _cached_whoami(token: str | None) -> dict:
-    return huggingface_hub.whoami(token=token)
+    return huggingface_hub.whoami(token=token, cache=True)["name"]

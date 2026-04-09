@@ -26,7 +26,7 @@ labels = [1, 0, 1, 0, 1, 0] * 3
 encodings = tokenizer(texts, truncation=True, padding=True, max_length=64)
 dataset = Dataset.from_dict({**encodings, "labels": labels})
 
-username = huggingface_hub.whoami()["name"]
+username = huggingface_hub.whoami(cache=True)["name"]
 hub_model_id = f"{username}/trackio-transformers-demo"
 
 # Local Trackio logs by default; the first Hub push runs sync(sdk="static") and links the dashboard on the model card.
