@@ -32,8 +32,15 @@
   let plotDataByMetric = $derived.by(() => {
     const map = new Map();
     const lim = xLim;
-    for (const m of metricNames) {
-      map.set(m, computeMetricPlotData(systemData, "time", m, lim));
+    for (const g of Object.values(metricGroups)) {
+      for (const m of g.direct) {
+        if (!map.has(m)) map.set(m, computeMetricPlotData(systemData, "time", m, lim));
+      }
+      for (const sub of Object.values(g.subgroups)) {
+        for (const m of sub) {
+          if (!map.has(m)) map.set(m, computeMetricPlotData(systemData, "time", m, lim));
+        }
+      }
     }
     return map;
   });
@@ -216,30 +223,70 @@
       {@const directKey = `sys:${groupName}`}
       {@const orderedDirect = getOrderedMetrics(directKey, group.direct)}
       <Accordion label={groupName} open={true}>
-        <div class="plot-grid">
-          {#each orderedDirect as metric, i}
-            {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
-            {@const plotData = plotResult.data}
-            {@const yExtent = plotResult.yExtent}
-            {#if plotData.length > 0}
-              <LinePlot
-                data={plotData}
-                x="time"
-                y={metric}
-                title={metric}
-                {colorMap}
-                {xLim}
-                {yExtent}
-                onSelect={handlePlotSelect}
-                onResetZoom={handleResetZoom}
-                draggable={true}
-                ondragstart={(e) => handleDragStart(directKey, i, e)}
-                ondragover={(e) => handleDragOver(directKey, i, e)}
-                ondrop={(e) => handleDrop(directKey, i, orderedDirect, e)}
-              />
-            {/if}
-          {/each}
-        </div>
+        {#if orderedDirect.length > 0}
+          <div class="plot-grid">
+            {#each orderedDirect as metric, i}
+              {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
+              {@const plotData = plotResult.data}
+              {@const yExtent = plotResult.yExtent}
+              {#if plotData.length > 0}
+                <LinePlot
+                  data={plotData}
+                  x="time"
+                  y={metric}
+                  title={metric.split("/").slice(1).join("/") || metric}
+                  {colorMap}
+                  {xLim}
+                  {yExtent}
+                  onSelect={handlePlotSelect}
+                  onResetZoom={handleResetZoom}
+                  draggable={true}
+                  ondragstart={(e) => handleDragStart(directKey, i, e)}
+                  ondragover={(e) => handleDragOver(directKey, i, e)}
+                  ondrop={(e) => handleDrop(directKey, i, orderedDirect, e)}
+                />
+              {/if}
+            {/each}
+          </div>
+        {/if}
+
+        {@const subEntries = Object.entries(group.subgroups)}
+        {#if subEntries.length > 1}
+          {@const keyMetricSuffixes = ["utilization", "allocated_memory", "power", "temp"]}
+          <div class="subgroup-list">
+            {#each subEntries as [subName, subMetrics]}
+              {@const filteredSub = subMetrics.filter((m) => keyMetricSuffixes.some((s) => m.endsWith("/" + s)))}
+              {@const subKey = `sys:${groupName}:${subName}`}
+              {@const orderedSub = getOrderedMetrics(subKey, filteredSub)}
+              <Accordion label="GPU {subName}" open={false}>
+                <div class="plot-grid">
+                  {#each orderedSub as metric, i}
+                    {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
+                    {@const plotData = plotResult.data}
+                    {@const yExtent = plotResult.yExtent}
+                    {#if plotData.length > 0}
+                      <LinePlot
+                        data={plotData}
+                        x="time"
+                        y={metric}
+                        title={metric.split("/").slice(2).join("/") || metric}
+                        {colorMap}
+                        {xLim}
+                        {yExtent}
+                        onSelect={handlePlotSelect}
+                        onResetZoom={handleResetZoom}
+                        draggable={true}
+                        ondragstart={(e) => handleDragStart(subKey, i, e)}
+                        ondragover={(e) => handleDragOver(subKey, i, e)}
+                        ondrop={(e) => handleDrop(subKey, i, orderedSub, e)}
+                      />
+                    {/if}
+                  {/each}
+                </div>
+              </Accordion>
+            {/each}
+          </div>
+        {/if}
       </Accordion>
     {/each}
   {/if}
@@ -256,6 +303,9 @@
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
+  }
+  .subgroup-list {
+    margin-top: 16px;
   }
   .empty-state {
     max-width: 640px;
