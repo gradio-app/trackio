@@ -47,4 +47,6 @@ static_space_id = trackio.freeze(
     space_id=PROJECT, project=PROJECT, new_space_id=f"{PROJECT}_static"
 )
 print(f"Static snapshot: https://huggingface.co/spaces/{static_space_id}")
-print("Future metrics synced to the Gradio Space will not appear here unless you freeze again.")
+print(
+    "Future metrics synced to the Gradio Space will not appear here unless you freeze again."
+)
