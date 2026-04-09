@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 
 import huggingface_hub
-from huggingface_hub import sync_bucket
+from huggingface_hub import copy_files, sync_bucket
 
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import MEDIA_DIR, TRACKIO_DIR
@@ -108,6 +108,22 @@ def _export_and_upload_static(
         huggingface_hub.batch_bucket_files(dest_bucket_id, add=files_to_add)
 
 
+def _copy_project_media_between_buckets(
+    source_bucket_id: str, dest_bucket_id: str, project: str
+) -> None:
+    source_media_prefix = f"trackio/media/{project}/"
+    media_to_copy = _list_bucket_file_paths(
+        source_bucket_id, prefix=source_media_prefix
+    )
+    if not media_to_copy:
+        return
+
+    copy_files(
+        f"hf://buckets/{source_bucket_id}/{source_media_prefix}",
+        f"hf://buckets/{dest_bucket_id}/media/",
+    )
+
+
 def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
     if not _local_db_has_data(project):
         _download_db_from_bucket(project, bucket_id)
@@ -131,24 +147,5 @@ def export_from_bucket_for_static(
                 f"from bucket '{source_bucket_id}'."
             )
 
-        media_dest = work_path / "media"
-        source_media_prefix = f"trackio/media/{project}/"
-        media_to_download = _list_bucket_file_paths(
-            source_bucket_id, prefix=source_media_prefix
-        )
-        if media_to_download:
-            media_dest.mkdir(parents=True, exist_ok=True)
-            dl_pairs = []
-            for remote_path in media_to_download:
-                rel = remote_path[len(source_media_prefix) :]
-                local_file = media_dest / rel
-                local_file.parent.mkdir(parents=True, exist_ok=True)
-                dl_pairs.append((remote_path, str(local_file)))
-            huggingface_hub.download_bucket_files(source_bucket_id, files=dl_pairs)
-
-        _export_and_upload_static(
-            project,
-            dest_bucket_id,
-            db_path,
-            media_dest if media_dest.exists() else None,
-        )
+        _export_and_upload_static(project, dest_bucket_id, db_path)
+        _copy_project_media_between_buckets(source_bucket_id, dest_bucket_id, project)
