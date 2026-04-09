@@ -1,5 +1,12 @@
 # trackio
 
+## 0.21.1
+
+### Features
+
+- [#475](https://github.com/gradio-app/trackio/pull/475) [`fcb476c`](https://github.com/gradio-app/trackio/commit/fcb476cd37a40923e9679aaf966f41d582a878a8) - Tweaks.  Thanks @abidlabs!
+- [#477](https://github.com/gradio-app/trackio/pull/477) [`7d52dfd`](https://github.com/gradio-app/trackio/commit/7d52dfdce5b6eff6a34501a6d5a620220663cf09) - Fix `.sync()` and add `.freeze()` as a separate methods.  Thanks @abidlabs!
+
 ## 0.21.0
 
 ### Features
