@@ -1,5 +1,11 @@
 # trackio
 
+## 0.21.2
+
+### Features
+
+- [#482](https://github.com/gradio-app/trackio/pull/482) [`f62180a`](https://github.com/gradio-app/trackio/commit/f62180a0218bc99a259d5ca110a0384a6cae11c8) - Use server-side bucket copy when freezing Spaces.  Thanks @abidlabs!
+
 ## 0.21.1
 
 ### Features
