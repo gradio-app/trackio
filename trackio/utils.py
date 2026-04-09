@@ -5,7 +5,6 @@ import secrets
 import time
 import warnings
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
