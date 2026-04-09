@@ -32,11 +32,7 @@ def _make_mock_pynvml(num_gpus=4):
     mock = MagicMock()
     mock.nvmlInit.return_value = None
     mock.nvmlDeviceGetCount.return_value = num_gpus
-
-    def make_handle(idx):
-        return f"handle_{idx}"
-
-    mock.nvmlDeviceGetHandleByIndex.side_effect = make_handle
+    mock.nvmlDeviceGetHandleByIndex.side_effect = lambda idx: f"handle_{idx}"
     mock.nvmlDeviceGetUtilizationRates.side_effect = lambda h: SimpleNamespace(
         gpu=50 + int(h.split("_")[1]) * 10, memory=30
     )
@@ -68,61 +64,44 @@ def _make_mock_pynvml(num_gpus=4):
     return mock
 
 
-def test_get_all_gpu_count_ignores_cuda_visible_devices():
-    mock_pynvml = _make_mock_pynvml(4)
+@pytest.fixture
+def mock_pynvml_env():
     old_pynvml = gpu.pynvml
     old_initialized = gpu._nvml_initialized
-    gpu.pynvml = mock_pynvml
-    gpu._nvml_initialized = True
-
-    try:
-        with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
-            all_count, all_indices = gpu.get_all_gpu_count()
-            assert all_count == 4
-            assert all_indices == [0, 1, 2, 3]
-
-            vis_count, vis_indices = gpu.get_gpu_count()
-            assert vis_count == 1
-            assert vis_indices == [2]
-    finally:
-        gpu.pynvml = old_pynvml
-        gpu._nvml_initialized = old_initialized
-
-
-def test_collect_gpu_metrics_all_gpus():
-    mock_pynvml = _make_mock_pynvml(4)
-    old_pynvml = gpu.pynvml
-    old_initialized = gpu._nvml_initialized
-    gpu.pynvml = mock_pynvml
+    old_baseline = gpu._energy_baseline
+    mock = _make_mock_pynvml(4)
+    gpu.pynvml = mock
     gpu._nvml_initialized = True
     gpu._energy_baseline = {}
-
-    try:
-        with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
-            metrics = gpu.collect_gpu_metrics(all_gpus=True)
-            for i in range(4):
-                assert f"gpu/{i}/utilization" in metrics
-            assert "gpu/mean_utilization" in metrics
-    finally:
-        gpu.pynvml = old_pynvml
-        gpu._nvml_initialized = old_initialized
+    yield mock
+    gpu.pynvml = old_pynvml
+    gpu._nvml_initialized = old_initialized
+    gpu._energy_baseline = old_baseline
 
 
-def test_collect_gpu_metrics_default_respects_cuda_visible():
-    mock_pynvml = _make_mock_pynvml(4)
-    old_pynvml = gpu.pynvml
-    old_initialized = gpu._nvml_initialized
-    gpu.pynvml = mock_pynvml
-    gpu._nvml_initialized = True
-    gpu._energy_baseline = {}
+def test_get_all_gpu_count_ignores_cuda_visible_devices(mock_pynvml_env):
+    with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
+        all_count, all_indices = gpu.get_all_gpu_count()
+        assert all_count == 4
+        assert all_indices == [0, 1, 2, 3]
 
-    try:
-        with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
-            metrics = gpu.collect_gpu_metrics()
-            assert "gpu/0/utilization" in metrics
-            assert "gpu/1/utilization" not in metrics
-            assert "gpu/2/utilization" not in metrics
-            assert "gpu/3/utilization" not in metrics
-    finally:
-        gpu.pynvml = old_pynvml
-        gpu._nvml_initialized = old_initialized
+        vis_count, vis_indices = gpu.get_gpu_count()
+        assert vis_count == 1
+        assert vis_indices == [2]
+
+
+def test_collect_gpu_metrics_all_gpus(mock_pynvml_env):
+    with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
+        metrics = gpu.collect_gpu_metrics(all_gpus=True)
+        for i in range(4):
+            assert f"gpu/{i}/utilization" in metrics
+        assert "gpu/mean_utilization" in metrics
+
+
+def test_collect_gpu_metrics_default_respects_cuda_visible(mock_pynvml_env):
+    with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
+        metrics = gpu.collect_gpu_metrics()
+        assert "gpu/0/utilization" in metrics
+        assert "gpu/1/utilization" not in metrics
+        assert "gpu/2/utilization" not in metrics
+        assert "gpu/3/utilization" not in metrics

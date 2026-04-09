@@ -189,6 +189,8 @@
     xLim = null;
   }
 
+  const keyMetricSuffixes = ["utilization", "allocated_memory", "power", "temp"];
+
   const metricUnits = {
     utilization: "%",
     mean_utilization: "%",
@@ -270,7 +272,6 @@
 
         {@const subEntries = Object.entries(group.subgroups)}
         {#if subEntries.length > 1}
-          {@const keyMetricSuffixes = ["utilization", "allocated_memory", "power", "temp"]}
           <div class="subgroup-list">
             {#each subEntries as [subName, subMetrics]}
               {@const filteredSub = subMetrics.filter((m) => keyMetricSuffixes.some((s) => m.endsWith("/" + s)))}
