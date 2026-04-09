@@ -831,7 +831,8 @@ def freeze(
 
     Args:
         space_id (`str`):
-            The ID of the source Gradio Space (e.g., `"username/my-space"`).
+            The ID of the source Gradio Space (e.g., `"username/my-space"` or a
+            short repo name with the logged-in namespace inferred, like `init()`).
             Must be a Gradio Space with a bucket mounted at `/data`.
         project (`str`):
             The name of the project whose data to include in the frozen Space.
@@ -848,10 +849,7 @@ def freeze(
     Returns:
         `str`: The Space ID of the newly created static Space.
     """
-    if "/" not in space_id:
-        raise ValueError(
-            f"space_id must be a full Gradio Space ID (e.g. 'username/space'): {space_id}"
-        )
+    space_id, _, _ = preprocess_space_and_dataset_ids(space_id, None, None)
 
     try:
         info = huggingface_hub.HfApi().space_info(space_id)
