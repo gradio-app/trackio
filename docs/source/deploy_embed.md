@@ -60,7 +60,7 @@ trackio freeze --space-id "username/my-space" --project "my-project"
 
 This creates a new static Space (by default named `{space_id}_static`) containing a snapshot of the project's data from the source Space's bucket. The original Space is not modified.
 
-Unlike `trackio.sync(..., sdk="static")`, `freeze()` is a one-time snapshot. If new metrics are later uploaded to the original Gradio Space, the frozen static Space will not update automatically.
+Note that`freeze()` is a one-time snapshot. If new metrics are later uploaded to the original Gradio Space, the frozen static Space will not update automatically.
 
 You can customize the destination:
 
