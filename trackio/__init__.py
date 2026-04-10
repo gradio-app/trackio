@@ -78,9 +78,9 @@ __all__ = [
     "Api",
 ]
 
+Audio = TrackioAudio
 Image = TrackioImage
 Video = TrackioVideo
-Audio = TrackioAudio
 
 
 config = {}
