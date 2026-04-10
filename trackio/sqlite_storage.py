@@ -97,6 +97,7 @@ class SQLiteStorage:
     _dataset_import_attempted = False
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
+    _dataset_load_lock = Lock()
 
     @staticmethod
     @contextmanager
@@ -460,6 +461,7 @@ class SQLiteStorage:
         for pq_name in parquet_names:
             parquet_path = TRACKIO_DIR / pq_name
             db_path = parquet_path.with_suffix(DB_EXT)
+            project_name = db_path.stem
 
             SQLiteStorage._cleanup_wal_sidecars(db_path)
 
@@ -481,11 +483,12 @@ class SQLiteStorage:
                 metrics = orjson.loads(metrics.to_json(orient="records"))
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
-            with SQLiteStorage._get_connection(
-                db_path, configure_pragmas=False, row_factory=None
-            ) as conn:
-                df.to_sql("metrics", conn, if_exists="replace", index=False)
-                conn.commit()
+            with SQLiteStorage._get_process_lock(project_name):
+                with SQLiteStorage._get_connection(
+                    db_path, configure_pragmas=False, row_factory=None
+                ) as conn:
+                    df.to_sql("metrics", conn, if_exists="replace", index=False)
+                    conn.commit()
 
         system_parquet_names = [f for f in all_paths if f.endswith("_system.parquet")]
         for pq_name in system_parquet_names:
@@ -507,11 +510,12 @@ class SQLiteStorage:
                 metrics = orjson.loads(metrics.to_json(orient="records"))
                 df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
 
-            with SQLiteStorage._get_connection(
-                db_path, configure_pragmas=False, row_factory=None
-            ) as conn:
-                df.to_sql("system_metrics", conn, if_exists="replace", index=False)
-                conn.commit()
+            with SQLiteStorage._get_process_lock(project_name):
+                with SQLiteStorage._get_connection(
+                    db_path, configure_pragmas=False, row_factory=None
+                ) as conn:
+                    df.to_sql("system_metrics", conn, if_exists="replace", index=False)
+                    conn.commit()
 
         configs_parquet_names = [f for f in all_paths if f.endswith("_configs.parquet")]
         for pq_name in configs_parquet_names:
@@ -535,11 +539,12 @@ class SQLiteStorage:
                     orjson.dumps(serialize_values(row)) for row in config_data
                 ]
 
-            with SQLiteStorage._get_connection(
-                db_path, configure_pragmas=False, row_factory=None
-            ) as conn:
-                df.to_sql("configs", conn, if_exists="replace", index=False)
-                conn.commit()
+            with SQLiteStorage._get_process_lock(project_name):
+                with SQLiteStorage._get_connection(
+                    db_path, configure_pragmas=False, row_factory=None
+                ) as conn:
+                    df.to_sql("configs", conn, if_exists="replace", index=False)
+                    conn.commit()
 
     @staticmethod
     def get_scheduler():
@@ -812,6 +817,7 @@ class SQLiteStorage:
         level: str | None = None,
         since: str | None = None,
     ) -> list[dict]:
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
@@ -857,6 +863,7 @@ class SQLiteStorage:
 
     @staticmethod
     def get_alert_count(project: str) -> int:
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return 0
@@ -872,6 +879,7 @@ class SQLiteStorage:
     @staticmethod
     def get_system_logs(project: str, run: str) -> list[dict]:
         """Retrieve system metrics for a specific run. Returns metrics with timestamps (no steps)."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
@@ -912,6 +920,7 @@ class SQLiteStorage:
     @staticmethod
     def has_system_metrics(project: str) -> bool:
         """Check if a project has any system metrics logged."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
@@ -946,6 +955,7 @@ class SQLiteStorage:
 
     @staticmethod
     def get_last_step(project: str, run: str) -> int | None:
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
@@ -966,6 +976,7 @@ class SQLiteStorage:
     @staticmethod
     def get_logs(project: str, run: str, max_points: int | None = None) -> list[dict]:
         """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
@@ -1046,7 +1057,11 @@ class SQLiteStorage:
 
     @staticmethod
     def _ensure_hub_loaded():
-        if not SQLiteStorage._dataset_import_attempted:
+        if SQLiteStorage._dataset_import_attempted:
+            return
+        with SQLiteStorage._dataset_load_lock:
+            if SQLiteStorage._dataset_import_attempted:
+                return
             SQLiteStorage.load_from_dataset()
 
     @staticmethod
@@ -1093,6 +1108,7 @@ class SQLiteStorage:
     @staticmethod
     def get_max_steps_for_runs(project: str) -> dict[str, int]:
         """Get the maximum step for each run in a project."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return {}
@@ -1121,6 +1137,7 @@ class SQLiteStorage:
     @staticmethod
     def get_max_step_for_run(project: str, run: str) -> int | None:
         """Get the maximum step for a specific run, or None if no logs exist."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
@@ -1141,6 +1158,7 @@ class SQLiteStorage:
     @staticmethod
     def get_run_config(project: str, run: str) -> dict | None:
         """Get configuration for a specific run."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
