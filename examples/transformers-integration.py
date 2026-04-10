@@ -7,6 +7,8 @@
 # ]
 # ///
 
+import random
+
 import huggingface_hub
 from datasets import Dataset
 from transformers import (
@@ -15,7 +17,6 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-import random
 
 suffix = random.randint(100000, 999999)
 model_name = "distilbert-base-uncased"
