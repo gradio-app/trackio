@@ -74,19 +74,19 @@ def test_runs_data_persisted_after_restart(test_space_id):
         test_space_id, "TRACKIO_TEST_RESTART", secrets.token_urlsafe(8)
     )
 
-    time.sleep(5)
-    deadline = time.time() + 180
+    time.sleep(10)
+    deadline = time.time() + 300
     client = None
     while time.time() < deadline:
         try:
             client = Client(test_space_id, verbose=False)
             break
         except Exception:
-            time.sleep(5)
+            time.sleep(10)
     assert client is not None, "Space did not come back up after restart"
 
     run_names = []
-    deadline = time.time() + 120
+    deadline = time.time() + 300
     while time.time() < deadline:
         try:
             run_names = client.predict(
@@ -96,14 +96,14 @@ def test_runs_data_persisted_after_restart(test_space_id):
                 break
         except Exception:
             pass
-        time.sleep(3)
+        time.sleep(5)
         client = Client(test_space_id, verbose=False)
     if run_name not in run_names:
         pytest.skip("Space did not restore runs for project within timeout")
 
     summary = None
     cfg = {}
-    deadline = time.time() + 90
+    deadline = time.time() + 180
     while time.time() < deadline:
         try:
             summary = client.predict(
@@ -119,7 +119,7 @@ def test_runs_data_persisted_after_restart(test_space_id):
                 break
         except Exception:
             pass
-        time.sleep(3)
+        time.sleep(5)
         client = Client(test_space_id, verbose=False)
 
     lr = cfg.get("learning_rate")
@@ -148,15 +148,15 @@ def test_bucket_space_preserves_logged_metrics_after_restart(test_space_id):
         test_space_id, "TRACKIO_TEST_RESTART", secrets.token_urlsafe(8)
     )
 
-    time.sleep(5)
-    deadline = time.time() + 180
+    time.sleep(10)
+    deadline = time.time() + 300
     client = None
     while time.time() < deadline:
         try:
             client = Client(test_space_id, verbose=False)
             break
         except Exception:
-            time.sleep(5)
+            time.sleep(10)
     assert client is not None, "Space did not come back up after restart"
 
     summary = client.predict(
