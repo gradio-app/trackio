@@ -11,15 +11,9 @@ import trackio
 from trackio import deploy, utils
 
 
-def _wait_for_space_ready(space_id, timeout=300):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            Client(space_id, verbose=False)
-            return
-        except Exception:
-            time.sleep(10)
-    raise TimeoutError(f"Space {space_id} not ready after {timeout}s")
+def _namespaced_ephemeral_space_id(test_space_id: str, stem: str) -> str:
+    ns, _ = test_space_id.split("/", 1)
+    return f"{ns}/{stem}"
 
 
 def _download_parquet_from_bucket(bucket_id, remote_name="metrics.parquet"):
@@ -76,11 +70,13 @@ def test_sync_to_gradio_space(test_space_id, temp_dir):
     assert loss_values[2]["value"] == 0.1
 
 
-def test_sync_to_static_space_incremental(temp_dir):
+def test_sync_to_static_space_incremental(test_space_id, temp_dir):
     project_name = f"test_sync_static_{secrets.token_urlsafe(8)}"
     run_name = "run1"
     suffix = secrets.token_urlsafe(6)
-    space_id = f"trackio-test-static-{suffix}"
+    space_id = _namespaced_ephemeral_space_id(
+        test_space_id, f"trackio-test-static-{suffix}"
+    )
     space_id, _, bucket_id = utils.preprocess_space_and_dataset_ids(space_id, None)
 
     try:
@@ -124,10 +120,12 @@ def test_sync_gradio_then_freeze_to_static(test_space_id, temp_dir):
 
     client = Client(test_space_id, verbose=False)
     client.predict(api_name="/force_sync")
-    time.sleep(5)
+    time.sleep(2)
 
     suffix = secrets.token_urlsafe(6)
-    frozen_space_id = f"trackio-test-frozen-{suffix}"
+    frozen_space_id = _namespaced_ephemeral_space_id(
+        test_space_id, f"trackio-test-frozen-{suffix}"
+    )
     frozen_space_id, _, frozen_bucket_id = utils.preprocess_space_and_dataset_ids(
         frozen_space_id, None
     )

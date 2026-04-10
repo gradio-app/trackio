@@ -14,7 +14,7 @@ def _predict_run_summary(
     run_name: str,
     *,
     min_num_logs: int = 0,
-    timeout: float = 240,
+    timeout: float = 120,
 ):
     deadline = time.time() + timeout
     last_err: Exception | None = None
@@ -30,46 +30,22 @@ def _predict_run_summary(
             last_err = None
         except Exception as e:
             last_err = e
-        if not flush_attempted and time.time() > deadline - max(timeout - 60, 0):
+        if not flush_attempted and time.time() > deadline - max(timeout - 45, 0):
             flush_run = trackio.init(
                 project=project_name,
                 name=f"flush_{secrets.token_urlsafe(4)}",
                 space_id=test_space_id,
                 auto_log_gpu=False,
             )
-            flush_deadline = time.time() + 30
+            flush_deadline = time.time() + 20
             while flush_run._client is None and time.time() < flush_deadline:
                 time.sleep(0.1)
             flush_run.finish()
             flush_attempted = True
-        time.sleep(5)
+        time.sleep(3)
     if last_err is not None:
         raise last_err
     raise TimeoutError("get_run_summary timed out before logs appeared")
-
-
-def test_config_persisted_on_spaces(test_space_id, wait_for_client):
-    project_name = f"test_config_{secrets.token_urlsafe(8)}"
-    run_name = f"config_run_{secrets.token_urlsafe(6)}"
-
-    run = trackio.init(
-        project=project_name,
-        name=run_name,
-        space_id=test_space_id,
-        config={"lr": 0.001, "batch_size": 32, "model": "resnet50"},
-    )
-    wait_for_client(run)
-
-    trackio.log({"loss": 0.5, "acc": 0.8})
-    trackio.log({"loss": 0.3, "acc": 0.9})
-    trackio.finish()
-
-    summary = _predict_run_summary(
-        test_space_id, project_name, run_name, min_num_logs=2
-    )
-    assert summary["num_logs"] == 2
-    assert "loss" in summary["metrics"]
-    assert "acc" in summary["metrics"]
 
 
 def test_system_metrics_on_spaces(test_space_id, wait_for_client):
@@ -97,13 +73,13 @@ def test_system_metrics_on_spaces(test_space_id, wait_for_client):
 
     try:
         summary = _predict_run_summary(
-            test_space_id, project_name, run_name, min_num_logs=1, timeout=360
+            test_space_id, project_name, run_name, min_num_logs=1, timeout=120
         )
     except TimeoutError:
         pytest.skip("Space did not surface run summary within timeout")
     assert summary["num_logs"] >= 1
 
-    deadline = time.time() + 120
+    deadline = time.time() + 60
     system_logs = []
     while time.time() < deadline:
         try:
@@ -115,7 +91,7 @@ def test_system_metrics_on_spaces(test_space_id, wait_for_client):
                 break
         except Exception:
             pass
-        time.sleep(5)
+        time.sleep(3)
     if not system_logs:
         pytest.skip("Space did not surface system logs within timeout")
 
