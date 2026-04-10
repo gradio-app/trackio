@@ -294,9 +294,8 @@ class SQLiteStorage:
             index=df.index,
         )
         df = df.drop(columns=[col])
-        for c in expanded.columns:
-            df[c] = expanded[c]
-        return df
+        expanded = expanded.loc[:, ~expanded.columns.isin(df.columns)]
+        return pd.concat([df, expanded], axis=1)
 
     @staticmethod
     def _read_table(db_path: Path, table: str) -> pd.DataFrame:
