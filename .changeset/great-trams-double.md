@@ -1,0 +1,5 @@
+---
+"trackio": minor
+---
+
+feat:Remove `gradio` dependency in `trackio` -- only `gradio_client` is needed locally anymore
