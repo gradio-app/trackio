@@ -1,5 +1,5 @@
 ---
-"trackio": minor
+"trackio": patch
 ---
 
 feat:Fix duplicate columns in parquet export
