@@ -15,7 +15,6 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib
 
-import gradio
 import httpx
 import huggingface_hub
 from gradio_client import Client, handle_file
@@ -194,7 +193,7 @@ def deploy_as_space(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
+    # We can assume pandas and huggingface-hub are available; requirements.txt pins trackio.
     # Make sure necessary dependencies are installed by creating a requirements.txt.
     is_source_install = _is_trackio_installed_from_source()
 
@@ -203,7 +202,7 @@ def deploy_as_space(
 
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
-        readme_content = readme_content.replace("{GRADIO_VERSION}", gradio.__version__)
+        readme_content = readme_content.replace("{GRADIO_VERSION}", trackio.__version__)
         readme_content = readme_content.replace("{APP_FILE}", "app.py")
         readme_content = readme_content.replace(
             "{LINKED_HUB_METADATA}", _readme_linked_hub_yaml(dataset_id)
