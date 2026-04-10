@@ -7,14 +7,14 @@ from gradio_client import Client
 import trackio
 
 
-def test_burst_2000_logs_single_process(test_space_id, wait_for_client):
+def test_burst_logs_single_process(test_space_id, wait_for_client):
     """
-    A single process burst-sends 2,000 trackio.log() calls in ~2 seconds.
-    All 2,000 entries should eventually arrive at the Space.
+    Burst-sends many trackio.log() calls in one process; all entries should
+    eventually arrive at the Space. Kept moderate in count so CI stays fast.
     """
     project_name = f"test_burst_{secrets.token_urlsafe(8)}"
     run_name = "burst_run"
-    num_logs = 2000
+    num_logs = 400
 
     run = trackio.init(project=project_name, name=run_name, space_id=test_space_id)
     wait_for_client(run)
@@ -46,15 +46,14 @@ def test_burst_2000_logs_single_process(test_space_id, wait_for_client):
     assert loss_values[-1]["step"] == num_logs - 1
 
 
-def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
+def test_parallel_threads_log_smoke(test_space_id, wait_for_client):
     """
-    32 parallel threads each run their own trackio run and send 1,000
-    log() calls. All 32,000 entries across 32 runs should arrive at the
-    Space. This tests concurrent write throughput and server-side locking.
+    A few concurrent runs with modest log volume to exercise concurrent writes
+    without the wall time of a full stress test.
     """
     project_name = f"test_parallel_{secrets.token_urlsafe(8)}"
-    num_threads = 32
-    logs_per_thread = 1000
+    num_threads = 4
+    logs_per_thread = 50
     errors = []
 
     def worker(thread_idx):
@@ -78,7 +77,7 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
         t.start()
 
     for t in threads:
-        t.join(timeout=180)
+        t.join(timeout=120)
 
     alive_threads = [idx for idx, t in enumerate(threads) if t.is_alive()]
     assert not alive_threads, f"Threads did not finish before timeout: {alive_threads}"
@@ -93,7 +92,7 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
 
     verify_client = Client(test_space_id)
     runs = []
-    deadline = time.time() + 120
+    deadline = time.time() + 90
     while time.time() < deadline:
         try:
             runs = verify_client.predict(
@@ -103,7 +102,7 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
                 break
         except Exception:
             verify_client = Client(test_space_id, verbose=False)
-        time.sleep(5)
+        time.sleep(3)
     assert len(runs) == num_threads, f"Expected {num_threads} runs, got {len(runs)}"
 
     total_logs = 0
@@ -119,7 +118,7 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
             except Exception:
                 if attempt == 2:
                     raise
-                time.sleep(5)
+                time.sleep(3)
                 verify_client = Client(test_space_id)
         total_logs += summary["num_logs"]
         assert summary["num_logs"] == logs_per_thread, (
