@@ -218,7 +218,7 @@ def init(
         warnings.warn(
             "trackio.init() has `bucket_id` set but `space_id` is None: metrics will be logged "
             "locally only. Pass `space_id` to create or use a Hugging Face Space, which will be "
-            "attached to the Hugging Face Bucket."
+            "attached to the Hugging Face Bucket.",
             UserWarning,
             stacklevel=2,
         )
