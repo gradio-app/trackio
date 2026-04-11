@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Fix
+feat:Fix sqlite corruption issue
