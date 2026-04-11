@@ -14,16 +14,16 @@ def _assert_mcp_mutation_access(
     hf_token: str | None = None,
     write_token: str | None = None,
 ) -> None:
-    from trackio.server import check_hf_token_has_write_access, write_token as server_token  # noqa: I001, PLC0415
+    import trackio.server as trackio_server  # noqa: PLC0415
 
     if os.getenv("SYSTEM") == "spaces":
         try:
-            check_hf_token_has_write_access(hf_token)
+            trackio_server.check_hf_token_has_write_access(hf_token)
         except PermissionError as e:
             raise ValueError(str(e)) from e
         return
 
-    if write_token != server_token:
+    if write_token != trackio_server.write_token:
         raise ValueError(
             "A write_token is required for Trackio MCP mutations. "
             "Use the write token from the dashboard URL."
@@ -33,21 +33,7 @@ def _assert_mcp_mutation_access(
 def create_mcp_integration() -> tuple[list[Any], Any]:
     from mcp.server.fastmcp import FastMCP  # noqa: PLC0415
 
-    from trackio.server import (  # noqa: PLC0415
-        force_sync,
-        get_alerts,
-        get_all_projects,
-        get_logs,
-        get_metric_values,
-        get_metrics_for_run,
-        get_project_summary,
-        get_run_summary,
-        get_runs_for_project,
-        get_settings,
-        get_snapshot,
-        get_system_logs,
-        get_system_metrics_for_run,
-    )
+    import trackio.server as trackio_server  # noqa: PLC0415
 
     mcp = FastMCP(
         "Trackio",
@@ -57,62 +43,62 @@ def create_mcp_integration() -> tuple[list[Any], Any]:
     )
 
     mcp.add_tool(
-        get_all_projects,
+        trackio_server.get_all_projects,
         description="List all Trackio projects available on this server.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_runs_for_project,
+        trackio_server.get_runs_for_project,
         description="List runs for a given Trackio project.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_metrics_for_run,
+        trackio_server.get_metrics_for_run,
         description="List metric names recorded for a given Trackio run.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_project_summary,
+        trackio_server.get_project_summary,
         description="Return summary metadata for a Trackio project.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_run_summary,
+        trackio_server.get_run_summary,
         description="Return summary metadata for a Trackio run.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_metric_values,
+        trackio_server.get_metric_values,
         description="Fetch metric values for a run, optionally around a step or time.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_system_metrics_for_run,
+        trackio_server.get_system_metrics_for_run,
         description="List system metric names recorded for a run.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_system_logs,
+        trackio_server.get_system_logs,
         description="Fetch system metric logs for a run.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_snapshot,
+        trackio_server.get_snapshot,
         description="Fetch a single Trackio snapshot around a step or timestamp.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_logs,
+        trackio_server.get_logs,
         description="Fetch Trackio metric logs for a run.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_alerts,
+        trackio_server.get_alerts,
         description="Fetch alerts for a project, optionally filtered by run or level.",
         structured_output=True,
     )
     mcp.add_tool(
-        get_settings,
+        trackio_server.get_settings,
         description="Return Trackio dashboard settings and asset configuration.",
         structured_output=True,
     )
@@ -157,7 +143,7 @@ def create_mcp_integration() -> tuple[list[Any], Any]:
         write_token: str | None = None,
     ) -> bool:
         _assert_mcp_mutation_access(hf_token=hf_token, write_token=write_token)
-        return force_sync()
+        return trackio_server.force_sync()
 
     mcp_app = mcp.streamable_http_app()
 

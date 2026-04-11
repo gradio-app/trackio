@@ -6,12 +6,16 @@ import socket
 import threading
 import time
 import warnings
+from pathlib import Path
 from typing import Any
 
 import httpx
 import uvicorn
 from uvicorn.config import Config
 
+from trackio._vendor.gradio_exceptions import ChecksumMismatchError
+from trackio._vendor.networking import normalize_share_url, setup_tunnel, url_ok
+from trackio._vendor.tunneling import BINARY_PATH
 from trackio.launch_utils import colab_check, is_hosted_notebook
 
 INITIAL_PORT_VALUE = int(os.getenv("GRADIO_SERVER_PORT", "7860"))
@@ -112,11 +116,6 @@ def launch_trackio_dashboard(
     ssl_verify: bool = True,
     quiet: bool = False,
 ) -> tuple[str | None, str | None, str | None, Any]:
-    from pathlib import Path
-
-    from trackio._vendor.networking import normalize_share_url, setup_tunnel
-    from trackio._vendor.tunneling import BINARY_PATH
-
     is_colab = colab_check()
     is_hosted_nb = is_hosted_notebook()
     space_id = os.getenv("SPACE_ID")
@@ -180,8 +179,6 @@ def launch_trackio_dashboard(
         except Exception as e:
             share_url = None
             if not quiet:
-                from trackio._vendor.gradio_exceptions import ChecksumMismatchError
-
                 if isinstance(e, ChecksumMismatchError):
                     print(
                         "\nCould not create share link. Checksum mismatch for frpc binary."
@@ -202,6 +199,4 @@ def launch_trackio_dashboard(
 
 
 def url_ok_local(local_url: str) -> bool:
-    from trackio._vendor.networking import url_ok
-
     return url_ok(local_url)

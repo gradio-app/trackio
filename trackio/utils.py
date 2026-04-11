@@ -7,8 +7,7 @@ import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlencode
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import huggingface_hub
 import numpy as np

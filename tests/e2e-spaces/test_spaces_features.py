@@ -3,6 +3,7 @@ import time
 
 import numpy as np
 import pytest
+
 import trackio
 from trackio.remote_client import RemoteClient as Client
 

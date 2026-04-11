@@ -3,9 +3,10 @@ import time
 
 import huggingface_hub
 import pytest
+
 import trackio
-from trackio.remote_client import RemoteClient as Client
 from trackio import utils
+from trackio.remote_client import RemoteClient as Client
 
 
 def test_basic_logging(test_space_id):
