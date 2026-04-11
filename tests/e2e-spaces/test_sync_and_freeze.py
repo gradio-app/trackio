@@ -5,10 +5,10 @@ from pathlib import Path
 
 import huggingface_hub
 import pandas as pd
-from gradio_client import Client
 
 import trackio
 from trackio import deploy, utils
+from trackio.remote_client import RemoteClient as Client
 
 
 def _wait_for_space_ready(space_id, timeout=300):

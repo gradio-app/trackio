@@ -5,9 +5,10 @@ import uuid
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import huggingface_hub
-from gradio_client import Client, handle_file
+from gradio_client import handle_file
 
 from trackio import utils
 from trackio.alerts import (
@@ -22,6 +23,7 @@ from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
+from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
@@ -36,7 +38,7 @@ class Run:
         self,
         url: str | None,
         project: str,
-        client: Client | None,
+        client: Any | None,
         name: str | None = None,
         group: str | None = None,
         config: dict | None = None,
@@ -50,9 +52,9 @@ class Run:
         Initialize a Run for logging metrics to Trackio.
 
         Args:
-            url: The URL of the Trackio server (local Gradio app or HF Space).
+            url: The URL or Space id of the Trackio server.
             project: The name of the project to log metrics to.
-            client: A pre-configured gradio_client.Client instance, or None to
+            client: A pre-configured Trackio-compatible client instance, or None to
                 create one automatically in a background thread with retry logic.
                 Passing None is recommended for normal usage. Passing a client
                 is useful for testing (e.g., injecting a mock client).
@@ -481,7 +483,11 @@ class Run:
                 if self._stop_flag.is_set():
                     break
                 try:
-                    client = Client(self.url, verbose=False)
+                    client = RemoteClient(
+                        self.url,
+                        hf_token=huggingface_hub.utils.get_token(),
+                        verbose=False,
+                    )
 
                     with self._client_lock:
                         self._client = client

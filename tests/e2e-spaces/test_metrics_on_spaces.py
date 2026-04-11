@@ -3,9 +3,8 @@ import time
 
 import huggingface_hub
 import pytest
-from gradio_client import Client
-
 import trackio
+from trackio.remote_client import RemoteClient as Client
 from trackio import utils
 
 

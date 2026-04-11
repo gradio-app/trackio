@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
+from urllib.parse import quote
 
 import huggingface_hub
 import numpy as np
@@ -27,11 +28,11 @@ def get_logo_urls() -> dict[str, str]:
     """Get logo URLs from environment variables or use defaults."""
     light_url = os.environ.get(
         "TRACKIO_LOGO_LIGHT_URL",
-        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png",
+        f"/file?path={quote(str(TRACKIO_LOGO_DIR / 'trackio_logo_type_light_transparent.png'))}",
     )
     dark_url = os.environ.get(
         "TRACKIO_LOGO_DARK_URL",
-        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png",
+        f"/file?path={quote(str(TRACKIO_LOGO_DIR / 'trackio_logo_type_dark_transparent.png'))}",
     )
     return {"light": light_url, "dark": dark_url}
 

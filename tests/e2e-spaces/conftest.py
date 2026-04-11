@@ -2,9 +2,9 @@ import os
 import time
 
 import pytest
-from gradio_client import Client
 
 from trackio import deploy, utils
+from trackio.remote_client import RemoteClient as Client
 
 
 @pytest.fixture(scope="session")

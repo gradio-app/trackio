@@ -73,7 +73,7 @@ def test_table_to_display_format_with_images():
     assert row1["step"] == 1
     assert row1["value"] == 42
     assert row1["text"] == "regular text"
-    assert '<img src="/gradio_api/file=' in row1["image"]
+    assert '<img src="/file?path=' in row1["image"]
     assert 'image.png"' in row1["image"]
     assert 'alt="Test Caption"' in row1["image"]
 
@@ -121,7 +121,7 @@ def test_table_to_display_format_with_multiple_images():
     row1 = processed_data[0]
     assert row1["step"] == 1
     assert row1["value"] == 42
-    assert '<img src="/gradio_api/file=' in row1["images"]
+    assert '<img src="/file?path=' in row1["images"]
     assert 'alt="First Image"' in row1["images"]
     assert 'image1.png"' in row1["images"]
     assert 'alt="Second Image"' in row1["images"]

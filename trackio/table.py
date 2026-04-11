@@ -1,5 +1,6 @@
 import os
 from typing import Any, Literal
+from urllib.parse import quote
 
 from pandas import DataFrame
 
@@ -118,7 +119,7 @@ class Table:
             relative_path = image_data.get("file_path", "")
             caption = image_data.get("caption", "")
             absolute_path = MEDIA_DIR / relative_path
-            return f'<img src="/gradio_api/file={absolute_path}" alt="{caption}" />'
+            return f'<img src="/file?path={quote(str(absolute_path))}" alt="{caption}" />'
 
         processed_data = []
         for row in table_data:

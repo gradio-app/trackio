@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import huggingface_hub
-from gradio_client import Client, handle_file
+from gradio_client import handle_file
 from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
@@ -32,6 +32,7 @@ from trackio.media import (
     TrackioVideo,
     get_project_media_path,
 )
+from trackio.remote_client import RemoteClient
 from trackio.run import Run
 from trackio.server import TrackioDashboardApp, build_starlette_app_only
 from trackio.sqlite_storage import SQLiteStorage
@@ -166,9 +167,9 @@ def init(
         embed (`bool`, *optional*, defaults to `True`):
             If running inside a Jupyter/Colab notebook, whether the dashboard should
             automatically be embedded in the cell when trackio.init() is called. For
-            local runs, this launches a local Gradio app and embeds it. For Space runs,
+            local runs, this launches a local Trackio dashboard and embeds it. For Space runs,
             this embeds the Space URL. In Colab, the local dashboard will be accessible
-            via a public share URL (default Gradio behavior).
+            via a public share URL when `share=True`.
         auto_log_gpu (`bool` or `None`, *optional*, defaults to `None`):
             Controls automatic GPU metrics logging. If `None` (default), GPU logging
             is automatically enabled when `nvidia-ml-py` is installed and an NVIDIA
@@ -626,7 +627,11 @@ def save(
                 )
 
             try:
-                client = Client(url, verbose=False, httpx_kwargs={"timeout": 90})
+                client = RemoteClient(
+                    url,
+                    hf_token=huggingface_hub.utils.get_token(),
+                    httpx_kwargs={"timeout": 90},
+                )
                 client.predict(
                     api_name="/bulk_upload_media",
                     uploads=upload_entries,
@@ -664,8 +669,9 @@ def show(
         theme (`Any`, *optional*):
             Ignored. Kept for backward compatibility; Trackio no longer uses Gradio themes.
         mcp_server (`bool`, *optional*):
-            If `True`, the dashboard enables MCP lifespan hooks when available. If `None`
-            (default), the `GRADIO_MCP_SERVER` environment variable is used (e.g. on Spaces).
+            If `True`, the dashboard exposes an MCP server at `/mcp` when the optional
+            `trackio[mcp]` dependency is installed. If `None` (default), the
+            `GRADIO_MCP_SERVER` environment variable is used (e.g. on Spaces).
         footer (`bool`, *optional*, defaults to `True`):
             Whether to include `footer=false` in the write-token URL when `False`.
             This can also be controlled via the `footer` query parameter in the URL.
@@ -696,7 +702,7 @@ def show(
             `share_url`: The public share URL, if any.
             `full_url`: The full URL including the write token (share URL when sharing, else local).
     """
-    if theme is not None:
+    if theme is not None and theme != "default":
         warnings.warn(
             "The theme argument is ignored; Trackio no longer depends on Gradio themes.",
             UserWarning,
@@ -737,7 +743,6 @@ def show(
 
     if not utils.is_in_notebook():
         print(f"* Trackio UI launched at: {dashboard_url}")
-        print(f"* API (gradio_client-compatible) at: {base_url}gradio_api/")
         if open_browser:
             webbrowser.open(dashboard_url)
         block_thread = block_thread if block_thread is not None else True

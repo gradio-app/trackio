@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import threading
 import time
+import warnings
 from collections import deque
 from functools import lru_cache
 from typing import Any
@@ -522,7 +523,7 @@ def get_alerts(
     run: str | None = None,
     level: str | None = None,
     since: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
 
 
@@ -534,7 +535,7 @@ def get_metric_values(
     around_step: int | None = None,
     at_time: str | None = None,
     window: int | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     return SQLiteStorage.get_metric_values(
         project,
         run,
@@ -570,7 +571,7 @@ def get_all_projects() -> list[str]:
     return SQLiteStorage.get_projects()
 
 
-def get_project_summary(project: str) -> dict:
+def get_project_summary(project: str) -> dict[str, Any]:
     runs = SQLiteStorage.get_runs(project)
     if not runs:
         return {"project": project, "num_runs": 0, "runs": [], "last_activity": None}
@@ -585,7 +586,7 @@ def get_project_summary(project: str) -> dict:
     }
 
 
-def get_run_summary(project: str, run: str) -> dict:
+def get_run_summary(project: str, run: str) -> dict[str, Any]:
     num_logs = SQLiteStorage.get_log_count(project, run)
     if num_logs == 0:
         return {
@@ -615,7 +616,7 @@ def get_system_metrics_for_run(project: str, run: str) -> list[str]:
     return SQLiteStorage.get_all_system_metrics_for_run(project, run)
 
 
-def get_system_logs(project: str, run: str) -> list[dict]:
+def get_system_logs(project: str, run: str) -> list[dict[str, Any]]:
     return SQLiteStorage.get_system_logs(project, run)
 
 
@@ -626,17 +627,17 @@ def get_snapshot(
     around_step: int | None = None,
     at_time: str | None = None,
     window: int | None = None,
-) -> dict:
+) -> dict[str, Any]:
     return SQLiteStorage.get_snapshot(
         project, run, step=step, around_step=around_step, at_time=at_time, window=window
     )
 
 
-def get_logs(project: str, run: str) -> list[dict]:
+def get_logs(project: str, run: str) -> list[dict[str, Any]]:
     return SQLiteStorage.get_logs(project, run, max_points=1500)
 
 
-def get_settings() -> dict:
+def get_settings() -> dict[str, Any]:
     return {
         "logo_urls": utils.get_logo_urls(),
         "color_palette": utils.get_color_palette(),
@@ -652,7 +653,7 @@ def get_settings() -> dict:
     }
 
 
-def get_project_files(project: str) -> list[dict]:
+def get_project_files(project: str) -> list[dict[str, Any]]:
     files_dir = utils.MEDIA_DIR / project / "files"
     if not files_dir.exists():
         return []
@@ -746,19 +747,29 @@ def build_starlette_app_only(mcp_server: bool = False) -> tuple[Any, str]:
         Route("/oauth/logout", oauth_logout, methods=["GET"]),
     ]
     mcp_lifespan = None
+    mcp_routes: list[Any] = []
+    mcp_enabled = False
     if mcp_server:
         try:
-            from trackio.mcp_setup import mcp_lifespan_context
+            from trackio.mcp_setup import create_mcp_integration  # noqa: PLC0415
 
-            mcp_lifespan = mcp_lifespan_context
+            mcp_routes, mcp_lifespan = create_mcp_integration()
+            mcp_enabled = True
         except ImportError:
-            pass
+            warnings.warn(
+                "MCP support requested, but the optional `mcp` package is not installed. "
+                "Install `trackio[mcp]` to expose `/mcp`.",
+                UserWarning,
+                stacklevel=2,
+            )
     starlette_app = create_trackio_starlette_app(
         oauth_routes,
         _api_registry(),
+        extra_routes=mcp_routes,
         mcp_lifespan=mcp_lifespan,
+        mcp_enabled=mcp_enabled,
     )
-    from trackio.frontend_server import mount_frontend
+    from trackio.frontend_server import mount_frontend  # noqa: PLC0415
 
     mount_frontend(starlette_app)
     return starlette_app, write_token

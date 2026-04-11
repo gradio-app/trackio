@@ -56,6 +56,9 @@ apple-gpu = [
 spaces = [
     "pyarrow>=21.0",
 ]
+mcp = [
+    "mcp>=1.0.0,<2.0.0",
+]
 
 [project.scripts]
 trackio = "trackio.cli:main"

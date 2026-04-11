@@ -1,9 +1,8 @@
 import secrets
 import time
 
-from gradio_client import Client
-
 import trackio
+from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
 
 

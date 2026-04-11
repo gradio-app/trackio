@@ -1,5 +1,10 @@
+import asyncio
+
+import pytest
+
 import trackio
 from trackio import Api
+from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -163,3 +168,82 @@ def test_rename_run(temp_dir, image_ndarray):
 
     new_config = SQLiteStorage.get_run_config(project=project, run=new_name)
     assert new_config is not None
+
+
+def test_local_dashboard_supports_remote_client(temp_dir):
+    project = "test_local_client"
+    run_name = "client-run"
+
+    trackio.init(project=project, name=run_name)
+    trackio.log(metrics={"loss": 0.1})
+    trackio.finish()
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        client = Client(url, verbose=False)
+        projects = client.predict(api_name="/get_all_projects")
+        runs = client.predict(project, api_name="/get_runs_for_project")
+        settings = client.predict(api_name="/get_settings")
+
+        assert project in projects
+        assert runs == [run_name]
+        assert "logo_urls" in settings
+    finally:
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_local_dashboard_supports_mcp(temp_dir):
+    pytest.importorskip("mcp")
+
+    project = "test_local_mcp"
+    run_name = "mcp-run"
+
+    trackio.init(project=project, name=run_name)
+    trackio.log(metrics={"loss": 0.1})
+    trackio.finish()
+
+    app, url, _, _ = trackio.show(
+        block_thread=False,
+        open_browser=False,
+        mcp_server=True,
+    )
+
+    async def check_mcp() -> None:
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+
+        async with streamable_http_client(f"{url.rstrip('/')}/mcp") as (
+            read_stream,
+            write_stream,
+            _,
+        ):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                tool_names = {tool.name for tool in tools.tools}
+                assert "get_all_projects" in tool_names
+                assert "get_run_summary" in tool_names
+
+                projects = await session.call_tool("get_all_projects")
+                assert project in projects.structuredContent["result"]
+
+                runs = await session.call_tool(
+                    "get_runs_for_project",
+                    {"project": project},
+                )
+                assert runs.structuredContent["result"] == [run_name]
+
+                run_summary = await session.call_tool(
+                    "get_run_summary",
+                    {"project": project, "run": run_name},
+                )
+                assert run_summary.structuredContent["run"] == run_name
+                assert run_summary.structuredContent["num_logs"] == 1
+
+    try:
+        asyncio.run(check_mcp())
+    finally:
+        trackio.delete_project(project, force=True)
+        app.close()

@@ -17,7 +17,7 @@ else:
 
 import httpx
 import huggingface_hub
-from gradio_client import Client, handle_file
+from gradio_client import handle_file
 from httpx import ReadTimeout
 from huggingface_hub import Volume
 from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
@@ -29,6 +29,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
+from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
@@ -120,7 +121,12 @@ def _get_source_install_dependencies() -> str:
     spaces_deps = (
         pyproject["project"].get("optional-dependencies", {}).get("spaces", [])
     )
-    return "\n".join(deps + spaces_deps)
+    mcp_deps = pyproject["project"].get("optional-dependencies", {}).get("mcp", [])
+    return "\n".join(deps + spaces_deps + mcp_deps)
+
+
+def _get_space_install_requirement() -> str:
+    return f"trackio[spaces,mcp]=={trackio.__version__}"
 
 
 def _is_trackio_installed_from_source() -> bool:
@@ -218,7 +224,7 @@ def deploy_as_space(
     if is_source_install:
         requirements_content = _get_source_install_dependencies()
     else:
-        requirements_content = f"trackio[spaces]=={trackio.__version__}"
+        requirements_content = _get_space_install_requirement()
 
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(
@@ -432,8 +438,8 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
     """
     Uploads the database of a local Trackio project to a Hugging Face Space.
 
-    This uses the Gradio Client to upload since we do not want to trigger a new build of
-    the Space, which would happen if we used `huggingface_hub.upload_file`.
+    This uses the Trackio remote client so newer Trackio Spaces can speak the direct
+    HTTP API while older Gradio-based Spaces still work through `gradio_client`.
 
     Args:
         project (`str`):
@@ -445,7 +451,11 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
             prompts for confirmation.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
-    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
+    client = RemoteClient(
+        space_id,
+        hf_token=huggingface_hub.utils.get_token(),
+        httpx_kwargs={"timeout": 90},
+    )
 
     if not force:
         try:
@@ -494,9 +504,13 @@ def sync_incremental(
     )
     create_space_if_not_exists(space_id, private=private)
     wait_until_space_exists(space_id)
-
-    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
     hf_token = huggingface_hub.utils.get_token()
+
+    client = RemoteClient(
+        space_id,
+        hf_token=hf_token,
+        httpx_kwargs={"timeout": 90},
+    )
 
     if pending_only:
         pending_logs = SQLiteStorage.get_pending_logs(project)

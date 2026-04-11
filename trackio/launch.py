@@ -145,12 +145,12 @@ def launch_trackio_dashboard(
         server_port=server_port,
     )
 
-    local_api_url = f"{local_url.rstrip('/')}/gradio_api/"
+    local_api_url = f"{local_url.rstrip('/')}/api/"
     try:
-        httpx.get(f"{local_api_url}startup-events", verify=ssl_verify, timeout=10)
+        httpx.get(f"{local_url.rstrip('/')}/version", verify=ssl_verify, timeout=10)
     except Exception as e:
         raise RuntimeError(
-            f"Could not reach startup-events at {local_api_url}startup-events: {e}"
+            f"Could not reach Trackio server at {local_url.rstrip('/')}/version: {e}"
         ) from e
 
     if share and space_id:
@@ -197,10 +197,6 @@ def launch_trackio_dashboard(
 
     if not share_url and not quiet:
         print("* To create a public link, set `share=True` in `trackio.show()`.")
-
-    if mcp_server and not quiet:
-        base = share_url or local_url.rstrip("/")
-        print(f"\n* MCP streamable HTTP: {base}/gradio_api/mcp/")
 
     return local_url, share_url, local_api_url, uv_server
 
