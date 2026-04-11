@@ -1,3 +1,5 @@
+const THEME_KEY = "trackio_theme_preference";
+
 const darkOverrides = {
   "--neutral-50": "#fafafa",
   "--neutral-100": "#f4f4f5",
@@ -79,4 +81,43 @@ export function detectSystemTheme() {
     return "dark";
   }
   return "default";
+}
+
+export function getThemePreference() {
+  return localStorage.getItem(THEME_KEY) || "system";
+}
+
+export function setThemePreference(pref) {
+  localStorage.setItem(THEME_KEY, pref);
+  applyThemeFromPreference(pref);
+}
+
+export function applyThemeFromPreference(pref) {
+  if (pref === "system") {
+    applyTheme(detectSystemTheme());
+  } else if (pref === "dark") {
+    applyTheme("dark");
+  } else {
+    applyTheme("default");
+  }
+}
+
+export function initTheme() {
+  const urlTheme = new URLSearchParams(window.location.search).get("__theme");
+  if (urlTheme) {
+    applyTheme(urlTheme);
+    return;
+  }
+  const pref = getThemePreference();
+  applyThemeFromPreference(pref);
+
+  if (pref === "system") {
+    window
+      .matchMedia("(prefers-color-scheme: dark)")
+      .addEventListener("change", () => {
+        if (getThemePreference() === "system") {
+          applyTheme(detectSystemTheme());
+        }
+      });
+  }
 }

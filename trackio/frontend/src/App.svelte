@@ -22,9 +22,10 @@
   } from "./lib/api.js";
   import { setColorPalette } from "./lib/stores.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
-  import { applyTheme, detectSystemTheme } from "./lib/theme.js";
+  import Settings from "./pages/Settings.svelte";
+  import { initTheme } from "./lib/theme.js";
 
-  applyTheme(getQueryParam("__theme") || detectSystemTheme());
+  initTheme();
 
   let currentPage = $state("metrics");
   let projects = $state([]);
@@ -56,6 +57,7 @@
   let plotOrder = $state([]);
   let tableTruncateLength = $state(250);
   let readOnlySource = $state(null);
+  let spaceId = $state(null);
 
   function handleNavigate(page) {
     currentPage = page;
@@ -256,6 +258,7 @@
             if (settings.plot_order) plotOrder = settings.plot_order;
             if (settings.table_truncate_length) tableTruncateLength = settings.table_truncate_length;
             if (settings.media_dir) setMediaDir(settings.media_dir);
+            if (settings.space_id) spaceId = settings.space_id;
           }
         } catch {
           // settings endpoint may not be available
@@ -300,7 +303,8 @@
       currentPage === "reports" ||
       currentPage === "runs" ||
       currentPage === "run-detail" ||
-      currentPage === "files"
+      currentPage === "files" ||
+      currentPage === "settings"
   );
 
   let sidebarVariant = $derived(
@@ -377,6 +381,8 @@
         <RunDetail project={selectedProject} />
       {:else if currentPage === "files"}
         <Files project={selectedProject} />
+      {:else if currentPage === "settings"}
+        <Settings {spaceId} selectedProject={selectedProject} />
       {/if}
     </div>
   </div>
