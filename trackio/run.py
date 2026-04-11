@@ -9,7 +9,7 @@ from pathlib import Path
 import huggingface_hub
 from gradio_client import Client, handle_file
 
-from trackio import utils
+from trackio import jsonl_buffer, utils
 from trackio.alerts import (
     AlertLevel,
     format_alert_terminal,
@@ -282,7 +282,7 @@ class Run:
                             self._persist_uploads_locally(self._queued_uploads)
                             self._queued_uploads.clear()
                         if self._queued_alerts:
-                            self._write_alerts_to_sqlite(self._queued_alerts)
+                            self._persist_alerts_locally(self._queued_alerts)
                             self._queued_alerts.clear()
                     return
 
@@ -337,7 +337,7 @@ class Run:
                             hf_token=huggingface_hub.utils.get_token(),
                         )
                     except Exception:
-                        self._write_alerts_to_sqlite(alerts_to_send)
+                        self._persist_alerts_locally(alerts_to_send)
                         failed = True
 
                 if failed:
@@ -350,102 +350,61 @@ class Run:
     def _persist_logs_locally(self, logs: list[LogEntry]):
         if not self._space_id:
             return
-        logs_by_run: dict[tuple, dict] = {}
-        for entry in logs:
-            key = (entry["project"], entry["run"])
-            if key not in logs_by_run:
-                logs_by_run[key] = {
-                    "metrics": [],
-                    "steps": [],
-                    "log_ids": [],
-                    "config": None,
-                }
-            logs_by_run[key]["metrics"].append(entry["metrics"])
-            logs_by_run[key]["steps"].append(entry.get("step"))
-            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
-            if entry.get("config") and logs_by_run[key]["config"] is None:
-                logs_by_run[key]["config"] = entry["config"]
-
-        for (project, run), data in logs_by_run.items():
-            SQLiteStorage.bulk_log(
-                project=project,
-                run=run,
-                metrics_list=data["metrics"],
-                steps=data["steps"],
-                log_ids=data["log_ids"],
-                config=data["config"],
-                space_id=self._space_id,
-            )
-        self._has_local_buffer = True
+        try:
+            jsonl_buffer.append_logs(self.project, logs, self._space_id)
+            self._has_local_buffer = True
+        except Exception:
+            pass
 
     def _persist_system_logs_locally(self, logs: list[SystemLogEntry]):
         if not self._space_id:
             return
-        logs_by_run: dict[tuple, dict] = {}
-        for entry in logs:
-            key = (entry["project"], entry["run"])
-            if key not in logs_by_run:
-                logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
-            logs_by_run[key]["metrics"].append(entry["metrics"])
-            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
-            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
-
-        for (project, run), data in logs_by_run.items():
-            SQLiteStorage.bulk_log_system(
-                project=project,
-                run=run,
-                metrics_list=data["metrics"],
-                timestamps=data["timestamps"],
-                log_ids=data["log_ids"],
-                space_id=self._space_id,
-            )
-        self._has_local_buffer = True
+        try:
+            jsonl_buffer.append_system_logs(self.project, logs, self._space_id)
+            self._has_local_buffer = True
+        except Exception:
+            pass
 
     def _persist_uploads_locally(self, uploads: list[UploadEntry]):
         if not self._space_id:
             return
-        for entry in uploads:
-            file_data = entry.get("uploaded_file")
-            file_path = ""
-            if isinstance(file_data, dict):
-                file_path = file_data.get("path", "")
-            elif hasattr(file_data, "path"):
-                file_path = str(file_data.path)
-            else:
-                file_path = str(file_data)
-            SQLiteStorage.add_pending_upload(
-                project=entry["project"],
-                space_id=self._space_id,
-                run_name=entry.get("run"),
-                step=entry.get("step"),
-                file_path=file_path,
-                relative_path=entry.get("relative_path"),
-            )
-        self._has_local_buffer = True
+        try:
+            jsonl_buffer.append_uploads(self.project, uploads, self._space_id)
+            self._has_local_buffer = True
+        except Exception:
+            pass
+
+    def _persist_alerts_locally(self, alerts: list[AlertEntry]):
+        if not self._space_id:
+            self._write_alerts_to_sqlite(alerts)
+            return
+        try:
+            jsonl_buffer.append_alerts(self.project, alerts)
+            self._has_local_buffer = True
+        except Exception:
+            pass
 
     def _flush_local_buffer(self):
         try:
-            buffered_logs = SQLiteStorage.get_pending_logs(self.project)
+            buffered_logs = jsonl_buffer.get_pending_logs(self.project)
             if buffered_logs:
                 self._client.predict(
                     api_name="/bulk_log",
                     logs=buffered_logs["logs"],
                     hf_token=huggingface_hub.utils.get_token(),
                 )
-                SQLiteStorage.clear_pending_logs(self.project, buffered_logs["ids"])
+                jsonl_buffer.clear_logs(self.project)
 
-            buffered_sys = SQLiteStorage.get_pending_system_logs(self.project)
+            buffered_sys = jsonl_buffer.get_pending_system_logs(self.project)
             if buffered_sys:
                 self._client.predict(
                     api_name="/bulk_log_system",
                     logs=buffered_sys["logs"],
                     hf_token=huggingface_hub.utils.get_token(),
                 )
-                SQLiteStorage.clear_pending_system_logs(
-                    self.project, buffered_sys["ids"]
-                )
+                jsonl_buffer.clear_system_logs(self.project)
 
-            buffered_uploads = SQLiteStorage.get_pending_uploads(self.project)
+            buffered_uploads = jsonl_buffer.get_pending_uploads(self.project)
             if buffered_uploads:
                 upload_entries = []
                 for u in buffered_uploads["uploads"]:
@@ -466,9 +425,7 @@ class Run:
                         uploads=upload_entries,
                         hf_token=huggingface_hub.utils.get_token(),
                     )
-                SQLiteStorage.clear_pending_uploads(
-                    self.project, buffered_uploads["ids"]
-                )
+                jsonl_buffer.clear_uploads(self.project)
 
             self._has_local_buffer = False
         except Exception:
@@ -731,7 +688,7 @@ class Run:
                     warnings.warn(
                         "Could not flush all logs within 30s. Some data may be buffered locally."
                     )
-            if SQLiteStorage.has_pending_data(self.project):
+            if jsonl_buffer.has_pending_data(self.project):
                 warnings.warn(
                     f"* Some logs could not be sent to the Space (it may still be starting up). "
                     f"They have been saved locally and will be sent automatically next time you call: "
