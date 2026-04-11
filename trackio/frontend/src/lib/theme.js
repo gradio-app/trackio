@@ -1,5 +1,19 @@
 const THEME_KEY = "trackio_theme_preference";
 
+let _listeners = [];
+
+export function onThemeChange(fn) {
+  _listeners.push(fn);
+  return () => {
+    _listeners = _listeners.filter((f) => f !== fn);
+  };
+}
+
+function _notify() {
+  const dark = isDark();
+  _listeners.forEach((fn) => fn(dark));
+}
+
 const darkOverrides = {
   "--neutral-50": "#fafafa",
   "--neutral-100": "#f4f4f5",
@@ -67,6 +81,7 @@ export function applyTheme(themeName) {
       root.style.removeProperty(key);
     });
   }
+  _notify();
 }
 
 export function isDark() {

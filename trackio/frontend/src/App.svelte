@@ -23,9 +23,12 @@
   import { setColorPalette } from "./lib/stores.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
-  import { initTheme } from "./lib/theme.js";
+  import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
 
   initTheme();
+
+  let darkMode = $state(isDark());
+  onThemeChange((dark) => { darkMode = dark; });
 
   let currentPage = $state("metrics");
   let projects = $state([]);
@@ -303,8 +306,7 @@
       currentPage === "reports" ||
       currentPage === "runs" ||
       currentPage === "run-detail" ||
-      currentPage === "files" ||
-      currentPage === "settings"
+      currentPage === "files"
   );
 
   let sidebarVariant = $derived(
@@ -337,6 +339,7 @@
       bind:filterText
       {metricColumns}
       {logoUrls}
+      {darkMode}
     />
   {/if}
 
