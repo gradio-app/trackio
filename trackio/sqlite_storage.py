@@ -1,4 +1,5 @@
 import json as json_mod
+import logging
 import os
 import shutil
 import sqlite3
@@ -32,6 +33,8 @@ from trackio.utils import (
     get_color_palette,
     serialize_values,
 )
+
+logger = logging.getLogger("trackio")
 
 DB_EXT = ".db"
 
@@ -816,9 +819,9 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
                 query = (
                     "SELECT timestamp, run_name, title, text, level, step FROM alerts"
                 )
@@ -850,10 +853,13 @@ class SQLiteStorage:
                     }
                     for row in rows
                 ]
-            except sqlite3.OperationalError as e:
-                if "no such table: alerts" in str(e):
-                    return []
-                raise
+        except sqlite3.OperationalError as e:
+            if "no such table: alerts" in str(e):
+                return []
+            raise
+        except sqlite3.DatabaseError:
+            logger.warning("database error reading alerts for %s, skipping", project)
+            return []
 
     @staticmethod
     def get_alert_count(project: str) -> int:
@@ -861,13 +867,13 @@ class SQLiteStorage:
         if not db_path.exists():
             return 0
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM alerts")
                 return cursor.fetchone()[0]
-            except sqlite3.OperationalError:
-                return 0
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            return 0
 
     @staticmethod
     def get_system_logs(project: str, run: str) -> list[dict]:
@@ -876,9 +882,9 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
                 cursor.execute(
                     """
                     SELECT timestamp, metrics
@@ -897,10 +903,15 @@ class SQLiteStorage:
                     metrics["timestamp"] = row["timestamp"]
                     results.append(metrics)
                 return results
-            except sqlite3.OperationalError as e:
-                if "no such table: system_metrics" in str(e):
-                    return []
-                raise
+        except sqlite3.OperationalError as e:
+            if "no such table: system_metrics" in str(e):
+                return []
+            raise
+        except sqlite3.DatabaseError:
+            logger.warning(
+                "database error reading system logs for %s/%s, skipping", project, run
+            )
+            return []
 
     @staticmethod
     def get_all_system_metrics_for_run(project: str, run: str) -> list[str]:
@@ -916,14 +927,14 @@ class SQLiteStorage:
         if not db_path.exists():
             return False
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM system_metrics LIMIT 1")
                 count = cursor.fetchone()[0]
                 return count > 0
-            except sqlite3.OperationalError:
-                return False
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            return False
 
     @staticmethod
     def get_log_count(project: str, run: str) -> int:
@@ -943,6 +954,8 @@ class SQLiteStorage:
             if "no such table: metrics" in str(e):
                 return 0
             raise
+        except sqlite3.DatabaseError:
+            return 0
 
     @staticmethod
     def get_last_step(project: str, run: str) -> int | None:
@@ -962,6 +975,8 @@ class SQLiteStorage:
             if "no such table: metrics" in str(e):
                 return None
             raise
+        except sqlite3.DatabaseError:
+            return None
 
     @staticmethod
     def get_logs(project: str, run: str, max_points: int | None = None) -> list[dict]:
@@ -1002,6 +1017,11 @@ class SQLiteStorage:
             if "no such table: metrics" in str(e):
                 return []
             raise
+        except sqlite3.DatabaseError:
+            logger.warning(
+                "database error reading logs for %s/%s, skipping", project, run
+            )
+            return []
 
     @staticmethod
     def load_from_dataset():
@@ -1089,6 +1109,9 @@ class SQLiteStorage:
             if "no such table: metrics" in str(e):
                 return []
             raise
+        except sqlite3.DatabaseError:
+            logger.warning("database error reading runs for %s, skipping", project)
+            return []
 
     @staticmethod
     def get_max_steps_for_runs(project: str) -> dict[str, int]:
@@ -1117,6 +1140,8 @@ class SQLiteStorage:
             if "no such table: metrics" in str(e):
                 return {}
             raise
+        except sqlite3.DatabaseError:
+            return {}
 
     @staticmethod
     def get_max_step_for_run(project: str, run: str) -> int | None:
@@ -1137,6 +1162,8 @@ class SQLiteStorage:
             if "no such table: metrics" in str(e):
                 return None
             raise
+        except sqlite3.DatabaseError:
+            return None
 
     @staticmethod
     def get_run_config(project: str, run: str) -> dict | None:
@@ -1145,9 +1172,9 @@ class SQLiteStorage:
         if not db_path.exists():
             return None
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
                 cursor.execute(
                     """
                     SELECT config FROM configs WHERE run_name = ?
@@ -1160,10 +1187,12 @@ class SQLiteStorage:
                     config = orjson.loads(row["config"])
                     return deserialize_values(config)
                 return None
-            except sqlite3.OperationalError as e:
-                if "no such table: configs" in str(e):
-                    return None
-                raise
+        except sqlite3.OperationalError as e:
+            if "no such table: configs" in str(e):
+                return None
+            raise
+        except sqlite3.DatabaseError:
+            return None
 
     @staticmethod
     def delete_run(project: str, run: str) -> bool:
@@ -1624,9 +1653,9 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
                 cursor.execute(
                     f"""
                     SELECT metrics
@@ -1646,10 +1675,12 @@ class SQLiteStorage:
                         if key not in exclude_keys:
                             all_metrics.add(key)
                 return sorted(list(all_metrics))
-            except sqlite3.OperationalError as e:
-                if f"no such table: {table}" in str(e):
-                    return []
-                raise
+        except sqlite3.OperationalError as e:
+            if f"no such table: {table}" in str(e):
+                return []
+            raise
+        except sqlite3.DatabaseError:
+            return []
 
     @staticmethod
     def set_project_metadata(project: str, key: str, value: str) -> None:
@@ -1667,16 +1698,16 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
                 cursor.execute(
                     "SELECT value FROM project_metadata WHERE key = ?", (key,)
                 )
                 row = cursor.fetchone()
                 return row[0] if row else None
-            except sqlite3.OperationalError:
-                return None
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            return None
 
     @staticmethod
     def get_space_id(project: str) -> str | None:
@@ -1687,30 +1718,35 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute(
-                    "SELECT EXISTS(SELECT 1 FROM metrics WHERE space_id IS NOT NULL LIMIT 1)"
-                )
-                if cursor.fetchone()[0]:
-                    return True
-            except sqlite3.OperationalError:
-                pass
-            try:
-                cursor.execute(
-                    "SELECT EXISTS(SELECT 1 FROM system_metrics WHERE space_id IS NOT NULL LIMIT 1)"
-                )
-                if cursor.fetchone()[0]:
-                    return True
-            except sqlite3.OperationalError:
-                pass
-            try:
-                cursor.execute("SELECT EXISTS(SELECT 1 FROM pending_uploads LIMIT 1)")
-                if cursor.fetchone()[0]:
-                    return True
-            except sqlite3.OperationalError:
-                pass
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        "SELECT EXISTS(SELECT 1 FROM metrics WHERE space_id IS NOT NULL LIMIT 1)"
+                    )
+                    if cursor.fetchone()[0]:
+                        return True
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    cursor.execute(
+                        "SELECT EXISTS(SELECT 1 FROM system_metrics WHERE space_id IS NOT NULL LIMIT 1)"
+                    )
+                    if cursor.fetchone()[0]:
+                        return True
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    cursor.execute(
+                        "SELECT EXISTS(SELECT 1 FROM pending_uploads LIMIT 1)"
+                    )
+                    if cursor.fetchone()[0]:
+                        return True
+                except sqlite3.OperationalError:
+                    pass
+                return False
+        except sqlite3.DatabaseError:
             return False
 
     @staticmethod
@@ -1738,36 +1774,39 @@ class SQLiteStorage:
         if not db_path.exists():
             return None
         extra_cols = ", ".join(extra_fields) + ", " if extra_fields else ""
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute(
-                    f"""SELECT id, timestamp, run_name, {extra_cols}metrics, log_id, space_id
-                    FROM {table} WHERE space_id IS NOT NULL"""
-                )
-            except sqlite3.OperationalError:
-                return None
-            rows = cursor.fetchall()
-            if not rows:
-                return None
-            logs = []
-            ids = []
-            for row in rows:
-                metrics = deserialize_values(orjson.loads(row["metrics"]))
-                entry = {
-                    "project": project,
-                    "run": row["run_name"],
-                    "metrics": metrics,
-                    "timestamp": row["timestamp"],
-                    "log_id": row["log_id"],
-                }
-                for field in extra_fields or []:
-                    entry[field] = row[field]
-                if include_config:
-                    entry["config"] = None
-                logs.append(entry)
-                ids.append(row["id"])
-            return {"logs": logs, "ids": ids, "space_id": rows[0]["space_id"]}
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        f"""SELECT id, timestamp, run_name, {extra_cols}metrics, log_id, space_id
+                        FROM {table} WHERE space_id IS NOT NULL"""
+                    )
+                except sqlite3.OperationalError:
+                    return None
+                rows = cursor.fetchall()
+                if not rows:
+                    return None
+                logs = []
+                ids = []
+                for row in rows:
+                    metrics = deserialize_values(orjson.loads(row["metrics"]))
+                    entry = {
+                        "project": project,
+                        "run": row["run_name"],
+                        "metrics": metrics,
+                        "timestamp": row["timestamp"],
+                        "log_id": row["log_id"],
+                    }
+                    for field in extra_fields or []:
+                        entry[field] = row[field]
+                    if include_config:
+                        entry["config"] = None
+                    logs.append(entry)
+                    ids.append(row["id"])
+                return {"logs": logs, "ids": ids, "space_id": rows[0]["space_id"]}
+        except sqlite3.DatabaseError:
+            return None
 
     @staticmethod
     def clear_pending_system_logs(project: str, metric_ids: list[int]) -> None:

@@ -32,8 +32,10 @@ logger = logging.getLogger("trackio")
 _write_queue: deque[tuple[str, Any]] = deque()
 _flush_thread: threading.Thread | None = None
 _flush_lock = threading.Lock()
-_FLUSH_INTERVAL = 2.0
+_BATCH_INTERVAL = 1.0
+_RETRY_INTERVAL = 1.0
 _MAX_RETRIES = 30
+_ON_SPACES = os.getenv("SYSTEM") == "spaces"
 
 
 def _enqueue_write(kind: str, payload: Any) -> None:
@@ -50,30 +52,52 @@ def _ensure_flush_thread() -> None:
         _flush_thread.start()
 
 
+def _dispatch_write(kind: str, payload: Any) -> None:
+    if kind == "bulk_log":
+        SQLiteStorage.bulk_log(**payload)
+    elif kind == "bulk_log_system":
+        SQLiteStorage.bulk_log_system(**payload)
+    elif kind == "bulk_alert":
+        SQLiteStorage.bulk_alert(**payload)
+
+
 def _flush_loop() -> None:
     retries = 0
-    while _write_queue and retries < _MAX_RETRIES:
+    while True:
+        if not _write_queue:
+            if not _ON_SPACES:
+                break
+            time.sleep(_BATCH_INTERVAL)
+            if not _write_queue:
+                break
+            continue
+
+        if _ON_SPACES and retries == 0:
+            time.sleep(_BATCH_INTERVAL)
+
         kind, payload = _write_queue[0]
         try:
-            if kind == "bulk_log":
-                SQLiteStorage.bulk_log(**payload)
-            elif kind == "bulk_log_system":
-                SQLiteStorage.bulk_log_system(**payload)
-            elif kind == "bulk_alert":
-                SQLiteStorage.bulk_alert(**payload)
+            _dispatch_write(kind, payload)
             _write_queue.popleft()
             retries = 0
-        except sqlite3.OperationalError as e:
+        except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
             msg = str(e).lower()
-            if "disk i/o error" in msg or "readonly" in msg:
+            if (
+                "disk i/o error" in msg
+                or "readonly" in msg
+                or "malformed" in msg
+                or "not a database" in msg
+            ):
                 retries += 1
+                if retries >= _MAX_RETRIES:
+                    break
                 logger.warning(
                     "write queue: flush failed (%s), retry %d/%d",
                     e,
                     retries,
                     _MAX_RETRIES,
                 )
-                time.sleep(min(_FLUSH_INTERVAL * retries, 15.0))
+                time.sleep(min(_RETRY_INTERVAL * retries, 15.0))
             else:
                 logger.error("write queue: non-retryable error (%s), dropping entry", e)
                 _write_queue.popleft()
@@ -446,10 +470,13 @@ def bulk_log(
             config=data["config"],
             log_ids=data["log_ids"] if has_log_ids else None,
         )
-        try:
-            SQLiteStorage.bulk_log(**payload)
-        except sqlite3.OperationalError:
+        if _ON_SPACES:
             _enqueue_write("bulk_log", payload)
+        else:
+            try:
+                SQLiteStorage.bulk_log(**payload)
+            except sqlite3.OperationalError:
+                _enqueue_write("bulk_log", payload)
 
 
 def bulk_log_system(
@@ -476,10 +503,13 @@ def bulk_log_system(
             timestamps=data["timestamps"],
             log_ids=data["log_ids"] if has_log_ids else None,
         )
-        try:
-            SQLiteStorage.bulk_log_system(**payload)
-        except sqlite3.OperationalError:
+        if _ON_SPACES:
             _enqueue_write("bulk_log_system", payload)
+        else:
+            try:
+                SQLiteStorage.bulk_log_system(**payload)
+            except sqlite3.OperationalError:
+                _enqueue_write("bulk_log_system", payload)
 
 
 def bulk_alert(
@@ -519,10 +549,13 @@ def bulk_alert(
             timestamps=data["timestamps"],
             alert_ids=data["alert_ids"] if has_alert_ids else None,
         )
-        try:
-            SQLiteStorage.bulk_alert(**payload)
-        except sqlite3.OperationalError:
+        if _ON_SPACES:
             _enqueue_write("bulk_alert", payload)
+        else:
+            try:
+                SQLiteStorage.bulk_alert(**payload)
+            except sqlite3.OperationalError:
+                _enqueue_write("bulk_alert", payload)
 
 
 def get_alerts(
