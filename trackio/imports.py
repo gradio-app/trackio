@@ -1,7 +1,6 @@
+import csv
 import os
 from pathlib import Path
-
-import pandas as pd
 
 from trackio import deploy, utils
 from trackio.sqlite_storage import SQLiteStorage
@@ -57,15 +56,22 @@ def import_csv(
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
-    df = pd.read_csv(csv_path)
-    if df.empty:
+    with csv_path.open(newline="", encoding="utf-8") as csv_file:
+        reader = csv.DictReader(csv_file)
+        source_columns = reader.fieldnames or []
+        rows = list(reader)
+
+    if not rows:
         raise ValueError("CSV file is empty")
 
-    column_mapping = utils.simplify_column_names(df.columns.tolist())
-    df = df.rename(columns=column_mapping)
+    column_mapping = utils.simplify_column_names(source_columns)
+    normalized_rows = [
+        {column_mapping[key]: value for key, value in row.items()} for row in rows
+    ]
+    columns = list(normalized_rows[0].keys())
 
     step_column = None
-    for col in df.columns:
+    for col in columns:
         if col.lower() == "step":
             step_column = col
             break
@@ -81,30 +87,34 @@ def import_csv(
     timestamps = []
 
     numeric_columns = []
-    for column in df.columns:
+    for column in columns:
         if column == step_column:
             continue
         if column == "timestamp":
             continue
 
         try:
-            pd.to_numeric(df[column], errors="raise")
-            numeric_columns.append(column)
+            for row in normalized_rows:
+                value = row[column]
+                if value in ("", None):
+                    continue
+                float(value)
         except (ValueError, TypeError):
             continue
+        numeric_columns.append(column)
 
-    for _, row in df.iterrows():
+    for row in normalized_rows:
         metrics = {}
         for column in numeric_columns:
             value = row[column]
-            if bool(pd.notna(value)):
+            if value not in ("", None):
                 metrics[column] = float(value)
 
         if metrics:
             metrics_list.append(metrics)
-            steps.append(int(row[step_column]))
+            steps.append(int(float(row[step_column])))
 
-            if "timestamp" in df.columns and bool(pd.notna(row["timestamp"])):
+            if "timestamp" in row and row["timestamp"] not in ("", None):
                 timestamps.append(str(row["timestamp"]))
             else:
                 timestamps.append("")
@@ -236,8 +246,8 @@ def import_tf_events(
                 steps.append(step)
 
                 # Use wall_time if present, else fallback
-                if "wall_time" in group_df.columns and not bool(
-                    pd.isna(row["wall_time"])
+                if "wall_time" in group_df.columns and not utils.is_missing_value(
+                    row["wall_time"]
                 ):
                     timestamps.append(str(row["wall_time"]))
                 else:

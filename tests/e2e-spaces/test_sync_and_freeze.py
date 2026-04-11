@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 import huggingface_hub
-import pandas as pd
+import pyarrow.parquet as pq
 
 import trackio
 from trackio import deploy, utils
@@ -28,7 +28,7 @@ def _download_parquet_from_bucket(bucket_id, remote_name="metrics.parquet"):
         huggingface_hub.download_bucket_files(
             bucket_id, files=[(remote_name, str(local_path))]
         )
-        return pd.read_parquet(local_path)
+        return pq.read_table(local_path).to_pylist()
 
 
 def _cleanup_space(space_id):
@@ -93,7 +93,7 @@ def test_sync_to_static_space_incremental(temp_dir):
 
         df1 = _download_parquet_from_bucket(bucket_id)
         assert len(df1) == 2
-        assert "loss" in df1.columns
+        assert "loss" in df1[0]
 
         trackio.init(project=project_name, name=run_name)
         trackio.log({"loss": 0.1})
@@ -104,7 +104,7 @@ def test_sync_to_static_space_incremental(temp_dir):
 
         df2 = _download_parquet_from_bucket(bucket_id)
         assert len(df2) == 4
-        assert sorted(df2["loss"].tolist()) == [0.05, 0.1, 0.3, 0.5]
+        assert sorted(row["loss"] for row in df2) == [0.05, 0.1, 0.3, 0.5]
     finally:
         _cleanup_space(space_id)
         _cleanup_bucket(bucket_id)

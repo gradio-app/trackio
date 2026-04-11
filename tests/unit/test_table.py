@@ -1,4 +1,4 @@
-import pandas as pd
+import pytest
 
 from trackio.media import TrackioImage
 from trackio.table import Table
@@ -9,16 +9,14 @@ RUN_NAME = "test_run"
 
 def test_table_to_dict_with_images(image_ndarray, temp_dir):
     img = TrackioImage(image_ndarray, caption="Mixed Test")
-    df = pd.DataFrame(
-        {
-            "step": [1, 2, 3],
-            "image": [img, None, img],
-            "text": ["hello", "world", "test"],
-            "number": [1.5, 2.5, 3.5],
-        }
+    table = Table(
+        columns=["step", "image", "text", "number"],
+        data=[
+            [1, img, "hello", 1.5],
+            [2, None, "world", 2.5],
+            [3, img, "test", 3.5],
+        ],
     )
-
-    table = Table(dataframe=df)
     result = table._to_dict(project=PROJECT_NAME, run=RUN_NAME, step=5)
 
     assert result["_type"] == Table.TYPE
@@ -43,6 +41,17 @@ def test_table_to_dict_with_images(image_ndarray, temp_dir):
     assert row3["number"] == 3.5
     assert isinstance(row3["image"], dict)
     assert row3["image"]["_type"] == TrackioImage.TYPE
+
+
+def test_table_accepts_pandas_dataframe_if_installed():
+    pd = pytest.importorskip("pandas")
+
+    df = pd.DataFrame({"step": [1], "text": ["hello"]})
+    table = Table(dataframe=df)
+
+    assert table._to_dict(project=PROJECT_NAME, run=RUN_NAME)["_value"] == [
+        {"step": 1, "text": "hello"}
+    ]
 
 
 def test_table_to_display_format_with_images():

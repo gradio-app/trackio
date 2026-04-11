@@ -13,7 +13,6 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pandas<3.0.0",
     "huggingface-hub>=1.10.0,<2",
     "gradio-client>=2.0.0,<3.0.0",
     "starlette>=1.0.0,<2",

@@ -199,7 +199,7 @@ def deploy_as_space(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    # We can assume pandas and huggingface-hub are available; requirements.txt pins trackio.
+    # We can assume huggingface-hub is available; requirements.txt pins trackio.
     # Make sure necessary dependencies are installed by creating a requirements.txt.
     is_source_install = _is_trackio_installed_from_source()
 

@@ -6,12 +6,11 @@ import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
 
 import huggingface_hub
 import numpy as np
-import pandas as pd
 from huggingface_hub.constants import HF_HOME
 
 if TYPE_CHECKING:
@@ -467,7 +466,7 @@ def fibo():
 
 def format_timestamp(timestamp_str):
     """Convert ISO timestamp to human-readable format like '3 minutes ago'."""
-    if not timestamp_str or pd.isna(timestamp_str):
+    if not timestamp_str or is_missing_value(timestamp_str):
         return "Unknown"
 
     try:
@@ -537,13 +536,56 @@ def get_color_mapping(
     return color_map
 
 
+def is_missing_value(value: object) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return False
+    try:
+        return bool(math.isnan(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _to_records_with_columns(
+    data: object,
+) -> tuple[list[dict[str, Any]], list[str], Any]:
+    if hasattr(data, "to_dict"):
+        try:
+            records = data.to_dict(orient="records")
+        except Exception:
+            pass
+        else:
+            columns = [str(column) for column in getattr(data, "columns", [])]
+            return [dict(row) for row in records], columns, data.__class__
+
+    if isinstance(data, list):
+        records = [dict(row) for row in data]
+        columns = list(records[0].keys()) if records else []
+        return records, columns, None
+
+    raise TypeError(
+        "downsample() expects a list of row dictionaries or a dataframe-like object."
+    )
+
+
+def _restore_records_shape(
+    records: list[dict[str, Any]],
+    columns: list[str],
+    dataframe_class: Any,
+) -> Any:
+    if dataframe_class is None or not hasattr(dataframe_class, "from_records"):
+        return records
+    return dataframe_class.from_records(records, columns=columns)
+
+
 def downsample(
-    df: pd.DataFrame,
+    data: object,
     x: str,
     y: str,
     color: str | None,
     x_lim: tuple[float | None, float | None] | None = None,
-) -> tuple[pd.DataFrame, tuple[float, float] | None]:
+) -> tuple[Any, tuple[float, float] | None]:
     """
     Downsample the dataframe to reduce the number of points plotted.
     Also updates the x-axis limits to the data min/max if either of the x-axis limits are None.
@@ -558,18 +600,23 @@ def downsample(
     Returns:
         A tuple containing the downsampled dataframe and the updated x-axis limits.
     """
-    if df.empty:
+    rows, columns, dataframe_class = _to_records_with_columns(data)
+
+    if not rows:
         if x_lim is not None:
             x_lim = (x_lim[0] or 0, x_lim[1] or 0)
-        return df, x_lim
+        return _restore_records_shape([], columns, dataframe_class), x_lim
 
     columns_to_keep = [x, y]
-    if color is not None and color in df.columns:
+    if color is not None and any(color in row for row in rows):
         columns_to_keep.append(color)
-    df = df[columns_to_keep].copy()
+    filtered_rows = [
+        {column: row.get(column) for column in columns_to_keep} for row in rows
+    ]
 
-    data_x_min = df[x].min()
-    data_x_max = df[x].max()
+    data_x_values = [row[x] for row in filtered_rows]
+    data_x_min = min(data_x_values)
+    data_x_max = max(data_x_values)
 
     if x_lim is not None:
         x_min, x_max = x_lim
@@ -583,83 +630,95 @@ def downsample(
 
     n_bins = 100
 
-    if color is not None and color in df.columns:
-        groups = df.groupby(color)
+    groups: dict[Any, list[tuple[int, dict[str, Any]]]] = {}
+    if color is not None and color in columns_to_keep:
+        for idx, row in enumerate(filtered_rows):
+            groups.setdefault(row.get(color), []).append((idx, row))
     else:
-        groups = [(None, df)]
+        groups[None] = list(enumerate(filtered_rows))
 
-    downsampled_indices = []
+    downsampled_indices: list[int] = []
 
-    for _, group_df in groups:
-        if group_df.empty:
+    for group_rows in groups.values():
+        if not group_rows:
             continue
 
-        group_df = group_df.sort_values(x)
+        group_rows = sorted(group_rows, key=lambda item: item[1][x])
 
         if updated_x_lim is not None:
             x_min, x_max = updated_x_lim
-            before_point = group_df[group_df[x] < x_min].tail(1)
-            after_point = group_df[group_df[x] > x_max].head(1)
-            group_df = group_df[(group_df[x] >= x_min) & (group_df[x] <= x_max)]
+            before_point = [item for item in group_rows if item[1][x] < x_min]
+            after_point = [item for item in group_rows if item[1][x] > x_max]
+            group_rows = [item for item in group_rows if x_min <= item[1][x] <= x_max]
         else:
             before_point = after_point = None
-            x_min = group_df[x].min()
-            x_max = group_df[x].max()
+            x_min = group_rows[0][1][x]
+            x_max = group_rows[-1][1][x]
 
-        if before_point is not None and not before_point.empty:
-            downsampled_indices.extend(before_point.index.tolist())
-        if after_point is not None and not after_point.empty:
-            downsampled_indices.extend(after_point.index.tolist())
+        if before_point:
+            downsampled_indices.append(before_point[-1][0])
+        if after_point:
+            downsampled_indices.append(after_point[0][0])
 
-        if group_df.empty:
+        if not group_rows:
             continue
 
         if x_min == x_max:
-            min_y_idx = group_df[y].idxmin()
-            max_y_idx = group_df[y].idxmax()
+            min_y_idx = min(group_rows, key=lambda item: item[1][y])[0]
+            max_y_idx = max(group_rows, key=lambda item: item[1][y])[0]
             if min_y_idx != max_y_idx:
                 downsampled_indices.extend([min_y_idx, max_y_idx])
             else:
                 downsampled_indices.append(min_y_idx)
             continue
 
-        if len(group_df) < 500:
-            downsampled_indices.extend(group_df.index.tolist())
+        if len(group_rows) < 500:
+            downsampled_indices.extend(idx for idx, _ in group_rows)
             continue
 
         bins = np.linspace(x_min, x_max, n_bins + 1)
-        group_df["bin"] = pd.cut(
-            group_df[x], bins=bins, labels=False, include_lowest=True
-        )
+        binned_rows: dict[int, list[tuple[int, dict[str, Any]]]] = {}
+        for idx, row in group_rows:
+            bin_idx = int(
+                np.clip(np.digitize(row[x], bins, right=False) - 1, 0, n_bins - 1)
+            )
+            binned_rows.setdefault(bin_idx, []).append((idx, row))
 
-        for bin_idx in group_df["bin"].dropna().unique():
-            bin_data = group_df[group_df["bin"] == bin_idx]
-            if bin_data.empty:
+        for bin_rows in binned_rows.values():
+            if not bin_rows:
                 continue
 
-            min_y_idx = bin_data[y].idxmin()
-            max_y_idx = bin_data[y].idxmax()
+            min_y_idx = min(bin_rows, key=lambda item: item[1][y])[0]
+            max_y_idx = max(bin_rows, key=lambda item: item[1][y])[0]
 
             downsampled_indices.append(min_y_idx)
             if min_y_idx != max_y_idx:
                 downsampled_indices.append(max_y_idx)
 
-    unique_indices = list(set(downsampled_indices))
+    unique_indices = sorted(set(downsampled_indices))
+    selected_rows = [filtered_rows[idx] for idx in unique_indices]
 
-    downsampled_df = df.loc[unique_indices].copy()
-
-    if color is not None:
-        downsampled_df = (
-            downsampled_df.groupby(color, sort=False)[downsampled_df.columns]
-            .apply(lambda group: group.sort_values(x))
-            .reset_index(drop=True)
-        )
+    if color is not None and color in columns_to_keep:
+        grouped_rows: dict[Any, list[dict[str, Any]]] = {}
+        group_order: list[Any] = []
+        for row in selected_rows:
+            group_key = row.get(color)
+            if group_key not in grouped_rows:
+                grouped_rows[group_key] = []
+                group_order.append(group_key)
+            grouped_rows[group_key].append(row)
+        downsampled_rows = []
+        for group_key in group_order:
+            downsampled_rows.extend(
+                sorted(grouped_rows[group_key], key=lambda row: row[x])
+            )
     else:
-        downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
+        downsampled_rows = sorted(selected_rows, key=lambda row: row[x])
 
-    downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
-
-    return downsampled_df, updated_x_lim
+    return (
+        _restore_records_shape(downsampled_rows, columns_to_keep, dataframe_class),
+        updated_x_lim,
+    )
 
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
