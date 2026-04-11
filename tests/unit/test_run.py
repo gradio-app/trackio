@@ -158,3 +158,28 @@ def test_run_group_added(temp_dir):
         config={"learning_rate": 0.01},
     )
     assert run.config["_Group"] == "test_group"
+
+
+def test_log_does_not_crash_on_bad_metrics(temp_dir, monkeypatch):
+    run = Run(url=None, project="proj", client=None, name="safe-run", space_id=None)
+
+    from trackio import utils
+
+    original = utils.serialize_values
+
+    def exploding_serialize(metrics):
+        if "bad" in metrics:
+            raise RuntimeError("serialize boom")
+        return original(metrics)
+
+    monkeypatch.setattr(utils, "serialize_values", exploding_serialize)
+
+    with pytest.warns(UserWarning, match="trackio.log\\(\\) failed to process metrics"):
+        run.log({"bad": 1})
+
+    run.log({"loss": 0.5})
+    run.finish()
+
+    logs = SQLiteStorage.get_logs("proj", "safe-run")
+    assert len(logs) == 1
+    assert logs[0]["loss"] == 0.5

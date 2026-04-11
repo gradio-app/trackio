@@ -593,56 +593,59 @@ class Run:
                 self._client_thread.start()
 
     def log(self, metrics: dict, step: int | None = None):
-        renamed_keys = []
-        new_metrics = {}
+        try:
+            renamed_keys = []
+            new_metrics = {}
 
-        for k, v in metrics.items():
-            if k in utils.RESERVED_KEYS or k.startswith("__"):
-                new_key = f"__{k}"
-                renamed_keys.append(k)
-                new_metrics[new_key] = v
-            else:
-                new_metrics[k] = v
+            for k, v in metrics.items():
+                if k in utils.RESERVED_KEYS or k.startswith("__"):
+                    new_key = f"__{k}"
+                    renamed_keys.append(k)
+                    new_metrics[new_key] = v
+                else:
+                    new_metrics[k] = v
 
-        if renamed_keys:
-            warnings.warn(f"Reserved keys renamed: {renamed_keys} → '__{{key}}'")
+            if renamed_keys:
+                warnings.warn(f"Reserved keys renamed: {renamed_keys} → '__{{key}}'")
 
-        metrics = new_metrics
-        for key, value in metrics.items():
-            if isinstance(value, Table):
-                metrics[key] = value._to_dict(
-                    project=self.project, run=self.name, step=step
-                )
-                self._scan_and_queue_media_uploads(metrics[key], step)
-            elif isinstance(value, Histogram):
-                metrics[key] = value._to_dict()
-            elif isinstance(value, Markdown):
-                metrics[key] = value._to_dict()
-            elif isinstance(value, TrackioMedia):
-                metrics[key] = self._process_media(value, step)
-        metrics = utils.serialize_values(metrics)
+            metrics = new_metrics
+            for key, value in metrics.items():
+                if isinstance(value, Table):
+                    metrics[key] = value._to_dict(
+                        project=self.project, run=self.name, step=step
+                    )
+                    self._scan_and_queue_media_uploads(metrics[key], step)
+                elif isinstance(value, Histogram):
+                    metrics[key] = value._to_dict()
+                elif isinstance(value, Markdown):
+                    metrics[key] = value._to_dict()
+                elif isinstance(value, TrackioMedia):
+                    metrics[key] = self._process_media(value, step)
+            metrics = utils.serialize_values(metrics)
 
-        if step is None:
-            step = self._next_step
-        self._next_step = max(self._next_step, step + 1)
+            if step is None:
+                step = self._next_step
+            self._next_step = max(self._next_step, step + 1)
 
-        config_to_log = None
-        if not self._config_logged and self.config:
-            config_to_log = utils.to_json_safe(self.config)
-            self._config_logged = True
+            config_to_log = None
+            if not self._config_logged and self.config:
+                config_to_log = utils.to_json_safe(self.config)
+                self._config_logged = True
 
-        log_entry: LogEntry = {
-            "project": self.project,
-            "run": self.name,
-            "metrics": metrics,
-            "step": step,
-            "config": config_to_log,
-            "log_id": uuid.uuid4().hex,
-        }
+            log_entry: LogEntry = {
+                "project": self.project,
+                "run": self.name,
+                "metrics": metrics,
+                "step": step,
+                "config": config_to_log,
+                "log_id": uuid.uuid4().hex,
+            }
 
-        with self._client_lock:
-            self._queued_logs.append(log_entry)
-            self._ensure_sender_alive()
+            with self._client_lock:
+                self._queued_logs.append(log_entry)
+                self._ensure_sender_alive()
+        except Exception as e:
+            warnings.warn(f"trackio.log() failed to process metrics: {e}")
 
     def alert(
         self,
@@ -652,60 +655,66 @@ class Run:
         step: int | None = None,
         webhook_url: str | None = None,
     ):
-        if step is None:
-            step = max(self._next_step - 1, 0)
-        timestamp = datetime.now(timezone.utc).isoformat()
+        try:
+            if step is None:
+                step = max(self._next_step - 1, 0)
+            timestamp = datetime.now(timezone.utc).isoformat()
 
-        print(format_alert_terminal(level, title, text, step))
+            print(format_alert_terminal(level, title, text, step))
 
-        alert_entry: AlertEntry = {
-            "project": self.project,
-            "run": self.name,
-            "title": title,
-            "text": text,
-            "level": level.value,
-            "step": step,
-            "timestamp": timestamp,
-            "alert_id": uuid.uuid4().hex,
-        }
+            alert_entry: AlertEntry = {
+                "project": self.project,
+                "run": self.name,
+                "title": title,
+                "text": text,
+                "level": level.value,
+                "step": step,
+                "timestamp": timestamp,
+                "alert_id": uuid.uuid4().hex,
+            }
 
-        with self._client_lock:
-            self._queued_alerts.append(alert_entry)
-            self._ensure_sender_alive()
+            with self._client_lock:
+                self._queued_alerts.append(alert_entry)
+                self._ensure_sender_alive()
 
-        url = webhook_url or self._webhook_url
-        if url and should_send_webhook(level, self._webhook_min_level):
-            t = threading.Thread(
-                target=send_webhook,
-                args=(
-                    url,
-                    level,
-                    title,
-                    text,
-                    self.project,
-                    self.name,
-                    step,
-                    timestamp,
-                ),
-                daemon=True,
-            )
-            t.start()
+            url = webhook_url or self._webhook_url
+            if url and should_send_webhook(level, self._webhook_min_level):
+                t = threading.Thread(
+                    target=send_webhook,
+                    args=(
+                        url,
+                        level,
+                        title,
+                        text,
+                        self.project,
+                        self.name,
+                        step,
+                        timestamp,
+                    ),
+                    daemon=True,
+                )
+                t.start()
+        except Exception as e:
+            warnings.warn(f"trackio.alert() failed: {e}")
 
     def log_system(self, metrics: dict):
-        metrics = utils.serialize_values(metrics)
-        timestamp = datetime.now(timezone.utc).isoformat()
+        try:
+            metrics = utils.serialize_values(metrics)
+            timestamp = datetime.now(timezone.utc).isoformat()
 
-        system_log_entry: SystemLogEntry = {
-            "project": self.project,
-            "run": self.name,
-            "metrics": metrics,
-            "timestamp": timestamp,
-            "log_id": uuid.uuid4().hex,
-        }
+            system_log_entry: SystemLogEntry = {
+                "project": self.project,
+                "run": self.name,
+                "metrics": metrics,
+                "timestamp": timestamp,
+                "log_id": uuid.uuid4().hex,
+            }
 
-        with self._client_lock:
-            self._queued_system_logs.append(system_log_entry)
-            self._ensure_sender_alive()
+            with self._client_lock:
+                self._queued_system_logs.append(system_log_entry)
+                self._ensure_sender_alive()
+        except Exception as e:
+            warnings.warn(f"trackio.log_system() failed: {e}")
 
     def finish(self):
         if self._gpu_monitor is not None:
