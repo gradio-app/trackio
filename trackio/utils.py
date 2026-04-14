@@ -856,8 +856,7 @@ def generate_embed_code(
 
 def serialize_values(metrics):
     """
-    Serialize infinity and NaN values in metrics dict to make it JSON-compliant.
-    Only handles top-level float values.
+    Serialize values to make them JSON-compliant.
 
     Converts:
     - float('inf') -> "Infinity"
@@ -867,29 +866,24 @@ def serialize_values(metrics):
     Example:
         {"loss": float('inf'), "accuracy": 0.95} -> {"loss": "Infinity", "accuracy": 0.95}
     """
-    if not isinstance(metrics, dict):
-        return metrics
-
-    result = {}
-    for key, value in metrics.items():
+    def _serialize(value):
+        if isinstance(value, dict):
+            return {str(key): _serialize(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [_serialize(item) for item in value]
+        if isinstance(value, np.generic):
+            value = value.item()
+        if isinstance(value, bool | int):
+            return value
         if isinstance(value, float):
             if math.isinf(value):
-                result[key] = "Infinity" if value > 0 else "-Infinity"
-            elif math.isnan(value):
-                result[key] = "NaN"
-            else:
-                result[key] = value
-        elif isinstance(value, np.floating):
-            float_val = float(value)
-            if math.isinf(float_val):
-                result[key] = "Infinity" if float_val > 0 else "-Infinity"
-            elif math.isnan(float_val):
-                result[key] = "NaN"
-            else:
-                result[key] = float_val
-        else:
-            result[key] = value
-    return result
+                return "Infinity" if value > 0 else "-Infinity"
+            if math.isnan(value):
+                return "NaN"
+            return float(value)
+        return value
+
+    return _serialize(metrics)
 
 
 def deserialize_values(metrics):
