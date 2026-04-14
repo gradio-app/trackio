@@ -26,7 +26,7 @@ def test_runs_plots_images_are_displayed(temp_dir):
             page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
             nav_links = page.locator(".nav-link")
-            expect(nav_links).to_have_count(6)
+            expect(nav_links).to_have_count(7)
 
             run_label = page.locator(".run-name", has_text="test_run")
             expect(run_label).to_be_visible()
@@ -106,7 +106,7 @@ def test_navbar_page_navigation(temp_dir):
             page.goto(url if url.endswith("/") else url + "/")
             page.wait_for_load_state("networkidle")
             nav_links = page.locator(".nav-link")
-            expect(nav_links).to_have_count(6)
+            expect(nav_links).to_have_count(7)
 
             expect(page.locator(".metrics-page")).to_be_visible()
 
@@ -145,7 +145,7 @@ def test_runs_table_shows_run_data(temp_dir):
             page.wait_for_load_state("networkidle")
 
             nav_links = page.locator(".nav-link")
-            expect(nav_links).to_have_count(6)
+            expect(nav_links).to_have_count(7)
             page.get_by_role("button", name="Runs", exact=True).click()
             page.wait_for_load_state("networkidle")
 

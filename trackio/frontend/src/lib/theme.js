@@ -1,3 +1,19 @@
+const THEME_KEY = "trackio_theme_preference";
+
+let _listeners = [];
+
+export function onThemeChange(fn) {
+  _listeners.push(fn);
+  return () => {
+    _listeners = _listeners.filter((f) => f !== fn);
+  };
+}
+
+function _notify() {
+  const dark = isDark();
+  _listeners.forEach((fn) => fn(dark));
+}
+
 const darkOverrides = {
   "--neutral-50": "#fafafa",
   "--neutral-100": "#f4f4f5",
@@ -65,6 +81,7 @@ export function applyTheme(themeName) {
       root.style.removeProperty(key);
     });
   }
+  _notify();
 }
 
 export function isDark() {
@@ -79,4 +96,54 @@ export function detectSystemTheme() {
     return "dark";
   }
   return "default";
+}
+
+export function getThemePreference() {
+  return localStorage.getItem(THEME_KEY) || "system";
+}
+
+export function setThemePreference(pref) {
+  localStorage.setItem(THEME_KEY, pref);
+  applyThemeFromPreference(pref);
+  _ensureSystemListener(pref === "system");
+}
+
+export function applyThemeFromPreference(pref) {
+  if (pref === "system") {
+    applyTheme(detectSystemTheme());
+  } else if (pref === "dark") {
+    applyTheme("dark");
+  } else {
+    applyTheme("default");
+  }
+}
+
+let _systemListenerAttached = false;
+
+function _onSystemThemeChange() {
+  if (getThemePreference() === "system") {
+    applyTheme(detectSystemTheme());
+  }
+}
+
+function _ensureSystemListener(needed) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (needed && !_systemListenerAttached) {
+    mq.addEventListener("change", _onSystemThemeChange);
+    _systemListenerAttached = true;
+  } else if (!needed && _systemListenerAttached) {
+    mq.removeEventListener("change", _onSystemThemeChange);
+    _systemListenerAttached = false;
+  }
+}
+
+export function initTheme() {
+  const urlTheme = new URLSearchParams(window.location.search).get("__theme");
+  if (urlTheme) {
+    applyTheme(urlTheme);
+    return;
+  }
+  const pref = getThemePreference();
+  applyThemeFromPreference(pref);
+  _ensureSystemListener(pref === "system");
 }
