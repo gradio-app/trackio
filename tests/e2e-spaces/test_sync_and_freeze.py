@@ -42,7 +42,9 @@ def _cleanup_space(space_id):
 
 def _cleanup_bucket(bucket_id):
     try:
-        huggingface_hub.delete_bucket(bucket_id, token=huggingface_hub.utils.get_token())
+        huggingface_hub.delete_bucket(
+            bucket_id, token=huggingface_hub.utils.get_token()
+        )
     except Exception:
         pass
 

@@ -64,6 +64,7 @@ def _download_db_from_bucket(
         huggingface_hub.download_bucket_files(
             bucket_id,
             files=[(remote_path, str(local_path))],
+            token=huggingface_hub.utils.get_token(),
         )
         return local_path.exists()
     except Exception:
