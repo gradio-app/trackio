@@ -385,7 +385,7 @@
       {:else if currentPage === "files"}
         <Files project={selectedProject} />
       {:else if currentPage === "settings"}
-        <Settings {spaceId} selectedProject={selectedProject} />
+        <Settings {spaceId} selectedProject={selectedProject} {projects} />
       {/if}
     </div>
   </div>
