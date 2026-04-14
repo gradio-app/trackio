@@ -105,6 +105,7 @@ export function getThemePreference() {
 export function setThemePreference(pref) {
   localStorage.setItem(THEME_KEY, pref);
   applyThemeFromPreference(pref);
+  _ensureSystemListener(pref === "system");
 }
 
 export function applyThemeFromPreference(pref) {
@@ -117,6 +118,25 @@ export function applyThemeFromPreference(pref) {
   }
 }
 
+let _systemListenerAttached = false;
+
+function _onSystemThemeChange() {
+  if (getThemePreference() === "system") {
+    applyTheme(detectSystemTheme());
+  }
+}
+
+function _ensureSystemListener(needed) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (needed && !_systemListenerAttached) {
+    mq.addEventListener("change", _onSystemThemeChange);
+    _systemListenerAttached = true;
+  } else if (!needed && _systemListenerAttached) {
+    mq.removeEventListener("change", _onSystemThemeChange);
+    _systemListenerAttached = false;
+  }
+}
+
 export function initTheme() {
   const urlTheme = new URLSearchParams(window.location.search).get("__theme");
   if (urlTheme) {
@@ -125,14 +145,5 @@ export function initTheme() {
   }
   const pref = getThemePreference();
   applyThemeFromPreference(pref);
-
-  if (pref === "system") {
-    window
-      .matchMedia("(prefers-color-scheme: dark)")
-      .addEventListener("change", () => {
-        if (getThemePreference() === "system") {
-          applyTheme(detectSystemTheme());
-        }
-      });
-  }
+  _ensureSystemListener(pref === "system");
 }

@@ -55,7 +55,7 @@
       { title: "List metrics", cmd: `trackio${sf} list metrics --project "${proj}" --run <run>` },
       { title: "Project summary", cmd: `trackio${sf} summary --project "${proj}"` },
       { title: "Run summary", cmd: `trackio${sf} summary --project "${proj}" --run <run>` },
-      { title: "Sync to HF Space", cmd: `trackio sync --project "${proj}"` },
+      { title: "Sync to HF Space", cmd: `trackio sync${sf} --project "${proj}"` },
       { title: "Check sync status", cmd: `trackio status` },
     ];
   });
