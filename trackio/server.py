@@ -22,7 +22,10 @@ from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
 import trackio.utils as utils
-from trackio.asgi_app import create_trackio_starlette_app
+from trackio.asgi_app import (
+    consume_uploaded_temp_file,
+    create_trackio_starlette_app,
+)
 from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
@@ -377,23 +380,34 @@ def get_run_mutation_status(request: Request) -> dict[str, Any]:
     return {"spaces": True, "allowed": False, "auth": "none"}
 
 
-def upload_db_to_space(project: str, uploaded_db: dict, hf_token: str | None) -> None:
+def upload_db_to_space(
+    request: Request,
+    project: str,
+    uploaded_db: dict,
+    hf_token: str | None,
+) -> None:
     check_hf_token_has_write_access(hf_token)
+    uploaded_path = consume_uploaded_temp_file(request, uploaded_db)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
-    shutil.copy(uploaded_db["path"], db_project_path)
+    shutil.copy(uploaded_path, db_project_path)
 
 
-def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
+def bulk_upload_media(
+    request: Request,
+    uploads: list[UploadEntry],
+    hf_token: str | None,
+) -> None:
     check_hf_token_has_write_access(hf_token)
     for upload in uploads:
+        uploaded_path = consume_uploaded_temp_file(request, upload["uploaded_file"])
         media_path = get_project_media_path(
             project=upload["project"],
             run=upload["run"],
             step=upload["step"],
             relative_path=upload["relative_path"],
         )
-        shutil.copy(upload["uploaded_file"]["path"], media_path)
+        shutil.copy(uploaded_path, media_path)
 
 
 def log(

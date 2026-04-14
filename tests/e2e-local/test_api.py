@@ -1,4 +1,6 @@
 import asyncio
+import tempfile
+from pathlib import Path
 
 import httpx
 import pytest
@@ -243,6 +245,80 @@ def test_local_dashboard_file_endpoint_only_serves_trackio_paths(
         assert allowed_resp.status_code == 200
         assert blocked_resp.status_code == 404
     finally:
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir):
+    project = "test_local_upload_guard"
+    source_path = Path(tempfile.gettempdir()) / "trackio-upload-source.txt"
+    source_text = "uploaded through server"
+    source_path.write_text(source_text)
+    blocked_target = trackio_utils.MEDIA_DIR / project / "files" / "blocked.txt"
+    allowed_target = None
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        with source_path.open("rb") as handle:
+            upload_resp = httpx.post(
+                f"{url.rstrip('/')}/api/upload",
+                files={"files": (source_path.name, handle)},
+                timeout=5,
+            )
+        upload_resp.raise_for_status()
+        uploaded_path = upload_resp.json()["paths"][0]
+        allowed_target = (
+            trackio_utils.MEDIA_DIR
+            / project
+            / "files"
+            / "allowed.txt"
+            / Path(uploaded_path).name
+        )
+
+        allowed_resp = httpx.post(
+            f"{url.rstrip('/')}/api/bulk_upload_media",
+            json={
+                "uploads": [
+                    {
+                        "project": project,
+                        "run": None,
+                        "step": None,
+                        "relative_path": "allowed.txt",
+                        "uploaded_file": {"path": uploaded_path},
+                    }
+                ],
+                "hf_token": None,
+            },
+            timeout=5,
+        )
+        blocked_resp = httpx.post(
+            f"{url.rstrip('/')}/api/bulk_upload_media",
+            json={
+                "uploads": [
+                    {
+                        "project": project,
+                        "run": None,
+                        "step": None,
+                        "relative_path": "blocked.txt",
+                        "uploaded_file": {"path": "/etc/hosts"},
+                    }
+                ],
+                "hf_token": None,
+            },
+            timeout=5,
+        )
+
+        assert allowed_resp.status_code == 200
+        assert allowed_target is not None
+        assert allowed_target.read_text() == source_text
+        assert blocked_resp.status_code == 400
+        assert blocked_resp.json() == {
+            "error": "Uploaded file was not created by this Trackio server."
+        }
+        assert not blocked_target.exists()
+    finally:
+        source_path.unlink(missing_ok=True)
         trackio.delete_project(project, force=True)
         app.close()
 

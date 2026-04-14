@@ -4,6 +4,7 @@ import inspect
 import json
 import math
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -52,6 +53,31 @@ def _json_safe(data: Any) -> Any:
         except Exception:
             pass
     return str(data)
+
+
+def register_uploaded_temp_file(request: Request, file_path: str | Path) -> None:
+    resolved_path = Path(file_path).resolve(strict=False)
+    with request.app.state.uploaded_temp_files_lock:
+        request.app.state.uploaded_temp_files.add(resolved_path)
+
+
+def consume_uploaded_temp_file(request: Request, file_data: Any) -> Path:
+    file_path = file_data.get("path") if isinstance(file_data, dict) else None
+    if not isinstance(file_path, str) or not file_path:
+        raise TrackioAPIError("Expected uploaded file metadata with a valid path.")
+
+    resolved_path = Path(file_path).resolve(strict=False)
+    with request.app.state.uploaded_temp_files_lock:
+        if resolved_path not in request.app.state.uploaded_temp_files:
+            raise TrackioAPIError(
+                "Uploaded file was not created by this Trackio server."
+            )
+        request.app.state.uploaded_temp_files.remove(resolved_path)
+
+    if not resolved_path.is_file():
+        raise TrackioAPIError("Uploaded file is missing.")
+
+    return resolved_path
 
 
 def _invoke_handler(
@@ -162,6 +188,7 @@ async def upload_handler(request: Request) -> Response:
             suffix=suffix,
         ) as tmp:
             tmp.write(await upload.read())
+            register_uploaded_temp_file(request, tmp.name)
             saved_paths.append(tmp.name)
     return JSONResponse({"paths": saved_paths})
 
@@ -199,4 +226,6 @@ def create_trackio_starlette_app(
     app.state.api_registry = api_registry
     app.state.mcp_enabled = mcp_enabled
     app.state.allowed_file_roots = _normalize_allowed_file_roots(allowed_file_roots)
+    app.state.uploaded_temp_files = set()
+    app.state.uploaded_temp_files_lock = threading.Lock()
     return app
