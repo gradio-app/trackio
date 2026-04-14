@@ -866,6 +866,7 @@ def serialize_values(metrics):
     Example:
         {"loss": float('inf'), "accuracy": 0.95} -> {"loss": "Infinity", "accuracy": 0.95}
     """
+
     def _serialize(value):
         if isinstance(value, dict):
             return {str(key): _serialize(item) for key, item in value.items()}
