@@ -26,7 +26,9 @@ def _download_parquet_from_bucket(bucket_id, remote_name="metrics.parquet"):
     with tempfile.TemporaryDirectory() as tmp:
         local_path = Path(tmp) / remote_name
         huggingface_hub.download_bucket_files(
-            bucket_id, files=[(remote_name, str(local_path))]
+            bucket_id,
+            files=[(remote_name, str(local_path))],
+            token=huggingface_hub.utils.get_token(),
         )
         return pd.read_parquet(local_path)
 
@@ -40,7 +42,7 @@ def _cleanup_space(space_id):
 
 def _cleanup_bucket(bucket_id):
     try:
-        huggingface_hub.delete_bucket(bucket_id)
+        huggingface_hub.delete_bucket(bucket_id, token=huggingface_hub.utils.get_token())
     except Exception:
         pass
 
