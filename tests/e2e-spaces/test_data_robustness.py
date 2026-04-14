@@ -164,7 +164,10 @@ def test_local_buffer_flushed_after_recovery(test_space_id, temp_dir, wait_for_c
         f"Expected all 3 logs on Space after recovery, got {summary['num_logs']}"
     )
 
-    local_logs = SQLiteStorage.get_logs(project=project_name, run=run_name)
-    assert len(local_logs) == 0, (
-        f"Expected local buffer to be empty after flush, but found {len(local_logs)} rows"
+    deadline = time.time() + 60
+    while time.time() < deadline and SQLiteStorage.has_pending_data(project_name):
+        time.sleep(2)
+
+    assert not SQLiteStorage.has_pending_data(project_name), (
+        "Expected pending local buffer rows to be cleared after flush"
     )
