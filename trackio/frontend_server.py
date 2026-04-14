@@ -21,6 +21,7 @@ _SPA_SEGMENTS = (
     "runs",
     "run",
     "files",
+    "settings",
 )
 
 

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import Counter
 from importlib.resources import files
 from pathlib import Path
 
@@ -505,6 +506,7 @@ def sync_incremental(
     create_space_if_not_exists(space_id, private=private)
     wait_until_space_exists(space_id)
     hf_token = huggingface_hub.utils.get_token()
+    expected_run_counts: Counter[str] = Counter()
 
     client = RemoteClient(
         space_id,
@@ -516,6 +518,7 @@ def sync_incremental(
         pending_logs = SQLiteStorage.get_pending_logs(project)
         if pending_logs:
             logs = pending_logs["logs"]
+            expected_run_counts.update(log["run"] for log in logs)
             for i in range(0, len(logs), SYNC_BATCH_SIZE):
                 batch = logs[i : i + SYNC_BATCH_SIZE]
                 print(
@@ -563,6 +566,7 @@ def sync_incremental(
     else:
         all_logs = SQLiteStorage.get_all_logs_for_sync(project)
         if all_logs:
+            expected_run_counts.update(log["run"] for log in all_logs)
             for i in range(0, len(all_logs), SYNC_BATCH_SIZE):
                 batch = all_logs[i : i + SYNC_BATCH_SIZE]
                 print(
@@ -581,10 +585,50 @@ def sync_incremental(
                     api_name="/bulk_log_system", logs=batch, hf_token=hf_token
                 )
 
+    _wait_for_remote_sync(client, project, expected_run_counts)
     SQLiteStorage.set_project_metadata(project, "space_id", space_id)
     print(
         f"* Synced successfully to space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
     )
+
+
+def _wait_for_remote_sync(
+    client: RemoteClient,
+    project: str,
+    expected_run_counts: Counter[str],
+    timeout: int = 180,
+) -> None:
+    if not expected_run_counts:
+        return
+
+    deadline = time.time() + timeout
+    delay = 2
+    last_error: Exception | None = None
+    pending = dict(expected_run_counts)
+
+    while time.time() < deadline and pending:
+        completed = []
+        for run_name, expected_num_logs in pending.items():
+            try:
+                summary = client.predict(
+                    project=project, run=run_name, api_name="/get_run_summary"
+                )
+                if summary.get("num_logs") == expected_num_logs:
+                    completed.append(run_name)
+            except Exception as e:
+                last_error = e
+        for run_name in completed:
+            pending.pop(run_name, None)
+        if pending:
+            time.sleep(delay)
+            delay = min(delay * 1.5, 15)
+
+    if pending:
+        raise TimeoutError(
+            f"Remote sync for project '{project}' did not become visible for runs "
+            f"{sorted(pending.items())} within {timeout}s. "
+            f"Last error: {last_error!r}"
+        )
 
 
 def upload_dataset_for_static(
@@ -843,6 +887,16 @@ def sync(
                 )
                 create_space_if_not_exists(
                     space_id, bucket_id=bucket_id, private=private
+                )
+                _wait_for_remote_sync(
+                    RemoteClient(
+                        space_id, verbose=False, httpx_kwargs={"timeout": 90}
+                    ),
+                    project,
+                    Counter(
+                        log["run"]
+                        for log in SQLiteStorage.get_all_logs_for_sync(project)
+                    ),
                 )
             else:
                 sync_incremental(project, space_id, private=private, pending_only=False)

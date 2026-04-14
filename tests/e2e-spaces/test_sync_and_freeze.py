@@ -26,7 +26,9 @@ def _download_parquet_from_bucket(bucket_id, remote_name="metrics.parquet"):
     with tempfile.TemporaryDirectory() as tmp:
         local_path = Path(tmp) / remote_name
         huggingface_hub.download_bucket_files(
-            bucket_id, files=[(remote_name, str(local_path))]
+            bucket_id,
+            files=[(remote_name, str(local_path))],
+            token=huggingface_hub.utils.get_token(),
         )
         return pq.read_table(local_path).to_pylist()
 
@@ -40,9 +42,18 @@ def _cleanup_space(space_id):
 
 def _cleanup_bucket(bucket_id):
     try:
-        huggingface_hub.delete_bucket(bucket_id)
+        huggingface_hub.delete_bucket(
+            bucket_id, token=huggingface_hub.utils.get_token()
+        )
     except Exception:
         pass
+
+
+def _namespace_scoped_repo_id(test_space_id: str, repo_name: str) -> str:
+    if "/" in test_space_id:
+        namespace = test_space_id.split("/", 1)[0]
+        return f"{namespace}/{repo_name}"
+    return repo_name
 
 
 def test_sync_to_gradio_space(test_space_id, temp_dir):
@@ -76,11 +87,11 @@ def test_sync_to_gradio_space(test_space_id, temp_dir):
     assert loss_values[2]["value"] == 0.1
 
 
-def test_sync_to_static_space_incremental(temp_dir):
+def test_sync_to_static_space_incremental(test_space_id, temp_dir):
     project_name = f"test_sync_static_{secrets.token_urlsafe(8)}"
     run_name = "run1"
     suffix = secrets.token_urlsafe(6)
-    space_id = f"trackio-test-static-{suffix}"
+    space_id = _namespace_scoped_repo_id(test_space_id, f"trackio-test-static-{suffix}")
     space_id, _, bucket_id = utils.preprocess_space_and_dataset_ids(space_id, None)
 
     try:
@@ -127,7 +138,9 @@ def test_sync_gradio_then_freeze_to_static(test_space_id, temp_dir):
     time.sleep(5)
 
     suffix = secrets.token_urlsafe(6)
-    frozen_space_id = f"trackio-test-frozen-{suffix}"
+    frozen_space_id = _namespace_scoped_repo_id(
+        test_space_id, f"trackio-test-frozen-{suffix}"
+    )
     frozen_space_id, _, frozen_bucket_id = utils.preprocess_space_and_dataset_ids(
         frozen_space_id, None
     )
