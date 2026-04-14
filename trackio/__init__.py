@@ -78,9 +78,9 @@ __all__ = [
     "Api",
 ]
 
+Audio = TrackioAudio
 Image = TrackioImage
 Video = TrackioVideo
-Audio = TrackioAudio
 
 
 config = {}
@@ -213,6 +213,15 @@ def init(
         raise LocalTokenNotFoundError(
             f"You must be logged in to Hugging Face locally when `space_id` is provided to deploy to a Space. {e}"
         ) from e
+
+    if space_id is None and bucket_id is not None:
+        warnings.warn(
+            "trackio.init() has `bucket_id` set but `space_id` is None: metrics will be logged "
+            "locally only. Pass `space_id` to create or use a Hugging Face Space, which will be "
+            "attached to the Hugging Face Bucket.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     if space_id is not None:
         deploy.raise_if_space_is_frozen_for_logging(space_id)

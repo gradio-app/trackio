@@ -6,7 +6,6 @@
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
-  import { isDark } from "../lib/theme.js";
 
   let {
     open = $bindable(true),
@@ -31,6 +30,7 @@
     readOnlySource = null,
     projectLocked = false,
     logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
+    darkMode = false,
   } = $props();
 
   let navTick = $state(0);
@@ -105,7 +105,7 @@
       <div class="sidebar-scroll">
       <div class="logo-section">
         <img
-          src={isDark() ? logoUrls.dark : logoUrls.light}
+          src={darkMode ? logoUrls.dark : logoUrls.light}
           alt="Trackio"
           class="logo"
         />

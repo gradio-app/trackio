@@ -1,5 +1,18 @@
 # trackio
 
+## 0.22.0
+
+### Features
+
+- [#484](https://github.com/gradio-app/trackio/pull/484) [`cc05ada`](https://github.com/gradio-app/trackio/commit/cc05ada8e89773f3a894af99b801ef680f64418f) - Fix duplicate columns in parquet export.  Thanks @abidlabs!
+- [#487](https://github.com/gradio-app/trackio/pull/487) [`853f764`](https://github.com/gradio-app/trackio/commit/853f7646a70d12633afaa4f69db86425aa665413) - Relax `PIL` dependency and remove `plotly` as it's no longer used.  Thanks @abidlabs!
+
+## 0.21.2
+
+### Features
+
+- [#482](https://github.com/gradio-app/trackio/pull/482) [`f62180a`](https://github.com/gradio-app/trackio/commit/f62180a0218bc99a259d5ca110a0384a6cae11c8) - Use server-side bucket copy when freezing Spaces.  Thanks @abidlabs!
+
 ## 0.21.1
 
 ### Features
