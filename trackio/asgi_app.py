@@ -17,6 +17,9 @@ from starlette.routing import Route
 from trackio.exceptions import TrackioAPIError
 from trackio.remote_client import HTTP_API_VERSION
 
+_PACKAGE_JSON_PATH = Path(__file__).parent / "package.json"
+_TRACKIO_PACKAGE_VERSION = json.loads(_PACKAGE_JSON_PATH.read_text())["version"]
+
 
 def _normalize_allowed_file_roots(
     allowed_file_roots: list[str | Path] | None,
@@ -121,12 +124,10 @@ def _invoke_handler(
 
 
 async def version_handler(request: Request) -> Response:
-    package_json = Path(__file__).parent / "package.json"
-    version = json.loads(package_json.read_text())["version"]
     mcp_enabled = bool(getattr(request.app.state, "mcp_enabled", False))
     return JSONResponse(
         {
-            "version": version,
+            "version": _TRACKIO_PACKAGE_VERSION,
             "api_version": HTTP_API_VERSION,
             "api_transport": "http",
             "mcp_enabled": mcp_enabled,
@@ -197,7 +198,7 @@ async def file_handler(request: Request) -> Response:
     fs_path = request.query_params.get("path")
     if fs_path is None:
         return Response("Missing path", status_code=400)
-    fp = Path(unquote(fs_path))
+    fp = Path(unquote(fs_path)).resolve(strict=False)
     allowed_roots = getattr(request.app.state, "allowed_file_roots", ())
     if fp.is_file() and _is_allowed_file_path(fp, allowed_roots):
         return FileResponse(str(fp))

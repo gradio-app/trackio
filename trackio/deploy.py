@@ -889,9 +889,7 @@ def sync(
                     space_id, bucket_id=bucket_id, private=private
                 )
                 _wait_for_remote_sync(
-                    RemoteClient(
-                        space_id, verbose=False, httpx_kwargs={"timeout": 90}
-                    ),
+                    RemoteClient(space_id, verbose=False, httpx_kwargs={"timeout": 90}),
                     project,
                     Counter(
                         log["run"]

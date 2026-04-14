@@ -170,6 +170,8 @@ class RemoteClient:
                     httpx_kwargs=httpx_kwargs,
                     verbose=verbose,
                 )
+        except ValueError:
+            raise
         except Exception as e:
             raise ConnectionError(
                 f"Could not connect to Space '{space}'. Is it running?\n{e}"

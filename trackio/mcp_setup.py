@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -23,7 +24,7 @@ def _assert_mcp_mutation_access(
             raise ValueError(str(e)) from e
         return
 
-    if write_token != trackio_server.write_token:
+    if not secrets.compare_digest(write_token or "", trackio_server.write_token or ""):
         raise ValueError(
             "A write_token is required for Trackio MCP mutations. "
             "Use the write token from the dashboard URL."

@@ -328,15 +328,16 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
 
 
 def check_write_access(request: Request, token: str) -> bool:
+    expected_token = token or ""
     cookies = request.headers.get("cookie", "")
     if cookies:
         for cookie in cookies.split(";"):
             parts = cookie.strip().split("=", 1)
             if len(parts) == 2 and parts[0] == "trackio_write_token":
-                return parts[1] == token
+                return secrets.compare_digest(parts[1], expected_token)
     if hasattr(request, "query_params") and request.query_params:
         qp = request.query_params.get("write_token")
-        return qp == token
+        return secrets.compare_digest(qp or "", expected_token)
     return False
 
 
