@@ -1,8 +1,8 @@
 import os
 import time
 
-import pytest
 import huggingface_hub
+import pytest
 from gradio_client import Client
 from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
