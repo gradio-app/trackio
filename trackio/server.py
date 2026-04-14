@@ -768,6 +768,11 @@ def build_starlette_app_only(mcp_server: bool = False) -> tuple[Any, str]:
         extra_routes=mcp_routes,
         mcp_lifespan=mcp_lifespan,
         mcp_enabled=mcp_enabled,
+        allowed_file_roots=[
+            utils.MEDIA_DIR,
+            utils.TRACKIO_DIR,
+            utils.TRACKIO_LOGO_DIR,
+        ],
     )
     from trackio.frontend_server import mount_frontend  # noqa: PLC0415
 

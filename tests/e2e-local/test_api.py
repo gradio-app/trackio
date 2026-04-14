@@ -1,8 +1,10 @@
 import asyncio
 
+import httpx
 import pytest
 
 import trackio
+import trackio.utils as trackio_utils
 from trackio import Api
 from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
@@ -189,6 +191,57 @@ def test_local_dashboard_supports_remote_client(temp_dir):
         assert project in projects
         assert runs == [run_name]
         assert "logo_urls" in settings
+    finally:
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        resp = httpx.post(
+            f"{url.rstrip('/')}/api/get_runs_for_project",
+            json={},
+            timeout=5,
+        )
+
+        assert resp.status_code == 400
+        assert resp.json() == {"error": "Missing required parameter: project"}
+    finally:
+        app.close()
+
+
+def test_local_dashboard_file_endpoint_only_serves_trackio_paths(
+    temp_dir, image_ndarray
+):
+    project = "test_local_file_endpoint"
+    run_name = "file-run"
+
+    trackio.init(project=project, name=run_name)
+    trackio.log(metrics={"image": trackio.Image(image_ndarray, caption="allowed")})
+    trackio.finish()
+
+    logs = SQLiteStorage.get_logs(project=project, run=run_name)
+    rel_path = logs[0]["image"]["file_path"]
+    allowed_path = trackio_utils.MEDIA_DIR / rel_path
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        allowed_resp = httpx.get(
+            f"{url.rstrip('/')}/file",
+            params={"path": str(allowed_path)},
+            timeout=5,
+        )
+        blocked_resp = httpx.get(
+            f"{url.rstrip('/')}/file",
+            params={"path": "/etc/hosts"},
+            timeout=5,
+        )
+
+        assert allowed_resp.status_code == 200
+        assert blocked_resp.status_code == 404
     finally:
         trackio.delete_project(project, force=True)
         app.close()

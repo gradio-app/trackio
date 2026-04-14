@@ -208,7 +208,7 @@ def deploy_as_space(
 
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
-        readme_content = readme_content.replace("{GRADIO_VERSION}", trackio.__version__)
+        readme_content = readme_content.replace("sdk_version: {GRADIO_VERSION}\n", "")
         readme_content = readme_content.replace("{APP_FILE}", "app.py")
         readme_content = readme_content.replace(
             "{LINKED_HUB_METADATA}", _readme_linked_hub_yaml(dataset_id)

@@ -68,10 +68,10 @@ def start_server(
     server = None
     for port in server_ports:
         try:
-            s = socket.socket()
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind((LOCALHOST_NAME, port))
-            s.close()
+            socket_family = socket.AF_INET6 if ":" in host else socket.AF_INET
+            with socket.socket(socket_family, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind((host, port))
             config = Config(
                 app=app,
                 port=port,

@@ -17,6 +17,26 @@ from trackio.exceptions import TrackioAPIError
 from trackio.remote_client import HTTP_API_VERSION
 
 
+def _normalize_allowed_file_roots(
+    allowed_file_roots: list[str | Path] | None,
+) -> tuple[Path, ...]:
+    roots = []
+    for root in allowed_file_roots or []:
+        roots.append(Path(root).resolve())
+    return tuple(roots)
+
+
+def _is_allowed_file_path(path: Path, allowed_roots: tuple[Path, ...]) -> bool:
+    resolved_path = path.resolve(strict=False)
+    for root in allowed_roots:
+        try:
+            resolved_path.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def _json_safe(data: Any) -> Any:
     if data is None or isinstance(data, (str, bool, int)):
         return data
@@ -51,13 +71,25 @@ def _invoke_handler(
     for param in params:
         if param.name == "request":
             keyword_args["request"] = request
+        elif param.kind == inspect.Parameter.VAR_POSITIONAL:
+            positional_args.extend(args[data_index:])
+            data_index = len(args)
+        elif param.kind == inspect.Parameter.VAR_KEYWORD:
+            keyword_args.update(kwargs)
+            kwargs.clear()
         elif param.name in kwargs:
             keyword_args[param.name] = kwargs.pop(param.name)
-        elif data_index < len(args):
+        elif param.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ) and data_index < len(args):
             positional_args.append(args[data_index])
             data_index += 1
-        elif param.default is inspect.Signature.empty:
-            positional_args.append(None)
+        elif param.default is inspect.Signature.empty and param.kind not in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            raise TrackioAPIError(f"Missing required parameter: {param.name}")
 
     return fn(*positional_args, **keyword_args)
 
@@ -139,7 +171,8 @@ async def file_handler(request: Request) -> Response:
     if fs_path is None:
         return Response("Missing path", status_code=400)
     fp = Path(unquote(fs_path))
-    if fp.is_file():
+    allowed_roots = getattr(request.app.state, "allowed_file_roots", ())
+    if fp.is_file() and _is_allowed_file_path(fp, allowed_roots):
         return FileResponse(str(fp))
     return Response("Not found", status_code=404)
 
@@ -150,6 +183,7 @@ def create_trackio_starlette_app(
     extra_routes: list[Any] | None = None,
     mcp_lifespan: Any = None,
     mcp_enabled: bool = False,
+    allowed_file_roots: list[str | Path] | None = None,
 ) -> Starlette:
     routes: list[Any] = list(oauth_routes)
     routes.extend(
@@ -164,4 +198,5 @@ def create_trackio_starlette_app(
     app = Starlette(routes=routes, lifespan=mcp_lifespan)
     app.state.api_registry = api_registry
     app.state.mcp_enabled = mcp_enabled
+    app.state.allowed_file_roots = _normalize_allowed_file_roots(allowed_file_roots)
     return app
