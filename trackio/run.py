@@ -117,6 +117,18 @@ class Run:
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
         self.config["_Group"] = self.group
+        try:
+            self._run_id = SQLiteStorage.ensure_run(self.project, self.name)
+        except Exception as e:
+            self._warn_once(
+                "ensure-run-id",
+                f"trackio.init() could not allocate stable run metadata for '{self.name}': {e}. Falling back to the run name as the internal id.",
+            )
+            self._run_id = self.name
+        self._run_storage_key = (
+            SQLiteStorage.get_run_storage_key(self.project, self.name)
+            or self._run_id
+        )
 
         self._queued_logs: list[LogEntry] = []
         self._queued_system_logs: list[SystemLogEntry] = []
@@ -713,9 +725,19 @@ class Run:
             shutil.copy(str(src), str(media_path))
 
     def _process_media(self, value: TrackioMedia, step: int | None) -> dict:
-        value._save(self.project, self.name, step if step is not None else 0)
+        value._save(
+            self.project,
+            self.name,
+            step if step is not None else 0,
+            run_storage_key=self._run_storage_key,
+        )
         if self._space_id:
-            self._queue_upload(value._get_absolute_file_path(), step)
+            rel_path = value._get_relative_file_path()
+            self._queue_upload(
+                value._get_absolute_file_path(),
+                step,
+                relative_path=str(rel_path) if rel_path is not None else None,
+            )
         return value._to_dict()
 
     def _scan_and_queue_media_uploads(self, table_dict: dict, step: int | None):
@@ -733,7 +755,9 @@ class Run:
                     file_path = value.get("file_path")
                     if file_path:
                         absolute_path = MEDIA_DIR / file_path
-                        self._queue_upload(absolute_path, step)
+                        self._queue_upload(
+                            absolute_path, step, relative_path=str(file_path)
+                        )
                 elif isinstance(value, list):
                     for item in value:
                         if isinstance(item, dict) and item.get("_type") in [
@@ -744,7 +768,11 @@ class Run:
                             file_path = item.get("file_path")
                             if file_path:
                                 absolute_path = MEDIA_DIR / file_path
-                                self._queue_upload(absolute_path, step)
+                                self._queue_upload(
+                                    absolute_path,
+                                    step,
+                                    relative_path=str(file_path),
+                                )
 
     def _ensure_sender_alive(self):
         if self._is_local:
@@ -792,7 +820,10 @@ class Run:
             for key, value in metrics.items():
                 if isinstance(value, Table):
                     metrics[key] = value._to_dict(
-                        project=self.project, run=self.name, step=step
+                        project=self.project,
+                        run=self.name,
+                        step=step,
+                        run_storage_key=self._run_storage_key,
                     )
                     self._scan_and_queue_media_uploads(metrics[key], step)
                 elif isinstance(value, Histogram):

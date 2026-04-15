@@ -72,7 +72,13 @@ class Table:
                 return True
         return False
 
-    def _process_data(self, project: str, run: str, step: int = 0):
+    def _process_data(
+        self,
+        project: str,
+        run: str,
+        step: int = 0,
+        run_storage_key: str | None = None,
+    ):
         """Convert dataframe to dict format, processing any TrackioMedia objects if present."""
         df = self.data
         if not self._has_media_objects(df):
@@ -83,14 +89,24 @@ class Table:
             for idx in processed_df.index:
                 value = processed_df.at[idx, col]
                 if isinstance(value, TrackioMedia):
-                    value._save(project, run, step)
+                    value._save(
+                        project, run, step, run_storage_key=run_storage_key
+                    )
                     processed_df.at[idx, col] = value._to_dict()
                 if (
                     isinstance(value, list)
                     and len(value) > 0
                     and isinstance(value[0], TrackioMedia)
                 ):
-                    [v._save(project, run, step) for v in value]
+                    [
+                        v._save(
+                            project,
+                            run,
+                            step,
+                            run_storage_key=run_storage_key,
+                        )
+                        for v in value
+                    ]
                     processed_df.at[idx, col] = [v._to_dict() for v in value]
 
         return processed_df.to_dict(orient="records")
@@ -154,7 +170,13 @@ class Table:
             processed_data.append(processed_row)
         return processed_data
 
-    def _to_dict(self, project: str, run: str, step: int = 0):
+    def _to_dict(
+        self,
+        project: str,
+        run: str,
+        step: int = 0,
+        run_storage_key: str | None = None,
+    ):
         """
         Converts the table to a dictionary representation.
 
@@ -166,7 +188,9 @@ class Table:
             step (`int`, *optional*, defaults to `0`):
                 Step number for saving media files.
         """
-        data = self._process_data(project, run, step)
+        data = self._process_data(
+            project, run, step, run_storage_key=run_storage_key
+        )
         return {
             "_type": self.TYPE,
             "_value": data,

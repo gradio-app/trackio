@@ -10,9 +10,9 @@ from pathlib import Path
 import orjson
 import pytest
 
-import trackio.sqlite_storage
+import trackio.sqlite_backend
 import trackio.utils
-from trackio.sqlite_storage import SQLiteStorage
+from trackio.sqlite_backend import SQLiteStorage
 
 
 def test_init_creates_metrics_table(temp_dir):
@@ -107,10 +107,12 @@ def _worker_using_sqlite_storage(
         from pathlib import Path
 
         import trackio.sqlite_storage
+        import trackio.sqlite_backend
         import trackio.utils
 
         trackio.utils.TRACKIO_DIR = Path(temp_dir)
         trackio.sqlite_storage.TRACKIO_DIR = Path(temp_dir)
+        trackio.sqlite_backend.TRACKIO_DIR = Path(temp_dir)
 
     if sync_start_time:
         while time.time() < sync_start_time:
@@ -153,6 +155,7 @@ def test_concurrent_database_access_without_errors():
         os.environ["TRACKIO_DIR"] = str(temp_dir)
         trackio.utils.TRACKIO_DIR = Path(temp_dir)
         trackio.sqlite_storage.TRACKIO_DIR = Path(temp_dir)
+        trackio.sqlite_backend.TRACKIO_DIR = Path(temp_dir)
 
         project = "concurrent_test"
 

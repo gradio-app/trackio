@@ -464,12 +464,24 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
             print(f"* Warning: Could not check if project exists on Space: {e}")
             print("* Proceeding with upload...")
 
-    client.predict(
-        api_name="/upload_db_to_space",
-        project=project,
-        uploaded_db=handle_file(db_path),
-        hf_token=huggingface_hub.utils.get_token(),
-    )
+    upload_path = db_path
+    archive_base = None
+    if db_path.is_dir():
+        archive_base = str(db_path.parent / f"{db_path.name}-upload")
+        upload_path = Path(shutil.make_archive(archive_base, "zip", db_path))
+
+    try:
+        client.predict(
+            api_name="/upload_db_to_space",
+            project=project,
+            uploaded_db=handle_file(upload_path),
+            hf_token=huggingface_hub.utils.get_token(),
+        )
+    finally:
+        if archive_base is not None:
+            archive_path = Path(f"{archive_base}.zip")
+            if archive_path.exists():
+                archive_path.unlink()
 
 
 SYNC_BATCH_SIZE = 500

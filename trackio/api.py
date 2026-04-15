@@ -11,7 +11,7 @@ class Run:
 
     @property
     def id(self) -> str:
-        return self.name
+        return SQLiteStorage.get_run_id(self.project, self.name) or self.name
 
     @property
     def config(self) -> dict | None:

@@ -51,11 +51,22 @@ class TrackioMedia(ABC):
             return MEDIA_DIR / self._file_path
         return None
 
-    def _save(self, project: str, run: str, step: int = 0):
+    def _save(
+        self,
+        project: str,
+        run: str,
+        step: int = 0,
+        run_storage_key: str | None = None,
+    ):
         if self._file_path:
             return
 
-        media_dir = get_project_media_path(project=project, run=run, step=step)
+        media_dir = get_project_media_path(
+            project=project,
+            run=run,
+            step=step,
+            run_storage_key=run_storage_key,
+        )
         filename = f"{uuid.uuid4()}.{self._file_extension()}"
         file_path = media_dir / filename
 

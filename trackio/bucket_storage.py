@@ -35,13 +35,21 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
     db_path = SQLiteStorage.get_project_db_path(project)
     if not db_path.exists():
         raise FileNotFoundError(f"No database found for project '{project}'")
-
-    with SQLiteStorage._get_connection(
-        db_path, configure_pragmas=False, row_factory=None
-    ) as conn:
-        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-
-    files_to_add = [(str(db_path), f"trackio/{db_path.name}")]
+    files_to_add = []
+    if db_path.is_dir():
+        for file_path in db_path.rglob("*"):
+            if file_path.is_file():
+                rel = file_path.relative_to(db_path)
+                files_to_add.append(
+                    (str(file_path), f"trackio/{db_path.name}/{rel.as_posix()}")
+                )
+    else:
+        with SQLiteStorage._get_connection(
+            db_path, configure_pragmas=False, row_factory=None
+        ) as conn:
+            if conn is not None:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        files_to_add.append((str(db_path), f"trackio/{db_path.name}"))
 
     media_dir = MEDIA_DIR / project
     if media_dir.exists():
@@ -57,15 +65,33 @@ def _download_db_from_bucket(
     project: str, bucket_id: str, dest_path: Path | None = None
 ) -> bool:
     db_filename = SQLiteStorage.get_project_db_filename(project)
-    remote_path = f"trackio/{db_filename}"
     local_path = dest_path or SQLiteStorage.get_project_db_path(project)
     local_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        huggingface_hub.download_bucket_files(
-            bucket_id,
-            files=[(remote_path, str(local_path))],
-            token=huggingface_hub.utils.get_token(),
-        )
+        if db_filename.endswith(".trackio"):
+            prefix = f"trackio/{db_filename}/"
+            remote_files = _list_bucket_file_paths(bucket_id, prefix=prefix)
+            if not remote_files:
+                return False
+            local_path.mkdir(parents=True, exist_ok=True)
+            huggingface_hub.download_bucket_files(
+                bucket_id,
+                files=[
+                    (
+                        remote_file,
+                        str(local_path / Path(remote_file.removeprefix(prefix))),
+                    )
+                    for remote_file in remote_files
+                ],
+                token=huggingface_hub.utils.get_token(),
+            )
+        else:
+            remote_path = f"trackio/{db_filename}"
+            huggingface_hub.download_bucket_files(
+                bucket_id,
+                files=[(remote_path, str(local_path))],
+                token=huggingface_hub.utils.get_token(),
+            )
         return local_path.exists()
     except Exception:
         return False
@@ -73,14 +99,10 @@ def _download_db_from_bucket(
 
 def _local_db_has_data(project: str) -> bool:
     db_path = SQLiteStorage.get_project_db_path(project)
-    if not db_path.exists() or db_path.stat().st_size == 0:
+    if not db_path.exists():
         return False
     try:
-        with SQLiteStorage._get_connection(
-            db_path, configure_pragmas=False, row_factory=None
-        ) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
-            return count > 0
+        return len(SQLiteStorage.get_runs(project)) > 0
     except Exception:
         return False
 

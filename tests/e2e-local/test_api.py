@@ -57,17 +57,20 @@ def test_move_run(temp_dir, image_ndarray):
     image1_path = source_logs[0]["img1"].get("file_path")
     assert image1_path is not None
     normalized_path = str(image1_path).replace("\\", "/")
-    assert normalized_path.startswith(f"{source_project}/{run_name}/")
+    source_run_id = SQLiteStorage.get_run_id(source_project, run_name)
+    assert normalized_path.startswith(f"{source_project}/{source_run_id}/")
 
     api = Api()
     runs = api.runs(source_project)
     run = runs[0]
     assert run.name == run_name
     assert run.project == source_project
+    assert run.id == source_run_id
 
     success = run.move(target_project)
     assert success is True
     assert run.project == target_project
+    target_run_id = run.id
 
     target_logs = SQLiteStorage.get_logs(project=target_project, run=run_name)
     assert len(target_logs) == 2
@@ -77,12 +80,13 @@ def test_move_run(temp_dir, image_ndarray):
     target_image1_path = target_logs[0]["img1"].get("file_path")
     assert target_image1_path is not None
     normalized_path1 = str(target_image1_path).replace("\\", "/")
-    assert normalized_path1.startswith(f"{target_project}/{run_name}/")
+    assert normalized_path1.startswith(f"{target_project}/{target_run_id}/")
 
     target_image2_path = target_logs[1]["img2"].get("file_path")
     assert target_image2_path is not None
     normalized_path2 = str(target_image2_path).replace("\\", "/")
-    assert normalized_path2.startswith(f"{target_project}/{run_name}/")
+    assert normalized_path2.startswith(f"{target_project}/{target_run_id}/")
+    assert target_run_id != source_run_id
 
     source_logs_after = SQLiteStorage.get_logs(project=source_project, run=run_name)
     assert len(source_logs_after) == 0
@@ -125,16 +129,20 @@ def test_rename_run(temp_dir, image_ndarray):
     image1_path = old_logs[0]["img1"].get("file_path")
     assert image1_path is not None
     normalized_path = str(image1_path).replace("\\", "/")
-    assert normalized_path.startswith(f"{project}/{old_name}/")
+    old_run_id = SQLiteStorage.get_run_id(project, old_name)
+    assert normalized_path.startswith(f"{project}/{old_run_id}/")
 
     api = Api()
     runs = api.runs(project)
     run = runs[0]
     assert run.name == old_name
+    assert run.id == old_run_id
+    run_id = run.id
 
     result = run.rename(new_name)
     assert result is run
     assert run.name == new_name
+    assert run.id == run_id
 
     new_logs = SQLiteStorage.get_logs(project=project, run=new_name)
     assert len(new_logs) == 2
@@ -144,12 +152,12 @@ def test_rename_run(temp_dir, image_ndarray):
     new_image1_path = new_logs[0]["img1"].get("file_path")
     assert new_image1_path is not None
     normalized_new_path1 = str(new_image1_path).replace("\\", "/")
-    assert normalized_new_path1.startswith(f"{project}/{new_name}/")
+    assert normalized_new_path1.startswith(f"{project}/{run_id}/")
 
     new_image2_path = new_logs[1]["img2"].get("file_path")
     assert new_image2_path is not None
     normalized_new_path2 = str(new_image2_path).replace("\\", "/")
-    assert normalized_new_path2.startswith(f"{project}/{new_name}/")
+    assert normalized_new_path2.startswith(f"{project}/{run_id}/")
 
     old_logs_after = SQLiteStorage.get_logs(project=project, run=old_name)
     assert len(old_logs_after) == 0

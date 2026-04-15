@@ -30,6 +30,7 @@ def get_project_media_path(
     run: str | None = None,
     step: int | None = None,
     relative_path: str | Path | None = None,
+    run_storage_key: str | None = None,
 ) -> Path:
     """
     Get the full path where uploaded files are stored for a Trackio project (and create the directory if it doesn't exist).
@@ -44,12 +45,13 @@ def get_project_media_path(
     Returns:
         The full path to the media file
     """
-    if step is not None and run is None:
+    if step is not None and run is None and run_storage_key is None:
         raise ValueError("Uploading files at a specific step requires a run")
 
     path = MEDIA_DIR / project
-    if run:
-        path /= run
+    storage_key = run_storage_key or run
+    if storage_key:
+        path /= storage_key
         if step is not None:
             path /= str(step)
     else:

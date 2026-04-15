@@ -11,6 +11,7 @@ import threading
 import time
 from collections import deque
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
@@ -387,19 +388,37 @@ def upload_db_to_space(
 ) -> None:
     check_hf_token_has_write_access(hf_token)
     db_project_path = SQLiteStorage.get_project_db_path(project)
-    os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
+    db_project_path.parent.mkdir(parents=True, exist_ok=True)
+    uploaded_path = Path(uploaded_db["path"])
+    if uploaded_path.suffix == ".zip":
+        if db_project_path.exists():
+            if db_project_path.is_dir():
+                shutil.rmtree(db_project_path)
+            else:
+                db_project_path.unlink()
+        shutil.unpack_archive(str(uploaded_path), str(db_project_path))
+        return
     shutil.copy(uploaded_db["path"], db_project_path)
 
 
 def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
     check_hf_token_has_write_access(hf_token)
     for upload in uploads:
-        media_path = get_project_media_path(
-            project=upload["project"],
-            run=upload["run"],
-            step=upload["step"],
-            relative_path=upload["relative_path"],
-        )
+        relative_path = upload.get("relative_path")
+        if (
+            relative_path
+            and isinstance(relative_path, str)
+            and relative_path.startswith(f'{upload["project"]}/')
+        ):
+            media_path = utils.MEDIA_DIR / relative_path
+            media_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            media_path = get_project_media_path(
+                project=upload["project"],
+                run=upload["run"],
+                step=upload["step"],
+                relative_path=relative_path,
+            )
         shutil.copy(upload["uploaded_file"]["path"], media_path)
 
 

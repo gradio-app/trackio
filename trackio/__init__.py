@@ -157,8 +157,8 @@ def init(
             The ID of the Hugging Face Bucket to use for metric persistence. By default,
             when a `space_id` is provided and `bucket_id` is not explicitly set, a
             bucket is auto-generated from the space_id. Buckets provide
-            S3-like storage without git overhead - the SQLite database is stored directly
-            via `hf-mount` in the Space. Specify a Bucket with name like
+            S3-like storage without git overhead. Trackio stores project data in a
+            bucket-friendly Parquet-backed layout by default. Specify a Bucket with name like
             `"username/bucketname"` or just `"bucketname"`.
         config (`dict`, *optional*):
             A dictionary of configuration options. Provided for compatibility with
@@ -499,7 +499,7 @@ def alert(
 
 def delete_project(project: str, force: bool = False) -> bool:
     """
-    Deletes a project by removing its local SQLite database.
+    Deletes a project by removing its local Trackio storage.
 
     Args:
         project (`str`):
@@ -527,12 +527,19 @@ def delete_project(project: str, force: bool = False) -> bool:
             return False
 
     try:
-        db_path.unlink()
+        if db_path.is_dir():
+            shutil.rmtree(db_path)
+        else:
+            db_path.unlink()
 
-        for suffix in ("-wal", "-shm"):
-            sidecar = Path(str(db_path) + suffix)
-            if sidecar.exists():
-                sidecar.unlink()
+            for suffix in ("-wal", "-shm"):
+                sidecar = Path(str(db_path) + suffix)
+                if sidecar.exists():
+                    sidecar.unlink()
+
+        media_path = utils.MEDIA_DIR / project
+        if media_path.exists():
+            shutil.rmtree(media_path, ignore_errors=True)
 
         print(f"* Project '{project}' has been deleted.")
         return True
