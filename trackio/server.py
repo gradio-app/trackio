@@ -690,6 +690,7 @@ def get_settings() -> dict:
             os.environ.get("TRACKIO_TABLE_TRUNCATE_LENGTH", "250")
         ),
         "media_dir": str(utils.MEDIA_DIR),
+        "space_id": os.getenv("SPACE_ID"),
     }
 
 

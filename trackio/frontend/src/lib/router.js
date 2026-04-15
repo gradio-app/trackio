@@ -18,6 +18,8 @@ export function getPageFromPath() {
       return "run-detail";
     case "files":
       return "files";
+    case "settings":
+      return "settings";
     default:
       return "metrics";
   }
@@ -33,6 +35,7 @@ export function navigateTo(page) {
     runs: "/runs",
     "run-detail": "/run",
     files: "/files",
+    settings: "/settings",
   };
   const path = pathMap[page] || "/";
   const search = params.toString();

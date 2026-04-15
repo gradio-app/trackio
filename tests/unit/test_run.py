@@ -1,9 +1,10 @@
+import sqlite3
 import time
 from unittest.mock import MagicMock
 
 import pytest
 
-from trackio import Markdown, Run, init
+from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -158,3 +159,61 @@ def test_run_group_added(temp_dir):
         config={"learning_rate": 0.01},
     )
     assert run.config["_Group"] == "test_group"
+
+
+def test_log_does_not_crash_on_bad_metrics(temp_dir, monkeypatch):
+    run = Run(url=None, project="proj", client=None, name="safe-run", space_id=None)
+
+    original = utils.serialize_values
+
+    def exploding_serialize(metrics):
+        if "bad" in metrics:
+            raise RuntimeError("serialize boom")
+        return original(metrics)
+
+    monkeypatch.setattr(utils, "serialize_values", exploding_serialize)
+
+    with pytest.warns(UserWarning, match="trackio.log\\(\\) failed to process metrics"):
+        run.log({"bad": 1})
+
+    run.log({"loss": 0.5})
+    run.finish()
+
+    logs = SQLiteStorage.get_logs("proj", "safe-run")
+    assert len(logs) == 1
+    assert logs[0]["loss"] == 0.5
+
+
+def test_init_survives_storage_read_failures(temp_dir, monkeypatch):
+    def raise_db_error(*args, **kwargs):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(SQLiteStorage, "get_runs", raise_db_error)
+    monkeypatch.setattr(SQLiteStorage, "get_max_step_for_run", raise_db_error)
+
+    with pytest.warns(UserWarning) as record:
+        run = init(project="broken-project", name="safe-run")
+
+    messages = [str(item.message) for item in record]
+    assert any("could not inspect existing runs" in message for message in messages)
+    assert any("could not recover the previous step" in message for message in messages)
+    assert isinstance(run, Run)
+    assert run.name == "safe-run"
+    assert run._next_step == 0
+
+    run.log({"loss": 0.5})
+    run.finish()
+
+
+def test_local_flush_failure_does_not_crash(temp_dir, monkeypatch):
+    run = Run(url=None, project="proj", client=None, name="safe-run", space_id=None)
+
+    def raise_db_error(*args, **kwargs):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(SQLiteStorage, "bulk_log", raise_db_error)
+
+    run.log({"loss": 0.5})
+
+    with pytest.warns(UserWarning, match="trackio failed to flush metric logs"):
+        run.finish()
