@@ -40,6 +40,13 @@ _JOURNAL_MODE_WHITELIST = frozenset(
 )
 
 
+def _use_exclusive_locking() -> bool:
+    return (
+        bool(os.environ.get("TRACKIO_BUCKET_ID"))
+        and os.environ.get("SYSTEM") == "spaces"
+    )
+
+
 def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     override = os.environ.get("TRACKIO_SQLITE_JOURNAL_MODE", "").strip().lower()
     if override in _JOURNAL_MODE_WHITELIST:
@@ -52,16 +59,59 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA temp_store = MEMORY")
     conn.execute("PRAGMA cache_size = -20000")
+    if _use_exclusive_locking():
+        conn.execute("PRAGMA locking_mode = EXCLUSIVE")
+
+
+_persistent_connections: dict[str, sqlite3.Connection] = {}
+_persistent_lock = Lock()
+
+
+def _get_or_create_persistent_conn(
+    db_path: Path, timeout: float = 30.0
+) -> sqlite3.Connection:
+    key = str(db_path)
+    with _persistent_lock:
+        conn = _persistent_connections.get(key)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                _persistent_connections.pop(key, None)
+        conn = sqlite3.connect(str(db_path), timeout=timeout)
+        _configure_sqlite_pragmas(conn)
+        conn.execute("SELECT 1")
+        _persistent_connections[key] = conn
+        return conn
 
 
 class ProcessLock:
-    """A file-based lock that works across processes using fcntl (Unix) or msvcrt (Windows)."""
+    """Cross-process/thread lock. Uses file-based locking normally, or an in-memory
+    threading Lock when on a bucket-mounted filesystem where file locks are unreliable."""
+
+    _thread_locks: dict[str, Lock] = {}
+    _meta_lock = Lock()
 
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
         self.lockfile = None
+        self._use_thread_lock = _use_exclusive_locking()
+        if self._use_thread_lock:
+            key = str(lockfile_path)
+            with ProcessLock._meta_lock:
+                if key not in ProcessLock._thread_locks:
+                    ProcessLock._thread_locks[key] = Lock()
+                self._thread_lock = ProcessLock._thread_locks[key]
 
     def __enter__(self):
+        if self._use_thread_lock:
+            self._thread_lock.acquire()
+            return self
         if fcntl is None and _msvcrt is None:
             return self
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +132,9 @@ class ProcessLock:
                     raise IOError("Could not acquire database lock after 10 seconds")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._use_thread_lock:
+            self._thread_lock.release()
+            return
         if self.lockfile:
             try:
                 if fcntl is not None:
@@ -107,16 +160,23 @@ class SQLiteStorage:
         configure_pragmas: bool = True,
         row_factory=sqlite3.Row,
     ) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(str(db_path), timeout=timeout)
-        try:
-            if configure_pragmas:
-                _configure_sqlite_pragmas(conn)
+        if _use_exclusive_locking() and configure_pragmas:
+            conn = _get_or_create_persistent_conn(db_path, timeout=timeout)
             if row_factory is not None:
                 conn.row_factory = row_factory
             with conn:
                 yield conn
-        finally:
-            conn.close()
+        else:
+            conn = sqlite3.connect(str(db_path), timeout=timeout)
+            try:
+                if configure_pragmas:
+                    _configure_sqlite_pragmas(conn)
+                if row_factory is not None:
+                    conn.row_factory = row_factory
+                with conn:
+                    yield conn
+            finally:
+                conn.close()
 
     @staticmethod
     def _get_process_lock(project: str) -> ProcessLock:
