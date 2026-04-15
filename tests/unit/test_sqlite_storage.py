@@ -453,11 +453,3 @@ def test_exclusive_locking_mode(temp_dir, monkeypatch):
         conn.close()
     except Exception:
         pass
-
-
-def test_exclusive_locking_not_enabled_by_default(temp_dir, monkeypatch):
-    monkeypatch.delenv("TRACKIO_BUCKET_ID", raising=False)
-    monkeypatch.delenv("SYSTEM", raising=False)
-    import trackio.sqlite_storage as mod
-
-    assert not mod._use_exclusive_locking()

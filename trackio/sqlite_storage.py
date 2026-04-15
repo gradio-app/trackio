@@ -65,6 +65,15 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
 
 _persistent_connections: dict[str, sqlite3.Connection] = {}
 _persistent_lock = Lock()
+_db_access_locks: dict[str, Lock] = {}
+
+
+def _get_db_access_lock(db_path: Path) -> Lock:
+    key = str(db_path)
+    with _persistent_lock:
+        if key not in _db_access_locks:
+            _db_access_locks[key] = Lock()
+        return _db_access_locks[key]
 
 
 def _get_or_create_persistent_conn(
@@ -83,7 +92,7 @@ def _get_or_create_persistent_conn(
                 except Exception:
                     pass
                 _persistent_connections.pop(key, None)
-        conn = sqlite3.connect(str(db_path), timeout=timeout)
+        conn = sqlite3.connect(str(db_path), timeout=timeout, check_same_thread=False)
         _configure_sqlite_pragmas(conn)
         conn.execute("SELECT 1")
         _persistent_connections[key] = conn
@@ -160,12 +169,16 @@ class SQLiteStorage:
         configure_pragmas: bool = True,
         row_factory=sqlite3.Row,
     ) -> Iterator[sqlite3.Connection]:
-        if _use_exclusive_locking() and configure_pragmas:
-            conn = _get_or_create_persistent_conn(db_path, timeout=timeout)
-            if row_factory is not None:
+        if _use_exclusive_locking():
+            access_lock = _get_db_access_lock(db_path)
+            access_lock.acquire()
+            try:
+                conn = _get_or_create_persistent_conn(db_path, timeout=timeout)
                 conn.row_factory = row_factory
-            with conn:
-                yield conn
+                with conn:
+                    yield conn
+            finally:
+                access_lock.release()
         else:
             conn = sqlite3.connect(str(db_path), timeout=timeout)
             try:
