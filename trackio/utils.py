@@ -23,6 +23,13 @@ RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
 
+def _emit_nonfatal_warning(message: str, *args, **kwargs) -> None:
+    try:
+        warnings.warn(message, *args, **kwargs)
+    except Exception:
+        print(f"* Trackio warning: {message}")
+
+
 def get_logo_urls() -> dict[str, str]:
     """Get logo URLs from environment variables or use defaults."""
     light_url = os.environ.get(

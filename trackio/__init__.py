@@ -39,7 +39,7 @@ from trackio.server import make_trackio_server
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import UploadEntry
-from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR
+from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -87,13 +87,6 @@ config = {}
 
 _atexit_registered = False
 _projects_notified_auto_log_hw: set[str] = set()
-
-
-def _emit_nonfatal_warning(message: str, *args, **kwargs) -> None:
-    try:
-        warnings.warn(message, *args, **kwargs)
-    except Exception:
-        print(f"* Trackio warning: {message}")
 
 
 def _cleanup_current_run():

@@ -2,7 +2,6 @@ import os
 import shutil
 import threading
 import uuid
-import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,17 +24,10 @@ from trackio.media import TrackioMedia, get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
-from trackio.utils import MEDIA_DIR, _get_default_namespace
+from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
-
-
-def _emit_nonfatal_warning(message: str, *args, **kwargs) -> None:
-    try:
-        warnings.warn(message, *args, **kwargs)
-    except Exception:
-        print(f"* Trackio warning: {message}")
 
 
 class Run:
