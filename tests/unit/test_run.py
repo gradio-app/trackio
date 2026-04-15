@@ -1,4 +1,6 @@
+import sqlite3
 import time
+import warnings
 from unittest.mock import MagicMock
 
 import pytest
@@ -183,3 +185,79 @@ def test_log_does_not_crash_on_bad_metrics(temp_dir, monkeypatch):
     logs = SQLiteStorage.get_logs("proj", "safe-run")
     assert len(logs) == 1
     assert logs[0]["loss"] == 0.5
+
+
+def test_init_survives_storage_read_failures(temp_dir, monkeypatch):
+    def raise_db_error(*args, **kwargs):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(SQLiteStorage, "get_runs", raise_db_error)
+    monkeypatch.setattr(SQLiteStorage, "get_max_step_for_run", raise_db_error)
+
+    with pytest.warns(UserWarning) as record:
+        run = init(project="broken-project", name="safe-run")
+
+    messages = [str(item.message) for item in record]
+    assert any("could not inspect existing runs" in message for message in messages)
+    assert any("could not recover the previous step" in message for message in messages)
+    assert isinstance(run, Run)
+    assert run.name == "safe-run"
+    assert run._next_step == 0
+
+    run.log({"loss": 0.5})
+    run.finish()
+
+
+def test_local_flush_failure_does_not_crash(temp_dir, monkeypatch):
+    run = Run(url=None, project="proj", client=None, name="safe-run", space_id=None)
+
+    def raise_db_error(*args, **kwargs):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(SQLiteStorage, "bulk_log", raise_db_error)
+
+    run.log({"loss": 0.5})
+
+    with pytest.warns(UserWarning, match="trackio failed to flush metric logs"):
+        run.finish()
+
+
+def test_finish_does_not_crash_when_pending_data_check_fails(temp_dir, monkeypatch):
+    run = Run(
+        url="fake_url",
+        project="proj",
+        client=DummyClient(),
+        name="space-run",
+        space_id="user/space",
+    )
+
+    def raise_db_error(*args, **kwargs):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(SQLiteStorage, "has_pending_data", raise_db_error)
+
+    with pytest.warns(
+        UserWarning, match="trackio.finish\\(\\) could not inspect pending buffered logs"
+    ):
+        run.finish()
+
+
+def test_nonfatal_warnings_do_not_raise_when_warning_filter_is_error(
+    temp_dir, monkeypatch
+):
+    def raise_db_error(*args, **kwargs):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(SQLiteStorage, "get_runs", raise_db_error)
+    monkeypatch.setattr(SQLiteStorage, "get_max_step_for_run", raise_db_error)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        run = init(project="broken-project", name="safe-run")
+
+    monkeypatch.setattr(SQLiteStorage, "bulk_log", raise_db_error)
+    run.log({"loss": 0.5})
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        run.finish()
