@@ -25,7 +25,7 @@ from trackio.media import TrackioMedia, get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
-from trackio.utils import _get_default_namespace
+from trackio.utils import MEDIA_DIR, _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
@@ -88,6 +88,7 @@ class Run:
         self._client_lock = threading.Lock()
         self._warning_lock = threading.Lock()
         self._warned_failures: set[str] = set()
+        self._local_sender_thread: threading.Thread | None = None
         self._client_thread = None
         self._client = client
         self._space_id = space_id
@@ -211,17 +212,61 @@ class Run:
         *,
         warning_key: str,
         description: str,
-    ) -> None:
+    ) -> bool:
         try:
             thread = threading.Thread(target=target, daemon=True)
             setattr(self, attr_name, thread)
             thread.start()
+            return True
         except Exception as e:
             setattr(self, attr_name, None)
             self._warn_once(
                 warning_key,
                 f"trackio failed to start the {description}: {e}. Logging will continue in degraded mode.",
             )
+            return False
+
+    def _thread_is_alive(self, attr_name: str) -> bool:
+        thread = getattr(self, attr_name, None)
+        return isinstance(thread, threading.Thread) and thread.is_alive()
+
+    def _flush_queues_inline(self) -> None:
+        if self._is_local:
+            if self._queued_logs:
+                logs_to_send = self._queued_logs.copy()
+                self._queued_logs.clear()
+                self._write_logs_to_sqlite(logs_to_send)
+
+            if self._queued_system_logs:
+                system_logs_to_send = self._queued_system_logs.copy()
+                self._queued_system_logs.clear()
+                self._write_system_logs_to_sqlite(system_logs_to_send)
+
+            if self._queued_alerts:
+                alerts_to_send = self._queued_alerts.copy()
+                self._queued_alerts.clear()
+                self._write_alerts_to_sqlite(alerts_to_send)
+            return
+
+        if self._queued_logs:
+            logs_to_send = self._queued_logs.copy()
+            self._queued_logs.clear()
+            self._persist_logs_locally(logs_to_send)
+
+        if self._queued_system_logs:
+            system_logs_to_send = self._queued_system_logs.copy()
+            self._queued_system_logs.clear()
+            self._persist_system_logs_locally(system_logs_to_send)
+
+        if self._queued_uploads:
+            uploads_to_send = self._queued_uploads.copy()
+            self._queued_uploads.clear()
+            self._persist_uploads_locally(uploads_to_send)
+
+        if self._queued_alerts:
+            alerts_to_send = self._queued_alerts.copy()
+            self._queued_alerts.clear()
+            self._write_alerts_to_sqlite(alerts_to_send)
 
     def _local_batch_sender(self):
         while (
@@ -649,6 +694,9 @@ class Run:
                 }
                 with self._client_lock:
                     self._queued_uploads.append(upload_entry)
+                    self._ensure_sender_alive()
+                    if not self._thread_is_alive("_client_thread"):
+                        self._flush_queues_inline()
         except Exception as e:
             self._warn_once(
                 "queue-upload",
@@ -692,8 +740,6 @@ class Run:
                 ]:
                     file_path = value.get("file_path")
                     if file_path:
-                        from trackio.utils import MEDIA_DIR
-
                         absolute_path = MEDIA_DIR / file_path
                         self._queue_upload(absolute_path, step)
                 elif isinstance(value, list):
@@ -705,16 +751,13 @@ class Run:
                         ]:
                             file_path = item.get("file_path")
                             if file_path:
-                                from trackio.utils import MEDIA_DIR
-
                                 absolute_path = MEDIA_DIR / file_path
                                 self._queue_upload(absolute_path, step)
 
     def _ensure_sender_alive(self):
         if self._is_local:
             if (
-                hasattr(self, "_local_sender_thread")
-                and not self._local_sender_thread.is_alive()
+                not self._thread_is_alive("_local_sender_thread")
                 and not self._stop_flag.is_set()
             ):
                 self._start_background_thread(
@@ -725,8 +768,7 @@ class Run:
                 )
         else:
             if (
-                self._client_thread is not None
-                and not self._client_thread.is_alive()
+                not self._thread_is_alive("_client_thread")
                 and not self._stop_flag.is_set()
             ):
                 self._start_background_thread(
@@ -790,6 +832,10 @@ class Run:
             with self._client_lock:
                 self._queued_logs.append(log_entry)
                 self._ensure_sender_alive()
+                if not self._thread_is_alive(
+                    "_local_sender_thread" if self._is_local else "_client_thread"
+                ):
+                    self._flush_queues_inline()
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log() failed to process metrics: {e}")
 
@@ -822,6 +868,10 @@ class Run:
             with self._client_lock:
                 self._queued_alerts.append(alert_entry)
                 self._ensure_sender_alive()
+                if not self._thread_is_alive(
+                    "_local_sender_thread" if self._is_local else "_client_thread"
+                ):
+                    self._flush_queues_inline()
 
             url = webhook_url or self._webhook_url
             if url and should_send_webhook(level, self._webhook_min_level):
@@ -859,6 +909,10 @@ class Run:
             with self._client_lock:
                 self._queued_system_logs.append(system_log_entry)
                 self._ensure_sender_alive()
+                if not self._thread_is_alive(
+                    "_local_sender_thread" if self._is_local else "_client_thread"
+                ):
+                    self._flush_queues_inline()
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log_system() failed: {e}")
 
@@ -876,13 +930,16 @@ class Run:
             self._stop_flag.set()
 
             if self._is_local:
-                if hasattr(self, "_local_sender_thread"):
+                if self._local_sender_thread is not None:
                     print("* Run finished. Uploading logs to Trackio (please wait...)")
                     self._local_sender_thread.join(timeout=30)
                     if self._local_sender_thread.is_alive():
                         _emit_nonfatal_warning(
                             "Could not flush all logs within 30s. Some data may be buffered locally."
                         )
+                else:
+                    with self._client_lock:
+                        self._flush_queues_inline()
             else:
                 if self._client_thread is not None:
                     print(
@@ -893,6 +950,9 @@ class Run:
                         _emit_nonfatal_warning(
                             "Could not flush all logs within 30s. Some data may be buffered locally."
                         )
+                else:
+                    with self._client_lock:
+                        self._flush_queues_inline()
 
                 try:
                     has_pending = SQLiteStorage.has_pending_data(self.project)

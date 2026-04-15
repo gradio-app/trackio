@@ -52,6 +52,8 @@ Once your run is initialized, you can start logging data using the [`log`] funct
 trackio.log({"loss": 0.05})
 ```
 
+Trackio is written defensively so Trackio-side failures should not take down your main experiment code. Under normal API usage, issues inside Trackio's logging, flushing, or delivery paths degrade to warnings and local buffering rather than exceptions from your training loop.
+
 Each call to [`log`] automatically increments the step counter.
 If you want to log multiple metrics at once, pass them together:
 

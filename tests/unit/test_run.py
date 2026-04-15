@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from trackio import Markdown, Run, init
+from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -165,8 +165,6 @@ def test_run_group_added(temp_dir):
 def test_log_does_not_crash_on_bad_metrics(temp_dir, monkeypatch):
     run = Run(url=None, project="proj", client=None, name="safe-run", space_id=None)
 
-    from trackio import utils
-
     original = utils.serialize_values
 
     def exploding_serialize(metrics):
@@ -262,3 +260,42 @@ def test_nonfatal_warnings_do_not_raise_when_warning_filter_is_error(
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         run.finish()
+
+
+def test_local_logging_survives_sender_thread_start_failure(temp_dir, monkeypatch):
+    def fail_start(self, attr_name, target, **kwargs):
+        setattr(self, attr_name, None)
+        return False
+
+    monkeypatch.setattr(Run, "_start_background_thread", fail_start)
+
+    run = Run(url=None, project="proj", client=None, name="safe-run", space_id=None)
+    run.log({"loss": 0.5})
+    run.finish()
+
+    logs = SQLiteStorage.get_logs("proj", "safe-run")
+    assert len(logs) == 1
+    assert logs[0]["loss"] == 0.5
+
+
+def test_remote_logging_survives_sender_thread_start_failure(temp_dir, monkeypatch):
+    def fail_start(self, attr_name, target, **kwargs):
+        setattr(self, attr_name, None)
+        return False
+
+    monkeypatch.setattr(Run, "_start_background_thread", fail_start)
+
+    run = Run(
+        url="fake_url",
+        project="proj",
+        client=DummyClient(),
+        name="space-run",
+        space_id="user/space",
+    )
+    run.log({"loss": 0.5})
+    run.finish()
+
+    logs = SQLiteStorage.get_logs("proj", "space-run")
+    assert len(logs) == 1
+    assert logs[0]["loss"] == 0.5
+    assert SQLiteStorage.has_pending_data("proj")
