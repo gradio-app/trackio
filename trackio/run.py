@@ -163,9 +163,7 @@ class Run:
                     self._gpu_monitor = GpuMonitor(self, interval=gpu_log_interval)
                     self._gpu_monitor.start()
                 elif apple_gpu_available():
-                    self._gpu_monitor = AppleGpuMonitor(
-                        self, interval=gpu_log_interval
-                    )
+                    self._gpu_monitor = AppleGpuMonitor(self, interval=gpu_log_interval)
                     self._gpu_monitor.start()
             except Exception as e:
                 self._warn_once(

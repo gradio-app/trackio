@@ -237,7 +237,8 @@ def test_finish_does_not_crash_when_pending_data_check_fails(temp_dir, monkeypat
     monkeypatch.setattr(SQLiteStorage, "has_pending_data", raise_db_error)
 
     with pytest.warns(
-        UserWarning, match="trackio.finish\\(\\) could not inspect pending buffered logs"
+        UserWarning,
+        match="trackio.finish\\(\\) could not inspect pending buffered logs",
     ):
         run.finish()
 
