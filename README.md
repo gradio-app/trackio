@@ -245,7 +245,7 @@ To get started and see basic examples of usage, see these files:
 
 `trackio.log()` is a non-blocking call that appends to an in-memory queue and returns immediately. A background thread drains the queue every **0.5 s** and writes to the local SQLite database. Because log calls never touch the network or disk on the calling thread, the client-side throughput is effectively **unlimited** -- you can burst thousands of calls per second without slowing down your training loop.
 
-Trackio is written defensively so Trackio-side failures should not take down your main experiment code. Under normal API usage, issues inside Trackio's logging, flushing, or delivery paths degrade to warnings and local buffering rather than exceptions from your training loop.
+Trackio is written defensively so Trackio-side failures should never take down your main experiment code. Under normal usage, issues inside Trackio's logging, flushing, or delivery paths degrade to warnings and local buffering rather than exceptions from your training loop.
 
 ### Logging to a Hugging Face Space
 
