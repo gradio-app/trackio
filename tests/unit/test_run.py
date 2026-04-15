@@ -217,4 +217,3 @@ def test_local_flush_failure_does_not_crash(temp_dir, monkeypatch):
 
     with pytest.warns(UserWarning, match="trackio failed to flush metric logs"):
         run.finish()
-
