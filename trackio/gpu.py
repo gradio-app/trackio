@@ -236,9 +236,9 @@ def collect_gpu_metrics(device: int | None = None, all_gpus: bool = False) -> di
 
             try:
                 energy_mj = pynvml.nvmlDeviceGetTotalEnergyConsumption(handle)
-                if logical_idx not in _energy_baseline:
-                    _energy_baseline[logical_idx] = energy_mj
-                energy_consumed_mj = energy_mj - _energy_baseline[logical_idx]
+                if physical_idx not in _energy_baseline:
+                    _energy_baseline[physical_idx] = energy_mj
+                energy_consumed_mj = energy_mj - _energy_baseline[physical_idx]
                 metrics[f"{prefix}/energy_consumed"] = energy_consumed_mj / 1000.0
             except Exception:
                 pass

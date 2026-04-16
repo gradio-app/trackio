@@ -96,3 +96,37 @@ def test_collect_gpu_metrics_all_gpus(mock_pynvml_env):
         for i in range(4):
             assert f"gpu/{i}/utilization" in metrics
         assert "gpu/mean_utilization" in metrics
+
+
+def test_collect_gpu_metrics_respects_cuda_visible_devices(mock_pynvml_env):
+    with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2,3"}):
+        metrics = gpu.collect_gpu_metrics()
+
+    assert metrics["gpu/0/utilization"] == 70
+    assert metrics["gpu/1/utilization"] == 80
+    assert "gpu/2/utilization" not in metrics
+    assert "gpu/3/utilization" not in metrics
+    assert mock_pynvml_env.nvmlDeviceGetHandleByIndex.call_args_list[:2] == [
+        ((2,),),
+        ((3,),),
+    ]
+
+
+def test_collect_gpu_metrics_energy_baseline_tracks_physical_gpu(mock_pynvml_env):
+    energy_readings = {
+        "handle_0": iter([1000]),
+        "handle_1": iter([2000]),
+        "handle_2": iter([5000, 5600]),
+        "handle_3": iter([3000]),
+    }
+    mock_pynvml_env.nvmlDeviceGetTotalEnergyConsumption.side_effect = (
+        lambda handle: next(energy_readings[handle])
+    )
+
+    with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
+        first_metrics = gpu.collect_gpu_metrics()
+        second_metrics = gpu.collect_gpu_metrics(all_gpus=True)
+
+    assert first_metrics["gpu/0/energy_consumed"] == 0.0
+    assert second_metrics["gpu/0/energy_consumed"] == 0.0
+    assert second_metrics["gpu/2/energy_consumed"] == pytest.approx(0.6)

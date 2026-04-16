@@ -20,26 +20,42 @@
     <div class="alert-header" role="button" tabindex="0" onclick={() => (collapsed = !collapsed)} onkeydown={(e) => e.key === "Enter" && (collapsed = !collapsed)}>
       <span class="alert-title">Alerts ({alerts.length})</span>
       {#if !collapsed}
-        <div class="filter-pills" onclick={(e) => e.stopPropagation()}>
+        <div class="filter-pills">
           <button
             class="pill"
             class:active={filterLevel === null}
-            onclick={() => (filterLevel = null)}>All</button
+            onclick={(e) => {
+              e.stopPropagation();
+              filterLevel = null;
+            }}
+            >All</button
           >
           <button
             class="pill"
             class:active={filterLevel === "info"}
-            onclick={() => (filterLevel = "info")}>🔵 Info</button
+            onclick={(e) => {
+              e.stopPropagation();
+              filterLevel = "info";
+            }}
+            >🔵 Info</button
           >
           <button
             class="pill"
             class:active={filterLevel === "warn"}
-            onclick={() => (filterLevel = "warn")}>🟡 Warn</button
+            onclick={(e) => {
+              e.stopPropagation();
+              filterLevel = "warn";
+            }}
+            >🟡 Warn</button
           >
           <button
             class="pill"
             class:active={filterLevel === "error"}
-            onclick={() => (filterLevel = "error")}>🔴 Error</button
+            onclick={(e) => {
+              e.stopPropagation();
+              filterLevel = "error";
+            }}
+            >🔴 Error</button
           >
         </div>
       {/if}

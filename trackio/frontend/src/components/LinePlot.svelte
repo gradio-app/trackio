@@ -9,6 +9,8 @@
     x = "step",
     y = "",
     colorField = "run",
+    colorLabel = "",
+    yLabel = "",
     colorMap = {},
     title = "",
     xLim = null,
@@ -29,6 +31,8 @@
 
   let lastStructuralKey = null;
   let lastHasSmoothed = false;
+  let resolvedColorLabel = $derived(colorLabel || colorField);
+  let resolvedYLabel = $derived(yLabel || (y.includes("/") ? y.split("/").pop() : y));
 
   let legendEntries = $derived.by(() => {
     if (!colorField || !data || data.length === 0) return [];
@@ -115,9 +119,9 @@
       ...extra,
     });
 
-    const yTitle = y.includes("/") ? y.split("/").pop() : y;
+    const yTitle = resolvedYLabel;
     const tooltipEnc = [
-      { field: colorField, type: "nominal", title: "Run" },
+      { field: colorField, type: "nominal", title: resolvedColorLabel },
       { field: x, type: "quantitative", title: x },
       { field: y, type: "quantitative", title: yTitle },
     ];
@@ -557,7 +561,7 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend">
-        <span class="legend-title">{colorField}</span>
+        <span class="legend-title">{resolvedColorLabel}</span>
         {#each legendEntries as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
@@ -637,7 +641,7 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend fullscreen-legend">
-        <span class="legend-title">{colorField}</span>
+        <span class="legend-title">{resolvedColorLabel}</span>
         {#each legendEntries as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
