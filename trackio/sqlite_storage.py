@@ -1,3 +1,4 @@
+import atexit
 import json as json_mod
 import os
 import shutil
@@ -86,10 +87,10 @@ def _get_or_create_persistent_conn(
             try:
                 conn.execute("SELECT 1")
                 return conn
-            except Exception:
+            except sqlite3.Error:
                 try:
                     conn.close()
-                except Exception:
+                except sqlite3.Error:
                     pass
                 _persistent_connections.pop(key, None)
         conn = sqlite3.connect(str(db_path), timeout=timeout, check_same_thread=False)
@@ -99,9 +100,25 @@ def _get_or_create_persistent_conn(
         return conn
 
 
+def _close_all_persistent_connections() -> None:
+    with _persistent_lock:
+        for conn in _persistent_connections.values():
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        _persistent_connections.clear()
+
+
+atexit.register(_close_all_persistent_connections)
+
+
 class ProcessLock:
-    """Cross-process/thread lock. Uses file-based locking normally, or an in-memory
-    threading Lock when on a bucket-mounted filesystem where file locks are unreliable."""
+    """Lock used to coordinate database access.
+
+    Normally uses file-based locking for cross-process coordination. When running
+    on a bucket-mounted filesystem where file locks are unreliable,
+    falls back to an in-memory threading Lock (single-process only)."""
 
     _thread_locks: dict[str, Lock] = {}
     _meta_lock = Lock()
@@ -170,6 +187,10 @@ class SQLiteStorage:
         row_factory=sqlite3.Row,
     ) -> Iterator[sqlite3.Connection]:
         if _use_exclusive_locking():
+            # In exclusive mode all callers share a single persistent connection
+            # that is pragma-configured at creation time. The `configure_pragmas`
+            # flag is intentionally ignored here — the pragmas (journal mode,
+            # synchronous, locking mode) don't affect query semantics.
             access_lock = _get_db_access_lock(db_path)
             access_lock.acquire()
             try:
