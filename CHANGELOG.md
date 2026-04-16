@@ -1,5 +1,15 @@
 # trackio
 
+## 0.23.0
+
+### Features
+
+- [#494](https://github.com/gradio-app/trackio/pull/494) [`e8a897d`](https://github.com/gradio-app/trackio/commit/e8a897d2266d9b2558f72d768b0b21f4d0a8781b) - Add a settings/CLI page to Trackio.  Thanks @abidlabs!
+- [#481](https://github.com/gradio-app/trackio/pull/481) [`882647e`](https://github.com/gradio-app/trackio/commit/882647ec1599cf04500d03b5ca75ddc2733682e2) - Add multi-GPU system metrics support.  Thanks @Saba9!
+- [#485](https://github.com/gradio-app/trackio/pull/485) [`46a3cc3`](https://github.com/gradio-app/trackio/commit/46a3cc3758719e171417612efee102a487e71ebd) - Fix/remove flaky E2E space tests.  Thanks @abidlabs!
+- [#501](https://github.com/gradio-app/trackio/pull/501) [`06ea885`](https://github.com/gradio-app/trackio/commit/06ea8852f5e40ab3f1cf629a0a01af5c17f847a1) - Fix SQLite corruption on bucket-mounted Spaces.  Thanks @abidlabs!
+- [#496](https://github.com/gradio-app/trackio/pull/496) [`af23d74`](https://github.com/gradio-app/trackio/commit/af23d74438b146c4a3512ace15ea984656e943ed) - Prevent trackio errors from crashing the user's training loop.  Thanks @abidlabs!
+
 ## 0.22.0
 
 ### Features
