@@ -119,8 +119,8 @@ def test_collect_gpu_metrics_energy_baseline_tracks_physical_gpu(mock_pynvml_env
         "handle_2": iter([5000, 5600]),
         "handle_3": iter([3000]),
     }
-    mock_pynvml_env.nvmlDeviceGetTotalEnergyConsumption.side_effect = (
-        lambda handle: next(energy_readings[handle])
+    mock_pynvml_env.nvmlDeviceGetTotalEnergyConsumption.side_effect = lambda handle: (
+        next(energy_readings[handle])
     )
 
     with patch.dict("os.environ", {"CUDA_VISIBLE_DEVICES": "2"}):
