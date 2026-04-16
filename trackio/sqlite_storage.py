@@ -1,3 +1,4 @@
+import atexit
 import json as json_mod
 import os
 import shutil
@@ -29,6 +30,7 @@ from trackio.utils import (
     TRACKIO_DIR,
     deserialize_values,
     get_color_palette,
+    on_spaces,
     serialize_values,
 )
 
@@ -43,7 +45,7 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     override = os.environ.get("TRACKIO_SQLITE_JOURNAL_MODE", "").strip().lower()
     if override in _JOURNAL_MODE_WHITELIST:
         journal = override.upper()
-    elif os.environ.get("SYSTEM") == "spaces":
+    elif on_spaces():
         journal = "DELETE"
     else:
         journal = "WAL"
@@ -51,16 +53,84 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA temp_store = MEMORY")
     conn.execute("PRAGMA cache_size = -20000")
+    if on_spaces():
+        conn.execute("PRAGMA locking_mode = EXCLUSIVE")
+
+
+_persistent_connections: dict[str, sqlite3.Connection] = {}
+_persistent_lock = Lock()
+_db_access_locks: dict[str, Lock] = {}
+
+
+def _get_db_access_lock(db_path: Path) -> Lock:
+    key = str(db_path)
+    with _persistent_lock:
+        if key not in _db_access_locks:
+            _db_access_locks[key] = Lock()
+        return _db_access_locks[key]
+
+
+def _get_or_create_persistent_conn(
+    db_path: Path, timeout: float = 30.0
+) -> sqlite3.Connection:
+    key = str(db_path)
+    with _persistent_lock:
+        conn = _persistent_connections.get(key)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except sqlite3.Error:
+                try:
+                    conn.close()
+                except sqlite3.Error:
+                    pass
+                _persistent_connections.pop(key, None)
+        conn = sqlite3.connect(str(db_path), timeout=timeout, check_same_thread=False)
+        _configure_sqlite_pragmas(conn)
+        conn.execute("SELECT 1")
+        _persistent_connections[key] = conn
+        return conn
+
+
+def _close_all_persistent_connections() -> None:
+    with _persistent_lock:
+        for conn in _persistent_connections.values():
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        _persistent_connections.clear()
+
+
+atexit.register(_close_all_persistent_connections)
 
 
 class ProcessLock:
-    """A file-based lock that works across processes using fcntl (Unix) or msvcrt (Windows)."""
+    """Lock used to coordinate database access.
+
+    Normally uses file-based locking for cross-process coordination. When running
+    on a bucket-mounted filesystem where file locks are unreliable,
+    falls back to an in-memory threading Lock (single-process only)."""
+
+    _thread_locks: dict[str, Lock] = {}
+    _meta_lock = Lock()
 
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
         self.lockfile = None
+        self._use_thread_lock = on_spaces()
+        if self._use_thread_lock:
+            key = str(lockfile_path)
+            with ProcessLock._meta_lock:
+                if key not in ProcessLock._thread_locks:
+                    ProcessLock._thread_locks[key] = Lock()
+                self._thread_lock = ProcessLock._thread_locks[key]
 
     def __enter__(self):
+        if self._use_thread_lock:
+            self._thread_lock.acquire()
+            return self
         if fcntl is None and _msvcrt is None:
             return self
         self.lockfile_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,6 +151,9 @@ class ProcessLock:
                     raise IOError("Could not acquire database lock after 10 seconds")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._use_thread_lock:
+            self._thread_lock.release()
+            return
         if self.lockfile:
             try:
                 if fcntl is not None:
@@ -106,16 +179,31 @@ class SQLiteStorage:
         configure_pragmas: bool = True,
         row_factory=sqlite3.Row,
     ) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(str(db_path), timeout=timeout)
-        try:
-            if configure_pragmas:
-                _configure_sqlite_pragmas(conn)
-            if row_factory is not None:
+        if on_spaces():
+            # On Spaces, all callers share a single persistent connection
+            # that is pragma-configured at creation time. The `configure_pragmas`
+            # flag is intentionally ignored here — the pragmas (journal mode,
+            # synchronous, locking mode) don't affect query semantics.
+            access_lock = _get_db_access_lock(db_path)
+            access_lock.acquire()
+            try:
+                conn = _get_or_create_persistent_conn(db_path, timeout=timeout)
                 conn.row_factory = row_factory
-            with conn:
-                yield conn
-        finally:
-            conn.close()
+                with conn:
+                    yield conn
+            finally:
+                access_lock.release()
+        else:
+            conn = sqlite3.connect(str(db_path), timeout=timeout)
+            try:
+                if configure_pragmas:
+                    _configure_sqlite_pragmas(conn)
+                if row_factory is not None:
+                    conn.row_factory = row_factory
+                with conn:
+                    yield conn
+            finally:
+                conn.close()
 
     @staticmethod
     def _get_process_lock(project: str) -> ProcessLock:

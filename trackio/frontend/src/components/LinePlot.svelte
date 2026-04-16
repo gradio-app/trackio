@@ -9,6 +9,10 @@
     x = "step",
     y = "",
     colorField = "run",
+    colorLabel = "",
+    dashField = "",
+    dashLabel = "",
+    yLabel = "",
     colorMap = {},
     title = "",
     xLim = null,
@@ -29,6 +33,9 @@
 
   let lastStructuralKey = null;
   let lastHasSmoothed = false;
+  let resolvedColorLabel = $derived(colorLabel || colorField);
+  let resolvedDashLabel = $derived(dashLabel || dashField);
+  let resolvedYLabel = $derived(yLabel || (y.includes("/") ? y.split("/").pop() : y));
 
   let legendEntries = $derived.by(() => {
     if (!colorField || !data || data.length === 0) return [];
@@ -45,6 +52,44 @@
   });
 
   let colorSpecKey = $derived(buildColorSpecKey(data, colorField, colorMap));
+
+  let dashLegendEntries = $derived.by(() => {
+    if (!dashField || !data || data.length === 0) return [];
+    const seen = new Set();
+    const entries = [];
+    const patterns = [
+      [1, 0],
+      [12, 4],
+      [3, 2],
+      [10, 3, 2, 3],
+      [2, 2],
+      [14, 4, 2, 4],
+      [6, 4, 1, 4],
+      [16, 5],
+      [4, 2, 1, 2],
+      [2, 1],
+    ];
+    for (const d of data) {
+      const name = d[dashField];
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        entries.push({
+          name,
+          pattern: patterns[entries.length % patterns.length],
+        });
+      }
+    }
+    return entries;
+  });
+
+  let dashSpecKey = $derived.by(() => {
+    if (!dashField || !data || data.length === 0) return "";
+    const parts = dashLegendEntries.map(
+      (entry) => `${entry.name}:${entry.pattern.join(",")}`,
+    );
+    parts.sort();
+    return parts.join("|");
+  });
 
   function cssVar(name, fallback) {
     return (
@@ -72,6 +117,8 @@
   function buildSpec() {
     const hasColor =
       colorField && data.length > 0 && Object.hasOwn(data[0], colorField);
+    const hasDash =
+      dashField && data.length > 0 && Object.hasOwn(data[0], dashField);
     const allRuns = hasColor
       ? [...new Set(data.map((d) => d[colorField]))]
       : [];
@@ -105,22 +152,49 @@
           },
         }
       : {};
+    const dashEnc = hasDash
+      ? {
+          strokeDash: {
+            field: dashField,
+            type: "nominal",
+            scale: {
+              domain: dashLegendEntries.map((entry) => entry.name),
+              range: dashLegendEntries.map((entry) => entry.pattern),
+            },
+            legend: null,
+          },
+        }
+      : {};
 
     const layers = [];
 
     const lineMark = (extra = {}) => ({
       type: "line",
       clip: true,
-      strokeWidth: 2,
+      strokeWidth: 2.25,
       ...extra,
     });
 
-    const yTitle = y.includes("/") ? y.split("/").pop() : y;
-    const tooltipEnc = [
-      { field: colorField, type: "nominal", title: "Run" },
+    const yTitle = resolvedYLabel;
+    const tooltipEnc = [];
+    if (hasColor) {
+      tooltipEnc.push({
+        field: colorField,
+        type: "nominal",
+        title: resolvedColorLabel,
+      });
+    }
+    if (hasDash) {
+      tooltipEnc.push({
+        field: dashField,
+        type: "nominal",
+        title: resolvedDashLabel,
+      });
+    }
+    tooltipEnc.push(
       { field: x, type: "quantitative", title: x },
       { field: y, type: "quantitative", title: yTitle },
-    ];
+    );
 
     const hoverParams = [{
       name: "hover",
@@ -148,13 +222,13 @@
       layers.push({
         data: { name: "data_original", values: originalData },
         mark: lineMark({ strokeWidth: 1, opacity: 0.3 }),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc, ...dashEnc },
         name: "original",
       });
       layers.push({
         data: { name: "data_smoothed", values: smoothedData },
         mark: lineMark(),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc, ...dashEnc },
         name: "plot",
       });
       layers.push(
@@ -164,7 +238,7 @@
       layers.push({
         data: { name: "data_plot", values: data },
         mark: lineMark(),
-        encoding: { x: xEnc, y: yEnc, ...colorEnc },
+        encoding: { x: xEnc, y: yEnc, ...colorEnc, ...dashEnc },
         name: "plot",
       });
       layers.push(
@@ -223,7 +297,7 @@
     const xDomain = computeXDomain(originalData);
     const xKey = xDomain ? `${xDomain[0]},${xDomain[1]}` : "auto";
     const yKey = yExtent ? `${yExtent[0]},${yExtent[1]}` : "auto";
-    return `${y}\0${x}\0${colorSpecKey}\0${title}\0${fullscreen}\0${!!onSelect}\0${xKey}\0${yKey}`;
+    return `${y}\0${x}\0${colorSpecKey}\0${dashSpecKey}\0${title}\0${fullscreen}\0${!!onSelect}\0${xKey}\0${yKey}`;
   }
 
   function replaceDataset(v, name, newData) {
@@ -428,6 +502,7 @@
     y;
     x;
     colorSpecKey;
+    dashSpecKey;
     xLim;
     yExtent;
     title;
@@ -557,10 +632,32 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend">
-        <span class="legend-title">{colorField}</span>
+        <span class="legend-title">{resolvedColorLabel}</span>
         {#each legendEntries as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
+            <span class="legend-label">{entry.name}</span>
+          </span>
+        {/each}
+      </div>
+    {/if}
+    {#if dashLegendEntries.length > 0}
+      <div class="custom-legend">
+        <span class="legend-title">{resolvedDashLabel}</span>
+        {#each dashLegendEntries as entry}
+          <span class="legend-item">
+            <svg class="legend-line-swatch" viewBox="0 0 24 10" aria-hidden="true">
+              <line
+                x1="1"
+                y1="5"
+                x2="23"
+                y2="5"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-dasharray={entry.pattern.join(" ")}
+                stroke-linecap="round"
+              />
+            </svg>
             <span class="legend-label">{entry.name}</span>
           </span>
         {/each}
@@ -637,10 +734,32 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend fullscreen-legend">
-        <span class="legend-title">{colorField}</span>
+        <span class="legend-title">{resolvedColorLabel}</span>
         {#each legendEntries as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
+            <span class="legend-label">{entry.name}</span>
+          </span>
+        {/each}
+      </div>
+    {/if}
+    {#if dashLegendEntries.length > 0}
+      <div class="custom-legend fullscreen-legend">
+        <span class="legend-title">{resolvedDashLabel}</span>
+        {#each dashLegendEntries as entry}
+          <span class="legend-item">
+            <svg class="legend-line-swatch" viewBox="0 0 24 10" aria-hidden="true">
+              <line
+                x1="1"
+                y1="5"
+                x2="23"
+                y2="5"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-dasharray={entry.pattern.join(" ")}
+                stroke-linecap="round"
+              />
+            </svg>
             <span class="legend-label">{entry.name}</span>
           </span>
         {/each}
@@ -848,6 +967,12 @@
     height: 10px;
     border-radius: 50%;
     flex-shrink: 0;
+  }
+  .legend-line-swatch {
+    width: 24px;
+    height: 10px;
+    flex-shrink: 0;
+    color: var(--body-text-color, #1f2937);
   }
   .legend-label {
     font-size: 11px;

@@ -30,6 +30,7 @@ from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
+from trackio.utils import on_spaces
 
 HfApi = hf.HfApi()
 
@@ -205,28 +206,28 @@ def oauth_hf_callback(request: Request):
         return RedirectResponse(url=err, status_code=302)
     session_id = secrets.token_urlsafe(32)
     _oauth_sessions[session_id] = (access_token, time.monotonic())
-    on_spaces = os.getenv("SYSTEM") == "spaces"
+    _on_spaces = on_spaces()
     resp = RedirectResponse(url=f"/?oauth_session={session_id}", status_code=302)
     resp.set_cookie(
         key="trackio_hf_access_token",
         value=access_token,
         httponly=True,
-        samesite="none" if on_spaces else "lax",
+        samesite="none" if _on_spaces else "lax",
         max_age=86400 * 30,
         path="/",
-        secure=on_spaces,
+        secure=_on_spaces,
     )
     return resp
 
 
 def oauth_logout(request: Request):
-    on_spaces = os.getenv("SYSTEM") == "spaces"
+    _on_spaces = on_spaces()
     resp = RedirectResponse(url="/", status_code=302)
     resp.delete_cookie(
         "trackio_hf_access_token",
         path="/",
-        samesite="none" if on_spaces else "lax",
-        secure=on_spaces,
+        samesite="none" if _on_spaces else "lax",
+        secure=_on_spaces,
     )
     return resp
 
@@ -241,7 +242,7 @@ def check_hf_token_has_write_access(hf_token: str | None) -> None:
     - A cache of the whoami response for the hf_token using .whoami(token=hf_token, cache=True).
     - This entire function is cached using @lru_cache(maxsize=32).
     """
-    if os.getenv("SYSTEM") == "spaces":
+    if on_spaces():
         if hf_token is None:
             raise PermissionError(
                 "Expected a HF_TOKEN to be provided when logging to a Space"
@@ -295,7 +296,7 @@ _OAUTH_WRITE_CACHE_TTL = 300
 
 
 def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
-    if not os.getenv("SYSTEM") == "spaces":
+    if not on_spaces():
         return
     if oauth_token is None:
         raise PermissionError(
@@ -342,7 +343,7 @@ def check_write_access(request: Request, token: str) -> bool:
 
 
 def assert_can_mutate_runs(request: Request) -> None:
-    if os.getenv("SYSTEM") != "spaces":
+    if not on_spaces():
         if check_write_access(request, write_token):
             return
         raise TrackioAPIError(
@@ -365,7 +366,7 @@ def assert_can_mutate_runs(request: Request) -> None:
 
 
 def get_run_mutation_status(request: Request) -> dict[str, Any]:
-    if os.getenv("SYSTEM") != "spaces":
+    if not on_spaces():
         if check_write_access(request, write_token):
             return {"spaces": False, "allowed": True, "auth": "local"}
         return {"spaces": False, "allowed": False, "auth": "none"}

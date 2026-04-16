@@ -38,7 +38,7 @@ from trackio.server import TrackioDashboardApp, build_starlette_app_only
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import UploadEntry
-from trackio.utils import TRACKIO_DIR
+from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -94,6 +94,16 @@ def _cleanup_current_run():
             run.finish()
         except Exception:
             pass
+
+
+def _safe_get_runs_for_init(project: str) -> list[str]:
+    try:
+        return SQLiteStorage.get_runs(project)
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not inspect existing runs for project '{project}': {e}. Continuing without resume metadata."
+        )
+        return []
 
 
 def init(
@@ -193,7 +203,7 @@ def init(
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
     if settings is not None:
-        warnings.warn(
+        _emit_nonfatal_warning(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
@@ -213,7 +223,7 @@ def init(
         ) from e
 
     if space_id is None and bucket_id is not None:
-        warnings.warn(
+        _emit_nonfatal_warning(
             "trackio.init() has `bucket_id` set but `space_id` is None: metrics will be logged "
             "locally only. Pass `space_id` to create or use a Hugging Face Space, which will be "
             "attached to the Hugging Face Bucket.",
@@ -257,32 +267,39 @@ def init(
             if not _should_embed_local:
                 utils.print_dashboard_instructions(project)
         else:
-            deploy.create_space_if_not_exists(
-                space_id,
-                space_storage,
-                dataset_id,
-                bucket_id,
-                private,
-            )
-            user_name, space_name = space_id.split("/")
-            space_url = deploy.SPACE_HOST_URL.format(
-                user_name=user_name, space_name=space_name
-            )
-            if utils.is_in_notebook() and embed:
-                utils.embed_url_in_notebook(space_url)
+            try:
+                deploy.create_space_if_not_exists(
+                    space_id,
+                    space_storage,
+                    dataset_id,
+                    bucket_id,
+                    private,
+                )
+                user_name, space_name = space_id.split("/")
+                space_url = deploy.SPACE_HOST_URL.format(
+                    user_name=user_name, space_name=space_name
+                )
+                if utils.is_in_notebook() and embed:
+                    utils.embed_url_in_notebook(space_url)
+            except Exception as e:
+                _emit_nonfatal_warning(
+                    f"trackio.init() could not prepare Space '{space_id}': {e}. Logging will continue in local fallback mode until the Space is reachable."
+                )
     context_vars.current_project.set(project)
+
+    existing_runs = _safe_get_runs_for_init(project)
 
     if resume == "must":
         if name is None:
             raise ValueError("Must provide a run name when resume='must'")
-        if name not in SQLiteStorage.get_runs(project):
+        if name not in existing_runs:
             raise ValueError(f"Run '{name}' does not exist in project '{project}'")
         resumed = True
     elif resume == "allow":
-        resumed = name is not None and name in SQLiteStorage.get_runs(project)
+        resumed = name is not None and name in existing_runs
     elif resume == "never":
-        if name is not None and name in SQLiteStorage.get_runs(project):
-            warnings.warn(
+        if name is not None and name in existing_runs:
+            _emit_nonfatal_warning(
                 f"* Warning: resume='never' but a run '{name}' already exists in "
                 f"project '{project}'. Generating a new name and instead. If you want "
                 "to resume this run, call init() with resume='must' or resume='allow'."
@@ -321,9 +338,19 @@ def init(
     )
 
     if space_id is not None:
-        SQLiteStorage.set_project_metadata(project, "space_id", space_id)
-        if SQLiteStorage.has_pending_data(project):
-            run._has_local_buffer = True
+        try:
+            SQLiteStorage.set_project_metadata(project, "space_id", space_id)
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not persist Space metadata for project '{project}': {e}. Logging will continue."
+            )
+        try:
+            if SQLiteStorage.has_pending_data(project):
+                run._has_local_buffer = True
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not inspect pending buffered data for project '{project}': {e}. Logging will continue."
+            )
 
     global _atexit_registered
     if not _atexit_registered:
@@ -339,7 +366,12 @@ def init(
     globals()["config"] = run.config
 
     if _should_embed_local:
-        show(project=project, open_browser=False, block_thread=False)
+        try:
+            show(project=project, open_browser=False, block_thread=False)
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not auto-launch the dashboard: {e}. Logging will continue."
+            )
 
     return run
 
@@ -413,7 +445,7 @@ def log_gpu(run: Run | None = None, device: int | None = None) -> dict:
     elif apple_gpu_available():
         return _log_apple_gpu(run=run)
     else:
-        warnings.warn(
+        _emit_nonfatal_warning(
             "No GPU detected. Install nvidia-ml-py for NVIDIA GPU support "
             "or psutil for Apple Silicon support."
         )
@@ -638,7 +670,7 @@ def save(
                     hf_token=huggingface_hub.utils.get_token(),
                 )
             except Exception as e:
-                warnings.warn(
+                _emit_nonfatal_warning(
                     f"Failed to upload files: {e}. "
                     "Files may not be available in the dashboard."
                 )

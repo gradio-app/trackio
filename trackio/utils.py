@@ -22,6 +22,13 @@ RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
 
+def _emit_nonfatal_warning(message: str, *args, **kwargs) -> None:
+    try:
+        warnings.warn(message, *args, **kwargs)
+    except Exception:
+        print(f"* Trackio warning: {message}")
+
+
 def get_logo_urls() -> dict[str, str]:
     """Get logo URLs from environment variables or use defaults."""
     light_url = os.environ.get(
@@ -122,15 +129,11 @@ def order_metrics_by_plot_preference(metrics: list[str]) -> tuple[list[str], dic
     return ordered_groups, result
 
 
-def persistent_storage_enabled() -> bool:
-    return (
-        os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
-    )  # typo in the name of the environment variable
+def on_spaces() -> bool:
+    return os.environ.get("SYSTEM") == "spaces"
 
 
 def _get_trackio_dir() -> Path:
-    if persistent_storage_enabled():
-        return Path("/data/trackio")
     if os.environ.get("TRACKIO_DIR"):
         return Path(os.environ.get("TRACKIO_DIR"))
     return Path(HF_HOME) / "trackio"

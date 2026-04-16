@@ -2,7 +2,6 @@ import os
 import shutil
 import threading
 import uuid
-import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,7 +26,7 @@ from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
-from trackio.utils import _get_default_namespace
+from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
@@ -81,14 +80,34 @@ class Run:
         self.url = url
         self.project = project
         self._client_lock = threading.Lock()
+        self._warning_lock = threading.Lock()
+        self._warned_failures: set[str] = set()
+        self._local_sender_thread: threading.Thread | None = None
         self._client_thread = None
         self._client = client
         self._space_id = space_id
-        self.name = name or utils.generate_readable_name(
-            SQLiteStorage.get_runs(project), space_id
-        )
+        if name is not None:
+            self.name = name
+        else:
+            try:
+                self.name = utils.generate_readable_name(
+                    self._safe_get_existing_runs(), space_id
+                )
+            except Exception as e:
+                self._warn_once(
+                    "init-run-name",
+                    f"trackio.init() could not generate a run name: {e}. Falling back to a random name.",
+                )
+                self.name = f"trackio-run-{uuid.uuid4().hex[:8]}"
         self.group = group
-        self.config = utils.to_json_safe(config or {})
+        try:
+            self.config = utils.to_json_safe(config or {})
+        except Exception as e:
+            self._warn_once(
+                "init-config",
+                f"trackio.init() failed to serialize the run config: {e}. Continuing without config.",
+            )
+            self.config = {}
 
         if isinstance(self.config, dict):
             for key in self.config:
@@ -107,7 +126,7 @@ class Run:
         self._queued_alerts: list[AlertEntry] = []
         self._stop_flag = threading.Event()
         self._config_logged = False
-        max_step = SQLiteStorage.get_max_step_for_run(self.project, self.name)
+        max_step = self._safe_get_max_step_for_run()
         self._next_step = 0 if max_step is None else max_step + 1
         self._has_local_buffer = False
 
@@ -118,30 +137,130 @@ class Run:
         )
 
         if self._is_local:
-            self._local_sender_thread = threading.Thread(
-                target=self._local_batch_sender
+            self._start_background_thread(
+                "_local_sender_thread",
+                self._local_batch_sender,
+                warning_key="local-sender-thread",
+                description="local Trackio logging thread",
             )
-            self._local_sender_thread.daemon = True
-            self._local_sender_thread.start()
         else:
-            self._client_thread = threading.Thread(target=self._init_client_background)
-            self._client_thread.daemon = True
-            self._client_thread.start()
+            self._start_background_thread(
+                "_client_thread",
+                self._init_client_background,
+                warning_key="remote-sender-thread",
+                description="remote Trackio logging thread",
+            )
 
         self._gpu_monitor: "GpuMonitor | AppleGpuMonitor | None" = None
         if auto_log_gpu:
-            if gpu_available():
-                self._gpu_monitor = GpuMonitor(self, interval=gpu_log_interval)
-                self._gpu_monitor.start()
-            elif apple_gpu_available():
-                self._gpu_monitor = AppleGpuMonitor(self, interval=gpu_log_interval)
-                self._gpu_monitor.start()
+            try:
+                if gpu_available():
+                    self._gpu_monitor = GpuMonitor(self, interval=gpu_log_interval)
+                    self._gpu_monitor.start()
+                elif apple_gpu_available():
+                    self._gpu_monitor = AppleGpuMonitor(self, interval=gpu_log_interval)
+                    self._gpu_monitor.start()
+            except Exception as e:
+                self._warn_once(
+                    "gpu-monitor",
+                    f"trackio.init() failed to start automatic GPU logging: {e}. Continuing without system metric auto-logging.",
+                )
 
     def _get_username(self) -> str | None:
         try:
             return _get_default_namespace()
         except Exception:
             return None
+
+    def _warn_once(self, key: str, message: str) -> None:
+        with self._warning_lock:
+            if key in self._warned_failures:
+                return
+            self._warned_failures.add(key)
+        _emit_nonfatal_warning(message)
+
+    def _safe_get_existing_runs(self) -> list[str]:
+        try:
+            return SQLiteStorage.get_runs(self.project)
+        except Exception as e:
+            self._warn_once(
+                "init-existing-runs",
+                f"trackio.init() could not inspect existing runs for project '{self.project}': {e}. Continuing without prior-run metadata.",
+            )
+            return []
+
+    def _safe_get_max_step_for_run(self) -> int | None:
+        try:
+            return SQLiteStorage.get_max_step_for_run(self.project, self.name)
+        except Exception as e:
+            self._warn_once(
+                "init-max-step",
+                f"trackio.init() could not recover the previous step for run '{self.name}': {e}. Continuing from step 0.",
+            )
+            return None
+
+    def _start_background_thread(
+        self,
+        attr_name: str,
+        target,
+        *,
+        warning_key: str,
+        description: str,
+    ) -> bool:
+        try:
+            thread = threading.Thread(target=target, daemon=True)
+            setattr(self, attr_name, thread)
+            thread.start()
+            return True
+        except Exception as e:
+            setattr(self, attr_name, None)
+            self._warn_once(
+                warning_key,
+                f"trackio failed to start the {description}: {e}. Logging will continue in degraded mode.",
+            )
+            return False
+
+    def _thread_is_alive(self, attr_name: str) -> bool:
+        thread = getattr(self, attr_name, None)
+        return isinstance(thread, threading.Thread) and thread.is_alive()
+
+    def _flush_queues_inline(self) -> None:
+        if self._is_local:
+            if self._queued_logs:
+                logs_to_send = self._queued_logs.copy()
+                self._queued_logs.clear()
+                self._write_logs_to_sqlite(logs_to_send)
+
+            if self._queued_system_logs:
+                system_logs_to_send = self._queued_system_logs.copy()
+                self._queued_system_logs.clear()
+                self._write_system_logs_to_sqlite(system_logs_to_send)
+
+            if self._queued_alerts:
+                alerts_to_send = self._queued_alerts.copy()
+                self._queued_alerts.clear()
+                self._write_alerts_to_sqlite(alerts_to_send)
+            return
+
+        if self._queued_logs:
+            logs_to_send = self._queued_logs.copy()
+            self._queued_logs.clear()
+            self._persist_logs_locally(logs_to_send)
+
+        if self._queued_system_logs:
+            system_logs_to_send = self._queued_system_logs.copy()
+            self._queued_system_logs.clear()
+            self._persist_system_logs_locally(system_logs_to_send)
+
+        if self._queued_uploads:
+            uploads_to_send = self._queued_uploads.copy()
+            self._queued_uploads.clear()
+            self._persist_uploads_locally(uploads_to_send)
+
+        if self._queued_alerts:
+            alerts_to_send = self._queued_alerts.copy()
+            self._queued_alerts.clear()
+            self._write_alerts_to_sqlite(alerts_to_send)
 
     def _local_batch_sender(self):
         while (
@@ -153,101 +272,125 @@ class Run:
             if not self._stop_flag.is_set():
                 self._stop_flag.wait(timeout=BATCH_SEND_INTERVAL)
 
-            with self._client_lock:
-                if self._queued_logs:
-                    logs_to_send = self._queued_logs.copy()
-                    self._queued_logs.clear()
-                    self._write_logs_to_sqlite(logs_to_send)
+            try:
+                with self._client_lock:
+                    if self._queued_logs:
+                        logs_to_send = self._queued_logs.copy()
+                        self._queued_logs.clear()
+                        self._write_logs_to_sqlite(logs_to_send)
 
-                if self._queued_system_logs:
-                    system_logs_to_send = self._queued_system_logs.copy()
-                    self._queued_system_logs.clear()
-                    self._write_system_logs_to_sqlite(system_logs_to_send)
+                    if self._queued_system_logs:
+                        system_logs_to_send = self._queued_system_logs.copy()
+                        self._queued_system_logs.clear()
+                        self._write_system_logs_to_sqlite(system_logs_to_send)
 
-                if self._queued_alerts:
-                    alerts_to_send = self._queued_alerts.copy()
-                    self._queued_alerts.clear()
-                    self._write_alerts_to_sqlite(alerts_to_send)
+                    if self._queued_alerts:
+                        alerts_to_send = self._queued_alerts.copy()
+                        self._queued_alerts.clear()
+                        self._write_alerts_to_sqlite(alerts_to_send)
+            except Exception as e:
+                self._warn_once(
+                    "local-sender-loop",
+                    f"trackio's local logging thread hit an internal error: {e}. User code will continue, but some Trackio data may be dropped.",
+                )
 
     def _write_logs_to_sqlite(self, logs: list[LogEntry]):
-        logs_by_run: dict[tuple, dict] = {}
-        for entry in logs:
-            key = (entry["project"], entry["run"])
-            if key not in logs_by_run:
-                logs_by_run[key] = {
-                    "metrics": [],
-                    "steps": [],
-                    "log_ids": [],
-                    "config": None,
-                }
-            logs_by_run[key]["metrics"].append(entry["metrics"])
-            logs_by_run[key]["steps"].append(entry.get("step"))
-            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
-            if entry.get("config") and logs_by_run[key]["config"] is None:
-                logs_by_run[key]["config"] = entry["config"]
+        try:
+            logs_by_run: dict[tuple, dict] = {}
+            for entry in logs:
+                key = (entry["project"], entry["run"])
+                if key not in logs_by_run:
+                    logs_by_run[key] = {
+                        "metrics": [],
+                        "steps": [],
+                        "log_ids": [],
+                        "config": None,
+                    }
+                logs_by_run[key]["metrics"].append(entry["metrics"])
+                logs_by_run[key]["steps"].append(entry.get("step"))
+                logs_by_run[key]["log_ids"].append(entry.get("log_id"))
+                if entry.get("config") and logs_by_run[key]["config"] is None:
+                    logs_by_run[key]["config"] = entry["config"]
 
-        for (project, run), data in logs_by_run.items():
-            has_log_ids = any(lid is not None for lid in data["log_ids"])
-            SQLiteStorage.bulk_log(
-                project=project,
-                run=run,
-                metrics_list=data["metrics"],
-                steps=data["steps"],
-                config=data["config"],
-                log_ids=data["log_ids"] if has_log_ids else None,
+            for (project, run), data in logs_by_run.items():
+                has_log_ids = any(lid is not None for lid in data["log_ids"])
+                SQLiteStorage.bulk_log(
+                    project=project,
+                    run=run,
+                    metrics_list=data["metrics"],
+                    steps=data["steps"],
+                    config=data["config"],
+                    log_ids=data["log_ids"] if has_log_ids else None,
+                )
+        except Exception as e:
+            self._warn_once(
+                "write-logs-to-sqlite",
+                f"trackio failed to flush metric logs for run '{self.name}': {e}. User code will continue, but this batch could not be persisted.",
             )
 
     def _write_system_logs_to_sqlite(self, logs: list[SystemLogEntry]):
-        logs_by_run: dict[tuple, dict] = {}
-        for entry in logs:
-            key = (entry["project"], entry["run"])
-            if key not in logs_by_run:
-                logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
-            logs_by_run[key]["metrics"].append(entry["metrics"])
-            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
-            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
+        try:
+            logs_by_run: dict[tuple, dict] = {}
+            for entry in logs:
+                key = (entry["project"], entry["run"])
+                if key not in logs_by_run:
+                    logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
+                logs_by_run[key]["metrics"].append(entry["metrics"])
+                logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
+                logs_by_run[key]["log_ids"].append(entry.get("log_id"))
 
-        for (project, run), data in logs_by_run.items():
-            has_log_ids = any(lid is not None for lid in data["log_ids"])
-            SQLiteStorage.bulk_log_system(
-                project=project,
-                run=run,
-                metrics_list=data["metrics"],
-                timestamps=data["timestamps"],
-                log_ids=data["log_ids"] if has_log_ids else None,
+            for (project, run), data in logs_by_run.items():
+                has_log_ids = any(lid is not None for lid in data["log_ids"])
+                SQLiteStorage.bulk_log_system(
+                    project=project,
+                    run=run,
+                    metrics_list=data["metrics"],
+                    timestamps=data["timestamps"],
+                    log_ids=data["log_ids"] if has_log_ids else None,
+                )
+        except Exception as e:
+            self._warn_once(
+                "write-system-logs-to-sqlite",
+                f"trackio failed to flush system logs for run '{self.name}': {e}. User code will continue, but this batch could not be persisted.",
             )
 
     def _write_alerts_to_sqlite(self, alerts: list[AlertEntry]):
-        alerts_by_run: dict[tuple, dict] = {}
-        for entry in alerts:
-            key = (entry["project"], entry["run"])
-            if key not in alerts_by_run:
-                alerts_by_run[key] = {
-                    "titles": [],
-                    "texts": [],
-                    "levels": [],
-                    "steps": [],
-                    "timestamps": [],
-                    "alert_ids": [],
-                }
-            alerts_by_run[key]["titles"].append(entry["title"])
-            alerts_by_run[key]["texts"].append(entry.get("text"))
-            alerts_by_run[key]["levels"].append(entry["level"])
-            alerts_by_run[key]["steps"].append(entry.get("step"))
-            alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
-            alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
+        try:
+            alerts_by_run: dict[tuple, dict] = {}
+            for entry in alerts:
+                key = (entry["project"], entry["run"])
+                if key not in alerts_by_run:
+                    alerts_by_run[key] = {
+                        "titles": [],
+                        "texts": [],
+                        "levels": [],
+                        "steps": [],
+                        "timestamps": [],
+                        "alert_ids": [],
+                    }
+                alerts_by_run[key]["titles"].append(entry["title"])
+                alerts_by_run[key]["texts"].append(entry.get("text"))
+                alerts_by_run[key]["levels"].append(entry["level"])
+                alerts_by_run[key]["steps"].append(entry.get("step"))
+                alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
+                alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
 
-        for (project, run), data in alerts_by_run.items():
-            has_alert_ids = any(aid is not None for aid in data["alert_ids"])
-            SQLiteStorage.bulk_alert(
-                project=project,
-                run=run,
-                titles=data["titles"],
-                texts=data["texts"],
-                levels=data["levels"],
-                steps=data["steps"],
-                timestamps=data["timestamps"],
-                alert_ids=data["alert_ids"] if has_alert_ids else None,
+            for (project, run), data in alerts_by_run.items():
+                has_alert_ids = any(aid is not None for aid in data["alert_ids"])
+                SQLiteStorage.bulk_alert(
+                    project=project,
+                    run=run,
+                    titles=data["titles"],
+                    texts=data["texts"],
+                    levels=data["levels"],
+                    steps=data["steps"],
+                    timestamps=data["timestamps"],
+                    alert_ids=data["alert_ids"] if has_alert_ids else None,
+                )
+        except Exception as e:
+            self._warn_once(
+                "write-alerts-to-sqlite",
+                f"trackio failed to flush alerts for run '{self.name}': {e}. User code will continue, but this batch could not be persisted.",
             )
 
     def _batch_sender(self):
@@ -271,159 +414,186 @@ class Run:
             elif self._has_local_buffer:
                 self._stop_flag.wait(timeout=BATCH_SEND_INTERVAL)
 
-            with self._client_lock:
-                if self._client is None:
-                    if self._stop_flag.is_set():
-                        if self._queued_logs:
-                            self._persist_logs_locally(self._queued_logs)
-                            self._queued_logs.clear()
-                        if self._queued_system_logs:
-                            self._persist_system_logs_locally(self._queued_system_logs)
-                            self._queued_system_logs.clear()
-                        if self._queued_uploads:
-                            self._persist_uploads_locally(self._queued_uploads)
-                            self._queued_uploads.clear()
-                        if self._queued_alerts:
-                            self._write_alerts_to_sqlite(self._queued_alerts)
-                            self._queued_alerts.clear()
-                    return
+            try:
+                with self._client_lock:
+                    if self._client is None:
+                        if self._stop_flag.is_set():
+                            if self._queued_logs:
+                                self._persist_logs_locally(self._queued_logs)
+                                self._queued_logs.clear()
+                            if self._queued_system_logs:
+                                self._persist_system_logs_locally(
+                                    self._queued_system_logs
+                                )
+                                self._queued_system_logs.clear()
+                            if self._queued_uploads:
+                                self._persist_uploads_locally(self._queued_uploads)
+                                self._queued_uploads.clear()
+                            if self._queued_alerts:
+                                self._write_alerts_to_sqlite(self._queued_alerts)
+                                self._queued_alerts.clear()
+                        return
 
-                failed = False
+                    failed = False
 
-                if self._queued_logs:
-                    logs_to_send = self._queued_logs.copy()
-                    self._queued_logs.clear()
-                    try:
-                        self._client.predict(
-                            api_name="/bulk_log",
-                            logs=logs_to_send,
-                            hf_token=huggingface_hub.utils.get_token(),
-                        )
-                    except Exception:
-                        self._persist_logs_locally(logs_to_send)
-                        failed = True
+                    if self._queued_logs:
+                        logs_to_send = self._queued_logs.copy()
+                        self._queued_logs.clear()
+                        try:
+                            self._client.predict(
+                                api_name="/bulk_log",
+                                logs=logs_to_send,
+                                hf_token=huggingface_hub.utils.get_token(),
+                            )
+                        except Exception:
+                            self._persist_logs_locally(logs_to_send)
+                            failed = True
 
-                if self._queued_system_logs:
-                    system_logs_to_send = self._queued_system_logs.copy()
-                    self._queued_system_logs.clear()
-                    try:
-                        self._client.predict(
-                            api_name="/bulk_log_system",
-                            logs=system_logs_to_send,
-                            hf_token=huggingface_hub.utils.get_token(),
-                        )
-                    except Exception:
-                        self._persist_system_logs_locally(system_logs_to_send)
-                        failed = True
+                    if self._queued_system_logs:
+                        system_logs_to_send = self._queued_system_logs.copy()
+                        self._queued_system_logs.clear()
+                        try:
+                            self._client.predict(
+                                api_name="/bulk_log_system",
+                                logs=system_logs_to_send,
+                                hf_token=huggingface_hub.utils.get_token(),
+                            )
+                        except Exception:
+                            self._persist_system_logs_locally(system_logs_to_send)
+                            failed = True
 
-                if self._queued_uploads:
-                    uploads_to_send = self._queued_uploads.copy()
-                    self._queued_uploads.clear()
-                    try:
-                        self._client.predict(
-                            api_name="/bulk_upload_media",
-                            uploads=uploads_to_send,
-                            hf_token=huggingface_hub.utils.get_token(),
-                        )
-                    except Exception:
-                        self._persist_uploads_locally(uploads_to_send)
-                        failed = True
+                    if self._queued_uploads:
+                        uploads_to_send = self._queued_uploads.copy()
+                        self._queued_uploads.clear()
+                        try:
+                            self._client.predict(
+                                api_name="/bulk_upload_media",
+                                uploads=uploads_to_send,
+                                hf_token=huggingface_hub.utils.get_token(),
+                            )
+                        except Exception:
+                            self._persist_uploads_locally(uploads_to_send)
+                            failed = True
 
-                if self._queued_alerts:
-                    alerts_to_send = self._queued_alerts.copy()
-                    self._queued_alerts.clear()
-                    try:
-                        self._client.predict(
-                            api_name="/bulk_alert",
-                            alerts=alerts_to_send,
-                            hf_token=huggingface_hub.utils.get_token(),
-                        )
-                    except Exception:
-                        self._write_alerts_to_sqlite(alerts_to_send)
-                        failed = True
+                    if self._queued_alerts:
+                        alerts_to_send = self._queued_alerts.copy()
+                        self._queued_alerts.clear()
+                        try:
+                            self._client.predict(
+                                api_name="/bulk_alert",
+                                alerts=alerts_to_send,
+                                hf_token=huggingface_hub.utils.get_token(),
+                            )
+                        except Exception:
+                            self._write_alerts_to_sqlite(alerts_to_send)
+                            failed = True
 
-                if failed:
-                    consecutive_failures += 1
-                else:
-                    consecutive_failures = 0
-                    if self._has_local_buffer:
-                        self._flush_local_buffer()
+                    if failed:
+                        consecutive_failures += 1
+                    else:
+                        consecutive_failures = 0
+                        if self._has_local_buffer:
+                            self._flush_local_buffer()
+            except Exception as e:
+                consecutive_failures += 1
+                self._warn_once(
+                    "remote-sender-loop",
+                    f"trackio's remote logging thread hit an internal error: {e}. User code will continue while Trackio retries in the background.",
+                )
 
     def _persist_logs_locally(self, logs: list[LogEntry]):
         if not self._space_id:
             return
-        logs_by_run: dict[tuple, dict] = {}
-        for entry in logs:
-            key = (entry["project"], entry["run"])
-            if key not in logs_by_run:
-                logs_by_run[key] = {
-                    "metrics": [],
-                    "steps": [],
-                    "log_ids": [],
-                    "config": None,
-                }
-            logs_by_run[key]["metrics"].append(entry["metrics"])
-            logs_by_run[key]["steps"].append(entry.get("step"))
-            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
-            if entry.get("config") and logs_by_run[key]["config"] is None:
-                logs_by_run[key]["config"] = entry["config"]
+        try:
+            logs_by_run: dict[tuple, dict] = {}
+            for entry in logs:
+                key = (entry["project"], entry["run"])
+                if key not in logs_by_run:
+                    logs_by_run[key] = {
+                        "metrics": [],
+                        "steps": [],
+                        "log_ids": [],
+                        "config": None,
+                    }
+                logs_by_run[key]["metrics"].append(entry["metrics"])
+                logs_by_run[key]["steps"].append(entry.get("step"))
+                logs_by_run[key]["log_ids"].append(entry.get("log_id"))
+                if entry.get("config") and logs_by_run[key]["config"] is None:
+                    logs_by_run[key]["config"] = entry["config"]
 
-        for (project, run), data in logs_by_run.items():
-            SQLiteStorage.bulk_log(
-                project=project,
-                run=run,
-                metrics_list=data["metrics"],
-                steps=data["steps"],
-                log_ids=data["log_ids"],
-                config=data["config"],
-                space_id=self._space_id,
+            for (project, run), data in logs_by_run.items():
+                SQLiteStorage.bulk_log(
+                    project=project,
+                    run=run,
+                    metrics_list=data["metrics"],
+                    steps=data["steps"],
+                    log_ids=data["log_ids"],
+                    config=data["config"],
+                    space_id=self._space_id,
+                )
+            self._has_local_buffer = True
+        except Exception as e:
+            self._warn_once(
+                "persist-logs-locally",
+                f"trackio could not persist failed remote metric logs locally for run '{self.name}': {e}. User code will continue, but this batch could be lost.",
             )
-        self._has_local_buffer = True
 
     def _persist_system_logs_locally(self, logs: list[SystemLogEntry]):
         if not self._space_id:
             return
-        logs_by_run: dict[tuple, dict] = {}
-        for entry in logs:
-            key = (entry["project"], entry["run"])
-            if key not in logs_by_run:
-                logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
-            logs_by_run[key]["metrics"].append(entry["metrics"])
-            logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
-            logs_by_run[key]["log_ids"].append(entry.get("log_id"))
+        try:
+            logs_by_run: dict[tuple, dict] = {}
+            for entry in logs:
+                key = (entry["project"], entry["run"])
+                if key not in logs_by_run:
+                    logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
+                logs_by_run[key]["metrics"].append(entry["metrics"])
+                logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
+                logs_by_run[key]["log_ids"].append(entry.get("log_id"))
 
-        for (project, run), data in logs_by_run.items():
-            SQLiteStorage.bulk_log_system(
-                project=project,
-                run=run,
-                metrics_list=data["metrics"],
-                timestamps=data["timestamps"],
-                log_ids=data["log_ids"],
-                space_id=self._space_id,
+            for (project, run), data in logs_by_run.items():
+                SQLiteStorage.bulk_log_system(
+                    project=project,
+                    run=run,
+                    metrics_list=data["metrics"],
+                    timestamps=data["timestamps"],
+                    log_ids=data["log_ids"],
+                    space_id=self._space_id,
+                )
+            self._has_local_buffer = True
+        except Exception as e:
+            self._warn_once(
+                "persist-system-logs-locally",
+                f"trackio could not persist failed remote system logs locally for run '{self.name}': {e}. User code will continue, but this batch could be lost.",
             )
-        self._has_local_buffer = True
 
     def _persist_uploads_locally(self, uploads: list[UploadEntry]):
         if not self._space_id:
             return
-        for entry in uploads:
-            file_data = entry.get("uploaded_file")
-            file_path = ""
-            if isinstance(file_data, dict):
-                file_path = file_data.get("path", "")
-            elif hasattr(file_data, "path"):
-                file_path = str(file_data.path)
-            else:
-                file_path = str(file_data)
-            SQLiteStorage.add_pending_upload(
-                project=entry["project"],
-                space_id=self._space_id,
-                run_name=entry.get("run"),
-                step=entry.get("step"),
-                file_path=file_path,
-                relative_path=entry.get("relative_path"),
+        try:
+            for entry in uploads:
+                file_data = entry.get("uploaded_file")
+                file_path = ""
+                if isinstance(file_data, dict):
+                    file_path = file_data.get("path", "")
+                elif hasattr(file_data, "path"):
+                    file_path = str(file_data.path)
+                else:
+                    file_path = str(file_data)
+                SQLiteStorage.add_pending_upload(
+                    project=entry["project"],
+                    space_id=self._space_id,
+                    run_name=entry.get("run"),
+                    step=entry.get("step"),
+                    file_path=file_path,
+                    relative_path=entry.get("relative_path"),
+                )
+            self._has_local_buffer = True
+        except Exception as e:
+            self._warn_once(
+                "persist-uploads-locally",
+                f"trackio could not persist failed remote file uploads locally for run '{self.name}': {e}. User code will continue, but some artifacts could be lost.",
             )
-        self._has_local_buffer = True
 
     def _flush_local_buffer(self):
         try:
@@ -473,8 +643,11 @@ class Run:
                 )
 
             self._has_local_buffer = False
-        except Exception:
-            pass
+        except Exception as e:
+            self._warn_once(
+                "flush-local-buffer",
+                f"trackio could not flush buffered remote data for run '{self.name}': {e}. It will retry later if possible.",
+            )
 
     def _init_client_background(self):
         if self._client is None:
@@ -506,18 +679,27 @@ class Run:
         relative_path: str | None = None,
         use_run_name: bool = True,
     ):
-        if self._is_local:
-            self._save_upload_locally(file_path, step, relative_path, use_run_name)
-        else:
-            upload_entry: UploadEntry = {
-                "project": self.project,
-                "run": self.name if use_run_name else None,
-                "step": step,
-                "relative_path": relative_path,
-                "uploaded_file": handle_file(file_path),
-            }
-            with self._client_lock:
-                self._queued_uploads.append(upload_entry)
+        try:
+            if self._is_local:
+                self._save_upload_locally(file_path, step, relative_path, use_run_name)
+            else:
+                upload_entry: UploadEntry = {
+                    "project": self.project,
+                    "run": self.name if use_run_name else None,
+                    "step": step,
+                    "relative_path": relative_path,
+                    "uploaded_file": handle_file(file_path),
+                }
+                with self._client_lock:
+                    self._queued_uploads.append(upload_entry)
+                    self._ensure_sender_alive()
+                    if not self._thread_is_alive("_client_thread"):
+                        self._flush_queues_inline()
+        except Exception as e:
+            self._warn_once(
+                "queue-upload",
+                f"trackio could not queue the artifact '{file_path}' for run '{self.name}': {e}. User code will continue, but this artifact could be missing.",
+            )
 
     def _save_upload_locally(
         self,
@@ -556,8 +738,6 @@ class Run:
                 ]:
                     file_path = value.get("file_path")
                     if file_path:
-                        from trackio.utils import MEDIA_DIR
-
                         absolute_path = MEDIA_DIR / file_path
                         self._queue_upload(absolute_path, step)
                 elif isinstance(value, list):
@@ -569,86 +749,93 @@ class Run:
                         ]:
                             file_path = item.get("file_path")
                             if file_path:
-                                from trackio.utils import MEDIA_DIR
-
                                 absolute_path = MEDIA_DIR / file_path
                                 self._queue_upload(absolute_path, step)
 
     def _ensure_sender_alive(self):
         if self._is_local:
             if (
-                hasattr(self, "_local_sender_thread")
-                and not self._local_sender_thread.is_alive()
+                not self._thread_is_alive("_local_sender_thread")
                 and not self._stop_flag.is_set()
             ):
-                self._local_sender_thread = threading.Thread(
-                    target=self._local_batch_sender
+                self._start_background_thread(
+                    "_local_sender_thread",
+                    self._local_batch_sender,
+                    warning_key="local-sender-thread-restart",
+                    description="local Trackio logging thread",
                 )
-                self._local_sender_thread.daemon = True
-                self._local_sender_thread.start()
         else:
             if (
-                self._client_thread is not None
-                and not self._client_thread.is_alive()
+                not self._thread_is_alive("_client_thread")
                 and not self._stop_flag.is_set()
             ):
-                self._client_thread = threading.Thread(
-                    target=self._init_client_background
+                self._start_background_thread(
+                    "_client_thread",
+                    self._init_client_background,
+                    warning_key="remote-sender-thread-restart",
+                    description="remote Trackio logging thread",
                 )
-                self._client_thread.daemon = True
-                self._client_thread.start()
 
     def log(self, metrics: dict, step: int | None = None):
-        renamed_keys = []
-        new_metrics = {}
+        try:
+            renamed_keys = []
+            new_metrics = {}
 
-        for k, v in metrics.items():
-            if k in utils.RESERVED_KEYS or k.startswith("__"):
-                new_key = f"__{k}"
-                renamed_keys.append(k)
-                new_metrics[new_key] = v
-            else:
-                new_metrics[k] = v
+            for k, v in metrics.items():
+                if k in utils.RESERVED_KEYS or k.startswith("__"):
+                    new_key = f"__{k}"
+                    renamed_keys.append(k)
+                    new_metrics[new_key] = v
+                else:
+                    new_metrics[k] = v
 
-        if renamed_keys:
-            warnings.warn(f"Reserved keys renamed: {renamed_keys} → '__{{key}}'")
-
-        metrics = new_metrics
-        for key, value in metrics.items():
-            if isinstance(value, Table):
-                metrics[key] = value._to_dict(
-                    project=self.project, run=self.name, step=step
+            if renamed_keys:
+                _emit_nonfatal_warning(
+                    f"Reserved keys renamed: {renamed_keys} → '__{{key}}'"
                 )
-                self._scan_and_queue_media_uploads(metrics[key], step)
-            elif isinstance(value, Histogram):
-                metrics[key] = value._to_dict()
-            elif isinstance(value, Markdown):
-                metrics[key] = value._to_dict()
-            elif isinstance(value, TrackioMedia):
-                metrics[key] = self._process_media(value, step)
-        metrics = utils.serialize_values(metrics)
 
-        if step is None:
-            step = self._next_step
-        self._next_step = max(self._next_step, step + 1)
+            metrics = new_metrics
+            for key, value in metrics.items():
+                if isinstance(value, Table):
+                    metrics[key] = value._to_dict(
+                        project=self.project, run=self.name, step=step
+                    )
+                    self._scan_and_queue_media_uploads(metrics[key], step)
+                elif isinstance(value, Histogram):
+                    metrics[key] = value._to_dict()
+                elif isinstance(value, Markdown):
+                    metrics[key] = value._to_dict()
+                elif isinstance(value, TrackioMedia):
+                    metrics[key] = self._process_media(value, step)
+            metrics = utils.serialize_values(metrics)
 
-        config_to_log = None
-        if not self._config_logged and self.config:
-            config_to_log = utils.to_json_safe(self.config)
-            self._config_logged = True
+            if step is None:
+                step = self._next_step
+            self._next_step = max(self._next_step, step + 1)
 
-        log_entry: LogEntry = {
-            "project": self.project,
-            "run": self.name,
-            "metrics": metrics,
-            "step": step,
-            "config": config_to_log,
-            "log_id": uuid.uuid4().hex,
-        }
+            config_to_log = None
+            if not self._config_logged and self.config:
+                config_to_log = utils.to_json_safe(self.config)
+                self._config_logged = True
 
-        with self._client_lock:
-            self._queued_logs.append(log_entry)
-            self._ensure_sender_alive()
+            log_entry: LogEntry = {
+                "project": self.project,
+                "run": self.name,
+                "metrics": metrics,
+                "step": step,
+                "config": config_to_log,
+                "log_id": uuid.uuid4().hex,
+            }
+
+            with self._client_lock:
+                self._queued_logs.append(log_entry)
+                self._ensure_sender_alive()
+                if not self._thread_is_alive(
+                    "_local_sender_thread" if self._is_local else "_client_thread"
+                ):
+                    self._flush_queues_inline()
+        except Exception as e:
+            _emit_nonfatal_warning(f"trackio.log() failed to process metrics: {e}")
 
     def alert(
         self,
@@ -658,88 +845,127 @@ class Run:
         step: int | None = None,
         webhook_url: str | None = None,
     ):
-        if step is None:
-            step = max(self._next_step - 1, 0)
-        timestamp = datetime.now(timezone.utc).isoformat()
+        try:
+            if step is None:
+                step = max(self._next_step - 1, 0)
+            timestamp = datetime.now(timezone.utc).isoformat()
 
-        print(format_alert_terminal(level, title, text, step))
+            print(format_alert_terminal(level, title, text, step))
 
-        alert_entry: AlertEntry = {
-            "project": self.project,
-            "run": self.name,
-            "title": title,
-            "text": text,
-            "level": level.value,
-            "step": step,
-            "timestamp": timestamp,
-            "alert_id": uuid.uuid4().hex,
-        }
+            alert_entry: AlertEntry = {
+                "project": self.project,
+                "run": self.name,
+                "title": title,
+                "text": text,
+                "level": level.value,
+                "step": step,
+                "timestamp": timestamp,
+                "alert_id": uuid.uuid4().hex,
+            }
 
-        with self._client_lock:
-            self._queued_alerts.append(alert_entry)
-            self._ensure_sender_alive()
+            with self._client_lock:
+                self._queued_alerts.append(alert_entry)
+                self._ensure_sender_alive()
+                if not self._thread_is_alive(
+                    "_local_sender_thread" if self._is_local else "_client_thread"
+                ):
+                    self._flush_queues_inline()
 
-        url = webhook_url or self._webhook_url
-        if url and should_send_webhook(level, self._webhook_min_level):
-            t = threading.Thread(
-                target=send_webhook,
-                args=(
-                    url,
-                    level,
-                    title,
-                    text,
-                    self.project,
-                    self.name,
-                    step,
-                    timestamp,
-                ),
-                daemon=True,
-            )
-            t.start()
+            url = webhook_url or self._webhook_url
+            if url and should_send_webhook(level, self._webhook_min_level):
+                t = threading.Thread(
+                    target=send_webhook,
+                    args=(
+                        url,
+                        level,
+                        title,
+                        text,
+                        self.project,
+                        self.name,
+                        step,
+                        timestamp,
+                    ),
+                    daemon=True,
+                )
+                t.start()
+        except Exception as e:
+            _emit_nonfatal_warning(f"trackio.alert() failed: {e}")
 
     def log_system(self, metrics: dict):
-        metrics = utils.serialize_values(metrics)
-        timestamp = datetime.now(timezone.utc).isoformat()
+        try:
+            metrics = utils.serialize_values(metrics)
+            timestamp = datetime.now(timezone.utc).isoformat()
 
-        system_log_entry: SystemLogEntry = {
-            "project": self.project,
-            "run": self.name,
-            "metrics": metrics,
-            "timestamp": timestamp,
-            "log_id": uuid.uuid4().hex,
-        }
+            system_log_entry: SystemLogEntry = {
+                "project": self.project,
+                "run": self.name,
+                "metrics": metrics,
+                "timestamp": timestamp,
+                "log_id": uuid.uuid4().hex,
+            }
 
-        with self._client_lock:
-            self._queued_system_logs.append(system_log_entry)
-            self._ensure_sender_alive()
+            with self._client_lock:
+                self._queued_system_logs.append(system_log_entry)
+                self._ensure_sender_alive()
+                if not self._thread_is_alive(
+                    "_local_sender_thread" if self._is_local else "_client_thread"
+                ):
+                    self._flush_queues_inline()
+        except Exception as e:
+            _emit_nonfatal_warning(f"trackio.log_system() failed: {e}")
 
     def finish(self):
-        if self._gpu_monitor is not None:
-            self._gpu_monitor.stop()
-
-        self._stop_flag.set()
-
-        if self._is_local:
-            if hasattr(self, "_local_sender_thread"):
-                print("* Run finished. Uploading logs to Trackio (please wait...)")
-                self._local_sender_thread.join(timeout=30)
-                if self._local_sender_thread.is_alive():
-                    warnings.warn(
-                        "Could not flush all logs within 30s. Some data may be buffered locally."
+        try:
+            if self._gpu_monitor is not None:
+                try:
+                    self._gpu_monitor.stop()
+                except Exception as e:
+                    self._warn_once(
+                        "finish-gpu-monitor",
+                        f"trackio.finish() could not stop automatic GPU logging cleanly: {e}.",
                     )
-        else:
-            if self._client_thread is not None:
-                print(
-                    "* Run finished. Uploading logs to Trackio Space (please wait...)"
-                )
-                self._client_thread.join(timeout=30)
-                if self._client_thread.is_alive():
-                    warnings.warn(
-                        "Could not flush all logs within 30s. Some data may be buffered locally."
+
+            self._stop_flag.set()
+
+            if self._is_local:
+                if self._local_sender_thread is not None:
+                    print("* Run finished. Uploading logs to Trackio (please wait...)")
+                    self._local_sender_thread.join(timeout=30)
+                    if self._local_sender_thread.is_alive():
+                        _emit_nonfatal_warning(
+                            "Could not flush all logs within 30s. Some data may be buffered locally."
+                        )
+                else:
+                    with self._client_lock:
+                        self._flush_queues_inline()
+            else:
+                if self._client_thread is not None:
+                    print(
+                        "* Run finished. Uploading logs to Trackio Space (please wait...)"
                     )
-            if SQLiteStorage.has_pending_data(self.project):
-                warnings.warn(
-                    f"* Some logs could not be sent to the Space (it may still be starting up). "
-                    f"They have been saved locally and will be sent automatically next time you call: "
-                    f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
-                )
+                    self._client_thread.join(timeout=30)
+                    if self._client_thread.is_alive():
+                        _emit_nonfatal_warning(
+                            "Could not flush all logs within 30s. Some data may be buffered locally."
+                        )
+                else:
+                    with self._client_lock:
+                        self._flush_queues_inline()
+
+                try:
+                    has_pending = SQLiteStorage.has_pending_data(self.project)
+                except Exception as e:
+                    self._warn_once(
+                        "finish-pending-data",
+                        f"trackio.finish() could not inspect pending buffered logs for project '{self.project}': {e}.",
+                    )
+                    has_pending = False
+
+                if has_pending:
+                    _emit_nonfatal_warning(
+                        f"* Some logs could not be sent to the Space (it may still be starting up). "
+                        f"They have been saved locally and will be sent automatically next time you call: "
+                        f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
+                    )
+        except Exception as e:
+            _emit_nonfatal_warning(f"trackio.finish() failed: {e}")

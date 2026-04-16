@@ -35,6 +35,7 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
     get_or_create_project_hash,
+    on_spaces,
     preprocess_space_and_dataset_ids,
 )
 
@@ -162,9 +163,7 @@ def deploy_as_space(
     bucket_id: str | None = None,
     private: bool | None = None,
 ):
-    if (
-        os.getenv("SYSTEM") == "spaces"
-    ):  # in case a repo with this function is uploaded to spaces
+    if on_spaces():  # in case a repo with this function is uploaded to spaces
         return
 
     if dataset_id is not None and bucket_id is not None:
@@ -687,7 +686,7 @@ def deploy_as_static_space(
     private: bool | None = None,
     hf_token: str | None = None,
 ) -> None:
-    if os.getenv("SYSTEM") == "spaces":
+    if on_spaces():
         return
 
     hf_api = huggingface_hub.HfApi()

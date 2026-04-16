@@ -156,18 +156,22 @@ export function computeMetricPlotData(masterData, xColumn, metric, xLim) {
     }
     if (yMin !== Infinity) yExtent = [yMin, yMax];
   }
-  return { data: downsample(relevant, xColumn, metric, "run", xLim).data, yExtent };
+  return {
+    data: downsample(relevant, xColumn, metric, "run", xLim, ["run"]).data,
+    yExtent,
+  };
 }
 
-function downsampleImpl(data, x, y, colorField, xLim) {
+function downsampleImpl(data, x, y, colorField, xLim, extraFields = []) {
   const columns = [x, y];
   if (colorField && Object.hasOwn(data[0], colorField)) {
     columns.push(colorField);
   }
+  columns.push(...extraFields);
 
   let filtered = data.map((r) => {
     const out = {};
-    columns.forEach((c) => (out[c] = r[c]));
+    [...new Set(columns)].forEach((c) => (out[c] = r[c]));
     if (r.data_type) out.data_type = r.data_type;
     if (r.run) out.run = r.run;
     return out;
@@ -243,7 +247,7 @@ function downsampleImpl(data, x, y, colorField, xLim) {
   return { data: result, xLim: updatedXLim };
 }
 
-export function downsample(data, x, y, colorField, xLim) {
+export function downsample(data, x, y, colorField, xLim, extraFields = []) {
   if (!data || data.length === 0) return { data, xLim };
 
   const splitByDataType =
@@ -262,7 +266,7 @@ export function downsample(data, x, y, colorField, xLim) {
     const merged = [];
     let mergedXLim = xLim;
     for (const chunk of chunks.values()) {
-      const out = downsampleImpl(chunk, x, y, colorField, xLim);
+      const out = downsampleImpl(chunk, x, y, colorField, xLim, extraFields);
       merged.push(...out.data);
       mergedXLim = out.xLim;
     }
@@ -270,7 +274,7 @@ export function downsample(data, x, y, colorField, xLim) {
     return { data: merged, xLim: mergedXLim };
   }
 
-  return downsampleImpl(data, x, y, colorField, xLim);
+  return downsampleImpl(data, x, y, colorField, xLim, extraFields);
 }
 
 export function groupMetricsByPrefix(metrics, plotOrder = []) {

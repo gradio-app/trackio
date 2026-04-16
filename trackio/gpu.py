@@ -74,6 +74,25 @@ def get_gpu_count() -> tuple[int, list[int]]:
         return 0, []
 
 
+def get_all_gpu_count() -> tuple[int, list[int]]:
+    """
+    Get the total number of physical GPUs on the machine, ignoring CUDA_VISIBLE_DEVICES.
+
+    Returns:
+        Tuple of (count, physical_indices) for ALL GPUs on the machine.
+        e.g., on a 4-GPU machine returns (4, [0, 1, 2, 3]) regardless of
+        CUDA_VISIBLE_DEVICES setting.
+    """
+    if not _init_nvml():
+        return 0, []
+
+    try:
+        total = pynvml.nvmlDeviceGetCount()
+        return total, list(range(total))
+    except Exception:
+        return 0, []
+
+
 def gpu_available() -> bool:
     """
     Check if GPU monitoring is available.
@@ -97,7 +116,7 @@ def reset_energy_baseline():
     _energy_baseline = {}
 
 
-def collect_gpu_metrics(device: int | None = None) -> dict:
+def collect_gpu_metrics(device: int | None = None, all_gpus: bool = False) -> dict:
     """
     Collect GPU metrics for visible GPUs.
 
@@ -106,15 +125,20 @@ def collect_gpu_metrics(device: int | None = None) -> dict:
                 from all GPUs visible to this process (respects CUDA_VISIBLE_DEVICES).
                 The device index is the logical CUDA index (0, 1, 2...), not the
                 physical GPU index.
+        all_gpus: If True and device is None, collect metrics for ALL physical GPUs
+                  on the machine, ignoring CUDA_VISIBLE_DEVICES. Used by GpuMonitor
+                  to report system-wide GPU metrics in distributed training.
 
     Returns:
-        Dictionary of GPU metrics. Keys use logical device indices (gpu/0/, gpu/1/, etc.)
-        which correspond to CUDA device indices, not physical GPU indices.
+        Dictionary of GPU metrics. Keys use device indices (gpu/0/, gpu/1/, etc.).
     """
     if not _init_nvml():
         return {}
 
-    gpu_count, visible_gpus = get_gpu_count()
+    if all_gpus and device is None:
+        gpu_count, visible_gpus = get_all_gpu_count()
+    else:
+        gpu_count, visible_gpus = get_gpu_count()
     if gpu_count == 0:
         return {}
 
@@ -212,9 +236,9 @@ def collect_gpu_metrics(device: int | None = None) -> dict:
 
             try:
                 energy_mj = pynvml.nvmlDeviceGetTotalEnergyConsumption(handle)
-                if logical_idx not in _energy_baseline:
-                    _energy_baseline[logical_idx] = energy_mj
-                energy_consumed_mj = energy_mj - _energy_baseline[logical_idx]
+                if physical_idx not in _energy_baseline:
+                    _energy_baseline[physical_idx] = energy_mj
+                energy_consumed_mj = energy_mj - _energy_baseline[physical_idx]
                 metrics[f"{prefix}/energy_consumed"] = energy_consumed_mj / 1000.0
             except Exception:
                 pass
@@ -294,7 +318,7 @@ class GpuMonitor:
         self._thread: "threading.Thread | None" = None
 
     def start(self):
-        count, _ = get_gpu_count()
+        count, _ = get_all_gpu_count()
         if count == 0:
             warnings.warn(
                 "auto_log_gpu=True but no NVIDIA GPUs detected. GPU logging disabled."
@@ -313,7 +337,7 @@ class GpuMonitor:
     def _monitor_loop(self):
         while not self._stop_flag.is_set():
             try:
-                metrics = collect_gpu_metrics()
+                metrics = collect_gpu_metrics(all_gpus=True)
                 if metrics:
                     self._run.log_system(metrics)
             except Exception:
