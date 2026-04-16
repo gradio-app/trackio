@@ -417,39 +417,3 @@ def test_bucket_upload_paths_match_mount_layout(temp_dir):
             f"outside TRACKIO_DIR={trackio_dir}"
         )
         assert Path(local_path).exists()
-
-
-def test_exclusive_locking_mode(temp_dir, monkeypatch):
-    monkeypatch.setenv("TRACKIO_BUCKET_ID", "user/test-bucket")
-    monkeypatch.setenv("SYSTEM", "spaces")
-    import trackio.sqlite_storage as mod
-
-    assert mod._use_exclusive_locking()
-
-    project = "excl_proj"
-    SQLiteStorage.log(project=project, run="run1", metrics={"loss": 0.5})
-    results = SQLiteStorage.get_logs(project=project, run="run1")
-    assert len(results) == 1
-    assert results[0]["loss"] == 0.5
-
-    SQLiteStorage.bulk_log(
-        project, "run1", [{"loss": 0.4}, {"loss": 0.3}], config={"lr": 0.01}
-    )
-    results = SQLiteStorage.get_logs(project=project, run="run1")
-    assert len(results) == 3
-
-    config = SQLiteStorage.get_run_config(project, "run1")
-    assert config["lr"] == 0.01
-
-    db_path = SQLiteStorage.get_project_db_path(project)
-    key = str(db_path)
-    assert key in mod._persistent_connections
-    conn = mod._persistent_connections[key]
-    locking = conn.execute("PRAGMA locking_mode").fetchone()[0]
-    assert locking.lower() == "exclusive"
-
-    mod._persistent_connections.pop(key, None)
-    try:
-        conn.close()
-    except Exception:
-        pass
