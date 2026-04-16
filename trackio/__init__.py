@@ -74,6 +74,7 @@ __all__ = [
     "Histogram",
     "Markdown",
     "Api",
+    "TRACKIO_LOGO_DIR",
 ]
 
 Audio = TrackioAudio
