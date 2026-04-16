@@ -42,10 +42,6 @@ _JOURNAL_MODE_WHITELIST = frozenset(
 )
 
 
-def _use_exclusive_locking() -> bool:
-    return on_spaces()
-
-
 def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     override = os.environ.get("TRACKIO_SQLITE_JOURNAL_MODE", "").strip().lower()
     if override in _JOURNAL_MODE_WHITELIST:
@@ -58,7 +54,7 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA temp_store = MEMORY")
     conn.execute("PRAGMA cache_size = -20000")
-    if _use_exclusive_locking():
+    if on_spaces():
         conn.execute("PRAGMA locking_mode = EXCLUSIVE")
 
 
@@ -124,7 +120,7 @@ class ProcessLock:
     def __init__(self, lockfile_path: Path):
         self.lockfile_path = lockfile_path
         self.lockfile = None
-        self._use_thread_lock = _use_exclusive_locking()
+        self._use_thread_lock = on_spaces()
         if self._use_thread_lock:
             key = str(lockfile_path)
             with ProcessLock._meta_lock:
@@ -184,8 +180,8 @@ class SQLiteStorage:
         configure_pragmas: bool = True,
         row_factory=sqlite3.Row,
     ) -> Iterator[sqlite3.Connection]:
-        if _use_exclusive_locking():
-            # In exclusive mode all callers share a single persistent connection
+        if on_spaces():
+            # On Spaces, all callers share a single persistent connection
             # that is pragma-configured at creation time. The `configure_pragmas`
             # flag is intentionally ignored here — the pragmas (journal mode,
             # synchronous, locking mode) don't affect query semantics.
