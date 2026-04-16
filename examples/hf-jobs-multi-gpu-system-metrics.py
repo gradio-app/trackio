@@ -146,7 +146,7 @@ def average_across_workers(value: torch.Tensor, world_size: int) -> float:
 
 def run_workload(args: argparse.Namespace) -> None:
     maybe_relaunch_distributed(args)
-    rank, local_rank, world_size, device = init_distributed()
+    rank, _, world_size, device = init_distributed()
 
     if device.type == "cuda":
         dtype = torch.float16
@@ -205,21 +205,21 @@ def run_workload(args: argparse.Namespace) -> None:
         )
 
         if rank == 0 and run is not None:
-            total_flops = (
-                2
-                * args.matmul_repeats
-                * (args.matrix_size**3)
-                * world_size
-            )
+            total_flops = 2 * args.matmul_repeats * (args.matrix_size**3) * world_size
             tokens_per_second = (
-                args.matrix_size * args.matrix_size * world_size / max(mean_step_time, 1e-6)
+                args.matrix_size
+                * args.matrix_size
+                * world_size
+                / max(mean_step_time, 1e-6)
             )
             trackio.log(
                 {
                     "train/rmse": mean_loss,
                     "train/step_time_seconds": mean_step_time,
                     "train/tokens_per_second": tokens_per_second,
-                    "train/approx_tflops": total_flops / max(mean_step_time, 1e-6) / 1e12,
+                    "train/approx_tflops": total_flops
+                    / max(mean_step_time, 1e-6)
+                    / 1e12,
                 },
                 step=step,
             )
