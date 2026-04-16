@@ -42,10 +42,7 @@ _JOURNAL_MODE_WHITELIST = frozenset(
 
 
 def _use_exclusive_locking() -> bool:
-    return (
-        bool(os.environ.get("TRACKIO_BUCKET_ID"))
-        and os.environ.get("SYSTEM") == "spaces"
-    )
+    return os.environ.get("SYSTEM") == "spaces"
 
 
 def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
