@@ -16,6 +16,8 @@
     selectedRuns = [],
     smoothing = 5,
     appBootstrapReady = false,
+    availableDevices = $bindable([]),
+    selectedDevices = $bindable([]),
   } = $props();
 
   let systemData = $state([]);
@@ -32,7 +34,6 @@
 
   let metricGroups = $derived(groupMetricsByPrefix(metricNames));
   let groupNames = $derived(Object.keys(metricGroups));
-  let visibleGpuIds = $state([]);
 
   let plotDataByMetric = $derived.by(() => {
     const map = new Map();
@@ -50,10 +51,14 @@
     return map;
   });
 
-  let availableGpuIds = $derived.by(() => {
-    const gpuGroup = metricGroups.gpu;
-    if (!gpuGroup) return [];
-    return sortSubgroupNames(Object.keys(gpuGroup.subgroups));
+  let availableIndexedDevices = $derived.by(() => {
+    const devices = [];
+    for (const [groupName, group] of Object.entries(metricGroups)) {
+      for (const subName of sortSubgroupNames(Object.keys(group.subgroups))) {
+        devices.push(formatIndexedSourceLabel(groupName, subName));
+      }
+    }
+    return [...new Set(devices)];
   });
 
   let comparisonMetricsByGroup = $derived.by(() => {
@@ -72,14 +77,6 @@
         const key = `sys:${groupName}:compare:${metricName}`;
         map.set(key, computeComparisonPlotData(systemData, "time", metrics, lim));
       }
-    }
-    return map;
-  });
-
-  let comparisonColorMapsByKey = $derived.by(() => {
-    const map = new Map();
-    for (const [key, plot] of comparisonPlotsByKey.entries()) {
-      map.set(key, buildColorMap(plot.seriesNames ?? []));
     }
     return map;
   });
@@ -129,6 +126,11 @@
       if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) return aNum - bNum;
       return a.localeCompare(b);
     });
+  }
+
+  function sameItems(a, b) {
+    if (a.length !== b.length) return false;
+    return a.every((item, i) => item === b[i]);
   }
 
   function processFromCache() {
@@ -221,21 +223,33 @@
   });
 
   $effect(() => {
-    const available = availableGpuIds;
-    const filtered = visibleGpuIds.filter((gpuId) => available.includes(gpuId));
+    const previousAvailable = availableDevices;
+    const nextAvailable = availableIndexedDevices;
+    const filtered = selectedDevices.filter((device) =>
+      nextAvailable.includes(device),
+    );
 
-    if (available.length === 0) {
-      if (visibleGpuIds.length > 0) visibleGpuIds = [];
+    if (!sameItems(availableDevices, nextAvailable)) {
+      availableDevices = nextAvailable;
+    }
+
+    if (nextAvailable.length === 0) {
+      if (selectedDevices.length > 0) selectedDevices = [];
       return;
     }
 
-    if (visibleGpuIds.length === 0) {
-      visibleGpuIds = [...available];
+    if (previousAvailable.length === 0 && selectedDevices.length === 0) {
+      if (!sameItems(selectedDevices, nextAvailable)) {
+        selectedDevices = [...nextAvailable];
+      }
       return;
     }
 
-    if (filtered.length !== visibleGpuIds.length) {
-      visibleGpuIds = filtered.length > 0 ? filtered : [...available];
+    if (selectedDevices.length > 0 && filtered.length !== selectedDevices.length) {
+      const nextSelected = filtered.length > 0 ? filtered : [...nextAvailable];
+      if (!sameItems(selectedDevices, nextSelected)) {
+        selectedDevices = nextSelected;
+      }
     }
   });
 
@@ -283,18 +297,17 @@
     return `${groupName.toUpperCase()} ${subName}`;
   }
 
-  function seriesLabel(groupName, subName, runName) {
-    const label = formatIndexedSourceLabel(groupName, subName);
-    return selectedRuns.length > 1 ? `${runName} / ${label}` : label;
+  function deviceLabel(groupName, subName) {
+    return formatIndexedSourceLabel(groupName, subName);
   }
 
   function buildIndexedMetricGroups(groupName, subgroups) {
     const grouped = {};
     const visibleSubgroups = sortSubgroupNames(Object.keys(subgroups)).filter(
-      (subName) =>
-        groupName !== "gpu" ||
-        visibleGpuIds.length === 0 ||
-        visibleGpuIds.includes(subName),
+      (subName) => {
+        const label = deviceLabel(groupName, subName);
+        return selectedDevices.length === 0 || selectedDevices.includes(label);
+      },
     );
 
     for (const subName of visibleSubgroups) {
@@ -317,28 +330,22 @@
 
   function computeComparisonPlotData(rows, xColumn, metrics, xLim) {
     if (!metrics || metrics.length === 0) {
-      return { data: [], yExtent: undefined, seriesNames: [] };
+      return { data: [], yExtent: undefined };
     }
 
     let relevant = [];
-    const seenSeries = new Set();
-    const seriesNames = [];
 
     for (const metric of metrics) {
       const [groupName, subName] = metric.split("/");
       for (const row of rows) {
         const value = row[metric];
         if (value == null) continue;
-        const series = seriesLabel(groupName, subName, row.run);
-        if (!seenSeries.has(series)) {
-          seenSeries.add(series);
-          seriesNames.push(series);
-        }
         relevant.push({
           [xColumn]: row[xColumn],
           value,
-          series,
+          seriesKey: `${row.run}\0${groupName}\0${subName}`,
           run: row.run,
+          device: deviceLabel(groupName, subName),
           data_type: row.data_type,
         });
       }
@@ -347,7 +354,7 @@
     if (xLim) {
       const groups = new Map();
       for (const row of relevant) {
-        const key = `${row.series}\0${row.data_type || "original"}`;
+        const key = `${row.seriesKey}\0${row.data_type || "original"}`;
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(row);
       }
@@ -381,30 +388,16 @@
     }
 
     return {
-      data: downsample(relevant, xColumn, "value", "series", xLim).data,
+      data: downsample(
+        relevant,
+        xColumn,
+        "value",
+        "seriesKey",
+        xLim,
+        ["seriesKey", "run", "device"],
+      ).data,
       yExtent,
-      seriesNames,
     };
-  }
-
-  function toggleGpuVisibility(gpuId) {
-    if (visibleGpuIds.includes(gpuId)) {
-      if (visibleGpuIds.length === 1) return;
-      visibleGpuIds = visibleGpuIds.filter((id) => id !== gpuId);
-      return;
-    }
-    visibleGpuIds = [...visibleGpuIds, gpuId];
-  }
-
-  function showAllGpus() {
-    visibleGpuIds = [...availableGpuIds];
-  }
-
-  function comparisonLegendLabel(groupName) {
-    if (groupName === "gpu") {
-      return selectedRuns.length > 1 ? "Run / GPU" : "GPU";
-    }
-    return selectedRuns.length > 1 ? "Run / Device" : "Device";
   }
 
 </script>
@@ -471,39 +464,14 @@
           </div>
         {/if}
 
-        {#if groupName === "gpu" && availableGpuIds.length > 1}
-          <div class="gpu-filter">
-            <span class="gpu-filter__label">Visible GPUs</span>
-            <button
-              type="button"
-              class="gpu-filter__chip"
-              class:gpu-filter__chip--active={visibleGpuIds.length === availableGpuIds.length}
-              onclick={showAllGpus}
-            >
-              All
-            </button>
-            {#each availableGpuIds as gpuId}
-              <button
-                type="button"
-                class="gpu-filter__chip"
-                class:gpu-filter__chip--active={visibleGpuIds.includes(gpuId)}
-                onclick={() => toggleGpuVisibility(gpuId)}
-              >
-                GPU {gpuId}
-              </button>
-            {/each}
-          </div>
-        {/if}
-
         {#if orderedComparisons.length > 0}
           <div class="subgroup-list">
             <div class="plot-grid">
               {#each orderedComparisons as metricName, i}
                 {@const plotKey = `sys:${groupName}:compare:${metricName}`}
-                {@const plotResult = comparisonPlotsByKey.get(plotKey) ?? { data: [], yExtent: undefined, seriesNames: [] }}
+                {@const plotResult = comparisonPlotsByKey.get(plotKey) ?? { data: [], yExtent: undefined }}
                 {@const plotData = plotResult.data}
                 {@const yExtent = plotResult.yExtent}
-                {@const compareColorMap = comparisonColorMapsByKey.get(plotKey) ?? {}}
                 {#if plotData.length > 0}
                   <LinePlot
                     data={plotData}
@@ -511,9 +479,11 @@
                     y="value"
                     yLabel={metricTitleFromName(metricName)}
                     title={metricTitleFromName(metricName)}
-                    colorField="series"
-                    colorLabel={comparisonLegendLabel(groupName)}
-                    colorMap={compareColorMap}
+                    colorField="run"
+                    colorLabel="Run"
+                    colorMap={runColorMap}
+                    dashField="device"
+                    dashLabel="Device"
                     {xLim}
                     {yExtent}
                     onSelect={handlePlotSelect}
@@ -547,33 +517,6 @@
   }
   .subgroup-list {
     margin-top: 16px;
-  }
-  .gpu-filter {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-top: 16px;
-  }
-  .gpu-filter__label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--body-text-color-subdued, #6b7280);
-  }
-  .gpu-filter__chip {
-    border: 1px solid var(--border-color-primary, #d1d5db);
-    background: var(--background-fill-primary, #fff);
-    color: var(--body-text-color, #1f2937);
-    border-radius: 999px;
-    padding: 6px 10px;
-    font-size: 12px;
-    line-height: 1;
-    cursor: pointer;
-  }
-  .gpu-filter__chip--active {
-    border-color: var(--link-text-color, #2563eb);
-    background: var(--background-fill-secondary, #eff6ff);
-    color: var(--link-text-color, #2563eb);
   }
   .empty-state {
     max-width: 640px;
