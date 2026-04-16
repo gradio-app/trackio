@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
+from typing import Any
 
 try:
     import fcntl
@@ -39,6 +40,10 @@ DB_EXT = ".db"
 
 _JOURNAL_MODE_WHITELIST = frozenset(
     {"wal", "delete", "truncate", "persist", "memory", "off"}
+)
+_READ_ONLY_QUERY_PREFIXES = ("select", "with", "pragma")
+_READ_ONLY_PRAGMAS = frozenset(
+    {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo"}
 )
 
 
@@ -1177,6 +1182,70 @@ class SQLiteStorage:
             if "no such table: metrics" in str(e):
                 return []
             raise
+
+    @staticmethod
+    def _validate_read_only_query(query: str) -> str:
+        normalized = query.strip().rstrip(";").strip()
+        if not normalized:
+            raise ValueError("Query cannot be empty.")
+        if not normalized.lower().startswith(_READ_ONLY_QUERY_PREFIXES):
+            raise ValueError(
+                "Only read-only SELECT, WITH, and safe PRAGMA queries are supported."
+            )
+        return normalized
+
+    @staticmethod
+    def _query_authorizer(
+        action_code: int,
+        arg1: str | None,
+        arg2: str | None,
+        db_name: str | None,
+        source: str | None,
+    ) -> int:
+        del arg2, db_name, source
+        if action_code in {
+            sqlite3.SQLITE_SELECT,
+            sqlite3.SQLITE_READ,
+            sqlite3.SQLITE_FUNCTION,
+        }:
+            return sqlite3.SQLITE_OK
+        pragma_code = getattr(sqlite3, "SQLITE_PRAGMA", None)
+        if action_code == pragma_code:
+            pragma_name = (arg1 or "").lower()
+            if pragma_name in _READ_ONLY_PRAGMAS:
+                return sqlite3.SQLITE_OK
+        return sqlite3.SQLITE_DENY
+
+    @staticmethod
+    def query_project(project: str, query: str) -> dict[str, Any]:
+        SQLiteStorage._ensure_hub_loaded()
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            raise FileNotFoundError(f"Project '{project}' not found.")
+
+        normalized_query = SQLiteStorage._validate_read_only_query(query)
+        with SQLiteStorage._get_connection(db_path) as conn:
+            conn.set_authorizer(SQLiteStorage._query_authorizer)
+            try:
+                cursor = conn.cursor()
+                cursor.execute(normalized_query)
+                description = cursor.description or []
+                columns = [column[0] for column in description]
+                rows = []
+                for row in cursor.fetchall():
+                    rows.append({column: row[column] for column in columns})
+            except sqlite3.DatabaseError as e:
+                raise ValueError(str(e)) from e
+            finally:
+                conn.set_authorizer(None)
+
+        return {
+            "project": project,
+            "query": normalized_query,
+            "columns": columns,
+            "rows": rows,
+            "row_count": len(rows),
+        }
 
     @staticmethod
     def get_max_steps_for_runs(project: str) -> dict[str, int]:

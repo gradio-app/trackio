@@ -645,6 +645,10 @@ def get_logs(project: str, run: str) -> list[dict]:
     return SQLiteStorage.get_logs(project, run, max_points=1500)
 
 
+def query_project(project: str, query: str) -> dict[str, Any]:
+    return SQLiteStorage.query_project(project, query)
+
+
 def get_settings() -> dict:
     return {
         "logo_urls": utils.get_logo_urls(),
@@ -735,6 +739,7 @@ def make_trackio_server() -> TrackioServer:
     server.api(fn=get_system_logs, name="get_system_logs")
     server.api(fn=get_snapshot, name="get_snapshot")
     server.api(fn=get_logs, name="get_logs")
+    server.api(fn=query_project, name="query_project")
     server.api(fn=get_settings, name="get_settings")
     server.api(fn=get_project_files, name="get_project_files")
     server.api(fn=delete_run, name="delete_run")

@@ -14,6 +14,7 @@ Trackio is an experiment tracking library for logging and visualizing ML trainin
 | **Logging metrics** during training | Python API | [logging_metrics.md](logging_metrics.md) |
 | **Firing alerts** for training diagnostics | Python API | [alerts.md](alerts.md) |
 | **Retrieving metrics & alerts** after/during training | CLI | [retrieving_metrics.md](retrieving_metrics.md) |
+| **Inspecting storage schema and running direct SQL** | CLI | [storage_schema.md](storage_schema.md) |
 
 ## When to Use Each
 
@@ -47,15 +48,17 @@ Use the `trackio` command to query logged metrics and alerts:
 
 - `trackio list projects/runs/metrics` — discover what's available
 - `trackio get project/run/metric` — retrieve summaries and values
+- `trackio query project --project <name> --sql "SELECT ..."` — run catch-all read-only SQL
 - `trackio list alerts --project <name> --json` — retrieve alerts
 - `trackio show` — launch the dashboard
 - `trackio sync` — sync to HF Space
 
 **Key concept**: Add `--json` for programmatic output suitable for automation and LLM agents.
 
-**Remote Spaces**: Add `--space <space_id_or_url>` to any `list`/`get` command to query a remote HF Space instead of local data. Use `--hf-token` for private Spaces.
+**Remote Spaces**: Add `--space <space_id_or_url>` to any `list`/`get`/`query` command to query a remote HF Space instead of local data. Use `--hf-token` for private Spaces.
 
 → See [retrieving_metrics.md](retrieving_metrics.md) for all commands, workflows, and JSON output formats.
+→ See [storage_schema.md](storage_schema.md) for SQLite tables, parquet layout, and direct query examples.
 
 ## Minimal Logging Setup
 
@@ -73,6 +76,7 @@ trackio.finish()
 ```bash
 trackio list projects --json
 trackio get metric --project my-project --run my-run --metric loss --json
+trackio query project --project my-project --sql "SELECT name FROM sqlite_master WHERE type = 'table'" --json
 
 # Query a remote Space
 trackio list projects --space username/my-space --json
