@@ -159,24 +159,12 @@ def test_trackio_dir_env_var(monkeypatch):
         test_path = str(tmpdir)
 
         monkeypatch.setenv("TRACKIO_DIR", test_path)
-        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
         result_dir = utils._get_trackio_dir()
         assert str(result_dir) == test_path
 
         monkeypatch.delenv("TRACKIO_DIR", raising=False)
-        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
         result_dir = utils._get_trackio_dir()
         assert "huggingface/trackio" in Path(result_dir).as_posix()
-
-        monkeypatch.delenv("TRACKIO_DIR", raising=False)
-        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
-        result_dir = utils._get_trackio_dir()
-        assert Path(result_dir).as_posix() == "/data/trackio"
-
-        monkeypatch.setenv("TRACKIO_DIR", test_path)
-        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
-        result_dir = utils._get_trackio_dir()
-        assert Path(result_dir).as_posix() == "/data/trackio"
 
 
 def test_plot_ordering():

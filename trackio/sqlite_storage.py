@@ -31,6 +31,7 @@ from trackio.utils import (
     TRACKIO_DIR,
     deserialize_values,
     get_color_palette,
+    on_spaces,
     serialize_values,
 )
 
@@ -42,14 +43,14 @@ _JOURNAL_MODE_WHITELIST = frozenset(
 
 
 def _use_exclusive_locking() -> bool:
-    return os.environ.get("SYSTEM") == "spaces"
+    return on_spaces()
 
 
 def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     override = os.environ.get("TRACKIO_SQLITE_JOURNAL_MODE", "").strip().lower()
     if override in _JOURNAL_MODE_WHITELIST:
         journal = override.upper()
-    elif os.environ.get("SYSTEM") == "spaces":
+    elif on_spaces():
         journal = "DELETE"
     else:
         journal = "WAL"
