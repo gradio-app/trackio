@@ -17,7 +17,8 @@ def _normalize_src(src: str) -> str:
 
 def _space_id_to_url(space_id: str) -> str:
     namespace, name = space_id.split("/", 1)
-    return f"https://{namespace}-{name}.hf.space/"
+    subdomain = f"{namespace}-{name}".lower().replace("_", "-").replace(".", "-")
+    return f"https://{subdomain}.hf.space/"
 
 
 def _resolve_src_url(src: str) -> str:
