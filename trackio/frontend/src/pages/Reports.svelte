@@ -211,13 +211,6 @@
   .control {
     min-width: 200px;
   }
-  .block-title {
-    display: block;
-    font-size: var(--block-title-text-size, 14px);
-    font-weight: var(--block-title-text-weight, 400);
-    color: var(--block-title-text-color, #6b7280);
-    margin-bottom: var(--spacing-lg, 8px);
-  }
   .filter-pills {
     display: flex;
     gap: 4px;

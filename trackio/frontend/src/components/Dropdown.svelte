@@ -11,7 +11,6 @@
   } = $props();
 
   let filterInput;
-  let listElement;
   let showOptions = $state(false);
   let inputText = $state("");
   let activeIndex = $state(null);
@@ -170,7 +169,6 @@
         style:bottom={bottom}
         style:max-height="{maxHeight}px"
         style:width="{inputWidth}px"
-        bind:this={listElement}
         role="listbox"
       >
         {#each filteredIndices as index}

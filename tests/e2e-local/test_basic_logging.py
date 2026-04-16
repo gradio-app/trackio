@@ -120,7 +120,7 @@ def test_reserved_keys_are_renamed(temp_dir):
 
 
 def test_auto_log_gpu(temp_dir):
-    def fake_gpu_metrics(device=None):
+    def fake_gpu_metrics(device=None, all_gpus=False):
         return {
             "gpu/0/utilization": 75,
             "gpu/0/allocated_memory": 4.5,
@@ -131,7 +131,7 @@ def test_auto_log_gpu(temp_dir):
         }
 
     with patch.object(gpu, "collect_gpu_metrics", fake_gpu_metrics):
-        with patch.object(gpu, "get_gpu_count", return_value=(1, [0])):
+        with patch.object(gpu, "get_all_gpu_count", return_value=(1, [0])):
             with patch("trackio.run.gpu_available", return_value=True):
                 with patch("trackio.run.apple_gpu_available", return_value=False):
                     trackio.init(
@@ -156,3 +156,49 @@ def test_auto_log_gpu(temp_dir):
     assert log["gpu/0/power"] == 150.0
     assert log["gpu/mean_utilization"] == 75
     assert "timestamp" in log
+
+
+def test_auto_log_gpu_multi(temp_dir):
+    def fake_gpu_metrics(device=None, all_gpus=False):
+        metrics = {
+            "gpu/0/utilization": 75,
+            "gpu/0/allocated_memory": 4.5,
+            "gpu/0/total_memory": 12.0,
+            "gpu/0/temp": 65,
+            "gpu/0/power": 150.0,
+            "gpu/mean_utilization": 70,
+        }
+        if all_gpus:
+            metrics.update(
+                {
+                    "gpu/1/utilization": 65,
+                    "gpu/1/allocated_memory": 3.0,
+                    "gpu/1/total_memory": 12.0,
+                    "gpu/1/temp": 60,
+                    "gpu/1/power": 120.0,
+                }
+            )
+        return metrics
+
+    with patch.object(gpu, "collect_gpu_metrics", fake_gpu_metrics):
+        with patch.object(gpu, "get_all_gpu_count", return_value=(2, [0, 1])):
+            with patch("trackio.run.gpu_available", return_value=True):
+                with patch("trackio.run.apple_gpu_available", return_value=False):
+                    trackio.init(
+                        project="test_gpu_multi",
+                        name="test_gpu_multi_run",
+                        auto_log_gpu=True,
+                        gpu_log_interval=0.1,
+                    )
+                    trackio.log({"loss": 0.5})
+                    time.sleep(0.3)
+                    trackio.finish()
+
+    system_logs = SQLiteStorage.get_system_logs(
+        project="test_gpu_multi", run="test_gpu_multi_run"
+    )
+    assert len(system_logs) >= 1
+    log = system_logs[0]
+    assert log["gpu/0/utilization"] == 75
+    assert log["gpu/1/utilization"] == 65
+    assert log["gpu/mean_utilization"] == 70

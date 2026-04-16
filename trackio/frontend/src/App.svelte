@@ -61,6 +61,8 @@
   let tableTruncateLength = $state(250);
   let readOnlySource = $state(null);
   let spaceId = $state(null);
+  let availableSystemDevices = $state([]);
+  let selectedSystemDevices = $state([]);
 
   function handleNavigate(page) {
     currentPage = page;
@@ -103,6 +105,8 @@
     if (!selectedProject) {
       runs = [];
       selectedRuns = [];
+      availableSystemDevices = [];
+      selectedSystemDevices = [];
       return;
     }
     try {
@@ -191,6 +195,8 @@
 
   $effect(() => {
     selectedProject;
+    availableSystemDevices = [];
+    selectedSystemDevices = [];
     refreshRuns();
   });
 
@@ -338,6 +344,8 @@
       bind:showHeaders
       bind:filterText
       {metricColumns}
+      {availableSystemDevices}
+      bind:selectedSystemDevices
       {logoUrls}
       {darkMode}
     />
@@ -368,6 +376,8 @@
           {selectedRuns}
           {smoothing}
           {appBootstrapReady}
+          bind:availableDevices={availableSystemDevices}
+          bind:selectedDevices={selectedSystemDevices}
         />
       {:else if currentPage === "media"}
         <Media project={selectedProject} {selectedRuns} {tableTruncateLength} />

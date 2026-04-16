@@ -8,7 +8,7 @@
 
   let themeChoice = $state(getThemePreference());
   let copiedIdx = $state(null);
-  let cliProject = $state(selectedProject);
+  let cliProject = $state(null);
   let selectedAgent = $state("claude");
   let agentCopied = $state(false);
   let exampleCopied = $state(false);
@@ -33,6 +33,18 @@
       opencode: `Use the trackio skill to get a summary of project "${proj}" and flag any runs where the loss spiked unexpectedly.`,
     };
     return examples[selectedAgent];
+  });
+
+  $effect(() => {
+    projects;
+    selectedProject;
+
+    if (cliProject && projects.includes(cliProject)) return;
+    if (selectedProject && projects.includes(selectedProject)) {
+      cliProject = selectedProject;
+      return;
+    }
+    cliProject = projects[0] ?? selectedProject ?? null;
   });
 
   function switchTheme(value) {

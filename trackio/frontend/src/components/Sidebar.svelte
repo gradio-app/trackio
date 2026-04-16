@@ -15,6 +15,8 @@
     selectedProject = $bindable(null),
     runs = [],
     selectedRuns = $bindable([]),
+    availableSystemDevices = [],
+    selectedSystemDevices = $bindable([]),
     smoothing = $bindable(10),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
@@ -83,6 +85,14 @@
       selectedRuns = [filteredRuns[filteredRuns.length - 1]];
     } else if (!latestOnly) {
       selectedRuns = [...filteredRuns];
+    }
+  }
+
+  function toggleDevice(device) {
+    if (selectedSystemDevices.includes(device)) {
+      selectedSystemDevices = selectedSystemDevices.filter((d) => d !== device);
+    } else {
+      selectedSystemDevices = [...selectedSystemDevices, device];
     }
   }
 </script>
@@ -169,6 +179,38 @@
               ontoggle={() => { latestOnly = false; }}
             />
           </div>
+          {#if currentPage === "system" && availableSystemDevices.length > 0}
+            <div class="device-group">
+              <label class="select-all-label">
+                <input
+                  type="checkbox"
+                  class="select-all-cb"
+                  checked={selectedSystemDevices.length === availableSystemDevices.length && availableSystemDevices.length > 0}
+                  use:setIndeterminate={selectedSystemDevices.length > 0 && selectedSystemDevices.length < availableSystemDevices.length}
+                  onchange={() => {
+                    if (selectedSystemDevices.length === availableSystemDevices.length) {
+                      selectedSystemDevices = [];
+                    } else {
+                      selectedSystemDevices = [...availableSystemDevices];
+                    }
+                  }}
+                />
+                <span class="section-sublabel">Devices ({availableSystemDevices.length})</span>
+              </label>
+              <div class="checkbox-group">
+                {#each availableSystemDevices as device}
+                  <label class="checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={selectedSystemDevices.includes(device)}
+                      onchange={() => toggleDevice(device)}
+                    />
+                    <span class="run-name" title={device}>{device}</span>
+                  </label>
+                {/each}
+              </div>
+            </div>
+          {/if}
         </div>
 
         {#if currentPage === "metrics" || currentPage === "system"}
@@ -493,5 +535,56 @@
     max-height: 300px;
     overflow-y: auto;
     margin-top: 8px;
+  }
+  .device-group {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color-primary, #e5e7eb);
+  }
+  .section-sublabel {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .checkbox-group {
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+  }
+  .checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .checkbox-item input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 1px solid var(--checkbox-border-color, #d1d5db);
+    border-radius: var(--checkbox-border-radius, 4px);
+    background-color: var(--checkbox-background-color, white);
+    box-shadow: var(--checkbox-shadow);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .checkbox-item input[type="checkbox"]:checked {
+    background-image: var(--checkbox-check);
+    background-color: var(--checkbox-background-color-selected, #f97316);
+    border-color: var(--checkbox-border-color-selected, #f97316);
+  }
+  .checkbox-item input[type="checkbox"]:hover {
+    border-color: var(--checkbox-border-color-hover, #d1d5db);
+  }
+  .run-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--body-text-color, #1f2937);
   }
 </style>
