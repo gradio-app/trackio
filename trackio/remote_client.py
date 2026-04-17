@@ -51,6 +51,7 @@ class _TrackioHTTPClient:
     ) -> None:
         self.src = _resolve_src_url(src)
         self.httpx_kwargs = dict(httpx_kwargs or {})
+        self.httpx_kwargs.setdefault("timeout", 60)
         self.headers = build_hf_headers(token=hf_token)
 
     def _upload_file(self, file_data: dict[str, Any]) -> dict[str, Any]:
