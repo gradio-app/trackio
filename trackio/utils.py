@@ -429,6 +429,15 @@ def print_dashboard_instructions(project: str) -> None:
     print(f'* or by running in Python: trackio.show(project="{project}")')
 
 
+def print_write_token_instructions(full_url: str) -> None:
+    print()
+    print(f"* Trackio dashboard opened in browser with write access at: {full_url}")
+    print(
+        "* Warning: anyone with access to your dashboard with the write_token can "
+        "write logs, rename/delete runs, and connect MCP tools"
+    )
+
+
 def preprocess_space_and_dataset_ids(
     space_id: str | None,
     dataset_id: str | None,

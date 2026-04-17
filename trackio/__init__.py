@@ -922,12 +922,13 @@ def show(
     )
 
     if not utils.is_in_notebook():
-        print(f"* Trackio UI launched at: {dashboard_url}")
+        print(f"\033[1m\033[38;5;208m* Trackio UI launched at: {dashboard_url}\033[0m")
+        utils.print_write_token_instructions(full_url)
         if open_browser:
-            webbrowser.open(dashboard_url)
+            webbrowser.open(full_url)
         block_thread = block_thread if block_thread is not None else True
     else:
-        utils.embed_url_in_notebook(dashboard_url)
+        utils.embed_url_in_notebook(full_url)
         block_thread = block_thread if block_thread is not None else False
 
     if block_thread:
