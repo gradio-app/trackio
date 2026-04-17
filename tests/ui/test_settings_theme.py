@@ -8,14 +8,16 @@ def test_settings_theme_switching_and_persistence(temp_dir):
     trackio.log(metrics={"loss": 0.5})
     trackio.finish()
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, _, _, full_url = trackio.show(
+        project="test_theme", block_thread=False, open_browser=False
+    )
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            base_url = url if url.endswith("/") else url + "/"
+            base_url = full_url
             page.goto(base_url)
             page.wait_for_load_state("networkidle")
 

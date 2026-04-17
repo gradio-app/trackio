@@ -3,10 +3,10 @@ import time
 
 import huggingface_hub
 import pytest
-from gradio_client import Client
 from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 from trackio import deploy, utils
+from trackio.remote_client import RemoteClient as Client
 
 
 @pytest.fixture(scope="session")

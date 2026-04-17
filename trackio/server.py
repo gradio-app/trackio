@@ -9,18 +9,24 @@ import shutil
 import sqlite3
 import threading
 import time
+import warnings
 from collections import deque
 from functools import lru_cache
 from typing import Any
 from urllib.parse import urlencode
 
-import gradio as gr
 import httpx
 import huggingface_hub as hf
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
+from starlette.routing import Route
 
 import trackio.utils as utils
+from trackio.asgi_app import (
+    consume_uploaded_temp_file,
+    create_trackio_starlette_app,
+)
+from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
@@ -94,7 +100,7 @@ OAUTH_CALLBACK_PATH = "/login/callback"
 OAUTH_START_PATH = "/oauth/hf/start"
 
 
-def _hf_access_token(request: gr.Request) -> str | None:
+def _hf_access_token(request: Request) -> str | None:
     session_id = None
     try:
         session_id = request.headers.get("x-trackio-oauth-session")
@@ -124,14 +130,6 @@ def _oauth_redirect_uri(request: Request) -> str:
         space_host = space_host.split(",")[0]
         return f"https://{space_host}{OAUTH_CALLBACK_PATH}"
     return str(request.base_url).rstrip("/") + OAUTH_CALLBACK_PATH
-
-
-class TrackioServer(gr.Server):
-    def close(self, verbose: bool = True) -> None:
-        if self.blocks is None:
-            return
-        if self.blocks.is_running:
-            self.blocks.close(verbose=verbose)
 
 
 _OAUTH_STATE_TTL = 86400
@@ -330,24 +328,25 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
     )
 
 
-def check_write_access(request: gr.Request, token: str) -> bool:
+def check_write_access(request: Request, token: str) -> bool:
+    expected_token = token or ""
     cookies = request.headers.get("cookie", "")
     if cookies:
         for cookie in cookies.split(";"):
             parts = cookie.strip().split("=", 1)
             if len(parts) == 2 and parts[0] == "trackio_write_token":
-                return parts[1] == token
+                return secrets.compare_digest(parts[1], expected_token)
     if hasattr(request, "query_params") and request.query_params:
         qp = request.query_params.get("write_token")
-        return qp == token
+        return secrets.compare_digest(qp or "", expected_token)
     return False
 
 
-def assert_can_mutate_runs(request: gr.Request) -> None:
+def assert_can_mutate_runs(request: Request) -> None:
     if not on_spaces():
         if check_write_access(request, write_token):
             return
-        raise gr.Error(
+        raise TrackioAPIError(
             "A write_token is required to delete or rename runs. "
             "Open the dashboard using the link that includes the write_token query parameter."
         )
@@ -356,17 +355,17 @@ def assert_can_mutate_runs(request: gr.Request) -> None:
         try:
             check_oauth_token_has_write_access(hf_tok)
         except PermissionError as e:
-            raise gr.Error(str(e)) from e
+            raise TrackioAPIError(str(e)) from e
         return
     if check_write_access(request, write_token):
         return
-    raise gr.Error(
+    raise TrackioAPIError(
         "Sign in with Hugging Face to delete or rename runs. You need write access to this Space, "
         "or open the dashboard using a link that includes the write_token query parameter."
     )
 
 
-def get_run_mutation_status(request: gr.Request) -> dict[str, Any]:
+def get_run_mutation_status(request: Request) -> dict[str, Any]:
     if not on_spaces():
         if check_write_access(request, write_token):
             return {"spaces": False, "allowed": True, "auth": "local"}
@@ -384,24 +383,33 @@ def get_run_mutation_status(request: gr.Request) -> dict[str, Any]:
 
 
 def upload_db_to_space(
-    project: str, uploaded_db: gr.FileData, hf_token: str | None
+    request: Request,
+    project: str,
+    uploaded_db: dict,
+    hf_token: str | None,
 ) -> None:
     check_hf_token_has_write_access(hf_token)
+    uploaded_path = consume_uploaded_temp_file(request, uploaded_db)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
-    shutil.copy(uploaded_db["path"], db_project_path)
+    shutil.copy(uploaded_path, db_project_path)
 
 
-def bulk_upload_media(uploads: list[UploadEntry], hf_token: str | None) -> None:
+def bulk_upload_media(
+    request: Request,
+    uploads: list[UploadEntry],
+    hf_token: str | None,
+) -> None:
     check_hf_token_has_write_access(hf_token)
     for upload in uploads:
+        uploaded_path = consume_uploaded_temp_file(request, upload["uploaded_file"])
         media_path = get_project_media_path(
             project=upload["project"],
             run=upload["run"],
             step=upload["step"],
             relative_path=upload["relative_path"],
         )
-        shutil.copy(upload["uploaded_file"]["path"], media_path)
+        shutil.copy(uploaded_path, media_path)
 
 
 def log(
@@ -531,7 +539,7 @@ def get_alerts(
     run: str | None = None,
     level: str | None = None,
     since: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
 
 
@@ -543,7 +551,7 @@ def get_metric_values(
     around_step: int | None = None,
     at_time: str | None = None,
     window: int | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     return SQLiteStorage.get_metric_values(
         project,
         run,
@@ -579,7 +587,7 @@ def get_all_projects() -> list[str]:
     return SQLiteStorage.get_projects()
 
 
-def get_project_summary(project: str) -> dict:
+def get_project_summary(project: str) -> dict[str, Any]:
     runs = SQLiteStorage.get_runs(project)
     if not runs:
         return {"project": project, "num_runs": 0, "runs": [], "last_activity": None}
@@ -594,7 +602,7 @@ def get_project_summary(project: str) -> dict:
     }
 
 
-def get_run_summary(project: str, run: str) -> dict:
+def get_run_summary(project: str, run: str) -> dict[str, Any]:
     num_logs = SQLiteStorage.get_log_count(project, run)
     if num_logs == 0:
         return {
@@ -624,7 +632,7 @@ def get_system_metrics_for_run(project: str, run: str) -> list[str]:
     return SQLiteStorage.get_all_system_metrics_for_run(project, run)
 
 
-def get_system_logs(project: str, run: str) -> list[dict]:
+def get_system_logs(project: str, run: str) -> list[dict[str, Any]]:
     return SQLiteStorage.get_system_logs(project, run)
 
 
@@ -635,13 +643,13 @@ def get_snapshot(
     around_step: int | None = None,
     at_time: str | None = None,
     window: int | None = None,
-) -> dict:
+) -> dict[str, Any]:
     return SQLiteStorage.get_snapshot(
         project, run, step=step, around_step=around_step, at_time=at_time, window=window
     )
 
 
-def get_logs(project: str, run: str) -> list[dict]:
+def get_logs(project: str, run: str) -> list[dict[str, Any]]:
     return SQLiteStorage.get_logs(project, run, max_points=1500)
 
 
@@ -649,7 +657,7 @@ def query_project(project: str, query: str) -> dict[str, Any]:
     return SQLiteStorage.query_project(project, query)
 
 
-def get_settings() -> dict:
+def get_settings() -> dict[str, Any]:
     return {
         "logo_urls": utils.get_logo_urls(),
         "color_palette": utils.get_color_palette(),
@@ -666,7 +674,7 @@ def get_settings() -> dict:
     }
 
 
-def get_project_files(project: str) -> list[dict]:
+def get_project_files(project: str) -> list[dict[str, Any]]:
     files_dir = utils.MEDIA_DIR / project / "files"
     if not files_dir.exists():
         return []
@@ -684,13 +692,13 @@ def get_project_files(project: str) -> list[dict]:
     return results
 
 
-def delete_run(request: gr.Request, project: str, run: str) -> bool:
+def delete_run(request: Request, project: str, run: str) -> bool:
     assert_can_mutate_runs(request)
     return SQLiteStorage.delete_run(project, run)
 
 
 def rename_run(
-    request: gr.Request,
+    request: Request,
     project: str,
     old_name: str,
     new_name: str,
@@ -713,37 +721,87 @@ def force_sync() -> bool:
 CSS = ""
 HEAD = ""
 
-gr.set_static_paths(paths=[utils.MEDIA_DIR])
+
+def _api_registry() -> dict[str, Any]:
+    return {
+        "get_run_mutation_status": get_run_mutation_status,
+        "upload_db_to_space": upload_db_to_space,
+        "bulk_upload_media": bulk_upload_media,
+        "log": log,
+        "bulk_log": bulk_log,
+        "bulk_log_system": bulk_log_system,
+        "bulk_alert": bulk_alert,
+        "get_alerts": get_alerts,
+        "get_metric_values": get_metric_values,
+        "get_runs_for_project": get_runs_for_project,
+        "get_metrics_for_run": get_metrics_for_run,
+        "get_all_projects": get_all_projects,
+        "get_project_summary": get_project_summary,
+        "get_run_summary": get_run_summary,
+        "get_system_metrics_for_run": get_system_metrics_for_run,
+        "get_system_logs": get_system_logs,
+        "get_snapshot": get_snapshot,
+        "get_logs": get_logs,
+        "query_project": query_project,
+        "get_settings": get_settings,
+        "get_project_files": get_project_files,
+        "delete_run": delete_run,
+        "rename_run": rename_run,
+        "force_sync": force_sync,
+    }
 
 
-def make_trackio_server() -> TrackioServer:
-    server = TrackioServer(title="Trackio Dashboard")
-    server.add_api_route(OAUTH_START_PATH, oauth_hf_start, methods=["GET"])
-    server.add_api_route(OAUTH_CALLBACK_PATH, oauth_hf_callback, methods=["GET"])
-    server.add_api_route("/oauth/logout", oauth_logout, methods=["GET"])
-    server.api(fn=get_run_mutation_status, name="get_run_mutation_status")
-    server.api(fn=upload_db_to_space, name="upload_db_to_space")
-    server.api(fn=bulk_upload_media, name="bulk_upload_media")
-    server.api(fn=log, name="log")
-    server.api(fn=bulk_log, name="bulk_log")
-    server.api(fn=bulk_log_system, name="bulk_log_system")
-    server.api(fn=bulk_alert, name="bulk_alert")
-    server.api(fn=get_alerts, name="get_alerts")
-    server.api(fn=get_metric_values, name="get_metric_values")
-    server.api(fn=get_runs_for_project, name="get_runs_for_project")
-    server.api(fn=get_metrics_for_run, name="get_metrics_for_run")
-    server.api(fn=get_all_projects, name="get_all_projects")
-    server.api(fn=get_project_summary, name="get_project_summary")
-    server.api(fn=get_run_summary, name="get_run_summary")
-    server.api(fn=get_system_metrics_for_run, name="get_system_metrics_for_run")
-    server.api(fn=get_system_logs, name="get_system_logs")
-    server.api(fn=get_snapshot, name="get_snapshot")
-    server.api(fn=get_logs, name="get_logs")
-    server.api(fn=query_project, name="query_project")
-    server.api(fn=get_settings, name="get_settings")
-    server.api(fn=get_project_files, name="get_project_files")
-    server.api(fn=delete_run, name="delete_run")
-    server.api(fn=rename_run, name="rename_run")
-    server.api(fn=force_sync, name="force_sync")
-    server.write_token = write_token
-    return server
+class TrackioDashboardApp:
+    def __init__(self, starlette_app, uvicorn_server: Any, write_token: str) -> None:
+        self.app = starlette_app
+        self._uvicorn_server = uvicorn_server
+        self.write_token = write_token
+
+    def close(self, verbose: bool = True) -> None:
+        if self._uvicorn_server is not None:
+            self._uvicorn_server.should_exit = True
+
+
+def build_starlette_app_only(mcp_server: bool = False) -> tuple[Any, str]:
+    oauth_routes = [
+        Route(OAUTH_START_PATH, oauth_hf_start, methods=["GET"]),
+        Route(OAUTH_CALLBACK_PATH, oauth_hf_callback, methods=["GET"]),
+        Route("/oauth/logout", oauth_logout, methods=["GET"]),
+    ]
+    mcp_lifespan = None
+    mcp_routes: list[Any] = []
+    mcp_enabled = False
+    if mcp_server:
+        try:
+            from trackio.mcp_setup import create_mcp_integration  # noqa: PLC0415
+
+            mcp_routes, mcp_lifespan = create_mcp_integration()
+            mcp_enabled = True
+        except ImportError:
+            warnings.warn(
+                "MCP support requested, but the optional `mcp` package is not installed. "
+                "Install `trackio[mcp]` to expose `/mcp`.",
+                UserWarning,
+                stacklevel=2,
+            )
+    starlette_app = create_trackio_starlette_app(
+        oauth_routes,
+        _api_registry(),
+        extra_routes=mcp_routes,
+        mcp_lifespan=mcp_lifespan,
+        mcp_enabled=mcp_enabled,
+        allowed_file_roots=[
+            utils.MEDIA_DIR,
+            utils.TRACKIO_DIR,
+            utils.TRACKIO_LOGO_DIR,
+        ],
+    )
+    from trackio.frontend_server import mount_frontend  # noqa: PLC0415
+
+    mount_frontend(starlette_app)
+    return starlette_app, write_token
+
+
+def make_trackio_server(mcp_server: bool = False) -> TrackioDashboardApp:
+    app, wt = build_starlette_app_only(mcp_server=mcp_server)
+    return TrackioDashboardApp(app, None, wt)

@@ -3,9 +3,9 @@ import time
 
 import numpy as np
 import pytest
-from gradio_client import Client
 
 import trackio
+from trackio.remote_client import RemoteClient as Client
 
 
 def _predict_run_summary(

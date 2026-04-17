@@ -1,4 +1,4 @@
-"""Serves the built Svelte frontend alongside the Gradio API."""
+"""Serves the built Svelte frontend alongside the Trackio HTTP API."""
 
 import logging
 import re
