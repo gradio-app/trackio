@@ -14,6 +14,14 @@ export TRACKIO_DIR="/path/to/trackio/data"
 
 Note: This environment variable applies as long as Trackio is not running in a Space with persistent storage enabled. If Trackio is running in a Space with persistent storage enabled (which is detected with the `PERSISTANT_STORAGE_ENABLED` env variable), then the Trackio data will be stored in `/data/trackio`.
 
+### `TRACKIO_SERVER_URL`
+
+Base URL of a self-hosted Trackio server (HTTP or HTTPS). When set, `trackio.init()` sends metrics to this server instead of using a Hugging Face Space. Must be a full URL (for example `http://127.0.0.1:7860/`). Equivalent to passing `server_url=` to `trackio.init()`. Mutually exclusive with configuring a Space via `TRACKIO_SPACE_ID` / `space_id`. See [Self-host the Server](self_hosted_server.md).
+
+```bash
+export TRACKIO_SERVER_URL="http://127.0.0.1:7860/"
+```
+
 ### `TRACKIO_LOGO_LIGHT_URL` and `TRACKIO_LOGO_DARK_URL`
 
 Customize the logos displayed in the Trackio dashboard for light and dark themes. You can provide URLs to custom logos. Note that both environment variables should be supplied; otherwise, the Trackio default will be used for any variable that is not provided.

@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Add first-class trackio_url for self-hosted Trackio servers
+feat:Add first-class server_url for self-hosted Trackio servers

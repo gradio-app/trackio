@@ -213,7 +213,7 @@ def init(
     name: str | None = None,
     group: str | None = None,
     space_id: str | None = None,
-    trackio_url: str | None = None,
+    server_url: str | None = None,
     space_storage: SpaceStorage | None = None,
     dataset_id: str | None = None,
     bucket_id: str | None = None,
@@ -250,8 +250,8 @@ def init(
             via the `TRACKIO_SPACE_ID` environment variable. You cannot log to a
             Space that has been **frozen** (converted to the static SDK); use
             ``trackio.sync(..., sdk="static")`` only after you are done logging.
-            Mutually exclusive with `trackio_url`.
-        trackio_url (`str`, *optional*):
+            Mutually exclusive with `server_url`.
+        server_url (`str`, *optional*):
             URL of a self-hosted Trackio server (e.g. `"http://my-host:7860/"` or
             `"https://trackio.internal.example.com"`). When set, metrics are logged to
             that server over HTTP instead of creating or syncing to a Hugging Face
@@ -319,18 +319,18 @@ def init(
         )
 
     space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
-    trackio_url = trackio_url or os.environ.get("TRACKIO_SERVER_URL")
+    server_url = server_url or os.environ.get("TRACKIO_SERVER_URL")
     bucket_id = bucket_id or os.environ.get("TRACKIO_BUCKET_ID")
-    if space_id is not None and trackio_url is not None:
-        raise ValueError("Cannot provide both `space_id` and `trackio_url`.")
-    if trackio_url is not None and not trackio_url.startswith(("http://", "https://")):
+    if space_id is not None and server_url is not None:
+        raise ValueError("Cannot provide both `space_id` and `server_url`.")
+    if server_url is not None and not server_url.startswith(("http://", "https://")):
         raise ValueError(
-            f"`trackio_url` must be a full URL starting with http:// or https://, got: {trackio_url!r}"
+            f"`server_url` must be a full URL starting with http:// or https://, got: {server_url!r}"
         )
-    if trackio_url is not None and (dataset_id is not None or bucket_id is not None):
+    if server_url is not None and (dataset_id is not None or bucket_id is not None):
         raise ValueError(
             "`dataset_id` and `bucket_id` are Hugging Face Spaces concepts and are not "
-            "compatible with `trackio_url`. Configure storage on the self-hosted server."
+            "compatible with `server_url`. Configure storage on the self-hosted server."
         )
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
@@ -357,7 +357,7 @@ def init(
     if space_id is not None:
         deploy.raise_if_space_is_frozen_for_logging(space_id)
 
-    remote_source = space_id or trackio_url
+    remote_source = space_id or server_url
 
     url = context_vars.current_server.get()
 
@@ -392,12 +392,12 @@ def init(
             _should_embed_local = embed and utils.is_in_notebook()
             if not _should_embed_local:
                 utils.print_dashboard_instructions(project)
-        elif trackio_url is not None:
+        elif server_url is not None:
             print(
-                f"* Trackio metrics will be sent to self-hosted server: {trackio_url}"
+                f"* Trackio metrics will be sent to self-hosted server: {server_url}"
             )
             if utils.is_in_notebook() and embed:
-                utils.embed_url_in_notebook(trackio_url)
+                utils.embed_url_in_notebook(server_url)
         else:
             try:
                 deploy.create_space_if_not_exists(

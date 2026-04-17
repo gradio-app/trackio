@@ -199,7 +199,7 @@ def test_local_dashboard_supports_remote_client(temp_dir):
         app.close()
 
 
-def test_trackio_url_logs_to_self_hosted_server(temp_dir):
+def test_server_url_logs_to_self_hosted_server(temp_dir):
     from urllib.parse import parse_qs, urlparse
 
     import trackio.context_vars as context_vars
@@ -217,7 +217,7 @@ def test_trackio_url_logs_to_self_hosted_server(temp_dir):
         context_vars.current_project.set(None)
         context_vars.current_run.set(None)
 
-        trackio.init(project=project, name=run_name, trackio_url=full_url)
+        trackio.init(project=project, name=run_name, server_url=full_url)
         trackio.log(metrics={"loss": 0.5})
         trackio.finish()
 
@@ -228,14 +228,14 @@ def test_trackio_url_logs_to_self_hosted_server(temp_dir):
         app.close()
 
 
-def test_trackio_url_rejects_non_url_value(temp_dir):
+def test_server_url_rejects_non_url_value(temp_dir):
     with pytest.raises(ValueError, match="full URL"):
-        trackio.init(project="x", trackio_url="not-a-url")
+        trackio.init(project="x", server_url="not-a-url")
 
 
-def test_trackio_url_mutually_exclusive_with_space_id(temp_dir):
+def test_server_url_mutually_exclusive_with_space_id(temp_dir):
     with pytest.raises(ValueError, match="Cannot provide both"):
-        trackio.init(project="x", space_id="u/s", trackio_url="http://localhost:1")
+        trackio.init(project="x", space_id="u/s", server_url="http://localhost:1")
 
 
 def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
