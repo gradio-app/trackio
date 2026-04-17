@@ -3,6 +3,7 @@ import io
 import json as json_mod
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -69,21 +70,47 @@ def _readme_linked_hub_yaml(dataset_id: str | None) -> str:
 _SPACE_APP_PY = "import trackio\ntrackio.show()\n"
 
 
-_SPACE_DOCKERFILE = """FROM python:3.11-slim
+_SPACE_DOCKERFILE_PYPI = """FROM python:3.11-slim
 
 RUN useradd -m -u 1000 user
 USER user
 
-ENV PATH="/home/user/.local/bin:${PATH}" \\
+ENV PATH="/home/user/.local/bin:${{PATH}}" \\
     PYTHONUNBUFFERED=1 \\
     GRADIO_SERVER_NAME=0.0.0.0 \\
     GRADIO_SERVER_PORT=7860
 
 WORKDIR /home/user/app
 
-COPY --chown=user . /home/user/app
+COPY --chown=user requirements.txt /home/user/app/requirements.txt
 
 RUN pip install --user --no-cache-dir -r requirements.txt
+
+COPY --chown=user app.py /home/user/app/app.py
+
+EXPOSE 7860
+CMD ["python", "app.py"]
+"""
+
+
+_SPACE_DOCKERFILE_WHEEL = """FROM python:3.11-slim
+
+RUN useradd -m -u 1000 user
+USER user
+
+ENV PATH="/home/user/.local/bin:${{PATH}}" \\
+    PYTHONUNBUFFERED=1 \\
+    GRADIO_SERVER_NAME=0.0.0.0 \\
+    GRADIO_SERVER_PORT=7860
+
+WORKDIR /home/user/app
+
+COPY --chown=user requirements.txt /home/user/app/requirements.txt
+COPY --chown=user {wheel_name} /home/user/app/{wheel_name}
+
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+COPY --chown=user app.py /home/user/app/app.py
 
 EXPOSE 7860
 CMD ["python", "app.py"]
@@ -148,6 +175,19 @@ def _get_source_install_dependencies() -> str:
     return "\n".join(deps + spaces_deps + mcp_deps)
 
 
+def _get_source_install_space_extra_dependencies() -> list[str]:
+    """Get source-only optional dependencies needed for Spaces builds."""
+    trackio_path = files("trackio")
+    pyproject_path = Path(trackio_path).parent / "pyproject.toml"
+    with open(pyproject_path, "rb") as f:
+        pyproject = tomllib.load(f)
+    spaces_deps = (
+        pyproject["project"].get("optional-dependencies", {}).get("spaces", [])
+    )
+    mcp_deps = pyproject["project"].get("optional-dependencies", {}).get("mcp", [])
+    return list(spaces_deps + mcp_deps)
+
+
 def _get_space_install_requirement() -> str:
     return f"trackio[spaces,mcp]=={trackio.__version__}"
 
@@ -175,6 +215,42 @@ def _is_trackio_installed_from_source() -> bool:
         TypeError,
     ):
         return True
+
+
+def _assert_frontend_build_exists() -> None:
+    dist_index = Path(trackio.__file__).resolve().parent / "frontend" / "dist" / "index.html"
+    if not dist_index.is_file():
+        raise ValueError(
+            "The Trackio frontend build is missing. From the repository root run "
+            "`cd trackio/frontend && npm ci && npm run build`, then deploy again."
+        )
+
+
+def _build_source_install_wheel(wheel_dir: Path) -> Path:
+    _assert_frontend_build_exists()
+    project_root = Path(files("trackio")).parent
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            str(project_root),
+            "--wheel-dir",
+            str(wheel_dir),
+            "--no-deps",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    wheels = sorted(wheel_dir.glob("trackio-*.whl"))
+    if not wheels:
+        raise RuntimeError(
+            "Building the Trackio wheel for Docker Space deploy produced no wheel file.\n"
+            f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
+        )
+    return wheels[-1]
 
 
 def deploy_as_space(
@@ -225,6 +301,7 @@ def deploy_as_space(
             raise ValueError(f"Failed to create Space: {e}")
 
     is_source_install = _is_trackio_installed_from_source()
+    docker_wheel_path: Path | None = None
 
     if bucket_id is not None:
         create_bucket_if_not_exists(bucket_id, private=private)
@@ -247,14 +324,31 @@ def deploy_as_space(
         )
 
     if sdk == "docker":
+        dockerfile_content = _SPACE_DOCKERFILE_PYPI
+        if is_source_install:
+            with tempfile.TemporaryDirectory(prefix="trackio-space-wheel-") as wheel_dir:
+                docker_wheel_path = _build_source_install_wheel(Path(wheel_dir))
+                dockerfile_content = _SPACE_DOCKERFILE_WHEEL.format(
+                    wheel_name=docker_wheel_path.name
+                )
+                hf_api.upload_file(
+                    path_or_fileobj=str(docker_wheel_path),
+                    path_in_repo=docker_wheel_path.name,
+                    repo_id=space_id,
+                    repo_type="space",
+                )
         hf_api.upload_file(
-            path_or_fileobj=io.BytesIO(_SPACE_DOCKERFILE.encode("utf-8")),
+            path_or_fileobj=io.BytesIO(dockerfile_content.encode("utf-8")),
             path_in_repo="Dockerfile",
             repo_id=space_id,
             repo_type="space",
         )
 
-    if is_source_install:
+    if is_source_install and sdk == "docker":
+        requirements_content = "\n".join(
+            [f"./{docker_wheel_path.name}", *_get_source_install_space_extra_dependencies()]
+        )
+    elif is_source_install:
         requirements_content = _get_source_install_dependencies()
     else:
         requirements_content = _get_space_install_requirement()
@@ -269,15 +363,8 @@ def deploy_as_space(
 
     huggingface_hub.utils.disable_progress_bars()
 
-    if is_source_install:
-        dist_index = (
-            Path(trackio.__file__).resolve().parent / "frontend" / "dist" / "index.html"
-        )
-        if not dist_index.is_file():
-            raise ValueError(
-                "The Trackio frontend build is missing. From the repository root run "
-                "`cd trackio/frontend && npm ci && npm run build`, then deploy again."
-            )
+    if is_source_install and sdk != "docker":
+        _assert_frontend_build_exists()
         hf_api.upload_folder(
             repo_id=space_id,
             repo_type="space",
