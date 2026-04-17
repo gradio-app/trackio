@@ -172,68 +172,6 @@ class ProcessLock:
             self.lockfile.close()
 
 
-_LOGS_READ_CACHE: dict[tuple[Any, ...], tuple[int, list[dict[str, Any]]]] = {}
-_LOGS_READ_CACHE_LOCK = Lock()
-_LOGS_READ_CACHE_MAX_KEYS = 512
-
-
-def _spaces_logs_read_cache_enabled() -> bool:
-    if not on_spaces():
-        return False
-    v = os.environ.get("TRACKIO_DISABLE_LOGS_CACHE", "").strip().lower()
-    return v not in ("1", "true", "yes")
-
-
-def _logs_read_cache_key(
-    project: str,
-    run: str | None,
-    run_id: str | None,
-    max_points: int | None,
-) -> tuple[Any, ...]:
-    return (
-        project,
-        run or "",
-        run_id or "",
-        max_points if max_points is not None else -1,
-    )
-
-
-def _logs_read_cache_get(
-    db_path: Path, key: tuple[Any, ...]
-) -> list[dict[str, Any]] | None:
-    if not _spaces_logs_read_cache_enabled():
-        return None
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
-        return None
-    with _LOGS_READ_CACHE_LOCK:
-        item = _LOGS_READ_CACHE.get(key)
-        if item is None:
-            return None
-        cached_mtime, logs = item
-        if cached_mtime != mtime_ns:
-            del _LOGS_READ_CACHE[key]
-            return None
-    return [{**d} for d in logs]
-
-
-def _logs_read_cache_put(
-    db_path: Path, key: tuple[Any, ...], logs: list[dict[str, Any]]
-) -> None:
-    if not _spaces_logs_read_cache_enabled():
-        return
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
-        return
-    snapshot = [{**d} for d in logs]
-    with _LOGS_READ_CACHE_LOCK:
-        while len(_LOGS_READ_CACHE) >= _LOGS_READ_CACHE_MAX_KEYS:
-            _LOGS_READ_CACHE.pop(next(iter(_LOGS_READ_CACHE)))
-        _LOGS_READ_CACHE[key] = (mtime_ns, snapshot)
-
-
 class SQLiteStorage:
     _dataset_import_attempted = False
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
@@ -1618,11 +1556,6 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        cache_key = _logs_read_cache_key(project, run, run_id, max_points)
-        cached = _logs_read_cache_get(db_path, cache_key)
-        if cached is not None:
-            return cached
-
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
@@ -1630,17 +1563,15 @@ class SQLiteStorage:
                     conn, run_name=run, run_id=run_id
                 )
                 if run_identity is None:
-                    logs: list[dict[str, Any]] = []
-                else:
-                    logs = SQLiteStorage._fetch_metric_logs_with_cursor(
-                        cursor, run_identity, max_points
-                    )
+                    return []
+                logs = SQLiteStorage._fetch_metric_logs_with_cursor(
+                    cursor, run_identity, max_points
+                )
         except sqlite3.OperationalError as e:
             if "no such table: metrics" in str(e):
                 return []
             raise
 
-        _logs_read_cache_put(db_path, cache_key, logs)
         return [{**d} for d in logs]
 
     @staticmethod
@@ -1669,17 +1600,6 @@ class SQLiteStorage:
                 for r in runs:
                     run = r.get("run")
                     run_id = r.get("run_id")
-                    cache_key = _logs_read_cache_key(project, run, run_id, max_points)
-                    cached = _logs_read_cache_get(db_path, cache_key)
-                    if cached is not None:
-                        out.append(
-                            {
-                                "run": run,
-                                "run_id": run_id,
-                                "logs": cached,
-                            }
-                        )
-                        continue
                     run_identity = SQLiteStorage._resolve_run_identity(
                         conn, run_name=run, run_id=run_id
                     )
@@ -1689,7 +1609,6 @@ class SQLiteStorage:
                         logs = SQLiteStorage._fetch_metric_logs_with_cursor(
                             cursor, run_identity, max_points
                         )
-                    _logs_read_cache_put(db_path, cache_key, logs)
                     out.append(
                         {
                             "run": run,
