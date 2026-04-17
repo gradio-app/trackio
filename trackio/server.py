@@ -713,6 +713,14 @@ def get_logs(
     return SQLiteStorage.get_logs(project, run, max_points=1500, run_id=run_id)
 
 
+def get_logs_batch(
+    project: str,
+    runs: list[dict[str, Any]],
+    max_points: int | None = 1500,
+) -> list[dict[str, Any]]:
+    return SQLiteStorage.get_logs_batch(project, runs, max_points=max_points)
+
+
 def query_project(project: str, query: str) -> dict[str, Any]:
     return SQLiteStorage.query_project(project, query)
 
@@ -808,6 +816,7 @@ def _api_registry() -> dict[str, Any]:
         "get_system_logs": get_system_logs,
         "get_snapshot": get_snapshot,
         "get_logs": get_logs,
+        "get_logs_batch": get_logs_batch,
         "query_project": query_project,
         "get_settings": get_settings,
         "get_project_files": get_project_files,

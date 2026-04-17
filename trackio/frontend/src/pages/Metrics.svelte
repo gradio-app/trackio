@@ -5,7 +5,12 @@
   import BarPlot from "../components/BarPlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getLogs } from "../lib/api.js";
+  import { getLogsBatch } from "../lib/api.js";
+  import {
+    getMetricsPollIntervalMs,
+    isRateLimitCooldownActive,
+    isTabHidden,
+  } from "../lib/hostPolling.js";
   import {
     processRunData,
     getMetricColumns,
@@ -27,6 +32,7 @@
     showHeaders = true,
     appBootstrapReady = false,
     plotOrder = [],
+    realtimeEnabled = true,
     // eslint-disable-next-line no-useless-assignment -- bindable out-prop to parent
     metricColumns = $bindable([]),
   } = $props();
@@ -168,12 +174,16 @@
       return;
     }
 
-    let fetched = false;
-    for (const run of selectedRuns) {
+    const needFetch = selectedRuns.filter((run) => {
       const runKey = run.id ?? run.name;
-      if (!rawDataCache.has(runKey)) {
-        const logs = await getLogs(project, run);
-        rawDataCache.set(runKey, logs);
+      return !rawDataCache.has(runKey);
+    });
+    let fetched = false;
+    if (needFetch.length > 0) {
+      const batch = await getLogsBatch(project, needFetch);
+      for (const entry of batch) {
+        const runKey = entry.run_id ?? entry.run;
+        rawDataCache.set(runKey, entry.logs);
         fetched = true;
       }
     }
@@ -185,12 +195,16 @@
   }
 
   async function refreshCachedRuns() {
+    if (!realtimeEnabled) return;
     if (!project || selectedRuns.length === 0) return;
+    if (isTabHidden()) return;
+    if (isRateLimitCooldownActive()) return;
 
+    const batch = await getLogsBatch(project, selectedRuns);
     let changed = false;
-    for (const run of selectedRuns) {
-      const logs = await getLogs(project, run);
-      const runKey = run.id ?? run.name;
+    for (const entry of batch) {
+      const runKey = entry.run_id ?? entry.run;
+      const logs = entry.logs;
       const prev = rawDataCache.get(runKey);
       if (!prev || logs.length !== prev.length) {
         rawDataCache.set(runKey, logs);
@@ -230,7 +244,10 @@
         xLim = [lo, hi];
       }
     }
-    refreshTimer = setInterval(refreshCachedRuns, 1000);
+    refreshTimer = setInterval(
+      refreshCachedRuns,
+      getMetricsPollIntervalMs(),
+    );
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
     };

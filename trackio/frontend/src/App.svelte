@@ -20,6 +20,11 @@
     isStaticMode,
     setMediaDir,
   } from "./lib/api.js";
+  import {
+    getAppPollIntervalMs,
+    isRateLimitCooldownActive,
+    isTabHidden,
+  } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
@@ -159,9 +164,11 @@
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (!realtimeEnabled) return;
+      if (isTabHidden()) return;
+      if (isRateLimitCooldownActive()) return;
       await refreshRuns();
       await refreshAlerts();
-    }, 1000);
+    }, getAppPollIntervalMs());
   }
 
   function applyUrlTokens() {
@@ -382,6 +389,7 @@
           {showHeaders}
           {appBootstrapReady}
           {plotOrder}
+          {realtimeEnabled}
           bind:metricColumns
         />
       {:else if currentPage === "system"}
@@ -390,6 +398,7 @@
           selectedRuns={selectedRunRecords}
           {smoothing}
           {appBootstrapReady}
+          {realtimeEnabled}
           bind:availableDevices={availableSystemDevices}
           bind:selectedDevices={selectedSystemDevices}
         />

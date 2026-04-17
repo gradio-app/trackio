@@ -1,4 +1,5 @@
 import * as staticApi from "./staticApi.js";
+import { registerRateLimitHit } from "./hostPolling.js";
 
 const BASE = window.__trackio_base || "";
 
@@ -47,6 +48,9 @@ export async function callApi(apiName, params = {}) {
     headers: { "Content-Type": "application/json", ...getOauthSessionHeader() },
     body: JSON.stringify(params),
   });
+  if (resp.status === 429) {
+    registerRateLimitHit();
+  }
   if (!resp.ok) {
     throw new Error(`API call ${apiName} failed: ${resp.status}`);
   }
@@ -83,6 +87,29 @@ export async function getLogs(project, run) {
   const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getLogs(project, run);
   return await callApi("/get_logs", params);
+}
+
+export async function getLogsBatch(project, runs) {
+  if (await isStaticMode()) {
+    const out = [];
+    for (const run of runs) {
+      const logs = await staticApi.getLogs(project, run);
+      out.push({
+        run: run?.name ?? null,
+        run_id: run?.id ?? null,
+        logs,
+      });
+    }
+    return out;
+  }
+  const payload = {
+    project,
+    runs: runs.map((run) => ({
+      run: run?.name ?? null,
+      run_id: run?.id ?? null,
+    })),
+  };
+  return await callApi("/get_logs_batch", payload);
 }
 
 export async function getProjectSummary(project) {

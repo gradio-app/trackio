@@ -5,6 +5,11 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getSystemLogs } from "../lib/api.js";
   import {
+    getMetricsPollIntervalMs,
+    isRateLimitCooldownActive,
+    isTabHidden,
+  } from "../lib/hostPolling.js";
+  import {
     groupMetricsByPrefix,
     computeMetricPlotData,
     downsample,
@@ -16,6 +21,7 @@
     selectedRuns = [],
     smoothing = 5,
     appBootstrapReady = false,
+    realtimeEnabled = true,
     availableDevices = $bindable([]),
     selectedDevices = $bindable([]),
   } = $props();
@@ -200,7 +206,10 @@
   }
 
   async function refreshCachedRuns() {
+    if (!realtimeEnabled) return;
     if (!project || selectedRuns.length === 0) return;
+    if (isTabHidden()) return;
+    if (isRateLimitCooldownActive()) return;
 
     let changed = false;
     for (const run of selectedRuns) {
@@ -264,7 +273,10 @@
   });
 
   onMount(() => {
-    refreshTimer = setInterval(refreshCachedRuns, 1000);
+    refreshTimer = setInterval(
+      refreshCachedRuns,
+      getMetricsPollIntervalMs(),
+    );
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
     };
