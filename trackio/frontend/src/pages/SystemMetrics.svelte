@@ -3,7 +3,12 @@
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getSystemLogs } from "../lib/api.js";
+  import { getSystemLogs, getSystemLogsBatch } from "../lib/api.js";
+  import {
+    getMetricsPollIntervalMs,
+    isRateLimitCooldownActive,
+    isTabHidden,
+  } from "../lib/hostPolling.js";
   import {
     groupMetricsByPrefix,
     computeMetricPlotData,
@@ -16,6 +21,7 @@
     selectedRuns = [],
     smoothing = 5,
     appBootstrapReady = false,
+    realtimeEnabled = true,
     availableDevices = $bindable([]),
     selectedDevices = $bindable([]),
   } = $props();
@@ -24,6 +30,8 @@
   let metricNames = $state([]);
   let xLim = $state(null);
   let hasLoaded = $state(false);
+  let loadError = $state(null);
+  let batchEndpointAvailable = true;
   let metricOrder = $state({});
   let dragState = $state({ group: null, index: -1 });
 
@@ -171,6 +179,32 @@
     systemData = allRows;
   }
 
+  function isMissingEndpointError(e) {
+    const msg = e && e.message ? String(e.message) : "";
+    return /\b(404|405|501)\b/.test(msg);
+  }
+
+  async function fetchSystemLogsForRuns(runs) {
+    if (batchEndpointAvailable) {
+      try {
+        return await getSystemLogsBatch(project, runs);
+      } catch (e) {
+        if (!isMissingEndpointError(e)) throw e;
+        batchEndpointAvailable = false;
+      }
+    }
+    const results = [];
+    for (const run of runs) {
+      const logs = await getSystemLogs(project, run);
+      results.push({
+        run: run?.name ?? null,
+        run_id: run?.id ?? null,
+        logs,
+      });
+    }
+    return results;
+  }
+
   async function fetchNewRuns() {
     if (!appBootstrapReady) {
       hasLoaded = false;
@@ -179,41 +213,64 @@
     if (!project || selectedRuns.length === 0) {
       systemData = [];
       metricNames = [];
+      loadError = null;
       hasLoaded = true;
       return;
     }
 
-    let fetched = false;
-    for (const run of selectedRuns) {
+    const needFetch = selectedRuns.filter((run) => {
       const runKey = run.id ?? run.name;
-      if (!rawDataCache.has(runKey)) {
-        const logs = await getSystemLogs(project, run);
-        rawDataCache.set(runKey, logs);
-        fetched = true;
+      return !rawDataCache.has(runKey);
+    });
+    let fetched = false;
+    if (needFetch.length > 0) {
+      try {
+        const batch = await fetchSystemLogsForRuns(needFetch);
+        for (const entry of batch) {
+          const runKey = entry.run_id ?? entry.run;
+          rawDataCache.set(runKey, entry.logs);
+          fetched = true;
+        }
+        loadError = null;
+      } catch (e) {
+        console.error("Failed to load system metric logs:", e);
+        if (!hasLoaded) {
+          loadError = e && e.message ? e.message : "Failed to load system metrics";
+          return;
+        }
       }
     }
 
     if (fetched || !hasLoaded) {
       processFromCache();
     }
+    loadError = null;
     hasLoaded = true;
   }
 
   async function refreshCachedRuns() {
+    if (!realtimeEnabled) return;
     if (!project || selectedRuns.length === 0) return;
+    if (isTabHidden()) return;
+    if (isRateLimitCooldownActive()) return;
 
-    let changed = false;
-    for (const run of selectedRuns) {
-      const logs = await getSystemLogs(project, run);
-      const runKey = run.id ?? run.name;
-      const prev = rawDataCache.get(runKey);
-      if (!prev || logs.length !== prev.length) {
-        rawDataCache.set(runKey, logs);
-        changed = true;
+    try {
+      const batch = await fetchSystemLogsForRuns(selectedRuns);
+      let changed = false;
+      for (const entry of batch) {
+        const runKey = entry.run_id ?? entry.run;
+        const logs = entry.logs;
+        const prev = rawDataCache.get(runKey);
+        if (!prev || logs.length !== prev.length) {
+          rawDataCache.set(runKey, logs);
+          changed = true;
+        }
       }
-    }
-    if (changed) {
-      processFromCache();
+      if (changed) {
+        processFromCache();
+      }
+    } catch (e) {
+      console.error("Failed to refresh system metric logs:", e);
     }
   }
 
@@ -264,7 +321,10 @@
   });
 
   onMount(() => {
-    refreshTimer = setInterval(refreshCachedRuns, 1000);
+    refreshTimer = setInterval(
+      refreshCachedRuns,
+      getMetricsPollIntervalMs(),
+    );
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
     };
@@ -414,8 +474,13 @@
 </script>
 
 <div class="system-page">
-  {#if !appBootstrapReady || !hasLoaded}
+  {#if !appBootstrapReady || (!hasLoaded && !loadError)}
     <LoadingTrackio />
+  {:else if loadError && !hasLoaded}
+    <div class="empty-state">
+      <h2>Unable to load system metrics</h2>
+      <p>{loadError}</p>
+    </div>
   {:else if !project}
     <div class="empty-state">
       <h2>No projects</h2>
