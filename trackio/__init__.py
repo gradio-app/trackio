@@ -107,6 +107,16 @@ def _safe_get_runs_for_init(project: str) -> list[str]:
         return []
 
 
+def _safe_get_latest_run_for_init(project: str, name: str) -> dict | None:
+    try:
+        return SQLiteStorage.get_latest_run_record_by_name(project, name)
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not inspect existing runs for project '{project}': {e}. Continuing without resume metadata."
+        )
+        return None
+
+
 def init(
     project: str,
     name: str | None = None,
@@ -289,23 +299,23 @@ def init(
     context_vars.current_project.set(project)
 
     existing_runs = _safe_get_runs_for_init(project)
+    existing_run = (
+        _safe_get_latest_run_for_init(project, name) if name is not None else None
+    )
+    resolved_run_id = None
 
     if resume == "must":
         if name is None:
             raise ValueError("Must provide a run name when resume='must'")
-        if name not in existing_runs:
+        if existing_run is None:
             raise ValueError(f"Run '{name}' does not exist in project '{project}'")
         resumed = True
+        resolved_run_id = existing_run["id"]
     elif resume == "allow":
-        resumed = name is not None and name in existing_runs
+        resumed = existing_run is not None
+        if resumed:
+            resolved_run_id = existing_run["id"]
     elif resume == "never":
-        if name is not None and name in existing_runs:
-            _emit_nonfatal_warning(
-                f"* Warning: resume='never' but a run '{name}' already exists in "
-                f"project '{project}'. Generating a new name and instead. If you want "
-                "to resume this run, call init() with resume='must' or resume='allow'."
-            )
-            name = None
         resumed = False
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
@@ -329,6 +339,7 @@ def init(
         project=project,
         client=None,
         name=name,
+        run_id=resolved_run_id,
         group=group,
         config=config,
         space_id=space_id,

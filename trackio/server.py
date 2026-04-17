@@ -418,9 +418,12 @@ def log(
     metrics: dict[str, Any],
     step: int | None,
     hf_token: str | None,
+    run_id: str | None = None,
 ) -> None:
     check_hf_token_has_write_access(hf_token)
-    SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
+    SQLiteStorage.log(
+        project=project, run=run, run_id=run_id, metrics=metrics, step=step
+    )
 
 
 def bulk_log(
@@ -431,7 +434,7 @@ def bulk_log(
 
     logs_by_run = {}
     for log_entry in logs:
-        key = (log_entry["project"], log_entry["run"])
+        key = (log_entry["project"], log_entry["run"], log_entry.get("run_id"))
         if key not in logs_by_run:
             logs_by_run[key] = {
                 "metrics": [],
@@ -445,11 +448,12 @@ def bulk_log(
         if log_entry.get("config") and logs_by_run[key]["config"] is None:
             logs_by_run[key]["config"] = log_entry["config"]
 
-    for (project, run), data in logs_by_run.items():
+    for (project, run, run_id), data in logs_by_run.items():
         has_log_ids = any(lid is not None for lid in data["log_ids"])
         payload = dict(
             project=project,
             run=run,
+            run_id=run_id,
             metrics_list=data["metrics"],
             steps=data["steps"],
             config=data["config"],
@@ -469,18 +473,19 @@ def bulk_log_system(
 
     logs_by_run = {}
     for log_entry in logs:
-        key = (log_entry["project"], log_entry["run"])
+        key = (log_entry["project"], log_entry["run"], log_entry.get("run_id"))
         if key not in logs_by_run:
             logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["timestamps"].append(log_entry.get("timestamp"))
         logs_by_run[key]["log_ids"].append(log_entry.get("log_id"))
 
-    for (project, run), data in logs_by_run.items():
+    for (project, run, run_id), data in logs_by_run.items():
         has_log_ids = any(lid is not None for lid in data["log_ids"])
         payload = dict(
             project=project,
             run=run,
+            run_id=run_id,
             metrics_list=data["metrics"],
             timestamps=data["timestamps"],
             log_ids=data["log_ids"] if has_log_ids else None,
@@ -499,7 +504,7 @@ def bulk_alert(
 
     alerts_by_run: dict[tuple, dict] = {}
     for entry in alerts:
-        key = (entry["project"], entry["run"])
+        key = (entry["project"], entry["run"], entry.get("run_id"))
         if key not in alerts_by_run:
             alerts_by_run[key] = {
                 "titles": [],
@@ -516,11 +521,12 @@ def bulk_alert(
         alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
         alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
 
-    for (project, run), data in alerts_by_run.items():
+    for (project, run, run_id), data in alerts_by_run.items():
         has_alert_ids = any(aid is not None for aid in data["alert_ids"])
         payload = dict(
             project=project,
             run=run,
+            run_id=run_id,
             titles=data["titles"],
             texts=data["texts"],
             levels=data["levels"],

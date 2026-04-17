@@ -26,6 +26,7 @@ def test_run_log_writes_to_sqlite_locally(temp_dir):
 
     config = SQLiteStorage.get_run_config("proj", "run1")
     assert config is not None
+    assert run.id is not None
 
 
 def test_markdown_logging(temp_dir):
@@ -80,6 +81,7 @@ def test_init_resume_modes(temp_dir):
     run.log({"x": 1})
     SQLiteStorage.bulk_log("test-project", "new-run", [{"x": 1}])
     run.finish()
+    first_run_id = run.id
 
     run = init(
         project="test-project",
@@ -88,6 +90,7 @@ def test_init_resume_modes(temp_dir):
     )
     assert isinstance(run, Run)
     assert run.name == "new-run"
+    assert run.id == first_run_id
 
     run = init(
         project="test-project",
@@ -96,6 +99,7 @@ def test_init_resume_modes(temp_dir):
     )
     assert isinstance(run, Run)
     assert run.name == "new-run"
+    assert run.id == first_run_id
 
     run = init(
         project="test-project",
@@ -103,7 +107,8 @@ def test_init_resume_modes(temp_dir):
         resume="never",
     )
     assert isinstance(run, Run)
-    assert run.name != "new-run"
+    assert run.name == "new-run"
+    assert run.id != first_run_id
 
     with pytest.raises(
         ValueError,
@@ -124,6 +129,22 @@ def test_init_resume_modes(temp_dir):
     assert run.name == "nonexistent-run"
 
 
+def test_resume_allow_and_must_use_latest_run_with_same_name(temp_dir):
+    first = init(project="dup-project", name="same-name", resume="never")
+    first.log({"x": 1})
+    first.finish()
+
+    second = init(project="dup-project", name="same-name", resume="never")
+    second.log({"x": 2})
+    second.finish()
+
+    allowed = init(project="dup-project", name="same-name", resume="allow")
+    assert allowed.id == second.id
+
+    required = init(project="dup-project", name="same-name", resume="must")
+    assert required.id == second.id
+
+
 def test_reserved_config_keys_rejected(temp_dir):
     with pytest.raises(ValueError, match="Config key '_test' is reserved"):
         Run(
@@ -136,16 +157,26 @@ def test_reserved_config_keys_rejected(temp_dir):
 
 def test_step_recovery_after_crash(temp_dir):
     SQLiteStorage.bulk_log(
-        "proj", "run1", [{"loss": 0.5}, {"loss": 0.4}, {"loss": 0.3}]
+        "proj",
+        "run1",
+        [{"loss": 0.5}, {"loss": 0.4}, {"loss": 0.3}],
+        run_id="run-1-id",
     )
 
-    run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
+    run = Run(
+        url=None,
+        project="proj",
+        client=None,
+        name="run1",
+        run_id="run-1-id",
+        space_id=None,
+    )
     assert run._next_step == 3
 
     run.log({"loss": 0.2})
     time.sleep(0.6)
 
-    logs = SQLiteStorage.get_logs("proj", "run1")
+    logs = SQLiteStorage.get_logs("proj", "run1", run_id="run-1-id")
     assert len(logs) == 4
     assert logs[3]["step"] == 3
 

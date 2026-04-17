@@ -309,15 +309,41 @@ trackio.finish()
 
 ## Resuming a Run
 
-If you need to continue a run (for example, after an interruption), you can resume it by calling [`init`] again with the same project and run name, and setting `resume="must"`:
+Trackio identifies runs internally by a stable `run_id`. The human-readable `name`
+is no longer required to be unique, so you can create multiple runs with the same
+display name.
+
+If you need to continue the latest run with a given name (for example, after an
+interruption), call [`init`] again with the same project and run name, and set
+`resume="must"`:
 
 ```python
 trackio.init(project="my_project", name="my_first_run", resume="must")
 ```
 
-This will load the existing run so you can keep logging data.
+This will load the most recently created run with that name so you can keep
+logging data using the same `run_id`.
 
-For more flexibility, use `resume="allow"`. This will resume the run if it exists, or create a new one otherwise.
+For more flexibility, use `resume="allow"`. This will resume the latest run with
+that name if one exists, or create a new run otherwise.
+
+The default is `resume="never"`, which always creates a fresh run with a new
+`run_id`, even if another run with the same `name` already exists.
+
+## Run Storage Schema
+
+For newly created Trackio databases, run data is stored with a stable `run_id`
+plus a non-unique `run_name`:
+
+- `metrics`, `system_metrics`, and `alerts` store both `run_id` and `run_name`
+- `configs` stores one config row per `run_id`
+- `pending_uploads` stores `run_id` when available for buffered remote uploads
+
+Older Trackio SQLite databases that predate `run_id` remain readable without an
+in-place migration. When Trackio loads one of those legacy databases, it treats
+`run_name` as the effective `run_id`. Legacy databases therefore keep their old
+“one run per name” behavior, while newly created databases support duplicate run
+names.
 
 ## Tracking Configuration
 

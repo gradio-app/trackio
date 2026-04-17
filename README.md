@@ -264,7 +264,7 @@ These numbers were measured against a free-tier Hugging Face Space (2 vCPU / 16 
 
 ## Note: Trackio is in Beta (DB Schema May Change)
 
-Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio sqlite database may change, which may require migrating or deleting existing database files (located by default at: `~/.cache/huggingface/trackio`).  
+Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio sqlite database may change. Newer Trackio databases now use a stable `run_id` plus a non-unique `run_name`, while older databases remain readable in compatibility mode by treating `run_name` as the effective run identifier. Existing database files are located by default at: `~/.cache/huggingface/trackio`.  
 
 Since Trackio is in beta, your feedback is welcome! Please create issues with bug reports or feature requests.
 

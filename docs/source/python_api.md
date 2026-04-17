@@ -89,10 +89,14 @@ Represents a single run in a project.
 
 #### Properties
 
-- **`id`**: The run name (same as `name`)
-- **`name`**: The run name
+- **`id`**: The stable run identifier used internally by Trackio
+- **`name`**: The human-readable run name. Multiple runs can share the same name.
 - **`project`**: The project this run belongs to
 - **`config`**: The run's configuration dictionary (lazy-loaded)
+
+Trackio keeps `id` stable even when multiple runs share the same `name`. For
+older SQLite databases created before `run_id` support existed, the API exposes
+`run_name` as the effective `id` for backwards compatibility.
 
 #### Methods
 
@@ -149,4 +153,3 @@ for run in source_runs:
     run.move("archive")
     print(f"Moved {run.name} to archive")
 ```
-
