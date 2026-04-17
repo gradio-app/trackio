@@ -34,7 +34,7 @@
 
   let lastStructuralKey = null;
   let lastHasSmoothed = false;
-  let resolvedColorLabel = $derived(colorLabel || colorDisplayField || colorField);
+  let resolvedColorLabel = $derived(colorLabel || colorField);
   let resolvedDashLabel = $derived(dashLabel || dashField);
   let resolvedYLabel = $derived(yLabel || (y.includes("/") ? y.split("/").pop() : y));
 
