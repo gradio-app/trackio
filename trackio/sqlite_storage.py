@@ -175,6 +175,7 @@ class ProcessLock:
 _LOGS_READ_CACHE: dict[tuple[Any, ...], tuple[int, list[dict[str, Any]]]] = {}
 _LOGS_READ_CACHE_LOCK = Lock()
 _LOGS_READ_CACHE_MAX_KEYS = 512
+_LOGS_READ_CACHE_MAX_ROWS_PER_ENTRY = 4000
 
 
 def _spaces_logs_read_cache_enabled() -> bool:
@@ -182,6 +183,20 @@ def _spaces_logs_read_cache_enabled() -> bool:
         return False
     v = os.environ.get("TRACKIO_DISABLE_LOGS_CACHE", "").strip().lower()
     return v not in ("1", "true", "yes")
+
+
+def _sqlite_db_invalidation_mtime_ns(db_path: Path) -> int | None:
+    try:
+        m = db_path.stat().st_mtime_ns
+    except OSError:
+        return None
+    wal_path = db_path.with_name(db_path.name + "-wal")
+    if wal_path.is_file():
+        try:
+            m = max(m, wal_path.stat().st_mtime_ns)
+        except OSError:
+            pass
+    return m
 
 
 def _logs_read_cache_key(
@@ -203,9 +218,8 @@ def _logs_read_cache_get(
 ) -> list[dict[str, Any]] | None:
     if not _spaces_logs_read_cache_enabled():
         return None
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
+    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
+    if mtime_ns is None:
         return None
     with _LOGS_READ_CACHE_LOCK:
         item = _LOGS_READ_CACHE.get(key)
@@ -223,9 +237,10 @@ def _logs_read_cache_put(
 ) -> None:
     if not _spaces_logs_read_cache_enabled():
         return
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
+    if len(logs) > _LOGS_READ_CACHE_MAX_ROWS_PER_ENTRY:
+        return
+    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
+    if mtime_ns is None:
         return
     snapshot = [{**d} for d in logs]
     with _LOGS_READ_CACHE_LOCK:
@@ -250,9 +265,8 @@ def _system_logs_read_cache_get(
 ) -> list[dict[str, Any]] | None:
     if not _spaces_logs_read_cache_enabled():
         return None
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
+    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
+    if mtime_ns is None:
         return None
     with _LOGS_READ_CACHE_LOCK:
         item = _SYSTEM_LOGS_READ_CACHE.get(key)
@@ -270,9 +284,10 @@ def _system_logs_read_cache_put(
 ) -> None:
     if not _spaces_logs_read_cache_enabled():
         return
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
+    if len(logs) > _LOGS_READ_CACHE_MAX_ROWS_PER_ENTRY:
+        return
+    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
+    if mtime_ns is None:
         return
     snapshot = [{**d} for d in logs]
     with _LOGS_READ_CACHE_LOCK:
@@ -1700,7 +1715,9 @@ class SQLiteStorage:
 
     @staticmethod
     def _subsample_metric_rows(rows: list[Any], max_points: int | None) -> list[Any]:
-        if max_points is None or len(rows) <= max_points:
+        if max_points is None or max_points < 1:
+            return rows
+        if len(rows) <= max_points:
             return rows
         step = len(rows) / max_points
         indices = {int(i * step) for i in range(max_points)}

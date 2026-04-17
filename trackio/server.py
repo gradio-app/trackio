@@ -42,6 +42,40 @@ _flush_lock = threading.Lock()
 _FLUSH_INTERVAL = 2.0
 _MAX_RETRIES = 30
 
+_LOGS_BATCH_MAX_RUNS = 64
+_LOGS_BATCH_MAX_POINTS = 10_000
+
+
+def _normalize_logs_batch_runs(runs: Any) -> list[dict[str, Any]]:
+    if not isinstance(runs, list):
+        raise TrackioAPIError("runs must be a list")
+    if len(runs) > _LOGS_BATCH_MAX_RUNS:
+        raise TrackioAPIError(
+            f"runs cannot contain more than {_LOGS_BATCH_MAX_RUNS} entries"
+        )
+    out: list[dict[str, Any]] = []
+    for i, r in enumerate(runs):
+        if not isinstance(r, dict):
+            raise TrackioAPIError(f"runs[{i}] must be an object")
+        out.append({"run": r.get("run"), "run_id": r.get("run_id")})
+    return out
+
+
+def _normalize_logs_batch_max_points(max_points: Any) -> int | None:
+    if max_points is None:
+        return 1500
+    if isinstance(max_points, bool):
+        raise TrackioAPIError("max_points must be a number or null")
+    if isinstance(max_points, float):
+        if not max_points.is_integer():
+            raise TrackioAPIError("max_points must be a whole number")
+        max_points = int(max_points)
+    if not isinstance(max_points, int):
+        raise TrackioAPIError("max_points must be an integer or null")
+    if max_points < 1:
+        return 1500
+    return min(max_points, _LOGS_BATCH_MAX_POINTS)
+
 
 def _enqueue_write(kind: str, payload: Any) -> None:
     _write_queue.append((kind, payload))
@@ -691,7 +725,8 @@ def get_system_logs_batch(
     project: str,
     runs: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_system_logs_batch(project, runs)
+    runs_clean = _normalize_logs_batch_runs(runs)
+    return SQLiteStorage.get_system_logs_batch(project, runs_clean)
 
 
 def get_snapshot(
@@ -725,7 +760,9 @@ def get_logs_batch(
     runs: list[dict[str, Any]],
     max_points: int | None = 1500,
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_logs_batch(project, runs, max_points=max_points)
+    runs_clean = _normalize_logs_batch_runs(runs)
+    mp = _normalize_logs_batch_max_points(max_points)
+    return SQLiteStorage.get_logs_batch(project, runs_clean, max_points=mp)
 
 
 def query_project(project: str, query: str) -> dict[str, Any]:

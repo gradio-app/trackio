@@ -195,11 +195,15 @@
     });
     let fetched = false;
     if (needFetch.length > 0) {
-      const batch = await getSystemLogsBatch(project, needFetch);
-      for (const entry of batch) {
-        const runKey = entry.run_id ?? entry.run;
-        rawDataCache.set(runKey, entry.logs);
-        fetched = true;
+      try {
+        const batch = await getSystemLogsBatch(project, needFetch);
+        for (const entry of batch) {
+          const runKey = entry.run_id ?? entry.run;
+          rawDataCache.set(runKey, entry.logs);
+          fetched = true;
+        }
+      } catch (e) {
+        console.error("Failed to load system metric logs:", e);
       }
     }
 
@@ -215,19 +219,23 @@
     if (isTabHidden()) return;
     if (isRateLimitCooldownActive()) return;
 
-    const batch = await getSystemLogsBatch(project, selectedRuns);
-    let changed = false;
-    for (const entry of batch) {
-      const runKey = entry.run_id ?? entry.run;
-      const logs = entry.logs;
-      const prev = rawDataCache.get(runKey);
-      if (!prev || logs.length !== prev.length) {
-        rawDataCache.set(runKey, logs);
-        changed = true;
+    try {
+      const batch = await getSystemLogsBatch(project, selectedRuns);
+      let changed = false;
+      for (const entry of batch) {
+        const runKey = entry.run_id ?? entry.run;
+        const logs = entry.logs;
+        const prev = rawDataCache.get(runKey);
+        if (!prev || logs.length !== prev.length) {
+          rawDataCache.set(runKey, logs);
+          changed = true;
+        }
       }
-    }
-    if (changed) {
-      processFromCache();
+      if (changed) {
+        processFromCache();
+      }
+    } catch (e) {
+      console.error("Failed to refresh system metric logs:", e);
     }
   }
 
