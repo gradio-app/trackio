@@ -216,12 +216,52 @@ def build_gradio_api_info(api_registry: dict[str, Any]) -> dict[str, Any]:
 _MAX_GRADIO_CALL_EVENTS = 256
 
 
-def _store_gradio_call_result(request: Request, event_id: str, result: Any) -> None:
+def _authorization_bearer_token(request: Request) -> str | None:
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not auth:
+        return None
+    parts = auth.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    tok = parts[1].strip()
+    return tok or None
+
+
+def _maybe_apply_hf_token_from_authorization(
+    request: Request, fn: Any, args: list[Any], kwargs: dict[str, Any]
+) -> None:
+    if not on_spaces():
+        return
+    token = _authorization_bearer_token(request)
+    if not token:
+        return
+    sig = inspect.signature(fn)
+    if "hf_token" not in sig.parameters:
+        return
+    params = [p for p in sig.parameters.values() if p.name != "request"]
+    names = [p.name for p in params]
+    if "hf_token" not in names:
+        return
+    idx = names.index("hf_token")
+    if "hf_token" in kwargs:
+        if kwargs["hf_token"] is None:
+            kwargs["hf_token"] = token
+        return
+    if idx < len(args):
+        if args[idx] is None:
+            args[idx] = token
+        return
+    kwargs["hf_token"] = token
+
+
+def _store_gradio_call_result(
+    request: Request, event_id: str, api_name: str, data: Any
+) -> None:
     with request.app.state.gradio_call_events_lock:
         d = request.app.state.gradio_call_events
         while len(d) >= _MAX_GRADIO_CALL_EVENTS:
             d.pop(next(iter(d)))
-        d[event_id] = result
+        d[event_id] = {"api_name": api_name, "data": data}
 
 
 async def run_api_request(request: Request, api_name: str) -> Response:
@@ -255,6 +295,8 @@ async def run_api_request(request: Request, api_name: str) -> Response:
     if not isinstance(kwargs, dict):
         kwargs = {}
 
+    _maybe_apply_hf_token_from_authorization(request, fn, args, kwargs)
+
     try:
         result = _invoke_handler(fn, request, args=args, kwargs=kwargs)
         return JSONResponse({"data": _json_safe(result)})
@@ -282,23 +324,37 @@ async def gradio_call_post_handler(request: Request) -> Response:
         return resp
     body = json.loads(bytes(resp.body).decode())
     event_id = secrets.token_urlsafe(16)
-    _store_gradio_call_result(request, event_id, body["data"])
+    _store_gradio_call_result(request, event_id, api_name, body["data"])
     return JSONResponse({"event_id": event_id})
 
 
 async def gradio_call_poll_handler(request: Request) -> Response:
+    api_name = request.path_params["api_name"]
     event_id = request.path_params["event_id"]
     with request.app.state.gradio_call_events_lock:
-        data = request.app.state.gradio_call_events.pop(event_id, None)
-    if data is None:
+        event = request.app.state.gradio_call_events.pop(event_id, None)
+    if event is None:
+        return JSONResponse({"error": "Unknown or expired event_id"}, status_code=404)
+    if event.get("api_name") != api_name:
+        with request.app.state.gradio_call_events_lock:
+            if len(request.app.state.gradio_call_events) < _MAX_GRADIO_CALL_EVENTS:
+                request.app.state.gradio_call_events[event_id] = event
         return JSONResponse({"error": "Unknown or expired event_id"}, status_code=404)
 
+    data = event["data"]
     payload = json.dumps(_json_safe([data]))
 
     async def sse() -> Any:
         yield f"event: complete\ndata: {payload}\n\n"
 
-    return StreamingResponse(sse(), media_type="text/event-stream")
+    return StreamingResponse(
+        sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 async def upload_handler(request: Request) -> Response:
