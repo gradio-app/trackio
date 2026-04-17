@@ -1005,13 +1005,9 @@ class Run:
 
                 if has_pending:
                     if self._space_id is not None:
-                        retry = (
-                            f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
-                        )
+                        retry = f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
                     else:
-                        retry = (
-                            f'trackio.init(project="{self.project}", server_url="{self._server_base_url}")'
-                        )
+                        retry = f'trackio.init(project="{self.project}", server_url="{self._server_base_url}")'
                     _emit_nonfatal_warning(
                         f"* Some logs could not be sent to the remote server (it may still be starting up). "
                         f"They have been saved locally and will be sent automatically next time you call: "

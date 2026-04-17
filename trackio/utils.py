@@ -158,9 +158,7 @@ def parse_trackio_server_url(url: str) -> tuple[str, str | None]:
         else:
             rest.append((k, v))
     new_query = urlencode(rest)
-    rebuilt = urlunparse(
-        (p.scheme, p.netloc, p.path, p.params, new_query, p.fragment)
-    )
+    rebuilt = urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
     return rebuilt, write_token
 
 

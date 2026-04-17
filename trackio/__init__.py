@@ -475,7 +475,9 @@ def init(
             if not _should_embed_local:
                 utils.print_dashboard_instructions(project)
         elif server_base_url is not None:
-            print(f"* Trackio metrics will be sent to self-hosted server: {server_base_url}")
+            print(
+                f"* Trackio metrics will be sent to self-hosted server: {server_base_url}"
+            )
             if utils.is_in_notebook() and embed:
                 utils.embed_url_in_notebook(server_base_url)
         else:
@@ -960,9 +962,7 @@ def save(
                 client.predict(
                     api_name="/bulk_upload_media",
                     uploads=upload_entries,
-                    hf_token=huggingface_hub.utils.get_token()
-                    if wt is None
-                    else None,
+                    hf_token=huggingface_hub.utils.get_token() if wt is None else None,
                 )
             except Exception as e:
                 _emit_nonfatal_warning(
