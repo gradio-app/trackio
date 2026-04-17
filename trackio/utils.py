@@ -462,8 +462,8 @@ def print_write_token_instructions(full_url: str) -> None:
     print()
     print(f"* Trackio dashboard opened in browser with write access at: {full_url}")
     print(
-        "* Warning: anyone with access to your dashboard with the write_token can "
-        "write logs, rename/delete runs, and connect MCP tools"
+        "* Only share this write_token with trusted users, as it allows them to write logs, "
+        "rename/delete runs, and connect MCP tools."
     )
 
 

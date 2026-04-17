@@ -124,7 +124,7 @@
     }
     try {
       const data = await getRunsForProject(selectedProject);
-      const newRuns = data || [];
+      const newRuns = [...(data || [])].reverse();
       const newRunIds = new Set(newRuns.map(runKey));
 
       if (JSON.stringify(runs) !== JSON.stringify(newRuns)) {
@@ -396,6 +396,7 @@
         <SystemMetrics
           project={selectedProject}
           selectedRuns={selectedRunRecords}
+          allRuns={runs}
           {smoothing}
           {appBootstrapReady}
           {realtimeEnabled}
