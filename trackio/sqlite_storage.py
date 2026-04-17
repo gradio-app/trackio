@@ -242,6 +242,7 @@ class SQLiteStorage:
                     """
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id TEXT NOT NULL,
                         timestamp TEXT NOT NULL,
                         run_name TEXT NOT NULL,
                         step INTEGER NOT NULL,
@@ -253,17 +254,18 @@ class SQLiteStorage:
                     """
                     CREATE TABLE IF NOT EXISTS configs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id TEXT NOT NULL,
                         run_name TEXT NOT NULL,
                         config TEXT NOT NULL,
                         created_at TEXT NOT NULL,
-                        UNIQUE(run_name)
+                        UNIQUE(run_id)
                     )
                     """
                 )
                 cursor.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_step
-                    ON metrics(run_name, step)
+                    ON metrics(run_id, step)
                     """
                 )
                 cursor.execute(
@@ -275,13 +277,14 @@ class SQLiteStorage:
                 cursor.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
-                    ON metrics(run_name, timestamp)
+                    ON metrics(run_id, timestamp)
                     """
                 )
                 cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS system_metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id TEXT NOT NULL,
                         timestamp TEXT NOT NULL,
                         run_name TEXT NOT NULL,
                         metrics TEXT NOT NULL
@@ -291,7 +294,7 @@ class SQLiteStorage:
                 cursor.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
-                    ON system_metrics(run_name, timestamp)
+                    ON system_metrics(run_id, timestamp)
                     """
                 )
 
@@ -309,6 +312,7 @@ class SQLiteStorage:
                     CREATE TABLE IF NOT EXISTS pending_uploads (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         space_id TEXT NOT NULL,
+                        run_id TEXT,
                         run_name TEXT,
                         step INTEGER,
                         file_path TEXT NOT NULL,
@@ -322,6 +326,7 @@ class SQLiteStorage:
                     """
                     CREATE TABLE IF NOT EXISTS alerts (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id TEXT NOT NULL,
                         timestamp TEXT NOT NULL,
                         run_name TEXT NOT NULL,
                         title TEXT NOT NULL,
@@ -335,7 +340,7 @@ class SQLiteStorage:
                 cursor.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_alerts_run
-                    ON alerts(run_name)
+                    ON alerts(run_id)
                     """
                 )
                 cursor.execute(
@@ -379,6 +384,157 @@ class SQLiteStorage:
                 "Parquet import/export requires `trackio[spaces]`."
             ) from e
         return pa, pq
+
+    @staticmethod
+    def _table_columns(
+        conn: sqlite3.Connection, table: str
+    ) -> set[str]:
+        cursor = conn.cursor()
+        try:
+            cursor.execute(f"PRAGMA table_info({table})")
+        except sqlite3.OperationalError:
+            return set()
+        return {row[1] for row in cursor.fetchall()}
+
+    @staticmethod
+    def _supports_run_ids(conn: sqlite3.Connection, table: str = "metrics") -> bool:
+        return "run_id" in SQLiteStorage._table_columns(conn, table)
+
+    @staticmethod
+    def _resolve_run_identity(
+        conn: sqlite3.Connection,
+        run_name: str | None = None,
+        run_id: str | None = None,
+        *,
+        table: str = "metrics",
+    ) -> tuple[str, str] | None:
+        supports_run_ids = SQLiteStorage._supports_run_ids(conn, table)
+        if supports_run_ids:
+            if run_id is not None:
+                return ("run_id", run_id)
+            if run_name is None:
+                return None
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT run_id
+                FROM {table}
+                WHERE run_name = ?
+                GROUP BY run_id
+                ORDER BY MIN(timestamp) DESC
+                LIMIT 1
+                """,
+                (run_name,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return ("run_id", row[0])
+
+        resolved = run_name if run_name is not None else run_id
+        if resolved is None:
+            return None
+        return ("run_name", resolved)
+
+    @staticmethod
+    def get_run_records(project: str) -> list[dict[str, str | None]]:
+        SQLiteStorage._ensure_hub_loaded()
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                if SQLiteStorage._supports_run_ids(conn):
+                    cursor.execute(
+                        """
+                        SELECT run_id, run_name, MIN(timestamp) as created_at
+                        FROM metrics
+                        GROUP BY run_id, run_name
+                        ORDER BY created_at ASC
+                        """
+                    )
+                    return [
+                        {
+                            "id": row["run_id"],
+                            "name": row["run_name"],
+                            "created_at": row["created_at"],
+                        }
+                        for row in cursor.fetchall()
+                    ]
+
+                cursor.execute(
+                    """
+                    SELECT run_name, MIN(timestamp) as created_at
+                    FROM metrics
+                    GROUP BY run_name
+                    ORDER BY created_at ASC
+                    """
+                )
+                return [
+                    {
+                        "id": row["run_name"],
+                        "name": row["run_name"],
+                        "created_at": row["created_at"],
+                    }
+                    for row in cursor.fetchall()
+                ]
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return []
+            raise
+
+    @staticmethod
+    def get_latest_run_record_by_name(
+        project: str, run_name: str
+    ) -> dict[str, str | None] | None:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            if SQLiteStorage._supports_run_ids(conn):
+                cursor.execute(
+                    """
+                    SELECT run_id, run_name, MIN(timestamp) as created_at
+                    FROM metrics
+                    WHERE run_name = ?
+                    GROUP BY run_id, run_name
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (run_name,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                return {
+                    "id": row["run_id"],
+                    "name": row["run_name"],
+                    "created_at": row["created_at"],
+                }
+
+            cursor.execute(
+                """
+                SELECT run_name, MIN(timestamp) as created_at
+                FROM metrics
+                WHERE run_name = ?
+                GROUP BY run_name
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (run_name,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return {
+                "id": row["run_name"],
+                "name": row["run_name"],
+                "created_at": row["created_at"],
+            }
 
     @staticmethod
     def _read_table_rows(db_path: Path, table: str) -> list[dict[str, object]]:
