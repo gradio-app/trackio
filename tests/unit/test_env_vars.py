@@ -50,7 +50,9 @@ def test_resolve_space_id_and_server_url_space_env_wins_over_server_env(monkeypa
     assert utils.resolve_space_id_and_server_url(None, None) == ("user/repo", None)
 
 
-def test_resolve_space_id_and_server_url_explicit_space_wins_over_server_arg(monkeypatch):
+def test_resolve_space_id_and_server_url_explicit_space_wins_over_server_arg(
+    monkeypatch,
+):
     monkeypatch.delenv("TRACKIO_SPACE_ID", raising=False)
     monkeypatch.delenv("TRACKIO_SERVER_URL", raising=False)
     assert utils.resolve_space_id_and_server_url("a/b", "http://127.0.0.1:1/") == (

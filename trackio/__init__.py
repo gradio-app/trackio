@@ -260,7 +260,7 @@ def init(
             enough. Example:
             ``"https://trackio.internal.example.com?write_token=..."``. When set, metrics are sent to
             that server over HTTP instead of creating or syncing to a Hugging Face
-            Space. Can also be set via the `TRACKIO_SERVER_URL` environment variable. 
+            Space. Can also be set via the `TRACKIO_SERVER_URL` environment variable.
             Ignored when `space_id` or `TRACKIO_SPACE_ID` is set.
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
@@ -394,9 +394,7 @@ def init(
             if not _should_embed_local:
                 utils.print_dashboard_instructions(project)
         elif server_url is not None:
-            print(
-                f"* Trackio metrics will be sent to self-hosted server: {server_url}"
-            )
+            print(f"* Trackio metrics will be sent to self-hosted server: {server_url}")
             if utils.is_in_notebook() and embed:
                 utils.embed_url_in_notebook(server_url)
         else:
