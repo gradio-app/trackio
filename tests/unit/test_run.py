@@ -145,6 +145,62 @@ def test_resume_allow_and_must_use_latest_run_with_same_name(temp_dir):
     assert required.id == second.id
 
 
+def test_legacy_project_without_run_id_still_resumes_and_logs(temp_dir):
+    project = "legacy-project"
+    db_path = SQLiteStorage.get_project_db_path(project)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE metrics (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT,
+                run_name TEXT,
+                step INTEGER,
+                metrics TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE configs (
+                id INTEGER PRIMARY KEY,
+                run_name TEXT,
+                config TEXT,
+                created_at TEXT,
+                UNIQUE(run_name)
+            )
+        """)
+        conn.execute(
+            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+            ("2024-01-01T00:00:00+00:00", "legacy-run", 0, sqlite3.Binary(b'{"loss":0.5}')),
+        )
+        conn.execute(
+            "INSERT INTO configs (run_name, config, created_at) VALUES (?, ?, ?)",
+            (
+                "legacy-run",
+                sqlite3.Binary(
+                    b'{"_Created":"2024-01-01T00:00:00+00:00","_Username":"test"}'
+                ),
+                "2024-01-01T00:00:00+00:00",
+            ),
+        )
+
+    run = init(project=project, name="legacy-run", resume="must")
+
+    assert run.name == "legacy-run"
+    assert run.id == "legacy-run"
+    assert run._next_step == 1
+
+    run.log({"loss": 0.4})
+    run.finish()
+
+    logs = SQLiteStorage.get_logs(project, "legacy-run")
+    assert len(logs) == 2
+    assert logs[-1]["step"] == 1
+
+    config = SQLiteStorage.get_run_config(project, "legacy-run")
+    assert config is not None
+
+
 def test_reserved_config_keys_rejected(temp_dir):
     with pytest.raises(ValueError, match="Config key '_test' is reserved"):
         Run(

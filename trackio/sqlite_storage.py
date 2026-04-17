@@ -264,24 +264,6 @@ class SQLiteStorage:
                 )
                 cursor.execute(
                     """
-                    CREATE INDEX IF NOT EXISTS idx_metrics_run_step
-                    ON metrics(run_id, step)
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_configs_run_name
-                    ON configs(run_name)
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
-                    ON metrics(run_id, timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
                     CREATE TABLE IF NOT EXISTS system_metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -289,12 +271,6 @@ class SQLiteStorage:
                         run_name TEXT NOT NULL,
                         metrics TEXT NOT NULL
                     )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
-                    ON system_metrics(run_id, timestamp)
                     """
                 )
 
@@ -337,10 +313,42 @@ class SQLiteStorage:
                     )
                     """
                 )
+                metrics_cols = SQLiteStorage._table_columns(conn, "metrics")
+                metrics_run_key = "run_id" if "run_id" in metrics_cols else "run_name"
+                cursor.execute(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS idx_metrics_run_step
+                    ON metrics({metrics_run_key}, step)
+                    """
+                )
+                cursor.execute(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
+                    ON metrics({metrics_run_key}, timestamp)
+                    """
+                )
                 cursor.execute(
                     """
+                    CREATE INDEX IF NOT EXISTS idx_configs_run_name
+                    ON configs(run_name)
+                    """
+                )
+                system_cols = SQLiteStorage._table_columns(conn, "system_metrics")
+                system_run_key = (
+                    "run_id" if "run_id" in system_cols else "run_name"
+                )
+                cursor.execute(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
+                    ON system_metrics({system_run_key}, timestamp)
+                    """
+                )
+                alerts_cols = SQLiteStorage._table_columns(conn, "alerts")
+                alerts_run_key = "run_id" if "run_id" in alerts_cols else "run_name"
+                cursor.execute(
+                    f"""
                     CREATE INDEX IF NOT EXISTS idx_alerts_run
-                    ON alerts(run_id)
+                    ON alerts({alerts_run_key})
                     """
                 )
                 cursor.execute(
