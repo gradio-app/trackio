@@ -94,9 +94,7 @@ Represents a single run in a project.
 - **`project`**: The project this run belongs to
 - **`config`**: The run's configuration dictionary (lazy-loaded)
 
-Trackio keeps `id` stable even when multiple runs share the same `name`. For
-older SQLite databases created before `run_id` support existed, the API exposes
-`run_name` as the effective `id` for backwards compatibility.
+Note: Multiple runs can share the same `name`, as Trackio will use the `id` identifier to disambiguate them internally. 
 
 #### Methods
 
