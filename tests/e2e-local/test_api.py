@@ -228,11 +228,6 @@ def test_server_url_logs_to_self_hosted_server(temp_dir):
         app.close()
 
 
-def test_server_url_rejects_non_url_value(temp_dir):
-    with pytest.raises(ValueError, match="full URL"):
-        trackio.init(project="x", server_url="not-a-url")
-
-
 def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
 

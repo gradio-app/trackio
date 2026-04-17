@@ -253,8 +253,12 @@ def init(
             Takes precedence over `server_url` and `TRACKIO_SERVER_URL` when more than
             one is set.
         server_url (`str`, *optional*):
-            URL of a self-hosted Trackio server (e.g. `"http://my-host:7860/"` or
-            `"https://trackio.internal.example.com"`). When set, metrics are logged to
+            Full URL of a self-hosted Trackio server, including the ``write_token`` query
+            parameter (for example the ``full_url`` value returned by ``trackio.show()``,
+            or the write-access URL printed when the dashboard starts). Logging and other
+            remote calls require that token; a base URL without ``write_token`` is not
+            enough. Example:
+            ``"http://127.0.0.1:7860?write_token=..."``. When set, metrics are sent to
             that server over HTTP instead of creating or syncing to a Hugging Face
             Space. The server does not need to live on Hugging Face. Can also be set
             via the `TRACKIO_SERVER_URL` environment variable. Ignored when `space_id`

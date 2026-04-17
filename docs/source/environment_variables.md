@@ -16,7 +16,11 @@ Note: This environment variable applies as long as Trackio is not running in a S
 
 ### `TRACKIO_SERVER_URL`
 
-Base URL of a self-hosted Trackio server (HTTP or HTTPS). When set, `trackio.init()` sends metrics to this server instead of using a Hugging Face Space. Must be a full URL (for example `http://127.0.0.1:7860/`). Equivalent to passing `server_url=` to `trackio.init()`. If `TRACKIO_SPACE_ID` / `space_id` is also set, the Space configuration takes precedence and `TRACKIO_SERVER_URL` is ignored. See [Self-host the Server](self_hosted_server.md).
+Full URL of a self-hosted Trackio server (HTTP or HTTPS), **including the `write_token` query parameter** (same URL as the dashboard’s write-access link or the `full_url` from `trackio.show()`). When set, `trackio.init()` sends metrics to that server. Equivalent to passing `server_url=` to `trackio.init()`.
+
+**Precedence:** If `TRACKIO_SPACE_ID` is also set (or `space_id` is passed in code), the Hugging Face Space is used and `TRACKIO_SERVER_URL` is ignored. Same rule when both `space_id` and `server_url` are passed: `space_id` wins.
+
+See [Self-host the Server](self_hosted_server.md).
 
 ```bash
 export TRACKIO_SERVER_URL="http://127.0.0.1:7860/"

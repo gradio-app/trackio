@@ -14,9 +14,9 @@
   import trackio as wandb
   ```
 
-- **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id`.
-- Persists logs locally (or in a private Hugging Face Dataset)
-- Visualize experiments with a Gradio dashboard locally (or on Hugging Face Spaces)
+- **Local-first** design: dashboard runs locally by default. You can log to a Hugging Face Space (`space_id`) or to a **self-hosted** Trackio server (`server_url` / `TRACKIO_SERVER_URL`). If both are set, the Space wins.
+- Persists logs locally, in a Hugging Face Dataset when using Spaces, or on the machine hosting your self-hosted server
+- Visualize experiments with a Gradio dashboard locally, on Hugging Face Spaces, or on your own host when self-hosting
 - **LLM-friendly**: Designed for autonomous ML experiments with CLI commands and Python APIs that enable LLMs to easily log and query experiment data.
 - Everything here, including hosting on Hugging Face, is **free**!
 

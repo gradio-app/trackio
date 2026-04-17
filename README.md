@@ -155,6 +155,18 @@ trackio.init(project="my-project", space_id="username/space_id")
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
 
+## Self-hosted Trackio server
+
+You can run the Trackio dashboard and API on your own machine or infrastructure and point training jobs at it over HTTP. Pass the **full URL including the `write_token` query** (as printed when the server starts, or use the `full_url` return value from `trackio.show()`):
+
+```py
+trackio.init(project="my-project", server_url="http://127.0.0.1:7860?write_token=YOUR_TOKEN")
+```
+
+You can also set `TRACKIO_SERVER_URL` to that full URL instead of passing `server_url`. If `space_id` / `TRACKIO_SPACE_ID` and `server_url` / `TRACKIO_SERVER_URL` are both set, Trackio uses the Hugging Face Space and ignores the self-hosted URL.
+
+See the documentation: [Self-host the Server](https://huggingface.co/docs/trackio/self_hosted_server).
+
 ## Syncing Offline Projects to Spaces
 
 If you've been tracking experiments locally and want to move them to Hugging Face Spaces for sharing or collaboration, use the `sync` function:
