@@ -3,19 +3,21 @@ from __future__ import annotations
 import inspect
 import json
 import math
+import secrets
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_origin
 from urllib.parse import unquote
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from trackio.exceptions import TrackioAPIError
 from trackio.remote_client import HTTP_API_VERSION
+from trackio.utils import on_spaces
 
 _PACKAGE_JSON_PATH = Path(__file__).parent / "package.json"
 _TRACKIO_PACKAGE_VERSION = json.loads(_PACKAGE_JSON_PATH.read_text())["version"]
@@ -136,9 +138,94 @@ async def version_handler(request: Request) -> Response:
     )
 
 
-async def api_handler(request: Request) -> Response:
+def _json_schema_and_python_type(annotation: Any) -> tuple[dict[str, Any], str]:
+    if annotation is inspect.Parameter.empty:
+        return {"type": "object"}, "Any"
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is not None and args:
+        non_none = tuple(a for a in args if a is not type(None))
+        if len(non_none) == 1 and len(args) > 1:
+            return _json_schema_and_python_type(non_none[0])
+        if origin is list:
+            inner, py_inner = _json_schema_and_python_type(
+                args[0] if args else inspect.Parameter.empty
+            )
+            return {"type": "array", "items": inner}, f"list[{py_inner}]"
+        if origin is dict:
+            return {"type": "object"}, "dict"
+    if annotation in (str, bytes):
+        return {"type": "string"}, "str"
+    if annotation is int:
+        return {"type": "integer"}, "int"
+    if annotation is float:
+        return {"type": "number"}, "float"
+    if annotation is bool:
+        return {"type": "boolean"}, "bool"
+    name = getattr(annotation, "__name__", None)
+    if name:
+        return {"type": "object"}, name
+    return {"type": "object"}, "Any"
+
+
+def build_gradio_api_info(api_registry: dict[str, Any]) -> dict[str, Any]:
+    named_endpoints: dict[str, Any] = {}
+    for name in sorted(api_registry.keys()):
+        fn = api_registry[name]
+        if not callable(fn):
+            continue
+        sig = inspect.signature(fn)
+        parameters: list[dict[str, Any]] = []
+        for pname, param in sig.parameters.items():
+            if pname == "request":
+                continue
+            jtype, pytype = _json_schema_and_python_type(param.annotation)
+            has_default = param.default is not inspect.Parameter.empty
+            parameters.append(
+                {
+                    "label": pname,
+                    "parameter_name": pname,
+                    "parameter_has_default": has_default,
+                    "parameter_default": None if not has_default else param.default,
+                    "type": jtype,
+                    "python_type": {"type": pytype, "description": ""},
+                    "component": "Api",
+                    "example_input": None,
+                }
+            )
+        ret_ann = sig.return_annotation
+        if ret_ann is inspect.Signature.empty:
+            ret_ann = Any
+        rjtype, rpytype = _json_schema_and_python_type(ret_ann)
+        returns = [
+            {
+                "label": "result",
+                "type": rjtype,
+                "python_type": {"type": rpytype, "description": ""},
+                "component": "Api",
+            }
+        ]
+        named_endpoints[f"/{name}"] = {
+            "parameters": parameters,
+            "returns": returns,
+            "api_visibility": "public",
+        }
+    return {"named_endpoints": named_endpoints, "unnamed_endpoints": {}}
+
+
+_MAX_GRADIO_CALL_EVENTS = 256
+
+
+def _store_gradio_call_result(request: Request, event_id: str, result: Any) -> None:
+    with request.app.state.gradio_call_events_lock:
+        d = request.app.state.gradio_call_events
+        while len(d) >= _MAX_GRADIO_CALL_EVENTS:
+            d.pop(next(iter(d)))
+        d[event_id] = result
+
+
+async def run_api_request(request: Request, api_name: str) -> Response:
     api_registry = request.app.state.api_registry
-    api_name = request.path_params["api_name"]
     fn = api_registry.get(api_name)
     if fn is None:
         return JSONResponse({"error": f"Unknown API: {api_name}"}, status_code=404)
@@ -177,6 +264,43 @@ async def api_handler(request: Request) -> Response:
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+async def api_handler(request: Request) -> Response:
+    return await run_api_request(request, request.path_params["api_name"])
+
+
+async def gradio_api_info_handler(request: Request) -> Response:
+    return JSONResponse(
+        build_gradio_api_info(request.app.state.api_registry),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def gradio_call_post_handler(request: Request) -> Response:
+    api_name = request.path_params["api_name"]
+    resp = await run_api_request(request, api_name)
+    if resp.status_code != 200:
+        return resp
+    body = json.loads(bytes(resp.body).decode())
+    event_id = secrets.token_urlsafe(16)
+    _store_gradio_call_result(request, event_id, body["data"])
+    return JSONResponse({"event_id": event_id})
+
+
+async def gradio_call_poll_handler(request: Request) -> Response:
+    event_id = request.path_params["event_id"]
+    with request.app.state.gradio_call_events_lock:
+        data = request.app.state.gradio_call_events.pop(event_id, None)
+    if data is None:
+        return JSONResponse({"error": "Unknown or expired event_id"}, status_code=404)
+
+    payload = json.dumps(_json_safe([data]))
+
+    async def sse() -> Any:
+        yield f"event: complete\ndata: {payload}\n\n"
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
+
+
 async def upload_handler(request: Request) -> Response:
     form = await request.form()
     uploads = form.getlist("files")
@@ -192,6 +316,10 @@ async def upload_handler(request: Request) -> Response:
             register_uploaded_temp_file(request, tmp.name)
             saved_paths.append(tmp.name)
     return JSONResponse({"paths": saved_paths})
+
+
+async def gradio_upload_alias_handler(request: Request) -> Response:
+    return await upload_handler(request)
 
 
 async def file_handler(request: Request) -> Response:
@@ -222,6 +350,51 @@ def create_trackio_starlette_app(
             Route("/file", endpoint=file_handler, methods=["GET"]),
         ]
     )
+    if on_spaces():
+        routes.extend(
+            [
+                Route(
+                    "/gradio_api/info",
+                    endpoint=gradio_api_info_handler,
+                    methods=["GET"],
+                ),
+                Route(
+                    "/gradio_api/info/",
+                    endpoint=gradio_api_info_handler,
+                    methods=["GET"],
+                ),
+                Route(
+                    "/gradio_api/upload",
+                    endpoint=gradio_upload_alias_handler,
+                    methods=["POST"],
+                ),
+                Route(
+                    "/gradio_api/upload/",
+                    endpoint=gradio_upload_alias_handler,
+                    methods=["POST"],
+                ),
+                Route(
+                    "/gradio_api/call/{api_name:str}",
+                    endpoint=gradio_call_post_handler,
+                    methods=["POST"],
+                ),
+                Route(
+                    "/gradio_api/call/{api_name:str}/",
+                    endpoint=gradio_call_post_handler,
+                    methods=["POST"],
+                ),
+                Route(
+                    "/gradio_api/call/{api_name:str}/{event_id:str}",
+                    endpoint=gradio_call_poll_handler,
+                    methods=["GET"],
+                ),
+                Route(
+                    "/gradio_api/call/{api_name:str}/{event_id:str}/",
+                    endpoint=gradio_call_poll_handler,
+                    methods=["GET"],
+                ),
+            ]
+        )
     routes.extend(extra_routes or [])
     app = Starlette(routes=routes, lifespan=mcp_lifespan)
     app.state.api_registry = api_registry
@@ -229,4 +402,7 @@ def create_trackio_starlette_app(
     app.state.allowed_file_roots = _normalize_allowed_file_roots(allowed_file_roots)
     app.state.uploaded_temp_files = set()
     app.state.uploaded_temp_files_lock = threading.Lock()
+    if on_spaces():
+        app.state.gradio_call_events = {}
+        app.state.gradio_call_events_lock = threading.Lock()
     return app
