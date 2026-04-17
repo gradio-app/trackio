@@ -213,6 +213,7 @@ def init(
     name: str | None = None,
     group: str | None = None,
     space_id: str | None = None,
+    trackio_url: str | None = None,
     space_storage: SpaceStorage | None = None,
     dataset_id: str | None = None,
     bucket_id: str | None = None,
@@ -249,6 +250,14 @@ def init(
             via the `TRACKIO_SPACE_ID` environment variable. You cannot log to a
             Space that has been **frozen** (converted to the static SDK); use
             ``trackio.sync(..., sdk="static")`` only after you are done logging.
+            Mutually exclusive with `trackio_url`.
+        trackio_url (`str`, *optional*):
+            URL of a self-hosted Trackio server (e.g. `"http://my-host:7860/"` or
+            `"https://trackio.internal.example.com"`). When set, metrics are logged to
+            that server over HTTP instead of creating or syncing to a Hugging Face
+            Space. The server does not need to live on Hugging Face. Can also be set
+            via the `TRACKIO_SERVER_URL` environment variable. Mutually exclusive with
+            `space_id`.
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
@@ -310,7 +319,19 @@ def init(
         )
 
     space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
+    trackio_url = trackio_url or os.environ.get("TRACKIO_SERVER_URL")
     bucket_id = bucket_id or os.environ.get("TRACKIO_BUCKET_ID")
+    if space_id is not None and trackio_url is not None:
+        raise ValueError("Cannot provide both `space_id` and `trackio_url`.")
+    if trackio_url is not None and not trackio_url.startswith(("http://", "https://")):
+        raise ValueError(
+            f"`trackio_url` must be a full URL starting with http:// or https://, got: {trackio_url!r}"
+        )
+    if trackio_url is not None and (dataset_id is not None or bucket_id is not None):
+        raise ValueError(
+            "`dataset_id` and `bucket_id` are Hugging Face Spaces concepts and are not "
+            "compatible with `trackio_url`. Configure storage on the self-hosted server."
+        )
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     if dataset_id is not None and bucket_id is not None:
@@ -336,13 +357,16 @@ def init(
     if space_id is not None:
         deploy.raise_if_space_is_frozen_for_logging(space_id)
 
+    remote_source = space_id or trackio_url
+
     url = context_vars.current_server.get()
 
-    if space_id is not None:
+    if remote_source is not None:
         if url is None:
-            url = space_id
+            url = remote_source
             context_vars.current_server.set(url)
-            context_vars.current_space_id.set(space_id)
+            if space_id is not None:
+                context_vars.current_space_id.set(space_id)
 
     _should_embed_local = False
 
@@ -363,11 +387,17 @@ def init(
             print(
                 f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}"
             )
-        if space_id is None:
+        if remote_source is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             _should_embed_local = embed and utils.is_in_notebook()
             if not _should_embed_local:
                 utils.print_dashboard_instructions(project)
+        elif trackio_url is not None:
+            print(
+                f"* Trackio metrics will be sent to self-hosted server: {trackio_url}"
+            )
+            if utils.is_in_notebook() and embed:
+                utils.embed_url_in_notebook(trackio_url)
         else:
             try:
                 deploy.create_space_if_not_exists(
@@ -390,21 +420,21 @@ def init(
     context_vars.current_project.set(project)
 
     remote_client = None
-    if space_id is not None:
+    if remote_source is not None:
         try:
             remote_client = RemoteClient(
-                space_id,
+                remote_source,
                 hf_token=huggingface_hub.utils.get_token(),
                 verbose=False,
             )
         except Exception as e:
             _emit_nonfatal_warning(
-                f"trackio.init() could not create a Space client for '{space_id}': {e}. Continuing with local fallback metadata lookups."
+                f"trackio.init() could not create a remote client for '{remote_source}': {e}. Continuing with local fallback metadata lookups."
             )
 
     existing_run_records = _safe_get_runs_for_init(
         project,
-        space_id,
+        remote_source,
         resume,
         remote_client=remote_client,
         check_existing_for_never=name is not None,
@@ -415,7 +445,7 @@ def init(
 
     existing_run = (
         _safe_get_latest_run_for_init(
-            project, name, space_id=space_id, remote_client=remote_client
+            project, name, space_id=remote_source, remote_client=remote_client
         )
         if name is not None
         else None
@@ -442,7 +472,7 @@ def init(
         _safe_get_last_step_for_init(
             project,
             name,
-            space_id,
+            remote_source,
             resumed,
             run_id=resolved_run_id,
             remote_client=remote_client,
@@ -473,7 +503,7 @@ def init(
         run_id=resolved_run_id,
         group=group,
         config=config,
-        space_id=space_id,
+        space_id=remote_source,
         existing_runs=existing_runs,
         initial_last_step=initial_last_step,
         auto_log_gpu=auto_log_gpu,

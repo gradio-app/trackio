@@ -199,6 +199,45 @@ def test_local_dashboard_supports_remote_client(temp_dir):
         app.close()
 
 
+def test_trackio_url_logs_to_self_hosted_server(temp_dir):
+    from urllib.parse import parse_qs, urlparse
+
+    import trackio.context_vars as context_vars
+
+    project = "test_self_hosted"
+    run_name = "self-hosted-run"
+
+    app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        write_token = parse_qs(urlparse(full_url).query).get("write_token", [None])[0]
+        assert write_token
+
+        context_vars.current_server.set(None)
+        context_vars.current_project.set(None)
+        context_vars.current_run.set(None)
+
+        trackio.init(project=project, name=run_name, trackio_url=full_url)
+        trackio.log(metrics={"loss": 0.5})
+        trackio.finish()
+
+        client = Client(url, verbose=False)
+        runs = client.predict(project, api_name="/get_runs_for_project")
+        assert any(r.get("name") == run_name for r in runs)
+    finally:
+        app.close()
+
+
+def test_trackio_url_rejects_non_url_value(temp_dir):
+    with pytest.raises(ValueError, match="full URL"):
+        trackio.init(project="x", trackio_url="not-a-url")
+
+
+def test_trackio_url_mutually_exclusive_with_space_id(temp_dir):
+    with pytest.raises(ValueError, match="Cannot provide both"):
+        trackio.init(project="x", space_id="u/s", trackio_url="http://localhost:1")
+
+
 def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
 
