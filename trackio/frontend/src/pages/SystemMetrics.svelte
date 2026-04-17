@@ -274,10 +274,11 @@
   });
 
   onMount(() => {
-    refreshTimer = setInterval(
-      refreshCachedRuns,
-      getMetricsPollIntervalMs(),
-    );
+    refreshTimer = setInterval(() => {
+      refreshCachedRuns().catch((error) => {
+        console.error("Failed to refresh cached runs", error);
+      });
+    }, getMetricsPollIntervalMs());
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
     };
