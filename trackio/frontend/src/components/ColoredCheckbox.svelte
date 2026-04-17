@@ -4,28 +4,31 @@
     selected = $bindable([]),
     colors = [],
     ontoggle = null,
+    getKey = (choice) => choice,
+    getLabel = (choice) => choice,
   } = $props();
 
-  function toggle(run) {
-    if (selected.includes(run)) {
-      selected = selected.filter((r) => r !== run);
+  function toggle(choice) {
+    const key = getKey(choice);
+    if (selected.includes(key)) {
+      selected = selected.filter((r) => r !== key);
     } else {
-      selected = [...selected, run];
+      selected = [...selected, key];
     }
     ontoggle?.();
   }
 </script>
 
 <div class="checkbox-group">
-  {#each choices as run, i}
+  {#each choices as choice, i}
     <label class="checkbox-item">
       <input
         type="checkbox"
-        checked={selected.includes(run)}
-        onchange={() => toggle(run)}
+        checked={selected.includes(getKey(choice))}
+        onchange={() => toggle(choice)}
       />
       <span class="color-dot" style="background: {colors[i] || '#999'}"></span>
-      <span class="run-name" title={run}>{run}</span>
+      <span class="run-name" title={getLabel(choice)}>{getLabel(choice)}</span>
     </label>
   {/each}
 </div>

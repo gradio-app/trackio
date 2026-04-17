@@ -129,11 +129,47 @@ def _safe_get_runs_for_init(
         return []
 
 
+def _safe_get_latest_run_for_init(
+    project: str,
+    name: str,
+    space_id: str | None = None,
+    remote_client: RemoteClient | None = None,
+) -> dict | None:
+    if space_id is not None:
+        try:
+            client = remote_client or RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=False,
+            )
+            runs = client.predict(project=project, api_name="/get_runs_for_project")
+            if not isinstance(runs, list):
+                return None
+            matches = [r for r in runs if isinstance(r, dict) and r.get("name") == name]
+            if not matches:
+                return None
+            matches.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+            return matches[0]
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not inspect existing runs for project '{project}' on Space '{space_id}': {e}. Continuing without resume metadata."
+            )
+            return None
+    try:
+        return SQLiteStorage.get_latest_run_record_by_name(project, name)
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not inspect existing runs for project '{project}': {e}. Continuing without resume metadata."
+        )
+        return None
+
+
 def _safe_get_last_step_for_init(
     project: str,
     run_name: str,
     space_id: str | None,
     resumed: bool,
+    run_id: str | None = None,
     remote_client: RemoteClient | None = None,
 ) -> int | None:
     if not resumed:
@@ -145,9 +181,15 @@ def _safe_get_last_step_for_init(
                 hf_token=huggingface_hub.utils.get_token(),
                 verbose=False,
             )
-            summary = client.predict(
-                project=project, run=run_name, api_name="/get_run_summary"
-            )
+            summary_kwargs: dict[str, Any] = {
+                "project": project,
+                "api_name": "/get_run_summary",
+            }
+            if run_id is not None:
+                summary_kwargs["run_id"] = run_id
+            else:
+                summary_kwargs["run"] = run_name
+            summary = client.predict(**summary_kwargs)
             if isinstance(summary, dict):
                 last_step = summary.get("last_step")
                 return last_step if isinstance(last_step, int) else None
@@ -158,7 +200,7 @@ def _safe_get_last_step_for_init(
             )
             return None
     try:
-        return SQLiteStorage.get_max_step_for_run(project, run_name)
+        return SQLiteStorage.get_max_step_for_run(project, run_name, run_id=run_id)
     except Exception as e:
         _emit_nonfatal_warning(
             f"trackio.init() could not recover the previous step for run '{run_name}': {e}. Continuing from step 0."
@@ -360,30 +402,38 @@ def init(
                 f"trackio.init() could not create a Space client for '{space_id}': {e}. Continuing with local fallback metadata lookups."
             )
 
-    existing_runs = _safe_get_runs_for_init(
+    existing_run_records = _safe_get_runs_for_init(
         project,
         space_id,
         resume,
         remote_client=remote_client,
         check_existing_for_never=name is not None,
     )
+    existing_runs = [
+        r["name"] if isinstance(r, dict) else r for r in existing_run_records
+    ]
+
+    existing_run = (
+        _safe_get_latest_run_for_init(
+            project, name, space_id=space_id, remote_client=remote_client
+        )
+        if name is not None
+        else None
+    )
+    resolved_run_id = None
 
     if resume == "must":
         if name is None:
             raise ValueError("Must provide a run name when resume='must'")
-        if name not in existing_runs:
+        if existing_run is None:
             raise ValueError(f"Run '{name}' does not exist in project '{project}'")
         resumed = True
+        resolved_run_id = existing_run["id"]
     elif resume == "allow":
-        resumed = name is not None and name in existing_runs
+        resumed = existing_run is not None
+        if resumed:
+            resolved_run_id = existing_run["id"]
     elif resume == "never":
-        if name is not None and name in existing_runs:
-            _emit_nonfatal_warning(
-                f"* Warning: resume='never' but a run '{name}' already exists in "
-                f"project '{project}'. Generating a new name and instead. If you want "
-                "to resume this run, call init() with resume='must' or resume='allow'."
-            )
-            name = None
         resumed = False
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
@@ -394,6 +444,7 @@ def init(
             name,
             space_id,
             resumed,
+            run_id=resolved_run_id,
             remote_client=remote_client,
         )
         if name is not None
@@ -419,6 +470,7 @@ def init(
         project=project,
         client=None,
         name=name,
+        run_id=resolved_run_id,
         group=group,
         config=config,
         space_id=space_id,
@@ -552,7 +604,10 @@ def finish():
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.finish().")
-    run.finish()
+    try:
+        run.finish()
+    finally:
+        context_vars.current_run.set(None)
 
 
 def alert(

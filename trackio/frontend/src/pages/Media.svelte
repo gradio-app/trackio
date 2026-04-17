@@ -20,7 +20,7 @@
       const allLogs = [];
       for (const run of runsToLoad) {
         const logs = await getLogs(project, run);
-        if (logs) allLogs.push(...logs.map((l) => ({ ...l, _run: run })));
+        if (logs) allLogs.push(...logs.map((l) => ({ ...l, _run: run.name })));
       }
       const logs = allLogs;
       const images = [];

@@ -39,6 +39,7 @@ class Run:
         project: str,
         client: Any | None,
         name: str | None = None,
+        run_id: str | None = None,
         group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
@@ -91,6 +92,7 @@ class Run:
         self._client_thread = None
         self._client = client
         self._space_id = space_id
+        self.id = run_id or uuid.uuid4().hex
         self._existing_runs = existing_runs
         self._initial_last_step = initial_last_step
         if name is not None:
@@ -202,7 +204,9 @@ class Run:
         if self._initial_last_step is not None:
             return self._initial_last_step
         try:
-            return SQLiteStorage.get_max_step_for_run(self.project, self.name)
+            return SQLiteStorage.get_max_step_for_run(
+                self.project, self.name, run_id=self.id
+            )
         except Exception as e:
             self._warn_once(
                 "init-max-step",
@@ -309,7 +313,7 @@ class Run:
         try:
             logs_by_run: dict[tuple, dict] = {}
             for entry in logs:
-                key = (entry["project"], entry["run"])
+                key = (entry["project"], entry["run"], entry.get("run_id"))
                 if key not in logs_by_run:
                     logs_by_run[key] = {
                         "metrics": [],
@@ -323,11 +327,12 @@ class Run:
                 if entry.get("config") and logs_by_run[key]["config"] is None:
                     logs_by_run[key]["config"] = entry["config"]
 
-            for (project, run), data in logs_by_run.items():
+            for (project, run, run_id), data in logs_by_run.items():
                 has_log_ids = any(lid is not None for lid in data["log_ids"])
                 SQLiteStorage.bulk_log(
                     project=project,
                     run=run,
+                    run_id=run_id,
                     metrics_list=data["metrics"],
                     steps=data["steps"],
                     config=data["config"],
@@ -343,18 +348,19 @@ class Run:
         try:
             logs_by_run: dict[tuple, dict] = {}
             for entry in logs:
-                key = (entry["project"], entry["run"])
+                key = (entry["project"], entry["run"], entry.get("run_id"))
                 if key not in logs_by_run:
                     logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
                 logs_by_run[key]["metrics"].append(entry["metrics"])
                 logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
                 logs_by_run[key]["log_ids"].append(entry.get("log_id"))
 
-            for (project, run), data in logs_by_run.items():
+            for (project, run, run_id), data in logs_by_run.items():
                 has_log_ids = any(lid is not None for lid in data["log_ids"])
                 SQLiteStorage.bulk_log_system(
                     project=project,
                     run=run,
+                    run_id=run_id,
                     metrics_list=data["metrics"],
                     timestamps=data["timestamps"],
                     log_ids=data["log_ids"] if has_log_ids else None,
@@ -369,7 +375,7 @@ class Run:
         try:
             alerts_by_run: dict[tuple, dict] = {}
             for entry in alerts:
-                key = (entry["project"], entry["run"])
+                key = (entry["project"], entry["run"], entry.get("run_id"))
                 if key not in alerts_by_run:
                     alerts_by_run[key] = {
                         "titles": [],
@@ -386,11 +392,12 @@ class Run:
                 alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
                 alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
 
-            for (project, run), data in alerts_by_run.items():
+            for (project, run, run_id), data in alerts_by_run.items():
                 has_alert_ids = any(aid is not None for aid in data["alert_ids"])
                 SQLiteStorage.bulk_alert(
                     project=project,
                     run=run,
+                    run_id=run_id,
                     titles=data["titles"],
                     texts=data["texts"],
                     levels=data["levels"],
@@ -518,7 +525,7 @@ class Run:
         try:
             logs_by_run: dict[tuple, dict] = {}
             for entry in logs:
-                key = (entry["project"], entry["run"])
+                key = (entry["project"], entry["run"], entry.get("run_id"))
                 if key not in logs_by_run:
                     logs_by_run[key] = {
                         "metrics": [],
@@ -532,10 +539,11 @@ class Run:
                 if entry.get("config") and logs_by_run[key]["config"] is None:
                     logs_by_run[key]["config"] = entry["config"]
 
-            for (project, run), data in logs_by_run.items():
+            for (project, run, run_id), data in logs_by_run.items():
                 SQLiteStorage.bulk_log(
                     project=project,
                     run=run,
+                    run_id=run_id,
                     metrics_list=data["metrics"],
                     steps=data["steps"],
                     log_ids=data["log_ids"],
@@ -555,17 +563,18 @@ class Run:
         try:
             logs_by_run: dict[tuple, dict] = {}
             for entry in logs:
-                key = (entry["project"], entry["run"])
+                key = (entry["project"], entry["run"], entry.get("run_id"))
                 if key not in logs_by_run:
                     logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
                 logs_by_run[key]["metrics"].append(entry["metrics"])
                 logs_by_run[key]["timestamps"].append(entry.get("timestamp"))
                 logs_by_run[key]["log_ids"].append(entry.get("log_id"))
 
-            for (project, run), data in logs_by_run.items():
+            for (project, run, run_id), data in logs_by_run.items():
                 SQLiteStorage.bulk_log_system(
                     project=project,
                     run=run,
+                    run_id=run_id,
                     metrics_list=data["metrics"],
                     timestamps=data["timestamps"],
                     log_ids=data["log_ids"],
@@ -594,6 +603,7 @@ class Run:
                 SQLiteStorage.add_pending_upload(
                     project=entry["project"],
                     space_id=self._space_id,
+                    run_id=entry.get("run_id"),
                     run_name=entry.get("run"),
                     step=entry.get("step"),
                     file_path=file_path,
@@ -638,6 +648,7 @@ class Run:
                             {
                                 "project": u["project"],
                                 "run": u["run"],
+                                "run_id": u.get("run_id"),
                                 "step": u["step"],
                                 "relative_path": u["relative_path"],
                                 "uploaded_file": handle_file(fp),
@@ -697,6 +708,7 @@ class Run:
                 upload_entry: UploadEntry = {
                     "project": self.project,
                     "run": self.name if use_run_name else None,
+                    "run_id": self.id if use_run_name else None,
                     "step": step,
                     "relative_path": relative_path,
                     "uploaded_file": handle_file(file_path),
@@ -832,6 +844,7 @@ class Run:
             log_entry: LogEntry = {
                 "project": self.project,
                 "run": self.name,
+                "run_id": self.id,
                 "metrics": metrics,
                 "step": step,
                 "config": config_to_log,
@@ -866,6 +879,7 @@ class Run:
             alert_entry: AlertEntry = {
                 "project": self.project,
                 "run": self.name,
+                "run_id": self.id,
                 "title": title,
                 "text": text,
                 "level": level.value,
@@ -910,6 +924,7 @@ class Run:
             system_log_entry: SystemLogEntry = {
                 "project": self.project,
                 "run": self.name,
+                "run_id": self.id,
                 "metrics": metrics,
                 "timestamp": timestamp,
                 "log_id": uuid.uuid4().hex,

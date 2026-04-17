@@ -67,14 +67,22 @@ export async function getRunsForProject(project) {
   return await callApi("/get_runs_for_project", { project });
 }
 
+function normalizeRun(run) {
+  if (run == null) return { run: null, run_id: null };
+  if (typeof run === "string") return { run, run_id: null };
+  return { run: run.name ?? null, run_id: run.id ?? null };
+}
+
 export async function getMetricsForRun(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getMetricsForRun(project, run);
-  return await callApi("/get_metrics_for_run", { project, run });
+  return await callApi("/get_metrics_for_run", params);
 }
 
 export async function getLogs(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getLogs(project, run);
-  return await callApi("/get_logs", { project, run });
+  return await callApi("/get_logs", params);
 }
 
 export async function getProjectSummary(project) {
@@ -83,30 +91,34 @@ export async function getProjectSummary(project) {
 }
 
 export async function getRunSummary(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getRunSummary(project, run);
-  return await callApi("/get_run_summary", { project, run });
+  return await callApi("/get_run_summary", params);
 }
 
 export async function getAlerts(project, run, level, since) {
+  const params = { project, ...normalizeRun(run), level, since };
   if (await isStaticMode()) return staticApi.getAlerts(project, run, level, since);
-  return await callApi("/get_alerts", { project, run, level, since });
+  return await callApi("/get_alerts", params);
 }
 
 export async function getSystemMetricsForRun(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSystemMetricsForRun(project, run);
-  return await callApi("/get_system_metrics_for_run", { project, run });
+  return await callApi("/get_system_metrics_for_run", params);
 }
 
 export async function getSystemLogs(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSystemLogs(project, run);
-  return await callApi("/get_system_logs", { project, run });
+  return await callApi("/get_system_logs", params);
 }
 
 export async function getSnapshot(project, run, step) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSnapshot(project, run, step);
   return await callApi("/get_snapshot", {
-    project,
-    run,
+    ...params,
     step,
     around_step: null,
     at_time: null,
@@ -117,9 +129,9 @@ export async function getSnapshot(project, run, step) {
 export async function getMetricValues(project, run, metricName) {
   if (await isStaticMode())
     return staticApi.getMetricValues(project, run, metricName);
+  const params = { project, ...normalizeRun(run) };
   return await callApi("/get_metric_values", {
-    project,
-    run,
+    ...params,
     metric_name: metricName,
     step: null,
     around_step: null,
@@ -144,15 +156,18 @@ export async function getRunMutationStatus() {
 }
 
 export async function deleteRun(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.deleteRun(project, run);
-  return await callApi("/delete_run", { project, run });
+  return await callApi("/delete_run", params);
 }
 
-export async function renameRun(project, oldName, newName) {
-  if (await isStaticMode()) return staticApi.renameRun(project, oldName, newName);
+export async function renameRun(project, oldRun, newName) {
+  const run = normalizeRun(oldRun);
+  if (await isStaticMode()) return staticApi.renameRun(project, oldRun, newName);
   return await callApi("/rename_run", {
     project,
-    old_name: oldName,
+    old_name: run.run,
+    run_id: run.run_id,
     new_name: newName,
   });
 }

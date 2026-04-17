@@ -119,7 +119,7 @@
 
     const allRows = [];
     for (const run of selectedRuns) {
-      const logs = rawDataCache.get(run);
+      const logs = rawDataCache.get(run.id ?? run.name);
       if (!logs) continue;
       const result = processRunData(logs, run, smoothing, xAxis, logScaleX, logScaleY);
       if (result) {
@@ -140,7 +140,7 @@
 
     const countPerRunMetric = new Map();
     for (const r of originals) {
-      const run = r.run;
+      const run = r.series_key;
       for (const col of cols) {
         if (r[col] == null) continue;
         const key = `${col}\0${run}`;
@@ -170,9 +170,10 @@
 
     let fetched = false;
     for (const run of selectedRuns) {
-      if (!rawDataCache.has(run)) {
+      const runKey = run.id ?? run.name;
+      if (!rawDataCache.has(runKey)) {
         const logs = await getLogs(project, run);
-        rawDataCache.set(run, logs);
+        rawDataCache.set(runKey, logs);
         fetched = true;
       }
     }
@@ -189,9 +190,10 @@
     let changed = false;
     for (const run of selectedRuns) {
       const logs = await getLogs(project, run);
-      const prev = rawDataCache.get(run);
+      const runKey = run.id ?? run.name;
+      const prev = rawDataCache.get(runKey);
       if (!prev || logs.length !== prev.length) {
-        rawDataCache.set(run, logs);
+        rawDataCache.set(runKey, logs);
         changed = true;
       }
     }
@@ -299,6 +301,8 @@
                     data={plotData}
                     y={metric}
                     title={directTitle}
+                    colorField="series_key"
+                    colorDisplayField="run"
                     {colorMap}
                     draggable={true}
                     ondragstart={(e) => handleDragStart(directKey, i, e)}
@@ -311,6 +315,8 @@
                     x={xColumn}
                     y={metric}
                     title={directTitle}
+                    colorField="series_key"
+                    colorDisplayField="run"
                     {colorMap}
                     {xLim}
                     {yExtent}
@@ -349,6 +355,8 @@
                         data={plotData}
                         y={metric}
                         title={subTitle}
+                        colorField="series_key"
+                        colorDisplayField="run"
                         {colorMap}
                         draggable={true}
                         ondragstart={(e) => handleDragStart(subKey, i, e)}
@@ -361,6 +369,8 @@
                         x={xColumn}
                         y={metric}
                         title={subTitle}
+                        colorField="series_key"
+                        colorDisplayField="run"
                         {colorMap}
                         {xLim}
                         {yExtent}

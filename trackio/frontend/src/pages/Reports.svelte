@@ -48,9 +48,10 @@
 
     loading = true;
     try {
-      const data = await getAlerts(project, null, null, null);
-      const runSet = new Set(selectedRuns);
-      allAlerts = (data || []).filter((a) => !a.run || runSet.has(a.run));
+      const alertBatches = await Promise.all(
+        selectedRuns.map((run) => getAlerts(project, run, null, null)),
+      );
+      allAlerts = alertBatches.flat();
 
       const runsToLoad = selectedRuns;
       const reports = [];
@@ -63,7 +64,7 @@
                 if (value && typeof value === "object" && value._type === "trackio.markdown") {
                   reports.push({
                     key,
-                    run,
+                    run: run.name,
                     step: log.step,
                     content: value._value || "",
                   });

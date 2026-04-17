@@ -295,7 +295,7 @@ def test_rename_run(temp_dir):
     assert new_logs[0]["loss"] == 0.1
 
 
-def test_rename_run_duplicate_name(temp_dir):
+def test_rename_run_allows_duplicate_name_in_new_schema(temp_dir):
     project = "test_project"
     run1 = "run1"
     run2 = "run2"
@@ -303,11 +303,11 @@ def test_rename_run_duplicate_name(temp_dir):
     SQLiteStorage.bulk_log(project, run1, [{"a": 1}])
     SQLiteStorage.bulk_log(project, run2, [{"b": 2}])
 
-    with pytest.raises(ValueError, match="already exists"):
-        SQLiteStorage.rename_run(project, run1, run2)
+    SQLiteStorage.rename_run(project, run1, run2)
 
-    assert len(SQLiteStorage.get_logs(project, run1)) > 0
-    assert len(SQLiteStorage.get_logs(project, run2)) > 0
+    records = SQLiteStorage.get_run_records(project)
+    duplicate_names = [record for record in records if record["name"] == run2]
+    assert len(duplicate_names) == 2
 
 
 def test_rename_run_with_media(temp_dir):

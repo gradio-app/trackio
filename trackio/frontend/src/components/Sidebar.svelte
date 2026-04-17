@@ -71,20 +71,21 @@
 
   let filteredRuns = $derived(
     filterText
-      ? runs.filter((r) => r.toLowerCase().includes(filterText.toLowerCase()))
+      ? runs.filter((r) => r.name.toLowerCase().includes(filterText.toLowerCase()))
       : runs,
   );
 
   let runColorMap = $derived(buildColorMap(runs));
+  let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
 
   let latestOnly = $state(false);
 
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
     if (latestOnly && filteredRuns.length > 0) {
-      selectedRuns = [filteredRuns[filteredRuns.length - 1]];
+      selectedRuns = [filteredRunIds[filteredRunIds.length - 1]];
     } else if (!latestOnly) {
-      selectedRuns = [...filteredRuns];
+      selectedRuns = [...filteredRunIds];
     }
   }
 
@@ -142,18 +143,18 @@
               <input
                 type="checkbox"
                 class="select-all-cb"
-                checked={selectedRuns.length === filteredRuns.length && filteredRuns.length > 0}
-                use:setIndeterminate={selectedRuns.length > 0 && selectedRuns.length < filteredRuns.length}
+                checked={selectedRuns.length === filteredRunIds.length && filteredRunIds.length > 0}
+                use:setIndeterminate={selectedRuns.length > 0 && selectedRuns.length < filteredRunIds.length}
                 onchange={() => {
-                  if (selectedRuns.length === filteredRuns.length) {
+                  if (selectedRuns.length === filteredRunIds.length) {
                     selectedRuns = [];
                   } else {
-                    selectedRuns = [...filteredRuns];
+                    selectedRuns = [...filteredRunIds];
                   }
                   latestOnly = false;
                 }}
               />
-              <span class="section-label">Runs ({filteredRuns.length})</span>
+              <span class="section-label">Runs ({filteredRunIds.length})</span>
             </label>
             <label class="latest-toggle">
               <span>Latest only</span>
@@ -173,8 +174,10 @@
             <ColoredCheckbox
               choices={filteredRuns}
               bind:selected={selectedRuns}
+              getKey={(run) => run.id ?? run.name}
+              getLabel={(run) => run.name}
               colors={filteredRuns.map(
-              (r) => runColorMap[r] ?? getColorForIndex(Math.max(0, runs.indexOf(r))),
+              (r) => runColorMap[r.id ?? r.name] ?? getColorForIndex(Math.max(0, runs.indexOf(r))),
             )}
               ontoggle={() => { latestOnly = false; }}
             />

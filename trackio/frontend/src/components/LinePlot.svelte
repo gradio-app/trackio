@@ -9,6 +9,7 @@
     x = "step",
     y = "",
     colorField = "run",
+    colorDisplayField = "",
     colorLabel = "",
     dashField = "",
     dashLabel = "",
@@ -42,10 +43,14 @@
     const seen = new Set();
     const entries = [];
     for (const d of data) {
-      const name = d[colorField];
-      if (name && !seen.has(name)) {
-        seen.add(name);
-        entries.push({ name, color: colorMap[name] || "#999" });
+      const key = d[colorField];
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        entries.push({
+          key,
+          name: d[colorDisplayField] || key,
+          color: colorMap[key] || "#999",
+        });
       }
     }
     return entries;
@@ -179,7 +184,7 @@
     const tooltipEnc = [];
     if (hasColor) {
       tooltipEnc.push({
-        field: colorField,
+        field: colorDisplayField || colorField,
         type: "nominal",
         title: resolvedColorLabel,
       });

@@ -418,9 +418,12 @@ def log(
     metrics: dict[str, Any],
     step: int | None,
     hf_token: str | None,
+    run_id: str | None = None,
 ) -> None:
     check_hf_token_has_write_access(hf_token)
-    SQLiteStorage.log(project=project, run=run, metrics=metrics, step=step)
+    SQLiteStorage.log(
+        project=project, run=run, run_id=run_id, metrics=metrics, step=step
+    )
 
 
 def bulk_log(
@@ -431,7 +434,7 @@ def bulk_log(
 
     logs_by_run = {}
     for log_entry in logs:
-        key = (log_entry["project"], log_entry["run"])
+        key = (log_entry["project"], log_entry["run"], log_entry.get("run_id"))
         if key not in logs_by_run:
             logs_by_run[key] = {
                 "metrics": [],
@@ -445,11 +448,12 @@ def bulk_log(
         if log_entry.get("config") and logs_by_run[key]["config"] is None:
             logs_by_run[key]["config"] = log_entry["config"]
 
-    for (project, run), data in logs_by_run.items():
+    for (project, run, run_id), data in logs_by_run.items():
         has_log_ids = any(lid is not None for lid in data["log_ids"])
         payload = dict(
             project=project,
             run=run,
+            run_id=run_id,
             metrics_list=data["metrics"],
             steps=data["steps"],
             config=data["config"],
@@ -469,18 +473,19 @@ def bulk_log_system(
 
     logs_by_run = {}
     for log_entry in logs:
-        key = (log_entry["project"], log_entry["run"])
+        key = (log_entry["project"], log_entry["run"], log_entry.get("run_id"))
         if key not in logs_by_run:
             logs_by_run[key] = {"metrics": [], "timestamps": [], "log_ids": []}
         logs_by_run[key]["metrics"].append(log_entry["metrics"])
         logs_by_run[key]["timestamps"].append(log_entry.get("timestamp"))
         logs_by_run[key]["log_ids"].append(log_entry.get("log_id"))
 
-    for (project, run), data in logs_by_run.items():
+    for (project, run, run_id), data in logs_by_run.items():
         has_log_ids = any(lid is not None for lid in data["log_ids"])
         payload = dict(
             project=project,
             run=run,
+            run_id=run_id,
             metrics_list=data["metrics"],
             timestamps=data["timestamps"],
             log_ids=data["log_ids"] if has_log_ids else None,
@@ -499,7 +504,7 @@ def bulk_alert(
 
     alerts_by_run: dict[tuple, dict] = {}
     for entry in alerts:
-        key = (entry["project"], entry["run"])
+        key = (entry["project"], entry["run"], entry.get("run_id"))
         if key not in alerts_by_run:
             alerts_by_run[key] = {
                 "titles": [],
@@ -516,11 +521,12 @@ def bulk_alert(
         alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
         alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
 
-    for (project, run), data in alerts_by_run.items():
+    for (project, run, run_id), data in alerts_by_run.items():
         has_alert_ids = any(aid is not None for aid in data["alert_ids"])
         payload = dict(
             project=project,
             run=run,
+            run_id=run_id,
             titles=data["titles"],
             texts=data["texts"],
             levels=data["levels"],
@@ -537,10 +543,13 @@ def bulk_alert(
 def get_alerts(
     project: str,
     run: str | None = None,
+    run_id: str | None = None,
     level: str | None = None,
     since: str | None = None,
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
+    return SQLiteStorage.get_alerts(
+        project, run_name=run, run_id=run_id, level=level, since=since
+    )
 
 
 def get_metric_values(
@@ -563,12 +572,14 @@ def get_metric_values(
     )
 
 
-def get_runs_for_project(project: str) -> list[str]:
-    return SQLiteStorage.get_runs(project)
+def get_runs_for_project(project: str) -> list[dict[str, Any]]:
+    return SQLiteStorage.get_run_records(project)
 
 
-def get_metrics_for_run(project: str, run: str) -> list[str]:
-    return SQLiteStorage.get_all_metrics_for_run(project, run)
+def get_metrics_for_run(
+    project: str, run: str | None = None, run_id: str | None = None
+) -> list[str]:
+    return SQLiteStorage.get_all_metrics_for_run(project, run, run_id=run_id)
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
@@ -588,7 +599,7 @@ def get_all_projects() -> list[str]:
 
 
 def get_project_summary(project: str) -> dict[str, Any]:
-    runs = SQLiteStorage.get_runs(project)
+    runs = SQLiteStorage.get_run_records(project)
     if not runs:
         return {"project": project, "num_runs": 0, "runs": [], "last_activity": None}
 
@@ -602,25 +613,41 @@ def get_project_summary(project: str) -> dict[str, Any]:
     }
 
 
-def get_run_summary(project: str, run: str) -> dict[str, Any]:
-    num_logs = SQLiteStorage.get_log_count(project, run)
+def get_run_summary(
+    project: str, run: str | None = None, run_id: str | None = None
+) -> dict[str, Any]:
+    if run is None and run_id is not None:
+        record = next(
+            (
+                record
+                for record in SQLiteStorage.get_run_records(project)
+                if record["id"] == run_id
+            ),
+            None,
+        )
+        if record is not None:
+            run = record["name"]
+
+    num_logs = SQLiteStorage.get_log_count(project, run, run_id=run_id)
     if num_logs == 0:
         return {
             "project": project,
             "run": run,
+            "run_id": run_id,
             "num_logs": 0,
             "metrics": [],
             "config": None,
             "last_step": None,
         }
 
-    metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
-    config = SQLiteStorage.get_run_config(project, run)
-    last_step = SQLiteStorage.get_last_step(project, run)
+    metrics = SQLiteStorage.get_all_metrics_for_run(project, run, run_id=run_id)
+    config = SQLiteStorage.get_run_config(project, run, run_id=run_id)
+    last_step = SQLiteStorage.get_last_step(project, run, run_id=run_id)
 
     return {
         "project": project,
         "run": run,
+        "run_id": run_id,
         "num_logs": num_logs,
         "metrics": metrics,
         "config": config,
@@ -628,29 +655,42 @@ def get_run_summary(project: str, run: str) -> dict[str, Any]:
     }
 
 
-def get_system_metrics_for_run(project: str, run: str) -> list[str]:
-    return SQLiteStorage.get_all_system_metrics_for_run(project, run)
+def get_system_metrics_for_run(
+    project: str, run: str | None = None, run_id: str | None = None
+) -> list[str]:
+    return SQLiteStorage.get_all_system_metrics_for_run(project, run, run_id=run_id)
 
 
-def get_system_logs(project: str, run: str) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_system_logs(project, run)
+def get_system_logs(
+    project: str, run: str | None = None, run_id: str | None = None
+) -> list[dict[str, Any]]:
+    return SQLiteStorage.get_system_logs(project, run, run_id=run_id)
 
 
 def get_snapshot(
     project: str,
-    run: str,
+    run: str | None = None,
+    run_id: str | None = None,
     step: int | None = None,
     around_step: int | None = None,
     at_time: str | None = None,
     window: int | None = None,
 ) -> dict[str, Any]:
     return SQLiteStorage.get_snapshot(
-        project, run, step=step, around_step=around_step, at_time=at_time, window=window
+        project,
+        run,
+        run_id=run_id,
+        step=step,
+        around_step=around_step,
+        at_time=at_time,
+        window=window,
     )
 
 
-def get_logs(project: str, run: str) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_logs(project, run, max_points=1500)
+def get_logs(
+    project: str, run: str | None = None, run_id: str | None = None
+) -> list[dict[str, Any]]:
+    return SQLiteStorage.get_logs(project, run, max_points=1500, run_id=run_id)
 
 
 def query_project(project: str, query: str) -> dict[str, Any]:
@@ -692,9 +732,14 @@ def get_project_files(project: str) -> list[dict[str, Any]]:
     return results
 
 
-def delete_run(request: Request, project: str, run: str) -> bool:
+def delete_run(
+    request: Request,
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+) -> bool:
     assert_can_mutate_runs(request)
-    return SQLiteStorage.delete_run(project, run)
+    return SQLiteStorage.delete_run(project, run, run_id=run_id)
 
 
 def rename_run(
@@ -702,9 +747,10 @@ def rename_run(
     project: str,
     old_name: str,
     new_name: str,
+    run_id: str | None = None,
 ) -> bool:
     assert_can_mutate_runs(request)
-    SQLiteStorage.rename_run(project, old_name, new_name)
+    SQLiteStorage.rename_run(project, old_name, new_name, run_id=run_id)
     return True
 
 

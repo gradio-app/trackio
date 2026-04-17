@@ -128,9 +128,10 @@ def test_runs_data_persisted_after_restart(test_space_id):
     deadline = time.time() + 300
     while time.time() < deadline:
         try:
-            run_names = client.predict(
+            run_records = client.predict(
                 project=project_name, api_name="/get_runs_for_project"
             )
+            run_names = [r["name"] if isinstance(r, dict) else r for r in run_records]
             if run_name in run_names:
                 break
         except Exception:

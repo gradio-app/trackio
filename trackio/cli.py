@@ -737,7 +737,10 @@ def main():
                 print(format_list(projects, "Projects"))
         elif args.list_type == "runs":
             if remote:
-                runs = remote.predict(args.project, api_name="/get_runs_for_project")
+                run_records = remote.predict(
+                    args.project, api_name="/get_runs_for_project"
+                )
+                runs = [r["name"] if isinstance(r, dict) else r for r in run_records]
             else:
                 db_path = SQLiteStorage.get_project_db_path(args.project)
                 if not db_path.exists():
@@ -838,7 +841,10 @@ def main():
                 print(format_alerts(alerts))
         elif args.list_type == "reports":
             if remote:
-                runs = remote.predict(args.project, api_name="/get_runs_for_project")
+                run_records = remote.predict(
+                    args.project, api_name="/get_runs_for_project"
+                )
+                runs = [r["name"] if isinstance(r, dict) else r for r in run_records]
             else:
                 db_path = SQLiteStorage.get_project_db_path(args.project)
                 if not db_path.exists():

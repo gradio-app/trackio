@@ -7,6 +7,7 @@
     data = [],
     y = "",
     colorField = "run",
+    colorDisplayField = "",
     colorMap = {},
     title = "",
     draggable = false,
@@ -26,10 +27,14 @@
     const seen = new Set();
     const entries = [];
     for (const d of data) {
-      const name = d[colorField];
-      if (name && !seen.has(name)) {
-        seen.add(name);
-        entries.push({ name, color: colorMap[name] || "#999" });
+      const key = d[colorField];
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        entries.push({
+          key,
+          name: d[colorDisplayField] || key,
+          color: colorMap[key] || "#999",
+        });
       }
     }
     return entries;
@@ -43,10 +48,14 @@
       if (d.data_type === "smoothed") continue;
       const run = d[colorField];
       if (run && d[y] != null) {
-        runValues.set(run, d[y]);
+        runValues.set(run, {
+          run,
+          label: d[colorDisplayField] || run,
+          value: d[y],
+        });
       }
     }
-    return Array.from(runValues, ([run, value]) => ({ run, value }));
+    return Array.from(runValues.values());
   }
 
   function cssVar(name, fallback) {
@@ -85,6 +94,7 @@
           type: "nominal",
           sort: runs,
           axis: {
+            labelExpr: "datum.label",
             labelAngle: runs.length > 4 ? -45 : 0,
             labelLimit: 120,
           },
@@ -103,7 +113,7 @@
           legend: null,
         },
         tooltip: [
-          { field: "run", type: "nominal", title: "Run" },
+          { field: colorDisplayField || "label", type: "nominal", title: "Run" },
           { field: "value", type: "quantitative", title: yTitle },
         ],
       },
@@ -154,11 +164,11 @@
     const yHeader = /[,"]/.test(y) ? `"${y.replace(/"/g, '""')}"` : y;
     const header = "run," + yHeader;
     const rows = barData.map((row) => {
-      const run =
-        typeof row.run === "string" && (row.run.includes(",") || row.run.includes('"'))
-          ? `"${row.run.replace(/"/g, '""')}"`
-          : row.run;
-      return `${run},${row.value}`;
+      const label =
+        typeof row.label === "string" && (row.label.includes(",") || row.label.includes('"'))
+          ? `"${row.label.replace(/"/g, '""')}"`
+          : row.label;
+      return `${label},${row.value}`;
     });
     const csv = [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });

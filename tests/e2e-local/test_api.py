@@ -191,7 +191,8 @@ def test_local_dashboard_supports_remote_client(temp_dir):
         settings = client.predict(api_name="/get_settings")
 
         assert project in projects
-        assert runs == [run_name]
+        assert len(runs) == 1
+        assert runs[0]["name"] == run_name
         assert "logo_urls" in settings
     finally:
         trackio.delete_project(project, force=True)
@@ -362,7 +363,9 @@ def test_local_dashboard_supports_mcp(temp_dir):
                     "get_runs_for_project",
                     {"project": project},
                 )
-                assert runs.structuredContent["result"] == [run_name]
+                result = runs.structuredContent["result"]
+                assert len(result) == 1
+                assert result[0]["name"] == run_name
 
                 run_summary = await session.call_tool(
                     "get_run_summary",

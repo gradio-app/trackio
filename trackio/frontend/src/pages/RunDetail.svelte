@@ -6,22 +6,27 @@
   let { project = null } = $props();
 
   let runName = $state(null);
+  let runId = $state(null);
   let summary = $state(null);
   let loading = $state(false);
 
   $effect(() => {
+    runId = getQueryParam("selected_run_id");
     runName = getQueryParam("selected_run");
   });
 
   async function loadDetail() {
-    if (!project || !runName) {
+    if (!project || (!runName && !runId)) {
       summary = null;
       return;
     }
 
     loading = true;
     try {
-      summary = await getRunSummary(project, runName);
+      summary = await getRunSummary(
+        project,
+        runId ? { id: runId, name: runName } : runName,
+      );
     } catch (e) {
       console.error("Failed to load run detail:", e);
     } finally {
@@ -32,6 +37,7 @@
   $effect(() => {
     project;
     runName;
+    runId;
     loadDetail();
   });
 </script>
