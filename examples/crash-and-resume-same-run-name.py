@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--resume",
         choices=["never", "allow", "must"],
-        default="allow",
+        default="never",
         help="Resume mode used for the simulated restart phase.",
     )
     return parser.parse_args()
