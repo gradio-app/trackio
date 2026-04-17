@@ -1,7 +1,5 @@
 """End-to-end test for Table with TrackioImage functionality."""
 
-import pandas as pd
-
 import trackio
 from trackio.media import TrackioImage
 from trackio.sqlite_storage import SQLiteStorage
@@ -16,15 +14,14 @@ def test_table_mixed_images_and_regular_data(image_ndarray, temp_dir):
 
     img = TrackioImage(image_ndarray, caption="Only Image")
 
-    df = pd.DataFrame(
-        {
-            "experiment": ["exp1", "exp2", "exp3"],
-            "result_image": [img, None, img],
-            "score": [0.75, 0.80, 0.85],
-        }
+    table = Table(
+        columns=["experiment", "result_image", "score"],
+        data=[
+            ["exp1", img, 0.75],
+            ["exp2", None, 0.80],
+            ["exp3", img, 0.85],
+        ],
     )
-
-    table = Table(dataframe=df)
     trackio.log({"mixed_results": table})
     trackio.finish()
 

@@ -39,49 +39,22 @@ function getOauthSessionHeader() {
 }
 
 export async function callApi(apiName, params = {}) {
-  const url = `${BASE}/gradio_api/call${apiName}`;
+  const cleanApiName = apiName.startsWith("/") ? apiName.slice(1) : apiName;
+  const url = `${BASE}/api/${cleanApiName}`;
   const resp = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...getOauthSessionHeader() },
-    body: JSON.stringify({ data: Object.values(params) }),
+    body: JSON.stringify(params),
   });
   if (!resp.ok) {
     throw new Error(`API call ${apiName} failed: ${resp.status}`);
   }
   const json = await resp.json();
-  const eventId = json.event_id;
-
-  const dataResp = await fetch(`${BASE}/gradio_api/call${apiName}/${eventId}`, {
-    credentials: "include",
-  });
-  if (!dataResp.ok) {
-    throw new Error(`API result ${apiName} failed: ${dataResp.status}`);
+  if (json.error) {
+    throw new Error(json.error);
   }
-
-  const text = await dataResp.text();
-  const lines = text.trim().split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith("event: complete")) {
-      const dataLine = lines[i + 1];
-      if (dataLine && dataLine.startsWith("data: ")) {
-        const raw = dataLine.slice(6);
-        const sanitized = raw
-          .replace(/:\s*Infinity\b/g, ": null")
-          .replace(/:\s*-Infinity\b/g, ": null")
-          .replace(/:\s*NaN\b/g, ": null");
-        const parsed = JSON.parse(sanitized);
-        return Array.isArray(parsed) ? parsed[0] : parsed;
-      }
-    }
-    if (lines[i].startsWith("event: error")) {
-      const dataLine = lines[i + 1];
-      if (dataLine && dataLine.startsWith("data: ")) {
-        throw new Error(JSON.parse(dataLine.slice(6)));
-      }
-    }
-  }
-  throw new Error(`No complete event for ${apiName}`);
+  return json.data;
 }
 
 export async function getAllProjects() {
@@ -190,17 +163,17 @@ export function setMediaDir(dir) {
 
 export function getAssetUrl(path) {
   if (_staticMode) return staticApi.getAssetUrl(path);
-  return `${BASE}/gradio_api/file=${_mediaDir}${path}`;
+  return `${BASE}/file?path=${encodeURIComponent(`${_mediaDir}${path}`)}`;
 }
 
 export function getMediaUrl(path) {
   if (_staticMode) return staticApi.getMediaUrl(path);
-  return `${BASE}/gradio_api/file=${_mediaDir}${path}`;
+  return `${BASE}/file?path=${encodeURIComponent(`${_mediaDir}${path}`)}`;
 }
 
 export function getFileUrl(path) {
   if (_staticMode) return staticApi.getMediaUrl(path);
-  return `${BASE}/gradio_api/file=${path}`;
+  return `${BASE}/file?path=${encodeURIComponent(path)}`;
 }
 
 export async function getReadOnlySource() {

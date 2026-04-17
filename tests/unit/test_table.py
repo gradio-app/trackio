@@ -1,4 +1,4 @@
-import pandas as pd
+import pytest
 
 from trackio.media import TrackioImage
 from trackio.table import Table
@@ -9,16 +9,14 @@ RUN_NAME = "test_run"
 
 def test_table_to_dict_with_images(image_ndarray, temp_dir):
     img = TrackioImage(image_ndarray, caption="Mixed Test")
-    df = pd.DataFrame(
-        {
-            "step": [1, 2, 3],
-            "image": [img, None, img],
-            "text": ["hello", "world", "test"],
-            "number": [1.5, 2.5, 3.5],
-        }
+    table = Table(
+        columns=["step", "image", "text", "number"],
+        data=[
+            [1, img, "hello", 1.5],
+            [2, None, "world", 2.5],
+            [3, img, "test", 3.5],
+        ],
     )
-
-    table = Table(dataframe=df)
     result = table._to_dict(project=PROJECT_NAME, run=RUN_NAME, step=5)
 
     assert result["_type"] == Table.TYPE
@@ -43,6 +41,17 @@ def test_table_to_dict_with_images(image_ndarray, temp_dir):
     assert row3["number"] == 3.5
     assert isinstance(row3["image"], dict)
     assert row3["image"]["_type"] == TrackioImage.TYPE
+
+
+def test_table_accepts_pandas_dataframe_if_installed():
+    pd = pytest.importorskip("pandas")
+
+    df = pd.DataFrame({"step": [1], "text": ["hello"]})
+    table = Table(dataframe=df)
+
+    assert table._to_dict(project=PROJECT_NAME, run=RUN_NAME)["_value"] == [
+        {"step": 1, "text": "hello"}
+    ]
 
 
 def test_table_to_display_format_with_images():
@@ -73,7 +82,7 @@ def test_table_to_display_format_with_images():
     assert row1["step"] == 1
     assert row1["value"] == 42
     assert row1["text"] == "regular text"
-    assert '<img src="/gradio_api/file=' in row1["image"]
+    assert '<img src="/file?path=' in row1["image"]
     assert 'image.png"' in row1["image"]
     assert 'alt="Test Caption"' in row1["image"]
 
@@ -121,7 +130,7 @@ def test_table_to_display_format_with_multiple_images():
     row1 = processed_data[0]
     assert row1["step"] == 1
     assert row1["value"] == 42
-    assert '<img src="/gradio_api/file=' in row1["images"]
+    assert '<img src="/file?path=' in row1["images"]
     assert 'alt="First Image"' in row1["images"]
     assert 'image1.png"' in row1["images"]
     assert 'alt="Second Image"' in row1["images"]

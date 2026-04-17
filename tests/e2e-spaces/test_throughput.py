@@ -2,9 +2,8 @@ import secrets
 import threading
 import time
 
-from gradio_client import Client
-
 import trackio
+from trackio.remote_client import RemoteClient as Client
 
 
 def test_burst_2000_logs_single_process(test_space_id, wait_for_client):

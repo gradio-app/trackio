@@ -22,7 +22,6 @@ except ImportError:
 
 import huggingface_hub as hf
 import orjson
-import pandas as pd
 
 from trackio.commit_scheduler import CommitScheduler
 from trackio.dummy_commit_scheduler import DummyCommitScheduler
@@ -371,29 +370,123 @@ class SQLiteStorage:
         return db_path
 
     @staticmethod
-    def _flatten_json_column(df: pd.DataFrame, col: str) -> pd.DataFrame:
-        if df.empty:
-            return df
-        expanded = df[col].copy()
-        expanded = pd.DataFrame(
-            expanded.apply(
-                lambda x: deserialize_values(orjson.loads(x))
-            ).values.tolist(),
-            index=df.index,
-        )
-        df = df.drop(columns=[col])
-        expanded = expanded.loc[:, ~expanded.columns.isin(df.columns)]
-        return pd.concat([df, expanded], axis=1)
+    def _require_pyarrow():
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+        except ImportError as e:
+            raise ImportError(
+                "Parquet import/export requires `trackio[spaces]`."
+            ) from e
+        return pa, pq
 
     @staticmethod
-    def _read_table(db_path: Path, table: str) -> pd.DataFrame:
+    def _read_table_rows(db_path: Path, table: str) -> list[dict[str, object]]:
         try:
             with SQLiteStorage._get_connection(
-                db_path, timeout=5.0, configure_pragmas=False, row_factory=None
+                db_path, timeout=5.0, configure_pragmas=False
             ) as conn:
-                return pd.read_sql(f"SELECT * FROM {table}", conn)
+                cursor = conn.cursor()
+                cursor.execute(f"SELECT * FROM {table}")
+                return [dict(row) for row in cursor.fetchall()]
         except Exception:
-            return pd.DataFrame()
+            return []
+
+    @staticmethod
+    def _decode_json_blob(value: object) -> dict[str, object]:
+        if value is None:
+            return {}
+        if isinstance(value, memoryview):
+            value = value.tobytes()
+        return deserialize_values(orjson.loads(value))
+
+    @staticmethod
+    def _flatten_json_rows(
+        rows: list[dict[str, object]], json_col: str
+    ) -> list[dict[str, object]]:
+        flattened_rows = []
+        for row in rows:
+            flat_row = {key: value for key, value in row.items() if key != json_col}
+            expanded = SQLiteStorage._decode_json_blob(row.get(json_col))
+            for key, value in expanded.items():
+                if key not in flat_row:
+                    flat_row[key] = value
+            flattened_rows.append(flat_row)
+        return flattened_rows
+
+    @staticmethod
+    def _write_parquet_rows(parquet_path: Path, rows: list[dict[str, object]]) -> None:
+        if not rows:
+            return
+        pa, pq = SQLiteStorage._require_pyarrow()
+        table = pa.Table.from_pylist(rows)
+        write_kwargs = {
+            "write_page_index": True,
+            "use_content_defined_chunking": True,
+        }
+        try:
+            pq.write_table(table, parquet_path, **write_kwargs)
+        except TypeError:
+            pq.write_table(table, parquet_path)
+
+    @staticmethod
+    def _read_parquet_rows(parquet_path: Path) -> list[dict[str, object]]:
+        _, pq = SQLiteStorage._require_pyarrow()
+        return pq.read_table(parquet_path).to_pylist()
+
+    @staticmethod
+    def _normalize_json_column_value(value: object) -> object:
+        if value is None:
+            return orjson.dumps({})
+        if isinstance(value, memoryview):
+            return value.tobytes()
+        if isinstance(value, (bytes, bytearray, str)):
+            return value
+        return orjson.dumps(serialize_values(value))
+
+    @staticmethod
+    def _rows_to_sql_table_rows(
+        rows: list[dict[str, object]],
+        *,
+        json_col: str,
+        structural_cols: list[str],
+    ) -> list[dict[str, object]]:
+        sql_rows = []
+        for row in rows:
+            sql_row = {col: row.get(col) for col in structural_cols}
+            if json_col in row:
+                sql_row[json_col] = SQLiteStorage._normalize_json_column_value(
+                    row.get(json_col)
+                )
+            else:
+                payload = {
+                    key: value
+                    for key, value in row.items()
+                    if key not in structural_cols and key != json_col
+                }
+                sql_row[json_col] = orjson.dumps(serialize_values(payload))
+            sql_rows.append(sql_row)
+        return sql_rows
+
+    @staticmethod
+    def _replace_table_rows(
+        db_path: Path,
+        table: str,
+        rows: list[dict[str, object]],
+        columns: list[str],
+    ) -> None:
+        with SQLiteStorage._get_connection(
+            db_path, configure_pragmas=False, row_factory=None
+        ) as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"DELETE FROM {table}")
+            if rows:
+                placeholders = ", ".join(["?"] * len(columns))
+                cursor.executemany(
+                    f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
+                    [[row.get(column) for column in columns] for row in rows],
+                )
+            conn.commit()
 
     @staticmethod
     def _flatten_and_write_parquet(
@@ -404,15 +497,11 @@ class SQLiteStorage:
             and db_path.stat().st_mtime <= parquet_path.stat().st_mtime
         ):
             return
-        df = SQLiteStorage._read_table(db_path, table)
-        if df.empty:
+        rows = SQLiteStorage._read_table_rows(db_path, table)
+        if not rows:
             return
-        df = SQLiteStorage._flatten_json_column(df, json_col)
-        df.to_parquet(
-            parquet_path,
-            write_page_index=True,
-            use_content_defined_chunking=True,
-        )
+        flat_rows = SQLiteStorage._flatten_json_rows(rows, json_col)
+        SQLiteStorage._write_parquet_rows(parquet_path, flat_rows)
 
     @staticmethod
     def export_to_parquet():
@@ -468,20 +557,20 @@ class SQLiteStorage:
         aux_dir = output_dir / "aux"
         aux_dir.mkdir(parents=True, exist_ok=True)
 
-        metrics_df = SQLiteStorage._read_table(db_path, "metrics")
-        if not metrics_df.empty:
-            flat = SQLiteStorage._flatten_json_column(metrics_df.copy(), "metrics")
-            flat.to_parquet(output_dir / "metrics.parquet")
+        metrics_rows = SQLiteStorage._read_table_rows(db_path, "metrics")
+        if metrics_rows:
+            flat = SQLiteStorage._flatten_json_rows(metrics_rows, "metrics")
+            SQLiteStorage._write_parquet_rows(output_dir / "metrics.parquet", flat)
 
-        sys_df = SQLiteStorage._read_table(db_path, "system_metrics")
-        if not sys_df.empty:
-            flat = SQLiteStorage._flatten_json_column(sys_df.copy(), "metrics")
-            flat.to_parquet(aux_dir / "system_metrics.parquet")
+        sys_rows = SQLiteStorage._read_table_rows(db_path, "system_metrics")
+        if sys_rows:
+            flat = SQLiteStorage._flatten_json_rows(sys_rows, "metrics")
+            SQLiteStorage._write_parquet_rows(aux_dir / "system_metrics.parquet", flat)
 
-        configs_df = SQLiteStorage._read_table(db_path, "configs")
-        if not configs_df.empty:
-            flat = SQLiteStorage._flatten_json_column(configs_df.copy(), "config")
-            flat.to_parquet(aux_dir / "configs.parquet")
+        configs_rows = SQLiteStorage._read_table_rows(db_path, "configs")
+        if configs_rows:
+            flat = SQLiteStorage._flatten_json_rows(configs_rows, "config")
+            SQLiteStorage._write_parquet_rows(aux_dir / "configs.parquet", flat)
 
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
@@ -551,29 +640,35 @@ class SQLiteStorage:
 
             SQLiteStorage._cleanup_wal_sidecars(db_path)
 
-            df = pd.read_parquet(parquet_path)
-            if "metrics" not in df.columns:
-                metrics = df.copy()
-                structural_cols = [
+            rows = SQLiteStorage._read_parquet_rows(parquet_path)
+            project = db_path.stem
+            SQLiteStorage.init_db(project)
+            metrics_rows = SQLiteStorage._rows_to_sql_table_rows(
+                rows,
+                json_col="metrics",
+                structural_cols=[
                     "id",
                     "timestamp",
                     "run_name",
                     "step",
                     "log_id",
                     "space_id",
-                ]
-                df = df[[c for c in structural_cols if c in df.columns]]
-                for col in structural_cols:
-                    if col in metrics.columns:
-                        del metrics[col]
-                metrics = orjson.loads(metrics.to_json(orient="records"))
-                df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
-
-            with SQLiteStorage._get_connection(
-                db_path, configure_pragmas=False, row_factory=None
-            ) as conn:
-                df.to_sql("metrics", conn, if_exists="replace", index=False)
-                conn.commit()
+                ],
+            )
+            SQLiteStorage._replace_table_rows(
+                db_path,
+                "metrics",
+                metrics_rows,
+                [
+                    "id",
+                    "timestamp",
+                    "run_name",
+                    "step",
+                    "metrics",
+                    "log_id",
+                    "space_id",
+                ],
+            )
 
         system_parquet_names = [f for f in all_paths if f.endswith("_system.parquet")]
         for pq_name in system_parquet_names:
@@ -584,22 +679,19 @@ class SQLiteStorage:
             if project_name not in imported_projects and not db_path.exists():
                 continue
 
-            df = pd.read_parquet(parquet_path)
-            if "metrics" not in df.columns:
-                metrics = df.copy()
-                other_cols = ["id", "timestamp", "run_name"]
-                df = df[[c for c in other_cols if c in df.columns]]
-                for col in other_cols:
-                    if col in metrics.columns:
-                        del metrics[col]
-                metrics = orjson.loads(metrics.to_json(orient="records"))
-                df["metrics"] = [orjson.dumps(serialize_values(row)) for row in metrics]
-
-            with SQLiteStorage._get_connection(
-                db_path, configure_pragmas=False, row_factory=None
-            ) as conn:
-                df.to_sql("system_metrics", conn, if_exists="replace", index=False)
-                conn.commit()
+            rows = SQLiteStorage._read_parquet_rows(parquet_path)
+            SQLiteStorage.init_db(project_name)
+            system_rows = SQLiteStorage._rows_to_sql_table_rows(
+                rows,
+                json_col="metrics",
+                structural_cols=["id", "timestamp", "run_name", "log_id", "space_id"],
+            )
+            SQLiteStorage._replace_table_rows(
+                db_path,
+                "system_metrics",
+                system_rows,
+                ["id", "timestamp", "run_name", "metrics", "log_id", "space_id"],
+            )
 
         configs_parquet_names = [f for f in all_paths if f.endswith("_configs.parquet")]
         for pq_name in configs_parquet_names:
@@ -610,24 +702,19 @@ class SQLiteStorage:
             if project_name not in imported_projects and not db_path.exists():
                 continue
 
-            df = pd.read_parquet(parquet_path)
-            if "config" not in df.columns:
-                config_data = df.copy()
-                other_cols = ["id", "run_name", "created_at"]
-                df = df[[c for c in other_cols if c in df.columns]]
-                for col in other_cols:
-                    if col in config_data.columns:
-                        del config_data[col]
-                config_data = orjson.loads(config_data.to_json(orient="records"))
-                df["config"] = [
-                    orjson.dumps(serialize_values(row)) for row in config_data
-                ]
-
-            with SQLiteStorage._get_connection(
-                db_path, configure_pragmas=False, row_factory=None
-            ) as conn:
-                df.to_sql("configs", conn, if_exists="replace", index=False)
-                conn.commit()
+            rows = SQLiteStorage._read_parquet_rows(parquet_path)
+            SQLiteStorage.init_db(project_name)
+            config_rows = SQLiteStorage._rows_to_sql_table_rows(
+                rows,
+                json_col="config",
+                structural_cols=["id", "run_name", "created_at"],
+            )
+            SQLiteStorage._replace_table_rows(
+                db_path,
+                "configs",
+                config_rows,
+                ["id", "run_name", "config", "created_at"],
+            )
 
     @staticmethod
     def get_scheduler():

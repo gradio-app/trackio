@@ -16,14 +16,16 @@ def test_runs_plots_images_are_displayed(temp_dir):
 
     trackio.finish()
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, _, _, full_url = trackio.show(
+        project="test_project", block_thread=False, open_browser=False
+    )
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url if url.endswith("/") else url + "/")
+            page.goto(full_url)
             page.wait_for_load_state("networkidle")
             nav_links = page.locator(".nav-link")
             expect(nav_links).to_have_count(7)
@@ -63,14 +65,16 @@ def test_latest_only_selects_last_run(temp_dir):
         trackio.log(metrics={"loss": 0.1 * (i + 1)})
         trackio.finish()
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, _, _, full_url = trackio.show(
+        project="test_latest", block_thread=False, open_browser=False
+    )
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url if url.endswith("/") else url + "/")
+            page.goto(full_url)
             page.wait_for_load_state("networkidle")
 
             checkboxes = page.locator(".checkbox-item input[type='checkbox']")
@@ -96,14 +100,16 @@ def test_navbar_page_navigation(temp_dir):
     trackio.log(metrics={"loss": 0.5})
     trackio.finish()
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, _, _, full_url = trackio.show(
+        project="test_nav", block_thread=False, open_browser=False
+    )
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url if url.endswith("/") else url + "/")
+            page.goto(full_url)
             page.wait_for_load_state("networkidle")
             nav_links = page.locator(".nav-link")
             expect(nav_links).to_have_count(7)
@@ -134,14 +140,16 @@ def test_runs_table_shows_run_data(temp_dir):
         trackio.log(metrics={"loss": 1.0 / (i + 1)})
     trackio.finish()
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, _, _, full_url = trackio.show(
+        project="test_runs_table", block_thread=False, open_browser=False
+    )
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url if url.endswith("/") else url + "/")
+            page.goto(full_url)
             page.wait_for_load_state("networkidle")
 
             nav_links = page.locator(".nav-link")
@@ -170,14 +178,16 @@ def test_multiple_runs_display_multiple_plots(temp_dir):
         trackio.log(metrics={"val_loss": 0.05 * (i + 1)})
         trackio.finish()
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, _, _, full_url = trackio.show(
+        project="test_multi", block_thread=False, open_browser=False
+    )
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
             page.set_default_timeout(5000)
-            page.goto(url if url.endswith("/") else url + "/")
+            page.goto(full_url)
             page.wait_for_load_state("networkidle")
 
             run_items = page.locator(".checkbox-item")

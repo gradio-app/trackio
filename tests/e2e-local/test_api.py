@@ -1,5 +1,14 @@
+import asyncio
+import tempfile
+from pathlib import Path
+
+import httpx
+import pytest
+
 import trackio
+import trackio.utils as trackio_utils
 from trackio import Api
+from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -163,3 +172,207 @@ def test_rename_run(temp_dir, image_ndarray):
 
     new_config = SQLiteStorage.get_run_config(project=project, run=new_name)
     assert new_config is not None
+
+
+def test_local_dashboard_supports_remote_client(temp_dir):
+    project = "test_local_client"
+    run_name = "client-run"
+
+    trackio.init(project=project, name=run_name)
+    trackio.log(metrics={"loss": 0.1})
+    trackio.finish()
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        client = Client(url, verbose=False)
+        projects = client.predict(api_name="/get_all_projects")
+        runs = client.predict(project, api_name="/get_runs_for_project")
+        settings = client.predict(api_name="/get_settings")
+
+        assert project in projects
+        assert runs == [run_name]
+        assert "logo_urls" in settings
+    finally:
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        resp = httpx.post(
+            f"{url.rstrip('/')}/api/get_runs_for_project",
+            json={},
+            timeout=5,
+        )
+
+        assert resp.status_code == 400
+        assert resp.json() == {"error": "Missing required parameter: project"}
+    finally:
+        app.close()
+
+
+def test_local_dashboard_file_endpoint_only_serves_trackio_paths(
+    temp_dir, image_ndarray
+):
+    project = "test_local_file_endpoint"
+    run_name = "file-run"
+
+    trackio.init(project=project, name=run_name)
+    trackio.log(metrics={"image": trackio.Image(image_ndarray, caption="allowed")})
+    trackio.finish()
+
+    logs = SQLiteStorage.get_logs(project=project, run=run_name)
+    rel_path = logs[0]["image"]["file_path"]
+    allowed_path = trackio_utils.MEDIA_DIR / rel_path
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        allowed_resp = httpx.get(
+            f"{url.rstrip('/')}/file",
+            params={"path": str(allowed_path)},
+            timeout=5,
+        )
+        blocked_resp = httpx.get(
+            f"{url.rstrip('/')}/file",
+            params={"path": "/etc/hosts"},
+            timeout=5,
+        )
+
+        assert allowed_resp.status_code == 200
+        assert blocked_resp.status_code == 404
+    finally:
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir):
+    project = "test_local_upload_guard"
+    source_path = Path(tempfile.gettempdir()) / "trackio-upload-source.txt"
+    source_text = "uploaded through server"
+    source_path.write_text(source_text)
+    blocked_target = trackio_utils.MEDIA_DIR / project / "files" / "blocked.txt"
+    allowed_target = None
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        with source_path.open("rb") as handle:
+            upload_resp = httpx.post(
+                f"{url.rstrip('/')}/api/upload",
+                files={"files": (source_path.name, handle)},
+                timeout=5,
+            )
+        upload_resp.raise_for_status()
+        uploaded_path = upload_resp.json()["paths"][0]
+        allowed_target = (
+            trackio_utils.MEDIA_DIR
+            / project
+            / "files"
+            / "allowed.txt"
+            / Path(uploaded_path).name
+        )
+
+        allowed_resp = httpx.post(
+            f"{url.rstrip('/')}/api/bulk_upload_media",
+            json={
+                "uploads": [
+                    {
+                        "project": project,
+                        "run": None,
+                        "step": None,
+                        "relative_path": "allowed.txt",
+                        "uploaded_file": {"path": uploaded_path},
+                    }
+                ],
+                "hf_token": None,
+            },
+            timeout=5,
+        )
+        blocked_resp = httpx.post(
+            f"{url.rstrip('/')}/api/bulk_upload_media",
+            json={
+                "uploads": [
+                    {
+                        "project": project,
+                        "run": None,
+                        "step": None,
+                        "relative_path": "blocked.txt",
+                        "uploaded_file": {"path": "/etc/hosts"},
+                    }
+                ],
+                "hf_token": None,
+            },
+            timeout=5,
+        )
+
+        assert allowed_resp.status_code == 200
+        assert allowed_target is not None
+        assert allowed_target.read_text() == source_text
+        assert blocked_resp.status_code == 400
+        assert blocked_resp.json() == {
+            "error": "Uploaded file was not created by this Trackio server."
+        }
+        assert not blocked_target.exists()
+    finally:
+        source_path.unlink(missing_ok=True)
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_local_dashboard_supports_mcp(temp_dir):
+    pytest.importorskip("mcp")
+
+    project = "test_local_mcp"
+    run_name = "mcp-run"
+
+    trackio.init(project=project, name=run_name)
+    trackio.log(metrics={"loss": 0.1})
+    trackio.finish()
+
+    app, url, _, _ = trackio.show(
+        block_thread=False,
+        open_browser=False,
+        mcp_server=True,
+    )
+
+    async def check_mcp() -> None:
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+
+        async with streamable_http_client(f"{url.rstrip('/')}/mcp") as (
+            read_stream,
+            write_stream,
+            _,
+        ):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                tool_names = {tool.name for tool in tools.tools}
+                assert "get_all_projects" in tool_names
+                assert "get_run_summary" in tool_names
+
+                projects = await session.call_tool("get_all_projects")
+                assert project in projects.structuredContent["result"]
+
+                runs = await session.call_tool(
+                    "get_runs_for_project",
+                    {"project": project},
+                )
+                assert runs.structuredContent["result"] == [run_name]
+
+                run_summary = await session.call_tool(
+                    "get_run_summary",
+                    {"project": project, "run": run_name},
+                )
+                assert run_summary.structuredContent["run"] == run_name
+                assert run_summary.structuredContent["num_logs"] == 1
+
+    try:
+        asyncio.run(check_mcp())
+    finally:
+        trackio.delete_project(project, force=True)
+        app.close()

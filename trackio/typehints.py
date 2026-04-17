@@ -1,6 +1,6 @@
 from typing import Any, TypedDict
 
-from gradio import FileData
+from gradio_client import FileData
 
 
 class LogEntry(TypedDict, total=False):
