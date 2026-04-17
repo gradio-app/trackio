@@ -97,7 +97,29 @@ def _cleanup_current_run():
             pass
 
 
-def _safe_get_runs_for_init(project: str) -> list[str]:
+def _safe_get_runs_for_init(
+    project: str,
+    space_id: str | None,
+    resume: str,
+    remote_client: RemoteClient | None = None,
+    check_existing_for_never: bool = False,
+) -> list[str]:
+    if space_id is not None:
+        if resume == "never" and not check_existing_for_never:
+            return []
+        try:
+            client = remote_client or RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=False,
+            )
+            runs = client.predict(project=project, api_name="/get_runs_for_project")
+            return runs if isinstance(runs, list) else []
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not inspect existing runs for project '{project}' on Space '{space_id}': {e}. Continuing without resume metadata."
+            )
+            return []
     try:
         return SQLiteStorage.get_runs(project)
     except Exception as e:
@@ -107,12 +129,81 @@ def _safe_get_runs_for_init(project: str) -> list[str]:
         return []
 
 
-def _safe_get_latest_run_for_init(project: str, name: str) -> dict | None:
+def _safe_get_latest_run_for_init(
+    project: str,
+    name: str,
+    space_id: str | None = None,
+    remote_client: RemoteClient | None = None,
+) -> dict | None:
+    if space_id is not None:
+        try:
+            client = remote_client or RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=False,
+            )
+            runs = client.predict(project=project, api_name="/get_runs_for_project")
+            if not isinstance(runs, list):
+                return None
+            matches = [r for r in runs if isinstance(r, dict) and r.get("name") == name]
+            if not matches:
+                return None
+            matches.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+            return matches[0]
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not inspect existing runs for project '{project}' on Space '{space_id}': {e}. Continuing without resume metadata."
+            )
+            return None
     try:
         return SQLiteStorage.get_latest_run_record_by_name(project, name)
     except Exception as e:
         _emit_nonfatal_warning(
             f"trackio.init() could not inspect existing runs for project '{project}': {e}. Continuing without resume metadata."
+        )
+        return None
+
+
+def _safe_get_last_step_for_init(
+    project: str,
+    run_name: str,
+    space_id: str | None,
+    resumed: bool,
+    run_id: str | None = None,
+    remote_client: RemoteClient | None = None,
+) -> int | None:
+    if not resumed:
+        return None
+    if space_id is not None:
+        try:
+            client = remote_client or RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=False,
+            )
+            summary_kwargs: dict[str, Any] = {
+                "project": project,
+                "api_name": "/get_run_summary",
+            }
+            if run_id is not None:
+                summary_kwargs["run_id"] = run_id
+            else:
+                summary_kwargs["run"] = run_name
+            summary = client.predict(**summary_kwargs)
+            if isinstance(summary, dict):
+                last_step = summary.get("last_step")
+                return last_step if isinstance(last_step, int) else None
+            return None
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not recover the previous step for run '{run_name}' on Space '{space_id}': {e}. Continuing from step 0."
+            )
+            return None
+    try:
+        return SQLiteStorage.get_max_step_for_run(project, run_name, run_id=run_id)
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not recover the previous step for run '{run_name}': {e}. Continuing from step 0."
         )
         return None
 
@@ -298,8 +389,36 @@ def init(
                 )
     context_vars.current_project.set(project)
 
+    remote_client = None
+    if space_id is not None:
+        try:
+            remote_client = RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=False,
+            )
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not create a Space client for '{space_id}': {e}. Continuing with local fallback metadata lookups."
+            )
+
+    existing_run_records = _safe_get_runs_for_init(
+        project,
+        space_id,
+        resume,
+        remote_client=remote_client,
+        check_existing_for_never=name is not None,
+    )
+    existing_runs = [
+        r["name"] if isinstance(r, dict) else r for r in existing_run_records
+    ]
+
     existing_run = (
-        _safe_get_latest_run_for_init(project, name) if name is not None else None
+        _safe_get_latest_run_for_init(
+            project, name, space_id=space_id, remote_client=remote_client
+        )
+        if name is not None
+        else None
     )
     resolved_run_id = None
 
@@ -318,6 +437,19 @@ def init(
         resumed = False
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
+
+    initial_last_step = (
+        _safe_get_last_step_for_init(
+            project,
+            name,
+            space_id,
+            resumed,
+            run_id=resolved_run_id,
+            remote_client=remote_client,
+        )
+        if name is not None
+        else None
+    )
 
     if auto_log_gpu is None:
         nvidia_available = gpu_available()
@@ -342,6 +474,8 @@ def init(
         group=group,
         config=config,
         space_id=space_id,
+        existing_runs=existing_runs,
+        initial_last_step=initial_last_step,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
         webhook_url=webhook_url,
