@@ -97,7 +97,23 @@ def _cleanup_current_run():
             pass
 
 
-def _safe_get_runs_for_init(project: str) -> list[str]:
+def _safe_get_runs_for_init(project: str, space_id: str | None, resume: str) -> list[str]:
+    if space_id is not None:
+        if resume == "never":
+            return []
+        try:
+            client = RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=False,
+            )
+            runs = client.predict(project=project, api_name="/get_runs_for_project")
+            return runs if isinstance(runs, list) else []
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not inspect existing runs for project '{project}' on Space '{space_id}': {e}. Continuing without resume metadata."
+            )
+            return []
     try:
         return SQLiteStorage.get_runs(project)
     except Exception as e:
@@ -105,6 +121,38 @@ def _safe_get_runs_for_init(project: str) -> list[str]:
             f"trackio.init() could not inspect existing runs for project '{project}': {e}. Continuing without resume metadata."
         )
         return []
+
+
+def _safe_get_last_step_for_init(
+    project: str, run_name: str, space_id: str | None, resumed: bool
+) -> int | None:
+    if not resumed:
+        return None
+    if space_id is not None:
+        try:
+            client = RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=False,
+            )
+            summary = client.predict(
+                project=project, run=run_name, api_name="/get_run_summary"
+            )
+            if isinstance(summary, dict):
+                last_step = summary.get("last_step")
+                return last_step if isinstance(last_step, int) else None
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not recover the previous step for run '{run_name}' on Space '{space_id}': {e}. Continuing from step 0."
+            )
+            return None
+    try:
+        return SQLiteStorage.get_max_step_for_run(project, run_name)
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not recover the previous step for run '{run_name}': {e}. Continuing from step 0."
+        )
+        return None
 
 
 def init(
@@ -288,7 +336,7 @@ def init(
                 )
     context_vars.current_project.set(project)
 
-    existing_runs = _safe_get_runs_for_init(project)
+    existing_runs = _safe_get_runs_for_init(project, space_id, resume)
 
     if resume == "must":
         if name is None:
@@ -309,6 +357,12 @@ def init(
         resumed = False
     else:
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
+
+    initial_last_step = (
+        _safe_get_last_step_for_init(project, name, space_id, resumed)
+        if name is not None
+        else None
+    )
 
     if auto_log_gpu is None:
         nvidia_available = gpu_available()
@@ -332,6 +386,8 @@ def init(
         group=group,
         config=config,
         space_id=space_id,
+        existing_runs=existing_runs,
+        initial_last_step=initial_last_step,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
         webhook_url=webhook_url,
