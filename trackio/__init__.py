@@ -250,14 +250,15 @@ def init(
             via the `TRACKIO_SPACE_ID` environment variable. You cannot log to a
             Space that has been **frozen** (converted to the static SDK); use
             ``trackio.sync(..., sdk="static")`` only after you are done logging.
-            Mutually exclusive with `server_url`.
+            Takes precedence over `server_url` and `TRACKIO_SERVER_URL` when more than
+            one is set.
         server_url (`str`, *optional*):
             URL of a self-hosted Trackio server (e.g. `"http://my-host:7860/"` or
             `"https://trackio.internal.example.com"`). When set, metrics are logged to
             that server over HTTP instead of creating or syncing to a Hugging Face
             Space. The server does not need to live on Hugging Face. Can also be set
-            via the `TRACKIO_SERVER_URL` environment variable. Mutually exclusive with
-            `space_id`.
+            via the `TRACKIO_SERVER_URL` environment variable. Ignored when `space_id`
+            or `TRACKIO_SPACE_ID` is set (Space configuration wins).
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
@@ -318,11 +319,8 @@ def init(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
-    space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
-    server_url = server_url or os.environ.get("TRACKIO_SERVER_URL")
+    space_id, server_url = utils.resolve_space_id_and_server_url(space_id, server_url)
     bucket_id = bucket_id or os.environ.get("TRACKIO_BUCKET_ID")
-    if space_id is not None and server_url is not None:
-        raise ValueError("Cannot provide both `space_id` and `server_url`.")
     if server_url is not None and not server_url.startswith(("http://", "https://")):
         raise ValueError(
             f"`server_url` must be a full URL starting with http:// or https://, got: {server_url!r}"

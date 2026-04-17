@@ -133,6 +133,16 @@ def on_spaces() -> bool:
     return os.environ.get("SYSTEM") == "spaces"
 
 
+def resolve_space_id_and_server_url(
+    space_id: str | None, server_url: str | None
+) -> tuple[str | None, str | None]:
+    space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
+    server_url = server_url or os.environ.get("TRACKIO_SERVER_URL")
+    if space_id is not None:
+        server_url = None
+    return space_id, server_url
+
+
 def _get_trackio_dir() -> Path:
     if os.environ.get("TRACKIO_DIR"):
         return Path(os.environ.get("TRACKIO_DIR"))

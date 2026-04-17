@@ -35,9 +35,9 @@ Trackio's main features:
   ```
   and keep your existing logging code.
 
-- **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id` in `trackio.init()`.
-  - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
-  - Visualize experiments with a **Svelte 5** dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
+- **Local-first** design: dashboard runs locally by default. You can send metrics to a **Hugging Face Space** with `space_id` or to a **self-hosted Trackio server** you run yourself with `server_url` (or `TRACKIO_SERVER_URL`). If both a Space and a self-hosted URL are configured, the Space wins.
+  - Persists logs in a Sqlite database locally (or on the remote target you chose: Space, or the machine hosting your self-hosted server)
+  - Visualize experiments with a **Svelte 5** dashboard locally, on Hugging Face Spaces, or on your own host when you self-host the server
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
   - Use `trackio query project --project <name> --sql "SELECT ..."` for read-only SQL when `trackio list` and `trackio get` are not enough
   - See the storage schema and direct query reference at https://huggingface.co/docs/trackio/storage_schema

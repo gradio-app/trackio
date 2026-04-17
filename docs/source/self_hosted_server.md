@@ -64,7 +64,7 @@ trackio.log({"loss": 0.25})
 trackio.finish()
 ```
 
-`server_url` is mutually exclusive with `space_id`. Hugging Face–specific options such as `dataset_id` and `bucket_id` are not used together with `server_url`; configure persistence on the machine where the server runs (for example via `TRACKIO_DIR` on that host). See [Environment Variables](environment_variables.md).
+If you set both `space_id` (or `TRACKIO_SPACE_ID`) and `server_url` (or `TRACKIO_SERVER_URL`), Trackio uses the Hugging Face Space and ignores the self-hosted URL. Hugging Face–specific options such as `dataset_id` and `bucket_id` apply only when logging to a Space; when only `server_url` is in effect, configure persistence on the machine where the server runs (for example via `TRACKIO_DIR` on that host). See [Environment Variables](environment_variables.md).
 
 ## Related
 
