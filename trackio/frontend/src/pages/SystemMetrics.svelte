@@ -19,6 +19,7 @@
   let {
     project = null,
     selectedRuns = [],
+    allRuns = [],
     smoothing = 5,
     appBootstrapReady = false,
     realtimeEnabled = true,
@@ -36,7 +37,7 @@
   let rawDataCache = new Map();
   let refreshTimer = null;
 
-  let runColorMap = $derived(buildColorMap(selectedRuns));
+  let runColorMap = $derived(buildColorMap(allRuns.length ? allRuns : selectedRuns));
 
   let metricGroups = $derived(groupMetricsByPrefix(metricNames));
   let groupNames = $derived(Object.keys(metricGroups));

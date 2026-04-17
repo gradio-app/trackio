@@ -58,6 +58,20 @@
 
   let colorSpecKey = $derived(buildColorSpecKey(data, colorField, colorMap));
 
+  const LEGEND_COLLAPSED_COUNT = 6;
+  let legendExpanded = $state(false);
+  let legendExpandedFs = $state(false);
+  let visibleLegendEntries = $derived(
+    legendExpanded || legendEntries.length <= LEGEND_COLLAPSED_COUNT
+      ? legendEntries
+      : legendEntries.slice(0, LEGEND_COLLAPSED_COUNT),
+  );
+  let visibleLegendEntriesFs = $derived(
+    legendExpandedFs || legendEntries.length <= LEGEND_COLLAPSED_COUNT
+      ? legendEntries
+      : legendEntries.slice(0, LEGEND_COLLAPSED_COUNT),
+  );
+
   let dashLegendEntries = $derived.by(() => {
     if (!dashField || !data || data.length === 0) return [];
     const seen = new Set();
@@ -638,12 +652,23 @@
     {#if legendEntries.length > 0}
       <div class="custom-legend">
         <span class="legend-title">{resolvedColorLabel}</span>
-        {#each legendEntries as entry}
+        {#each visibleLegendEntries as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
             <span class="legend-label">{entry.name}</span>
           </span>
         {/each}
+        {#if legendEntries.length > LEGEND_COLLAPSED_COUNT}
+          <button
+            type="button"
+            class="legend-toggle"
+            onclick={(e) => { e.stopPropagation(); legendExpanded = !legendExpanded; }}
+          >
+            {legendExpanded
+              ? "Show less"
+              : `+${legendEntries.length - LEGEND_COLLAPSED_COUNT} more`}
+          </button>
+        {/if}
       </div>
     {/if}
     {#if dashLegendEntries.length > 0}
@@ -740,12 +765,23 @@
     {#if legendEntries.length > 0}
       <div class="custom-legend fullscreen-legend">
         <span class="legend-title">{resolvedColorLabel}</span>
-        {#each legendEntries as entry}
+        {#each visibleLegendEntriesFs as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
             <span class="legend-label">{entry.name}</span>
           </span>
         {/each}
+        {#if legendEntries.length > LEGEND_COLLAPSED_COUNT}
+          <button
+            type="button"
+            class="legend-toggle"
+            onclick={(e) => { e.stopPropagation(); legendExpandedFs = !legendExpandedFs; }}
+          >
+            {legendExpandedFs
+              ? "Show less"
+              : `+${legendEntries.length - LEGEND_COLLAPSED_COUNT} more`}
+          </button>
+        {/if}
       </div>
     {/if}
     {#if dashLegendEntries.length > 0}
@@ -982,5 +1018,17 @@
   .legend-label {
     font-size: 11px;
     color: var(--body-text-color-subdued, #6b7280);
+  }
+  .legend-toggle {
+    font-size: 11px;
+    color: var(--body-text-color-subdued, #6b7280);
+    background: none;
+    border: none;
+    padding: 0 4px;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .legend-toggle:hover {
+    color: var(--body-text-color, #1f2937);
   }
 </style>
