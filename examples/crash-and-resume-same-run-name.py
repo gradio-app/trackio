@@ -30,7 +30,7 @@ warnings.filterwarnings(
     module=r"pydub\.utils",
 )
 
-import trackio
+import trackio  # noqa: E402
 
 DEFAULT_PROJECT = f"crash-and-resume-demo-{uuid.uuid4().hex[:8]}"
 DEFAULT_RUN_NAME = "trainer-job-42"
@@ -58,7 +58,6 @@ def log_phase(
 ) -> None:
     print(f"Logging steps {start_step}..{start_step + num_steps - 1}")
     for offset in range(num_steps):
-        step = start_step + offset
         progress = offset / max(1, num_steps - 1)
         loss = (
             start_loss

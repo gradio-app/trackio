@@ -298,7 +298,6 @@ def init(
                 )
     context_vars.current_project.set(project)
 
-    existing_runs = _safe_get_runs_for_init(project)
     existing_run = (
         _safe_get_latest_run_for_init(project, name) if name is not None else None
     )
