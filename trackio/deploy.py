@@ -402,8 +402,6 @@ def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
                         f"Space {space_id} entered terminal stage {stage}. "
                         "Fix README.md or app files; see build logs on the Hub."
                     )
-                if stage == "RUNNING":
-                    return
         except RuntimeError:
             raise
         except (huggingface_hub.utils.HfHubHTTPError, httpx.RequestError):
