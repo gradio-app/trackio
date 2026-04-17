@@ -256,8 +256,15 @@ def _system_logs_read_cache_key(
     project: str,
     run: str | None,
     run_id: str | None,
+    max_points: int | None = None,
 ) -> tuple[Any, ...]:
-    return ("system_logs", project, run or "", run_id or "")
+    return (
+        "system_logs",
+        project,
+        run or "",
+        run_id or "",
+        max_points if max_points is not None else -1,
+    )
 
 
 def _system_logs_read_cache_get(
@@ -1512,6 +1519,7 @@ class SQLiteStorage:
     def _fetch_system_logs_with_cursor(
         cursor: sqlite3.Cursor,
         run_identity: tuple[str, Any],
+        max_points: int | None = None,
     ) -> list[dict[str, Any]]:
         cursor.execute(
             f"""
@@ -1523,6 +1531,7 @@ class SQLiteStorage:
             (run_identity[1],),
         )
         rows = cursor.fetchall()
+        rows = SQLiteStorage._subsample_metric_rows(rows, max_points)
         results = []
         for row in rows:
             metrics = orjson.loads(row["metrics"])
@@ -1533,14 +1542,17 @@ class SQLiteStorage:
 
     @staticmethod
     def get_system_logs(
-        project: str, run: str | None = None, run_id: str | None = None
+        project: str,
+        run: str | None = None,
+        run_id: str | None = None,
+        max_points: int | None = None,
     ) -> list[dict]:
         """Retrieve system metrics for a specific run. Returns metrics with timestamps (no steps)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
 
-        cache_key = _system_logs_read_cache_key(project, run, run_id)
+        cache_key = _system_logs_read_cache_key(project, run, run_id, max_points)
         cached = _system_logs_read_cache_get(db_path, cache_key)
         if cached is not None:
             return cached
@@ -1555,7 +1567,7 @@ class SQLiteStorage:
                     logs: list[dict[str, Any]] = []
                 else:
                     logs = SQLiteStorage._fetch_system_logs_with_cursor(
-                        cursor, run_identity
+                        cursor, run_identity, max_points
                     )
         except sqlite3.OperationalError as e:
             if "no such table: system_metrics" in str(e):
@@ -1569,6 +1581,7 @@ class SQLiteStorage:
     def get_system_logs_batch(
         project: str,
         runs: list[dict[str, Any]] | None = None,
+        max_points: int | None = None,
     ) -> list[dict[str, Any]]:
         if not runs:
             return []
@@ -1590,7 +1603,9 @@ class SQLiteStorage:
                 for r in runs:
                     run = r.get("run")
                     run_id = r.get("run_id")
-                    cache_key = _system_logs_read_cache_key(project, run, run_id)
+                    cache_key = _system_logs_read_cache_key(
+                        project, run, run_id, max_points
+                    )
                     cached = _system_logs_read_cache_get(db_path, cache_key)
                     if cached is not None:
                         out.append(
@@ -1608,7 +1623,7 @@ class SQLiteStorage:
                         logs = []
                     else:
                         logs = SQLiteStorage._fetch_system_logs_with_cursor(
-                            cursor, run_identity
+                            cursor, run_identity, max_points
                         )
                     _system_logs_read_cache_put(db_path, cache_key, logs)
                     out.append(

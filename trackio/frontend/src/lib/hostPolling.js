@@ -17,11 +17,11 @@ export function isRateLimitCooldownActive() {
 }
 
 export function getAppPollIntervalMs() {
-  return isHfSpaceHost() ? 2000 : 1000;
+  return isHfSpaceHost() ? 2500 : 1000;
 }
 
 export function getMetricsPollIntervalMs() {
-  return isHfSpaceHost() ? 2000 : 1000;
+  return isHfSpaceHost() ? 3500 : 1000;
 }
 
 export function isTabHidden() {

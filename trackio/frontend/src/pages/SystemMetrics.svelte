@@ -3,7 +3,7 @@
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getSystemLogsBatch } from "../lib/api.js";
+  import { getSystemLogs, getSystemLogsBatch } from "../lib/api.js";
   import {
     getMetricsPollIntervalMs,
     isRateLimitCooldownActive,
@@ -30,6 +30,8 @@
   let metricNames = $state([]);
   let xLim = $state(null);
   let hasLoaded = $state(false);
+  let loadError = $state(null);
+  let batchEndpointAvailable = true;
   let metricOrder = $state({});
   let dragState = $state({ group: null, index: -1 });
 
@@ -177,6 +179,32 @@
     systemData = allRows;
   }
 
+  function isMissingEndpointError(e) {
+    const msg = e && e.message ? String(e.message) : "";
+    return /\b(404|405|501)\b/.test(msg);
+  }
+
+  async function fetchSystemLogsForRuns(runs) {
+    if (batchEndpointAvailable) {
+      try {
+        return await getSystemLogsBatch(project, runs);
+      } catch (e) {
+        if (!isMissingEndpointError(e)) throw e;
+        batchEndpointAvailable = false;
+      }
+    }
+    const results = [];
+    for (const run of runs) {
+      const logs = await getSystemLogs(project, run);
+      results.push({
+        run: run?.name ?? null,
+        run_id: run?.id ?? null,
+        logs,
+      });
+    }
+    return results;
+  }
+
   async function fetchNewRuns() {
     if (!appBootstrapReady) {
       hasLoaded = false;
@@ -185,6 +213,7 @@
     if (!project || selectedRuns.length === 0) {
       systemData = [];
       metricNames = [];
+      loadError = null;
       hasLoaded = true;
       return;
     }
@@ -196,20 +225,26 @@
     let fetched = false;
     if (needFetch.length > 0) {
       try {
-        const batch = await getSystemLogsBatch(project, needFetch);
+        const batch = await fetchSystemLogsForRuns(needFetch);
         for (const entry of batch) {
           const runKey = entry.run_id ?? entry.run;
           rawDataCache.set(runKey, entry.logs);
           fetched = true;
         }
+        loadError = null;
       } catch (e) {
         console.error("Failed to load system metric logs:", e);
+        if (!hasLoaded) {
+          loadError = e && e.message ? e.message : "Failed to load system metrics";
+          return;
+        }
       }
     }
 
     if (fetched || !hasLoaded) {
       processFromCache();
     }
+    loadError = null;
     hasLoaded = true;
   }
 
@@ -220,7 +255,7 @@
     if (isRateLimitCooldownActive()) return;
 
     try {
-      const batch = await getSystemLogsBatch(project, selectedRuns);
+      const batch = await fetchSystemLogsForRuns(selectedRuns);
       let changed = false;
       for (const entry of batch) {
         const runKey = entry.run_id ?? entry.run;
@@ -439,8 +474,13 @@
 </script>
 
 <div class="system-page">
-  {#if !appBootstrapReady || !hasLoaded}
+  {#if !appBootstrapReady || (!hasLoaded && !loadError)}
     <LoadingTrackio />
+  {:else if loadError && !hasLoaded}
+    <div class="empty-state">
+      <h2>Unable to load system metrics</h2>
+      <p>{loadError}</p>
+    </div>
   {:else if !project}
     <div class="empty-state">
       <h2>No projects</h2>

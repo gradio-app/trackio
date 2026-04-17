@@ -718,15 +718,17 @@ def get_system_metrics_for_run(
 def get_system_logs(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_system_logs(project, run, run_id=run_id)
+    return SQLiteStorage.get_system_logs(project, run, run_id=run_id, max_points=1500)
 
 
 def get_system_logs_batch(
     project: str,
     runs: list[dict[str, Any]],
+    max_points: int | None = 1500,
 ) -> list[dict[str, Any]]:
     runs_clean = _normalize_logs_batch_runs(runs)
-    return SQLiteStorage.get_system_logs_batch(project, runs_clean)
+    mp = _normalize_logs_batch_max_points(max_points)
+    return SQLiteStorage.get_system_logs_batch(project, runs_clean, max_points=mp)
 
 
 def get_snapshot(
