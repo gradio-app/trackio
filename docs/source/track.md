@@ -330,21 +330,6 @@ that name if one exists, or create a new run otherwise.
 The default is `resume="never"`, which always creates a fresh run with a new
 `run_id`, even if another run with the same `name` already exists.
 
-## Run Storage Schema
-
-For newly created Trackio databases, run data is stored with a stable `run_id`
-plus a non-unique `run_name`:
-
-- `metrics`, `system_metrics`, and `alerts` store both `run_id` and `run_name`
-- `configs` stores one config row per `run_id`
-- `pending_uploads` stores `run_id` when available for buffered remote uploads
-
-Older Trackio SQLite databases that predate `run_id` remain readable without an
-in-place migration. When Trackio loads one of those legacy databases, it treats
-`run_name` as the effective `run_id`. Legacy databases therefore keep their old
-“one run per name” behavior, while newly created databases support duplicate run
-names.
-
 ## Tracking Configuration
 
 You can also track configuration parameters for your runs. This is useful for keeping track of hyperparameters or other settings used in your experiments. You can log configuration data using the `config` parameter in the [`init`] function:
