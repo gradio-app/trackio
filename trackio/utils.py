@@ -133,6 +133,35 @@ def on_spaces() -> bool:
     return os.environ.get("SYSTEM") == "spaces"
 
 
+def resolve_space_id_and_server_url(
+    space_id: str | None, server_url: str | None
+) -> tuple[str | None, str | None]:
+    space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
+    server_url = server_url or os.environ.get("TRACKIO_SERVER_URL")
+    if space_id is not None:
+        server_url = None
+    return space_id, server_url
+
+
+def parse_trackio_server_url(url: str) -> tuple[str, str | None]:
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    p = urlparse(url.strip())
+    if p.scheme not in ("http", "https"):
+        return url, None
+    pairs = parse_qsl(p.query, keep_blank_values=True)
+    write_token: str | None = None
+    rest: list[tuple[str, str]] = []
+    for k, v in pairs:
+        if k == "write_token":
+            write_token = v
+        else:
+            rest.append((k, v))
+    new_query = urlencode(rest)
+    rebuilt = urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
+    return rebuilt, write_token
+
+
 def _get_trackio_dir() -> Path:
     if os.environ.get("TRACKIO_DIR"):
         return Path(os.environ.get("TRACKIO_DIR"))
@@ -427,6 +456,15 @@ def print_dashboard_instructions(project: str) -> None:
     print("* View dashboard by running in your terminal:")
     print(f'{BOLD}{ORANGE}trackio show --project "{project}"{RESET}')
     print(f'* or by running in Python: trackio.show(project="{project}")')
+
+
+def print_write_token_instructions(full_url: str) -> None:
+    print()
+    print(f"* Trackio dashboard opened in browser with write access at: {full_url}")
+    print(
+        "* Warning: anyone with access to your dashboard with the write_token can "
+        "write logs, rename/delete runs, and connect MCP tools"
+    )
 
 
 def preprocess_space_and_dataset_ids(

@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from gradio_client import Client as GradioClient
 from huggingface_hub.utils import build_hf_headers
 
+from trackio.utils import parse_trackio_server_url
+
 HTTP_API_VERSION = 1
+
+WRITE_TOKEN_HEADER = "x-trackio-write-token"
 
 
 def _normalize_src(src: str) -> str:
@@ -21,9 +25,16 @@ def _space_id_to_url(space_id: str) -> str:
     return f"https://{subdomain}.hf.space/"
 
 
+def _host_is_hf_space(url: str) -> bool:
+    p = urlparse(url)
+    h = (p.hostname or "").lower()
+    return h.endswith(".hf.space")
+
+
 def _resolve_src_url(src: str) -> str:
     if src.startswith(("http://", "https://")):
-        return _normalize_src(src)
+        base, _ = parse_trackio_server_url(src)
+        return _normalize_src(base)
     if "/" in src:
         return _space_id_to_url(src)
     raise ValueError(
@@ -42,17 +53,33 @@ def _is_local_file_data(value: Any) -> bool:
     )
 
 
+def _merge_client_headers(
+    hf_token: str | None, write_token: str | None
+) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if hf_token:
+        headers.update(build_hf_headers(token=hf_token))
+    if write_token:
+        headers[WRITE_TOKEN_HEADER] = write_token
+    return headers
+
+
 class _TrackioHTTPClient:
     def __init__(
         self,
         src: str,
         hf_token: str | None = None,
+        write_token: str | None = None,
         httpx_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.src = _resolve_src_url(src)
         self.httpx_kwargs = dict(httpx_kwargs or {})
         self.httpx_kwargs.setdefault("timeout", 60)
-        self.headers = build_hf_headers(token=hf_token)
+        extra = self.httpx_kwargs.pop("headers", None)
+        h = _merge_client_headers(hf_token, write_token)
+        if isinstance(extra, dict):
+            h.update({str(k): str(v) for k, v in extra.items()})
+        self.headers = h
 
     def _upload_file(self, file_data: dict[str, Any]) -> dict[str, Any]:
         path = Path(file_data["path"])
@@ -110,14 +137,25 @@ class _TrackioGradioCompatClient:
         self,
         src: str,
         hf_token: str | None = None,
+        write_token: str | None = None,
         httpx_kwargs: dict[str, Any] | None = None,
         verbose: bool = False,
     ) -> None:
         kwargs: dict[str, Any] = {"verbose": verbose}
         if hf_token:
             kwargs["hf_token"] = hf_token
-        if httpx_kwargs:
-            kwargs["httpx_kwargs"] = httpx_kwargs
+        merged = dict(httpx_kwargs or {})
+        h = _merge_client_headers(
+            hf_token if hf_token else None,
+            write_token,
+        )
+        extra = merged.pop("headers", None)
+        if isinstance(extra, dict):
+            h.update({str(k): str(v) for k, v in extra.items()})
+        if h:
+            merged["headers"] = h
+        if merged:
+            kwargs["httpx_kwargs"] = merged
         self._client = GradioClient(src, **kwargs)
 
     def predict(self, *args, api_name: str, **kwargs) -> Any:
@@ -135,10 +173,11 @@ class _TrackioGradioCompatClient:
 def _supports_http_api(
     src: str,
     hf_token: str | None = None,
+    write_token: str | None = None,
     httpx_kwargs: dict[str, Any] | None = None,
 ) -> bool:
     url = _resolve_src_url(src)
-    headers = build_hf_headers(token=hf_token)
+    headers = _merge_client_headers(hf_token, write_token)
     kwargs = dict(httpx_kwargs or {})
     kwargs.setdefault("timeout", 10)
     try:
@@ -156,19 +195,39 @@ class RemoteClient:
         self,
         space: str,
         hf_token: str | None = None,
+        write_token: str | None = None,
         httpx_kwargs: dict[str, Any] | None = None,
         verbose: bool = False,
     ) -> None:
         self._space = space
+        src_for_resolve = space
+        hf_effective = hf_token
+        wt_effective = write_token
+        if space.startswith(("http://", "https://")):
+            base, url_tok = parse_trackio_server_url(space)
+            src_for_resolve = base
+            if wt_effective is None:
+                wt_effective = url_tok
+            if not _host_is_hf_space(_normalize_src(base)):
+                hf_effective = None
         try:
-            if _supports_http_api(space, hf_token=hf_token, httpx_kwargs=httpx_kwargs):
+            if _supports_http_api(
+                src_for_resolve,
+                hf_token=hf_effective,
+                write_token=wt_effective,
+                httpx_kwargs=httpx_kwargs,
+            ):
                 self._client = _TrackioHTTPClient(
-                    space, hf_token=hf_token, httpx_kwargs=httpx_kwargs
+                    src_for_resolve,
+                    hf_token=hf_effective,
+                    write_token=wt_effective,
+                    httpx_kwargs=httpx_kwargs,
                 )
             else:
                 self._client = _TrackioGradioCompatClient(
-                    space,
-                    hf_token=hf_token,
+                    src_for_resolve,
+                    hf_token=hf_effective,
+                    write_token=wt_effective,
                     httpx_kwargs=httpx_kwargs,
                     verbose=verbose,
                 )

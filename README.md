@@ -35,9 +35,9 @@ Trackio's main features:
   ```
   and keep your existing logging code.
 
-- **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id` in `trackio.init()`.
-  - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
-  - Visualize experiments with a **Svelte 5** dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
+- **Local-first** design: dashboard runs locally by default. You can also send metrics to a Hugging Face Space with `space_id` for free or to a self-hosted Trackio server you run yourself with `server_url`
+  - Persists logs in a Sqlite database locally (or on the remote target you chose: Space, or the machine hosting your self-hosted server)
+  - Visualize experiments with a **Svelte 5** dashboard locally, on Hugging Face Spaces, or on your own host when you self-host the server
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
   - Use `trackio query project --project <name> --sql "SELECT ..."` for read-only SQL when `trackio list` and `trackio get` are not enough
   - See the storage schema and direct query reference at https://huggingface.co/docs/trackio/storage_schema
@@ -154,6 +154,18 @@ trackio.init(project="my-project", space_id="username/space_id")
 ```
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
+
+## Self-hosted Trackio server
+
+You can run the Trackio dashboard and API on your own machine or infrastructure and point training jobs at it over HTTP. Pass the write-access URL from `trackio.show()` (which may include `write_token` in the query), or a base URL plus the `TRACKIO_WRITE_TOKEN` environment variable. The client sends that token on requests; it is not your Hugging Face token.
+
+```py
+trackio.init(project="my-project", server_url="http://127.0.0.1:7860?write_token=YOUR_TOKEN")
+```
+
+You can also set `TRACKIO_SERVER_URL` (and optionally `TRACKIO_WRITE_TOKEN` if the URL has no query string). If `space_id` / `TRACKIO_SPACE_ID` and `server_url` / `TRACKIO_SERVER_URL` are both set, Trackio uses the Hugging Face Space and ignores the self-hosted URL.
+
+See the documentation: [Self-host the Server](https://huggingface.co/docs/trackio/self_hosted_server).
 
 ## Syncing Offline Projects to Spaces
 

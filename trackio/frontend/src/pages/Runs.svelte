@@ -1,4 +1,5 @@
 <script>
+  import { tick } from "svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
@@ -19,6 +20,7 @@
   let loading = $state(false);
   let renamingIndex = $state(-1);
   let renameValue = $state("");
+  let renameInput = $state(null);
 
   async function loadRuns() {
     if (!project) {
@@ -65,10 +67,13 @@
     }
   }
 
-  function startRename(index, currentName) {
+  async function startRename(index, currentName) {
     if (!canMutateRuns) return;
     renamingIndex = index;
     renameValue = currentName;
+    await tick();
+    renameInput?.focus();
+    renameInput?.select();
   }
 
   async function submitRename(run) {
@@ -149,6 +154,7 @@
                   class="rename-input"
                   type="text"
                   bind:value={renameValue}
+                  bind:this={renameInput}
                   onkeydown={(e) => handleRenameKeydown(e, run)}
                   onblur={() => submitRename(run)}
                 />
