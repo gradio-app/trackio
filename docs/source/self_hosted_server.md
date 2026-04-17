@@ -54,7 +54,7 @@ Ensure your firewall and security policies allow the traffic you intend.
 
 ## Point training code at your server
 
-In your training script, pass the **full URL including the `write_token` query parameter** (the same URL the dashboard prints for write access, or the `full_url` return value from `trackio.show()`). Logging requires that token; a host-only URL like `http://127.0.0.1:7860/` is not sufficient. You can also set the environment variable `TRACKIO_SERVER_URL` to that full URL instead of passing an argument.
+In your training script, pass a `server_url` and supply the **write token**: either embed `write_token` in the query string (the same URL the dashboard prints for write access, or the `full_url` return value from `trackio.show()`), or pass a base URL like `http://127.0.0.1:7860/` and set the `TRACKIO_WRITE_TOKEN` environment variable to that token. Metric ingestion and uploads require this token when the server is not on Hugging Face Spaces. You can also set `TRACKIO_SERVER_URL` instead of passing `server_url` in code.
 
 ```py
 import trackio

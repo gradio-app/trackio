@@ -157,13 +157,13 @@ it will use an existing or automatically deploy a new Hugging Face Space as need
 
 ## Self-hosted Trackio server
 
-You can run the Trackio dashboard and API on your own machine or infrastructure and point training jobs at it over HTTP. Pass the **full URL including the `write_token` query** (as printed when the server starts, or use the `full_url` return value from `trackio.show()`):
+You can run the Trackio dashboard and API on your own machine or infrastructure and point training jobs at it over HTTP. Pass the write-access URL from `trackio.show()` (which may include `write_token` in the query), or a base URL plus the `TRACKIO_WRITE_TOKEN` environment variable. The client sends that token on requests; it is not your Hugging Face token.
 
 ```py
 trackio.init(project="my-project", server_url="http://127.0.0.1:7860?write_token=YOUR_TOKEN")
 ```
 
-You can also set `TRACKIO_SERVER_URL` to that full URL instead of passing `server_url`. If `space_id` / `TRACKIO_SPACE_ID` and `server_url` / `TRACKIO_SERVER_URL` are both set, Trackio uses the Hugging Face Space and ignores the self-hosted URL.
+You can also set `TRACKIO_SERVER_URL` (and optionally `TRACKIO_WRITE_TOKEN` if the URL has no query string). If `space_id` / `TRACKIO_SPACE_ID` and `server_url` / `TRACKIO_SERVER_URL` are both set, Trackio uses the Hugging Face Space and ignores the self-hosted URL.
 
 See the documentation: [Self-host the Server](https://huggingface.co/docs/trackio/self_hosted_server).
 

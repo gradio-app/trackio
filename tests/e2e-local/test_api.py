@@ -285,7 +285,10 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
     blocked_target = trackio_utils.MEDIA_DIR / project / "files" / "blocked.txt"
     allowed_target = None
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
+    write_token = parse_qs(urlparse(full_url).query).get("write_token", [None])[0]
+    assert write_token
+    write_headers = {"x-trackio-write-token": write_token}
 
     try:
         with source_path.open("rb") as handle:
@@ -306,6 +309,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
 
         allowed_resp = httpx.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
+            headers=write_headers,
             json={
                 "uploads": [
                     {
@@ -322,6 +326,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
         )
         blocked_resp = httpx.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
+            headers=write_headers,
             json={
                 "uploads": [
                     {

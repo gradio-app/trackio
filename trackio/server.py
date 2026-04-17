@@ -330,6 +330,9 @@ def check_oauth_token_has_write_access(oauth_token: str | None) -> None:
 
 def check_write_access(request: Request, token: str) -> bool:
     expected_token = token or ""
+    hdr = request.headers.get("x-trackio-write-token")
+    if hdr is not None:
+        return secrets.compare_digest(hdr, expected_token)
     cookies = request.headers.get("cookie", "")
     if cookies:
         for cookie in cookies.split(";"):
@@ -340,6 +343,19 @@ def check_write_access(request: Request, token: str) -> bool:
         qp = request.query_params.get("write_token")
         return secrets.compare_digest(qp or "", expected_token)
     return False
+
+
+def assert_can_write_metrics(request: Request, hf_token: str | None) -> None:
+    if on_spaces():
+        check_hf_token_has_write_access(hf_token)
+    else:
+        if check_write_access(request, write_token):
+            return
+        raise TrackioAPIError(
+            "A write_token is required to log metrics or upload to this server. "
+            "Use the write-access URL from trackio.show(), set TRACKIO_WRITE_TOKEN, "
+            "or send header X-Trackio-Write-Token."
+        )
 
 
 def assert_can_mutate_runs(request: Request) -> None:
@@ -388,7 +404,7 @@ def upload_db_to_space(
     uploaded_db: dict,
     hf_token: str | None,
 ) -> None:
-    check_hf_token_has_write_access(hf_token)
+    assert_can_write_metrics(request, hf_token)
     uploaded_path = consume_uploaded_temp_file(request, uploaded_db)
     db_project_path = SQLiteStorage.get_project_db_path(project)
     os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
@@ -400,7 +416,7 @@ def bulk_upload_media(
     uploads: list[UploadEntry],
     hf_token: str | None,
 ) -> None:
-    check_hf_token_has_write_access(hf_token)
+    assert_can_write_metrics(request, hf_token)
     for upload in uploads:
         uploaded_path = consume_uploaded_temp_file(request, upload["uploaded_file"])
         media_path = get_project_media_path(
@@ -413,6 +429,7 @@ def bulk_upload_media(
 
 
 def log(
+    request: Request,
     project: str,
     run: str,
     metrics: dict[str, Any],
@@ -420,17 +437,18 @@ def log(
     hf_token: str | None,
     run_id: str | None = None,
 ) -> None:
-    check_hf_token_has_write_access(hf_token)
+    assert_can_write_metrics(request, hf_token)
     SQLiteStorage.log(
         project=project, run=run, run_id=run_id, metrics=metrics, step=step
     )
 
 
 def bulk_log(
+    request: Request,
     logs: list[LogEntry],
     hf_token: str | None,
 ) -> None:
-    check_hf_token_has_write_access(hf_token)
+    assert_can_write_metrics(request, hf_token)
 
     logs_by_run = {}
     for log_entry in logs:
@@ -466,10 +484,11 @@ def bulk_log(
 
 
 def bulk_log_system(
+    request: Request,
     logs: list[SystemLogEntry],
     hf_token: str | None,
 ) -> None:
-    check_hf_token_has_write_access(hf_token)
+    assert_can_write_metrics(request, hf_token)
 
     logs_by_run = {}
     for log_entry in logs:
@@ -497,10 +516,11 @@ def bulk_log_system(
 
 
 def bulk_alert(
+    request: Request,
     alerts: list[AlertEntry],
     hf_token: str | None,
 ) -> None:
-    check_hf_token_has_write_access(hf_token)
+    assert_can_write_metrics(request, hf_token)
 
     alerts_by_run: dict[tuple, dict] = {}
     for entry in alerts:

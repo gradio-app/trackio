@@ -143,6 +143,27 @@ def resolve_space_id_and_server_url(
     return space_id, server_url
 
 
+def parse_trackio_server_url(url: str) -> tuple[str, str | None]:
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    p = urlparse(url.strip())
+    if p.scheme not in ("http", "https"):
+        return url, None
+    pairs = parse_qsl(p.query, keep_blank_values=True)
+    write_token: str | None = None
+    rest: list[tuple[str, str]] = []
+    for k, v in pairs:
+        if k == "write_token":
+            write_token = v
+        else:
+            rest.append((k, v))
+    new_query = urlencode(rest)
+    rebuilt = urlunparse(
+        (p.scheme, p.netloc, p.path, p.params, new_query, p.fragment)
+    )
+    return rebuilt, write_token
+
+
 def _get_trackio_dir() -> Path:
     if os.environ.get("TRACKIO_DIR"):
         return Path(os.environ.get("TRACKIO_DIR"))

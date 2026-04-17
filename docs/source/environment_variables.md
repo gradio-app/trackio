@@ -16,15 +16,20 @@ Note: This environment variable applies as long as Trackio is not running in a S
 
 ### `TRACKIO_SERVER_URL`
 
-Full URL of a self-hosted Trackio server (HTTP or HTTPS), **including the `write_token` query parameter** (same URL as the dashboard’s write-access link or the `full_url` from `trackio.show()`). When set, `trackio.init()` sends metrics to that server. Equivalent to passing `server_url=` to `trackio.init()`.
+Base URL of a self-hosted Trackio server (`http://` or `https://`). You may include `write_token` in the query string (as in the `full_url` from `trackio.show()`), or keep the URL bare and set `TRACKIO_WRITE_TOKEN` instead. When set, `trackio.init()` sends metrics to that server. Equivalent to passing `server_url=` to `trackio.init()`.
 
 **Precedence:** If `TRACKIO_SPACE_ID` is also set (or `space_id` is passed in code), the Hugging Face Space is used and `TRACKIO_SERVER_URL` is ignored. Same rule when both `space_id` and `server_url` are passed: `space_id` wins.
 
 See [Self-host the Server](self_hosted_server.md).
 
 ```bash
-export TRACKIO_SERVER_URL="http://127.0.0.1:7860?write_token=YOUR_TOKEN"
+export TRACKIO_SERVER_URL="http://127.0.0.1:7860"
+export TRACKIO_WRITE_TOKEN="YOUR_TOKEN"
 ```
+
+### `TRACKIO_WRITE_TOKEN`
+
+The dashboard **write token** for a self-hosted Trackio server (same value as the `write_token` query parameter in the write-access URL). Use this when `TRACKIO_SERVER_URL` or `server_url` is a base URL without query parameters. The client sends this token on each request (for example as the `X-Trackio-Write-Token` header) so metric ingestion and uploads are authenticated when not running on Hugging Face Spaces.
 
 ### `TRACKIO_LOGO_LIGHT_URL` and `TRACKIO_LOGO_DARK_URL`
 
