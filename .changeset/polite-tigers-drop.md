@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Reduce Spaces 429s: slower polling, get_logs_batch, read cache
+feat:Reduce HF Spaces 429s: polling tuning and batched metric logs API
