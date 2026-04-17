@@ -55,6 +55,8 @@ If both a Space and a self-hosted URL are configured (`space_id` / `TRACKIO_SPAC
 
 For setup steps (running `trackio show`, binding to `0.0.0.0`, write tokens), see [Self-host the Server](self_hosted_server.md).
 
+The built-in dashboard polls for new runs and metrics every **1 second** on localhost and every **2 seconds** when opened on a Hugging Face Space (`*.hf.space`), to ease rate limits on the Space URL.
+
 ## Logging Data
 
 Once your run is initialized, you can start logging data using the [`log`] function:
