@@ -10,11 +10,6 @@
     isTabHidden,
   } from "../lib/hostPolling.js";
   import {
-    getMetricsPollIntervalMs,
-    isRateLimitCooldownActive,
-    isTabHidden,
-  } from "../lib/hostPolling.js";
-  import {
     groupMetricsByPrefix,
     computeMetricPlotData,
     downsample,
