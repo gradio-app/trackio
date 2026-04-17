@@ -417,3 +417,54 @@ def test_bucket_upload_paths_match_mount_layout(temp_dir):
             f"outside TRACKIO_DIR={trackio_dir}"
         )
         assert Path(local_path).exists()
+
+
+def test_query_project_allows_select(temp_dir):
+    SQLiteStorage.log(project="qproj", run="r1", metrics={"acc": 0.9})
+    result = SQLiteStorage.query_project("qproj", "SELECT run_name FROM metrics")
+    assert result["project"] == "qproj"
+    assert result["columns"] == ["run_name"]
+    assert result["row_count"] == 1
+    assert result["rows"][0]["run_name"] == "r1"
+
+
+def test_query_project_allows_with_and_safe_pragma(temp_dir):
+    SQLiteStorage.log(project="qproj", run="r1", metrics={"acc": 0.9})
+    cte = SQLiteStorage.query_project(
+        "qproj", "WITH t AS (SELECT 1 AS x) SELECT x FROM t"
+    )
+    assert cte["rows"] == [{"x": 1}]
+    pragma = SQLiteStorage.query_project("qproj", "PRAGMA table_info(metrics)")
+    assert pragma["row_count"] > 0
+
+
+def test_query_project_denies_writes(temp_dir):
+    SQLiteStorage.log(project="qproj", run="r1", metrics={"acc": 0.9})
+    for bad in [
+        "INSERT INTO metrics (project_name, run_name, step, metrics, timestamp) VALUES ('x','y',0,'{}','t')",
+        "UPDATE metrics SET run_name='x'",
+        "DELETE FROM metrics",
+        "DROP TABLE metrics",
+        "PRAGMA journal_mode = DELETE",
+    ]:
+        with pytest.raises(ValueError):
+            SQLiteStorage.query_project("qproj", bad)
+
+
+def test_query_project_row_limit(temp_dir):
+    for i in range(5):
+        SQLiteStorage.log(project="qproj", run=f"r{i}", metrics={"a": i})
+    with pytest.raises(ValueError, match="more than"):
+        SQLiteStorage.query_project("qproj", "SELECT * FROM metrics", max_rows=2)
+
+
+def test_query_project_normalizes_bytes(temp_dir):
+    SQLiteStorage.log(project="qproj", run="r1", metrics={"a": 1})
+    result = SQLiteStorage.query_project("qproj", "SELECT randomblob(4) AS b")
+    assert isinstance(result["rows"][0]["b"], str)
+    assert len(result["rows"][0]["b"]) == 8
+
+
+def test_query_project_missing_project(temp_dir):
+    with pytest.raises(FileNotFoundError):
+        SQLiteStorage.query_project("nonexistent", "SELECT 1")

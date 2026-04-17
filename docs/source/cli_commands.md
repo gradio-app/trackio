@@ -4,7 +4,7 @@ Trackio provides a comprehensive set of CLI commands that enable you to query pr
 
 ## Querying Remote Spaces
 
-All `list` and `get` commands support querying a remote Hugging Face Space instead of local data. Pass the `--space` flag with either a Space ID or full URL:
+All `list`, `get`, and `query` commands support querying a remote Hugging Face Space instead of local data. Pass the `--space` flag with either a Space ID or full URL:
 
 ```sh
 # Using a Space ID
@@ -13,7 +13,7 @@ trackio list projects --space username/my-space
 # Using a Space URL
 trackio list projects --space https://username-my-space.hf.space
 
-# Works with any list/get command
+# Works with any list/get/query command
 trackio get metric --project "my-project" --run "my-run" --metric "loss" --space username/my-space
 ```
 
@@ -315,9 +315,56 @@ Output in JSON format:
 trackio get report --project "my-project" --run "my-run" --report "training_report" --json
 ```
 
+## Query Command
+
+Use `trackio query` when you need a catch-all read-only SQL query that is not already covered by `trackio list` or `trackio get`.
+
+### Run a Query Against a Project Database
+
+```sh
+trackio query project --project "my-project" --sql "SELECT run_name, MAX(step) AS last_step FROM metrics GROUP BY run_name ORDER BY last_step DESC"
+```
+
+Output in JSON format:
+
+```sh
+trackio query project --project "my-project" --sql "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name" --json
+```
+
+Query a remote Space:
+
+```sh
+trackio query project --project "my-project" --sql "SELECT COUNT(*) AS num_alerts FROM alerts" --space username/my-space --json
+```
+
+`trackio query` only supports read-only `SELECT`, `WITH`, and safe schema `PRAGMA` queries.
+
+Common schema inspection examples:
+
+```sh
+# Inspect table columns
+trackio query project --project "my-project" --sql "PRAGMA table_info(metrics)"
+
+# Inspect indexes
+trackio query project --project "my-project" --sql "PRAGMA index_list(alerts)"
+
+# List tables
+trackio query project --project "my-project" --sql "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+```
+
+The response includes:
+
+- `project`
+- `query`
+- `columns`
+- `rows`
+- `row_count`
+
+For the full SQLite and parquet layout, see the [Storage Schema and Direct Queries](./storage_schema).
+
 ## Output Formats
 
-All commands support two output formats:
+All `list`, `get`, and `query` commands support two output formats:
 
 1. **Human-readable** (default): Formatted text output suitable for terminal viewing
 2. **JSON** (with `--json` flag): Structured JSON output suitable for programmatic consumption
@@ -330,6 +377,7 @@ The CLI commands include comprehensive validation and error handling:
 - If a run doesn't exist in a project, an error message is displayed
 - If a metric doesn't exist in a run, an error message is displayed
 - If a report doesn't exist in a run, an error message is displayed
+- If a query is not read-only, the CLI exits with an error
 
 All errors are written to stderr and the command exits with a non-zero exit code.
 
@@ -367,6 +415,9 @@ trackio list reports --project "my-project" --run "my-run"
 
 # 10. Print report markdown in terminal
 trackio get report --project "my-project" --run "my-run" --report "training_report"
+
+# 11. Run a direct SQL query
+trackio query project --project "my-project" --sql "SELECT run_name, MAX(step) AS last_step FROM metrics GROUP BY run_name"
 ```
 
 ### Querying a Remote Space
@@ -389,6 +440,7 @@ These CLI commands are particularly useful for LLM agents that need to:
 - Discover available projects and runs
 - Query metric values programmatically
 - Inspect metrics around an alert with `get snapshot` or `get metric --around`
+- Run direct SQL for cases not covered by the structured commands
 - Get summaries without starting a server
 - Parse structured JSON output for further processing
 
