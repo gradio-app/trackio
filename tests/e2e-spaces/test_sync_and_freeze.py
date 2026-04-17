@@ -154,9 +154,9 @@ def test_sync_gradio_then_freeze_to_static(test_space_id, temp_dir):
 
         df = _download_parquet_from_bucket(frozen_bucket_id)
         assert len(df) == 3
-        assert "loss" in df.columns
-        assert "acc" in df.columns
-        assert sorted(df["loss"].tolist()) == [0.1, 0.3, 0.5]
+        assert "loss" in df[0]
+        assert "acc" in df[0]
+        assert sorted(row["loss"] for row in df) == [0.1, 0.3, 0.5]
     finally:
         _cleanup_space(frozen_space_id)
         _cleanup_bucket(frozen_bucket_id)
