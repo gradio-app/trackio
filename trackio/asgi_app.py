@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import math
 import secrets
 import tempfile
@@ -18,6 +19,8 @@ from starlette.routing import Route
 from trackio.exceptions import TrackioAPIError
 from trackio.remote_client import HTTP_API_VERSION
 from trackio.utils import on_spaces
+
+logger = logging.getLogger("trackio.asgi_app")
 
 _PACKAGE_JSON_PATH = Path(__file__).parent / "package.json"
 _TRACKIO_PACKAGE_VERSION = json.loads(_PACKAGE_JSON_PATH.read_text())["version"]
@@ -216,6 +219,14 @@ def build_gradio_api_info(api_registry: dict[str, Any]) -> dict[str, Any]:
 _MAX_GRADIO_CALL_EVENTS = 256
 
 
+def _hf_token_value_is_unset(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and value.strip() == "":
+        return True
+    return False
+
+
 def _authorization_bearer_token(request: Request) -> str | None:
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
     if not auth:
@@ -244,11 +255,11 @@ def _maybe_apply_hf_token_from_authorization(
         return
     idx = names.index("hf_token")
     if "hf_token" in kwargs:
-        if kwargs["hf_token"] is None:
+        if _hf_token_value_is_unset(kwargs["hf_token"]):
             kwargs["hf_token"] = token
         return
     if idx < len(args):
-        if args[idx] is None:
+        if _hf_token_value_is_unset(args[idx]):
             args[idx] = token
         return
     kwargs["hf_token"] = token
@@ -334,11 +345,19 @@ async def gradio_call_poll_handler(request: Request) -> Response:
     with request.app.state.gradio_call_events_lock:
         event = request.app.state.gradio_call_events.pop(event_id, None)
     if event is None:
+        logger.info("gradio_api poll: unknown or expired event_id")
         return JSONResponse({"error": "Unknown or expired event_id"}, status_code=404)
     if event.get("api_name") != api_name:
+        logger.info(
+            "gradio_api poll: api_name mismatch (path=%r, stored=%r)",
+            api_name,
+            event.get("api_name"),
+        )
         with request.app.state.gradio_call_events_lock:
-            if len(request.app.state.gradio_call_events) < _MAX_GRADIO_CALL_EVENTS:
-                request.app.state.gradio_call_events[event_id] = event
+            d = request.app.state.gradio_call_events
+            while len(d) >= _MAX_GRADIO_CALL_EVENTS:
+                d.pop(next(iter(d)))
+            d[event_id] = event
         return JSONResponse({"error": "Unknown or expired event_id"}, status_code=404)
 
     data = event["data"]

@@ -63,6 +63,28 @@ def test_hf_token_from_authorization_on_spaces(monkeypatch, temp_dir):
     assert r.json()["data"] == "space-token"
 
 
+def test_hf_token_empty_or_whitespace_body_uses_bearer(monkeypatch, temp_dir):
+    monkeypatch.setenv("SYSTEM", "spaces")
+    app = create_trackio_starlette_app([], {"hf_echo": _hf_echo})
+    client = TestClient(app)
+
+    r = client.post(
+        "/api/hf_echo",
+        json={"hf_token": ""},
+        headers={"Authorization": "Bearer from-header"},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"] == "from-header"
+
+    r2 = client.post(
+        "/api/hf_echo",
+        json={"hf_token": "  "},
+        headers={"Authorization": "Bearer from-header"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["data"] == "from-header"
+
+
 def test_gradio_upload_aliases_api_upload(monkeypatch, temp_dir):
     monkeypatch.setenv("SYSTEM", "spaces")
     app = create_trackio_starlette_app([], {"echo": _echo})
