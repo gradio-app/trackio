@@ -180,11 +180,15 @@
     });
     let fetched = false;
     if (needFetch.length > 0) {
-      const batch = await getLogsBatch(project, needFetch);
-      for (const entry of batch) {
-        const runKey = entry.run_id ?? entry.run;
-        rawDataCache.set(runKey, entry.logs);
-        fetched = true;
+      try {
+        const batch = await getLogsBatch(project, needFetch);
+        for (const entry of batch) {
+          const runKey = entry.run_id ?? entry.run;
+          rawDataCache.set(runKey, entry.logs);
+          fetched = true;
+        }
+      } catch (e) {
+        console.error("Failed to load metric logs:", e);
       }
     }
 
@@ -200,19 +204,23 @@
     if (isTabHidden()) return;
     if (isRateLimitCooldownActive()) return;
 
-    const batch = await getLogsBatch(project, selectedRuns);
-    let changed = false;
-    for (const entry of batch) {
-      const runKey = entry.run_id ?? entry.run;
-      const logs = entry.logs;
-      const prev = rawDataCache.get(runKey);
-      if (!prev || logs.length !== prev.length) {
-        rawDataCache.set(runKey, logs);
-        changed = true;
+    try {
+      const batch = await getLogsBatch(project, selectedRuns);
+      let changed = false;
+      for (const entry of batch) {
+        const runKey = entry.run_id ?? entry.run;
+        const logs = entry.logs;
+        const prev = rawDataCache.get(runKey);
+        if (!prev || logs.length !== prev.length) {
+          rawDataCache.set(runKey, logs);
+          changed = true;
+        }
       }
-    }
-    if (changed) {
-      processFromCache();
+      if (changed) {
+        processFromCache();
+      }
+    } catch (e) {
+      console.error("Failed to refresh metric logs:", e);
     }
   }
 
@@ -244,11 +252,10 @@
         xLim = [lo, hi];
       }
     }
-    refreshTimer = setInterval(() => {
-      void refreshCachedRuns().catch((error) => {
-        console.error("Failed to refresh cached runs", error);
-      });
-    }, getMetricsPollIntervalMs());
+    refreshTimer = setInterval(
+      refreshCachedRuns,
+      getMetricsPollIntervalMs(),
+    );
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
     };
