@@ -56,6 +56,10 @@ def _namespace_scoped_repo_id(test_space_id: str, repo_name: str) -> str:
     return repo_name
 
 
+def _repo_safe_suffix(nbytes: int = 6) -> str:
+    return secrets.token_hex(nbytes)
+
+
 def test_sync_to_gradio_space(test_space_id, temp_dir):
     project_name = f"test_sync_gradio_{secrets.token_urlsafe(8)}"
     run_name = "run1"
@@ -90,7 +94,7 @@ def test_sync_to_gradio_space(test_space_id, temp_dir):
 def test_sync_to_static_space_incremental(test_space_id, temp_dir):
     project_name = f"test_sync_static_{secrets.token_urlsafe(8)}"
     run_name = "run1"
-    suffix = secrets.token_urlsafe(6)
+    suffix = _repo_safe_suffix()
     space_id = _namespace_scoped_repo_id(test_space_id, f"trackio-test-static-{suffix}")
     space_id, _, bucket_id = utils.preprocess_space_and_dataset_ids(space_id, None)
 
@@ -137,7 +141,7 @@ def test_sync_gradio_then_freeze_to_static(test_space_id, temp_dir):
     client.predict(api_name="/force_sync")
     time.sleep(5)
 
-    suffix = secrets.token_urlsafe(6)
+    suffix = _repo_safe_suffix()
     frozen_space_id = _namespace_scoped_repo_id(
         test_space_id, f"trackio-test-frozen-{suffix}"
     )
