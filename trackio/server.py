@@ -687,6 +687,13 @@ def get_system_logs(
     return SQLiteStorage.get_system_logs(project, run, run_id=run_id)
 
 
+def get_system_logs_batch(
+    project: str,
+    runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return SQLiteStorage.get_system_logs_batch(project, runs)
+
+
 def get_snapshot(
     project: str,
     run: str | None = None,
@@ -814,6 +821,7 @@ def _api_registry() -> dict[str, Any]:
         "get_run_summary": get_run_summary,
         "get_system_metrics_for_run": get_system_metrics_for_run,
         "get_system_logs": get_system_logs,
+        "get_system_logs_batch": get_system_logs_batch,
         "get_snapshot": get_snapshot,
         "get_logs": get_logs,
         "get_logs_batch": get_logs_batch,
