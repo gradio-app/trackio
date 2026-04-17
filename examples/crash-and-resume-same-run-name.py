@@ -34,7 +34,7 @@ import trackio  # noqa: E402
 
 DEFAULT_PROJECT = f"crash-and-resume-demo-{uuid.uuid4().hex[:8]}"
 DEFAULT_RUN_NAME = "trainer-job-42"
-DEFAULT_CRASH_STEPS = 20
+DEFAULT_CRASH_STEPS = 50
 DEFAULT_RESTART_STEPS = 100
 
 

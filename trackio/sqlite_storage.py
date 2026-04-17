@@ -1883,7 +1883,9 @@ class SQLiteStorage:
         return obj
 
     @staticmethod
-    def _rewrite_metrics_rows(metrics_rows, new_run_name, old_prefix, new_prefix):
+    def _rewrite_metrics_rows(
+        metrics_rows, new_run_name, old_prefix, new_prefix, include_run_id=False
+    ):
         """Deserialize metrics rows, update media paths, and reserialize."""
         result = []
         for row in metrics_rows:
@@ -1892,14 +1894,15 @@ class SQLiteStorage:
             updated = SQLiteStorage._update_media_paths(
                 metrics_deserialized, old_prefix, new_prefix
             )
-            result.append(
-                (
-                    row["timestamp"],
-                    new_run_name,
-                    row["step"],
-                    orjson.dumps(serialize_values(updated)),
-                )
+            values = (
+                row["timestamp"],
+                new_run_name,
+                row["step"],
+                orjson.dumps(serialize_values(updated)),
             )
+            if include_run_id:
+                values = values + (row["run_id"],)
+            result.append(values)
         return result
 
     @staticmethod
@@ -2061,32 +2064,53 @@ class SQLiteStorage:
                 with SQLiteStorage._get_connection(source_db_path) as source_conn:
                     source_cursor = source_conn.cursor()
 
-                    source_cursor.execute(
-                        "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?",
-                        (run,),
+                    metrics_has_run_id = SQLiteStorage._supports_run_ids(
+                        source_conn, "metrics"
                     )
+                    configs_has_run_id = SQLiteStorage._supports_run_ids(
+                        source_conn, "configs"
+                    )
+                    system_has_run_id = SQLiteStorage._supports_run_ids(
+                        source_conn, "system_metrics"
+                    )
+                    alerts_has_run_id = SQLiteStorage._supports_run_ids(
+                        source_conn, "alerts"
+                    )
+
+                    metrics_select = (
+                        "SELECT timestamp, step, metrics"
+                        + (", run_id" if metrics_has_run_id else "")
+                        + " FROM metrics WHERE run_name = ?"
+                    )
+                    source_cursor.execute(metrics_select, (run,))
                     metrics_rows = source_cursor.fetchall()
 
-                    source_cursor.execute(
-                        "SELECT config, created_at FROM configs WHERE run_name = ?",
-                        (run,),
+                    configs_select = (
+                        "SELECT config, created_at"
+                        + (", run_id" if configs_has_run_id else "")
+                        + " FROM configs WHERE run_name = ?"
                     )
+                    source_cursor.execute(configs_select, (run,))
                     config_row = source_cursor.fetchone()
 
                     try:
-                        source_cursor.execute(
-                            "SELECT timestamp, metrics FROM system_metrics WHERE run_name = ?",
-                            (run,),
+                        system_select = (
+                            "SELECT timestamp, metrics"
+                            + (", run_id" if system_has_run_id else "")
+                            + " FROM system_metrics WHERE run_name = ?"
                         )
+                        source_cursor.execute(system_select, (run,))
                         system_metrics_rows = source_cursor.fetchall()
                     except sqlite3.OperationalError:
                         system_metrics_rows = []
 
                     try:
-                        source_cursor.execute(
-                            "SELECT timestamp, title, text, level, step, alert_id FROM alerts WHERE run_name = ?",
-                            (run,),
+                        alerts_select = (
+                            "SELECT timestamp, title, text, level, step, alert_id"
+                            + (", run_id" if alerts_has_run_id else "")
+                            + " FROM alerts WHERE run_name = ?"
                         )
+                        source_cursor.execute(alerts_select, (run,))
                         alert_rows = source_cursor.fetchall()
                     except sqlite3.OperationalError:
                         alert_rows = []
@@ -2099,53 +2123,141 @@ class SQLiteStorage:
 
                         old_prefix = f"{project}/{run}/"
                         new_prefix = f"{new_project}/{run}/"
-                        updated_rows = SQLiteStorage._rewrite_metrics_rows(
-                            metrics_rows, run, old_prefix, new_prefix
+                        target_metrics_run_id = SQLiteStorage._supports_run_ids(
+                            target_conn, "metrics"
+                        )
+                        target_configs_run_id = SQLiteStorage._supports_run_ids(
+                            target_conn, "configs"
+                        )
+                        target_system_run_id = SQLiteStorage._supports_run_ids(
+                            target_conn, "system_metrics"
+                        )
+                        target_alerts_run_id = SQLiteStorage._supports_run_ids(
+                            target_conn, "alerts"
                         )
 
-                        target_cursor.executemany(
-                            "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
-                            updated_rows,
+                        use_metrics_run_id = (
+                            metrics_has_run_id and target_metrics_run_id
                         )
+                        updated_rows = SQLiteStorage._rewrite_metrics_rows(
+                            metrics_rows,
+                            run,
+                            old_prefix,
+                            new_prefix,
+                            include_run_id=use_metrics_run_id,
+                        )
+
+                        if use_metrics_run_id:
+                            target_cursor.executemany(
+                                "INSERT INTO metrics (timestamp, run_name, step, metrics, run_id) VALUES (?, ?, ?, ?, ?)",
+                                updated_rows,
+                            )
+                        else:
+                            target_cursor.executemany(
+                                "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+                                updated_rows,
+                            )
 
                         if config_row:
-                            target_cursor.execute(
-                                """
-                                INSERT OR REPLACE INTO configs (run_name, config, created_at)
-                                VALUES (?, ?, ?)
-                                """,
-                                (run, config_row["config"], config_row["created_at"]),
-                            )
+                            if (
+                                configs_has_run_id
+                                and target_configs_run_id
+                                and "run_id" in config_row.keys()
+                            ):
+                                target_cursor.execute(
+                                    """
+                                    INSERT OR REPLACE INTO configs (run_name, config, created_at, run_id)
+                                    VALUES (?, ?, ?, ?)
+                                    """,
+                                    (
+                                        run,
+                                        config_row["config"],
+                                        config_row["created_at"],
+                                        config_row["run_id"],
+                                    ),
+                                )
+                            else:
+                                target_cursor.execute(
+                                    """
+                                    INSERT OR REPLACE INTO configs (run_name, config, created_at)
+                                    VALUES (?, ?, ?)
+                                    """,
+                                    (
+                                        run,
+                                        config_row["config"],
+                                        config_row["created_at"],
+                                    ),
+                                )
 
                         for row in system_metrics_rows:
                             try:
-                                target_cursor.execute(
-                                    """
-                                    INSERT INTO system_metrics (timestamp, run_name, metrics)
-                                    VALUES (?, ?, ?)
-                                    """,
-                                    (row["timestamp"], run, row["metrics"]),
-                                )
+                                if (
+                                    system_has_run_id
+                                    and target_system_run_id
+                                    and "run_id" in row.keys()
+                                ):
+                                    target_cursor.execute(
+                                        """
+                                        INSERT INTO system_metrics (timestamp, run_name, metrics, run_id)
+                                        VALUES (?, ?, ?, ?)
+                                        """,
+                                        (
+                                            row["timestamp"],
+                                            run,
+                                            row["metrics"],
+                                            row["run_id"],
+                                        ),
+                                    )
+                                else:
+                                    target_cursor.execute(
+                                        """
+                                        INSERT INTO system_metrics (timestamp, run_name, metrics)
+                                        VALUES (?, ?, ?)
+                                        """,
+                                        (row["timestamp"], run, row["metrics"]),
+                                    )
                             except sqlite3.OperationalError:
                                 pass
 
                         for row in alert_rows:
                             try:
-                                target_cursor.execute(
-                                    """
-                                    INSERT OR IGNORE INTO alerts (timestamp, run_name, title, text, level, step, alert_id)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                                    """,
-                                    (
-                                        row["timestamp"],
-                                        run,
-                                        row["title"],
-                                        row["text"],
-                                        row["level"],
-                                        row["step"],
-                                        row["alert_id"],
-                                    ),
-                                )
+                                if (
+                                    alerts_has_run_id
+                                    and target_alerts_run_id
+                                    and "run_id" in row.keys()
+                                ):
+                                    target_cursor.execute(
+                                        """
+                                        INSERT OR IGNORE INTO alerts (timestamp, run_name, title, text, level, step, alert_id, run_id)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                        """,
+                                        (
+                                            row["timestamp"],
+                                            run,
+                                            row["title"],
+                                            row["text"],
+                                            row["level"],
+                                            row["step"],
+                                            row["alert_id"],
+                                            row["run_id"],
+                                        ),
+                                    )
+                                else:
+                                    target_cursor.execute(
+                                        """
+                                        INSERT OR IGNORE INTO alerts (timestamp, run_name, title, text, level, step, alert_id)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                                        """,
+                                        (
+                                            row["timestamp"],
+                                            run,
+                                            row["title"],
+                                            row["text"],
+                                            row["level"],
+                                            row["step"],
+                                            row["alert_id"],
+                                        ),
+                                    )
                             except sqlite3.OperationalError:
                                 pass
 

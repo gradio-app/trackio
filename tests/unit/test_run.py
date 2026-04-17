@@ -281,6 +281,7 @@ def test_init_survives_storage_read_failures(temp_dir, monkeypatch):
         raise sqlite3.DatabaseError("database disk image is malformed")
 
     monkeypatch.setattr(SQLiteStorage, "get_runs", raise_db_error)
+    monkeypatch.setattr(SQLiteStorage, "get_latest_run_record_by_name", raise_db_error)
     monkeypatch.setattr(SQLiteStorage, "get_max_step_for_run", raise_db_error)
 
     with pytest.warns(UserWarning) as record:
