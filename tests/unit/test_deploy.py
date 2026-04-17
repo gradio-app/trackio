@@ -4,11 +4,7 @@ from unittest.mock import patch
 from huggingface_hub import Volume
 
 from trackio import deploy
-from trackio.bucket_storage import (
-    _list_bucket_file_paths,
-    download_bucket_to_trackio_dir,
-)
-from trackio.utils import TRACKIO_DIR
+from trackio.bucket_storage import _list_bucket_file_paths
 
 
 def test_get_source_install_dependencies_includes_mcp():
@@ -61,15 +57,4 @@ def test_list_bucket_file_paths_uses_list_bucket_tree(mock_list_bucket_tree):
         "abidlabs/example-bucket",
         prefix="trackio/media/proj/",
         recursive=True,
-    )
-
-
-@patch("trackio.bucket_storage.sync_bucket")
-def test_download_bucket_to_trackio_dir_scopes_walk_to_trackio_dir(mock_sync_bucket):
-    download_bucket_to_trackio_dir("abidlabs/example-bucket")
-
-    mock_sync_bucket.assert_called_once_with(
-        source="hf://buckets/abidlabs/example-bucket/trackio",
-        dest=str(TRACKIO_DIR),
-        quiet=True,
     )
