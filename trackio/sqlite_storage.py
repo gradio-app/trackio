@@ -41,6 +41,7 @@ _JOURNAL_MODE_WHITELIST = frozenset(
     {"wal", "delete", "truncate", "persist", "memory", "off"}
 )
 _READ_ONLY_QUERY_PREFIXES = ("select", "with", "pragma")
+_QUERY_MAX_ROWS = 10_000
 _READ_ONLY_PRAGMAS = frozenset(
     {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo"}
 )
@@ -1304,7 +1305,15 @@ class SQLiteStorage:
         return sqlite3.SQLITE_DENY
 
     @staticmethod
-    def query_project(project: str, query: str) -> dict[str, Any]:
+    def _normalize_query_value(value: Any) -> Any:
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            return bytes(value).hex()
+        return value
+
+    @staticmethod
+    def query_project(
+        project: str, query: str, max_rows: int = _QUERY_MAX_ROWS
+    ) -> dict[str, Any]:
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -1318,9 +1327,19 @@ class SQLiteStorage:
                 cursor.execute(normalized_query)
                 description = cursor.description or []
                 columns = [column[0] for column in description]
-                rows = []
-                for row in cursor.fetchall():
-                    rows.append({column: row[column] for column in columns})
+                fetched = cursor.fetchmany(max_rows + 1)
+                if len(fetched) > max_rows:
+                    raise ValueError(
+                        f"Query returned more than {max_rows} rows. "
+                        "Refine the query or add a LIMIT clause."
+                    )
+                rows = [
+                    {
+                        column: SQLiteStorage._normalize_query_value(row[column])
+                        for column in columns
+                    }
+                    for row in fetched
+                ]
             except sqlite3.DatabaseError as e:
                 raise ValueError(str(e)) from e
             finally:
