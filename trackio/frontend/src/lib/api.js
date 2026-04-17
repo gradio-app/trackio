@@ -141,6 +141,28 @@ export async function getSystemLogs(project, run) {
   return await callApi("/get_system_logs", params);
 }
 
+export async function getSystemLogsBatch(project, runs) {
+  if (await isStaticMode()) {
+    const out = [];
+    for (const run of runs) {
+      const logs = await staticApi.getSystemLogs(project, run);
+      out.push({
+        run: run?.name ?? null,
+        run_id: run?.id ?? null,
+        logs,
+      });
+    }
+    return out;
+  }
+  return await callApi("/get_system_logs_batch", {
+    project,
+    runs: runs.map((run) => ({
+      run: run?.name ?? null,
+      run_id: run?.id ?? null,
+    })),
+  });
+}
+
 export async function getSnapshot(project, run, step) {
   const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSnapshot(project, run, step);

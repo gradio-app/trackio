@@ -3,7 +3,7 @@
   import LinePlot from "../components/LinePlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getSystemLogs } from "../lib/api.js";
+  import { getSystemLogsBatch } from "../lib/api.js";
   import {
     getMetricsPollIntervalMs,
     isRateLimitCooldownActive,
@@ -189,12 +189,16 @@
       return;
     }
 
-    let fetched = false;
-    for (const run of selectedRuns) {
+    const needFetch = selectedRuns.filter((run) => {
       const runKey = run.id ?? run.name;
-      if (!rawDataCache.has(runKey)) {
-        const logs = await getSystemLogs(project, run);
-        rawDataCache.set(runKey, logs);
+      return !rawDataCache.has(runKey);
+    });
+    let fetched = false;
+    if (needFetch.length > 0) {
+      const batch = await getSystemLogsBatch(project, needFetch);
+      for (const entry of batch) {
+        const runKey = entry.run_id ?? entry.run;
+        rawDataCache.set(runKey, entry.logs);
         fetched = true;
       }
     }
@@ -211,10 +215,11 @@
     if (isTabHidden()) return;
     if (isRateLimitCooldownActive()) return;
 
+    const batch = await getSystemLogsBatch(project, selectedRuns);
     let changed = false;
-    for (const run of selectedRuns) {
-      const logs = await getSystemLogs(project, run);
-      const runKey = run.id ?? run.name;
+    for (const entry of batch) {
+      const runKey = entry.run_id ?? entry.run;
+      const logs = entry.logs;
       const prev = rawDataCache.get(runKey);
       if (!prev || logs.length !== prev.length) {
         rawDataCache.set(runKey, logs);
