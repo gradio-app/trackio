@@ -23,7 +23,7 @@ Full URL of a self-hosted Trackio server (HTTP or HTTPS), **including the `write
 See [Self-host the Server](self_hosted_server.md).
 
 ```bash
-export TRACKIO_SERVER_URL="http://127.0.0.1:7860/"
+export TRACKIO_SERVER_URL="http://127.0.0.1:7860?write_token=YOUR_TOKEN"
 ```
 
 ### `TRACKIO_LOGO_LIGHT_URL` and `TRACKIO_LOGO_DARK_URL`

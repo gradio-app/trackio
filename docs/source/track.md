@@ -49,7 +49,7 @@ Runs with the same group name can be grouped together in sidebar, making it easi
 By default, metrics are stored locally and you open the dashboard on your machine. You can instead send metrics to:
 
 - A **Hugging Face Space**, by passing `space_id` (or setting `TRACKIO_SPACE_ID`). Trackio can create or reuse the Space and sync data there.
-- A **self-hosted Trackio server** (HTTP or HTTPS), by passing `server_url` (or setting `TRACKIO_SERVER_URL`) to the full base URL of that server, for example `http://127.0.0.1:7860/`.
+- A **self-hosted Trackio server** (HTTP or HTTPS), by passing `server_url` (or setting `TRACKIO_SERVER_URL`) to the **full URL including the `write_token` query** (for example the `full_url` from `trackio.show()`), not the host-only dashboard URL.
 
 If both a Space and a self-hosted URL are configured (`space_id` / `TRACKIO_SPACE_ID` together with `server_url` / `TRACKIO_SERVER_URL`), **the Space takes precedence** and the self-hosted URL is ignored. Options such as `dataset_id` and `bucket_id` apply to Hugging Face deployments; when only `server_url` is in effect, configure storage on the host that runs the server (see [Environment Variables](environment_variables.md)).
 
