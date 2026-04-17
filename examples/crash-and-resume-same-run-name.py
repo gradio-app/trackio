@@ -53,13 +53,23 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def log_phase(start_step: int, num_steps: int, start_loss: float, end_loss: float) -> None:
+def log_phase(
+    start_step: int, num_steps: int, start_loss: float, end_loss: float
+) -> None:
     print(f"Logging steps {start_step}..{start_step + num_steps - 1}")
     for offset in range(num_steps):
         step = start_step + offset
         progress = offset / max(1, num_steps - 1)
-        loss = start_loss + ((end_loss - start_loss) * progress) + (0.01 * math.sin(offset / 6))
-        accuracy = 0.25 + (0.7 * (1 - (loss / max(start_loss, 0.01)))) + (0.02 * math.cos(offset / 9))
+        loss = (
+            start_loss
+            + ((end_loss - start_loss) * progress)
+            + (0.01 * math.sin(offset / 6))
+        )
+        accuracy = (
+            0.25
+            + (0.7 * (1 - (loss / max(start_loss, 0.01))))
+            + (0.02 * math.cos(offset / 9))
+        )
         trackio.log(
             {
                 "loss": round(loss, 4),
@@ -70,7 +80,14 @@ def log_phase(start_step: int, num_steps: int, start_loss: float, end_loss: floa
         )
 
 
-def start_run(project: str, run_name: str, resume: str, phase: str, crash_steps: int, restart_steps: int):
+def start_run(
+    project: str,
+    run_name: str,
+    resume: str,
+    phase: str,
+    crash_steps: int,
+    restart_steps: int,
+):
     run = trackio.init(
         project=project,
         name=run_name,
@@ -104,10 +121,7 @@ def main() -> None:
     log_phase(start_step=0, num_steps=args.crash_steps, start_loss=0.7, end_loss=0.6)
     trackio.finish()
 
-    print(
-        f"Simulated crash after {args.crash_steps} steps. "
-        "Restarting the job now."
-    )
+    print(f"Simulated crash after {args.crash_steps} steps. Restarting the job now.")
 
     print("=== phase 2: restart job ===")
     restarted_run = start_run(
