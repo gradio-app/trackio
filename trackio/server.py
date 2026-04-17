@@ -543,10 +543,13 @@ def bulk_alert(
 def get_alerts(
     project: str,
     run: str | None = None,
+    run_id: str | None = None,
     level: str | None = None,
     since: str | None = None,
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
+    return SQLiteStorage.get_alerts(
+        project, run_name=run, run_id=run_id, level=level, since=since
+    )
 
 
 def get_metric_values(

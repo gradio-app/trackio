@@ -4,6 +4,7 @@ import os
 import shutil
 import sqlite3
 import time
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -1339,6 +1340,8 @@ class SQLiteStorage:
                 if run_identity is not None:
                     conditions.append(f"{run_identity[0]} = ?")
                     params.append(run_identity[1])
+                elif run_name is not None or run_id is not None:
+                    return []
                 if level is not None:
                     conditions.append("level = ?")
                     params.append(level)
@@ -2136,6 +2139,21 @@ class SQLiteStorage:
                             target_conn, "alerts"
                         )
 
+                        needs_generated_run_id = (
+                            target_metrics_run_id
+                            or target_configs_run_id
+                            or target_system_run_id
+                            or target_alerts_run_id
+                        ) and not (
+                            metrics_has_run_id
+                            or configs_has_run_id
+                            or system_has_run_id
+                            or alerts_has_run_id
+                        )
+                        generated_run_id = (
+                            uuid.uuid4().hex if needs_generated_run_id else None
+                        )
+
                         use_metrics_run_id = (
                             metrics_has_run_id and target_metrics_run_id
                         )
@@ -2151,6 +2169,11 @@ class SQLiteStorage:
                             target_cursor.executemany(
                                 "INSERT INTO metrics (timestamp, run_name, step, metrics, run_id) VALUES (?, ?, ?, ?, ?)",
                                 updated_rows,
+                            )
+                        elif target_metrics_run_id and generated_run_id is not None:
+                            target_cursor.executemany(
+                                "INSERT INTO metrics (timestamp, run_name, step, metrics, run_id) VALUES (?, ?, ?, ?, ?)",
+                                [row + (generated_run_id,) for row in updated_rows],
                             )
                         else:
                             target_cursor.executemany(
@@ -2174,6 +2197,19 @@ class SQLiteStorage:
                                         config_row["config"],
                                         config_row["created_at"],
                                         config_row["run_id"],
+                                    ),
+                                )
+                            elif target_configs_run_id and generated_run_id is not None:
+                                target_cursor.execute(
+                                    """
+                                    INSERT OR REPLACE INTO configs (run_name, config, created_at, run_id)
+                                    VALUES (?, ?, ?, ?)
+                                    """,
+                                    (
+                                        run,
+                                        config_row["config"],
+                                        config_row["created_at"],
+                                        generated_run_id,
                                     ),
                                 )
                             else:
@@ -2208,6 +2244,22 @@ class SQLiteStorage:
                                             row["run_id"],
                                         ),
                                     )
+                                elif (
+                                    target_system_run_id
+                                    and generated_run_id is not None
+                                ):
+                                    target_cursor.execute(
+                                        """
+                                        INSERT INTO system_metrics (timestamp, run_name, metrics, run_id)
+                                        VALUES (?, ?, ?, ?)
+                                        """,
+                                        (
+                                            row["timestamp"],
+                                            run,
+                                            row["metrics"],
+                                            generated_run_id,
+                                        ),
+                                    )
                                 else:
                                     target_cursor.execute(
                                         """
@@ -2240,6 +2292,26 @@ class SQLiteStorage:
                                             row["step"],
                                             row["alert_id"],
                                             row["run_id"],
+                                        ),
+                                    )
+                                elif (
+                                    target_alerts_run_id
+                                    and generated_run_id is not None
+                                ):
+                                    target_cursor.execute(
+                                        """
+                                        INSERT OR IGNORE INTO alerts (timestamp, run_name, title, text, level, step, alert_id, run_id)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                        """,
+                                        (
+                                            row["timestamp"],
+                                            run,
+                                            row["title"],
+                                            row["text"],
+                                            row["level"],
+                                            row["step"],
+                                            row["alert_id"],
+                                            generated_run_id,
                                         ),
                                     )
                                 else:
@@ -2377,11 +2449,12 @@ class SQLiteStorage:
     @staticmethod
     def get_snapshot(
         project: str,
-        run: str,
+        run: str | None = None,
         step: int | None = None,
         around_step: int | None = None,
         at_time: str | None = None,
         window: int | float | None = None,
+        run_id: str | None = None,
     ) -> dict[str, list[dict]]:
         """Get all metrics at/around a point in time or step.
 
@@ -2393,8 +2466,13 @@ class SQLiteStorage:
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            query = "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?"
-            params: list = [run]
+            run_identity = SQLiteStorage._resolve_run_identity(
+                conn, run_name=run, run_id=run_id, table="metrics"
+            )
+            if run_identity is None:
+                return {}
+            query = f"SELECT timestamp, step, metrics FROM metrics WHERE {run_identity[0]} = ?"
+            params: list = [run_identity[1]]
 
             if step is not None:
                 query += " AND step = ?"
