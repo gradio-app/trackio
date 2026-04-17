@@ -244,10 +244,11 @@
         xLim = [lo, hi];
       }
     }
-    refreshTimer = setInterval(
-      refreshCachedRuns,
-      getMetricsPollIntervalMs(),
-    );
+    refreshTimer = setInterval(() => {
+      void refreshCachedRuns().catch((error) => {
+        console.error("Failed to refresh cached runs", error);
+      });
+    }, getMetricsPollIntervalMs());
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
     };
