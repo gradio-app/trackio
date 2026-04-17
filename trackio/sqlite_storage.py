@@ -334,9 +334,7 @@ class SQLiteStorage:
                     """
                 )
                 system_cols = SQLiteStorage._table_columns(conn, "system_metrics")
-                system_run_key = (
-                    "run_id" if "run_id" in system_cols else "run_name"
-                )
+                system_run_key = "run_id" if "run_id" in system_cols else "run_name"
                 cursor.execute(
                     f"""
                     CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
@@ -394,9 +392,7 @@ class SQLiteStorage:
         return pa, pq
 
     @staticmethod
-    def _table_columns(
-        conn: sqlite3.Connection, table: str
-    ) -> set[str]:
+    def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
         cursor = conn.cursor()
         try:
             cursor.execute(f"PRAGMA table_info({table})")
@@ -422,7 +418,11 @@ class SQLiteStorage:
                 return ("run_id", run_id)
             if run_name is None:
                 return None
-            source_table = table if "timestamp" in SQLiteStorage._table_columns(conn, table) else "metrics"
+            source_table = (
+                table
+                if "timestamp" in SQLiteStorage._table_columns(conn, table)
+                else "metrics"
+            )
             cursor = conn.cursor()
             cursor.execute(
                 f"""
@@ -1671,7 +1671,9 @@ class SQLiteStorage:
                 if run_identity is None:
                     return None
                 config_col = (
-                    "run_id" if "run_id" in SQLiteStorage._table_columns(conn, "configs") else "run_name"
+                    "run_id"
+                    if "run_id" in SQLiteStorage._table_columns(conn, "configs")
+                    else "run_name"
                 )
                 cursor.execute(
                     f"""
@@ -1875,7 +1877,9 @@ class SQLiteStorage:
                                 )
                             )
 
-                    cursor.execute(f"DELETE FROM metrics WHERE {run_col} = ?", (run_value,))
+                    cursor.execute(
+                        f"DELETE FROM metrics WHERE {run_col} = ?", (run_value,)
+                    )
                     if supports_run_ids:
                         cursor.executemany(
                             "INSERT INTO metrics (run_id, timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?, ?)",
@@ -1888,7 +1892,9 @@ class SQLiteStorage:
                         )
 
                     config_col = (
-                        "run_id" if "run_id" in SQLiteStorage._table_columns(conn, "configs") else "run_name"
+                        "run_id"
+                        if "run_id" in SQLiteStorage._table_columns(conn, "configs")
+                        else "run_name"
                     )
                     cursor.execute(
                         f"UPDATE configs SET run_name = ? WHERE {config_col} = ?",

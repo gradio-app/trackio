@@ -16,7 +16,6 @@ import argparse
 
 import trackio
 
-
 PROJECT = "crash-and-resume-demo"
 RUN_NAME = "trainer-job-42"
 

@@ -171,7 +171,12 @@ def test_legacy_project_without_run_id_still_resumes_and_logs(temp_dir):
         """)
         conn.execute(
             "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
-            ("2024-01-01T00:00:00+00:00", "legacy-run", 0, sqlite3.Binary(b'{"loss":0.5}')),
+            (
+                "2024-01-01T00:00:00+00:00",
+                "legacy-run",
+                0,
+                sqlite3.Binary(b'{"loss":0.5}'),
+            ),
         )
         conn.execute(
             "INSERT INTO configs (run_name, config, created_at) VALUES (?, ?, ?)",
