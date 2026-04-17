@@ -270,6 +270,48 @@ def test_get_runs_returns_chronological_order(temp_dir):
     assert runs == ["run-z", "run-a", "run-m"]
 
 
+def test_get_runs_uses_project_scoped_bucket_download(temp_dir, monkeypatch):
+    project = "proj"
+    bucket_id = "abidlabs/example-bucket"
+    SQLiteStorage._bucket_project_import_attempted = set()
+    SQLiteStorage._dataset_import_attempted = False
+    monkeypatch.setenv("TRACKIO_BUCKET_ID", bucket_id)
+
+    def fake_download(project_name, incoming_bucket_id):
+        assert project_name == project
+        assert incoming_bucket_id == bucket_id
+        db_path = SQLiteStorage.get_project_db_path(project_name)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("""
+                CREATE TABLE metrics (
+                    id INTEGER PRIMARY KEY,
+                    timestamp TEXT,
+                    run_name TEXT,
+                    step INTEGER,
+                    metrics TEXT
+                )
+            """)
+            conn.execute(
+                "INSERT INTO metrics (timestamp, run_name, step, metrics) VALUES (?, ?, ?, ?)",
+                ("2024-01-01", "run-1", 0, orjson.dumps({"loss": 0.5})),
+            )
+        return True
+
+    monkeypatch.setattr(
+        "trackio.bucket_storage.download_project_db_to_trackio_dir", fake_download
+    )
+
+    def fail_global_load():
+        raise AssertionError("global bucket sync should not run for get_runs(project)")
+
+    monkeypatch.setattr(SQLiteStorage, "_ensure_hub_loaded", fail_global_load)
+
+    runs = SQLiteStorage.get_runs(project)
+
+    assert runs == ["run-1"]
+
+
 def test_rename_run(temp_dir):
     project = "test_project"
     old_name = "old_run"

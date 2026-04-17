@@ -30,7 +30,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
-from trackio.remote_client import RemoteClient
+from trackio.remote_client import RemoteClient, _supports_http_api
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
@@ -380,13 +380,15 @@ def create_space_if_not_exists(
 def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
     hf_api = huggingface_hub.HfApi()
     start = time.time()
-    delay = 2
-    request_timeout = 45.0
+    delay = 1
+    request_timeout = 10.0
     failure_stages = frozenset(
         ("NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR")
     )
     while time.time() - start < timeout:
         try:
+            if _supports_http_api(space_id, httpx_kwargs={"timeout": request_timeout}):
+                return
             info = hf_api.space_info(space_id, timeout=request_timeout)
             if info.runtime:
                 stage = str(info.runtime.stage)
@@ -402,7 +404,7 @@ def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
         except (huggingface_hub.utils.HfHubHTTPError, httpx.RequestError):
             pass
         time.sleep(delay)
-        delay = min(delay * 1.5, 15)
+        delay = min(delay * 1.5, 10)
     raise TimeoutError(
         f"Space {space_id} did not reach RUNNING within {timeout}s. "
         "Check status and build logs on the Hub."

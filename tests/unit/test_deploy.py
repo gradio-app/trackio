@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from huggingface_hub import Volume
 
 from trackio import deploy
@@ -58,3 +59,35 @@ def test_list_bucket_file_paths_uses_list_bucket_tree(mock_list_bucket_tree):
         prefix="trackio/media/proj/",
         recursive=True,
     )
+
+
+@patch("trackio.deploy.time.sleep", return_value=None)
+@patch("trackio.deploy._supports_http_api", side_effect=[False, True])
+@patch("trackio.deploy.huggingface_hub.HfApi")
+def test_wait_until_space_running_returns_when_http_api_ready(
+    mock_hf_api, mock_supports_http_api, _mock_sleep
+):
+    api = mock_hf_api.return_value
+    api.space_info.return_value = SimpleNamespace(
+        runtime=SimpleNamespace(stage="BUILDING")
+    )
+
+    deploy._wait_until_space_running("abidlabs/example-space", timeout=5)
+
+    assert mock_supports_http_api.call_count == 2
+    assert api.space_info.call_count == 1
+
+
+@patch("trackio.deploy.time.sleep", return_value=None)
+@patch("trackio.deploy._supports_http_api", return_value=False)
+@patch("trackio.deploy.huggingface_hub.HfApi")
+def test_wait_until_space_running_raises_for_terminal_stage(
+    mock_hf_api, _mock_supports_http_api, _mock_sleep
+):
+    api = mock_hf_api.return_value
+    api.space_info.return_value = SimpleNamespace(
+        runtime=SimpleNamespace(stage="BUILD_ERROR")
+    )
+
+    with pytest.raises(RuntimeError, match="terminal stage BUILD_ERROR"):
+        deploy._wait_until_space_running("abidlabs/example-space", timeout=5)

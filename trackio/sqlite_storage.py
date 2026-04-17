@@ -167,6 +167,7 @@ class ProcessLock:
 
 class SQLiteStorage:
     _dataset_import_attempted = False
+    _bucket_project_import_attempted: set[str] = set()
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
@@ -1225,6 +1226,24 @@ class SQLiteStorage:
             SQLiteStorage.load_from_dataset()
 
     @staticmethod
+    def _ensure_project_loaded(project: str) -> None:
+        bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
+        if bucket_id is None:
+            SQLiteStorage._ensure_hub_loaded()
+            return
+
+        if project in SQLiteStorage._bucket_project_import_attempted:
+            return
+
+        from trackio.bucket_storage import download_project_db_to_trackio_dir
+
+        try:
+            download_project_db_to_trackio_dir(project, bucket_id)
+        except Exception:
+            pass
+        SQLiteStorage._bucket_project_import_attempted.add(project)
+
+    @staticmethod
     def get_projects() -> list[str]:
         """
         Get list of all projects by scanning the database files in the trackio directory.
@@ -1243,7 +1262,7 @@ class SQLiteStorage:
     @staticmethod
     def get_runs(project: str) -> list[str]:
         """Get list of all runs for a project, ordered by creation time."""
-        SQLiteStorage._ensure_hub_loaded()
+        SQLiteStorage._ensure_project_loaded(project)
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
