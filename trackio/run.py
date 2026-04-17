@@ -43,6 +43,8 @@ class Run:
         group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
+        server_base_url: str | None = None,
+        write_token: str | None = None,
         existing_runs: list[str] | None = None,
         initial_last_step: int | None = None,
         auto_log_gpu: bool = False,
@@ -92,6 +94,9 @@ class Run:
         self._client_thread = None
         self._client = client
         self._space_id = space_id
+        self._server_base_url = server_base_url
+        self._write_token = write_token
+        self._remote_storage_key = space_id or server_base_url
         self.id = run_id or uuid.uuid4().hex
         self._existing_runs = existing_runs
         self._initial_last_step = initial_last_step
@@ -100,7 +105,7 @@ class Run:
         else:
             try:
                 self.name = utils.generate_readable_name(
-                    self._safe_get_existing_runs(), space_id
+                    self._safe_get_existing_runs(), self._space_id
                 )
             except Exception as e:
                 self._warn_once(
@@ -139,7 +144,7 @@ class Run:
         self._next_step = 0 if max_step is None else max_step + 1
         self._has_local_buffer = False
 
-        self._is_local = space_id is None
+        self._is_local = space_id is None and server_base_url is None
         self._webhook_url = webhook_url or os.environ.get("TRACKIO_WEBHOOK_URL")
         self._webhook_min_level = resolve_webhook_min_level(
             webhook_min_level or os.environ.get("TRACKIO_WEBHOOK_MIN_LEVEL")
@@ -174,6 +179,9 @@ class Run:
                     "gpu-monitor",
                     f"trackio.init() failed to start automatic GPU logging: {e}. Continuing without system metric auto-logging.",
                 )
+
+    def _hf_token_for_remote(self) -> str | None:
+        return huggingface_hub.utils.get_token() if self._space_id else None
 
     def _get_username(self) -> str | None:
         try:
@@ -461,7 +469,7 @@ class Run:
                             self._client.predict(
                                 api_name="/bulk_log",
                                 logs=logs_to_send,
-                                hf_token=huggingface_hub.utils.get_token(),
+                                hf_token=self._hf_token_for_remote(),
                             )
                         except Exception:
                             self._persist_logs_locally(logs_to_send)
@@ -474,7 +482,7 @@ class Run:
                             self._client.predict(
                                 api_name="/bulk_log_system",
                                 logs=system_logs_to_send,
-                                hf_token=huggingface_hub.utils.get_token(),
+                                hf_token=self._hf_token_for_remote(),
                             )
                         except Exception:
                             self._persist_system_logs_locally(system_logs_to_send)
@@ -487,7 +495,7 @@ class Run:
                             self._client.predict(
                                 api_name="/bulk_upload_media",
                                 uploads=uploads_to_send,
-                                hf_token=huggingface_hub.utils.get_token(),
+                                hf_token=self._hf_token_for_remote(),
                             )
                         except Exception:
                             self._persist_uploads_locally(uploads_to_send)
@@ -500,7 +508,7 @@ class Run:
                             self._client.predict(
                                 api_name="/bulk_alert",
                                 alerts=alerts_to_send,
-                                hf_token=huggingface_hub.utils.get_token(),
+                                hf_token=self._hf_token_for_remote(),
                             )
                         except Exception:
                             self._write_alerts_to_sqlite(alerts_to_send)
@@ -520,7 +528,7 @@ class Run:
                 )
 
     def _persist_logs_locally(self, logs: list[LogEntry]):
-        if not self._space_id:
+        if not self._remote_storage_key:
             return
         try:
             logs_by_run: dict[tuple, dict] = {}
@@ -548,7 +556,7 @@ class Run:
                     steps=data["steps"],
                     log_ids=data["log_ids"],
                     config=data["config"],
-                    space_id=self._space_id,
+                    space_id=self._remote_storage_key,
                 )
             self._has_local_buffer = True
         except Exception as e:
@@ -558,7 +566,7 @@ class Run:
             )
 
     def _persist_system_logs_locally(self, logs: list[SystemLogEntry]):
-        if not self._space_id:
+        if not self._remote_storage_key:
             return
         try:
             logs_by_run: dict[tuple, dict] = {}
@@ -578,7 +586,7 @@ class Run:
                     metrics_list=data["metrics"],
                     timestamps=data["timestamps"],
                     log_ids=data["log_ids"],
-                    space_id=self._space_id,
+                    space_id=self._remote_storage_key,
                 )
             self._has_local_buffer = True
         except Exception as e:
@@ -588,7 +596,7 @@ class Run:
             )
 
     def _persist_uploads_locally(self, uploads: list[UploadEntry]):
-        if not self._space_id:
+        if not self._remote_storage_key:
             return
         try:
             for entry in uploads:
@@ -602,7 +610,7 @@ class Run:
                     file_path = str(file_data)
                 SQLiteStorage.add_pending_upload(
                     project=entry["project"],
-                    space_id=self._space_id,
+                    space_id=self._remote_storage_key,
                     run_id=entry.get("run_id"),
                     run_name=entry.get("run"),
                     step=entry.get("step"),
@@ -623,7 +631,7 @@ class Run:
                 self._client.predict(
                     api_name="/bulk_log",
                     logs=buffered_logs["logs"],
-                    hf_token=huggingface_hub.utils.get_token(),
+                    hf_token=self._hf_token_for_remote(),
                 )
                 SQLiteStorage.clear_pending_logs(self.project, buffered_logs["ids"])
 
@@ -632,7 +640,7 @@ class Run:
                 self._client.predict(
                     api_name="/bulk_log_system",
                     logs=buffered_sys["logs"],
-                    hf_token=huggingface_hub.utils.get_token(),
+                    hf_token=self._hf_token_for_remote(),
                 )
                 SQLiteStorage.clear_pending_system_logs(
                     self.project, buffered_sys["ids"]
@@ -658,7 +666,7 @@ class Run:
                     self._client.predict(
                         api_name="/bulk_upload_media",
                         uploads=upload_entries,
-                        hf_token=huggingface_hub.utils.get_token(),
+                        hf_token=self._hf_token_for_remote(),
                     )
                 SQLiteStorage.clear_pending_uploads(
                     self.project, buffered_uploads["ids"]
@@ -678,11 +686,19 @@ class Run:
                 if self._stop_flag.is_set():
                     break
                 try:
-                    client = RemoteClient(
-                        self.url,
-                        hf_token=huggingface_hub.utils.get_token(),
-                        verbose=False,
-                    )
+                    if self._server_base_url is not None:
+                        client = RemoteClient(
+                            self._server_base_url,
+                            hf_token=None,
+                            write_token=self._write_token,
+                            verbose=False,
+                        )
+                    else:
+                        client = RemoteClient(
+                            self.url,
+                            hf_token=huggingface_hub.utils.get_token(),
+                            verbose=False,
+                        )
 
                     with self._client_lock:
                         self._client = client
@@ -743,12 +759,12 @@ class Run:
 
     def _process_media(self, value: TrackioMedia, step: int | None) -> dict:
         value._save(self.project, self.name, step if step is not None else 0)
-        if self._space_id:
+        if self._space_id or self._server_base_url:
             self._queue_upload(value._get_absolute_file_path(), step)
         return value._to_dict()
 
     def _scan_and_queue_media_uploads(self, table_dict: dict, step: int | None):
-        if not self._space_id:
+        if not self._space_id and not self._server_base_url:
             return
 
         table_data = table_dict.get("_value", [])
@@ -967,7 +983,7 @@ class Run:
             else:
                 if self._client_thread is not None:
                     print(
-                        "* Run finished. Uploading logs to Trackio Space (please wait...)"
+                        "* Run finished. Uploading logs to the remote Trackio server (please wait...)"
                     )
                     self._client_thread.join(timeout=30)
                     if self._client_thread.is_alive():
@@ -988,10 +1004,14 @@ class Run:
                     has_pending = False
 
                 if has_pending:
+                    if self._space_id is not None:
+                        retry = f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
+                    else:
+                        retry = f'trackio.init(project="{self.project}", server_url="{self._server_base_url}")'
                     _emit_nonfatal_warning(
-                        f"* Some logs could not be sent to the Space (it may still be starting up). "
+                        f"* Some logs could not be sent to the remote server (it may still be starting up). "
                         f"They have been saved locally and will be sent automatically next time you call: "
-                        f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
+                        f"{retry}"
                     )
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")

@@ -100,6 +100,8 @@ def _cleanup_current_run():
 def _safe_get_runs_for_init(
     project: str,
     space_id: str | None,
+    server_base_url: str | None,
+    write_token: str | None,
     resume: str,
     remote_client: RemoteClient | None = None,
     check_existing_for_never: bool = False,
@@ -120,6 +122,23 @@ def _safe_get_runs_for_init(
                 f"trackio.init() could not inspect existing runs for project '{project}' on Space '{space_id}': {e}. Continuing without resume metadata."
             )
             return []
+    if server_base_url is not None:
+        if resume == "never" and not check_existing_for_never:
+            return []
+        try:
+            client = remote_client or RemoteClient(
+                server_base_url,
+                hf_token=None,
+                write_token=write_token,
+                verbose=False,
+            )
+            runs = client.predict(project=project, api_name="/get_runs_for_project")
+            return runs if isinstance(runs, list) else []
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not inspect existing runs for project '{project}' on self-hosted server '{server_base_url}': {e}. Continuing without resume metadata."
+            )
+            return []
     try:
         return SQLiteStorage.get_runs(project)
     except Exception as e:
@@ -133,6 +152,8 @@ def _safe_get_latest_run_for_init(
     project: str,
     name: str,
     space_id: str | None = None,
+    server_base_url: str | None = None,
+    write_token: str | None = None,
     remote_client: RemoteClient | None = None,
 ) -> dict | None:
     if space_id is not None:
@@ -155,6 +176,27 @@ def _safe_get_latest_run_for_init(
                 f"trackio.init() could not inspect existing runs for project '{project}' on Space '{space_id}': {e}. Continuing without resume metadata."
             )
             return None
+    if server_base_url is not None:
+        try:
+            client = remote_client or RemoteClient(
+                server_base_url,
+                hf_token=None,
+                write_token=write_token,
+                verbose=False,
+            )
+            runs = client.predict(project=project, api_name="/get_runs_for_project")
+            if not isinstance(runs, list):
+                return None
+            matches = [r for r in runs if isinstance(r, dict) and r.get("name") == name]
+            if not matches:
+                return None
+            matches.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+            return matches[0]
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not inspect existing runs for project '{project}' on self-hosted server '{server_base_url}': {e}. Continuing without resume metadata."
+            )
+            return None
     try:
         return SQLiteStorage.get_latest_run_record_by_name(project, name)
     except Exception as e:
@@ -168,6 +210,8 @@ def _safe_get_last_step_for_init(
     project: str,
     run_name: str,
     space_id: str | None,
+    server_base_url: str | None,
+    write_token: str | None,
     resumed: bool,
     run_id: str | None = None,
     remote_client: RemoteClient | None = None,
@@ -199,6 +243,32 @@ def _safe_get_last_step_for_init(
                 f"trackio.init() could not recover the previous step for run '{run_name}' on Space '{space_id}': {e}. Continuing from step 0."
             )
             return None
+    if server_base_url is not None:
+        try:
+            client = remote_client or RemoteClient(
+                server_base_url,
+                hf_token=None,
+                write_token=write_token,
+                verbose=False,
+            )
+            summary_kwargs = {
+                "project": project,
+                "api_name": "/get_run_summary",
+            }
+            if run_id is not None:
+                summary_kwargs["run_id"] = run_id
+            else:
+                summary_kwargs["run"] = run_name
+            summary = client.predict(**summary_kwargs)
+            if isinstance(summary, dict):
+                last_step = summary.get("last_step")
+                return last_step if isinstance(last_step, int) else None
+            return None
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not recover the previous step for run '{run_name}' on self-hosted server '{server_base_url}': {e}. Continuing from step 0."
+            )
+            return None
     try:
         return SQLiteStorage.get_max_step_for_run(project, run_name, run_id=run_id)
     except Exception as e:
@@ -213,6 +283,7 @@ def init(
     name: str | None = None,
     group: str | None = None,
     space_id: str | None = None,
+    server_url: str | None = None,
     space_storage: SpaceStorage | None = None,
     dataset_id: str | None = None,
     bucket_id: str | None = None,
@@ -249,6 +320,16 @@ def init(
             via the `TRACKIO_SPACE_ID` environment variable. You cannot log to a
             Space that has been **frozen** (converted to the static SDK); use
             ``trackio.sync(..., sdk="static")`` only after you are done logging.
+            Takes precedence over `server_url` and `TRACKIO_SERVER_URL` when more than
+            one is set.
+        server_url (`str`, *optional*):
+            Base URL of a self-hosted Trackio server (``http://`` or ``https://``), or the
+            write-access URL from ``trackio.show()`` which may include a ``write_token`` query
+            parameter. The client sends that token on each request (``X-Trackio-Write-Token``);
+            you can also set ``TRACKIO_WRITE_TOKEN`` instead of embedding the token in the URL.
+            When set, metrics are sent to that server over HTTP instead of creating or syncing
+            to a Hugging Face Space. Can also be set via the ``TRACKIO_SERVER_URL`` environment
+            variable. Ignored when ``space_id`` or ``TRACKIO_SPACE_ID`` is set.
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
@@ -309,8 +390,27 @@ def init(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
-    space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
+    space_id, server_url = utils.resolve_space_id_and_server_url(space_id, server_url)
     bucket_id = bucket_id or os.environ.get("TRACKIO_BUCKET_ID")
+    if server_url is not None and not server_url.startswith(("http://", "https://")):
+        raise ValueError(
+            f"`server_url` must be a full URL starting with http:// or https://, got: {server_url!r}"
+        )
+    server_base_url: str | None = None
+    write_token_resolved: str | None = None
+    if server_url is not None:
+        server_base_url, tok = utils.parse_trackio_server_url(server_url)
+        write_token_resolved = tok or os.environ.get("TRACKIO_WRITE_TOKEN")
+        if not write_token_resolved:
+            raise ValueError(
+                "Self-hosted logging requires a write token: add write_token to the server URL, "
+                "or set the TRACKIO_WRITE_TOKEN environment variable."
+            )
+    if server_url is not None and (dataset_id is not None or bucket_id is not None):
+        raise ValueError(
+            "`dataset_id` and `bucket_id` are Hugging Face Spaces concepts and are not "
+            "compatible with `server_url`. Configure storage on the self-hosted server."
+        )
     if space_id is None and dataset_id is not None:
         raise ValueError("Must provide a `space_id` when `dataset_id` is provided.")
     if dataset_id is not None and bucket_id is not None:
@@ -336,13 +436,19 @@ def init(
     if space_id is not None:
         deploy.raise_if_space_is_frozen_for_logging(space_id)
 
+    remote_source = space_id or server_base_url
+
     url = context_vars.current_server.get()
 
-    if space_id is not None:
+    if remote_source is not None:
         if url is None:
-            url = space_id
+            url = remote_source
             context_vars.current_server.set(url)
-            context_vars.current_space_id.set(space_id)
+            if space_id is not None:
+                context_vars.current_space_id.set(space_id)
+                context_vars.current_server_write_token.set(None)
+            elif server_base_url is not None:
+                context_vars.current_server_write_token.set(write_token_resolved)
 
     _should_embed_local = False
 
@@ -363,11 +469,17 @@ def init(
             print(
                 f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}"
             )
-        if space_id is None:
+        if remote_source is None:
             print(f"* Trackio metrics logged to: {TRACKIO_DIR}")
             _should_embed_local = embed and utils.is_in_notebook()
             if not _should_embed_local:
                 utils.print_dashboard_instructions(project)
+        elif server_base_url is not None:
+            print(
+                f"* Trackio metrics will be sent to self-hosted server: {server_base_url}"
+            )
+            if utils.is_in_notebook() and embed:
+                utils.embed_url_in_notebook(server_base_url)
         else:
             try:
                 deploy.create_space_if_not_exists(
@@ -399,12 +511,26 @@ def init(
             )
         except Exception as e:
             _emit_nonfatal_warning(
-                f"trackio.init() could not create a Space client for '{space_id}': {e}. Continuing with local fallback metadata lookups."
+                f"trackio.init() could not create a remote client for Space '{space_id}': {e}. Continuing with local fallback metadata lookups."
+            )
+    elif server_base_url is not None:
+        try:
+            remote_client = RemoteClient(
+                server_base_url,
+                hf_token=None,
+                write_token=write_token_resolved,
+                verbose=False,
+            )
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not create a remote client for '{server_base_url}': {e}. Continuing with local fallback metadata lookups."
             )
 
     existing_run_records = _safe_get_runs_for_init(
         project,
         space_id,
+        server_base_url,
+        write_token_resolved,
         resume,
         remote_client=remote_client,
         check_existing_for_never=name is not None,
@@ -415,7 +541,12 @@ def init(
 
     existing_run = (
         _safe_get_latest_run_for_init(
-            project, name, space_id=space_id, remote_client=remote_client
+            project,
+            name,
+            space_id=space_id,
+            server_base_url=server_base_url,
+            write_token=write_token_resolved,
+            remote_client=remote_client,
         )
         if name is not None
         else None
@@ -443,6 +574,8 @@ def init(
             project,
             name,
             space_id,
+            server_base_url,
+            write_token_resolved,
             resumed,
             run_id=resolved_run_id,
             remote_client=remote_client,
@@ -474,6 +607,8 @@ def init(
         group=group,
         config=config,
         space_id=space_id,
+        server_base_url=server_base_url,
+        write_token=write_token_resolved,
         existing_runs=existing_runs,
         initial_last_step=initial_last_step,
         auto_log_gpu=auto_log_gpu,
@@ -748,7 +883,10 @@ def save(
     is_local = (
         current_run._is_local
         if current_run is not None
-        else (context_vars.current_space_id.get() is None)
+        else (
+            context_vars.current_space_id.get() is None
+            and context_vars.current_server.get() is None
+        )
     )
 
     if is_local:
@@ -807,15 +945,24 @@ def save(
                 )
 
             try:
-                client = RemoteClient(
-                    url,
-                    hf_token=huggingface_hub.utils.get_token(),
-                    httpx_kwargs={"timeout": 90},
-                )
+                wt = context_vars.current_server_write_token.get()
+                if wt is not None:
+                    client = RemoteClient(
+                        url,
+                        hf_token=None,
+                        write_token=wt,
+                        httpx_kwargs={"timeout": 90},
+                    )
+                else:
+                    client = RemoteClient(
+                        url,
+                        hf_token=huggingface_hub.utils.get_token(),
+                        httpx_kwargs={"timeout": 90},
+                    )
                 client.predict(
                     api_name="/bulk_upload_media",
                     uploads=upload_entries,
-                    hf_token=huggingface_hub.utils.get_token(),
+                    hf_token=huggingface_hub.utils.get_token() if wt is None else None,
                 )
             except Exception as e:
                 _emit_nonfatal_warning(
