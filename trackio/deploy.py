@@ -379,6 +379,7 @@ def create_space_if_not_exists(
 
 def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
     hf_api = huggingface_hub.HfApi()
+    hf_token = huggingface_hub.utils.get_token()
     start = time.time()
     delay = 1
     request_timeout = 10.0
@@ -387,7 +388,11 @@ def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
     )
     while time.time() - start < timeout:
         try:
-            if _supports_http_api(space_id, httpx_kwargs={"timeout": request_timeout}):
+            if _supports_http_api(
+                space_id,
+                hf_token=hf_token,
+                httpx_kwargs={"timeout": request_timeout},
+            ):
                 return
             info = hf_api.space_info(space_id, timeout=request_timeout)
             if info.runtime:

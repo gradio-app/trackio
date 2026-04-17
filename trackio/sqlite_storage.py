@@ -1237,11 +1237,14 @@ class SQLiteStorage:
 
         from trackio.bucket_storage import download_project_db_to_trackio_dir
 
+        succeeded = False
         try:
-            download_project_db_to_trackio_dir(project, bucket_id)
+            succeeded = download_project_db_to_trackio_dir(project, bucket_id)
         except Exception:
-            pass
-        SQLiteStorage._bucket_project_import_attempted.add(project)
+            succeeded = False
+
+        if succeeded or SQLiteStorage.get_project_db_path(project).exists():
+            SQLiteStorage._bucket_project_import_attempted.add(project)
 
     @staticmethod
     def get_projects() -> list[str]:
