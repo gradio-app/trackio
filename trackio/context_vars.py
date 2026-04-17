@@ -16,3 +16,6 @@ current_server: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 current_space_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_space_id", default=None
 )
+current_server_write_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_server_write_token", default=None
+)

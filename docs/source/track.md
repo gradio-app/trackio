@@ -44,6 +44,19 @@ trackio.init(project="my_project", name="tuned_run_1", group="tuned")
 
 Runs with the same group name can be grouped together in sidebar, making it easier to compare related experiments. You can also group runs by any other configuration parameter (see [Tracking Configuration](#tracking-configuration) below).
 
+### Remote logging (Hugging Face Space or self-hosted server)
+
+By default, metrics are stored locally and you open the dashboard on your machine. You can instead send metrics to:
+
+- A **Hugging Face Space**, by passing `space_id` (or setting `TRACKIO_SPACE_ID`). Trackio can create or reuse the Space and sync data there.
+- A **self-hosted Trackio server** (HTTP or HTTPS), by passing `server_url` (or setting `TRACKIO_SERVER_URL`). Use the write-access URL from `trackio.show()` (optionally with `write_token` in the query), or a base URL plus `TRACKIO_WRITE_TOKEN`. The client authenticates with the same **write token** the dashboard uses (not your Hugging Face token).
+
+If both a Space and a self-hosted URL are configured (`space_id` / `TRACKIO_SPACE_ID` together with `server_url` / `TRACKIO_SERVER_URL`), **the Space takes precedence** and the self-hosted URL is ignored. Options such as `dataset_id` and `bucket_id` apply to Hugging Face deployments; when only `server_url` is in effect, configure storage on the host that runs the server (see [Environment Variables](environment_variables.md)).
+
+For setup steps (running `trackio show`, binding to `0.0.0.0`, write tokens), see [Self-host the Server](self_hosted_server.md).
+
+The built-in dashboard polls for new runs and metrics every **1 second** on localhost and every **2 seconds** when opened on a Hugging Face Space (`*.hf.space`), to ease rate limits on the Space URL.
+
 ## Logging Data
 
 Once your run is initialized, you can start logging data using the [`log`] function:

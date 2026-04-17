@@ -20,6 +20,11 @@
     isStaticMode,
     setMediaDir,
   } from "./lib/api.js";
+  import {
+    getAppPollIntervalMs,
+    isRateLimitCooldownActive,
+    isTabHidden,
+  } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
@@ -119,7 +124,7 @@
     }
     try {
       const data = await getRunsForProject(selectedProject);
-      const newRuns = data || [];
+      const newRuns = [...(data || [])].reverse();
       const newRunIds = new Set(newRuns.map(runKey));
 
       if (JSON.stringify(runs) !== JSON.stringify(newRuns)) {
@@ -159,9 +164,11 @@
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (!realtimeEnabled) return;
+      if (isTabHidden()) return;
+      if (isRateLimitCooldownActive()) return;
       await refreshRuns();
       await refreshAlerts();
-    }, 1000);
+    }, getAppPollIntervalMs());
   }
 
   function applyUrlTokens() {
@@ -382,14 +389,17 @@
           {showHeaders}
           {appBootstrapReady}
           {plotOrder}
+          {realtimeEnabled}
           bind:metricColumns
         />
       {:else if currentPage === "system"}
         <SystemMetrics
           project={selectedProject}
           selectedRuns={selectedRunRecords}
+          allRuns={runs}
           {smoothing}
           {appBootstrapReady}
+          {realtimeEnabled}
           bind:availableDevices={availableSystemDevices}
           bind:selectedDevices={selectedSystemDevices}
         />

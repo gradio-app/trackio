@@ -1,11 +1,13 @@
 import asyncio
 import tempfile
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
 
 import trackio
+import trackio.context_vars as context_vars
 import trackio.utils as trackio_utils
 from trackio import Api
 from trackio.remote_client import RemoteClient as Client
@@ -199,6 +201,31 @@ def test_local_dashboard_supports_remote_client(temp_dir):
         app.close()
 
 
+def test_server_url_logs_to_self_hosted_server(temp_dir):
+    project = "test_self_hosted"
+    run_name = "self-hosted-run"
+
+    app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        write_token = parse_qs(urlparse(full_url).query).get("write_token", [None])[0]
+        assert write_token
+
+        context_vars.current_server.set(None)
+        context_vars.current_project.set(None)
+        context_vars.current_run.set(None)
+
+        trackio.init(project=project, name=run_name, server_url=full_url)
+        trackio.log(metrics={"loss": 0.5})
+        trackio.finish()
+
+        client = Client(url, verbose=False)
+        runs = client.predict(project, api_name="/get_runs_for_project")
+        assert any(r.get("name") == run_name for r in runs)
+    finally:
+        app.close()
+
+
 def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
 
@@ -258,7 +285,10 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
     blocked_target = trackio_utils.MEDIA_DIR / project / "files" / "blocked.txt"
     allowed_target = None
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
+    write_token = parse_qs(urlparse(full_url).query).get("write_token", [None])[0]
+    assert write_token
+    write_headers = {"x-trackio-write-token": write_token}
 
     try:
         with source_path.open("rb") as handle:
@@ -279,6 +309,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
 
         allowed_resp = httpx.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
+            headers=write_headers,
             json={
                 "uploads": [
                     {
@@ -295,6 +326,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
         )
         blocked_resp = httpx.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
+            headers=write_headers,
             json={
                 "uploads": [
                     {
@@ -326,6 +358,8 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
 
 def test_local_dashboard_supports_mcp(temp_dir):
     pytest.importorskip("mcp")
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
 
     project = "test_local_mcp"
     run_name = "mcp-run"
@@ -341,9 +375,6 @@ def test_local_dashboard_supports_mcp(temp_dir):
     )
 
     async def check_mcp() -> None:
-        from mcp import ClientSession
-        from mcp.client.streamable_http import streamable_http_client
-
         async with streamable_http_client(f"{url.rstrip('/')}/mcp") as (
             read_stream,
             write_stream,

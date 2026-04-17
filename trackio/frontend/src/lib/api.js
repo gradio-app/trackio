@@ -1,4 +1,5 @@
 import * as staticApi from "./staticApi.js";
+import { registerRateLimitHit } from "./hostPolling.js";
 
 const BASE = window.__trackio_base || "";
 
@@ -47,6 +48,9 @@ export async function callApi(apiName, params = {}) {
     headers: { "Content-Type": "application/json", ...getOauthSessionHeader() },
     body: JSON.stringify(params),
   });
+  if (resp.status === 429) {
+    registerRateLimitHit();
+  }
   if (!resp.ok) {
     throw new Error(`API call ${apiName} failed: ${resp.status}`);
   }
@@ -85,6 +89,22 @@ export async function getLogs(project, run) {
   return await callApi("/get_logs", params);
 }
 
+export async function getLogsBatch(project, runs) {
+  if (await isStaticMode()) {
+    const out = [];
+    for (const run of runs) {
+      const logs = await staticApi.getLogs(project, run);
+      out.push({ ...normalizeRun(run), logs });
+    }
+    return out;
+  }
+  const payload = {
+    project,
+    runs: runs.map((run) => normalizeRun(run)),
+  };
+  return await callApi("/get_logs_batch", payload);
+}
+
 export async function getProjectSummary(project) {
   if (await isStaticMode()) return staticApi.getProjectSummary(project);
   return await callApi("/get_project_summary", { project });
@@ -112,6 +132,21 @@ export async function getSystemLogs(project, run) {
   const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSystemLogs(project, run);
   return await callApi("/get_system_logs", params);
+}
+
+export async function getSystemLogsBatch(project, runs) {
+  if (await isStaticMode()) {
+    const out = [];
+    for (const run of runs) {
+      const logs = await staticApi.getSystemLogs(project, run);
+      out.push({ ...normalizeRun(run), logs });
+    }
+    return out;
+  }
+  return await callApi("/get_system_logs_batch", {
+    project,
+    runs: runs.map((run) => normalizeRun(run)),
+  });
 }
 
 export async function getSnapshot(project, run, step) {
