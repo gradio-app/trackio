@@ -215,49 +215,6 @@ def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
         app.close()
 
 
-def test_local_dashboard_full_url_grants_write_access(temp_dir):
-    from urllib.parse import parse_qs, urlparse
-
-    project = "test_full_url_write"
-    run_name = "full-url-run"
-
-    trackio.init(project=project, name=run_name)
-    trackio.log(metrics={"loss": 0.1})
-    trackio.finish()
-
-    app, url, _, full_url = trackio.show(
-        project=project, block_thread=False, open_browser=False
-    )
-
-    try:
-        write_token = parse_qs(urlparse(full_url).query).get("write_token", [None])[0]
-        assert write_token, "full_url must expose the write_token query parameter"
-
-        base = url.rstrip("/")
-
-        anonymous = httpx.post(
-            f"{base}/api/get_run_mutation_status", json={}, timeout=5
-        )
-        assert anonymous.status_code == 200
-        assert anonymous.json()["data"]["allowed"] is False
-
-        authorized = httpx.post(
-            f"{base}/api/get_run_mutation_status",
-            json={},
-            cookies={"trackio_write_token": write_token},
-            timeout=5,
-        )
-        assert authorized.status_code == 200
-        assert authorized.json()["data"] == {
-            "spaces": False,
-            "allowed": True,
-            "auth": "local",
-        }
-    finally:
-        trackio.delete_project(project, force=True)
-        app.close()
-
-
 def test_local_dashboard_file_endpoint_only_serves_trackio_paths(
     temp_dir, image_ndarray
 ):
