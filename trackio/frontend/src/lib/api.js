@@ -94,20 +94,13 @@ export async function getLogsBatch(project, runs) {
     const out = [];
     for (const run of runs) {
       const logs = await staticApi.getLogs(project, run);
-      out.push({
-        run: run?.name ?? null,
-        run_id: run?.id ?? null,
-        logs,
-      });
+      out.push({ ...normalizeRun(run), logs });
     }
     return out;
   }
   const payload = {
     project,
-    runs: runs.map((run) => ({
-      run: run?.name ?? null,
-      run_id: run?.id ?? null,
-    })),
+    runs: runs.map((run) => normalizeRun(run)),
   };
   return await callApi("/get_logs_batch", payload);
 }
@@ -146,20 +139,13 @@ export async function getSystemLogsBatch(project, runs) {
     const out = [];
     for (const run of runs) {
       const logs = await staticApi.getSystemLogs(project, run);
-      out.push({
-        run: run?.name ?? null,
-        run_id: run?.id ?? null,
-        logs,
-      });
+      out.push({ ...normalizeRun(run), logs });
     }
     return out;
   }
   return await callApi("/get_system_logs_batch", {
     project,
-    runs: runs.map((run) => ({
-      run: run?.name ?? null,
-      run_id: run?.id ?? null,
-    })),
+    runs: runs.map((run) => normalizeRun(run)),
   });
 }
 
