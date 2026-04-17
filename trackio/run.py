@@ -42,6 +42,8 @@ class Run:
         group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
+        existing_runs: list[str] | None = None,
+        initial_last_step: int | None = None,
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
         webhook_url: str | None = None,
@@ -65,6 +67,9 @@ class Run:
                 Keys starting with '_' are reserved for internal use.
             space_id: The HF Space ID if logging to a Space (e.g., "user/space").
                 If provided, media files will be uploaded to the Space.
+            existing_runs: Optional pre-fetched run names for this project. Used to
+                avoid redundant storage or remote lookups during init.
+            initial_last_step: Optional pre-fetched last step for a resumed run.
             auto_log_gpu: Whether to automatically log GPU metrics (utilization,
                 memory, temperature) at regular intervals.
             gpu_log_interval: The interval in seconds between GPU metric logs.
@@ -86,6 +91,8 @@ class Run:
         self._client_thread = None
         self._client = client
         self._space_id = space_id
+        self._existing_runs = existing_runs
+        self._initial_last_step = initial_last_step
         if name is not None:
             self.name = name
         else:
@@ -180,6 +187,8 @@ class Run:
         _emit_nonfatal_warning(message)
 
     def _safe_get_existing_runs(self) -> list[str]:
+        if self._existing_runs is not None:
+            return self._existing_runs
         try:
             return SQLiteStorage.get_runs(self.project)
         except Exception as e:
@@ -190,6 +199,8 @@ class Run:
             return []
 
     def _safe_get_max_step_for_run(self) -> int | None:
+        if self._initial_last_step is not None:
+            return self._initial_last_step
         try:
             return SQLiteStorage.get_max_step_for_run(self.project, self.name)
         except Exception as e:
