@@ -1,11 +1,13 @@
 import asyncio
 import tempfile
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
 
 import trackio
+import trackio.context_vars as context_vars
 import trackio.utils as trackio_utils
 from trackio import Api
 from trackio.remote_client import RemoteClient as Client
@@ -200,10 +202,6 @@ def test_local_dashboard_supports_remote_client(temp_dir):
 
 
 def test_server_url_logs_to_self_hosted_server(temp_dir):
-    from urllib.parse import parse_qs, urlparse
-
-    import trackio.context_vars as context_vars
-
     project = "test_self_hosted"
     run_name = "self-hosted-run"
 
@@ -355,6 +353,8 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
 
 def test_local_dashboard_supports_mcp(temp_dir):
     pytest.importorskip("mcp")
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
 
     project = "test_local_mcp"
     run_name = "mcp-run"
@@ -370,9 +370,6 @@ def test_local_dashboard_supports_mcp(temp_dir):
     )
 
     async def check_mcp() -> None:
-        from mcp import ClientSession
-        from mcp.client.streamable_http import streamable_http_client
-
         async with streamable_http_client(f"{url.rstrip('/')}/mcp") as (
             read_stream,
             write_stream,

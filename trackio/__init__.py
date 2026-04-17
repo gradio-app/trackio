@@ -258,11 +258,10 @@ def init(
             or the write-access URL printed when the dashboard starts). Logging and other
             remote calls require that token; a base URL without ``write_token`` is not
             enough. Example:
-            ``"http://127.0.0.1:7860?write_token=..."``. When set, metrics are sent to
+            ``"https://trackio.internal.example.com?write_token=..."``. When set, metrics are sent to
             that server over HTTP instead of creating or syncing to a Hugging Face
-            Space. The server does not need to live on Hugging Face. Can also be set
-            via the `TRACKIO_SERVER_URL` environment variable. Ignored when `space_id`
-            or `TRACKIO_SPACE_ID` is set (Space configuration wins).
+            Space. Can also be set via the `TRACKIO_SERVER_URL` environment variable. 
+            Ignored when `space_id` or `TRACKIO_SPACE_ID` is set.
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
