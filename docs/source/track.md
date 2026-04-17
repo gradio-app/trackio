@@ -322,7 +322,7 @@ trackio.init(project="my_project", name="my_first_run", resume="must")
 ```
 
 This will load the most recently created run with that name so you can keep
-logging data using the same `run_id`.
+logging data using the same `run_id`. But if you set `resume="must"`, and no previous run exists with the same name, Trackio will raise an error. 
 
 For more flexibility, use `resume="allow"`. This will resume the latest run with
 that name if one exists, or create a new run otherwise.
