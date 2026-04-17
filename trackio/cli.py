@@ -240,9 +240,9 @@ def main():
     )
     sync_parser.add_argument(
         "--sdk",
-        choices=["gradio", "static"],
-        default="gradio",
-        help="The type of Space to deploy. 'gradio' (default) deploys a live Gradio server. 'static' deploys a static Space that reads from an HF Bucket.",
+        choices=["docker", "gradio", "static"],
+        default="docker",
+        help="The type of Space to deploy for a new Space. 'docker' (default) deploys a live Trackio server on the Docker SDK (faster cold-start). 'gradio' deploys a Gradio Space (kept for backwards compatibility). 'static' deploys a static Space that reads from an HF Bucket. Ignored if the Space already exists.",
     )
 
     freeze_parser = subparsers.add_parser(

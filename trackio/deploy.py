@@ -69,6 +69,27 @@ def _readme_linked_hub_yaml(dataset_id: str | None) -> str:
 _SPACE_APP_PY = "import trackio\ntrackio.show()\n"
 
 
+_SPACE_DOCKERFILE = """FROM python:3.11-slim
+
+RUN useradd -m -u 1000 user
+USER user
+
+ENV PATH="/home/user/.local/bin:${PATH}" \\
+    PYTHONUNBUFFERED=1 \\
+    GRADIO_SERVER_NAME=0.0.0.0 \\
+    GRADIO_SERVER_PORT=7860
+
+WORKDIR /home/user/app
+
+COPY --chown=user . /home/user/app
+
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+EXPOSE 7860
+CMD ["python", "app.py"]
+"""
+
+
 def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1.5):
     delay = initial_delay
     for attempt in range(1, retries + 1):
@@ -162,9 +183,13 @@ def deploy_as_space(
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
+    sdk: str = "docker",
 ):
     if on_spaces():  # in case a repo with this function is uploaded to spaces
         return
+
+    if sdk not in ("docker", "gradio"):
+        raise ValueError(f"sdk must be 'docker' or 'gradio', got '{sdk}'")
 
     if dataset_id is not None and bucket_id is not None:
         raise ValueError(
@@ -179,7 +204,7 @@ def deploy_as_space(
         huggingface_hub.create_repo(
             space_id,
             private=private,
-            space_sdk="gradio",
+            space_sdk=sdk,
             space_storage=space_storage,
             repo_type="space",
             exist_ok=True,
@@ -191,7 +216,7 @@ def deploy_as_space(
             huggingface_hub.create_repo(
                 space_id,
                 private=private,
-                space_sdk="gradio",
+                space_sdk=sdk,
                 space_storage=space_storage,
                 repo_type="space",
                 exist_ok=True,
@@ -199,16 +224,16 @@ def deploy_as_space(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    # We can assume huggingface-hub is available; requirements.txt pins trackio.
-    # Make sure necessary dependencies are installed by creating a requirements.txt.
     is_source_install = _is_trackio_installed_from_source()
 
     if bucket_id is not None:
         create_bucket_if_not_exists(bucket_id, private=private)
 
+    sdk_extra = "app_port: 7860\n" if sdk == "docker" else ""
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
-        readme_content = readme_content.replace("sdk_version: {GRADIO_VERSION}\n", "")
+        readme_content = readme_content.replace("{SDK}", sdk)
+        readme_content = readme_content.replace("{SDK_EXTRA}", sdk_extra)
         readme_content = readme_content.replace("{APP_FILE}", "app.py")
         readme_content = readme_content.replace(
             "{LINKED_HUB_METADATA}", _readme_linked_hub_yaml(dataset_id)
@@ -217,6 +242,14 @@ def deploy_as_space(
         hf_api.upload_file(
             path_or_fileobj=readme_buffer,
             path_in_repo="README.md",
+            repo_id=space_id,
+            repo_type="space",
+        )
+
+    if sdk == "docker":
+        hf_api.upload_file(
+            path_or_fileobj=io.BytesIO(_SPACE_DOCKERFILE.encode("utf-8")),
+            path_in_repo="Dockerfile",
             repo_id=space_id,
             repo_type="space",
         )
@@ -317,6 +350,7 @@ def create_space_if_not_exists(
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
+    sdk: str = "docker",
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist.
@@ -372,6 +406,7 @@ def create_space_if_not_exists(
         dataset_id,
         bucket_id,
         private,
+        sdk=sdk,
     )
     print("* Waiting for Space to be ready...")
     _wait_until_space_running(space_id)
@@ -488,6 +523,7 @@ def sync_incremental(
     space_id: str,
     private: bool | None = None,
     pending_only: bool = False,
+    sdk: str = "docker",
 ) -> None:
     """
     Syncs a local Trackio project to a Space via the bulk_log API endpoints
@@ -498,11 +534,13 @@ def sync_incremental(
         space_id: The HF Space ID to sync to.
         private: Whether to make the Space private if creating.
         pending_only: If True, only sync rows tagged with space_id (pending data).
+        sdk: The Space SDK to use when creating a new Space. Ignored if the Space
+            already exists.
     """
     print(
         f"* Syncing project '{project}' to: {SPACE_URL.format(space_id=space_id)} (please wait...)"
     )
-    create_space_if_not_exists(space_id, private=private)
+    create_space_if_not_exists(space_id, private=private, sdk=sdk)
     wait_until_space_exists(space_id)
     hf_token = huggingface_hub.utils.get_token()
     expected_run_counts: Counter[str] = Counter()
@@ -791,7 +829,7 @@ def sync(
     private: bool | None = None,
     force: bool = False,
     run_in_background: bool = False,
-    sdk: str = "gradio",
+    sdk: str = "docker",
     dataset_id: str | None = None,
     bucket_id: str | None = None,
 ) -> str:
@@ -818,10 +856,12 @@ def sync(
         run_in_background (`bool`, *optional*, defaults to `False`):
             If `True`, the Space creation and database upload will be run in a background thread.
             If `False`, all the steps will be run synchronously.
-        sdk (`str`, *optional*, defaults to `"gradio"`):
-            The type of Space to deploy. `"gradio"` deploys a Gradio Space with a live
-            server. `"static"` freezes the Space: deploys a static Space that reads from an HF Bucket
-            (no server needed).
+        sdk (`str`, *optional*, defaults to `"docker"`):
+            The type of Space to deploy. `"docker"` (default) deploys a Docker Space that runs
+            the Trackio server (faster cold-start than Gradio since only Trackio's dependencies
+            are installed). `"gradio"` deploys a Gradio Space (kept for backwards compatibility).
+            `"static"` freezes the Space: deploys a static Space that reads from an HF Bucket
+            (no server needed). When the Space already exists, the existing SDK is honored.
         dataset_id (`str`, *optional*):
             Deprecated. Use `bucket_id` instead.
         bucket_id (`str`, *optional*):
@@ -830,8 +870,8 @@ def sync(
     Returns:
         `str`: The Space ID of the synced project.
     """
-    if sdk not in ("gradio", "static"):
-        raise ValueError(f"sdk must be 'gradio' or 'static', got '{sdk}'")
+    if sdk not in ("docker", "gradio", "static"):
+        raise ValueError(f"sdk must be 'docker', 'gradio', or 'static', got '{sdk}'")
     if space_id is None:
         space_id = SQLiteStorage.get_space_id(project)
     if space_id is None:
@@ -840,15 +880,20 @@ def sync(
         space_id, dataset_id, bucket_id
     )
 
+    resolved_sdk = sdk
+
     def _do_sync():
+        nonlocal resolved_sdk
         try:
             info = huggingface_hub.HfApi().space_info(space_id)
             existing_sdk = info.sdk
-            if existing_sdk and existing_sdk != sdk:
+            if existing_sdk == "static" and sdk != "static":
                 raise ValueError(
-                    f"Space '{space_id}' is a '{existing_sdk}' Space but sdk='{sdk}' was requested. "
+                    f"Space '{space_id}' is a static Space but sdk='{sdk}' was requested. "
                     f"The sdk must match the existing Space type."
                 )
+            if existing_sdk in ("docker", "gradio") and sdk in ("docker", "gradio"):
+                resolved_sdk = existing_sdk
         except RepositoryNotFoundError:
             pass
 
@@ -885,7 +930,7 @@ def sync(
                     f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
                 )
                 create_space_if_not_exists(
-                    space_id, bucket_id=bucket_id, private=private
+                    space_id, bucket_id=bucket_id, private=private, sdk=resolved_sdk
                 )
                 _wait_for_remote_sync(
                     RemoteClient(space_id, verbose=False, httpx_kwargs={"timeout": 90}),
@@ -896,7 +941,13 @@ def sync(
                     ),
                 )
             else:
-                sync_incremental(project, space_id, private=private, pending_only=False)
+                sync_incremental(
+                    project,
+                    space_id,
+                    private=private,
+                    pending_only=False,
+                    sdk=resolved_sdk,
+                )
         SQLiteStorage.set_project_metadata(project, "space_id", space_id)
 
     if run_in_background:
@@ -955,14 +1006,14 @@ def freeze(
 
     try:
         info = huggingface_hub.HfApi().space_info(space_id)
-        if info.sdk != "gradio":
+        if info.sdk not in ("gradio", "docker"):
             raise ValueError(
-                f"Space '{space_id}' is not a Gradio Space (sdk='{info.sdk}'). "
-                f"freeze() requires a Gradio Space as the source."
+                f"Space '{space_id}' is not a live Trackio Space (sdk='{info.sdk}'). "
+                f"freeze() requires a Trackio Space running the gradio or docker SDK as the source."
             )
     except RepositoryNotFoundError:
         raise ValueError(
-            f"Space '{space_id}' not found. Provide an existing Gradio Space ID."
+            f"Space '{space_id}' not found. Provide an existing Trackio Space ID."
         )
 
     source_bucket_id = _get_source_bucket(space_id)

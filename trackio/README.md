@@ -1,7 +1,6 @@
 ---
-sdk: gradio
-sdk_version: {GRADIO_VERSION}
-app_file: {APP_FILE}
+sdk: {SDK}
+{SDK_EXTRA}app_file: {APP_FILE}
 tags:
  - trackio
 {LINKED_HUB_METADATA}hf_oauth: true
