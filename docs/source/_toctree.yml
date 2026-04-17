@@ -21,6 +21,8 @@
     title: Python API for Managing Runs
   - local: cli_commands
     title: CLI Commands
+  - local: storage_schema
+    title: Storage Schema and Direct Queries
   - local: api_mcp_server
     title: API and MCP Server
   - local: alerts

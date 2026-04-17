@@ -39,6 +39,8 @@ Trackio's main features:
   - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
   - Visualize experiments with a **Svelte 5** dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
+  - Use `trackio query project --project <name> --sql "SELECT ..."` for read-only SQL when `trackio list` and `trackio get` are not enough
+  - See the storage schema and direct query reference at https://huggingface.co/docs/trackio/storage_schema
 
 - **Free**: Everything here, including hosting on Hugging Face, is free!
 
@@ -265,6 +267,8 @@ These numbers were measured against a free-tier Hugging Face Space (2 vCPU / 16 
 ## Note: Trackio is in Beta (DB Schema May Change)
 
 Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio sqlite database may change, which may require migrating or deleting existing database files (located by default at: `~/.cache/huggingface/trackio`).  
+
+The current SQLite and parquet layout is documented in the [Storage Schema and Direct Queries](https://huggingface.co/docs/trackio/storage_schema) guide, including examples for `trackio query`.
 
 Since Trackio is in beta, your feedback is welcome! Please create issues with bug reports or feature requests.
 

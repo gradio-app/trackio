@@ -653,6 +653,10 @@ def get_logs(project: str, run: str) -> list[dict[str, Any]]:
     return SQLiteStorage.get_logs(project, run, max_points=1500)
 
 
+def query_project(project: str, query: str) -> dict[str, Any]:
+    return SQLiteStorage.query_project(project, query)
+
+
 def get_settings() -> dict[str, Any]:
     return {
         "logo_urls": utils.get_logo_urls(),
@@ -738,6 +742,7 @@ def _api_registry() -> dict[str, Any]:
         "get_system_logs": get_system_logs,
         "get_snapshot": get_snapshot,
         "get_logs": get_logs,
+        "query_project": query_project,
         "get_settings": get_settings,
         "get_project_files": get_project_files,
         "delete_run": delete_run,
