@@ -234,6 +234,53 @@ def _logs_read_cache_put(
         _LOGS_READ_CACHE[key] = (mtime_ns, snapshot)
 
 
+_SYSTEM_LOGS_READ_CACHE: dict[tuple[Any, ...], tuple[int, list[dict[str, Any]]]] = {}
+
+
+def _system_logs_read_cache_key(
+    project: str,
+    run: str | None,
+    run_id: str | None,
+) -> tuple[Any, ...]:
+    return ("system_logs", project, run or "", run_id or "")
+
+
+def _system_logs_read_cache_get(
+    db_path: Path, key: tuple[Any, ...]
+) -> list[dict[str, Any]] | None:
+    if not _spaces_logs_read_cache_enabled():
+        return None
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        return None
+    with _LOGS_READ_CACHE_LOCK:
+        item = _SYSTEM_LOGS_READ_CACHE.get(key)
+        if item is None:
+            return None
+        cached_mtime, logs = item
+        if cached_mtime != mtime_ns:
+            del _SYSTEM_LOGS_READ_CACHE[key]
+            return None
+    return [{**d} for d in logs]
+
+
+def _system_logs_read_cache_put(
+    db_path: Path, key: tuple[Any, ...], logs: list[dict[str, Any]]
+) -> None:
+    if not _spaces_logs_read_cache_enabled():
+        return
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        return
+    snapshot = [{**d} for d in logs]
+    with _LOGS_READ_CACHE_LOCK:
+        while len(_SYSTEM_LOGS_READ_CACHE) >= _LOGS_READ_CACHE_MAX_KEYS:
+            _SYSTEM_LOGS_READ_CACHE.pop(next(iter(_SYSTEM_LOGS_READ_CACHE)))
+        _SYSTEM_LOGS_READ_CACHE[key] = (mtime_ns, snapshot)
+
+
 class SQLiteStorage:
     _dataset_import_attempted = False
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
@@ -1447,6 +1494,29 @@ class SQLiteStorage:
                 return 0
 
     @staticmethod
+    def _fetch_system_logs_with_cursor(
+        cursor: sqlite3.Cursor,
+        run_identity: tuple[str, Any],
+    ) -> list[dict[str, Any]]:
+        cursor.execute(
+            f"""
+            SELECT timestamp, metrics
+            FROM system_metrics
+            WHERE {run_identity[0]} = ?
+            ORDER BY timestamp
+            """,
+            (run_identity[1],),
+        )
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            metrics = orjson.loads(row["metrics"])
+            metrics = deserialize_values(metrics)
+            metrics["timestamp"] = row["timestamp"]
+            results.append(metrics)
+        return results
+
+    @staticmethod
     def get_system_logs(
         project: str, run: str | None = None, run_id: str | None = None
     ) -> list[dict]:
@@ -1455,36 +1525,97 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
 
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        cache_key = _system_logs_read_cache_key(project, run, run_id)
+        cached = _system_logs_read_cache_get(db_path, cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
                 run_identity = SQLiteStorage._resolve_run_identity(
                     conn, run_name=run, run_id=run_id, table="system_metrics"
                 )
                 if run_identity is None:
-                    return []
-                cursor.execute(
-                    f"""
-                    SELECT timestamp, metrics
-                    FROM system_metrics
-                    WHERE {run_identity[0]} = ?
-                    ORDER BY timestamp
-                    """,
-                    (run_identity[1],),
-                )
+                    logs: list[dict[str, Any]] = []
+                else:
+                    logs = SQLiteStorage._fetch_system_logs_with_cursor(
+                        cursor, run_identity
+                    )
+        except sqlite3.OperationalError as e:
+            if "no such table: system_metrics" in str(e):
+                return []
+            raise
 
-                rows = cursor.fetchall()
-                results = []
-                for row in rows:
-                    metrics = orjson.loads(row["metrics"])
-                    metrics = deserialize_values(metrics)
-                    metrics["timestamp"] = row["timestamp"]
-                    results.append(metrics)
-                return results
-            except sqlite3.OperationalError as e:
-                if "no such table: system_metrics" in str(e):
-                    return []
-                raise
+        _system_logs_read_cache_put(db_path, cache_key, logs)
+        return [{**d} for d in logs]
+
+    @staticmethod
+    def get_system_logs_batch(
+        project: str,
+        runs: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        if not runs:
+            return []
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return [
+                {
+                    "run": r.get("run"),
+                    "run_id": r.get("run_id"),
+                    "logs": [],
+                }
+                for r in runs
+            ]
+
+        out: list[dict[str, Any]] = []
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                for r in runs:
+                    run = r.get("run")
+                    run_id = r.get("run_id")
+                    cache_key = _system_logs_read_cache_key(project, run, run_id)
+                    cached = _system_logs_read_cache_get(db_path, cache_key)
+                    if cached is not None:
+                        out.append(
+                            {
+                                "run": run,
+                                "run_id": run_id,
+                                "logs": cached,
+                            }
+                        )
+                        continue
+                    run_identity = SQLiteStorage._resolve_run_identity(
+                        conn, run_name=run, run_id=run_id, table="system_metrics"
+                    )
+                    if run_identity is None:
+                        logs = []
+                    else:
+                        logs = SQLiteStorage._fetch_system_logs_with_cursor(
+                            cursor, run_identity
+                        )
+                    _system_logs_read_cache_put(db_path, cache_key, logs)
+                    out.append(
+                        {
+                            "run": run,
+                            "run_id": run_id,
+                            "logs": [{**d} for d in logs],
+                        }
+                    )
+        except sqlite3.OperationalError as e:
+            if "no such table: system_metrics" in str(e):
+                return [
+                    {
+                        "run": r.get("run"),
+                        "run_id": r.get("run_id"),
+                        "logs": [],
+                    }
+                    for r in runs
+                ]
+            raise
+
+        return out
 
     @staticmethod
     def get_all_system_metrics_for_run(
