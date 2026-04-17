@@ -25,8 +25,8 @@ def _list_bucket_file_paths(bucket_id: str, prefix: str | None = None) -> list[s
 def download_bucket_to_trackio_dir(bucket_id: str) -> None:
     TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
     sync_bucket(
-        source=f"hf://buckets/{bucket_id}",
-        dest=str(TRACKIO_DIR.parent),
+        source=f"hf://buckets/{bucket_id}/trackio",
+        dest=str(TRACKIO_DIR),
         quiet=True,
     )
 
