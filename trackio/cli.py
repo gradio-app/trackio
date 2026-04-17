@@ -9,6 +9,7 @@ from trackio.cli_helpers import (
     format_list,
     format_metric_values,
     format_project_summary,
+    format_query_result,
     format_run_summary,
     format_snapshot,
     format_system_metric_names,
@@ -128,6 +129,24 @@ def _extract_reports(
                         }
                     )
     return reports
+
+
+def _handle_query(args):
+    remote = _get_remote(args)
+    try:
+        if remote:
+            result = remote.predict(args.project, args.sql, api_name="/query_project")
+        else:
+            result = SQLiteStorage.query_project(args.project, args.sql)
+    except FileNotFoundError as e:
+        error_exit(str(e))
+    except ValueError as e:
+        error_exit(str(e))
+
+    if args.json:
+        print(format_json(result))
+    else:
+        print(format_query_result(result))
 
 
 def main():
@@ -581,6 +600,31 @@ def main():
         help="Report metric name",
     )
     get_report_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
+    query_parser = subparsers.add_parser(
+        "query",
+        help="Run a read-only SQL query against a project database",
+    )
+    query_subparsers = query_parser.add_subparsers(dest="query_type", required=True)
+    query_project_parser = query_subparsers.add_parser(
+        "project",
+        help="Run a read-only SQL query against a project's SQLite database",
+    )
+    query_project_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    query_project_parser.add_argument(
+        "--sql",
+        required=True,
+        help="Read-only SQL query to execute",
+    )
+    query_project_parser.add_argument(
         "--json",
         action="store_true",
         help="Output in JSON format",
@@ -1152,6 +1196,9 @@ def main():
                     if idx < len(reports):
                         output.append("-" * 80)
                 print("\n".join(output))
+    elif args.command == "query":
+        if args.query_type == "project":
+            _handle_query(args)
     elif args.command == "skills":
         if args.skills_action == "add":
             _handle_skills_add(args)
@@ -1184,6 +1231,7 @@ def _handle_skills_add(args):
         "alerts.md",
         "logging_metrics.md",
         "retrieving_metrics.md",
+        "storage_schema.md",
     ]
 
     if not (args.cursor or args.claude or args.codex or args.opencode or args.dest):

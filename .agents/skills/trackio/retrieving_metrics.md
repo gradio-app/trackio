@@ -18,6 +18,7 @@ The `trackio` CLI provides direct terminal access to query Trackio experiment tr
 | Get metric around step | `trackio get metric ... --metric <name> --around <N> --window <W>` |
 | Get all metrics snapshot | `trackio get snapshot --project <name> --run <name> --step <N>` |
 | Get system metrics | `trackio get system-metric --project <name> --run <name>` |
+| Run direct SQL | `trackio query project --project <name> --sql "SELECT ..."` |
 | Query remote Space | `trackio list projects --space <space_id_or_url>` |
 | Show dashboard | `trackio show [--project <name>]` |
 | Sync to Space | `trackio sync --project <name> --space-id <space_id>` |
@@ -69,14 +70,23 @@ trackio get system-metric --project <name> --run <name> --metric <name>  # Speci
 trackio get system-metric --project <name> --run <name> --json
 ```
 
+### Query Command
+
+```bash
+trackio query project --project <name> --sql "SELECT name FROM sqlite_master WHERE type = 'table'"
+trackio query project --project <name> --sql "PRAGMA table_info(metrics)" --json
+trackio query project --project <name> --sql "SELECT run_name, MAX(step) AS last_step FROM metrics GROUP BY run_name"
+```
+
 ### Remote Space Queries
 
-All `list` and `get` commands support querying a remote HF Space with `--space`:
+All `list`, `get`, and `query` commands support querying a remote HF Space with `--space`:
 
 ```bash
 trackio list projects --space user/my-space              # Space ID
 trackio list projects --space https://user-my-space.hf.space  # Space URL
 trackio get metric --project <name> --run <name> --metric loss --space user/my-space
+trackio query project --project <name> --sql "SELECT COUNT(*) AS num_alerts FROM alerts" --space user/my-space
 trackio list projects --space user/private-space --hf-token hf_xxx  # Private Space
 ```
 
@@ -100,7 +110,7 @@ trackio sync --project <name> --space-id <space_id> --force   # Overwrite
 
 ## Output Formats
 
-All `list` and `get` commands support two output formats:
+All `list`, `get`, and `query` commands support two output formats:
 
 - **Human-readable** (default): Formatted text for terminal viewing
 - **JSON** (with `--json` flag): Structured JSON for programmatic use
@@ -157,6 +167,9 @@ trackio get run --project my-project --run my-run --json > run_summary.json
 
 # Filter runs with jq
 trackio list runs --project my-project --json | jq '.runs[] | select(startswith("train"))'
+
+# Run a direct SQL aggregate
+trackio query project --project my-project --sql "SELECT run_name, MAX(step) AS last_step FROM metrics GROUP BY run_name" --json
 ```
 
 ### LLM Agent Workflow
@@ -179,6 +192,9 @@ trackio list alerts --project my-project --json --since "2025-06-01T00:00:00"
 
 # 6. When an alert fires at step N, get all metrics around that point
 trackio get snapshot --project my-project --run my-run --around 200 --window 5 --json
+
+# 7. Fall back to direct SQL for one-off inspection
+trackio query project --project my-project --sql "SELECT timestamp, run_name, level, title FROM alerts ORDER BY timestamp DESC LIMIT 20" --json
 ```
 
 ## Error Handling
@@ -196,9 +212,10 @@ All errors exit with non-zero status code and write to stderr.
 - `--project`: Project name (required for most commands)
 - `--run`: Run name (required for run-specific commands)
 - `--metric`: Metric name (required for metric-specific commands)
+- `--sql`: Read-only SQL query (for `trackio query`)
 - `--json`: Output in JSON format instead of human-readable
-- `--space`: HF Space ID (e.g. `user/space`) or Space URL to query remotely (for `list`/`get` commands)
-- `--hf-token`: HF token for accessing private Spaces (for `list`/`get` commands with `--space`)
+- `--space`: HF Space ID (e.g. `user/space`) or Space URL to query remotely (for `list`/`get`/`query` commands)
+- `--hf-token`: HF token for accessing private Spaces (for `list`/`get`/`query` commands with `--space`)
 - `--step`: Exact step filter (for `get metric`, `get snapshot`)
 - `--around`: Center step for window filter (for `get metric`, `get snapshot`)
 - `--at-time`: Center ISO timestamp for window filter (for `get metric`, `get snapshot`)
@@ -258,8 +275,24 @@ All errors exit with non-zero status code and write to stderr.
 }
 ```
 
+### Query Result
+```json
+{
+  "project": "my-project",
+  "query": "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+  "columns": ["name"],
+  "rows": [
+    {"name": "alerts"},
+    {"name": "configs"},
+    {"name": "metrics"}
+  ],
+  "row_count": 3
+}
+```
+
 ## References
 
 - **Complete CLI documentation**: See [docs/source/cli_commands.md](docs/source/cli_commands.md)
+- **Storage schema and direct SQL**: See [storage_schema.md](storage_schema.md)
 - **API and MCP Server**: See [docs/source/api_mcp_server.md](docs/source/api_mcp_server.md)
 
