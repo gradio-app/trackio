@@ -98,13 +98,17 @@ def _cleanup_current_run():
 
 
 def _safe_get_runs_for_init(
-    project: str, space_id: str | None, resume: str
+    project: str,
+    space_id: str | None,
+    resume: str,
+    remote_client: RemoteClient | None = None,
+    check_existing_for_never: bool = False,
 ) -> list[str]:
     if space_id is not None:
-        if resume == "never":
+        if resume == "never" and not check_existing_for_never:
             return []
         try:
-            client = RemoteClient(
+            client = remote_client or RemoteClient(
                 space_id,
                 hf_token=huggingface_hub.utils.get_token(),
                 verbose=False,
@@ -126,13 +130,17 @@ def _safe_get_runs_for_init(
 
 
 def _safe_get_last_step_for_init(
-    project: str, run_name: str, space_id: str | None, resumed: bool
+    project: str,
+    run_name: str,
+    space_id: str | None,
+    resumed: bool,
+    remote_client: RemoteClient | None = None,
 ) -> int | None:
     if not resumed:
         return None
     if space_id is not None:
         try:
-            client = RemoteClient(
+            client = remote_client or RemoteClient(
                 space_id,
                 hf_token=huggingface_hub.utils.get_token(),
                 verbose=False,
@@ -143,6 +151,7 @@ def _safe_get_last_step_for_init(
             if isinstance(summary, dict):
                 last_step = summary.get("last_step")
                 return last_step if isinstance(last_step, int) else None
+            return None
         except Exception as e:
             _emit_nonfatal_warning(
                 f"trackio.init() could not recover the previous step for run '{run_name}' on Space '{space_id}': {e}. Continuing from step 0."
@@ -338,7 +347,26 @@ def init(
                 )
     context_vars.current_project.set(project)
 
-    existing_runs = _safe_get_runs_for_init(project, space_id, resume)
+    remote_client = None
+    if space_id is not None:
+        try:
+            remote_client = RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=False,
+            )
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not create a Space client for '{space_id}': {e}. Continuing with local fallback metadata lookups."
+            )
+
+    existing_runs = _safe_get_runs_for_init(
+        project,
+        space_id,
+        resume,
+        remote_client=remote_client,
+        check_existing_for_never=name is not None,
+    )
 
     if resume == "must":
         if name is None:
@@ -361,7 +389,13 @@ def init(
         raise ValueError("resume must be one of: 'must', 'allow', or 'never'")
 
     initial_last_step = (
-        _safe_get_last_step_for_init(project, name, space_id, resumed)
+        _safe_get_last_step_for_init(
+            project,
+            name,
+            space_id,
+            resumed,
+            remote_client=remote_client,
+        )
         if name is not None
         else None
     )
