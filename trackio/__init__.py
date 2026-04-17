@@ -471,7 +471,10 @@ def finish():
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.finish().")
-    run.finish()
+    try:
+        run.finish()
+    finally:
+        context_vars.current_run.set(None)
 
 
 def alert(
