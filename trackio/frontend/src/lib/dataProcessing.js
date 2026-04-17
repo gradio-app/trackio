@@ -9,7 +9,7 @@ const RESERVED_KEYS = [
 
 export function processRunData(
   logs,
-  runName,
+  run,
   smoothingGranularity,
   xAxis,
   logScaleX,
@@ -59,20 +59,37 @@ export function processRunData(
     });
   }
 
+  const runId = typeof run === "string" ? run : (run?.id ?? run?.name);
+  const runName = typeof run === "string" ? run : (run?.name ?? run?.id);
+
   if (smoothingGranularity > 0) {
     const originals = rows.map((r) => ({
       ...r,
       run: runName,
+      run_id: runId,
+      series_key: runId,
       data_type: "original",
     }));
     const smoothed = smoothData(rows, yCols, smoothingGranularity).map(
-      (r) => ({ ...r, run: runName, data_type: "smoothed" }),
+      (r) => ({
+        ...r,
+        run: runName,
+        run_id: runId,
+        series_key: runId,
+        data_type: "smoothed",
+      }),
     );
     return { rows: [...originals, ...smoothed], xColumn };
   }
 
   return {
-    rows: rows.map((r) => ({ ...r, run: runName, data_type: "original" })),
+    rows: rows.map((r) => ({
+      ...r,
+      run: runName,
+      run_id: runId,
+      series_key: runId,
+      data_type: "original",
+    })),
     xColumn,
   };
 }
@@ -123,7 +140,7 @@ export function computeMetricPlotData(masterData, xColumn, metric, xLim) {
   if (xLim) {
     const groups = new Map();
     for (const r of relevant) {
-      const key = `${r.run || ""}\0${r.data_type || "original"}`;
+        const key = `${r.series_key || r.run || ""}\0${r.data_type || "original"}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(r);
     }
@@ -157,7 +174,10 @@ export function computeMetricPlotData(masterData, xColumn, metric, xLim) {
     if (yMin !== Infinity) yExtent = [yMin, yMax];
   }
   return {
-    data: downsample(relevant, xColumn, metric, "run", xLim, ["run"]).data,
+    data: downsample(relevant, xColumn, metric, "series_key", xLim, [
+      "run",
+      "series_key",
+    ]).data,
     yExtent,
   };
 }

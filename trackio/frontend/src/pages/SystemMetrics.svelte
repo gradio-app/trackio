@@ -144,7 +144,8 @@
     const allMetrics = new Set();
 
     for (const run of selectedRuns) {
-      const logs = rawDataCache.get(run);
+      const runKey = run.id ?? run.name;
+      const logs = rawDataCache.get(runKey);
       if (!logs || logs.length === 0) continue;
 
       const firstTs = new Date(logs[0].timestamp).getTime();
@@ -155,7 +156,14 @@
             allMetrics.add(k);
           }
         });
-        allRows.push({ ...row, time: timeSeconds, run, data_type: "original" });
+        allRows.push({
+          ...row,
+          time: timeSeconds,
+          run: run.name,
+          run_id: runKey,
+          series_key: runKey,
+          data_type: "original",
+        });
       });
     }
 
@@ -177,9 +185,10 @@
 
     let fetched = false;
     for (const run of selectedRuns) {
-      if (!rawDataCache.has(run)) {
+      const runKey = run.id ?? run.name;
+      if (!rawDataCache.has(runKey)) {
         const logs = await getSystemLogs(project, run);
-        rawDataCache.set(run, logs);
+        rawDataCache.set(runKey, logs);
         fetched = true;
       }
     }
@@ -196,9 +205,10 @@
     let changed = false;
     for (const run of selectedRuns) {
       const logs = await getSystemLogs(project, run);
-      const prev = rawDataCache.get(run);
+      const runKey = run.id ?? run.name;
+      const prev = rawDataCache.get(runKey);
       if (!prev || logs.length !== prev.length) {
-        rawDataCache.set(run, logs);
+        rawDataCache.set(runKey, logs);
         changed = true;
       }
     }
@@ -343,8 +353,9 @@
         relevant.push({
           [xColumn]: row[xColumn],
           value,
-          seriesKey: `${row.run}\0${groupName}\0${subName}`,
+          seriesKey: `${row.series_key}\0${groupName}\0${subName}`,
           run: row.run,
+          series_key: row.series_key,
           device: deviceLabel(groupName, subName),
           data_type: row.data_type,
         });
@@ -394,7 +405,7 @@
         "value",
         "seriesKey",
         xLim,
-        ["seriesKey", "run", "device"],
+        ["seriesKey", "run", "series_key", "device"],
       ).data,
       yExtent,
     };
@@ -450,6 +461,8 @@
                   y={metric}
                   title={metricTitle(metric, 1)}
                   colorMap={runColorMap}
+                  colorField="series_key"
+                  colorDisplayField="run"
                   {xLim}
                   {yExtent}
                   onSelect={handlePlotSelect}
@@ -479,7 +492,8 @@
                     y="value"
                     yLabel={metricTitleFromName(metricName)}
                     title={metricTitleFromName(metricName)}
-                    colorField="run"
+                    colorField="series_key"
+                    colorDisplayField="run"
                     colorLabel="Run"
                     colorMap={runColorMap}
                     dashField="device"

@@ -64,6 +64,14 @@
   let availableSystemDevices = $state([]);
   let selectedSystemDevices = $state([]);
 
+  function runKey(run) {
+    return run?.id ?? run?.name;
+  }
+
+  let selectedRunRecords = $derived(
+    runs.filter((run) => selectedRuns.includes(runKey(run))),
+  );
+
   function handleNavigate(page) {
     currentPage = page;
     navigateTo(page);
@@ -112,18 +120,24 @@
     try {
       const data = await getRunsForProject(selectedProject);
       const newRuns = data || [];
-      const newRunNames = new Set(newRuns);
+      const newRunIds = new Set(newRuns.map(runKey));
 
       if (JSON.stringify(runs) !== JSON.stringify(newRuns)) {
         const prevSelected = new Set(selectedRuns);
         runs = newRuns;
 
-        const kept = selectedRuns.filter((r) => newRunNames.has(r));
+        const kept = selectedRuns.filter((r) => newRunIds.has(r));
+        const orderedIds = newRuns.map(runKey);
 
         if (kept.length === 0 && selectedRuns.length === 0) {
-          selectedRuns = [...newRuns];
+          selectedRuns = [...orderedIds];
         } else {
-          selectedRuns = [...kept, ...newRuns.filter((r) => !new Set([...kept, ...Array.from(prevSelected)]).has(r))];
+          selectedRuns = [
+            ...kept,
+            ...orderedIds.filter(
+              (r) => !new Set([...kept, ...Array.from(prevSelected)]).has(r),
+            ),
+          ];
         }
       }
     } catch (e) {
@@ -358,7 +372,7 @@
       {#if currentPage === "metrics"}
         <Metrics
           project={selectedProject}
-          {selectedRuns}
+          selectedRuns={selectedRunRecords}
           allRuns={runs}
           {smoothing}
           {xAxis}
@@ -373,16 +387,20 @@
       {:else if currentPage === "system"}
         <SystemMetrics
           project={selectedProject}
-          {selectedRuns}
+          selectedRuns={selectedRunRecords}
           {smoothing}
           {appBootstrapReady}
           bind:availableDevices={availableSystemDevices}
           bind:selectedDevices={selectedSystemDevices}
         />
       {:else if currentPage === "media"}
-        <Media project={selectedProject} {selectedRuns} {tableTruncateLength} />
+        <Media
+          project={selectedProject}
+          selectedRuns={selectedRunRecords}
+          {tableTruncateLength}
+        />
       {:else if currentPage === "reports"}
-        <Reports project={selectedProject} {selectedRuns} />
+        <Reports project={selectedProject} selectedRuns={selectedRunRecords} />
       {:else if currentPage === "runs"}
         <Runs
           project={selectedProject}

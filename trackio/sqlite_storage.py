@@ -746,19 +746,42 @@ class SQLiteStorage:
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    """SELECT run_name, MAX(step) as last_step, COUNT(*) as log_count
-                    FROM metrics GROUP BY run_name ORDER BY MIN(timestamp) ASC"""
-                )
-                rows = cursor.fetchall()
-                runs_meta = [
-                    {
-                        "name": row["run_name"],
-                        "last_step": row["last_step"],
-                        "log_count": row["log_count"],
-                    }
-                    for row in rows
-                ]
+                if SQLiteStorage._supports_run_ids(conn):
+                    cursor.execute(
+                        """SELECT run_id, run_name, MIN(timestamp) as created_at,
+                        MAX(step) as last_step, COUNT(*) as log_count
+                        FROM metrics
+                        GROUP BY run_id, run_name
+                        ORDER BY created_at ASC"""
+                    )
+                    rows = cursor.fetchall()
+                    runs_meta = [
+                        {
+                            "id": row["run_id"],
+                            "name": row["run_name"],
+                            "created_at": row["created_at"],
+                            "last_step": row["last_step"],
+                            "log_count": row["log_count"],
+                        }
+                        for row in rows
+                    ]
+                else:
+                    cursor.execute(
+                        """SELECT run_name, MIN(timestamp) as created_at,
+                        MAX(step) as last_step, COUNT(*) as log_count
+                        FROM metrics GROUP BY run_name ORDER BY created_at ASC"""
+                    )
+                    rows = cursor.fetchall()
+                    runs_meta = [
+                        {
+                            "id": row["run_name"],
+                            "name": row["run_name"],
+                            "created_at": row["created_at"],
+                            "last_step": row["last_step"],
+                            "log_count": row["log_count"],
+                        }
+                        for row in rows
+                    ]
         except sqlite3.OperationalError:
             runs_meta = []
         with open(output_dir / "runs.json", "w") as f:
@@ -1399,10 +1422,16 @@ class SQLiteStorage:
                 raise
 
     @staticmethod
-    def get_all_system_metrics_for_run(project: str, run: str) -> list[str]:
+    def get_all_system_metrics_for_run(
+        project: str, run: str | None = None, run_id: str | None = None
+    ) -> list[str]:
         """Get all system metric names for a specific project/run."""
         return SQLiteStorage._get_metric_names(
-            project, run, "system_metrics", exclude_keys={"timestamp"}
+            project,
+            run,
+            "system_metrics",
+            exclude_keys={"timestamp"},
+            run_id=run_id,
         )
 
     @staticmethod
@@ -1883,7 +1912,9 @@ class SQLiteStorage:
             shutil.move(str(source), str(target))
 
     @staticmethod
-    def rename_run(project: str, old_name: str, new_name: str) -> None:
+    def rename_run(
+        project: str, old_name: str, new_name: str, run_id: str | None = None
+    ) -> None:
         """Rename a run within the same project.
 
         Raises:
@@ -1905,7 +1936,7 @@ class SQLiteStorage:
                 cursor = conn.cursor()
                 supports_run_ids = SQLiteStorage._supports_run_ids(conn)
                 run_identity = SQLiteStorage._resolve_run_identity(
-                    conn, run_name=old_name
+                    conn, run_name=old_name, run_id=run_id
                 )
                 if run_identity is None:
                     raise ValueError(
@@ -2286,15 +2317,25 @@ class SQLiteStorage:
             return result
 
     @staticmethod
-    def get_all_metrics_for_run(project: str, run: str) -> list[str]:
+    def get_all_metrics_for_run(
+        project: str, run: str | None = None, run_id: str | None = None
+    ) -> list[str]:
         """Get all metric names for a specific project/run."""
         return SQLiteStorage._get_metric_names(
-            project, run, "metrics", exclude_keys={"timestamp", "step"}
+            project,
+            run,
+            "metrics",
+            exclude_keys={"timestamp", "step"},
+            run_id=run_id,
         )
 
     @staticmethod
     def _get_metric_names(
-        project: str, run: str, table: str, exclude_keys: set[str]
+        project: str,
+        run: str | None,
+        table: str,
+        exclude_keys: set[str],
+        run_id: str | None = None,
     ) -> list[str]:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -2303,14 +2344,19 @@ class SQLiteStorage:
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             try:
+                run_identity = SQLiteStorage._resolve_run_identity(
+                    conn, run_name=run, run_id=run_id, table=table
+                )
+                if run_identity is None:
+                    return []
                 cursor.execute(
                     f"""
                     SELECT metrics
                     FROM {table}
-                    WHERE run_name = ?
+                    WHERE {run_identity[0]} = ?
                     ORDER BY timestamp
                     """,
-                    (run,),
+                    (run_identity[1],),
                 )
 
                 rows = cursor.fetchall()
