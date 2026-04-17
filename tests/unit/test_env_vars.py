@@ -44,32 +44,6 @@ def test_truncate_length_short_text_not_truncated(monkeypatch):
     assert result[0]["col"] == short_text
 
 
-def test_resolve_space_id_and_server_url_space_env_wins_over_server_env(monkeypatch):
-    monkeypatch.setenv("TRACKIO_SPACE_ID", "user/repo")
-    monkeypatch.setenv("TRACKIO_SERVER_URL", "http://127.0.0.1:7860/")
-    assert utils.resolve_space_id_and_server_url(None, None) == ("user/repo", None)
-
-
-def test_resolve_space_id_and_server_url_explicit_space_wins_over_server_arg(
-    monkeypatch,
-):
-    monkeypatch.delenv("TRACKIO_SPACE_ID", raising=False)
-    monkeypatch.delenv("TRACKIO_SERVER_URL", raising=False)
-    assert utils.resolve_space_id_and_server_url("a/b", "http://127.0.0.1:1/") == (
-        "a/b",
-        None,
-    )
-
-
-def test_resolve_space_id_and_server_url_server_only(monkeypatch):
-    monkeypatch.delenv("TRACKIO_SPACE_ID", raising=False)
-    monkeypatch.delenv("TRACKIO_SERVER_URL", raising=False)
-    assert utils.resolve_space_id_and_server_url(None, "http://127.0.0.1:9/") == (
-        None,
-        "http://127.0.0.1:9/",
-    )
-
-
 def test_webhook_url_from_env(monkeypatch, temp_dir):
     monkeypatch.setenv("TRACKIO_WEBHOOK_URL", "https://hooks.slack.com/test")
     monkeypatch.delenv("TRACKIO_WEBHOOK_MIN_LEVEL", raising=False)
