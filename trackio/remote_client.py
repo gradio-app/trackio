@@ -5,7 +5,6 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from gradio_client import Client as GradioClient
 from huggingface_hub.utils import build_hf_headers
 
 HTTP_API_VERSION = 1
@@ -105,52 +104,6 @@ class _TrackioHTTPClient:
         return body.get("data")
 
 
-class _TrackioGradioCompatClient:
-    def __init__(
-        self,
-        src: str,
-        hf_token: str | None = None,
-        httpx_kwargs: dict[str, Any] | None = None,
-        verbose: bool = False,
-    ) -> None:
-        kwargs: dict[str, Any] = {"verbose": verbose}
-        if hf_token:
-            kwargs["hf_token"] = hf_token
-        if httpx_kwargs:
-            kwargs["httpx_kwargs"] = httpx_kwargs
-        self._client = GradioClient(src, **kwargs)
-
-    def predict(self, *args, api_name: str, **kwargs) -> Any:
-        try:
-            return self._client.predict(*args, api_name=api_name, **kwargs)
-        except Exception as e:
-            if "API Not Found" in str(e) or "api_name" in str(e):
-                raise RuntimeError(
-                    f"Space '{self._client.src}' does not support '{api_name}'. "
-                    "Redeploy with `trackio sync`."
-                ) from e
-            raise
-
-
-def _supports_http_api(
-    src: str,
-    hf_token: str | None = None,
-    httpx_kwargs: dict[str, Any] | None = None,
-) -> bool:
-    url = _resolve_src_url(src)
-    headers = build_hf_headers(token=hf_token)
-    kwargs = dict(httpx_kwargs or {})
-    kwargs.setdefault("timeout", 10)
-    try:
-        resp = httpx.get(urljoin(url, "version"), headers=headers, **kwargs)
-        if not resp.is_success:
-            return False
-        data = resp.json()
-        return data.get("api_version") == HTTP_API_VERSION
-    except Exception:
-        return False
-
-
 class RemoteClient:
     def __init__(
         self,
@@ -160,24 +113,9 @@ class RemoteClient:
         verbose: bool = False,
     ) -> None:
         self._space = space
-        try:
-            if _supports_http_api(space, hf_token=hf_token, httpx_kwargs=httpx_kwargs):
-                self._client = _TrackioHTTPClient(
-                    space, hf_token=hf_token, httpx_kwargs=httpx_kwargs
-                )
-            else:
-                self._client = _TrackioGradioCompatClient(
-                    space,
-                    hf_token=hf_token,
-                    httpx_kwargs=httpx_kwargs,
-                    verbose=verbose,
-                )
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ConnectionError(
-                f"Could not connect to Space '{space}'. Is it running?\n{e}"
-            ) from e
+        self._client = _TrackioHTTPClient(
+            space, hf_token=hf_token, httpx_kwargs=httpx_kwargs
+        )
 
     def predict(self, *args, api_name: str, **kwargs) -> Any:
         return self._client.predict(*args, api_name=api_name, **kwargs)

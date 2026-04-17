@@ -31,10 +31,6 @@ def download_bucket_to_trackio_dir(bucket_id: str) -> None:
     )
 
 
-def download_project_db_to_trackio_dir(project: str, bucket_id: str) -> bool:
-    return _download_db_from_bucket(project, bucket_id)
-
-
 def upload_project_to_bucket(project: str, bucket_id: str) -> None:
     db_path = SQLiteStorage.get_project_db_path(project)
     if not db_path.exists():

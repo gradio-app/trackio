@@ -1241,11 +1241,11 @@ class SQLiteStorage:
         if project in SQLiteStorage._bucket_project_import_attempted:
             return
 
-        from trackio.bucket_storage import download_project_db_to_trackio_dir
+        from trackio.bucket_storage import _download_db_from_bucket
 
         succeeded = False
         try:
-            succeeded = download_project_db_to_trackio_dir(project, bucket_id)
+            succeeded = _download_db_from_bucket(project, bucket_id)
         except Exception:
             succeeded = False
 

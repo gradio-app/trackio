@@ -30,7 +30,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
-from trackio.remote_client import RemoteClient, _supports_http_api
+from trackio.remote_client import HTTP_API_VERSION, RemoteClient, _resolve_src_url
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
@@ -377,6 +377,18 @@ def create_space_if_not_exists(
     _wait_until_space_running(space_id)
 
 
+def _http_api_reachable(space_id: str, hf_token: str | None, timeout: float) -> bool:
+    url = _resolve_src_url(space_id)
+    headers = huggingface_hub.utils.build_hf_headers(token=hf_token)
+    try:
+        resp = httpx.get(f"{url}version", headers=headers, timeout=timeout)
+        if not resp.is_success:
+            return False
+        return resp.json().get("api_version") == HTTP_API_VERSION
+    except (httpx.RequestError, ValueError):
+        return False
+
+
 def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
     hf_api = huggingface_hub.HfApi()
     hf_token = huggingface_hub.utils.get_token()
@@ -388,11 +400,7 @@ def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
     )
     while time.time() - start < timeout:
         try:
-            if _supports_http_api(
-                space_id,
-                hf_token=hf_token,
-                httpx_kwargs={"timeout": request_timeout},
-            ):
+            if _http_api_reachable(space_id, hf_token, request_timeout):
                 return
             info = hf_api.space_info(space_id, timeout=request_timeout)
             if info.runtime:
