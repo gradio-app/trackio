@@ -97,7 +97,9 @@ def _cleanup_current_run():
             pass
 
 
-def _safe_get_runs_for_init(project: str, space_id: str | None, resume: str) -> list[str]:
+def _safe_get_runs_for_init(
+    project: str, space_id: str | None, resume: str
+) -> list[str]:
     if space_id is not None:
         if resume == "never":
             return []
