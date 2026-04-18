@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import inspect
 import json
 import logging
@@ -8,6 +7,7 @@ import math
 import secrets
 import tempfile
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, get_args, get_origin
 from urllib.parse import unquote

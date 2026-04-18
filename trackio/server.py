@@ -159,6 +159,17 @@ def _hf_access_token(request: Request) -> str | None:
     return None
 
 
+def _authorization_bearer_token(request: Request) -> str | None:
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not auth:
+        return None
+    parts = auth.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None
+
+
 def _oauth_redirect_uri(request: Request) -> str:
     space_host = os.getenv("SPACE_HOST")
     if space_host:
