@@ -2792,9 +2792,7 @@ class SQLiteStorage:
             if run_identity is None:
                 return []
 
-            query = (
-                f"SELECT timestamp, step, metrics FROM metrics WHERE {run_identity[0]} = ?"
-            )
+            query = f"SELECT timestamp, step, metrics FROM metrics WHERE {run_identity[0]} = ?"
             params: list = [run_identity[1]]
 
             if step is not None:
