@@ -90,6 +90,17 @@
     }
   }
 
+  $effect(() => {
+    if (!latestOnly || filteredRunIds.length === 0) return;
+    const desired = latestOnlySelection(filteredRunIds);
+    if (
+      selectedRuns.length !== desired.length ||
+      selectedRuns[0] !== desired[0]
+    ) {
+      selectedRuns = desired;
+    }
+  });
+
   function toggleDevice(device) {
     if (selectedSystemDevices.includes(device)) {
       selectedSystemDevices = selectedSystemDevices.filter((d) => d !== device);

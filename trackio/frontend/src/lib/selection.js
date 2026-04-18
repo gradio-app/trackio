@@ -1,6 +1,6 @@
 export function latestOnlySelection(filteredRunIds) {
   if (!filteredRunIds || filteredRunIds.length === 0) return [];
-  return [filteredRunIds[filteredRunIds.length - 1]];
+  return [filteredRunIds[0]];
 }
 
 export function reconcileSelectedRuns(prevSelected, newOrderedIds) {

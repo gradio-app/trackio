@@ -8,8 +8,8 @@ describe("latestOnlySelection", () => {
     expect(latestOnlySelection(undefined)).toEqual([]);
   });
 
-  test("picks the last run (runs render oldest-first in the sidebar)", () => {
-    expect(latestOnlySelection(["run-0", "run-1", "run-2"])).toEqual(["run-2"]);
+  test("picks the first run (runs render newest-first in the sidebar)", () => {
+    expect(latestOnlySelection(["run-2", "run-1", "run-0"])).toEqual(["run-2"]);
   });
 
   test("returns the sole run when only one is present", () => {

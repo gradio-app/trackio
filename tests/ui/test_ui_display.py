@@ -85,9 +85,9 @@ def test_latest_only_selects_last_run(temp_dir):
             latest_toggle = page.locator(".latest-toggle input[type='checkbox']")
             latest_toggle.check()
 
-            expect(checkboxes.nth(0)).not_to_be_checked()
+            expect(checkboxes.nth(0)).to_be_checked()
             expect(checkboxes.nth(1)).not_to_be_checked()
-            expect(checkboxes.nth(2)).to_be_checked()
+            expect(checkboxes.nth(2)).not_to_be_checked()
 
             browser.close()
     finally:
