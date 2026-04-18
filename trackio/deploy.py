@@ -698,6 +698,26 @@ def sync_incremental(
     )
 
 
+def _build_remote_client_with_retry(
+    space_id: str,
+    timeout: int = 180,
+    verbose: bool = False,
+) -> RemoteClient:
+    deadline = time.time() + timeout
+    delay = 2
+    last_error: Exception | None = None
+    while time.time() < deadline:
+        try:
+            return RemoteClient(space_id, verbose=verbose, httpx_kwargs={"timeout": 90})
+        except (ValueError, ConnectionError) as e:
+            last_error = e
+            time.sleep(delay)
+            delay = min(delay * 1.5, 15)
+    raise ConnectionError(
+        f"Could not connect to Space '{space_id}' within {timeout}s: {last_error}"
+    )
+
+
 def _wait_for_remote_sync(
     client: RemoteClient,
     project: str,
@@ -1000,7 +1020,7 @@ def sync(
                 )
                 _wait_until_space_running(space_id)
                 _wait_for_remote_sync(
-                    RemoteClient(space_id, verbose=False, httpx_kwargs={"timeout": 90}),
+                    _build_remote_client_with_retry(space_id),
                     project,
                     Counter(
                         log["run"]
