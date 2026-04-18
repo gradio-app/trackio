@@ -2764,12 +2764,13 @@ class SQLiteStorage:
     @staticmethod
     def get_metric_values(
         project: str,
-        run: str,
+        run: str | None,
         metric_name: str,
         step: int | None = None,
         around_step: int | None = None,
         at_time: str | None = None,
         window: int | float | None = None,
+        run_id: str | None = None,
     ) -> list[dict]:
         """Get values for a specific metric in a project/run with optional filtering.
 
@@ -2785,8 +2786,16 @@ class SQLiteStorage:
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            query = "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?"
-            params: list = [run]
+            run_identity = SQLiteStorage._resolve_run_identity(
+                conn, run_name=run, run_id=run_id, table="metrics"
+            )
+            if run_identity is None:
+                return []
+
+            query = (
+                f"SELECT timestamp, step, metrics FROM metrics WHERE {run_identity[0]} = ?"
+            )
+            params: list = [run_identity[1]]
 
             if step is not None:
                 query += " AND step = ?"

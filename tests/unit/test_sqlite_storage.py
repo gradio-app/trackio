@@ -270,6 +270,38 @@ def test_get_runs_returns_chronological_order(temp_dir):
     assert runs == ["run-z", "run-a", "run-m"]
 
 
+def test_get_metric_values_respects_run_id_and_name_resolves_latest_run(temp_dir):
+    project = "proj_metric_values"
+    run_name = "dup-run"
+
+    SQLiteStorage.bulk_log(
+        project,
+        run_name,
+        [{"loss": 1.0}],
+        run_id="run-id-1",
+        timestamps=["2024-01-01T00:00:00+00:00"],
+    )
+    SQLiteStorage.bulk_log(
+        project,
+        run_name,
+        [{"loss": 2.0}],
+        run_id="run-id-2",
+        timestamps=["2024-01-02T00:00:00+00:00"],
+    )
+
+    latest_by_name = SQLiteStorage.get_metric_values(project, run_name, "loss")
+    first_by_id = SQLiteStorage.get_metric_values(
+        project, run_name, "loss", run_id="run-id-1"
+    )
+    second_by_id = SQLiteStorage.get_metric_values(
+        project, run_name, "loss", run_id="run-id-2"
+    )
+
+    assert [row["value"] for row in latest_by_name] == [2.0]
+    assert [row["value"] for row in first_by_id] == [1.0]
+    assert [row["value"] for row in second_by_id] == [2.0]
+
+
 def test_rename_run(temp_dir):
     project = "test_project"
     old_name = "old_run"

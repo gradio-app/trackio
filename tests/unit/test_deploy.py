@@ -91,6 +91,18 @@ def test_resolve_auto_bucket_uses_preferred_when_space_exists_without_data_mount
     assert result == "u/space-bucket"
 
 
+def test_resolve_auto_bucket_suffixes_when_existing_space_without_data_mount_bucket_taken():
+    hf_api = _make_hf_api(
+        space_exists=True,
+        volumes=[],
+        existing_bucket_ids={"u/space-bucket", "u/space-bucket-2"},
+    )
+
+    result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
+
+    assert result == "u/space-bucket-3"
+
+
 def test_resolve_auto_bucket_uses_preferred_when_neither_space_nor_bucket_exist():
     hf_api = _make_hf_api(space_exists=False, existing_bucket_ids=())
 

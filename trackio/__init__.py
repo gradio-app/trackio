@@ -448,17 +448,20 @@ def init(
 
     remote_source = space_id or server_base_url
 
-    url = context_vars.current_server.get()
-
     if remote_source is not None:
-        if url is None:
-            url = remote_source
-            context_vars.current_server.set(url)
-            if space_id is not None:
-                context_vars.current_space_id.set(space_id)
-                context_vars.current_server_write_token.set(None)
-            elif server_base_url is not None:
-                context_vars.current_server_write_token.set(write_token_resolved)
+        url = remote_source
+        context_vars.current_server.set(url)
+        if space_id is not None:
+            context_vars.current_space_id.set(space_id)
+            context_vars.current_server_write_token.set(None)
+        else:
+            context_vars.current_space_id.set(None)
+            context_vars.current_server_write_token.set(write_token_resolved)
+    else:
+        url = None
+        context_vars.current_server.set(None)
+        context_vars.current_space_id.set(None)
+        context_vars.current_server_write_token.set(None)
 
     _should_embed_local = False
 

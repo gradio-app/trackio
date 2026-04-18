@@ -5,6 +5,9 @@ from unittest.mock import MagicMock
 import pyarrow.parquet as pq
 import pytest
 
+import trackio
+import trackio.context_vars as context_vars
+import trackio.run as run_module
 from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -69,6 +72,60 @@ def test_init_does_not_inherit_bucket_id_outside_spaces(temp_dir, monkeypatch):
     run.finish()
 
     assert SQLiteStorage.get_space_id("local-project") is None
+
+
+def test_init_overwrites_remote_context_for_new_space(temp_dir, monkeypatch):
+    created_clients = []
+
+    class FakeRemoteClient:
+        def __init__(self, src, **kwargs):
+            created_clients.append(src)
+
+        def predict(self, *args, **kwargs):
+            api_name = kwargs.get("api_name")
+            if api_name == "/get_runs_for_project":
+                return []
+            if api_name == "/get_run_summary":
+                return {"last_step": None}
+            return None
+
+    monkeypatch.setattr(trackio, "RemoteClient", FakeRemoteClient)
+    monkeypatch.setattr(run_module, "RemoteClient", FakeRemoteClient)
+    monkeypatch.setattr(
+        trackio.deploy, "raise_if_space_is_frozen_for_logging", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        trackio.deploy, "create_space_if_not_exists", lambda *a, **k: None
+    )
+    monkeypatch.setattr(trackio.huggingface_hub.utils, "get_token", lambda: "token")
+    monkeypatch.setattr(run_module.huggingface_hub.utils, "get_token", lambda: "token")
+
+    context_vars.current_server.set("old-org/old-space")
+    context_vars.current_space_id.set("old-org/old-space")
+    context_vars.current_server_write_token.set(None)
+
+    run = init(project="space-project", name="space-run", space_id="new-org/new-space")
+    run.log({"loss": 0.1})
+    run.finish()
+
+    assert run.url == "new-org/new-space"
+    assert context_vars.current_server.get() == "new-org/new-space"
+    assert context_vars.current_space_id.get() == "new-org/new-space"
+    assert created_clients[-1] == "new-org/new-space"
+
+
+def test_init_clears_stale_remote_context_for_local_run(temp_dir):
+    context_vars.current_server.set("old-org/old-space")
+    context_vars.current_space_id.set("old-org/old-space")
+    context_vars.current_server_write_token.set("secret")
+
+    run = init(project="fresh-local-project", name="fresh-local-run")
+    run.finish()
+
+    assert run.url is None
+    assert context_vars.current_server.get() is None
+    assert context_vars.current_space_id.get() is None
+    assert context_vars.current_server_write_token.get() is None
 
 
 def test_run_log_calls_client_for_spaces(temp_dir):
