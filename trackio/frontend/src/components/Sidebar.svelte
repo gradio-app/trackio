@@ -6,6 +6,7 @@
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
+  import { latestOnlySelection } from "../lib/selection.js";
 
   let {
     open = $bindable(true),
@@ -83,7 +84,7 @@
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
     if (latestOnly && filteredRuns.length > 0) {
-      selectedRuns = [filteredRunIds[filteredRunIds.length - 1]];
+      selectedRuns = latestOnlySelection(filteredRunIds);
     } else if (!latestOnly) {
       selectedRuns = [...filteredRunIds];
     }

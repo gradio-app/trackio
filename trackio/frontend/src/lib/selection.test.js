@@ -1,0 +1,39 @@
+import { describe, expect, test } from "vitest";
+import { latestOnlySelection, reconcileSelectedRuns } from "./selection.js";
+
+describe("latestOnlySelection", () => {
+  test("returns an empty array when there are no runs", () => {
+    expect(latestOnlySelection([])).toEqual([]);
+    expect(latestOnlySelection(null)).toEqual([]);
+    expect(latestOnlySelection(undefined)).toEqual([]);
+  });
+
+  test("picks the last run (runs render oldest-first in the sidebar)", () => {
+    expect(latestOnlySelection(["run-0", "run-1", "run-2"])).toEqual(["run-2"]);
+  });
+
+  test("returns the sole run when only one is present", () => {
+    expect(latestOnlySelection(["only"])).toEqual(["only"]);
+  });
+});
+
+describe("reconcileSelectedRuns", () => {
+  test("selects all runs when the previous selection was empty (fresh load)", () => {
+    expect(reconcileSelectedRuns([], ["a", "b", "c"])).toEqual(["a", "b", "c"]);
+  });
+
+  test("keeps the previously selected run and appends new runs as selected", () => {
+    expect(reconcileSelectedRuns(["a"], ["a", "b", "c"])).toEqual(["a", "b", "c"]);
+  });
+
+  test("preserves the chosen run when the run list is unchanged on refresh", () => {
+    const prev = ["b"];
+    const next = ["a", "b", "c"];
+    expect(reconcileSelectedRuns(prev, next)).toEqual(["b", "a", "c"]);
+    expect(reconcileSelectedRuns(["b", "a", "c"], next)).toEqual(["b", "a", "c"]);
+  });
+
+  test("drops runs that no longer exist on the server", () => {
+    expect(reconcileSelectedRuns(["a", "b", "c"], ["a", "c"])).toEqual(["a", "c"]);
+  });
+});

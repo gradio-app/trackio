@@ -3,6 +3,7 @@
   import embed from "vega-embed";
   import * as vega from "vega";
   import { buildColorSpecKey } from "../lib/dataProcessing.js";
+  import { visibleLegendEntries } from "../lib/legend.js";
 
   let {
     data = [],
@@ -61,15 +62,11 @@
   const LEGEND_COLLAPSED_COUNT = 6;
   let legendExpanded = $state(false);
   let legendExpandedFs = $state(false);
-  let visibleLegendEntries = $derived(
-    legendExpanded || legendEntries.length <= LEGEND_COLLAPSED_COUNT
-      ? legendEntries
-      : legendEntries.slice(0, LEGEND_COLLAPSED_COUNT),
+  let visibleLegend = $derived(
+    visibleLegendEntries(legendEntries, legendExpanded, LEGEND_COLLAPSED_COUNT),
   );
-  let visibleLegendEntriesFs = $derived(
-    legendExpandedFs || legendEntries.length <= LEGEND_COLLAPSED_COUNT
-      ? legendEntries
-      : legendEntries.slice(0, LEGEND_COLLAPSED_COUNT),
+  let visibleLegendFs = $derived(
+    visibleLegendEntries(legendEntries, legendExpandedFs, LEGEND_COLLAPSED_COUNT),
   );
 
   let dashLegendEntries = $derived.by(() => {
@@ -652,7 +649,7 @@
     {#if legendEntries.length > 0}
       <div class="custom-legend">
         <span class="legend-title">{resolvedColorLabel}</span>
-        {#each visibleLegendEntries as entry}
+        {#each visibleLegend as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
             <span class="legend-label">{entry.name}</span>
@@ -765,7 +762,7 @@
     {#if legendEntries.length > 0}
       <div class="custom-legend fullscreen-legend">
         <span class="legend-title">{resolvedColorLabel}</span>
-        {#each visibleLegendEntriesFs as entry}
+        {#each visibleLegendFs as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
             <span class="legend-label">{entry.name}</span>
