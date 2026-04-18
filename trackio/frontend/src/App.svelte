@@ -153,6 +153,7 @@
       if (!realtimeEnabled) return;
       if (isTabHidden()) return;
       if (isRateLimitCooldownActive()) return;
+      await refreshProjects();
       await refreshRuns();
       await refreshAlerts();
     }, getAppPollIntervalMs());
