@@ -400,9 +400,11 @@ def validate_ui(
                         page.set_default_timeout(browser_timeout_ms)
                         page.on(
                             "console",
-                            lambda msg: raw_console_errors.append(msg.text)
-                            if msg.type == "error"
-                            else None,
+                            lambda msg: (
+                                raw_console_errors.append(msg.text)
+                                if msg.type == "error"
+                                else None
+                            ),
                         )
                         page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
