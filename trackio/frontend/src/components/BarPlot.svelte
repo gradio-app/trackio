@@ -410,7 +410,6 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend">
-        <span class="legend-title">{colorField}</span>
         {#each visibleLegendEntries as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
@@ -485,7 +484,6 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend fullscreen-legend">
-        <span class="legend-title">{colorField}</span>
         {#each visibleLegendEntriesFs as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
