@@ -20,7 +20,7 @@
 
 </div>
 
-Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face for humans and AI agents 🤗. 
+Welcome to `trackio`, a lightweight, <u>free</u> experiment tracking library built by Hugging Face for humans and AI agents 🤗. 
 
 Why Trackio when other experiment-tracking libraries exist? Trackio has a few qualities that make it particularly useful for  agents: 
 * It is local-first, because you shouldn't need to make an account to log data
