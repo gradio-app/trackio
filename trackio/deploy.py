@@ -124,6 +124,47 @@ def _get_space_bucket_at_data_mount(space_id: str) -> str | None:
     return None
 
 
+def _get_existing_space_bucket(space_id: str) -> str | None:
+    """Return the Trackio bucket for a Space, preferring the canonical /data mount."""
+    bucket_at_data = _get_space_bucket_at_data_mount(space_id)
+    if bucket_at_data is not None:
+        return bucket_at_data
+
+    for volume in _get_space_volumes(space_id):
+        if volume.type == "bucket":
+            return volume.source
+    return None
+
+
+def _ensure_bucket_mounted_at_data(
+    space_id: str,
+    bucket_id: str,
+    hf_api: huggingface_hub.HfApi | None = None,
+) -> None:
+    hf_api = hf_api or huggingface_hub.HfApi()
+    existing = _get_space_volumes(space_id)
+    already_mounted = any(
+        v.type == "bucket" and v.source == bucket_id and v.mount_path == "/data"
+        for v in existing
+    )
+    if not already_mounted:
+        preserved = [
+            v
+            for v in existing
+            if not (
+                v.type == "bucket"
+                and (v.source == bucket_id or v.mount_path == "/data")
+            )
+        ]
+        hf_api.set_space_volumes(
+            space_id,
+            preserved + [Volume(type="bucket", source=bucket_id, mount_path="/data")],
+        )
+        print(f"* Attached bucket {bucket_id} at '/data'")
+
+    huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
+
+
 def _bucket_exists(bucket_id: str, hf_api: huggingface_hub.HfApi | None = None) -> bool:
     hf_api = hf_api or huggingface_hub.HfApi()
     try:
@@ -167,7 +208,7 @@ def resolve_auto_bucket_id(
     except RepositoryNotFoundError:
         existing_bucket_id = None
     else:
-        existing_bucket_id = _get_space_bucket_at_data_mount(space_id)
+        existing_bucket_id = _get_existing_space_bucket(space_id)
         if existing_bucket_id is not None:
             return existing_bucket_id
 
@@ -343,24 +384,7 @@ def deploy_as_space(
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if bucket_id is not None:
-        existing = _get_space_volumes(space_id)
-        already_mounted = any(
-            v.type == "bucket" and v.source == bucket_id and v.mount_path == "/data"
-            for v in existing
-        )
-        if not already_mounted:
-            non_bucket = [
-                v
-                for v in existing
-                if not (v.type == "bucket" and v.source == bucket_id)
-            ]
-            hf_api.set_space_volumes(
-                space_id,
-                non_bucket
-                + [Volume(type="bucket", source=bucket_id, mount_path="/data")],
-            )
-            print(f"* Attached bucket {bucket_id} at '/data'")
-        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
+        _ensure_bucket_mounted_at_data(space_id, bucket_id, hf_api)
     elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
@@ -420,6 +444,11 @@ def create_space_if_not_exists(
         print(
             f"* Found existing space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
         )
+        if bucket_id is not None:
+            create_bucket_if_not_exists(bucket_id, private=private)
+            _ensure_bucket_mounted_at_data(space_id, bucket_id)
+        elif dataset_id is not None:
+            huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
         return
     except RepositoryNotFoundError:
         pass
@@ -978,10 +1007,10 @@ def sync(
 
 
 def _get_source_bucket(space_id: str) -> str:
-    volumes = _get_space_volumes(space_id)
-    for v in volumes:
-        if v.type == "bucket" and v.mount_path == "/data":
-            return v.source
+    bucket_id = _get_existing_space_bucket(space_id)
+    if bucket_id is not None:
+        _ensure_bucket_mounted_at_data(space_id, bucket_id)
+        return bucket_id
     raise ValueError(
         f"Space '{space_id}' has no bucket mounted at '/data'. "
         f"freeze() requires the source Space to use bucket storage."

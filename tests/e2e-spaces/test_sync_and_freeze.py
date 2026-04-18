@@ -5,6 +5,7 @@ from pathlib import Path
 
 import huggingface_hub
 import pyarrow.parquet as pq
+from huggingface_hub import Volume
 
 import trackio
 from trackio import deploy, utils
@@ -164,3 +165,83 @@ def test_sync_gradio_then_freeze_to_static(test_space_id, temp_dir):
     finally:
         _cleanup_space(frozen_space_id)
         _cleanup_bucket(frozen_bucket_id)
+
+
+def test_sync_reuses_existing_space_bucket_across_projects(test_space_id, temp_dir):
+    suffix = _repo_safe_suffix()
+    space_id = _namespace_scoped_repo_id(
+        test_space_id, f"trackio-test-auto-bucket-reuse-{suffix}"
+    )
+    first_project = f"test_auto_bucket_reuse_first_{suffix}"
+    second_project = f"test_auto_bucket_reuse_second_{suffix}"
+    created_bucket_id = None
+
+    try:
+        trackio.init(project=first_project, name="run1")
+        trackio.log({"loss": 0.5})
+        trackio.finish()
+
+        deploy.sync(project=first_project, space_id=space_id)
+        created_bucket_id = deploy._get_source_bucket(space_id)
+        huggingface_hub.HfApi().set_space_volumes(
+            space_id,
+            [Volume(type="bucket", source=created_bucket_id, mount_path="/trackio-data")],
+        )
+
+        trackio.init(project=second_project, name="run1")
+        trackio.log({"acc": 0.9})
+        trackio.finish()
+
+        deploy.sync(project=second_project, space_id=space_id)
+        reused_bucket_id = deploy._get_source_bucket(space_id)
+        volumes = deploy._get_space_volumes(space_id)
+
+        assert reused_bucket_id == created_bucket_id
+        assert any(
+            v.type == "bucket"
+            and v.source == created_bucket_id
+            and v.mount_path == "/data"
+            for v in volumes
+        )
+        assert not any(
+            v.type == "bucket"
+            and v.source == created_bucket_id
+            and v.mount_path == "/trackio-data"
+            for v in volumes
+        )
+    finally:
+        _cleanup_space(space_id)
+        if created_bucket_id is not None:
+            _cleanup_bucket(created_bucket_id)
+
+
+def test_sync_uses_fresh_auto_bucket_for_new_space_when_default_exists(
+    test_space_id, temp_dir
+):
+    suffix = _repo_safe_suffix()
+    project_name = f"test_auto_bucket_collision_{suffix}"
+    space_id = _namespace_scoped_repo_id(
+        test_space_id, f"trackio-test-auto-bucket-collision-{suffix}"
+    )
+    space_id, _, preferred_bucket_id = utils.preprocess_space_and_dataset_ids(
+        space_id, None
+    )
+    created_bucket_ids = {preferred_bucket_id}
+
+    try:
+        huggingface_hub.create_bucket(preferred_bucket_id)
+
+        trackio.init(project=project_name, name="run1")
+        trackio.log({"loss": 0.5})
+        trackio.finish()
+
+        deploy.sync(project=project_name, space_id=space_id)
+        actual_bucket_id = deploy._get_source_bucket(space_id)
+        created_bucket_ids.add(actual_bucket_id)
+
+        assert actual_bucket_id != preferred_bucket_id
+        assert actual_bucket_id.startswith(f"{preferred_bucket_id}-")
+    finally:
+        _cleanup_space(space_id)
+        for bucket_id in created_bucket_ids:
+            _cleanup_bucket(bucket_id)
