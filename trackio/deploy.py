@@ -97,7 +97,9 @@ def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1
             delay = min(delay * 2, 12)
 
 
-def _get_space_volumes(space_id: str) -> list[Volume]:
+def _get_space_volumes(
+    space_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> list[Volume]:
     """
     Return mounted volumes for a Space.
 
@@ -105,7 +107,7 @@ def _get_space_volumes(space_id: str) -> list[Volume]:
     mount exists. Fall back to `space_info().runtime.volumes`, which currently
     carries the volume metadata for running Spaces.
     """
-    hf_api = huggingface_hub.HfApi()
+    hf_api = hf_api or huggingface_hub.HfApi()
     runtime = hf_api.get_space_runtime(space_id)
     if runtime.volumes:
         return list(runtime.volumes)
@@ -117,20 +119,24 @@ def _get_space_volumes(space_id: str) -> list[Volume]:
     return []
 
 
-def _get_space_bucket_at_data_mount(space_id: str) -> str | None:
-    for volume in _get_space_volumes(space_id):
+def _get_space_bucket_at_data_mount(
+    space_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> str | None:
+    for volume in _get_space_volumes(space_id, hf_api=hf_api):
         if volume.type == "bucket" and volume.mount_path == "/data":
             return volume.source
     return None
 
 
-def _get_existing_space_bucket(space_id: str) -> str | None:
+def _get_existing_space_bucket(
+    space_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> str | None:
     """Return the Trackio bucket for a Space, preferring the canonical /data mount."""
-    bucket_at_data = _get_space_bucket_at_data_mount(space_id)
+    bucket_at_data = _get_space_bucket_at_data_mount(space_id, hf_api=hf_api)
     if bucket_at_data is not None:
         return bucket_at_data
 
-    for volume in _get_space_volumes(space_id):
+    for volume in _get_space_volumes(space_id, hf_api=hf_api):
         if volume.type == "bucket":
             return volume.source
     return None
@@ -142,7 +148,7 @@ def _ensure_bucket_mounted_at_data(
     hf_api: huggingface_hub.HfApi | None = None,
 ) -> None:
     hf_api = hf_api or huggingface_hub.HfApi()
-    existing = _get_space_volumes(space_id)
+    existing = _get_space_volumes(space_id, hf_api=hf_api)
     already_mounted = any(
         v.type == "bucket" and v.source == bucket_id and v.mount_path == "/data"
         for v in existing
@@ -208,7 +214,7 @@ def resolve_auto_bucket_id(
     except RepositoryNotFoundError:
         existing_bucket_id = None
     else:
-        existing_bucket_id = _get_existing_space_bucket(space_id)
+        existing_bucket_id = _get_existing_space_bucket(space_id, hf_api=hf_api)
         if existing_bucket_id is not None:
             return existing_bucket_id
 

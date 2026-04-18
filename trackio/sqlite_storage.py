@@ -723,10 +723,12 @@ class SQLiteStorage:
             return
         pa, pq = SQLiteStorage._require_pyarrow()
         column_names: list[str] = []
+        seen_columns: set[str] = set()
         for row in rows:
             for key in row:
-                if key not in column_names:
+                if key not in seen_columns:
                     column_names.append(key)
+                    seen_columns.add(key)
         normalized_rows = [{key: row.get(key) for key in column_names} for row in rows]
         table = pa.Table.from_pylist(normalized_rows)
         write_kwargs = {
