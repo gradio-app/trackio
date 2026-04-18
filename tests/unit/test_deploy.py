@@ -1,3 +1,5 @@
+import json
+import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -52,10 +54,26 @@ def _not_found_response():
     return SimpleNamespace(status_code=404, headers={}, request=None)
 
 
-def _make_hf_api(*, space_exists, volumes=(), existing_bucket_ids=()):
+def _make_hf_api(
+    *,
+    space_exists,
+    volumes=(),
+    existing_bucket_ids=(),
+    sdk="gradio",
+    config=None,
+):
+    config_path = None
+    if config is not None:
+        config_file = tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8")
+        with config_file:
+            json.dump(config, config_file)
+        config_path = config_file.name
+
     def space_info(space_id):
         if space_exists:
-            return SimpleNamespace(runtime=SimpleNamespace(volumes=list(volumes)))
+            return SimpleNamespace(
+                runtime=SimpleNamespace(volumes=list(volumes)), sdk=sdk
+            )
         raise RepositoryNotFoundError("missing", response=_not_found_response())
 
     def bucket_info(bucket_id):
@@ -63,10 +81,16 @@ def _make_hf_api(*, space_exists, volumes=(), existing_bucket_ids=()):
             return SimpleNamespace(id=bucket_id)
         raise BucketNotFoundError("missing", response=_not_found_response())
 
+    def hf_hub_download(repo_id, repo_type, filename):
+        if config_path is not None and repo_type == "space" and filename == "config.json":
+            return config_path
+        raise FileNotFoundError(filename)
+
     return SimpleNamespace(
         space_info=space_info,
         bucket_info=bucket_info,
         get_space_runtime=lambda space_id: SimpleNamespace(volumes=list(volumes)),
+        hf_hub_download=hf_hub_download,
     )
 
 
@@ -89,6 +113,20 @@ def test_resolve_auto_bucket_uses_preferred_when_space_exists_without_data_mount
     result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
 
     assert result == "u/space-bucket"
+
+
+def test_resolve_auto_bucket_reuses_bucket_from_existing_static_space_config():
+    hf_api = _make_hf_api(
+        space_exists=True,
+        volumes=[],
+        sdk="static",
+        config={"bucket_id": "u/static-bucket"},
+        existing_bucket_ids={"u/space-bucket"},
+    )
+
+    result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
+
+    assert result == "u/static-bucket"
 
 
 def test_resolve_auto_bucket_suffixes_when_existing_space_without_data_mount_bucket_taken():

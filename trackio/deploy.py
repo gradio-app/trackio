@@ -142,6 +142,31 @@ def _get_existing_space_bucket(
     return None
 
 
+def _get_existing_static_space_bucket(
+    space_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> str | None:
+    hf_api = hf_api or huggingface_hub.HfApi()
+    try:
+        config_path = hf_api.hf_hub_download(
+            repo_id=space_id,
+            repo_type="space",
+            filename="config.json",
+        )
+    except (FileNotFoundError, HfHubHTTPError, OSError, ValueError):
+        return None
+
+    try:
+        with open(config_path, encoding="utf-8") as config_file:
+            config = json_mod.load(config_file)
+    except (OSError, ValueError, TypeError):
+        return None
+
+    bucket_id = config.get("bucket_id")
+    if isinstance(bucket_id, str) and bucket_id:
+        return bucket_id
+    return None
+
+
 def _ensure_bucket_mounted_at_data(
     space_id: str,
     bucket_id: str,
@@ -208,15 +233,20 @@ def resolve_auto_bucket_id(
 
     Rules:
     - Existing Space with a bucket mounted at /data -> reuse that bucket.
+    - Existing static Space with a bucket_id in config.json -> reuse that bucket.
     - Otherwise -> use the preferred auto bucket ID if free, or a suffixed variant.
     """
     hf_api = hf_api or huggingface_hub.HfApi()
     try:
-        hf_api.space_info(space_id)
+        info = hf_api.space_info(space_id)
     except RepositoryNotFoundError:
         pass
     else:
         existing_bucket_id = _get_existing_space_bucket(space_id, hf_api=hf_api)
+        if existing_bucket_id is None and getattr(info, "sdk", None) == "static":
+            existing_bucket_id = _get_existing_static_space_bucket(
+                space_id, hf_api=hf_api
+            )
         if existing_bucket_id is not None:
             return existing_bucket_id
 
