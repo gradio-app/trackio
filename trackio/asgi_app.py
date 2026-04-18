@@ -7,6 +7,7 @@ import math
 import secrets
 import tempfile
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, get_args, get_origin
 from urllib.parse import unquote
@@ -86,6 +87,13 @@ def consume_uploaded_temp_file(request: Request, file_data: Any) -> Path:
         raise TrackioAPIError("Uploaded file is missing.")
 
     return resolved_path
+
+
+def cleanup_uploaded_temp_file(file_path: str | Path) -> None:
+    try:
+        Path(file_path).unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def _invoke_handler(
@@ -377,6 +385,13 @@ async def gradio_call_poll_handler(request: Request) -> Response:
 
 
 async def upload_handler(request: Request) -> Response:
+    upload_authorizer = getattr(request.app.state, "upload_authorizer", None)
+    if callable(upload_authorizer):
+        try:
+            upload_authorizer(request)
+        except TrackioAPIError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+
     form = await request.form()
     uploads = form.getlist("files")
     saved_paths = []
@@ -397,11 +412,18 @@ async def gradio_upload_alias_handler(request: Request) -> Response:
     return await upload_handler(request)
 
 
+_DISALLOWED_FILE_SUFFIXES = frozenset(
+    {".db", ".db-journal", ".db-wal", ".db-shm", ".sqlite", ".sqlite3"}
+)
+
+
 async def file_handler(request: Request) -> Response:
     fs_path = request.query_params.get("path")
     if fs_path is None:
         return Response("Missing path", status_code=400)
     fp = Path(unquote(fs_path)).resolve(strict=False)
+    if fp.suffix.lower() in _DISALLOWED_FILE_SUFFIXES:
+        return Response("Not found", status_code=404)
     allowed_roots = getattr(request.app.state, "allowed_file_roots", ())
     if fp.is_file() and _is_allowed_file_path(fp, allowed_roots):
         return FileResponse(str(fp))
@@ -415,6 +437,7 @@ def create_trackio_starlette_app(
     mcp_lifespan: Any = None,
     mcp_enabled: bool = False,
     allowed_file_roots: list[str | Path] | None = None,
+    upload_authorizer: Callable[[Request], None] | None = None,
 ) -> Starlette:
     routes: list[Any] = list(oauth_routes)
     routes.extend(
@@ -475,6 +498,7 @@ def create_trackio_starlette_app(
     app.state.api_registry = api_registry
     app.state.mcp_enabled = mcp_enabled
     app.state.allowed_file_roots = _normalize_allowed_file_roots(allowed_file_roots)
+    app.state.upload_authorizer = upload_authorizer
     app.state.uploaded_temp_files = set()
     app.state.uploaded_temp_files_lock = threading.Lock()
     if on_spaces():

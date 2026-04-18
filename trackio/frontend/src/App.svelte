@@ -26,6 +26,7 @@
     isTabHidden,
   } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
+  import { reconcileSelectedRuns } from "./lib/selection.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
@@ -125,25 +126,11 @@
     try {
       const data = await getRunsForProject(selectedProject);
       const newRuns = [...(data || [])].reverse();
-      const newRunIds = new Set(newRuns.map(runKey));
 
       if (JSON.stringify(runs) !== JSON.stringify(newRuns)) {
-        const prevSelected = new Set(selectedRuns);
+        const prevSelected = selectedRuns;
         runs = newRuns;
-
-        const kept = selectedRuns.filter((r) => newRunIds.has(r));
-        const orderedIds = newRuns.map(runKey);
-
-        if (kept.length === 0 && selectedRuns.length === 0) {
-          selectedRuns = [...orderedIds];
-        } else {
-          selectedRuns = [
-            ...kept,
-            ...orderedIds.filter(
-              (r) => !new Set([...kept, ...Array.from(prevSelected)]).has(r),
-            ),
-          ];
-        }
+        selectedRuns = reconcileSelectedRuns(prevSelected, newRuns.map(runKey));
       }
     } catch (e) {
       console.error("Failed to load runs:", e);
@@ -166,6 +153,7 @@
       if (!realtimeEnabled) return;
       if (isTabHidden()) return;
       if (isRateLimitCooldownActive()) return;
+      await refreshProjects();
       await refreshRuns();
       await refreshAlerts();
     }, getAppPollIntervalMs());

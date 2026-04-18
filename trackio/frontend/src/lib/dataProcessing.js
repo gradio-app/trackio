@@ -410,6 +410,29 @@ export function buildColorSpecKey(data, colorField, colorMap) {
   return parts.join("|");
 }
 
+function logMarker(log) {
+  if (!log) return null;
+  const step = typeof log.step === "number" ? log.step : null;
+  const ts = log.timestamp ?? null;
+  return { step, ts };
+}
+
+// Returns true when the freshly fetched `next` log array carries data the
+// cached `prev` array doesn't. We can't use `next.length !== prev.length`
+// because the backend caps each response at ~1500 points — once a run
+// crosses that threshold, length stops changing and realtime charts freeze.
+// Instead compare the last (step, timestamp) pair, which advances with every
+// new log even when the returned slice is truncated.
+export function logsHaveNewData(prev, next) {
+  if (!prev || !next) return Boolean(next);
+  if (next.length !== prev.length) return true;
+  if (next.length === 0) return false;
+  const a = logMarker(prev[prev.length - 1]);
+  const b = logMarker(next[next.length - 1]);
+  if (!a || !b) return true;
+  return a.step !== b.step || a.ts !== b.ts;
+}
+
 export function filterMetricsByRegex(metrics, pattern) {
   if (!pattern || !pattern.trim()) return metrics;
   try {

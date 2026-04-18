@@ -13,6 +13,7 @@
     groupMetricsByPrefix,
     computeMetricPlotData,
     downsample,
+    logsHaveNewData,
   } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
 
@@ -35,6 +36,7 @@
   let batchEndpointAvailable = true;
   let metricOrder = $state({});
   let dragState = $state({ group: null, index: -1 });
+  const MAX_BATCH_RUNS = 64;
 
   let rawDataCache = new Map();
   let refreshTimer = null;
@@ -186,13 +188,22 @@
   }
 
   async function fetchSystemLogsForRuns(runs) {
-    if (batchEndpointAvailable) {
+    if (batchEndpointAvailable && runs.length <= MAX_BATCH_RUNS) {
       try {
         return await getSystemLogsBatch(project, runs);
       } catch (e) {
         if (!isMissingEndpointError(e)) throw e;
         batchEndpointAvailable = false;
       }
+    }
+    if (batchEndpointAvailable) {
+      const results = [];
+      for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
+        const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
+        const batch = await getSystemLogsBatch(project, chunk);
+        results.push(...batch);
+      }
+      return results;
     }
     const results = [];
     for (const run of runs) {
@@ -262,7 +273,7 @@
         const runKey = entry.run_id ?? entry.run;
         const logs = entry.logs;
         const prev = rawDataCache.get(runKey);
-        if (!prev || logs.length !== prev.length) {
+        if (!prev || logsHaveNewData(prev, logs)) {
           rawDataCache.set(runKey, logs);
           changed = true;
         }

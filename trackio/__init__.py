@@ -390,8 +390,10 @@ def init(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
+    bucket_id_was_explicit = bucket_id is not None
     space_id, server_url = utils.resolve_space_id_and_server_url(space_id, server_url)
-    bucket_id = bucket_id or os.environ.get("TRACKIO_BUCKET_ID")
+    if bucket_id is None and utils.on_spaces():
+        bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
     if server_url is not None and not server_url.startswith(("http://", "https://")):
         raise ValueError(
             f"`server_url` must be a full URL starting with http:// or https://, got: {server_url!r}"
@@ -419,6 +421,14 @@ def init(
         space_id, dataset_id, bucket_id = utils.preprocess_space_and_dataset_ids(
             space_id, dataset_id, bucket_id
         )
+        if (
+            space_id is not None
+            and dataset_id is None
+            and bucket_id is not None
+            and not bucket_id_was_explicit
+            and not utils.on_spaces()
+        ):
+            bucket_id = deploy.resolve_auto_bucket_id(space_id, bucket_id)
     except LocalTokenNotFoundError as e:
         raise LocalTokenNotFoundError(
             f"You must be logged in to Hugging Face locally when `space_id` is provided to deploy to a Space. {e}"
@@ -438,17 +448,20 @@ def init(
 
     remote_source = space_id or server_base_url
 
-    url = context_vars.current_server.get()
-
     if remote_source is not None:
-        if url is None:
-            url = remote_source
-            context_vars.current_server.set(url)
-            if space_id is not None:
-                context_vars.current_space_id.set(space_id)
-                context_vars.current_server_write_token.set(None)
-            elif server_base_url is not None:
-                context_vars.current_server_write_token.set(write_token_resolved)
+        url = remote_source
+        context_vars.current_server.set(url)
+        if space_id is not None:
+            context_vars.current_space_id.set(space_id)
+            context_vars.current_server_write_token.set(None)
+        else:
+            context_vars.current_space_id.set(None)
+            context_vars.current_server_write_token.set(write_token_resolved)
+    else:
+        url = None
+        context_vars.current_server.set(None)
+        context_vars.current_space_id.set(None)
+        context_vars.current_server_write_token.set(None)
 
     _should_embed_local = False
 
@@ -459,13 +472,15 @@ def init(
         print(f"* Trackio project initialized: {project}")
 
         if bucket_id is not None:
-            os.environ["TRACKIO_BUCKET_ID"] = bucket_id
+            if utils.on_spaces():
+                os.environ["TRACKIO_BUCKET_ID"] = bucket_id
             bucket_url = f"https://huggingface.co/buckets/{bucket_id}"
             print(
                 f"* Trackio metrics will be synced to Hugging Face Bucket: {bucket_url}"
             )
         elif dataset_id is not None:
-            os.environ["TRACKIO_DATASET_ID"] = dataset_id
+            if utils.on_spaces():
+                os.environ["TRACKIO_DATASET_ID"] = dataset_id
             print(
                 f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}"
             )

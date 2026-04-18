@@ -232,6 +232,13 @@
     return Promise.resolve();
   }
 
+  function relocateTooltipElement(target) {
+    const tooltipEl = document.getElementById("vg-tooltip-element");
+    if (tooltipEl && target && tooltipEl.parentElement !== target) {
+      target.appendChild(tooltipEl);
+    }
+  }
+
   async function enterFullscreen() {
     fullscreen = true;
     document.body.style.overflow = "hidden";
@@ -240,6 +247,7 @@
     try {
       await requestFullscreenEl(fullscreenHost);
       await tick();
+      relocateTooltipElement(fullscreenHost);
       view?.resize();
     } catch {
       document.body.style.overflow = "";
@@ -254,6 +262,7 @@
     }
     document.body.style.overflow = "";
     fullscreen = false;
+    relocateTooltipElement(document.body);
   }
 
   async function toggleFullscreen() {
@@ -273,6 +282,7 @@
     if (!active && fullscreen) {
       document.body.style.overflow = "";
       fullscreen = false;
+      relocateTooltipElement(document.body);
     }
     if (active && fullscreen) {
       tick().then(() => view?.resize());
@@ -400,7 +410,6 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend">
-        <span class="legend-title">{colorField}</span>
         {#each visibleLegendEntries as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
@@ -475,7 +484,6 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend fullscreen-legend">
-        <span class="legend-title">{colorField}</span>
         {#each visibleLegendEntriesFs as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>

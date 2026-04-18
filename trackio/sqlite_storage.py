@@ -722,7 +722,15 @@ class SQLiteStorage:
         if not rows:
             return
         pa, pq = SQLiteStorage._require_pyarrow()
-        table = pa.Table.from_pylist(rows)
+        column_names: list[str] = []
+        seen_columns: set[str] = set()
+        for row in rows:
+            for key in row:
+                if key not in seen_columns:
+                    column_names.append(key)
+                    seen_columns.add(key)
+        normalized_rows = [{key: row.get(key) for key in column_names} for row in rows]
+        table = pa.Table.from_pylist(normalized_rows)
         write_kwargs = {
             "write_page_index": True,
             "use_content_defined_chunking": True,
@@ -2373,8 +2381,15 @@ class SQLiteStorage:
                     ) from e
 
     @staticmethod
-    def move_run(project: str, run: str, new_project: str) -> bool:
-        """Move a run from one project to another."""
+    def move_run(
+        project: str, run: str, new_project: str, run_id: str | None = None
+    ) -> bool:
+        """Move a run from one project to another.
+
+        When the source DB supports run_ids, ``run_id`` uniquely identifies the
+        run being moved; only that run is touched even when other runs share
+        the same ``run`` name.
+        """
         source_db_path = SQLiteStorage.get_project_db_path(project)
         if not source_db_path.exists():
             return False
@@ -2399,43 +2414,72 @@ class SQLiteStorage:
                         source_conn, "alerts"
                     )
 
+                    metrics_identity = SQLiteStorage._resolve_run_identity(
+                        source_conn, run_name=run, run_id=run_id, table="metrics"
+                    )
+                    if metrics_identity is None:
+                        return False
+                    metrics_col, metrics_val = metrics_identity
+
+                    configs_identity = SQLiteStorage._resolve_run_identity(
+                        source_conn, run_name=run, run_id=run_id, table="configs"
+                    )
+                    system_identity = SQLiteStorage._resolve_run_identity(
+                        source_conn,
+                        run_name=run,
+                        run_id=run_id,
+                        table="system_metrics",
+                    )
+                    alerts_identity = SQLiteStorage._resolve_run_identity(
+                        source_conn, run_name=run, run_id=run_id, table="alerts"
+                    )
+
                     metrics_select = (
                         "SELECT timestamp, step, metrics"
                         + (", run_id" if metrics_has_run_id else "")
-                        + " FROM metrics WHERE run_name = ?"
+                        + f" FROM metrics WHERE {metrics_col} = ?"
                     )
-                    source_cursor.execute(metrics_select, (run,))
+                    source_cursor.execute(metrics_select, (metrics_val,))
                     metrics_rows = source_cursor.fetchall()
 
-                    configs_select = (
-                        "SELECT config, created_at"
-                        + (", run_id" if configs_has_run_id else "")
-                        + " FROM configs WHERE run_name = ?"
-                    )
-                    source_cursor.execute(configs_select, (run,))
-                    config_row = source_cursor.fetchone()
-
-                    try:
-                        system_select = (
-                            "SELECT timestamp, metrics"
-                            + (", run_id" if system_has_run_id else "")
-                            + " FROM system_metrics WHERE run_name = ?"
+                    config_row = None
+                    if configs_identity is not None:
+                        configs_col, configs_val = configs_identity
+                        configs_select = (
+                            "SELECT config, created_at"
+                            + (", run_id" if configs_has_run_id else "")
+                            + f" FROM configs WHERE {configs_col} = ?"
                         )
-                        source_cursor.execute(system_select, (run,))
-                        system_metrics_rows = source_cursor.fetchall()
-                    except sqlite3.OperationalError:
-                        system_metrics_rows = []
+                        source_cursor.execute(configs_select, (configs_val,))
+                        config_row = source_cursor.fetchone()
 
-                    try:
-                        alerts_select = (
-                            "SELECT timestamp, title, text, level, step, alert_id"
-                            + (", run_id" if alerts_has_run_id else "")
-                            + " FROM alerts WHERE run_name = ?"
-                        )
-                        source_cursor.execute(alerts_select, (run,))
-                        alert_rows = source_cursor.fetchall()
-                    except sqlite3.OperationalError:
-                        alert_rows = []
+                    system_metrics_rows = []
+                    if system_identity is not None:
+                        try:
+                            system_col, system_val = system_identity
+                            system_select = (
+                                "SELECT timestamp, metrics"
+                                + (", run_id" if system_has_run_id else "")
+                                + f" FROM system_metrics WHERE {system_col} = ?"
+                            )
+                            source_cursor.execute(system_select, (system_val,))
+                            system_metrics_rows = source_cursor.fetchall()
+                        except sqlite3.OperationalError:
+                            system_metrics_rows = []
+
+                    alert_rows = []
+                    if alerts_identity is not None:
+                        try:
+                            alerts_col, alerts_val = alerts_identity
+                            alerts_select = (
+                                "SELECT timestamp, title, text, level, step, alert_id"
+                                + (", run_id" if alerts_has_run_id else "")
+                                + f" FROM alerts WHERE {alerts_col} = ?"
+                            )
+                            source_cursor.execute(alerts_select, (alerts_val,))
+                            alert_rows = source_cursor.fetchall()
+                        except sqlite3.OperationalError:
+                            alert_rows = []
 
                     if not metrics_rows and not config_row and not system_metrics_rows:
                         return False
@@ -2660,23 +2704,33 @@ class SQLiteStorage:
                         )
 
                         source_cursor.execute(
-                            "DELETE FROM metrics WHERE run_name = ?", (run,)
+                            f"DELETE FROM metrics WHERE {metrics_col} = ?",
+                            (metrics_val,),
                         )
-                        source_cursor.execute(
-                            "DELETE FROM configs WHERE run_name = ?", (run,)
-                        )
-                        try:
+                        if configs_identity is not None:
+                            configs_col, configs_val = configs_identity
                             source_cursor.execute(
-                                "DELETE FROM system_metrics WHERE run_name = ?", (run,)
+                                f"DELETE FROM configs WHERE {configs_col} = ?",
+                                (configs_val,),
                             )
-                        except sqlite3.OperationalError:
-                            pass
-                        try:
-                            source_cursor.execute(
-                                "DELETE FROM alerts WHERE run_name = ?", (run,)
-                            )
-                        except sqlite3.OperationalError:
-                            pass
+                        if system_identity is not None:
+                            try:
+                                system_col, system_val = system_identity
+                                source_cursor.execute(
+                                    f"DELETE FROM system_metrics WHERE {system_col} = ?",
+                                    (system_val,),
+                                )
+                            except sqlite3.OperationalError:
+                                pass
+                        if alerts_identity is not None:
+                            try:
+                                alerts_col, alerts_val = alerts_identity
+                                source_cursor.execute(
+                                    f"DELETE FROM alerts WHERE {alerts_col} = ?",
+                                    (alerts_val,),
+                                )
+                            except sqlite3.OperationalError:
+                                pass
                         source_conn.commit()
 
                         return True
@@ -2710,12 +2764,13 @@ class SQLiteStorage:
     @staticmethod
     def get_metric_values(
         project: str,
-        run: str,
+        run: str | None,
         metric_name: str,
         step: int | None = None,
         around_step: int | None = None,
         at_time: str | None = None,
         window: int | float | None = None,
+        run_id: str | None = None,
     ) -> list[dict]:
         """Get values for a specific metric in a project/run with optional filtering.
 
@@ -2731,8 +2786,14 @@ class SQLiteStorage:
 
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
-            query = "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ?"
-            params: list = [run]
+            run_identity = SQLiteStorage._resolve_run_identity(
+                conn, run_name=run, run_id=run_id, table="metrics"
+            )
+            if run_identity is None:
+                return []
+
+            query = f"SELECT timestamp, step, metrics FROM metrics WHERE {run_identity[0]} = ?"
+            params: list = [run_identity[1]]
 
             if step is not None:
                 query += " AND step = ?"

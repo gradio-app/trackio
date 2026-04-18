@@ -164,7 +164,7 @@
                     class="run-dot"
                     style:background={runColorMap[run.id] ?? "#9ca3af"}
                   ></span>
-                  <button class="link-btn" onclick={() => { setQueryParam("selected_run_id", run.id); navigateTo("run-detail"); }}>
+                  <button class="link-btn" onclick={() => { setQueryParam("selected_run_id", run.id); setQueryParam("selected_run", run.name); navigateTo("run-detail"); }}>
                     {run.name}
                   </button>
                 </div>

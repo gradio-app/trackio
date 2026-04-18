@@ -48,10 +48,11 @@
 
     loading = true;
     try {
-      const alertBatches = await Promise.all(
-        selectedRuns.map((run) => getAlerts(project, run, null, null)),
+      const data = await getAlerts(project, null, null, null);
+      const selectedRunNames = new Set(selectedRuns.map((run) => run.name));
+      allAlerts = (data || []).filter(
+        (alert) => !alert.run || selectedRunNames.has(alert.run),
       );
-      allAlerts = alertBatches.flat();
 
       const runsToLoad = selectedRuns;
       const reports = [];

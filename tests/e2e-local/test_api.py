@@ -291,9 +291,20 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
     write_headers = {"x-trackio-write-token": write_token}
 
     try:
+        blocked_upload_resp = httpx.post(
+            f"{url.rstrip('/')}/api/upload",
+            files={"files": (source_path.name, source_text.encode())},
+            timeout=5,
+        )
+        assert blocked_upload_resp.status_code == 400
+        assert blocked_upload_resp.json() == {
+            "error": "A write_token is required to upload files to this server. Use the write-access URL from trackio.show(), set TRACKIO_WRITE_TOKEN, or send header X-Trackio-Write-Token."
+        }
+
         with source_path.open("rb") as handle:
             upload_resp = httpx.post(
                 f"{url.rstrip('/')}/api/upload",
+                headers=write_headers,
                 files={"files": (source_path.name, handle)},
                 timeout=5,
             )
@@ -345,6 +356,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
         assert allowed_resp.status_code == 200
         assert allowed_target is not None
         assert allowed_target.read_text() == source_text
+        assert not Path(uploaded_path).exists()
         assert blocked_resp.status_code == 400
         assert blocked_resp.json() == {
             "error": "Uploaded file was not created by this Trackio server."
@@ -352,6 +364,68 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
         assert not blocked_target.exists()
     finally:
         source_path.unlink(missing_ok=True)
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_local_dashboard_get_metric_values_honors_run_id(temp_dir):
+    project = "test_metric_values_run_id"
+    run_name = "duplicate-run"
+
+    first = trackio.init(project=project, name=run_name, resume="never")
+    trackio.log(metrics={"loss": 1.0})
+    trackio.finish()
+
+    second = trackio.init(project=project, name=run_name, resume="never")
+    trackio.log(metrics={"loss": 2.0})
+    trackio.finish()
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        client = Client(url, verbose=False)
+        runs = client.predict(project, api_name="/get_runs_for_project")
+        first_run_id = first.id
+        second_run_id = second.id
+        assert [run["id"] for run in runs] == [first_run_id, second_run_id]
+
+        latest_resp = httpx.post(
+            f"{url.rstrip('/')}/api/get_metric_values",
+            json={
+                "project": project,
+                "run": run_name,
+                "metric_name": "loss",
+            },
+            timeout=5,
+        )
+        first_resp = httpx.post(
+            f"{url.rstrip('/')}/api/get_metric_values",
+            json={
+                "project": project,
+                "run": run_name,
+                "run_id": first_run_id,
+                "metric_name": "loss",
+            },
+            timeout=5,
+        )
+        second_resp = httpx.post(
+            f"{url.rstrip('/')}/api/get_metric_values",
+            json={
+                "project": project,
+                "run": run_name,
+                "run_id": second_run_id,
+                "metric_name": "loss",
+            },
+            timeout=5,
+        )
+
+        assert latest_resp.status_code == 200
+        assert first_resp.status_code == 200
+        assert second_resp.status_code == 200
+        assert [row["value"] for row in latest_resp.json()["data"]] == [2.0]
+        assert [row["value"] for row in first_resp.json()["data"]] == [1.0]
+        assert [row["value"] for row in second_resp.json()["data"]] == [2.0]
+    finally:
         trackio.delete_project(project, force=True)
         app.close()
 

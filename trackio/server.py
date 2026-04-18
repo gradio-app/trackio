@@ -23,6 +23,7 @@ from starlette.routing import Route
 
 import trackio.utils as utils
 from trackio.asgi_app import (
+    cleanup_uploaded_temp_file,
     consume_uploaded_temp_file,
     create_trackio_starlette_app,
 )
@@ -156,6 +157,17 @@ def _hf_access_token(request: Request) -> str | None:
             if len(parts) == 2 and parts[0] == "trackio_hf_access_token":
                 return parts[1] or None
     return None
+
+
+def _authorization_bearer_token(request: Request) -> str | None:
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not auth:
+        return None
+    parts = auth.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None
 
 
 def _oauth_redirect_uri(request: Request) -> str:
@@ -392,6 +404,40 @@ def assert_can_write_metrics(request: Request, hf_token: str | None) -> None:
         )
 
 
+def assert_can_stage_upload(request: Request) -> None:
+    if not on_spaces():
+        if check_write_access(request, write_token):
+            return
+        raise TrackioAPIError(
+            "A write_token is required to upload files to this server. "
+            "Use the write-access URL from trackio.show(), set TRACKIO_WRITE_TOKEN, "
+            "or send header X-Trackio-Write-Token."
+        )
+
+    bearer_token = _authorization_bearer_token(request)
+    if bearer_token is not None:
+        try:
+            check_hf_token_has_write_access(bearer_token)
+        except PermissionError as e:
+            raise TrackioAPIError(str(e)) from e
+        return
+
+    oauth_token = _hf_access_token(request)
+    if oauth_token is not None:
+        try:
+            check_oauth_token_has_write_access(oauth_token)
+        except PermissionError as e:
+            raise TrackioAPIError(str(e)) from e
+        return
+
+    if check_write_access(request, write_token):
+        return
+
+    raise TrackioAPIError(
+        "Sign in with Hugging Face to upload files, or use a link that includes the write_token query parameter."
+    )
+
+
 def assert_can_mutate_runs(request: Request) -> None:
     if not on_spaces():
         if check_write_access(request, write_token):
@@ -440,9 +486,12 @@ def upload_db_to_space(
 ) -> None:
     assert_can_write_metrics(request, hf_token)
     uploaded_path = consume_uploaded_temp_file(request, uploaded_db)
-    db_project_path = SQLiteStorage.get_project_db_path(project)
-    os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
-    shutil.copy(uploaded_path, db_project_path)
+    try:
+        db_project_path = SQLiteStorage.get_project_db_path(project)
+        os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
+        shutil.copy(uploaded_path, db_project_path)
+    finally:
+        cleanup_uploaded_temp_file(uploaded_path)
 
 
 def bulk_upload_media(
@@ -453,13 +502,16 @@ def bulk_upload_media(
     assert_can_write_metrics(request, hf_token)
     for upload in uploads:
         uploaded_path = consume_uploaded_temp_file(request, upload["uploaded_file"])
-        media_path = get_project_media_path(
-            project=upload["project"],
-            run=upload["run"],
-            step=upload["step"],
-            relative_path=upload["relative_path"],
-        )
-        shutil.copy(uploaded_path, media_path)
+        try:
+            media_path = get_project_media_path(
+                project=upload["project"],
+                run=upload["run"],
+                step=upload["step"],
+                relative_path=upload["relative_path"],
+            )
+            shutil.copy(uploaded_path, media_path)
+        finally:
+            cleanup_uploaded_temp_file(uploaded_path)
 
 
 def log(
@@ -608,12 +660,13 @@ def get_alerts(
 
 def get_metric_values(
     project: str,
-    run: str,
+    run: str | None,
     metric_name: str,
     step: int | None = None,
     around_step: int | None = None,
     at_time: str | None = None,
     window: int | None = None,
+    run_id: str | None = None,
 ) -> list[dict[str, Any]]:
     return SQLiteStorage.get_metric_values(
         project,
@@ -623,6 +676,7 @@ def get_metric_values(
         around_step=around_step,
         at_time=at_time,
         window=window,
+        run_id=run_id,
     )
 
 
@@ -670,7 +724,7 @@ def get_project_summary(project: str) -> dict[str, Any]:
 def get_run_summary(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> dict[str, Any]:
-    if run is None and run_id is not None:
+    if run_id is not None:
         record = next(
             (
                 record
@@ -914,9 +968,9 @@ def build_starlette_app_only(mcp_server: bool = False) -> tuple[Any, str]:
         mcp_enabled=mcp_enabled,
         allowed_file_roots=[
             utils.MEDIA_DIR,
-            utils.TRACKIO_DIR,
             utils.TRACKIO_LOGO_DIR,
         ],
+        upload_authorizer=assert_can_stage_upload,
     )
     from trackio.frontend_server import mount_frontend  # noqa: PLC0415
 

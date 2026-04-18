@@ -6,6 +6,7 @@
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
+  import { latestOnlySelection } from "../lib/selection.js";
 
   let {
     open = $bindable(true),
@@ -83,11 +84,22 @@
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
     if (latestOnly && filteredRuns.length > 0) {
-      selectedRuns = [filteredRunIds[filteredRunIds.length - 1]];
+      selectedRuns = latestOnlySelection(filteredRunIds);
     } else if (!latestOnly) {
       selectedRuns = [...filteredRunIds];
     }
   }
+
+  $effect(() => {
+    if (!latestOnly || filteredRunIds.length === 0) return;
+    const desired = latestOnlySelection(filteredRunIds);
+    if (
+      selectedRuns.length !== desired.length ||
+      selectedRuns[0] !== desired[0]
+    ) {
+      selectedRuns = desired;
+    }
+  });
 
   function toggleDevice(device) {
     if (selectedSystemDevices.includes(device)) {
@@ -452,6 +464,7 @@
     max-width: 200px;
   }
   .section {
+    margin-top: 2px;
     margin-bottom: 18px;
   }
   .section-label {
