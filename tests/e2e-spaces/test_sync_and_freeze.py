@@ -185,7 +185,11 @@ def test_sync_reuses_existing_space_bucket_across_projects(test_space_id, temp_d
         created_bucket_id = deploy._get_source_bucket(space_id)
         huggingface_hub.HfApi().set_space_volumes(
             space_id,
-            [Volume(type="bucket", source=created_bucket_id, mount_path="/trackio-data")],
+            [
+                Volume(
+                    type="bucket", source=created_bucket_id, mount_path="/trackio-data"
+                )
+            ],
         )
 
         trackio.init(project=second_project, name="run1")

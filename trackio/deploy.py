@@ -448,7 +448,9 @@ def create_space_if_not_exists(
             create_bucket_if_not_exists(bucket_id, private=private)
             _ensure_bucket_mounted_at_data(space_id, bucket_id)
         elif dataset_id is not None:
-            huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_DATASET_ID", dataset_id
+            )
         return
     except RepositoryNotFoundError:
         pass
