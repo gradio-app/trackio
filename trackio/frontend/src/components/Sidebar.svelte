@@ -464,6 +464,7 @@
     max-width: 200px;
   }
   .section {
+    margin-top: 2px;
     margin-bottom: 18px;
   }
   .section-label {

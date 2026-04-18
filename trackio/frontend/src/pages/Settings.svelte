@@ -215,7 +215,7 @@
 
         <div class="agent-panel">
           <div class="install-block">
-            <span class="install-label">Install</span>
+            <span class="install-label">Run in Terminal to Install:</span>
             <div class="install-cmd">
               <code>{agentInstallCmd}</code>
               <button

@@ -192,6 +192,7 @@
 <style>
   .dropdown-container {
     width: 100%;
+    margin-bottom: 4px;
   }
   .label {
     display: block;
