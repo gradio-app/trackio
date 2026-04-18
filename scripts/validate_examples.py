@@ -16,6 +16,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 import trackio
+import trackio.bucket_storage as bucket_storage
+import trackio.sqlite_storage as sqlite_storage
+import trackio.utils as utils
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -88,10 +91,6 @@ class ExampleOutcome:
 
 
 def apply_trackio_dir(path: Path) -> None:
-    import trackio.bucket_storage as bucket_storage
-    import trackio.sqlite_storage as sqlite_storage
-    import trackio.utils as utils
-
     path = path.resolve()
     path.mkdir(parents=True, exist_ok=True)
     utils.TRACKIO_DIR = path
