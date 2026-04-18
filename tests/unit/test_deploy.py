@@ -20,7 +20,9 @@ class StubHfApi:
                 "space not found",
                 response=httpx.Response(
                     404,
-                    request=httpx.Request("GET", f"https://huggingface.co/api/spaces/{space_id}"),
+                    request=httpx.Request(
+                        "GET", f"https://huggingface.co/api/spaces/{space_id}"
+                    ),
                 ),
             )
         return SimpleNamespace(id=space_id)
@@ -31,7 +33,9 @@ class StubHfApi:
                 "bucket not found",
                 response=httpx.Response(
                     404,
-                    request=httpx.Request("GET", f"https://huggingface.co/api/buckets/{bucket_id}"),
+                    request=httpx.Request(
+                        "GET", f"https://huggingface.co/api/buckets/{bucket_id}"
+                    ),
                 ),
             )
         return SimpleNamespace(id=bucket_id)
@@ -109,7 +113,9 @@ def test_resolve_auto_bucket_id_reuses_existing_space_bucket(monkeypatch):
 
 def test_resolve_auto_bucket_id_uses_preferred_bucket_for_new_space(monkeypatch):
     api = StubHfApi()
-    monkeypatch.setattr(deploy, "_get_space_bucket_at_data_mount", lambda _space_id: None)
+    monkeypatch.setattr(
+        deploy, "_get_space_bucket_at_data_mount", lambda _space_id: None
+    )
 
     bucket_id = deploy.resolve_auto_bucket_id(
         "user/new-space",
@@ -122,7 +128,9 @@ def test_resolve_auto_bucket_id_uses_preferred_bucket_for_new_space(monkeypatch)
 
 def test_resolve_auto_bucket_id_avoids_colliding_bucket_for_new_space(monkeypatch):
     api = StubHfApi(buckets={"user/new-space-bucket", "user/new-space-bucket-2"})
-    monkeypatch.setattr(deploy, "_get_space_bucket_at_data_mount", lambda _space_id: None)
+    monkeypatch.setattr(
+        deploy, "_get_space_bucket_at_data_mount", lambda _space_id: None
+    )
 
     bucket_id = deploy.resolve_auto_bucket_id(
         "user/new-space",

@@ -2,8 +2,8 @@ import sqlite3
 import time
 from unittest.mock import MagicMock
 
-import pytest
 import pyarrow.parquet as pq
+import pytest
 
 from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
