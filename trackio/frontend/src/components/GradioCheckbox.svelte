@@ -27,7 +27,7 @@
     align-items: center;
     gap: 8px;
     cursor: pointer;
-    margin: 8px 0px;
+    padding: 3px 0;
   }
 
   .label-text {
