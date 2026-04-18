@@ -11,6 +11,7 @@ from huggingface_hub.utils import build_hf_headers
 from trackio.utils import parse_trackio_server_url
 
 HTTP_API_VERSION = 1
+FORCE_SYNC_TIMEOUT = 180.0
 
 WRITE_TOKEN_HEADER = "x-trackio-write-token"
 
@@ -64,6 +65,25 @@ def _merge_client_headers(
     return headers
 
 
+def _request_timeout_for_api(
+    timeout: httpx.Timeout | float | int | None, api_name: str
+) -> httpx.Timeout | float | int | None:
+    if api_name != "force_sync":
+        return timeout
+
+    normalized = httpx.Timeout(timeout)
+    read_timeout = normalized.read if normalized.read is not None else 0.0
+    if read_timeout >= FORCE_SYNC_TIMEOUT:
+        return timeout
+
+    return httpx.Timeout(
+        connect=normalized.connect,
+        read=FORCE_SYNC_TIMEOUT,
+        write=normalized.write,
+        pool=normalized.pool,
+    )
+
+
 class _TrackioHTTPClient:
     def __init__(
         self,
@@ -115,11 +135,15 @@ class _TrackioHTTPClient:
             "args": self._prepare_value(list(args)),
             "kwargs": self._prepare_value(kwargs),
         }
+        request_kwargs = dict(self.httpx_kwargs)
+        request_kwargs["timeout"] = _request_timeout_for_api(
+            request_kwargs.get("timeout"), api_name
+        )
         resp = httpx.post(
             urljoin(self.src, f"api/{api_name}"),
             headers=self.headers,
             json=payload,
-            **self.httpx_kwargs,
+            **request_kwargs,
         )
         if resp.status_code == 404:
             raise RuntimeError(
