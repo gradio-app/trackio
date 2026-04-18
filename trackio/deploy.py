@@ -703,7 +703,7 @@ def sync_incremental(
 
 def _build_remote_client_with_retry(
     space_id: str,
-    timeout: int = 180,
+    timeout: int = 360,
     verbose: bool = False,
 ) -> RemoteClient:
     deadline = time.time() + timeout
