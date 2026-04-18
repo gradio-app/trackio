@@ -998,7 +998,7 @@ def sync(
                 create_space_if_not_exists(
                     space_id, bucket_id=bucket_id, private=private
                 )
-                wait_until_space_exists(space_id)
+                _wait_until_space_running(space_id)
                 _wait_for_remote_sync(
                     RemoteClient(space_id, verbose=False, httpx_kwargs={"timeout": 90}),
                     project,
