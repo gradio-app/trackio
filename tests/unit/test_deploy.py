@@ -35,6 +35,10 @@ def test_get_source_bucket_falls_back_to_space_info_runtime(mock_hf_api):
             ]
         )
     )
+    api.get_space_variables.return_value = {
+        "TRACKIO_DIR": SimpleNamespace(value="/data/trackio"),
+        "TRACKIO_BUCKET_ID": SimpleNamespace(value="abidlabs/example-bucket"),
+    }
 
     bucket_id = deploy._get_source_bucket("abidlabs/example-space")
 
