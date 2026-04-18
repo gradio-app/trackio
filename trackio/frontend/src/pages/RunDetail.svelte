@@ -23,10 +23,14 @@
 
     loading = true;
     try {
-      summary = await getRunSummary(
+      const loadedSummary = await getRunSummary(
         project,
         runId ? { id: runId, name: runName } : runName,
       );
+      summary = loadedSummary;
+      if (loadedSummary?.run) {
+        runName = loadedSummary.run;
+      }
     } catch (e) {
       console.error("Failed to load run detail:", e);
     } finally {

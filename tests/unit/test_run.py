@@ -8,6 +8,7 @@ import pytest
 import trackio
 import trackio.context_vars as context_vars
 import trackio.run as run_module
+import trackio.server as server
 from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -228,6 +229,22 @@ def test_resume_allow_and_must_use_latest_run_with_same_name(temp_dir):
 
     required = init(project="dup-project", name="same-name", resume="must")
     assert required.id == second.id
+
+
+def test_get_run_summary_prefers_canonical_name_for_run_id(temp_dir):
+    project = "summary-project"
+    old_name = "old-name"
+    new_name = "new-name"
+    run_id = "run-id-123"
+
+    SQLiteStorage.bulk_log(project, old_name, [{"loss": 0.1}], run_id=run_id)
+    SQLiteStorage.rename_run(project, old_name, new_name, run_id=run_id)
+
+    summary = server.get_run_summary(project, run=old_name, run_id=run_id)
+
+    assert summary["run"] == new_name
+    assert summary["run_id"] == run_id
+    assert summary["num_logs"] == 1
 
 
 def test_legacy_project_without_run_id_still_resumes_and_logs(temp_dir):

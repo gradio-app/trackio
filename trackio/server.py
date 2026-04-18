@@ -724,7 +724,7 @@ def get_project_summary(project: str) -> dict[str, Any]:
 def get_run_summary(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> dict[str, Any]:
-    if run is None and run_id is not None:
+    if run_id is not None:
         record = next(
             (
                 record

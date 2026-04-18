@@ -83,7 +83,7 @@
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
     if (latestOnly && filteredRuns.length > 0) {
-      selectedRuns = [filteredRunIds[filteredRunIds.length - 1]];
+      selectedRuns = [filteredRunIds[0]];
     } else if (!latestOnly) {
       selectedRuns = [...filteredRunIds];
     }

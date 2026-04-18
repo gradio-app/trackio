@@ -36,6 +36,7 @@
   let batchEndpointAvailable = true;
   let metricOrder = $state({});
   let dragState = $state({ group: null, index: -1 });
+  const MAX_BATCH_RUNS = 64;
 
   let rawDataCache = new Map();
   let refreshTimer = null;
@@ -187,13 +188,22 @@
   }
 
   async function fetchSystemLogsForRuns(runs) {
-    if (batchEndpointAvailable) {
+    if (batchEndpointAvailable && runs.length <= MAX_BATCH_RUNS) {
       try {
         return await getSystemLogsBatch(project, runs);
       } catch (e) {
         if (!isMissingEndpointError(e)) throw e;
         batchEndpointAvailable = false;
       }
+    }
+    if (batchEndpointAvailable) {
+      const results = [];
+      for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
+        const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
+        const batch = await getSystemLogsBatch(project, chunk);
+        results.push(...batch);
+      }
+      return results;
     }
     const results = [];
     for (const run of runs) {

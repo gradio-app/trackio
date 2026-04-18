@@ -49,6 +49,7 @@
 
   let rawDataCache = new Map();
   let refreshTimer = null;
+  const MAX_BATCH_RUNS = 64;
 
   let colorMap = $derived(buildColorMap(allRuns));
 
@@ -163,6 +164,16 @@
     singlePointMetrics = sp;
   }
 
+  async function fetchLogsForRuns(runs) {
+    const results = [];
+    for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
+      const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
+      const batch = await getLogsBatch(project, chunk);
+      results.push(...batch);
+    }
+    return results;
+  }
+
   async function fetchNewRuns() {
     if (!appBootstrapReady) {
       hasLoaded = false;
@@ -182,7 +193,7 @@
     let fetched = false;
     if (needFetch.length > 0) {
       try {
-        const batch = await getLogsBatch(project, needFetch);
+        const batch = await fetchLogsForRuns(needFetch);
         for (const entry of batch) {
           const runKey = entry.run_id ?? entry.run;
           rawDataCache.set(runKey, entry.logs);
@@ -206,7 +217,7 @@
     if (isRateLimitCooldownActive()) return;
 
     try {
-      const batch = await getLogsBatch(project, selectedRuns);
+      const batch = await fetchLogsForRuns(selectedRuns);
       let changed = false;
       for (const entry of batch) {
         const runKey = entry.run_id ?? entry.run;
