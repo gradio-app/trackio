@@ -97,6 +97,9 @@ def test_init_overwrites_remote_context_for_new_space(temp_dir, monkeypatch):
     monkeypatch.setattr(
         trackio.deploy, "create_space_if_not_exists", lambda *a, **k: None
     )
+    monkeypatch.setattr(
+        trackio.deploy, "resolve_auto_bucket_id", lambda space_id, bucket_id: bucket_id
+    )
     monkeypatch.setattr(trackio.huggingface_hub.utils, "get_token", lambda: "token")
     monkeypatch.setattr(run_module.huggingface_hub.utils, "get_token", lambda: "token")
 
