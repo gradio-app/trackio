@@ -3,6 +3,7 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
+import pyarrow.parquet as pq
 
 from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
@@ -44,6 +45,30 @@ def test_markdown_logging(temp_dir):
     ]
     assert len(markdown_entries) == 1
     assert markdown_entries[0]["summary"]["_value"] == "# Training summary"
+
+
+def test_static_export_preserves_late_markdown_columns(temp_dir, tmp_path):
+    run = Run(url=None, project="proj", client=None, name="run-report", space_id=None)
+    run.log({"loss": 0.1}, step=0)
+    run.log({"reports/summary": Markdown("# Training summary")}, step=1)
+    run.finish()
+
+    output_dir = tmp_path / "static-export"
+    SQLiteStorage.export_for_static_space("proj", output_dir)
+
+    rows = pq.read_table(output_dir / "metrics.parquet").to_pylist()
+    assert rows[1]["reports/summary"]["_type"] == Markdown.TYPE
+    assert rows[1]["reports/summary"]["_value"] == "# Training summary"
+
+
+def test_init_does_not_inherit_bucket_id_outside_spaces(temp_dir, monkeypatch):
+    monkeypatch.setenv("TRACKIO_BUCKET_ID", "user/old-bucket")
+
+    run = init(project="local-project", name="local-run")
+    run.log({"loss": 0.1})
+    run.finish()
+
+    assert SQLiteStorage.get_space_id("local-project") is None
 
 
 def test_run_log_calls_client_for_spaces(temp_dir):

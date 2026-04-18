@@ -21,7 +21,11 @@ import huggingface_hub
 from gradio_client import handle_file
 from httpx import ReadTimeout
 from huggingface_hub import Volume
-from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
+from huggingface_hub.errors import (
+    BucketNotFoundError,
+    HfHubHTTPError,
+    RepositoryNotFoundError,
+)
 
 import trackio
 from trackio.bucket_storage import (
@@ -111,6 +115,69 @@ def _get_space_volumes(space_id: str) -> list[Volume]:
         return list(info.runtime.volumes)
 
     return []
+
+
+def _get_space_bucket_at_data_mount(space_id: str) -> str | None:
+    for volume in _get_space_volumes(space_id):
+        if volume.type == "bucket" and volume.mount_path == "/data":
+            return volume.source
+    return None
+
+
+def _bucket_exists(bucket_id: str, hf_api: huggingface_hub.HfApi | None = None) -> bool:
+    hf_api = hf_api or huggingface_hub.HfApi()
+    try:
+        hf_api.bucket_info(bucket_id)
+        return True
+    except BucketNotFoundError:
+        return False
+
+
+def _find_available_bucket_id(
+    preferred_bucket_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> str:
+    hf_api = hf_api or huggingface_hub.HfApi()
+    if not _bucket_exists(preferred_bucket_id, hf_api):
+        return preferred_bucket_id
+
+    suffix = 2
+    while True:
+        candidate = f"{preferred_bucket_id}-{suffix}"
+        if not _bucket_exists(candidate, hf_api):
+            return candidate
+        suffix += 1
+
+
+def resolve_auto_bucket_id(
+    space_id: str,
+    preferred_bucket_id: str,
+    hf_api: huggingface_hub.HfApi | None = None,
+) -> str:
+    """
+    Resolve the bucket to use for an auto-generated bucket ID.
+
+    Rules:
+    - Existing Space with a bucket mounted at /data -> reuse that bucket.
+    - Otherwise -> use the preferred auto bucket ID if free, or a suffixed variant.
+    """
+    hf_api = hf_api or huggingface_hub.HfApi()
+
+    try:
+        hf_api.space_info(space_id)
+    except RepositoryNotFoundError:
+        existing_bucket_id = None
+    else:
+        existing_bucket_id = _get_space_bucket_at_data_mount(space_id)
+        if existing_bucket_id is not None:
+            return existing_bucket_id
+
+    bucket_id = _find_available_bucket_id(preferred_bucket_id, hf_api)
+    if bucket_id != preferred_bucket_id:
+        print(
+            f"* Auto-generated bucket {preferred_bucket_id} already exists; "
+            f"using {bucket_id} instead"
+        )
+    return bucket_id
 
 
 def _get_source_install_dependencies() -> str:
@@ -832,6 +899,8 @@ def sync(
     """
     if sdk not in ("gradio", "static"):
         raise ValueError(f"sdk must be 'gradio' or 'static', got '{sdk}'")
+    bucket_id_was_explicit = bucket_id is not None
+
     if space_id is None:
         space_id = SQLiteStorage.get_space_id(project)
     if space_id is None:
@@ -839,6 +908,8 @@ def sync(
     space_id, dataset_id, bucket_id = preprocess_space_and_dataset_ids(
         space_id, dataset_id, bucket_id
     )
+    if dataset_id is None and bucket_id is not None and not bucket_id_was_explicit:
+        bucket_id = resolve_auto_bucket_id(space_id, bucket_id)
 
     def _do_sync():
         try:
@@ -968,11 +1039,15 @@ def freeze(
     source_bucket_id = _get_source_bucket(space_id)
     print(f"* Reading project data from bucket: {source_bucket_id}")
 
+    bucket_id_was_explicit = bucket_id is not None
+
     if new_space_id is None:
         new_space_id = f"{space_id}_static"
     new_space_id, _dataset_id, bucket_id = preprocess_space_and_dataset_ids(
         new_space_id, None, bucket_id
     )
+    if bucket_id is not None and not bucket_id_was_explicit:
+        bucket_id = resolve_auto_bucket_id(new_space_id, bucket_id)
 
     hf_api = huggingface_hub.HfApi()
     try:

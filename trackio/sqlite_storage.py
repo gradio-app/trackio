@@ -722,7 +722,13 @@ class SQLiteStorage:
         if not rows:
             return
         pa, pq = SQLiteStorage._require_pyarrow()
-        table = pa.Table.from_pylist(rows)
+        column_names: list[str] = []
+        for row in rows:
+            for key in row:
+                if key not in column_names:
+                    column_names.append(key)
+        normalized_rows = [{key: row.get(key) for key in column_names} for row in rows]
+        table = pa.Table.from_pylist(normalized_rows)
         write_kwargs = {
             "write_page_index": True,
             "use_content_defined_chunking": True,
