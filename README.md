@@ -22,16 +22,20 @@
 
 Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face for humans and AI agents 🤗. 
 
-Why Trackio when other experiment-tracking libraries exist? Trackio has a few qualities that make it particularly useful for  agents: 
+**Why Trackio when other experiment-tracking libraries exist?** Trackio has a few qualities that make it particularly useful for  agents: 
 * It is local-first, because you shouldn't need to make an account to log data
-* Logs are stored in SQLite database (with support for "freezing" logs to Parquet), which not only supports very high throughputs for many parallel experiments, but also
+* Logs are stored in SQLite database (with support for "freezing" logs to Parquet), which not only lets Trackio supports very high throughputs for parallel experiments, but also
 * provides an easy CLI interface for querying data (including directly on the SQL data), perfect for LLM-driven analysis.
 
 So whether you are using agents to run entire research experiments autonomously or whether you are just using LLMs to analyze data, Trackio is for you.
 
 For human users, Trackio _also_ ships with a Gradio-inspired dashboard so you can view metrics, media, tables, alerts, etc.:
 
-![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
+
+
+https://github.com/user-attachments/assets/2683cf27-7520-4fff-9ee9-bdc08a8ca404
+
+
 
 ### Trackio's main features:
 
@@ -42,7 +46,7 @@ For human users, Trackio _also_ ships with a Gradio-inspired dashboard so you ca
   ```
   and keep your existing logging code.
 
-- **Local-first** design: dashboard runs locally by default. But note that you can also log metrics to a Hugging Face Space with `space_id` for free, which is useful for collaborative experiments.
+- **Local-first, cloud-optional** design: dashboard runs locally by default. But note that you can also log metrics to a Hugging Face Space with `space_id` which is _also_ free and useful for collaborative experiments.
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
   - Use `trackio query project --project <name> --sql "SELECT ..."` for read-only SQL when `trackio list` and `trackio get` are not enough
   - See the storage schema and direct query reference at https://huggingface.co/docs/trackio/storage_schema
