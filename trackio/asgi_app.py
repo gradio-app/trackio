@@ -397,11 +397,18 @@ async def gradio_upload_alias_handler(request: Request) -> Response:
     return await upload_handler(request)
 
 
+_DISALLOWED_FILE_SUFFIXES = frozenset(
+    {".db", ".db-journal", ".db-wal", ".db-shm", ".sqlite", ".sqlite3"}
+)
+
+
 async def file_handler(request: Request) -> Response:
     fs_path = request.query_params.get("path")
     if fs_path is None:
         return Response("Missing path", status_code=400)
     fp = Path(unquote(fs_path)).resolve(strict=False)
+    if fp.suffix.lower() in _DISALLOWED_FILE_SUFFIXES:
+        return Response("Not found", status_code=404)
     allowed_roots = getattr(request.app.state, "allowed_file_roots", ())
     if fp.is_file() and _is_allowed_file_path(fp, allowed_roots):
         return FileResponse(str(fp))

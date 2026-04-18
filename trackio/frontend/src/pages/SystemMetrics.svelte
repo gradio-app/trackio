@@ -13,6 +13,7 @@
     groupMetricsByPrefix,
     computeMetricPlotData,
     downsample,
+    logsHaveNewData,
   } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
 
@@ -262,7 +263,7 @@
         const runKey = entry.run_id ?? entry.run;
         const logs = entry.logs;
         const prev = rawDataCache.get(runKey);
-        if (!prev || logs.length !== prev.length) {
+        if (!prev || logsHaveNewData(prev, logs)) {
           rawDataCache.set(runKey, logs);
           changed = true;
         }

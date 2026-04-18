@@ -31,13 +31,15 @@ class Run:
         return SQLiteStorage.delete_run(self.project, self.name, run_id=self.id)
 
     def move(self, new_project: str) -> bool:
-        success = SQLiteStorage.move_run(self.project, self.name, new_project)
+        success = SQLiteStorage.move_run(
+            self.project, self.name, new_project, run_id=self.id
+        )
         if success:
             self.project = new_project
         return success
 
     def rename(self, new_name: str) -> "Run":
-        SQLiteStorage.rename_run(self.project, self.name, new_name)
+        SQLiteStorage.rename_run(self.project, self.name, new_name, run_id=self.id)
         self.name = new_name
         return self
 

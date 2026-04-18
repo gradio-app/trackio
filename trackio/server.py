@@ -914,7 +914,6 @@ def build_starlette_app_only(mcp_server: bool = False) -> tuple[Any, str]:
         mcp_enabled=mcp_enabled,
         allowed_file_roots=[
             utils.MEDIA_DIR,
-            utils.TRACKIO_DIR,
             utils.TRACKIO_LOGO_DIR,
         ],
     )
