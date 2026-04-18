@@ -82,7 +82,11 @@ def _make_hf_api(
         raise BucketNotFoundError("missing", response=_not_found_response())
 
     def hf_hub_download(repo_id, repo_type, filename):
-        if config_path is not None and repo_type == "space" and filename == "config.json":
+        if (
+            config_path is not None
+            and repo_type == "space"
+            and filename == "config.json"
+        ):
             return config_path
         raise FileNotFoundError(filename)
 
