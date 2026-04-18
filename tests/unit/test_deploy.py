@@ -45,8 +45,11 @@ def test_get_source_bucket_falls_back_to_space_info_runtime(
     bucket_id = deploy._get_source_bucket("abidlabs/example-space")
 
     assert bucket_id == "abidlabs/example-bucket"
-    mock_add_space_variable.assert_called_once_with(
+    mock_add_space_variable.assert_any_call(
         "abidlabs/example-space", "TRACKIO_DIR", "/data/trackio"
+    )
+    mock_add_space_variable.assert_any_call(
+        "abidlabs/example-space", "TRACKIO_BUCKET_ID", "abidlabs/example-bucket"
     )
 
 
