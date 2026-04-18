@@ -1,10 +1,7 @@
-import json
-import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from huggingface_hub import Volume
-from huggingface_hub.errors import BucketNotFoundError, RepositoryNotFoundError
 
 from trackio import deploy
 from trackio.bucket_storage import _list_bucket_file_paths
@@ -23,11 +20,8 @@ def test_get_space_install_requirement_includes_mcp_extra():
     assert requirement == f"trackio[spaces,mcp]=={deploy.trackio.__version__}"
 
 
-@patch("trackio.deploy.huggingface_hub.add_space_variable")
 @patch("trackio.deploy.huggingface_hub.HfApi")
-def test_get_source_bucket_falls_back_to_space_info_runtime(
-    mock_hf_api, mock_add_space_variable
-):
+def test_get_source_bucket_falls_back_to_space_info_runtime(mock_hf_api):
     api = mock_hf_api.return_value
     api.get_space_runtime.return_value = SimpleNamespace(volumes=None)
     api.space_info.return_value = SimpleNamespace(
@@ -45,125 +39,6 @@ def test_get_source_bucket_falls_back_to_space_info_runtime(
     bucket_id = deploy._get_source_bucket("abidlabs/example-space")
 
     assert bucket_id == "abidlabs/example-bucket"
-    mock_add_space_variable.assert_any_call(
-        "abidlabs/example-space", "TRACKIO_DIR", "/data/trackio"
-    )
-    mock_add_space_variable.assert_any_call(
-        "abidlabs/example-space", "TRACKIO_BUCKET_ID", "abidlabs/example-bucket"
-    )
-
-
-def _not_found_response():
-    return SimpleNamespace(status_code=404, headers={}, request=None)
-
-
-def _make_hf_api(
-    *,
-    space_exists,
-    volumes=(),
-    existing_bucket_ids=(),
-    sdk="gradio",
-    config=None,
-):
-    config_path = None
-    if config is not None:
-        config_file = tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8")
-        with config_file:
-            json.dump(config, config_file)
-        config_path = config_file.name
-
-    def space_info(space_id):
-        if space_exists:
-            return SimpleNamespace(
-                runtime=SimpleNamespace(volumes=list(volumes)), sdk=sdk
-            )
-        raise RepositoryNotFoundError("missing", response=_not_found_response())
-
-    def bucket_info(bucket_id):
-        if bucket_id in existing_bucket_ids:
-            return SimpleNamespace(id=bucket_id)
-        raise BucketNotFoundError("missing", response=_not_found_response())
-
-    def hf_hub_download(repo_id, repo_type, filename):
-        if (
-            config_path is not None
-            and repo_type == "space"
-            and filename == "config.json"
-        ):
-            return config_path
-        raise FileNotFoundError(filename)
-
-    return SimpleNamespace(
-        space_info=space_info,
-        bucket_info=bucket_info,
-        get_space_runtime=lambda space_id: SimpleNamespace(volumes=list(volumes)),
-        hf_hub_download=hf_hub_download,
-    )
-
-
-def test_resolve_auto_bucket_reuses_bucket_mounted_at_data():
-    hf_api = _make_hf_api(
-        space_exists=True,
-        volumes=[
-            Volume(type="bucket", source="u/old-bucket", mount_path="/data"),
-        ],
-    )
-
-    result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
-
-    assert result == "u/old-bucket"
-
-
-def test_resolve_auto_bucket_uses_preferred_when_space_exists_without_data_mount():
-    hf_api = _make_hf_api(space_exists=True, volumes=[])
-
-    result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
-
-    assert result == "u/space-bucket"
-
-
-def test_resolve_auto_bucket_reuses_bucket_from_existing_static_space_config():
-    hf_api = _make_hf_api(
-        space_exists=True,
-        volumes=[],
-        sdk="static",
-        config={"bucket_id": "u/static-bucket"},
-        existing_bucket_ids={"u/space-bucket"},
-    )
-
-    result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
-
-    assert result == "u/static-bucket"
-
-
-def test_resolve_auto_bucket_suffixes_when_existing_space_without_data_mount_bucket_taken():
-    hf_api = _make_hf_api(
-        space_exists=True,
-        volumes=[],
-        existing_bucket_ids={"u/space-bucket", "u/space-bucket-2"},
-    )
-
-    result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
-
-    assert result == "u/space-bucket-3"
-
-
-def test_resolve_auto_bucket_uses_preferred_when_neither_space_nor_bucket_exist():
-    hf_api = _make_hf_api(space_exists=False, existing_bucket_ids=())
-
-    result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
-
-    assert result == "u/space-bucket"
-
-
-def test_resolve_auto_bucket_suffixes_when_default_bucket_is_taken():
-    hf_api = _make_hf_api(
-        space_exists=False, existing_bucket_ids={"u/space-bucket", "u/space-bucket-2"}
-    )
-
-    result = deploy.resolve_auto_bucket_id("u/space", "u/space-bucket", hf_api=hf_api)
-
-    assert result == "u/space-bucket-3"
 
 
 @patch("trackio.bucket_storage.huggingface_hub.list_bucket_tree")

@@ -44,7 +44,6 @@ def generate_grad_norm_curve(epoch, max_epochs):
         noise = random.gauss(0, 0.5)
         return max(0.1, base_value + noise)
 
-wandb.show(project=f"fake-training-{PROJECT_ID}", block_thread=False)
 
 for run in range(3):
     wandb.init(

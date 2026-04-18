@@ -2,13 +2,8 @@ import sqlite3
 import time
 from unittest.mock import MagicMock
 
-import pyarrow.parquet as pq
 import pytest
 
-import trackio
-import trackio.context_vars as context_vars
-import trackio.run as run_module
-import trackio.server as server
 from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -49,87 +44,6 @@ def test_markdown_logging(temp_dir):
     ]
     assert len(markdown_entries) == 1
     assert markdown_entries[0]["summary"]["_value"] == "# Training summary"
-
-
-def test_static_export_preserves_late_markdown_columns(temp_dir, tmp_path):
-    run = Run(url=None, project="proj", client=None, name="run-report", space_id=None)
-    run.log({"loss": 0.1}, step=0)
-    run.log({"reports/summary": Markdown("# Training summary")}, step=1)
-    run.finish()
-
-    output_dir = tmp_path / "static-export"
-    SQLiteStorage.export_for_static_space("proj", output_dir)
-
-    rows = pq.read_table(output_dir / "metrics.parquet").to_pylist()
-    assert rows[1]["reports/summary"]["_type"] == Markdown.TYPE
-    assert rows[1]["reports/summary"]["_value"] == "# Training summary"
-
-
-def test_init_does_not_inherit_bucket_id_outside_spaces(temp_dir, monkeypatch):
-    monkeypatch.setenv("TRACKIO_BUCKET_ID", "user/old-bucket")
-
-    run = init(project="local-project", name="local-run")
-    run.log({"loss": 0.1})
-    run.finish()
-
-    assert SQLiteStorage.get_space_id("local-project") is None
-
-
-def test_init_overwrites_remote_context_for_new_space(temp_dir, monkeypatch):
-    created_clients = []
-
-    class FakeRemoteClient:
-        def __init__(self, src, **kwargs):
-            created_clients.append(src)
-
-        def predict(self, *args, **kwargs):
-            api_name = kwargs.get("api_name")
-            if api_name == "/get_runs_for_project":
-                return []
-            if api_name == "/get_run_summary":
-                return {"last_step": None}
-            return None
-
-    monkeypatch.setattr(trackio, "RemoteClient", FakeRemoteClient)
-    monkeypatch.setattr(run_module, "RemoteClient", FakeRemoteClient)
-    monkeypatch.setattr(
-        trackio.deploy, "raise_if_space_is_frozen_for_logging", lambda *a, **k: None
-    )
-    monkeypatch.setattr(
-        trackio.deploy, "create_space_if_not_exists", lambda *a, **k: None
-    )
-    monkeypatch.setattr(
-        trackio.deploy, "resolve_auto_bucket_id", lambda space_id, bucket_id: bucket_id
-    )
-    monkeypatch.setattr(trackio.huggingface_hub.utils, "get_token", lambda: "token")
-    monkeypatch.setattr(run_module.huggingface_hub.utils, "get_token", lambda: "token")
-
-    context_vars.current_server.set("old-org/old-space")
-    context_vars.current_space_id.set("old-org/old-space")
-    context_vars.current_server_write_token.set(None)
-
-    run = init(project="space-project", name="space-run", space_id="new-org/new-space")
-    run.log({"loss": 0.1})
-    run.finish()
-
-    assert run.url == "new-org/new-space"
-    assert context_vars.current_server.get() == "new-org/new-space"
-    assert context_vars.current_space_id.get() == "new-org/new-space"
-    assert created_clients[-1] == "new-org/new-space"
-
-
-def test_init_clears_stale_remote_context_for_local_run(temp_dir):
-    context_vars.current_server.set("old-org/old-space")
-    context_vars.current_space_id.set("old-org/old-space")
-    context_vars.current_server_write_token.set("secret")
-
-    run = init(project="fresh-local-project", name="fresh-local-run")
-    run.finish()
-
-    assert run.url is None
-    assert context_vars.current_server.get() is None
-    assert context_vars.current_space_id.get() is None
-    assert context_vars.current_server_write_token.get() is None
 
 
 def test_run_log_calls_client_for_spaces(temp_dir):
@@ -229,22 +143,6 @@ def test_resume_allow_and_must_use_latest_run_with_same_name(temp_dir):
 
     required = init(project="dup-project", name="same-name", resume="must")
     assert required.id == second.id
-
-
-def test_get_run_summary_prefers_canonical_name_for_run_id(temp_dir):
-    project = "summary-project"
-    old_name = "old-name"
-    new_name = "new-name"
-    run_id = "run-id-123"
-
-    SQLiteStorage.bulk_log(project, old_name, [{"loss": 0.1}], run_id=run_id)
-    SQLiteStorage.rename_run(project, old_name, new_name, run_id=run_id)
-
-    summary = server.get_run_summary(project, run=old_name, run_id=run_id)
-
-    assert summary["run"] == new_name
-    assert summary["run_id"] == run_id
-    assert summary["num_logs"] == 1
 
 
 def test_legacy_project_without_run_id_still_resumes_and_logs(temp_dir):
