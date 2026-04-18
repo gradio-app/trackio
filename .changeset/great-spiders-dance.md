@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Fix24
+feat:Fix static exports and Space bucket handling
