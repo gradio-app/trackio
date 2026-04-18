@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -15,6 +16,20 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 import trackio
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
+_print_lock = threading.Lock()
+
+
+def _progress(message: str) -> None:
+    with _print_lock:
+        print(message, flush=True)
+
 
 SPACE_HEAVY_KEYWORDS = (
     "deploy",
@@ -31,12 +46,19 @@ EXTRA_DEPS_KEYWORDS = (
     "fractal-evolution",
 )
 
+REQUIRES_SECRET_ENV_KEYWORDS = ("slack-webhook",)
+
 BENIGN_CONSOLE_ERROR_SNIPPETS = (
     "favicon.ico",
     "Failed to load resource: the server responded with a status of 404",
 )
 
-TRACKIO_PATH_IN_TRACEBACK = re.compile(r'File "[^"]*trackio[/\\]', re.IGNORECASE)
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+TRACKIO_LIB_FRAME = re.compile(
+    r'File "[^"]*(?:[/\\]trackio[/\\]trackio[/\\]|site-packages[/\\]trackio[/\\])',
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -85,20 +107,23 @@ def scan_logs_for_trackio_issues(
 ) -> list[TrackioIssue]:
     issues: list[TrackioIssue] = []
     combined = f"{stdout}\n{stderr}"
-    if "Traceback (most recent call last):" in combined and (
-        "trackio" in combined.lower() or TRACKIO_PATH_IN_TRACEBACK.search(combined)
+    if "Traceback (most recent call last):" in combined and TRACKIO_LIB_FRAME.search(
+        combined
     ):
         issues.append(
             TrackioIssue(
                 kind="python_traceback",
-                detail="Traceback involving Trackio appears in example output",
+                detail="Traceback with frames under the trackio package appears in output",
                 example=example_name,
                 artifact_path=str(stderr_path if stderr.strip() else stdout_path),
             )
         )
     for line in combined.splitlines():
-        lower = line.lower()
-        if "trackio" not in lower and "/trackio/" not in line:
+        plain = ANSI_ESCAPE.sub("", line)
+        lower = plain.lower()
+        if re.search(r"\[trackio\s+(info|warn|error)\]", plain, re.IGNORECASE):
+            continue
+        if "trackio" not in lower and "/trackio/" not in plain.lower():
             continue
         if any(
             w in lower
@@ -153,7 +178,12 @@ def _normalize_list_response(value: object, key: str) -> list[str]:
     return []
 
 
-def _example_candidates(examples_dir: Path, include_spaces: bool) -> list[Path]:
+def _example_candidates(
+    examples_dir: Path,
+    include_spaces: bool,
+    include_extra_deps: bool,
+    include_secret_env: bool,
+) -> list[Path]:
     paths = sorted(examples_dir.glob("*.py"))
     if include_spaces:
         return paths
@@ -162,7 +192,13 @@ def _example_candidates(examples_dir: Path, include_spaces: bool) -> list[Path]:
         name = path.name.lower()
         if any(keyword in name for keyword in SPACE_HEAVY_KEYWORDS):
             continue
-        if any(keyword in name for keyword in EXTRA_DEPS_KEYWORDS):
+        if not include_extra_deps and any(
+            keyword in name for keyword in EXTRA_DEPS_KEYWORDS
+        ):
+            continue
+        if not include_secret_env and any(
+            keyword in name for keyword in REQUIRES_SECRET_ENV_KEYWORDS
+        ):
             continue
         filtered.append(path)
     return filtered
@@ -181,6 +217,8 @@ def run_example_and_collect_projects(
     artifacts_dir: Path,
     space: str | None,
 ) -> ExampleOutcome:
+    env = {**env}
+    env.setdefault("PYTHONUNBUFFERED", "1")
     list_args = ["list", "projects"]
     if space:
         list_args.extend(["--space", space])
@@ -199,7 +237,7 @@ def run_example_and_collect_projects(
             [sys.executable, str(example_path)],
             env=env,
             timeout_s=timeout_s,
-            cwd=repo_root,
+            cwd=example_path.parent,
         )
     except subprocess.TimeoutExpired as e:
         return ExampleOutcome(
@@ -504,7 +542,12 @@ def execute_examples(
         shared.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ)
         env["TRACKIO_DIR"] = str(shared)
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        n = len(selected)
         for idx, example in enumerate(selected):
+            _progress(
+                f"  Example [{idx + 1}/{n}]: starting subprocess {example.name} ..."
+            )
             sublog = logs_root / f"{idx:02d}_{_ensure_serializable_name(example.stem)}"
             sublog.mkdir(parents=True, exist_ok=True)
             out = run_example_and_collect_projects(
@@ -517,12 +560,22 @@ def execute_examples(
                 space=space,
             )
             outcomes.append(out)
+            _progress(
+                f"  Example [{idx + 1}/{n}]: finished {example.name} (ok={out.ok})"
+            )
         return outcomes
 
     sandboxes_root = artifacts_root / "sandboxes"
     sandboxes_root.mkdir(exist_ok=True)
 
+    max_workers = min(jobs, len(selected))
+    _progress(
+        f"Running {len(selected)} example subprocess(es) in parallel "
+        f"(up to {max_workers} at a time; each may run for minutes) ..."
+    )
+
     def run_idx(idx: int, example: Path) -> ExampleOutcome:
+        _progress(f"  Subprocess started: [{idx}] {example.name}")
         try:
             trackio_dir = (
                 sandboxes_root / f"{idx:02d}_{_ensure_serializable_name(example.stem)}"
@@ -530,6 +583,7 @@ def execute_examples(
             trackio_dir.mkdir(parents=True, exist_ok=True)
             env = dict(os.environ)
             env["TRACKIO_DIR"] = str(trackio_dir)
+            env.setdefault("PYTHONUNBUFFERED", "1")
             sublog = logs_root / f"{idx:02d}_{_ensure_serializable_name(example.stem)}"
             sublog.mkdir(parents=True, exist_ok=True)
             return run_example_and_collect_projects(
@@ -555,13 +609,16 @@ def execute_examples(
                 error_message=repr(e),
             )
 
-    max_workers = min(jobs, len(selected))
     slot_outcomes: list[ExampleOutcome | None] = [None] * len(selected)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(run_idx, i, ex): i for i, ex in enumerate(selected)}
         for fut in as_completed(futures):
             slot = futures[fut]
-            slot_outcomes[slot] = fut.result()
+            done = fut.result()
+            slot_outcomes[slot] = done
+            _progress(
+                f"  Subprocess finished: [{slot}] {selected[slot].name} (ok={done.ok})"
+            )
     return [o for o in slot_outcomes if o is not None]
 
 
@@ -578,19 +635,19 @@ def dedupe_issues(issues: list[TrackioIssue]) -> list[TrackioIssue]:
 
 
 def print_trackio_library_report(issues: list[TrackioIssue]) -> None:
-    print("\n=== Trackio library health report ===")
-    print(
+    _progress("\n=== Trackio library health report ===")
+    _progress(
         "Focus: signals that suggest Trackio (library, CLI, or dashboard) regressions, "
         "not whether a particular example script is perfect."
     )
     if not issues:
-        print("No Trackio-related problems were collected in this run.")
+        _progress("No Trackio-related problems were collected in this run.")
         return
-    print(f"Collected {len(issues)} item(s) to review:\n")
+    _progress(f"Collected {len(issues)} item(s) to review:\n")
     for i, issue in enumerate(issues, 1):
         ex = f" [{issue.example}]" if issue.example else ""
         art = f"\n  log: {issue.artifact_path}" if issue.artifact_path else ""
-        print(f"{i}. ({issue.kind}){ex}\n  {issue.detail}{art}\n")
+        _progress(f"{i}. ({issue.kind}){ex}\n  {issue.detail}{art}\n")
 
 
 def main() -> int:
@@ -610,6 +667,23 @@ def main() -> int:
         "--include-space-examples",
         action="store_true",
         help="Include examples likely to require Spaces credentials/network.",
+    )
+    parser.add_argument(
+        "--include-extra-deps-examples",
+        action="store_true",
+        help=(
+            "Include examples that need optional third-party packages "
+            "(e.g. transformers, datasets). Excluded by default so local health checks "
+            "do not fail on missing optional deps."
+        ),
+    )
+    parser.add_argument(
+        "--include-secret-env-examples",
+        action="store_true",
+        help=(
+            "Include examples that require secret env vars (e.g. SLACK_WEBHOOK_URL). "
+            "Excluded by default."
+        ),
     )
     parser.add_argument(
         "--space",
@@ -643,7 +717,12 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parent.parent
     examples_dir = repo_root / "examples"
-    candidates = _example_candidates(examples_dir, args.include_space_examples)
+    candidates = _example_candidates(
+        examples_dir,
+        args.include_space_examples,
+        args.include_extra_deps_examples,
+        args.include_secret_env_examples,
+    )
     if not candidates:
         raise RuntimeError("No example candidates available with current filters.")
 
@@ -662,14 +741,18 @@ def main() -> int:
     screenshots_dir = artifacts_root / "screenshots"
     screenshots_dir.mkdir(exist_ok=True)
 
-    print(f"Artifacts: {artifacts_root}")
-    print(
+    _progress(f"Artifacts: {artifacts_root}")
+    _progress(
         f"Execution: {'parallel' if args.jobs > 1 else 'sequential'} (--jobs {args.jobs})"
     )
-    print(f"Selected examples ({sample_count}):")
+    _progress(f"Selected examples ({sample_count}):")
     for example in selected:
-        print(f"  - {example.name}")
+        _progress(f"  - {example.name}")
 
+    _progress(
+        "\nRunning example scripts (no further output until a subprocess finishes; "
+        "slow scripts with training loops can take several minutes) ..."
+    )
     start = time.time()
     outcomes = execute_examples(
         selected,
@@ -689,7 +772,7 @@ def main() -> int:
 
     if failed:
         for o in failed:
-            print(f"\nExample run failed: {o.error_message or 'unknown'}")
+            _progress(f"\nExample run failed: {o.error_message or 'unknown'}")
         if not args.continue_on_failure:
             collected_issues = dedupe_issues(collected_issues)
             print_trackio_library_report(collected_issues)
@@ -718,17 +801,19 @@ def main() -> int:
         print_trackio_library_report(collected_issues)
         return 1
 
-    print("\nValidating with Trackio CLI...")
+    _progress("\nValidating with Trackio CLI ...")
     cli_issues = validate_cli_for_results(ok_results, repo_root, args.space)
     collected_issues.extend(cli_issues)
     if cli_issues:
-        print(
+        _progress(
             f"  CLI reported {len(cli_issues)} problem(s); see Trackio library report."
         )
     else:
-        print("  CLI checks passed")
+        _progress("  CLI checks passed")
 
-    print("\nValidating UI with Playwright...")
+    _progress(
+        "\nValidating UI with Playwright (Chromium + local dashboard; often 30–120s) ..."
+    )
     ui_issues = validate_ui(
         ok_results,
         screenshots_dir=screenshots_dir,
@@ -736,9 +821,11 @@ def main() -> int:
     )
     collected_issues.extend(ui_issues)
     if ui_issues:
-        print(f"  UI reported {len(ui_issues)} problem(s); see Trackio library report.")
+        _progress(
+            f"  UI reported {len(ui_issues)} problem(s); see Trackio library report."
+        )
     else:
-        print("  UI checks passed")
+        _progress("  UI checks passed")
 
     collected_issues = dedupe_issues(collected_issues)
     print_trackio_library_report(collected_issues)
@@ -765,12 +852,12 @@ def main() -> int:
     summary_path = artifacts_root / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))
 
-    print(f"\nSummary written to: {summary_path}")
-    print(f"Screenshots: {screenshots_dir}")
+    _progress(f"\nSummary written to: {summary_path}")
+    _progress(f"Screenshots: {screenshots_dir}")
 
     if failed or collected_issues:
         return 1
-    print("\nTrackio library check completed with no collected issues.")
+    _progress("\nTrackio library check completed with no collected issues.")
     return 0
 
 
