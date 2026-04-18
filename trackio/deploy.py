@@ -197,6 +197,11 @@ def _ensure_bucket_mounted_at_data(
     current_trackio_dir = getattr(existing_variables.get("TRACKIO_DIR"), "value", None)
     if current_trackio_dir != "/data/trackio":
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
+    current_bucket_id = getattr(
+        existing_variables.get("TRACKIO_BUCKET_ID"), "value", None
+    )
+    if current_bucket_id != bucket_id:
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_BUCKET_ID", bucket_id)
 
 
 def _bucket_exists(bucket_id: str, hf_api: huggingface_hub.HfApi | None = None) -> bool:
