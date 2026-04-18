@@ -209,14 +209,17 @@ def resolve_auto_bucket_id(
     """
     hf_api = hf_api or huggingface_hub.HfApi()
 
+    space_exists = True
     try:
         hf_api.space_info(space_id)
     except RepositoryNotFoundError:
-        existing_bucket_id = None
-    else:
+        space_exists = False
+
+    if space_exists:
         existing_bucket_id = _get_existing_space_bucket(space_id, hf_api=hf_api)
         if existing_bucket_id is not None:
             return existing_bucket_id
+        return preferred_bucket_id
 
     bucket_id = _find_available_bucket_id(preferred_bucket_id, hf_api)
     if bucket_id != preferred_bucket_id:
