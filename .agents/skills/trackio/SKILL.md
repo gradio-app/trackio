@@ -7,7 +7,7 @@ description: Track and visualize ML training experiments with Trackio. Use when 
 
 Trackio is an experiment tracking library for logging and visualizing ML training metrics. It syncs to Hugging Face Spaces for real-time monitoring dashboards.
 
-## Three Interfaces
+## Interfaces
 
 | Task | Interface | Reference |
 |------|-----------|-----------|
@@ -15,6 +15,7 @@ Trackio is an experiment tracking library for logging and visualizing ML trainin
 | **Firing alerts** for training diagnostics | Python API | [alerts.md](alerts.md) |
 | **Retrieving metrics & alerts** after/during training | CLI | [retrieving_metrics.md](retrieving_metrics.md) |
 | **Inspecting storage schema and running direct SQL** | CLI | [storage_schema.md](storage_schema.md) |
+| **Building a custom dashboard / vibecoded frontend** on top of the data | Python / CLI / HTTP | [custom_frontends.md](custom_frontends.md) |
 
 ## When to Use Each
 
