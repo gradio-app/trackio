@@ -18,6 +18,9 @@
     selectedRuns = $bindable([]),
     availableSystemDevices = [],
     selectedSystemDevices = $bindable([]),
+    traceModel = $bindable("All models"),
+    traceMinReward = $bindable(0),
+    traceModelChoices = [],
     smoothing = $bindable(10),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
@@ -227,6 +230,29 @@
             </div>
           {/if}
         </div>
+
+        {#if currentPage === "traces"}
+          <span class="section-label">Trace Filters</span>
+
+          <div class="section">
+            <Dropdown
+              label="Model Version"
+              choices={traceModelChoices}
+              bind:value={traceModel}
+              filterable={false}
+            />
+          </div>
+
+          <div class="section">
+            <GradioSlider
+              label="Minimum Reward"
+              bind:value={traceMinReward}
+              min={0}
+              max={1}
+              step={0.01}
+            />
+          </div>
+        {/if}
 
         {#if currentPage === "metrics" || currentPage === "system"}
           <span class="section-label">Display Settings</span>

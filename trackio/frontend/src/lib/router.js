@@ -8,6 +8,8 @@ export function getPageFromPath() {
       return "metrics";
     case "system":
       return "system";
+    case "traces":
+      return "traces";
     case "media":
       return "media";
     case "reports":
@@ -29,6 +31,7 @@ export function navigateTo(page) {
   const params = new URLSearchParams(window.location.search);
   const pathMap = {
     metrics: "/",
+    traces: "/traces",
     system: "/system",
     media: "/media",
     reports: "/reports",

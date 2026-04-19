@@ -4,6 +4,7 @@
   import Sidebar from "./components/Sidebar.svelte";
   import AlertPanel from "./components/AlertPanel.svelte";
   import Metrics from "./pages/Metrics.svelte";
+  import Traces from "./pages/Traces.svelte";
   import SystemMetrics from "./pages/SystemMetrics.svelte";
   import Media from "./pages/Media.svelte";
   import Reports from "./pages/Reports.svelte";
@@ -69,6 +70,18 @@
   let spaceId = $state(null);
   let availableSystemDevices = $state([]);
   let selectedSystemDevices = $state([]);
+  let traceModel = $state("All models");
+  let traceMinReward = $state(0);
+  let traceModelChoices = $state([
+    "All models",
+    "step-1800",
+    "step-2000",
+    "step-2150",
+    "step-2300",
+    "step-2450",
+    "step-2600",
+    "step-2800",
+  ]);
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -316,6 +329,7 @@
 
   let showSidebar = $derived(
     currentPage === "metrics" ||
+      currentPage === "traces" ||
       currentPage === "system" ||
       currentPage === "media" ||
       currentPage === "reports" ||
@@ -355,6 +369,9 @@
       {metricColumns}
       {availableSystemDevices}
       bind:selectedSystemDevices
+      bind:traceModel
+      bind:traceMinReward
+      {traceModelChoices}
       {logoUrls}
       {darkMode}
     />
@@ -379,6 +396,13 @@
           {plotOrder}
           {realtimeEnabled}
           bind:metricColumns
+        />
+      {:else if currentPage === "traces"}
+        <Traces
+          project={selectedProject}
+          selectedRuns={selectedRunRecords}
+          bind:traceModel
+          bind:traceMinReward
         />
       {:else if currentPage === "system"}
         <SystemMetrics
