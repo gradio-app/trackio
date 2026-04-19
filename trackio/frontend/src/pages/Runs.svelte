@@ -123,6 +123,7 @@
         {#each runsData as run, i}
           <tr>
             <td class="actions-cell">
+              <div class="actions-wrap">
               <button
                 class="action-btn"
                 title={canMutateRuns ? "Rename" : "Sign in with Hugging Face (write access) to rename runs"}
@@ -147,6 +148,7 @@
                   <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
                 </svg>
               </button>
+              </div>
             </td>
             <td class="run-name-cell">
               {#if renamingIndex === i}
@@ -282,9 +284,10 @@
     outline: none;
     width: 100%;
   }
-  .actions-cell {
+  .actions-wrap {
     display: flex;
     gap: 4px;
+    align-items: center;
   }
   .action-btn {
     background: none;

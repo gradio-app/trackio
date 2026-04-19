@@ -395,6 +395,7 @@
         <Media
           project={selectedProject}
           selectedRuns={selectedRunRecords}
+          allRuns={runs}
           {tableTruncateLength}
         />
       {:else if currentPage === "reports"}

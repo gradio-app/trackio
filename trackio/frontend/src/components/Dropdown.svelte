@@ -46,6 +46,7 @@
   }
 
   function handleFocus() {
+    inputText = "";
     filteredIndices = choices.map((_, i) => i);
     showOptions = true;
     if (filterInput) {

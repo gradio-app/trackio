@@ -89,7 +89,7 @@ def main() -> None:
                     "train/loss": train_loss,
                     "train/accuracy": train_acc,
                     "media/preview_image": trackio.Image(
-                        img, caption=f"step {step}, run {run_idx}"
+                        img, caption="this is a caption"
                     ),
                     "media/preview_audio": trackio.Audio(
                         audio, sample_rate=16000, format="wav"
