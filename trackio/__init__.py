@@ -390,6 +390,16 @@ def init(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
+    previous_run = context_vars.current_run.get()
+    if previous_run is not None:
+        try:
+            previous_run.finish()
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not finish the previous run '{previous_run.name}': {e}. Continuing with new run."
+            )
+        context_vars.current_run.set(None)
+
     bucket_id_was_explicit = bucket_id is not None
     space_id, server_url = utils.resolve_space_id_and_server_url(space_id, server_url)
     if bucket_id is None and utils.on_spaces():

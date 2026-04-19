@@ -51,6 +51,10 @@ EXTRA_DEPS_KEYWORDS = (
 
 REQUIRES_SECRET_ENV_KEYWORDS = ("slack-webhook",)
 
+INTERACTIVE_HOLD_PATTERN = re.compile(
+    r"time\.sleep\(\s*(?:[1-9][0-9]{2,}|\d+\s*\*\s*\d+)"
+)
+
 BENIGN_CONSOLE_ERROR_SNIPPETS = (
     "favicon.ico",
     "Failed to load resource: the server responded with a status of 404",
@@ -79,6 +83,7 @@ class ValidationResult:
     touched_projects: list[str]
     run_stdout_path: Path
     run_stderr_path: Path
+    space_id: str | None = None
     trackio_issues: list[TrackioIssue] = field(default_factory=list)
 
 
@@ -199,8 +204,32 @@ def _example_candidates(
             keyword in name for keyword in REQUIRES_SECRET_ENV_KEYWORDS
         ):
             continue
+        try:
+            source = path.read_text()
+        except OSError:
+            source = ""
+        if INTERACTIVE_HOLD_PATTERN.search(source):
+            continue
         filtered.append(path)
     return filtered
+
+
+SPACE_URL_PATTERN = re.compile(
+    r"huggingface\.co/spaces/([A-Za-z0-9][A-Za-z0-9_.-]*)/([A-Za-z0-9][A-Za-z0-9_.-]*)"
+)
+
+
+def extract_space_id_from_output(output: str) -> str | None:
+    match = SPACE_URL_PATTERN.search(output)
+    if not match:
+        return None
+    return f"{match.group(1)}/{match.group(2)}"
+
+
+def space_embed_url(space_id: str) -> str:
+    user, name = space_id.split("/", 1)
+    sanitized = re.sub(r"[^A-Za-z0-9]+", "-", f"{user}-{name}").strip("-").lower()
+    return f"https://{sanitized}.hf.space"
 
 
 def _ensure_serializable_name(name: str) -> str:
@@ -281,15 +310,21 @@ def run_example_and_collect_projects(
             ),
         )
 
-    after_projects_raw = _run_trackio_json(list_args, env=env, cwd=repo_root)
+    detected_space_id = extract_space_id_from_output(result.stdout + result.stderr)
+    effective_space = space or detected_space_id
+
+    after_list_args = ["list", "projects"]
+    if effective_space:
+        after_list_args.extend(["--space", effective_space])
+    after_projects_raw = _run_trackio_json(after_list_args, env=env, cwd=repo_root)
     after_projects = set(_normalize_list_response(after_projects_raw, "projects"))
     new_projects = after_projects - before_projects
     touched_projects = set(new_projects)
 
     for project in sorted(after_projects & before_projects):
         runs_args = ["list", "runs", "--project", project]
-        if space:
-            runs_args.extend(["--space", space])
+        if effective_space:
+            runs_args.extend(["--space", effective_space])
         after_runs = _run_trackio_json(runs_args, env=env, cwd=repo_root)
         after_runs_set = set(_normalize_list_response(after_runs, "runs"))
         before_runs_set = before_runs_by_project.get(project, set())
@@ -325,6 +360,7 @@ def run_example_and_collect_projects(
             touched_projects=touched_projects_sorted,
             run_stdout_path=stdout_path,
             run_stderr_path=stderr_path,
+            space_id=detected_space_id,
             trackio_issues=scanned,
         ),
         issues=scanned,
@@ -379,19 +415,28 @@ def validate_ui(
                 for project in vr.touched_projects:
                     app = None
                     page = None
-                    try:
-                        app, _, _, full_url = trackio.show(
-                            project=project, block_thread=False, open_browser=False
+                    if vr.space_id:
+                        full_url = f"{space_embed_url(vr.space_id)}/?project={project}"
+                        _progress(
+                            f"  UI check via remote Space for {vr.example_path.name}: "
+                            f"{full_url}"
                         )
-                    except Exception as e:
-                        ui_issues.append(
-                            TrackioIssue(
-                                kind="ui_launch",
-                                detail=repr(e),
-                                example=vr.example_path.name,
+                    else:
+                        try:
+                            app, _, _, full_url = trackio.show(
+                                project=project,
+                                block_thread=False,
+                                open_browser=False,
                             )
-                        )
-                        continue
+                        except Exception as e:
+                            ui_issues.append(
+                                TrackioIssue(
+                                    kind="ui_launch",
+                                    detail=repr(e),
+                                    example=vr.example_path.name,
+                                )
+                            )
+                            continue
                     raw_console_errors: list[str] = []
                     page_errors: list[str] = []
                     try:
@@ -432,10 +477,26 @@ def validate_ui(
 
                         page.get_by_role("button", name="Metrics", exact=True).click()
                         page.wait_for_load_state("networkidle")
+                        page.wait_for_timeout(500)
+                        metrics_shot = (
+                            f"{_ensure_serializable_name(vr.example_path.stem)}__"
+                            f"{_ensure_serializable_name(project)}__metrics.png"
+                        )
+                        page.screenshot(
+                            path=str(screenshots_dir / metrics_shot), full_page=True
+                        )
                         page.get_by_role(
                             "button", name="Media & Tables", exact=True
                         ).click()
                         page.wait_for_load_state("networkidle")
+                        page.wait_for_timeout(500)
+                        media_shot = (
+                            f"{_ensure_serializable_name(vr.example_path.stem)}__"
+                            f"{_ensure_serializable_name(project)}__media.png"
+                        )
+                        page.screenshot(
+                            path=str(screenshots_dir / media_shot), full_page=True
+                        )
                         page.get_by_role(
                             "button", name="System Metrics", exact=True
                         ).click()
@@ -512,8 +573,14 @@ def validate_cli_for_results(
     for r in results:
         env = dict(os.environ)
         env["TRACKIO_DIR"] = str(r.trackio_dir)
+        effective_space = space or r.space_id
+        if r.space_id and not space:
+            _progress(
+                f"  Using remote space for CLI check of {r.example_path.name}: "
+                f"{r.space_id}"
+            )
         try:
-            validate_cli_data(r.touched_projects, env, repo_root, space)
+            validate_cli_data(r.touched_projects, env, repo_root, effective_space)
         except Exception as e:
             issues.append(
                 TrackioIssue(
