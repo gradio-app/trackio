@@ -20,13 +20,24 @@
 
 </div>
 
-Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face 🤗. Trackio is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
+Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face for humans and AI agents 🤗. 
 
-For human users, Trackio ships with a Gradio-based dashboard so you can view metrics, media, tables, alerts, etc.:
+**Why Trackio when other experiment-tracking libraries exist?** Trackio has a few qualities that make it particularly useful for  agents: 
+* It is local-first, because you shouldn't need to make an account to log data
+* Logs are stored in SQLite database (with support for "freezing" logs to Parquet), which not only lets Trackio supports very high throughputs for parallel experiments, but also
+* provides an easy CLI interface for querying data (including directly on the SQL data), perfect for LLM-driven analysis.
 
-![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
+So whether you are using agents to run entire research experiments autonomously or whether you are just using LLMs to analyze data, Trackio is for you.
 
-Trackio's main features:
+For human users, Trackio _also_ ships with a Gradio-inspired dashboard so you can view metrics, media, tables, alerts, etc.:
+
+
+
+https://github.com/user-attachments/assets/2683cf27-7520-4fff-9ee9-bdc08a8ca404
+
+
+
+### Trackio's main features:
 
 - **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish`. Drop-in replacement: just 
 
@@ -35,16 +46,14 @@ Trackio's main features:
   ```
   and keep your existing logging code.
 
-- **Local-first** design: dashboard runs locally by default. You can also send metrics to a Hugging Face Space with `space_id` for free or to a self-hosted Trackio server you run yourself with `server_url`
-  - Persists logs in a Sqlite database locally (or on the remote target you chose: Space, or the machine hosting your self-hosted server)
-  - Visualize experiments with a **Svelte 5** dashboard locally, on Hugging Face Spaces, or on your own host when you self-host the server
+- **Local-first, cloud-optional** design: dashboard runs locally by default. But note that you can also log metrics to a Hugging Face Space with `space_id` which is _also_ free and useful for collaborative experiments.
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
   - Use `trackio query project --project <name> --sql "SELECT ..."` for read-only SQL when `trackio list` and `trackio get` are not enough
   - See the storage schema and direct query reference at https://huggingface.co/docs/trackio/storage_schema
 
 - **Free**: Everything here, including hosting on Hugging Face, is free!
 
-Trackio is designed to be lightweight and _forkable_: **Python** for the backend and API, **Svelte 5** for the dashboard, and **Gradio component** code where UI widgets need to match Gradio behavior—so developers can fork the repository and extend either side.
+Trackio is designed to be lightweight and _forkable_: **Python** for the backend and API, **Svelte 5** for the dashboard, so developers can fork the repository and extend either side.
 
 ## Installation
 

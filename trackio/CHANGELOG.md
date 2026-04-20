@@ -1,5 +1,20 @@
 # trackio
 
+## 0.24.0
+
+### Features
+
+- [#502](https://github.com/gradio-app/trackio/pull/502) [`3b397df`](https://github.com/gradio-app/trackio/commit/3b397dfbaff9de137b088f3cad528117e14faab1) - Add docs on SQL & Parquet schema / format, as well as a new CLI command: `trackio query project --project PROJECT --sql SQL_QUERY`.  Thanks @abidlabs!
+- [#506](https://github.com/gradio-app/trackio/pull/506) [`498bbc4`](https://github.com/gradio-app/trackio/commit/498bbc47f66cc90cc5776f363d001a5571941c00) - Scope bucket sync to trackio/ subtree to avoid walking the HF cache.  Thanks @abidlabs!
+- [#505](https://github.com/gradio-app/trackio/pull/505) [`8e26ab9`](https://github.com/gradio-app/trackio/commit/8e26ab93b5d9caa2f81334f6fff42fb9cefbb232) - Add an `id` field to `Run` which is used internally, allowing users to have multiple runs with the same run name.  Thanks @abidlabs!
+- [#517](https://github.com/gradio-app/trackio/pull/517) [`29e1034`](https://github.com/gradio-app/trackio/commit/29e1034b795567ec5ed6d19c5a946915a6498e2a) - Fix static exports, Space bucket handling, and other misc issues.  Thanks @abidlabs!
+- [#489](https://github.com/gradio-app/trackio/pull/489) [`1b96db3`](https://github.com/gradio-app/trackio/commit/1b96db39c8fd4326e621ee2336b0fca4f263a18a) - Remove `gradio` dependency in `trackio` -- only `gradio_client` is needed locally anymore. Also lazily import `pandas` and remove it as a dependency.  Thanks @abidlabs!
+- [#513](https://github.com/gradio-app/trackio/pull/513) [`d54d290`](https://github.com/gradio-app/trackio/commit/d54d290fcb1bb08358b558a43a962f78abe990ea) - Reduce HF Spaces 429s: polling tuning and batched metric logs API.  Thanks @abidlabs!
+- [#516](https://github.com/gradio-app/trackio/pull/516) [`afe2959`](https://github.com/gradio-app/trackio/commit/afe295988928a3ea3ded38bdb5bb05cca85d3c74) - Fix run list order and legend overflow.  Thanks @abidlabs!
+- [#515](https://github.com/gradio-app/trackio/pull/515) [`0a242b8`](https://github.com/gradio-app/trackio/commit/0a242b85127b02f532b24c7fd2bb046580cc7641) - Add Gradio-compatible /gradio_api routes on Spaces.  Thanks @abidlabs!
+- [#510](https://github.com/gradio-app/trackio/pull/510) [`60bbc86`](https://github.com/gradio-app/trackio/commit/60bbc86b4e7f880de72075e5bf31b093709bb5a4) - Add server_url and TRACKIO_SERVER_URL for self-hosted servers; space_id and TRACKIO_SPACE_ID take precedence when both are set.  Thanks @abidlabs!
+- [#509](https://github.com/gradio-app/trackio/pull/509) [`21c099a`](https://github.com/gradio-app/trackio/commit/21c099aa830a278973fab4c7c58a0139f417caa4) - Fix: Open browser with write_token so trackio show allows mutations.  Thanks @abidlabs!
+
 ## 0.23.0
 
 ### Features

@@ -25,6 +25,7 @@
   );
 
   $effect(() => {
+    if (showOptions) return;
     if (value !== null && choices.includes(value)) {
       inputText = value;
     } else {
@@ -33,7 +34,7 @@
   });
 
   $effect(() => {
-    filteredIndices = choices.map((_, i) => i);
+    filteredIndices = showOptions ? filterChoices(inputText) : choices.map((_, i) => i);
   });
 
   function filterChoices(text) {
@@ -45,6 +46,7 @@
   }
 
   function handleFocus() {
+    inputText = "";
     filteredIndices = choices.map((_, i) => i);
     showOptions = true;
     if (filterInput) {
