@@ -29,6 +29,7 @@ class AlertEntry(TypedDict, total=False):
     step: int | None
     timestamp: str
     alert_id: str | None
+    data: dict | None
 
 
 class UploadEntry(TypedDict):

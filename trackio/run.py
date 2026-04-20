@@ -126,6 +126,9 @@ class Run:
             self._client_thread.daemon = True
             self._client_thread.start()
 
+        SQLiteStorage.set_run_status(self.project, self.name, "running")
+        self._finished = False
+
         self._gpu_monitor: "GpuMonitor | AppleGpuMonitor | None" = None
         if auto_log_gpu:
             if gpu_available():
@@ -227,6 +230,7 @@ class Run:
                     "steps": [],
                     "timestamps": [],
                     "alert_ids": [],
+                    "data_list": [],
                 }
             alerts_by_run[key]["titles"].append(entry["title"])
             alerts_by_run[key]["texts"].append(entry.get("text"))
@@ -234,9 +238,11 @@ class Run:
             alerts_by_run[key]["steps"].append(entry.get("step"))
             alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
             alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
+            alerts_by_run[key]["data_list"].append(entry.get("data"))
 
         for (project, run), data in alerts_by_run.items():
             has_alert_ids = any(aid is not None for aid in data["alert_ids"])
+            has_data = any(d is not None for d in data["data_list"])
             SQLiteStorage.bulk_alert(
                 project=project,
                 run=run,
@@ -246,6 +252,7 @@ class Run:
                 steps=data["steps"],
                 timestamps=data["timestamps"],
                 alert_ids=data["alert_ids"] if has_alert_ids else None,
+                data_list=data["data_list"] if has_data else None,
             )
 
     def _batch_sender(self):
@@ -651,6 +658,7 @@ class Run:
         level: AlertLevel = AlertLevel.WARN,
         step: int | None = None,
         webhook_url: str | None = None,
+        data: dict | None = None,
     ):
         if step is None:
             step = max(self._next_step - 1, 0)
@@ -667,6 +675,7 @@ class Run:
             "step": step,
             "timestamp": timestamp,
             "alert_id": uuid.uuid4().hex,
+            "data": data,
         }
 
         with self._client_lock:
@@ -708,6 +717,10 @@ class Run:
             self._ensure_sender_alive()
 
     def finish(self):
+        if self._finished:
+            return
+        self._finished = True
+
         if self._gpu_monitor is not None:
             self._gpu_monitor.stop()
 
@@ -737,3 +750,5 @@ class Run:
                     f"They have been saved locally and will be sent automatically next time you call: "
                     f'trackio.init(project="{self.project}", space_id="{self._space_id}")'
                 )
+
+        SQLiteStorage.set_run_status(self.project, self.name, "finished")

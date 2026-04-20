@@ -279,6 +279,17 @@ class SQLiteStorage:
                         ON {table}(space_id) WHERE space_id IS NOT NULL"""
                     )
 
+                for col in ("status TEXT", "finished_at TEXT"):
+                    try:
+                        cursor.execute(f"ALTER TABLE configs ADD COLUMN {col}")
+                    except sqlite3.OperationalError:
+                        pass
+
+                try:
+                    cursor.execute("ALTER TABLE alerts ADD COLUMN data TEXT")
+                except sqlite3.OperationalError:
+                    pass
+
                 conn.commit()
         return db_path
 
@@ -770,6 +781,7 @@ class SQLiteStorage:
         steps: list[int | None],
         timestamps: list[str] | None = None,
         alert_ids: list[str] | None = None,
+        data_list: list[dict | None] | None = None,
     ):
         if not titles:
             return
@@ -784,6 +796,9 @@ class SQLiteStorage:
                 data = []
                 for i in range(len(titles)):
                     aid = alert_ids[i] if alert_ids else None
+                    d = None
+                    if data_list and data_list[i] is not None:
+                        d = orjson.dumps(data_list[i]).decode("utf-8")
                     data.append(
                         (
                             timestamps[i],
@@ -793,14 +808,15 @@ class SQLiteStorage:
                             levels[i],
                             steps[i],
                             aid,
+                            d,
                         )
                     )
 
                 cursor.executemany(
                     """
                     INSERT OR IGNORE INTO alerts
-                    (timestamp, run_name, title, text, level, step, alert_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (timestamp, run_name, title, text, level, step, alert_id, data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     data,
                 )
@@ -820,9 +836,7 @@ class SQLiteStorage:
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             try:
-                query = (
-                    "SELECT timestamp, run_name, title, text, level, step FROM alerts"
-                )
+                query = "SELECT timestamp, run_name, title, text, level, step, data FROM alerts"
                 conditions = []
                 params = []
                 if run_name is not None:
@@ -840,8 +854,9 @@ class SQLiteStorage:
                 cursor.execute(query, params)
 
                 rows = cursor.fetchall()
-                return [
-                    {
+                results = []
+                for row in rows:
+                    alert_dict = {
                         "timestamp": row["timestamp"],
                         "run": row["run_name"],
                         "title": row["title"],
@@ -849,8 +864,14 @@ class SQLiteStorage:
                         "level": row["level"],
                         "step": row["step"],
                     }
-                    for row in rows
-                ]
+                    try:
+                        raw_data = row["data"]
+                        if raw_data:
+                            alert_dict["data"] = orjson.loads(raw_data)
+                    except (IndexError, KeyError):
+                        pass
+                    results.append(alert_dict)
+                return results
             except sqlite3.OperationalError as e:
                 if "no such table: alerts" in str(e):
                     return []
@@ -1165,6 +1186,64 @@ class SQLiteStorage:
                 if "no such table: configs" in str(e):
                     return None
                 raise
+
+    @staticmethod
+    def set_run_status(project: str, run: str, status: str) -> None:
+        db_path = SQLiteStorage.init_db(project)
+        finished_at = None
+        if status in ("finished", "failed"):
+            finished_at = datetime.now(timezone.utc).isoformat()
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    current_timestamp = datetime.now(timezone.utc).isoformat()
+                    cursor.execute(
+                        "INSERT OR IGNORE INTO configs (run_name, config, created_at) VALUES (?, '{}', ?)",
+                        (run, current_timestamp),
+                    )
+                    if finished_at:
+                        cursor.execute(
+                            "UPDATE configs SET status = ?, finished_at = ? WHERE run_name = ?",
+                            (status, finished_at, run),
+                        )
+                    else:
+                        cursor.execute(
+                            "UPDATE configs SET status = ? WHERE run_name = ?",
+                            (status, run),
+                        )
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
+
+    @staticmethod
+    def get_run_status(project: str, run: str) -> str | None:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT status FROM configs WHERE run_name = ?", (run,))
+                row = cursor.fetchone()
+                if row:
+                    return row["status"]
+                return None
+            except sqlite3.OperationalError:
+                return None
+
+    @staticmethod
+    def get_run_statuses(project: str) -> dict[str, str | None]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return {}
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT run_name, status FROM configs")
+                return {row["run_name"]: row["status"] for row in cursor.fetchall()}
+            except sqlite3.OperationalError:
+                return {}
 
     @staticmethod
     def delete_run(project: str, run: str) -> bool:
@@ -1651,6 +1730,68 @@ class SQLiteStorage:
                 if f"no such table: {table}" in str(e):
                     return []
                 raise
+
+    @staticmethod
+    def get_final_metric_for_runs(
+        project: str,
+        metric_name: str,
+        mode: str = "last",
+        run_names: list[str] | None = None,
+    ) -> list[dict]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+
+        runs = run_names or SQLiteStorage.get_runs(project)
+        results = []
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            for run in runs:
+                try:
+                    cursor.execute(
+                        "SELECT timestamp, step, metrics FROM metrics WHERE run_name = ? ORDER BY step ASC",
+                        (run,),
+                    )
+                    rows = cursor.fetchall()
+                    if not rows:
+                        continue
+
+                    best_value = None
+                    best_step = None
+                    for row in rows:
+                        metrics = orjson.loads(row["metrics"])
+                        metrics = deserialize_values(metrics)
+                        if metric_name not in metrics:
+                            continue
+                        val = metrics[metric_name]
+                        if not isinstance(val, (int, float)):
+                            continue
+
+                        if mode == "last":
+                            best_value = val
+                            best_step = row["step"]
+                        elif mode == "min":
+                            if best_value is None or val < best_value:
+                                best_value = val
+                                best_step = row["step"]
+                        elif mode == "max":
+                            if best_value is None or val > best_value:
+                                best_value = val
+                                best_step = row["step"]
+
+                    if best_value is not None:
+                        results.append(
+                            {
+                                "run": run,
+                                "value": best_value,
+                                "step": best_step,
+                            }
+                        )
+                except sqlite3.OperationalError:
+                    continue
+
+        return results
 
     @staticmethod
     def set_project_metadata(project: str, key: str, value: str) -> None:

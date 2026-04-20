@@ -5,12 +5,15 @@ from trackio import freeze, show, sync
 from trackio.cli_helpers import (
     error_exit,
     format_alerts,
+    format_best,
+    format_compare,
     format_json,
     format_list,
     format_metric_values,
     format_project_summary,
     format_run_summary,
     format_snapshot,
+    format_summary,
     format_system_metric_names,
     format_system_metrics,
 )
@@ -635,6 +638,94 @@ def main():
         help="Overwrite existing skill if it already exists",
     )
 
+    best_parser = subparsers.add_parser(
+        "best",
+        help="Find the best run in a project for a given metric",
+    )
+    best_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    best_parser.add_argument(
+        "--metric",
+        required=True,
+        help="Metric name to rank runs by",
+    )
+    best_parser.add_argument(
+        "--minimize",
+        action="store_true",
+        default=True,
+        help="Lower is better (default)",
+    )
+    best_parser.add_argument(
+        "--maximize",
+        action="store_true",
+        help="Higher is better",
+    )
+    best_parser.add_argument(
+        "--mode",
+        choices=["last", "min", "max"],
+        default="last",
+        help="How to select the value from each run: 'last' (final step), 'min' (minimum), 'max' (maximum). Default: last",
+    )
+    best_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Compare runs side-by-side",
+    )
+    compare_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    compare_parser.add_argument(
+        "--runs",
+        required=False,
+        help="Comma-separated run names (default: all runs in project)",
+    )
+    compare_parser.add_argument(
+        "--metrics",
+        required=False,
+        help="Comma-separated metric names to compare (default: all metrics)",
+    )
+    compare_parser.add_argument(
+        "--mode",
+        choices=["last", "min", "max"],
+        default="last",
+        help="How to select values: 'last', 'min', 'max'. Default: last",
+    )
+    compare_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
+    summary_parser = subparsers.add_parser(
+        "summary",
+        help="Get a full experiment summary for a project",
+    )
+    summary_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    summary_parser.add_argument(
+        "--metric",
+        required=False,
+        help="Primary metric to include in summary",
+    )
+    summary_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
         trailing_global_parser = argparse.ArgumentParser(add_help=False)
@@ -1152,6 +1243,150 @@ def main():
                     if idx < len(reports):
                         output.append("-" * 80)
                 print("\n".join(output))
+    elif args.command == "best":
+        db_path = SQLiteStorage.get_project_db_path(args.project)
+        if not db_path.exists():
+            error_exit(f"Project '{args.project}' not found.")
+
+        minimize = not args.maximize
+        results = SQLiteStorage.get_final_metric_for_runs(
+            args.project, args.metric, mode=args.mode
+        )
+        if not results:
+            error_exit(
+                f"No runs with metric '{args.metric}' found in project '{args.project}'."
+            )
+
+        configs = SQLiteStorage.get_all_run_configs(args.project)
+        for r in results:
+            cfg = configs.get(r["run"])
+            if cfg:
+                r["config"] = {k: v for k, v in cfg.items() if not k.startswith("_")}
+            else:
+                r["config"] = {}
+
+        results.sort(key=lambda x: x["value"], reverse=not minimize)
+        best = results[0]
+
+        if args.json:
+            print(
+                format_json(
+                    {
+                        "project": args.project,
+                        "metric": args.metric,
+                        "direction": "minimize" if minimize else "maximize",
+                        "mode": args.mode,
+                        "best_run": best["run"],
+                        "best_value": best["value"],
+                        "best_step": best["step"],
+                        "ranking": results,
+                    }
+                )
+            )
+        else:
+            print(format_best(args.project, args.metric, minimize, args.mode, results))
+    elif args.command == "compare":
+        db_path = SQLiteStorage.get_project_db_path(args.project)
+        if not db_path.exists():
+            error_exit(f"Project '{args.project}' not found.")
+
+        run_names = None
+        if args.runs:
+            run_names = [r.strip() for r in args.runs.split(",")]
+
+        all_runs = run_names or SQLiteStorage.get_runs(args.project)
+        metric_names = None
+        if args.metrics:
+            metric_names = [m.strip() for m in args.metrics.split(",")]
+
+        if not metric_names:
+            metric_set = set()
+            for run in all_runs:
+                metric_set.update(
+                    SQLiteStorage.get_all_metrics_for_run(args.project, run)
+                )
+            metric_names = sorted(metric_set)
+
+        configs = SQLiteStorage.get_all_run_configs(args.project)
+        statuses = SQLiteStorage.get_run_statuses(args.project)
+        comparison = []
+        for run in all_runs:
+            run_metrics = {}
+            for metric in metric_names:
+                values = SQLiteStorage.get_final_metric_for_runs(
+                    args.project, metric, mode=args.mode, run_names=[run]
+                )
+                if values:
+                    run_metrics[metric] = values[0]["value"]
+            cfg = configs.get(run, {})
+            comparison.append(
+                {
+                    "run": run,
+                    "status": statuses.get(run),
+                    "config": {k: v for k, v in cfg.items() if not k.startswith("_")},
+                    "metrics": run_metrics,
+                }
+            )
+
+        if args.json:
+            print(
+                format_json(
+                    {
+                        "project": args.project,
+                        "mode": args.mode,
+                        "runs": comparison,
+                    }
+                )
+            )
+        else:
+            print(format_compare(args.project, metric_names, comparison))
+    elif args.command == "summary":
+        db_path = SQLiteStorage.get_project_db_path(args.project)
+        if not db_path.exists():
+            error_exit(f"Project '{args.project}' not found.")
+
+        runs = SQLiteStorage.get_runs(args.project)
+        configs = SQLiteStorage.get_all_run_configs(args.project)
+        statuses = SQLiteStorage.get_run_statuses(args.project)
+        alert_count = SQLiteStorage.get_alert_count(args.project)
+
+        run_summaries = []
+        for run in runs:
+            last_step = SQLiteStorage.get_last_step(args.project, run)
+            num_logs = SQLiteStorage.get_log_count(args.project, run)
+            cfg = configs.get(run, {})
+
+            metric_value = None
+            if args.metric:
+                values = SQLiteStorage.get_final_metric_for_runs(
+                    args.project, args.metric, mode="last", run_names=[run]
+                )
+                if values:
+                    metric_value = values[0]["value"]
+
+            run_summaries.append(
+                {
+                    "run": run,
+                    "status": statuses.get(run),
+                    "last_step": last_step,
+                    "num_logs": num_logs,
+                    "config": {k: v for k, v in cfg.items() if not k.startswith("_")},
+                    "metric_value": metric_value,
+                }
+            )
+
+        summary_data = {
+            "project": args.project,
+            "num_runs": len(runs),
+            "total_alerts": alert_count,
+            "metric": args.metric,
+            "runs": run_summaries,
+        }
+
+        if args.json:
+            print(format_json(summary_data))
+        else:
+            print(format_summary(summary_data))
     elif args.command == "skills":
         if args.skills_action == "add":
             _handle_skills_add(args)

@@ -595,6 +595,7 @@ def get_project_summary(project: str) -> dict:
 
 def get_run_summary(project: str, run: str) -> dict:
     num_logs = SQLiteStorage.get_log_count(project, run)
+    status = SQLiteStorage.get_run_status(project, run)
     if num_logs == 0:
         return {
             "project": project,
@@ -603,6 +604,7 @@ def get_run_summary(project: str, run: str) -> dict:
             "metrics": [],
             "config": None,
             "last_step": None,
+            "status": status,
         }
 
     metrics = SQLiteStorage.get_all_metrics_for_run(project, run)
@@ -616,6 +618,7 @@ def get_run_summary(project: str, run: str) -> dict:
         "metrics": metrics,
         "config": config,
         "last_step": last_step,
+        "status": status,
     }
 
 
