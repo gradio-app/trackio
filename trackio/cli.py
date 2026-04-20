@@ -1216,18 +1216,10 @@ def _handle_skills_add(args):
     import shutil
     from pathlib import Path
 
-    try:
-        from huggingface_hub.cli.skills import (
-            CENTRAL_GLOBAL,
-            CENTRAL_LOCAL,
-            GLOBAL_TARGETS,
-            LOCAL_TARGETS,
-        )
-    except (ImportError, ModuleNotFoundError):
-        error_exit(
-            "The 'trackio skills' command requires huggingface_hub >= 1.4.0.\n"
-            "Please upgrade: pip install --upgrade huggingface_hub"
-        )
+    CENTRAL_LOCAL = Path(".agents/skills")
+    CENTRAL_GLOBAL = Path("~/.agents/skills")
+    CLAUDE_LOCAL = Path(".claude/skills")
+    CLAUDE_GLOBAL = Path("~/.claude/skills")
 
     SKILL_ID = "trackio"
     GITHUB_RAW = "https://raw.githubusercontent.com/gradio-app/trackio/main"
@@ -1292,8 +1284,18 @@ def _handle_skills_add(args):
         link_path.symlink_to(os.path.relpath(central_skill_path, agent_skills_dir))
         return link_path
 
-    global_targets = {**GLOBAL_TARGETS, "cursor": Path("~/.cursor/skills")}
-    local_targets = {**LOCAL_TARGETS, "cursor": Path(".cursor/skills")}
+    global_targets = {
+        "cursor": Path("~/.cursor/skills"),
+        "claude": CLAUDE_GLOBAL,
+        "codex": Path("~/.codex/skills"),
+        "opencode": Path("~/.opencode/skills"),
+    }
+    local_targets = {
+        "cursor": Path(".cursor/skills"),
+        "claude": CLAUDE_LOCAL,
+        "codex": Path(".codex/skills"),
+        "opencode": Path(".opencode/skills"),
+    }
     targets_dict = global_targets if args.global_ else local_targets
 
     if args.dest:
