@@ -185,8 +185,6 @@ def main():
                 step=step,
             )
 
-        prev_train_loss = train_loss
-
         if args.sleep > 0:
             time.sleep(args.sleep)
 

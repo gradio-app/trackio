@@ -316,7 +316,7 @@ def experiment_long_monitoring(project):
                 all_alerts.append(alert)
             since = datetime.now(timezone.utc).isoformat()
 
-    stdout, stderr = proc.communicate()
+    stdout, _ = proc.communicate()
     print(f"  [AGENT] Training finished. Exit code: {proc.returncode}")
     print(f"  [AGENT] stdout: {stdout.strip()}")
 
