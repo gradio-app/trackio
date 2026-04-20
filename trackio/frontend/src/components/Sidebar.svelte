@@ -118,14 +118,28 @@
     return `${namespace}-${name}.hf.space`;
   }
 
+  function shareBaseHref() {
+    const hfHost = buildSpaceHost(spaceId);
+    if (hfHost) {
+      return `https://${hfHost}`;
+    }
+    const base = window.__trackio_base || "/";
+    const u = new URL(base, window.location.origin);
+    let href = u.href;
+    if (href.endsWith("/")) {
+      href = href.slice(0, -1);
+    }
+    return href || u.origin;
+  }
+
   function selectedRunNamesFromIds(selectedIds, allRuns) {
     const byId = new Map(allRuns.map((run) => [run.id ?? run.name, run.name]));
     return selectedIds.map((id) => byId.get(id)).filter(Boolean);
   }
 
   let shareUrl = $derived.by(() => {
-    const host = buildSpaceHost(spaceId);
-    if (!host || !selectedProject) return "";
+    navTick;
+    if (!selectedProject) return "";
     const params = new URLSearchParams();
     params.set("project", selectedProject);
     if (metricFilter?.trim()) {
@@ -140,7 +154,9 @@
     }
     params.set("sidebar", "hidden");
     params.set("navbar", "hidden");
-    return `https://${host}?${params.toString()}`;
+    const base = shareBaseHref();
+    const q = params.toString();
+    return q ? `${base}/?${q}` : `${base}/`;
   });
 
   let embedCode = $derived.by(() => {
@@ -205,47 +221,53 @@
       </div>
 
       {#if variant === "full"}
-        {#if spaceId}
-          <div class="section">
-            <div class="share-tabs">
-              <button
-                class="share-tab-btn"
-                class:active={shareTab === "share"}
-                onclick={() => { shareTab = "share"; }}
-              >
-                Share
-              </button>
-              <button
-                class="share-tab-btn"
-                class:active={shareTab === "embed"}
-                onclick={() => { shareTab = "embed"; }}
-              >
-                Embed
-              </button>
-            </div>
-            {#if shareTab === "share"}
-              <div class="share-field">
-                <span class="section-label">Share this view</span>
+        <div class="section">
+          <div class="share-tabs">
+            <button
+              class="share-tab-btn"
+              class:active={shareTab === "share"}
+              onclick={() => { shareTab = "share"; }}
+            >
+              Share
+            </button>
+            <button
+              class="share-tab-btn"
+              class:active={shareTab === "embed"}
+              onclick={() => { shareTab = "embed"; }}
+            >
+              Embed
+            </button>
+          </div>
+          {#if shareTab === "share"}
+            <div class="share-field">
+              <span class="section-label">Share this view</span>
+              {#if shareUrl}
                 <div class="share-input-row">
                   <input type="text" value={shareUrl} readonly />
                   <button class="copy-btn" onclick={() => copyText(shareUrl)}>
                     Copy
                   </button>
                 </div>
-              </div>
-            {:else}
-              <div class="share-field">
-                <span class="section-label">Embed this view</span>
+              {:else}
+                <p class="share-hint">Select a project to generate a share link.</p>
+              {/if}
+            </div>
+          {:else}
+            <div class="share-field">
+              <span class="section-label">Embed this view</span>
+              {#if embedCode}
                 <div class="share-input-row">
                   <textarea readonly rows="2" value={embedCode}></textarea>
                   <button class="copy-btn" onclick={() => copyText(embedCode)}>
                     Copy
                   </button>
                 </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
+              {:else}
+                <p class="share-hint">Select a project to generate embed HTML.</p>
+              {/if}
+            </div>
+          {/if}
+        </div>
 
         <div class="section">
           <div class="runs-header">
@@ -615,6 +637,12 @@
     background: var(--background-fill-primary, white);
     cursor: pointer;
     flex-shrink: 0;
+  }
+  .share-hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .section-label {
     font-size: 13px;
