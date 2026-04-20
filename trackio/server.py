@@ -827,7 +827,6 @@ def get_traces(
     run_id: str | None = None,
     search: str | None = None,
     sort: str | None = None,
-    model_version: str | None = None,
     limit: int | None = None,
     offset: int | None = 0,
 ) -> list[dict[str, Any]]:
@@ -836,7 +835,6 @@ def get_traces(
         run,
         search=search,
         sort=sort,
-        model_version=model_version,
         limit=limit,
         offset=offset or 0,
         run_id=run_id,

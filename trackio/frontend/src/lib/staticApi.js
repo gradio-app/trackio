@@ -196,14 +196,7 @@ function flattenTraceSearchText(trace) {
 }
 
 function sortTraces(traces, sort) {
-  const rewardValue = (trace) =>
-    typeof trace.metadata?.reward === "number" ? trace.metadata.reward : -Infinity;
-
   switch (sort) {
-    case "reward_asc":
-      return [...traces].sort((a, b) => rewardValue(a) - rewardValue(b));
-    case "reward_desc":
-      return [...traces].sort((a, b) => rewardValue(b) - rewardValue(a));
     case "step_asc":
       return [...traces].sort((a, b) => (a.step ?? 0) - (b.step ?? 0));
     case "step_desc":
@@ -267,11 +260,6 @@ export async function getTraces(_project, run, options = {}) {
   if (options.search && options.search.trim()) {
     const needle = options.search.trim().toLowerCase();
     filtered = filtered.filter((trace) => trace._search_text.includes(needle));
-  }
-  if (options.model_version) {
-    filtered = filtered.filter(
-      (trace) => trace.metadata?.model_version === options.model_version,
-    );
   }
   filtered = sortTraces(filtered, options.sort || "request_time_desc");
   if (options.offset) {

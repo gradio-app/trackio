@@ -61,10 +61,10 @@ for run_idx in range(2):
                         },
                     ],
                     metadata={
-                        "model_version": f"agent-preview-{run_idx}",
+                        "label": f"complex-demo-{run_idx}",
                         "environment": "browser",
-                        "trace_kind": "complex",
-                        "step_variant": step,
+                        "category": "complex-example",
+                        "variant": step,
                     },
                 )
             },

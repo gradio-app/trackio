@@ -1955,15 +1955,6 @@ class SQLiteStorage:
         traces: list[dict[str, Any]], sort: str | None
     ) -> list[dict[str, Any]]:
         sort_key = sort or "request_time_desc"
-
-        def reward_value(trace: dict[str, Any]) -> float:
-            reward = trace.get("metadata", {}).get("reward")
-            return reward if isinstance(reward, (int, float)) else float("-inf")
-
-        if sort_key == "reward_asc":
-            return sorted(traces, key=lambda trace: reward_value(trace))
-        if sort_key == "reward_desc":
-            return sorted(traces, key=lambda trace: reward_value(trace), reverse=True)
         if sort_key == "step_asc":
             return sorted(traces, key=lambda trace: trace.get("step") or 0)
         if sort_key == "step_desc":
@@ -1982,7 +1973,6 @@ class SQLiteStorage:
         run: str | None = None,
         search: str | None = None,
         sort: str | None = None,
-        model_version: str | None = None,
         limit: int | None = None,
         offset: int = 0,
         run_id: str | None = None,
@@ -1996,13 +1986,6 @@ class SQLiteStorage:
                 traces = [
                     trace for trace in traces if needle in trace.get("_search_text", "")
                 ]
-
-        if model_version:
-            traces = [
-                trace
-                for trace in traces
-                if trace.get("metadata", {}).get("model_version") == model_version
-            ]
 
         traces = SQLiteStorage._sort_traces(traces, sort)
 

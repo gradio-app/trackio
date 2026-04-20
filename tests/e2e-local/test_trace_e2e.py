@@ -13,7 +13,7 @@ def test_trace_logging_round_trip(temp_dir):
                     {"role": "user", "content": "What is 2 + 2?"},
                     {"role": "assistant", "content": "2 + 2 = 4."},
                 ],
-                metadata={"model_version": "step-100"},
+                metadata={"label": "demo-trace"},
             )
         }
     )
@@ -22,4 +22,4 @@ def test_trace_logging_round_trip(temp_dir):
     traces = SQLiteStorage.get_traces("trace_project", "trace_run")
     assert len(traces) == 1
     assert traces[0]["messages"][2]["content"] == "2 + 2 = 4."
-    assert traces[0]["metadata"]["model_version"] == "step-100"
+    assert traces[0]["metadata"]["label"] == "demo-trace"

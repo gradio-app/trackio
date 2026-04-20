@@ -18,13 +18,13 @@ def test_trace_to_dict(image_ndarray, temp_dir):
                 ],
             },
         ],
-        metadata={"model_version": "step-10"},
+        metadata={"label": "demo-trace"},
     )
 
     payload = trace._to_dict(project="proj", run="run1", step=0)
 
     assert payload["_type"] == Trace.TYPE
-    assert payload["metadata"]["model_version"] == "step-10"
+    assert payload["metadata"]["label"] == "demo-trace"
     assert payload["messages"][1]["content"][1]["_type"] == "trackio.image"
 
 
@@ -43,7 +43,7 @@ def test_trace_logging_and_query(temp_dir):
                     {"role": "user", "content": "What is the capital of Australia?"},
                     {"role": "assistant", "content": "Sydney."},
                 ],
-                metadata={"model_version": "step-2000", "reward": 0.08},
+                metadata={"label": "candidate-a", "group": "capitals"},
             )
         }
     )
@@ -55,7 +55,7 @@ def test_trace_logging_and_query(temp_dir):
                     {"role": "user", "content": "What is the capital of Australia?"},
                     {"role": "assistant", "content": "Canberra."},
                 ],
-                metadata={"model_version": "step-2150", "reward": 0.91},
+                metadata={"label": "candidate-b", "group": "capitals"},
             )
         }
     )
@@ -70,8 +70,4 @@ def test_trace_logging_and_query(temp_dir):
 
     searched = SQLiteStorage.get_traces("proj", "trace-run", search="canberra")
     assert len(searched) == 1
-    assert searched[0]["metadata"]["model_version"] == "step-2150"
-
-    filtered = SQLiteStorage.get_traces("proj", "trace-run", model_version="step-2000")
-    assert len(filtered) == 1
-    assert filtered[0]["messages"][2]["content"] == "Sydney."
+    assert searched[0]["metadata"]["label"] == "candidate-b"

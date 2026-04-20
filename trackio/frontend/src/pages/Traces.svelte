@@ -35,9 +35,9 @@
     const messages = Array.isArray(trace.messages) ? trace.messages : [];
     const firstUser = messages.find((message) => message?.role === "user");
     const firstAssistant = messages.find((message) => message?.role === "assistant");
-      return {
-        ...trace,
-        run: trace.run || runLabel,
+    return {
+      ...trace,
+      run: trace.run || runLabel,
       request: textFromContent(firstUser?.content) || "(no user message)",
       preview: textFromContent(firstAssistant?.content) || "(no assistant response)",
     };
@@ -97,10 +97,6 @@
           return (left.step ?? 0) - (right.step ?? 0);
         case "step_desc":
           return (right.step ?? 0) - (left.step ?? 0);
-        case "reward_asc":
-          return (left.metadata?.reward ?? Number.NEGATIVE_INFINITY) - (right.metadata?.reward ?? Number.NEGATIVE_INFINITY);
-        case "reward_desc":
-          return (right.metadata?.reward ?? Number.NEGATIVE_INFINITY) - (left.metadata?.reward ?? Number.NEGATIVE_INFINITY);
         case "request_time_asc":
           return String(left.timestamp || "").localeCompare(String(right.timestamp || ""));
         case "request_time_desc":
@@ -118,10 +114,6 @@
 
   function toggleTrace(traceId) {
     expandedTraceId = expandedTraceId === traceId ? null : traceId;
-  }
-
-  function modelLabel(trace) {
-    return trace.metadata?.model_version || "—";
   }
 
   function formatRelativeTime(timestamp) {
@@ -253,7 +245,6 @@
             <th>Request</th>
             <th>Run</th>
             <th>Step</th>
-            <th>Model</th>
             <th>Request time</th>
           </tr>
         </thead>
@@ -269,12 +260,11 @@
               </td>
               <td>{trace.run || "—"}</td>
               <td>{trace.step ?? "—"}</td>
-              <td>{modelLabel(trace)}</td>
               <td>{formatRelativeTime(trace.timestamp)}</td>
             </tr>
             {#if expandedTraceId === trace.id}
               <tr class="expanded-row">
-                <td colspan="6">
+                <td colspan="5">
                   <div class="trace-detail">
                     <div class="detail-meta">
                       <span>Logged as: {trace.key}</span>

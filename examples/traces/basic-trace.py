@@ -28,9 +28,9 @@ for run_idx in range(2):
                         {"role": "assistant", "content": completion},
                     ],
                     metadata={
-                        "model_version": f"demo-basic-v{run_idx + 1}",
-                        "trace_kind": "basic",
-                        "example_index": step,
+                        "label": f"basic-demo-{run_idx + 1}",
+                        "category": "basic-example",
+                        "index": step,
                     },
                 )
             },
