@@ -1,5 +1,13 @@
 # trackio
 
+## 0.24.1
+
+### Features
+
+- [#524](https://github.com/gradio-app/trackio/pull/524) [`65a6897`](https://github.com/gradio-app/trackio/commit/65a6897561b465fc8f05550562f8da1ba3c99060) - Fix `trackio skills add`.  Thanks @abidlabs!
+- [#522](https://github.com/gradio-app/trackio/pull/522) [`05aaca7`](https://github.com/gradio-app/trackio/commit/05aaca7f166bf7667b60b40656d677532a4bdd6e) - relax `starlette` dependency and fix import style.  Thanks @abidlabs!
+- [#525](https://github.com/gradio-app/trackio/pull/525) [`32c05c5`](https://github.com/gradio-app/trackio/commit/32c05c5d5e3aa84ca7099a6fa08a9093ccd4b95f) - Restore sidebar share and embed snippets, and fix query parameter regression.  Thanks @abidlabs!
+
 ## 0.24.0
 
 ### Features
