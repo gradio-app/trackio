@@ -100,7 +100,6 @@ def main():
 
     best_val_loss = float("inf")
     stagnation_count = 0
-    prev_train_loss = float("inf")
 
     for step in range(args.steps):
         train_loss = simulate_loss(
