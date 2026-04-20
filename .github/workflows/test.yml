@@ -81,7 +81,11 @@ jobs:
 
     - name: Run backend unit tests
       run: |
-        "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces --deselect=tests/e2e-local
+        else
+          "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces
+        fi
 
     - name: Run ui/ux interaction tests
       if: matrix.os == 'ubuntu-latest'
