@@ -38,13 +38,20 @@
   } = $props();
 
   let navTick = $state(0);
+  let copyFeedbackTimer = null;
 
   onMount(() => {
     const bump = () => {
       navTick++;
     };
     window.addEventListener("popstate", bump);
-    return () => window.removeEventListener("popstate", bump);
+    return () => {
+      window.removeEventListener("popstate", bump);
+      if (copyFeedbackTimer) {
+        clearTimeout(copyFeedbackTimer);
+        copyFeedbackTimer = null;
+      }
+    };
   });
 
   let loginHref = $derived.by(() => {
@@ -83,7 +90,6 @@
   let latestOnly = $state(false);
   let shareTab = $state("share");
   let copyFeedback = $state(null);
-  let copyFeedbackTimer = null;
 
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
@@ -134,22 +140,23 @@
     return href || u.origin;
   }
 
-  function selectedRunNamesFromIds(selectedIds, allRuns) {
-    const byId = new Map(allRuns.map((run) => [run.id ?? run.name, run.name]));
-    return selectedIds.map((id) => byId.get(id)).filter(Boolean);
+  function selectedRunIdsForShare(selectedIds, allRuns) {
+    const valid = new Set(allRuns.map((run) => run.id ?? run.name));
+    return selectedIds.filter((id) => valid.has(id));
   }
 
   let shareUrl = $derived.by(() => {
     navTick;
+    if (currentPage !== "metrics" || !spacesMode) return "";
     if (!selectedProject) return "";
     const params = new URLSearchParams();
     params.set("project", selectedProject);
     if (metricFilter?.trim()) {
       params.set("metric_filter", metricFilter.trim());
     }
-    const runNames = selectedRunNamesFromIds(selectedRuns, runs);
-    if (runNames.length) {
-      params.set("runs", runNames.join(","));
+    const runIds = selectedRunIdsForShare(selectedRuns, runs);
+    if (runIds.length) {
+      params.set("run_ids", runIds.join(","));
     }
     if (!showHeaders) {
       params.set("accordion", "hidden");
@@ -231,7 +238,7 @@
       </div>
 
       {#if variant === "full"}
-        {#if currentPage === "metrics"}
+        {#if currentPage === "metrics" && spacesMode}
           <div class="section">
             <div class="share-tabs">
               <button

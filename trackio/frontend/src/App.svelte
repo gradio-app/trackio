@@ -339,8 +339,9 @@
     if (urlRunsFromQueryApplied) return;
     if (!appBootstrapReady) return;
     if (!selectedProject) return;
+    const runIdsParam = getQueryParam("run_ids");
     const runsParam = getQueryParam("runs");
-    if (!runsParam) {
+    if (!runIdsParam && !runsParam) {
       urlRunsFromQueryApplied = true;
       return;
     }
@@ -348,11 +349,16 @@
       urlRunsFromQueryApplied = true;
       return;
     }
-    const names = runsParam.split(",").map((s) => s.trim()).filter(Boolean);
-    const nameToKey = new Map(runs.map((r) => [r.name, runKey(r)]));
-    const wanted = names
-      .map((n) => nameToKey.get(n))
-      .filter((k) => k != null);
+    let wanted = [];
+    if (runIdsParam) {
+      const ids = runIdsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      const validKeys = new Set(runs.map((r) => runKey(r)));
+      wanted = ids.filter((id) => validKeys.has(id));
+    } else {
+      const names = runsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      const wantedNames = new Set(names);
+      wanted = runs.filter((r) => wantedNames.has(r.name)).map((r) => runKey(r));
+    }
     if (wanted.length) {
       selectedRuns = wanted;
     }
