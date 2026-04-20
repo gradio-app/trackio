@@ -32,6 +32,23 @@
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
 
+  function metricFilterFromLegacyMetricsParam(metricsParam) {
+    if (!metricsParam) return "";
+    const trimmed = metricsParam.trim();
+    const parts = trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 0) return "";
+    const isSimpleToken = (p) => /^[\w./-]+$/.test(p);
+    if (parts.every(isSimpleToken)) {
+      return parts
+        .map((p) => {
+          const esc = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          return `^${esc}$`;
+        })
+        .join("|");
+    }
+    return trimmed;
+  }
+
   initTheme();
 
   let darkMode = $state(isDark());
@@ -53,6 +70,7 @@
   let metricColumns = $state([]);
   let sidebarOpen = $state(true);
   let sidebarHidden = $state(false);
+  let navbarHidden = $state(false);
   let urlTick = $state(0);
   let alerts = $state([]);
   let pollTimer = $state(null);
@@ -212,6 +230,11 @@
     refreshRuns();
   });
 
+  $effect(() => {
+    urlTick;
+    navbarHidden = getQueryParam("navbar") === "hidden";
+  });
+
   onMount(() => {
     const sidebarParam = getQueryParam("sidebar");
     if (sidebarParam === "hidden") {
@@ -230,17 +253,12 @@
       if (!Number.isNaN(s)) smoothing = s;
     }
 
-    const metricsParam = getQueryParam("metrics");
-    if (metricsParam) {
-      const parts = metricsParam.split(",").map((s) => s.trim()).filter(Boolean);
-      if (parts.length) {
-        metricFilter = parts
-          .map((p) => {
-            const esc = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            return `^${esc}$`;
-          })
-          .join("|");
-      }
+    const metricFilterParam = getQueryParam("metric_filter");
+    const metricsLegacyParam = getQueryParam("metrics");
+    if (metricFilterParam) {
+      metricFilter = metricFilterParam;
+    } else if (metricsLegacyParam) {
+      metricFilter = metricFilterFromLegacyMetricsParam(metricsLegacyParam);
     }
 
     if (getQueryParam("accordion") === "hidden") {
@@ -286,6 +304,7 @@
         }
         await refreshProjects();
         await refreshRuns();
+
         await refreshAlerts();
       } catch (e) {
         console.error("Failed to load projects:", e);
@@ -315,6 +334,38 @@
     projects;
     urlTick;
     if (projectLocked) applyLockedProject();
+  });
+
+  let urlRunsFromQueryApplied = $state(false);
+
+  $effect(() => {
+    if (urlRunsFromQueryApplied) return;
+    if (!appBootstrapReady) return;
+    if (!selectedProject) return;
+    const runIdsParam = getQueryParam("run_ids");
+    const runsParam = getQueryParam("runs");
+    if (!runIdsParam && !runsParam) {
+      urlRunsFromQueryApplied = true;
+      return;
+    }
+    if (!runs.length) {
+      urlRunsFromQueryApplied = true;
+      return;
+    }
+    let wanted;
+    if (runIdsParam) {
+      const ids = runIdsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      const validKeys = new Set(runs.map((r) => runKey(r)));
+      wanted = ids.filter((id) => validKeys.has(id));
+    } else {
+      const names = runsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      const wantedNames = new Set(names);
+      wanted = runs.filter((r) => wantedNames.has(r.name)).map((r) => runKey(r));
+    }
+    if (wanted.length) {
+      selectedRuns = wanted;
+    }
+    urlRunsFromQueryApplied = true;
   });
 
   let showSidebar = $derived(
@@ -361,13 +412,16 @@
       bind:selectedSystemDevices
       bind:traceModel
       {traceModelChoices}
+      {spaceId}
       {logoUrls}
       {darkMode}
     />
   {/if}
 
   <div class="main">
-    <Navbar {currentPage} onNavigate={handleNavigate} />
+    {#if !navbarHidden}
+      <Navbar {currentPage} onNavigate={handleNavigate} />
+    {/if}
 
     <div class="page-content">
       {#if currentPage === "metrics"}
