@@ -1,16 +1,15 @@
 from urllib.parse import urlencode, urlparse, urlunparse
 
-import trackio
 from playwright.sync_api import expect, sync_playwright
+
+import trackio
 
 
 def _url_with_query(base_url: str, params: dict[str, str]) -> str:
     parsed = urlparse(base_url)
     path = parsed.path if parsed.path else "/"
     query = urlencode(params)
-    return urlunparse(
-        (parsed.scheme, parsed.netloc, path, "", query, "")
-    )
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", query, ""))
 
 
 def test_share_view_query_params_apply(temp_dir):
