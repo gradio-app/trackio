@@ -255,8 +255,30 @@
                 {#if shareUrl}
                   <div class="share-input-row">
                     <input type="text" value={shareUrl} readonly />
-                    <button class="copy-btn" onclick={() => copyText(shareUrl, "share")}>
-                      {copyFeedback === "share" ? "Copied" : "Copy"}
+                    <button
+                      type="button"
+                      class="copy-btn"
+                      aria-label={copyFeedback === "share" ? "Copied" : "Copy share link"}
+                      onclick={() => copyText(shareUrl, "share")}
+                    >
+                      {#if copyFeedback === "share"}
+                        <svg
+                          class="copy-btn-check"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      {:else}
+                        Copy
+                      {/if}
                     </button>
                   </div>
                 {:else}
@@ -269,8 +291,30 @@
                 {#if embedCode}
                   <div class="share-input-row">
                     <textarea readonly rows="2" value={embedCode}></textarea>
-                    <button class="copy-btn" onclick={() => copyText(embedCode, "embed")}>
-                      {copyFeedback === "embed" ? "Copied" : "Copy"}
+                    <button
+                      type="button"
+                      class="copy-btn"
+                      aria-label={copyFeedback === "embed" ? "Copied" : "Copy embed code"}
+                      onclick={() => copyText(embedCode, "embed")}
+                    >
+                      {#if copyFeedback === "embed"}
+                        <svg
+                          class="copy-btn-check"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      {:else}
+                        Copy
+                      {/if}
                     </button>
                   </div>
                 {:else}
@@ -641,14 +685,24 @@
     resize: vertical;
   }
   .copy-btn {
+    box-sizing: border-box;
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-md, 6px);
     padding: 6px 10px;
+    min-width: 3.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 12px;
+    line-height: 1;
     color: var(--body-text-color, #1f2937);
     background: var(--background-fill-primary, white);
     cursor: pointer;
     flex-shrink: 0;
+  }
+  .copy-btn-check {
+    display: block;
+    color: var(--color-accent, #f97316);
   }
   .share-hint {
     margin: 0;
