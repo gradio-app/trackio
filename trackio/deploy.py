@@ -876,7 +876,7 @@ def deploy_as_static_space(
 
     linked = _readme_linked_hub_yaml(dataset_id)
     readme_content = (
-        f"---\nsdk: static\npinned: false\ntags:\n - trackio\n{linked}---\n"
+        f"---\nemoji: 🎯\nsdk: static\npinned: false\ntags:\n - trackio\n{linked}---\n"
     )
     _retry_hf_write(
         "Static Space README upload",
