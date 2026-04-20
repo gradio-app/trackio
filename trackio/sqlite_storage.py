@@ -1965,10 +1965,10 @@ class SQLiteStorage:
         if sort_key == "reward_desc":
             return sorted(traces, key=lambda trace: reward_value(trace), reverse=True)
         if sort_key == "step_asc":
-            return sorted(traces, key=lambda trace: (trace.get("step") or 0))
+            return sorted(traces, key=lambda trace: trace.get("step") or 0)
         if sort_key == "step_desc":
             return sorted(
-                traces, key=lambda trace: (trace.get("step") or 0), reverse=True
+                traces, key=lambda trace: trace.get("step") or 0, reverse=True
             )
         if sort_key == "request_time_asc":
             return sorted(traces, key=lambda trace: trace.get("timestamp") or "")
@@ -1994,9 +1994,7 @@ class SQLiteStorage:
             needle = search.strip().lower()
             if needle:
                 traces = [
-                    trace
-                    for trace in traces
-                    if needle in trace.get("_search_text", "")
+                    trace for trace in traces if needle in trace.get("_search_text", "")
                 ]
 
         if model_version:

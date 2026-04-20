@@ -38,8 +38,7 @@ class Trace:
             }
         if isinstance(value, list):
             return [
-                self._serialize_nested_value(item, project, run, step)
-                for item in value
+                self._serialize_nested_value(item, project, run, step) for item in value
             ]
         return value
 

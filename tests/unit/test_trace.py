@@ -72,8 +72,6 @@ def test_trace_logging_and_query(temp_dir):
     assert len(searched) == 1
     assert searched[0]["metadata"]["model_version"] == "step-2150"
 
-    filtered = SQLiteStorage.get_traces(
-        "proj", "trace-run", model_version="step-2000"
-    )
+    filtered = SQLiteStorage.get_traces("proj", "trace-run", model_version="step-2000")
     assert len(filtered) == 1
     assert filtered[0]["messages"][2]["content"] == "Sydney."

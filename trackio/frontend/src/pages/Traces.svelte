@@ -5,8 +5,6 @@
   let {
     project = null,
     selectedRuns = [],
-    traceModel = $bindable("All models"),
-    traceModelChoices = $bindable(["All models"]),
   } = $props();
 
   let loading = $state(false);
@@ -37,9 +35,9 @@
     const messages = Array.isArray(trace.messages) ? trace.messages : [];
     const firstUser = messages.find((message) => message?.role === "user");
     const firstAssistant = messages.find((message) => message?.role === "assistant");
-    return {
-      ...trace,
-      run: trace.run || runLabel,
+      return {
+        ...trace,
+        run: trace.run || runLabel,
       request: textFromContent(firstUser?.content) || "(no user message)",
       preview: textFromContent(firstAssistant?.content) || "(no assistant response)",
     };
@@ -48,7 +46,6 @@
   async function loadTraces() {
     if (!project || selectedRuns.length === 0) {
       traces = [];
-      traceModelChoices = ["All models"];
       expandedTraceId = null;
       return;
     }
@@ -62,19 +59,12 @@
         }),
       );
       traces = batches.flat();
-
-      const models = [...new Set(traces.map((trace) => trace.metadata?.model_version).filter(Boolean))].sort();
-      traceModelChoices = ["All models", ...models];
-      if (!traceModelChoices.includes(traceModel)) {
-        traceModel = "All models";
-      }
       if (!traces.find((trace) => trace.id === expandedTraceId)) {
         expandedTraceId = null;
       }
     } catch (error) {
       console.error("Failed to load traces:", error);
       traces = [];
-      traceModelChoices = ["All models"];
     } finally {
       loading = false;
     }
@@ -83,9 +73,6 @@
   let visibleTraces = $derived.by(() => {
     const needle = search.trim().toLowerCase();
     const filtered = traces.filter((trace) => {
-      if (traceModel !== "All models" && trace.metadata?.model_version !== traceModel) {
-        return false;
-      }
       if (!needle) return true;
       const haystack = [
         trace.id,
@@ -133,21 +120,39 @@
     expandedTraceId = expandedTraceId === traceId ? null : traceId;
   }
 
-  function stateLabel(trace) {
-    const reward = trace.metadata?.reward;
-    if (typeof reward === "number") {
-      return reward < 0.3 ? "Needs review" : "Logged";
-    }
-    return "Logged";
-  }
-
-  function stateClass(trace) {
-    const reward = trace.metadata?.reward;
-    return typeof reward === "number" && reward < 0.3 ? "warning" : "neutral";
-  }
-
   function modelLabel(trace) {
     return trace.metadata?.model_version || "—";
+  }
+
+  function formatRelativeTime(timestamp) {
+    if (!timestamp) return "—";
+    const then = new Date(timestamp);
+    if (Number.isNaN(then.getTime())) return timestamp;
+
+    const now = new Date();
+    const diffMs = now.getTime() - then.getTime();
+    const diffSeconds = Math.max(0, Math.round(diffMs / 1000));
+
+    if (diffSeconds < 5) return "just now";
+    if (diffSeconds < 60) return `${diffSeconds} sec ago`;
+
+    const diffMinutes = Math.round(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+
+    const diffHours = Math.round(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours} hr ago`;
+
+    const diffDays = Math.round(diffHours / 24);
+    if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+
+    const diffWeeks = Math.round(diffDays / 7);
+    if (diffWeeks < 5) return `${diffWeeks} wk ago`;
+
+    const diffMonths = Math.round(diffDays / 30);
+    if (diffMonths < 12) return `${diffMonths} mo ago`;
+
+    const diffYears = Math.round(diffDays / 365);
+    return `${diffYears} yr ago`;
   }
 
   function renderableParts(message) {
@@ -215,8 +220,6 @@
           <option value="request_time_asc">Oldest first</option>
           <option value="step_desc">Step descending</option>
           <option value="step_asc">Step ascending</option>
-          <option value="reward_desc">Reward descending</option>
-          <option value="reward_asc">Reward ascending</option>
         </select>
       </label>
       <div class="count">0 of {traces.length}</div>
@@ -237,8 +240,6 @@
           <option value="request_time_asc">Oldest first</option>
           <option value="step_desc">Step descending</option>
           <option value="step_asc">Step ascending</option>
-          <option value="reward_desc">Reward descending</option>
-          <option value="reward_asc">Reward ascending</option>
         </select>
       </label>
       <div class="count">{visibleTraces.length} of {traces.length}</div>
@@ -254,7 +255,6 @@
             <th>Step</th>
             <th>Model</th>
             <th>Request time</th>
-            <th>State</th>
           </tr>
         </thead>
         <tbody>
@@ -270,17 +270,15 @@
               <td>{trace.run || "—"}</td>
               <td>{trace.step ?? "—"}</td>
               <td>{modelLabel(trace)}</td>
-              <td>{trace.timestamp || "—"}</td>
-              <td>
-                <span class="state {stateClass(trace)}">{stateLabel(trace)}</span>
-              </td>
+              <td>{formatRelativeTime(trace.timestamp)}</td>
             </tr>
             {#if expandedTraceId === trace.id}
               <tr class="expanded-row">
-                <td colspan="7">
+                <td colspan="6">
                   <div class="trace-detail">
                     <div class="detail-meta">
                       <span>Logged as: {trace.key}</span>
+                      <span>Timestamp: {trace.timestamp || "—"}</span>
                       {#each metadataEntries(trace) as [key, value]}
                         <span>{key}: {value}</span>
                       {/each}
@@ -422,11 +420,13 @@
   .trace-id {
     display: inline-block;
     background: var(--background-fill-secondary, #f3f4f6);
-    color: #334155;
+    color: var(--body-text-color, #1f2937);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-md, 6px);
     padding: 6px 10px;
     font-size: 13px;
     word-break: break-all;
+    line-height: 1.35;
   }
   .request {
     font-weight: 500;
@@ -436,25 +436,6 @@
     color: var(--body-text-color-subdued, #6b7280);
     font-size: 13px;
     line-height: 1.45;
-  }
-  .state {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-  }
-  .state::before {
-    content: "";
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: currentColor;
-  }
-  .state.warning {
-    color: #b45309;
-  }
-  .state.neutral {
-    color: #4b5563;
   }
   .expanded-row td {
     padding: 0;

@@ -18,8 +18,6 @@
     selectedRuns = $bindable([]),
     availableSystemDevices = [],
     selectedSystemDevices = $bindable([]),
-    traceModel = $bindable("All models"),
-    traceModelChoices = [],
     smoothing = $bindable(10),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
@@ -412,19 +410,6 @@
             </div>
           {/if}
         </div>
-
-        {#if currentPage === "traces"}
-          <span class="section-label">Trace Filters</span>
-
-          <div class="section">
-            <Dropdown
-              label="Model Version"
-              choices={traceModelChoices}
-              bind:value={traceModel}
-              filterable={false}
-            />
-          </div>
-        {/if}
 
         {#if currentPage === "metrics" || currentPage === "system"}
           <span class="section-label">Display Settings</span>

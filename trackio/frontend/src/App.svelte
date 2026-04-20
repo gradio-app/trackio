@@ -88,8 +88,6 @@
   let spaceId = $state(null);
   let availableSystemDevices = $state([]);
   let selectedSystemDevices = $state([]);
-  let traceModel = $state("All models");
-  let traceModelChoices = $state(["All models"]);
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -410,8 +408,6 @@
       {metricColumns}
       {availableSystemDevices}
       bind:selectedSystemDevices
-      bind:traceModel
-      {traceModelChoices}
       {spaceId}
       {logoUrls}
       {darkMode}
@@ -444,8 +440,6 @@
         <Traces
           project={selectedProject}
           selectedRuns={selectedRunRecords}
-          bind:traceModel
-          bind:traceModelChoices
         />
       {:else if currentPage === "system"}
         <SystemMetrics
