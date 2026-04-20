@@ -12,7 +12,7 @@ Usage:
 
     trackio.init(project="my_exp", name="run-1")
     trackio.watch("train/loss", nan=True, spike_factor=3.0, patience=100, max_value=50.0)
-    trackio.watch("val/loss", nan=True, patience=200, min_delta=0.001)
+    trackio.watch("val/accuracy", patience=200, mode="max")
 
     for step in range(1000):
         loss = train_step()
@@ -22,6 +22,8 @@ Usage:
 """
 
 import math
+from collections import deque
+from typing import Literal
 
 from trackio.alerts import AlertLevel
 
@@ -37,6 +39,7 @@ class MetricWatcher:
         max_value: float | None = None,
         min_value: float | None = None,
         window: int = 5,
+        mode: Literal["min", "max"] = "min",
     ):
         self.metric_name = metric_name
         self.check_nan = nan
@@ -46,12 +49,23 @@ class MetricWatcher:
         self.max_value = max_value
         self.min_value = min_value
         self.window = window
+        self.mode = mode
 
-        self._values: list[float] = []
+        self._values: deque[float] = deque(maxlen=window)
         self._best_value: float | None = None
         self._steps_without_improvement = 0
         self._triggered_stop = False
         self._stagnation_alerted = False
+        self._spike_alerted = False
+        self._max_alerted = False
+        self._min_alerted = False
+
+    def _is_improvement(self, value: float) -> bool:
+        if self._best_value is None:
+            return True
+        if self.mode == "min":
+            return value < self._best_value - self.min_delta
+        return value > self._best_value + self.min_delta
 
     def check(self, value, step: int | None = None) -> list[dict]:
         alerts = []
@@ -77,59 +91,71 @@ class MetricWatcher:
             return alerts
 
         if self.max_value is not None and value > self.max_value:
-            alerts.append(
-                {
-                    "title": f"{self.metric_name} exceeded threshold",
-                    "text": f"{self.metric_name}={value:.4f} > max_value={self.max_value} at step {step}",
-                    "level": AlertLevel.ERROR,
-                    "data": {
-                        "metric": self.metric_name,
-                        "value": value,
-                        "threshold": self.max_value,
-                        "step": step,
-                        "reason": "max_exceeded",
-                    },
-                }
-            )
-            self._triggered_stop = True
-
-        if self.min_value is not None and value < self.min_value:
-            alerts.append(
-                {
-                    "title": f"{self.metric_name} below threshold",
-                    "text": f"{self.metric_name}={value:.4f} < min_value={self.min_value} at step {step}",
-                    "level": AlertLevel.WARN,
-                    "data": {
-                        "metric": self.metric_name,
-                        "value": value,
-                        "threshold": self.min_value,
-                        "step": step,
-                        "reason": "min_exceeded",
-                    },
-                }
-            )
-
-        if self.spike_factor is not None and len(self._values) >= self.window:
-            recent_avg = sum(self._values[-self.window :]) / self.window
-            if recent_avg > 0 and value > recent_avg * self.spike_factor:
+            if not self._max_alerted:
                 alerts.append(
                     {
-                        "title": f"Spike detected in {self.metric_name}",
-                        "text": f"{self.metric_name}={value:.4f} is {value / recent_avg:.1f}x the recent average ({recent_avg:.4f}) at step {step}",
+                        "title": f"{self.metric_name} exceeded threshold",
+                        "text": f"{self.metric_name}={value:.4f} > max_value={self.max_value} at step {step}",
+                        "level": AlertLevel.ERROR,
+                        "data": {
+                            "metric": self.metric_name,
+                            "value": value,
+                            "threshold": self.max_value,
+                            "step": step,
+                            "reason": "max_exceeded",
+                        },
+                    }
+                )
+                self._max_alerted = True
+                self._triggered_stop = True
+        elif self.max_value is not None:
+            self._max_alerted = False
+
+        if self.min_value is not None and value < self.min_value:
+            if not self._min_alerted:
+                alerts.append(
+                    {
+                        "title": f"{self.metric_name} below threshold",
+                        "text": f"{self.metric_name}={value:.4f} < min_value={self.min_value} at step {step}",
                         "level": AlertLevel.WARN,
                         "data": {
                             "metric": self.metric_name,
                             "value": value,
-                            "recent_avg": recent_avg,
-                            "factor": value / recent_avg,
+                            "threshold": self.min_value,
                             "step": step,
-                            "reason": "spike",
+                            "reason": "min_exceeded",
                         },
                     }
                 )
+                self._min_alerted = True
+        elif self.min_value is not None:
+            self._min_alerted = False
+
+        if self.spike_factor is not None and len(self._values) >= self.window:
+            recent_avg = sum(self._values) / len(self._values)
+            if recent_avg > 0 and value > recent_avg * self.spike_factor:
+                if not self._spike_alerted:
+                    alerts.append(
+                        {
+                            "title": f"Spike detected in {self.metric_name}",
+                            "text": f"{self.metric_name}={value:.4f} is {value / recent_avg:.1f}x the recent average ({recent_avg:.4f}) at step {step}",
+                            "level": AlertLevel.WARN,
+                            "data": {
+                                "metric": self.metric_name,
+                                "value": value,
+                                "recent_avg": recent_avg,
+                                "factor": value / recent_avg,
+                                "step": step,
+                                "reason": "spike",
+                            },
+                        }
+                    )
+                    self._spike_alerted = True
+            else:
+                self._spike_alerted = False
 
         if self.patience is not None:
-            if self._best_value is None or value < self._best_value - self.min_delta:
+            if self._is_improvement(value):
                 self._best_value = value
                 self._steps_without_improvement = 0
                 self._stagnation_alerted = False

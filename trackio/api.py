@@ -9,7 +9,6 @@ class Run:
         self.name = name
         self._id = run_id or name
         self._config = None
-        self._summary = None
 
     @property
     def id(self) -> str:
@@ -25,21 +24,17 @@ class Run:
 
     @property
     def status(self) -> str | None:
-        return SQLiteStorage.get_run_status(self.project, self.name)
+        return SQLiteStorage.get_run_status(self.project, self.name, run_id=self.id)
 
     @property
     def summary(self) -> dict:
-        if self._summary is None:
-            logs = SQLiteStorage.get_logs(self.project, self.name)
-            final_values = {}
-            for log_entry in logs:
-                for key, value in log_entry.items():
-                    if key not in ("timestamp", "step") and isinstance(
-                        value, (int, float)
-                    ):
-                        final_values[key] = value
-            self._summary = final_values
-        return self._summary
+        logs = SQLiteStorage.get_logs(self.project, self.name)
+        final_values = {}
+        for log_entry in logs:
+            for key, value in log_entry.items():
+                if key not in ("timestamp", "step") and isinstance(value, (int, float)):
+                    final_values[key] = value
+        return final_values
 
     def metrics(self) -> list[str]:
         return SQLiteStorage.get_all_metrics_for_run(self.project, self.name)

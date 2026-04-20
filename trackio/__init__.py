@@ -96,8 +96,9 @@ def _cleanup_current_run():
     if run is not None:
         try:
             if not run._finished:
-                SQLiteStorage.set_run_status(run.project, run.name, "failed")
-            run.finish()
+                run.finish(status="failed")
+            else:
+                run.finish()
         except Exception:
             pass
 
@@ -674,6 +675,10 @@ def init(
 
     context_vars.current_run.set(run)
     globals()["config"] = run.config
+    if _watcher_manager._watchers:
+        _emit_nonfatal_warning(
+            "trackio.init() cleared existing metric watchers. Call trackio.watch() after trackio.init()."
+        )
     _watcher_manager.clear()
 
     if _should_embed_local:
@@ -835,10 +840,12 @@ def watch(
     max_value: float | None = None,
     min_value: float | None = None,
     window: int = 5,
+    mode: str = "min",
 ) -> None:
     """
     Register a metric watcher that automatically fires alerts when conditions
-    are met during ``trackio.log()`` calls.
+    are met during ``trackio.log()`` calls. Must be called after
+    ``trackio.init()`` — watchers are cleared when a new run starts.
 
     Args:
         metric (`str`):
@@ -860,6 +867,9 @@ def watch(
             Fire a WARN alert if the metric drops below this value.
         window (`int`, *optional*, defaults to `5`):
             Number of recent values to use for spike detection averaging.
+        mode (`str`, *optional*, defaults to ``"min"``):
+            Whether lower (``"min"``) or higher (``"max"``) values are better.
+            Affects patience-based stagnation detection.
     """
     watcher = MetricWatcher(
         metric_name=metric,
@@ -870,6 +880,7 @@ def watch(
         max_value=max_value,
         min_value=min_value,
         window=window,
+        mode=mode,
     )
     _watcher_manager.add(watcher)
 

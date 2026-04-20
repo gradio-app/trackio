@@ -178,7 +178,7 @@ def experiment_architecture_search(project):
     ]
     commands_issued = 0
 
-    for i, cfg in enumerate(configs):
+    for cfg in configs:
         run_name = f"arch-d{cfg['depth']}-bs{cfg['batch_size']}-lr{cfg['lr']}"
         run_training(project, run_name, steps=300, seed=42, **cfg)
 
@@ -348,7 +348,7 @@ def experiment_multi_objective(project):
     ]
     commands_issued = 0
 
-    for i, cfg in enumerate(configs):
+    for cfg in configs:
         run_name = f"multi-{i}-d{cfg['depth']}-lr{cfg['lr']}"
         run_training(project, run_name, steps=300, seed=42, **cfg)
 

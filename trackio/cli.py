@@ -697,15 +697,10 @@ def main():
         help="Metric name to rank runs by",
     )
     best_parser.add_argument(
-        "--minimize",
-        action="store_true",
-        default=True,
-        help="Lower is better (default)",
-    )
-    best_parser.add_argument(
-        "--maximize",
-        action="store_true",
-        help="Higher is better",
+        "--direction",
+        choices=["min", "max"],
+        default="min",
+        help="Whether lower ('min', default) or higher ('max') values are better",
     )
     best_parser.add_argument(
         "--mode",
@@ -1298,7 +1293,7 @@ def main():
         if not db_path.exists():
             error_exit(f"Project '{args.project}' not found.")
 
-        minimize = not args.maximize
+        minimize = args.direction == "min"
         results = SQLiteStorage.get_final_metric_for_runs(
             args.project, args.metric, mode=args.mode
         )
@@ -1324,7 +1319,7 @@ def main():
                     {
                         "project": args.project,
                         "metric": args.metric,
-                        "direction": "minimize" if minimize else "maximize",
+                        "direction": args.direction,
                         "mode": args.mode,
                         "best_run": best["run"],
                         "best_value": best["value"],

@@ -2162,7 +2162,9 @@ class SQLiteStorage:
                 raise
 
     @staticmethod
-    def set_run_status(project: str, run: str, status: str) -> None:
+    def set_run_status(
+        project: str, run: str, status: str, run_id: str | None = None
+    ) -> None:
         db_path = SQLiteStorage.init_db(project)
         finished_at = None
         if status in ("finished", "failed"):
@@ -2171,34 +2173,52 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 try:
+                    has_run_id_col = SQLiteStorage._supports_run_ids(conn, "configs")
+                    resolved_id = run_id or run
                     current_timestamp = datetime.now(timezone.utc).isoformat()
-                    cursor.execute(
-                        "INSERT OR IGNORE INTO configs (run_name, config, created_at) VALUES (?, '{}', ?)",
-                        (run, current_timestamp),
-                    )
-                    if finished_at:
+                    if has_run_id_col:
                         cursor.execute(
-                            "UPDATE configs SET status = ?, finished_at = ? WHERE run_name = ?",
-                            (status, finished_at, run),
+                            "INSERT OR IGNORE INTO configs (run_id, run_name, config, created_at) VALUES (?, ?, '{}', ?)",
+                            (resolved_id, run, current_timestamp),
                         )
                     else:
                         cursor.execute(
-                            "UPDATE configs SET status = ? WHERE run_name = ?",
-                            (status, run),
+                            "INSERT OR IGNORE INTO configs (run_name, config, created_at) VALUES (?, '{}', ?)",
+                            (run, current_timestamp),
+                        )
+                    identity = SQLiteStorage._resolve_run_identity(
+                        conn, run_name=run, run_id=run_id, table="configs"
+                    )
+                    id_col, id_val = identity if identity else ("run_name", run)
+                    if finished_at:
+                        cursor.execute(
+                            f"UPDATE configs SET status = ?, finished_at = ? WHERE {id_col} = ?",
+                            (status, finished_at, id_val),
+                        )
+                    else:
+                        cursor.execute(
+                            f"UPDATE configs SET status = ? WHERE {id_col} = ?",
+                            (status, id_val),
                         )
                     conn.commit()
                 except sqlite3.OperationalError:
                     pass
 
     @staticmethod
-    def get_run_status(project: str, run: str) -> str | None:
+    def get_run_status(project: str, run: str, run_id: str | None = None) -> str | None:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             try:
-                cursor.execute("SELECT status FROM configs WHERE run_name = ?", (run,))
+                identity = SQLiteStorage._resolve_run_identity(
+                    conn, run_name=run, run_id=run_id, table="configs"
+                )
+                id_col, id_val = identity if identity else ("run_name", run)
+                cursor.execute(
+                    f"SELECT status FROM configs WHERE {id_col} = ?", (id_val,)
+                )
                 row = cursor.fetchone()
                 if row:
                     return row["status"]

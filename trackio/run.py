@@ -165,7 +165,7 @@ class Run:
                 description="remote Trackio logging thread",
             )
 
-        SQLiteStorage.set_run_status(self.project, self.name, "running")
+        SQLiteStorage.set_run_status(self.project, self.name, "running", run_id=self.id)
         self._finished = False
 
         self._gpu_monitor: "GpuMonitor | AppleGpuMonitor | None" = None
@@ -965,7 +965,7 @@ class Run:
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log_system() failed: {e}")
 
-    def finish(self):
+    def finish(self, status: str = "finished"):
         if self._finished:
             return
         self._finished = True
@@ -1029,4 +1029,4 @@ class Run:
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")
 
-        SQLiteStorage.set_run_status(self.project, self.name, "finished")
+        SQLiteStorage.set_run_status(self.project, self.name, status, run_id=self.id)
