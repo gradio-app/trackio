@@ -349,7 +349,7 @@
       urlRunsFromQueryApplied = true;
       return;
     }
-    let wanted = [];
+    let wanted;
     if (runIdsParam) {
       const ids = runIdsParam.split(",").map((s) => s.trim()).filter(Boolean);
       const validKeys = new Set(runs.map((r) => runKey(r)));
