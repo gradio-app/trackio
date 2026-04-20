@@ -3,8 +3,8 @@
 
   const links = [
     { id: "metrics", label: "Metrics" },
-    { id: "traces", label: "Traces" },
     { id: "system", label: "System Metrics" },
+    { id: "traces", label: "Traces" },
     { id: "media", label: "Media & Tables" },
     { id: "reports", label: "Alerts & Reports" },
     { id: "runs", label: "Runs" },
