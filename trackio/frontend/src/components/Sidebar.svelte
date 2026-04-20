@@ -32,18 +32,26 @@
     mutationAuth = "local",
     readOnlySource = null,
     projectLocked = false,
+    spaceId = null,
     logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
     darkMode = false,
   } = $props();
 
   let navTick = $state(0);
+  let copyFeedbackTimer = null;
 
   onMount(() => {
     const bump = () => {
       navTick++;
     };
     window.addEventListener("popstate", bump);
-    return () => window.removeEventListener("popstate", bump);
+    return () => {
+      window.removeEventListener("popstate", bump);
+      if (copyFeedbackTimer) {
+        clearTimeout(copyFeedbackTimer);
+        copyFeedbackTimer = null;
+      }
+    };
   });
 
   let loginHref = $derived.by(() => {
@@ -80,6 +88,8 @@
   let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
 
   let latestOnly = $state(false);
+  let shareTab = $state("share");
+  let copyFeedback = $state(null);
 
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
@@ -107,6 +117,85 @@
     } else {
       selectedSystemDevices = [...selectedSystemDevices, device];
     }
+  }
+
+  function buildSpaceHost(spaceIdValue) {
+    if (!spaceIdValue || !spaceIdValue.includes("/")) return "";
+    const [namespace, name] = spaceIdValue.split("/", 2);
+    if (!namespace || !name) return "";
+    return `${namespace}-${name}.hf.space`;
+  }
+
+  function shareBaseHref() {
+    const hfHost = buildSpaceHost(spaceId);
+    if (hfHost) {
+      return `https://${hfHost}`;
+    }
+    const base = window.__trackio_base || "/";
+    const u = new URL(base, window.location.origin);
+    let href = u.href;
+    if (href.endsWith("/")) {
+      href = href.slice(0, -1);
+    }
+    return href || u.origin;
+  }
+
+  function selectedRunIdsForShare(selectedIds, allRuns) {
+    const valid = new Set(allRuns.map((run) => run.id ?? run.name));
+    return selectedIds.filter((id) => valid.has(id));
+  }
+
+  let shareUrl = $derived.by(() => {
+    navTick;
+    if (currentPage !== "metrics" || !spacesMode) return "";
+    if (!selectedProject) return "";
+    const params = new URLSearchParams();
+    params.set("project", selectedProject);
+    if (metricFilter?.trim()) {
+      params.set("metric_filter", metricFilter.trim());
+    }
+    const runIds = selectedRunIdsForShare(selectedRuns, runs);
+    if (runIds.length) {
+      params.set("run_ids", runIds.join(","));
+    }
+    if (!showHeaders) {
+      params.set("accordion", "hidden");
+    }
+    params.set("sidebar", "hidden");
+    params.set("navbar", "hidden");
+    const base = shareBaseHref();
+    const q = params.toString();
+    return q ? `${base}/?${q}` : `${base}/`;
+  });
+
+  let embedCode = $derived.by(() => {
+    if (!shareUrl) return "";
+    return `<iframe src="${shareUrl}" style="width:1600px; height:500px; border:0;"></iframe>`;
+  });
+
+  async function copyText(value, feedbackKey) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    copyFeedback = feedbackKey;
+    if (copyFeedbackTimer) {
+      clearTimeout(copyFeedbackTimer);
+    }
+    copyFeedbackTimer = setTimeout(() => {
+      copyFeedback = null;
+      copyFeedbackTimer = null;
+    }, 2000);
   }
 </script>
 
@@ -149,6 +238,100 @@
       </div>
 
       {#if variant === "full"}
+        {#if currentPage === "metrics" && spacesMode}
+          <div class="section">
+            <div class="share-tabs">
+              <button
+                class="share-tab-btn"
+                class:active={shareTab === "share"}
+                onclick={() => { shareTab = "share"; }}
+              >
+                Share
+              </button>
+              <button
+                class="share-tab-btn"
+                class:active={shareTab === "embed"}
+                onclick={() => { shareTab = "embed"; }}
+              >
+                Embed
+              </button>
+            </div>
+            {#if shareTab === "share"}
+              <div class="share-field">
+                <span class="section-label">Share this view</span>
+                {#if shareUrl}
+                  <div class="share-input-row">
+                    <input type="text" value={shareUrl} readonly />
+                    <button
+                      type="button"
+                      class="copy-btn"
+                      aria-label={copyFeedback === "share" ? "Copied" : "Copy share link"}
+                      onclick={() => copyText(shareUrl, "share")}
+                    >
+                      {#if copyFeedback === "share"}
+                        <svg
+                          class="copy-btn-check"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      {:else}
+                        Copy
+                      {/if}
+                    </button>
+                  </div>
+                {:else}
+                  <p class="share-hint">Select a project to generate a share link.</p>
+                {/if}
+              </div>
+            {:else}
+              <div class="share-field">
+                <span class="section-label">Embed this view</span>
+                {#if embedCode}
+                  <div class="share-input-row">
+                    <textarea readonly rows="2" value={embedCode}></textarea>
+                    <button
+                      type="button"
+                      class="copy-btn"
+                      aria-label={copyFeedback === "embed" ? "Copied" : "Copy embed code"}
+                      onclick={() => copyText(embedCode, "embed")}
+                    >
+                      {#if copyFeedback === "embed"}
+                        <svg
+                          class="copy-btn-check"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      {:else}
+                        Copy
+                      {/if}
+                    </button>
+                  </div>
+                {:else}
+                  <p class="share-hint">Select a project to generate embed HTML.</p>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
         <div class="section">
           <div class="runs-header">
             <label class="select-all-label">
@@ -466,6 +649,73 @@
   .section {
     margin-top: 2px;
     margin-bottom: 18px;
+  }
+  .share-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .share-tab-btn {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--body-text-color-subdued, #6b7280);
+    background: var(--background-fill-primary, white);
+    cursor: pointer;
+  }
+  .share-tab-btn.active {
+    color: var(--body-text-color, #1f2937);
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .share-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .share-input-row {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .share-input-row input,
+  .share-input-row textarea {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color: var(--body-text-color, #1f2937);
+    background: var(--background-fill-secondary, #f9fafb);
+    resize: vertical;
+  }
+  .copy-btn {
+    box-sizing: border-box;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    padding: 6px 10px;
+    min-width: 3.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--body-text-color, #1f2937);
+    background: var(--background-fill-primary, white);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .copy-btn-check {
+    display: block;
+    color: var(--color-accent, #f97316);
+  }
+  .share-hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .section-label {
     font-size: 13px;
