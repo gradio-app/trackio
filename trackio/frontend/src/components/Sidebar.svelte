@@ -82,6 +82,8 @@
 
   let latestOnly = $state(false);
   let shareTab = $state("share");
+  let copyFeedback = $state(null);
+  let copyFeedbackTimer = null;
 
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
@@ -143,7 +145,7 @@
     const params = new URLSearchParams();
     params.set("project", selectedProject);
     if (metricFilter?.trim()) {
-      params.set("metrics", metricFilter.trim());
+      params.set("metric_filter", metricFilter.trim());
     }
     const runNames = selectedRunNamesFromIds(selectedRuns, runs);
     if (runNames.length) {
@@ -164,7 +166,7 @@
     return `<iframe src="${shareUrl}" style="width:1600px; height:500px; border:0;"></iframe>`;
   });
 
-  async function copyText(value) {
+  async function copyText(value, feedbackKey) {
     if (!value) return;
     try {
       await navigator.clipboard.writeText(value);
@@ -179,6 +181,14 @@
       document.execCommand("copy");
       document.body.removeChild(textarea);
     }
+    copyFeedback = feedbackKey;
+    if (copyFeedbackTimer) {
+      clearTimeout(copyFeedbackTimer);
+    }
+    copyFeedbackTimer = setTimeout(() => {
+      copyFeedback = null;
+      copyFeedbackTimer = null;
+    }, 2000);
   }
 </script>
 
@@ -221,53 +231,55 @@
       </div>
 
       {#if variant === "full"}
-        <div class="section">
-          <div class="share-tabs">
-            <button
-              class="share-tab-btn"
-              class:active={shareTab === "share"}
-              onclick={() => { shareTab = "share"; }}
-            >
-              Share
-            </button>
-            <button
-              class="share-tab-btn"
-              class:active={shareTab === "embed"}
-              onclick={() => { shareTab = "embed"; }}
-            >
-              Embed
-            </button>
+        {#if currentPage === "metrics"}
+          <div class="section">
+            <div class="share-tabs">
+              <button
+                class="share-tab-btn"
+                class:active={shareTab === "share"}
+                onclick={() => { shareTab = "share"; }}
+              >
+                Share
+              </button>
+              <button
+                class="share-tab-btn"
+                class:active={shareTab === "embed"}
+                onclick={() => { shareTab = "embed"; }}
+              >
+                Embed
+              </button>
+            </div>
+            {#if shareTab === "share"}
+              <div class="share-field">
+                <span class="section-label">Share this view</span>
+                {#if shareUrl}
+                  <div class="share-input-row">
+                    <input type="text" value={shareUrl} readonly />
+                    <button class="copy-btn" onclick={() => copyText(shareUrl, "share")}>
+                      {copyFeedback === "share" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                {:else}
+                  <p class="share-hint">Select a project to generate a share link.</p>
+                {/if}
+              </div>
+            {:else}
+              <div class="share-field">
+                <span class="section-label">Embed this view</span>
+                {#if embedCode}
+                  <div class="share-input-row">
+                    <textarea readonly rows="2" value={embedCode}></textarea>
+                    <button class="copy-btn" onclick={() => copyText(embedCode, "embed")}>
+                      {copyFeedback === "embed" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                {:else}
+                  <p class="share-hint">Select a project to generate embed HTML.</p>
+                {/if}
+              </div>
+            {/if}
           </div>
-          {#if shareTab === "share"}
-            <div class="share-field">
-              <span class="section-label">Share this view</span>
-              {#if shareUrl}
-                <div class="share-input-row">
-                  <input type="text" value={shareUrl} readonly />
-                  <button class="copy-btn" onclick={() => copyText(shareUrl)}>
-                    Copy
-                  </button>
-                </div>
-              {:else}
-                <p class="share-hint">Select a project to generate a share link.</p>
-              {/if}
-            </div>
-          {:else}
-            <div class="share-field">
-              <span class="section-label">Embed this view</span>
-              {#if embedCode}
-                <div class="share-input-row">
-                  <textarea readonly rows="2" value={embedCode}></textarea>
-                  <button class="copy-btn" onclick={() => copyText(embedCode)}>
-                    Copy
-                  </button>
-                </div>
-              {:else}
-                <p class="share-hint">Select a project to generate embed HTML.</p>
-              {/if}
-            </div>
-          {/if}
-        </div>
+        {/if}
 
         <div class="section">
           <div class="runs-header">
