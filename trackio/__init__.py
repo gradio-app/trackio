@@ -37,6 +37,7 @@ from trackio.run import Run
 from trackio.server import TrackioDashboardApp, build_starlette_app_only
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
+from trackio.trace import Trace
 from trackio.typehints import UploadEntry
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
 
@@ -71,6 +72,7 @@ __all__ = [
     "Video",
     "Audio",
     "Table",
+    "Trace",
     "Histogram",
     "Markdown",
     "Api",

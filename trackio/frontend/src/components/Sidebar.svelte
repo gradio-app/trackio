@@ -19,7 +19,6 @@
     availableSystemDevices = [],
     selectedSystemDevices = $bindable([]),
     traceModel = $bindable("All models"),
-    traceMinReward = $bindable(0),
     traceModelChoices = [],
     smoothing = $bindable(10),
     xAxis = $bindable("step"),
@@ -240,16 +239,6 @@
               choices={traceModelChoices}
               bind:value={traceModel}
               filterable={false}
-            />
-          </div>
-
-          <div class="section">
-            <GradioSlider
-              label="Minimum Reward"
-              bind:value={traceMinReward}
-              min={0}
-              max={1}
-              step={0.01}
             />
           </div>
         {/if}

@@ -1,47 +1,45 @@
-# Trackio Traces: GRPO Rollout Logging & Viewer
+# Trackio Traces: Generic Conversational Trace Logging & Viewer
 
 ## Context
 
-ML researchers running GRPO-style RL training want to log and inspect rollouts — prompt/completion/reward rows across training steps — with conversation-style rendering and slicing by reward / step / model version. `trackio.Table()` already stores this data shape, but the viewer is a flat HTML table: long completions are hard to read, there's no way to filter to "low-reward rollouts at step 2000," and there's no multi-turn message structure.
+Trackio needs a native trace primitive for logging and inspecting conversational and agent-style executions: multi-turn messages, assistant responses, tool calls, and associated metadata. Today, `trackio.Table()` can store some of this shape, but the viewing experience is still a flat table, which makes long exchanges, tool use, and inline media hard to inspect.
 
-Goal: a native `trackio.Trace()` primitive that renders chat-style, slices across steps by metadata, and rides the existing SQLite → parquet → HF Space export path. No OTEL in v1; the native schema has to settle first.
+The motivating use case is GRPO and TRL-style training, but the product surface should not be defined around GRPO alone. The v1 should stay generic enough to support agent runs, environment interactions, and future OTEL-compatible directions without prematurely committing to a full span hierarchy.
 
-Non-goals for v1: nested span/tool-call tree viewers, side-by-side diff, OTEL/Phoenix exporter, dataset-per-run push.
+Goal: introduce a native `trackio.Trace()` primitive plus a lightweight viewer for browsing and expanding traces in the dashboard, while reusing the existing SQLite -> parquet -> HF Space export path.
+
+## Product position for v1
+
+`trackio.Trace` is a generic conversational / agent trace primitive for logging message sequences, tool calls, metadata, and multimodal content, with a lightweight viewer for inspection and search.
+
+GRPO remains an important motivating example, but not the product definition.
+
+## Non-goals for v1
+
+- Full `Project -> Run/Group -> Trace -> Span` hierarchy
+- Parent / child span trees
+- OTEL / OpenInference / Phoenix exporter
+- Reward-specific or GRPO-specific UX as the default product surface
+- Advanced metadata query builder
+- Side-by-side completion diffing
+- Dataset-per-run push
 
 ## Proposed Python API
 
 ```python
 import trackio
 
-trackio.init(project="grpo-run")
+trackio.init(project="agent-run")
 
-# GRPO one-liner — the common case
 trackio.log({
-    "rollout": trackio.Trace(
-        prompt="What is 2+2?",
-        completion="2+2 = 4",
-        metadata={"reward": 0.9, "model_version": "step-2000"},
-    )
-})
-
-# Full multi-turn form (OpenAI chat format)
-trackio.log({
-    "rollout": trackio.Trace(
+    "trace": trackio.Trace(
         messages=[
-            {"role": "system", "content": "You are a math tutor."},
+            {"role": "system", "content": "You are a concise math tutor."},
             {"role": "user", "content": "What is 2+2?"},
             {"role": "assistant", "content": "2+2 = 4"},
         ],
-        metadata={"reward": 0.9, "model_version": "step-2000", "group_id": "g42"},
+        metadata={"model_version": "step-2000", "group_id": "g42"},
     )
-})
-
-# Batch logging — a list of traces at one step
-trackio.log({
-    "rollouts": [
-        trackio.Trace(prompt=p, completion=c, metadata={"reward": r})
-        for p, c, r in zip(prompts, completions, rewards)
-    ]
 })
 ```
 
@@ -51,20 +49,42 @@ trackio.log({
 class Trace:
     def __init__(
         self,
-        messages: list[dict] | None = None,      # OpenAI chat format
-        metadata: dict | None = None,            # flat, filterable: reward, model_version, group_id, ...
-        prompt: str | list[dict] | None = None,  # sugar: string → user msg
-        completion: str | None = None,           # sugar: string → assistant msg
+        messages: list[dict],
+        metadata: dict | None = None,
     ): ...
 ```
 
-- `prompt` + `completion` is sugar for the GRPO case so users don't have to assemble `messages`.
-- `metadata` is flat `dict[str, scalar]` because the UI promotes its keys to filter chips. Nested values are allowed but not indexed.
-- `messages` follows OpenAI chat format (role/content, optional `tool_calls`) — the de-facto standard that TRL, vLLM, and Transformers pipelines already emit.
+- `messages` follows OpenAI chat-style structure so it works naturally with existing LLM tooling.
+- `messages` should support `role`, `content`, and optional tool / function-call fields.
+- `metadata` stays user-defined and unopinionated. No special reward schema in the core type.
+
+### Message shape for v1
+
+Supported message shapes in v1:
+
+- Standard conversational roles: `system`, `user`, `assistant`
+- Tool / function-related entries represented using OpenAI-compatible fields
+- `content` can be plain text in v1
+- The schema should leave room for image content parts so environment screenshots can be rendered inline when present
+
+We should align as closely as possible with OpenAI chat format rather than inventing a custom message schema.
+
+## Example usage tracks
+
+We should ship three examples alongside the feature so users can immediately understand how `Trace` is meant to be used:
+
+1. **Basic example**
+   Log a simple single-turn or short multi-turn trace with plain text messages and metadata.
+2. **More complex example**
+   Show a richer trace with multiple turns, a tool / function call, and optionally inline image content.
+3. **TRL integration example**
+   Show how a TRL training loop or callback logs traces during training.
+
+These examples should live in a discoverable place and be referenced from the README / docs for the feature.
 
 ## Using with TRL
 
-TRL's `GRPOTrainer` exposes completions + rewards inside the training loop. The integration is a one-line callback:
+TRL remains a key integration story for v1, but it should be presented as one example of `Trace`, not the defining abstraction.
 
 ```python
 from trl import GRPOTrainer, GRPOConfig
@@ -74,11 +94,17 @@ trackio.init(project="trl-grpo")
 
 def log_rollouts(prompts, completions, rewards, step, model_version):
     trackio.log({
-        "rollouts": [
+        "traces": [
             trackio.Trace(
-                prompt=p,
-                completion=c,
-                metadata={"reward": float(r), "step": step, "model_version": model_version},
+                messages=[
+                    {"role": "user", "content": p},
+                    {"role": "assistant", "content": c},
+                ],
+                metadata={
+                    "reward": float(r),
+                    "step": step,
+                    "model_version": model_version,
+                },
             )
             for p, c, r in zip(prompts, completions, rewards)
         ]
@@ -90,92 +116,121 @@ trainer = GRPOTrainer(
     args=GRPOConfig(output_dir="out", report_to="trackio"),
     train_dataset=ds,
 )
-# Hook log_rollouts into the trainer's on_step_end callback or inside reward_funcs.
 trainer.train()
 ```
 
-Once `trackio` is listed in TRL's `report_to`, `trackio.init` is called automatically. The rollout callback above can live in a `TrainerCallback` subclass in user code, or — as a follow-up — ship inside `trl.trackio` so that passing `report_to="trackio"` gives traces out of the box. That follow-up lines up with [trl#4818](https://github.com/huggingface/trl/pull/4818).
+Once `trackio` is listed in TRL's `report_to`, `trackio.init` is called automatically. The logging callback can live in user code in v1; a tighter `trl.trackio` integration can follow later.
 
 ## UI / UX notes
 
-The run view gets a new **Traces** tab (sibling of the metrics plots), visible only when a run contains any trace-typed log.
+The dashboard gets a **Traces** page / tab, visible only when a run contains trace-typed logs.
 
-```
-┌─ Run: grpo-run-2026-04-18 ─────────────────────────────────────────┐
-│  [Metrics]  [Traces]  [System]  [Config]                           │
-├──────────────────────┬─────────────────────────────────────────────┤
-│  Filter:             │  step 2000 · reward 0.12 · model step-2000  │
-│  reward: [0 ──●──1]  │  ┌──────────────────────────────────────┐   │
-│  model:  step-2000 ▾ │  │ system   You are a math tutor.       │   │
-│  step:   [0 ─── 5k]  │  │ user     What is 2+2?                │   │
-│  sort:   reward ↑    │  │ assistant 2 plus 2 equals five.      │   │
-│                      │  │          (markdown + code highlight) │   │
-│  ● step 2000  r=.12  │  └──────────────────────────────────────┘   │
-│    "2 plus 2..."     │                                             │
-│  ○ step 2000  r=.34  │                                             │
-│    "The answer..."   │                                             │
-│  ○ step 2100  r=.91  │                                             │
-│    ...               │                                             │
-└──────────────────────┴─────────────────────────────────────────────┘
-```
+The v1 UI should stay consistent with the rest of Trackio:
 
-Two panes:
+- No bespoke gradient-heavy styling
+- No oversized exploratory control surface
+- Filters should live in the sidebar where possible
+- The main page should primarily be the trace list itself
 
-1. **Left — rollout list.** Virtualized list across all steps in the run. Each row: step, one-line preview of the assistant reply, and the most salient metadata (reward badge, model version). A filter bar on top generates chips automatically from metadata keys present in the run: numeric keys (reward) become range sliders, string keys (model_version) become dropdowns, `step` is always available. Sort dropdown supports reward asc/desc and step asc/desc.
-2. **Right — chat viewer.** Selected trace renders role-tagged bubbles (system/user/assistant/tool) with markdown + code block highlighting and collapsible long content. Metadata shown as a key/value strip above the conversation.
+### Main page structure
 
-New Svelte components (under `trackio/frontend/src/components/`):
+Top row:
 
-- `TraceList.svelte` — left pane + filter bar
-- `TraceViewer.svelte` — right pane chat rendering
-- `TraceFilters.svelte` — metadata-driven filter controls
+- Search box: `Search traces by request`
+- Sort dropdown
+- Result count
 
-Reuses the markdown/code rendering utilities already in `GradioTable.svelte`.
+Sidebar filters for v1:
+
+- Minimal only
+- Example: model version
+- Avoid opinionated controls like a dedicated reward slider as the core default experience
+
+Main body:
+
+- Compact table / list of traces, closer to observability tooling than a custom chat app
+- Each row shows trace id, request preview, step / time, selected metadata, and state if available
+- Clicking a row expands it inline to reveal the full conversation
+
+Expanded trace view:
+
+- Render multi-turn conversations cleanly
+- Use collapsible sections or max-height scroll constraints for very long content
+- Distinguish normal messages from tool / function calls
+- Render inline images when present in message content
+
+### Search behavior
+
+The search bar should semantically search across trace content, not just trace id.
+
+For v1:
+
+- Simple substring matching across flattened request / response / message content / metadata is acceptable
+- Do not promise true FTS unless backend work is explicitly added
+
+### Filtering behavior
+
+The filtering model should remain generic and metadata-driven over time, but the v1 UI should be intentionally narrow.
+
+For v1:
+
+- Keep the visible filter set small
+- Avoid hard-coding reward as a privileged first-class product concept
+- Leave room for generic metadata filtering later, based on detected field types
 
 ## Storage & export
 
-No schema change. Traces are serialized via `_to_dict()` and ride inside the existing `metrics` JSON blob (same path as `Table` and `Histogram`). `SQLiteStorage.export_for_static_space()` already flattens `metrics` into `metrics.parquet`, so traces sync to HF Datasets for free when a run is deployed to a Space — which is the "push traces to HF Dataset" story.
+No schema change in v1. Traces are serialized via `_to_dict()` and ride inside the existing `metrics` JSON blob, same path as `Table` and `Histogram`.
 
-A read-side helper `SQLiteStorage.get_traces(project, run, filters, sort, limit, offset)` walks the metrics JSON, pulls rows where `_type == "trackio.trace"`, and filters/sorts in memory. Fine at ~10k rollouts; promote to a materialized `traces` table later if it bottlenecks.
+`SQLiteStorage.export_for_static_space()` already flattens `metrics` into `metrics.parquet`, so traces sync to HF Datasets automatically when a run is deployed to a Space.
+
+A read-side helper such as `SQLiteStorage.get_traces(project, run, search, sort, limit, offset)` can walk the metrics JSON, pull rows where `_type == "trackio.trace"`, and apply simple filtering / search in memory. This is acceptable for v1 scale; a materialized `traces` table can be introduced later if needed.
 
 ## Files to modify
 
 - `trackio/trace.py` — new `Trace` class
 - `trackio/__init__.py` — export `Trace`
-- `trackio/run.py` — handle `Trace` in `log()` (around line 818, next to the `Table` branch)
+- `trackio/run.py` — handle `Trace` in `log()`
 - `trackio/ui/main.py` — new `get_traces` endpoint via `gr.api()`
 - `trackio/sqlite_storage.py` — new `get_traces()` helper
-- `trackio/frontend/src/components/TraceList.svelte` — new
-- `trackio/frontend/src/components/TraceViewer.svelte` — new
-- `trackio/frontend/src/components/TraceFilters.svelte` — new
-- `trackio/frontend/src/` — wire Traces tab into run view
-- `tests/test_trace.py` — unit round-trip + filter/sort
-- `tests/e2e/` — end-to-end logging + query
+- `trackio/frontend/src/` — wire `Traces` into the dashboard
+- `tests/test_trace.py` — unit round-trip tests
+- `tests/e2e/` — end-to-end logging + query tests
 - `README.md` — usage section
+- `examples/` or docs examples — three usage examples: basic, complex, TRL integration
 
 ## Reuse (don't re-invent)
 
 - `serialize_values()` — `trackio/utils.py:898`
 - `Table._to_dict` pattern — `trackio/table.py`
-- `TrackioMedia` — the path forward for images inside messages (multimodal)
-- `SQLiteStorage.bulk_log` / `export_for_static_space` — `trackio/sqlite_storage.py:375`, `:850`
-- `GradioTable.svelte` markdown/image rendering utilities
+- `TrackioMedia` — path forward for images inside trace messages
+- `SQLiteStorage.bulk_log` / `export_for_static_space` — `trackio/sqlite_storage.py`
+- Existing frontend table / layout patterns instead of introducing a bespoke trace-only design system
 
 ## Verification
 
-1. `pytest tests/test_trace.py tests/e2e/` — unit + e2e logging round-trip, including filter/sort queries
+1. `pytest tests/test_trace.py tests/e2e/`
+   Covers trace round-trip, simple search, and inline expansion data loading.
 2. `ruff check --fix --select I && ruff format`
-3. Manual: adapt [AmineDiro's GRPO gist](https://gist.github.com/AmineDiro/3df6521bd3bf9405f913120551fe9fce) to log via `trackio.Trace`. Launch `trackio show` and confirm:
-   - Traces tab appears on the run
-   - Filter by `reward < 0.2` narrows the list
-   - Sort by reward ascending surfaces failures first
-   - Chat viewer renders roles + markdown + code blocks
-4. Deploy to an HF Space, confirm `metrics.parquet` contains trace rows and is loadable via `datasets.load_dataset`.
+3. Manual dashboard verification:
+   - Traces page appears only when trace logs exist
+   - Search narrows traces by content, not just id
+   - Expanded rows render multi-turn conversations
+   - Tool / function-call messages render distinctly
+   - Very long content is constrained and remains readable
+   - Inline images render when present
+4. Docs / examples verification:
+   - Basic example runs
+   - Complex example runs
+   - TRL example runs
+5. Deploy to an HF Space and confirm `metrics.parquet` contains trace rows that are loadable via `datasets.load_dataset`
 
 ## Deferred (explicitly out of v1)
 
-- OTEL / OpenInference exporter (revisit once schema settles; aligns with [trl#4818](https://github.com/huggingface/trl/pull/4818))
-- Nested tool-call span tree viewer
+- Full span hierarchy with parent / child relationships
+- OTEL / OpenInference exporter
+- Advanced metadata filter builder
+- True full-text search indexing
+- Nested span tree viewer
 - Side-by-side completion diff
-- Dataset-per-run push (Aditya: "interesting feature in the future")
-- Multimodal content parts in the viewer (schema allows it, viewer ignores non-text for v1)
+- Dataset-per-run push

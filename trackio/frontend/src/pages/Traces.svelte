@@ -1,270 +1,264 @@
 <script>
+  import LoadingTrackio from "../components/LoadingTrackio.svelte";
+  import { getMediaUrl, getTraces } from "../lib/api.js";
+
   let {
     project = null,
     selectedRuns = [],
     traceModel = $bindable("All models"),
-    traceMinReward = $bindable(0),
+    traceModelChoices = $bindable(["All models"]),
   } = $props();
 
-  const baseTraces = [
-    {
-      id: "tr-aa42e8eb647e",
-      request: "What is the capital of Australia?",
-      preview: "The capital of Australia is Sydney.",
-      step: 2000,
-      reward: 0.08,
-      modelVersion: "step-2000",
-      state: "Error",
-      timestamp: "19 hours ago",
-      latency: "0.001s",
-      groupId: "g-42",
-      messages: [
-        { role: "system", content: "Answer directly and avoid unsupported claims." },
-        { role: "user", content: "What is the capital of Australia?" },
-        { role: "assistant", content: "The capital of Australia is Sydney." },
-      ],
-    },
-    {
-      id: "tr-43c40a48387b",
-      request: "What is 17 * 19?",
-      preview: "17 * 19 = 17 * 20 - 17 = 340 - 17 = 323.",
-      step: 1800,
-      reward: 0.12,
-      modelVersion: "step-1800",
-      state: "Error",
-      timestamp: "19 hours ago",
-      latency: "0.002s",
-      groupId: "g-17",
-      messages: [
-        { role: "system", content: "You are a concise math tutor. Show the reasoning cleanly." },
-        { role: "user", content: "What is 17 * 19?" },
-        { role: "assistant", content: "17 * 19 = 17 * 20 - 17 = 340 - 17 = 323." },
-      ],
-    },
-    {
-      id: "tr-f9344cacf94b",
-      request: "How many minutes are in 3.5 days?",
-      preview: "There are 5,040 minutes in 3.5 days.",
-      step: 2000,
-      reward: 0.31,
-      modelVersion: "step-2000",
-      state: "Success",
-      timestamp: "19 hours ago",
-      latency: "0.001s",
-      groupId: "g-17",
-      messages: [
-        { role: "system", content: "Route calculations through the calculator tool when possible." },
-        { role: "user", content: "How many minutes are in 3.5 days?" },
-        { role: "tool", content: "calculator(days=3.5, unit='minutes') -> 5040" },
-        { role: "assistant", content: "There are 5,040 minutes in 3.5 days." },
-      ],
-    },
-    {
-      id: "tr-c819cdf800a9",
-      request: "What is the capital of Australia?",
-      preview: "The capital of Australia is Canberra.",
-      step: 2150,
-      reward: 0.91,
-      modelVersion: "step-2150",
-      state: "Success",
-      timestamp: "19 hours ago",
-      latency: "0.001s",
-      groupId: "g-42",
-      messages: [
-        { role: "system", content: "Answer directly and avoid unsupported claims." },
-        { role: "user", content: "What is the capital of Australia?" },
-        { role: "assistant", content: "The capital of Australia is Canberra." },
-      ],
-    },
-    {
-      id: "tr-8f397c1eeeda",
-      request: "Write a Fibonacci function",
-      preview: "def fib(n): seq = [] ... return seq",
-      step: 2300,
-      reward: 0.77,
-      modelVersion: "step-2300",
-      state: "Success",
-      timestamp: "19 hours ago",
-      latency: "0.002s",
-      groupId: "g-98",
-      messages: [
-        { role: "system", content: "Return runnable Python when the user asks for code." },
-        { role: "user", content: "Write a function that returns the Fibonacci sequence up to n." },
-        {
-          role: "assistant",
-          content:
-            "def fib(n):\n    seq = []\n    a, b = 0, 1\n    while a <= n:\n        seq.append(a)\n        a, b = b, a + b\n    return seq",
-        },
-      ],
-    },
-    {
-      id: "tr-eabe8cb67dad",
-      request: "Explain why leaves change color in the fall.",
-      preview: "Leaves change color because chlorophyll breaks down as daylight shortens...",
-      step: 2450,
-      reward: 0.24,
-      modelVersion: "step-2450",
-      state: "Error",
-      timestamp: "19 hours ago",
-      latency: "0.001s",
-      groupId: "g-98",
-      messages: [
-        { role: "system", content: "Answer in one sentence only." },
-        { role: "user", content: "Explain why leaves change color in the fall." },
-        {
-          role: "assistant",
-          content:
-            "Leaves change color because chlorophyll breaks down as daylight shortens, revealing pigments like carotenoids and anthocyanins, and this process also depends on sugar levels, temperature swings, and species-specific chemistry.",
-        },
-      ],
-    },
-    {
-      id: "tr-5b2efd0671bd",
-      request: "Explain why leaves change color in the fall.",
-      preview: "Leaves change color in fall because chlorophyll fades and other pigments become visible.",
-      step: 2600,
-      reward: 0.88,
-      modelVersion: "step-2600",
-      state: "Success",
-      timestamp: "19 hours ago",
-      latency: "0.001s",
-      groupId: "g-98",
-      messages: [
-        { role: "system", content: "Answer in one sentence only." },
-        { role: "user", content: "Explain why leaves change color in the fall." },
-        {
-          role: "assistant",
-          content: "Leaves change color in fall because chlorophyll fades and other pigments become visible.",
-        },
-      ],
-    },
-    {
-      id: "tr-91ecf34c9812",
-      request: "Summarize the launch checklist for a model evaluation run.",
-      preview: "- Freeze the dataset snapshot - Record the model and prompt version ...",
-      step: 2800,
-      reward: 0.95,
-      modelVersion: "step-2800",
-      state: "Success",
-      timestamp: "19 hours ago",
-      latency: "0.002s",
-      groupId: "g-121",
-      messages: [
-        { role: "system", content: "Use markdown bullets when summarizing requirements." },
-        { role: "user", content: "Summarize the launch checklist for a model evaluation run." },
-        {
-          role: "assistant",
-          content:
-            "- Freeze the dataset snapshot\n- Record the model and prompt version\n- Verify scoring scripts\n- Store outputs and metrics for review",
-        },
-      ],
-    },
-  ];
-
+  let loading = $state(false);
   let search = $state("");
-  let sortBy = $state("request-time");
+  let sortBy = $state("request_time_desc");
   let expandedTraceId = $state(null);
+  let traces = $state([]);
 
-  let activeRunLabel = $derived(
-    selectedRuns.length > 0 ? selectedRuns[0].name : "search_traces_test"
-  );
+  function textFromContent(content) {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .map((part) => {
+          if (typeof part === "string") return part;
+          if (typeof part?.text === "string") return part.text;
+          if (typeof part?.content === "string") return part.content;
+          if (part?._type === "trackio.image" || part?.type === "image") return "[image]";
+          return "";
+        })
+        .filter(Boolean)
+        .join(" ");
+    }
+    if (typeof content?.text === "string") return content.text;
+    return "";
+  }
 
-  let traces = $derived(baseTraces.map((trace) => ({ ...trace, run: activeRunLabel })));
+  function normalizeTrace(trace, runLabel) {
+    const messages = Array.isArray(trace.messages) ? trace.messages : [];
+    const firstUser = messages.find((message) => message?.role === "user");
+    const firstAssistant = messages.find((message) => message?.role === "assistant");
+    return {
+      ...trace,
+      run: trace.run || runLabel,
+      request: textFromContent(firstUser?.content) || "(no user message)",
+      preview: textFromContent(firstAssistant?.content) || "(no assistant response)",
+    };
+  }
 
-  let filteredTraces = $derived.by(() => {
+  async function loadTraces() {
+    if (!project || selectedRuns.length === 0) {
+      traces = [];
+      traceModelChoices = ["All models"];
+      expandedTraceId = null;
+      return;
+    }
+
+    loading = true;
+    try {
+      const batches = await Promise.all(
+        selectedRuns.map(async (run) => {
+          const runTraces = await getTraces(project, run);
+          return runTraces.map((trace) => normalizeTrace(trace, run.name));
+        }),
+      );
+      traces = batches.flat();
+
+      const models = [...new Set(traces.map((trace) => trace.metadata?.model_version).filter(Boolean))].sort();
+      traceModelChoices = ["All models", ...models];
+      if (!traceModelChoices.includes(traceModel)) {
+        traceModel = "All models";
+      }
+      if (!traces.find((trace) => trace.id === expandedTraceId)) {
+        expandedTraceId = null;
+      }
+    } catch (error) {
+      console.error("Failed to load traces:", error);
+      traces = [];
+      traceModelChoices = ["All models"];
+    } finally {
+      loading = false;
+    }
+  }
+
+  let visibleTraces = $derived.by(() => {
     const needle = search.trim().toLowerCase();
-    const matches = traces.filter((trace) => {
-      const matchesModel =
-        traceModel === "All models" || trace.modelVersion === traceModel;
-      const matchesReward = trace.reward >= traceMinReward;
+    const filtered = traces.filter((trace) => {
+      if (traceModel !== "All models" && trace.metadata?.model_version !== traceModel) {
+        return false;
+      }
+      if (!needle) return true;
       const haystack = [
         trace.id,
+        trace.key,
+        trace.run,
         trace.request,
         trace.preview,
-        trace.modelVersion,
-        trace.state,
-        trace.run,
-        ...trace.messages.map((message) => message.content),
+        JSON.stringify(trace.metadata || {}),
+        ...trace.messages.map((message) => {
+          if (typeof message?.content === "string") return message.content;
+          return JSON.stringify(message?.content || "");
+        }),
       ]
         .join(" ")
         .toLowerCase();
-      return matchesModel && matchesReward && (!needle || haystack.includes(needle));
+      return haystack.includes(needle);
     });
 
-    return matches.sort((left, right) => {
+    return filtered.sort((left, right) => {
       switch (sortBy) {
-        case "reward-asc":
-          return left.reward - right.reward;
-        case "reward-desc":
-          return right.reward - left.reward;
-        case "step-asc":
-          return left.step - right.step;
-        case "step-desc":
-          return right.step - left.step;
-        case "request-time":
+        case "step_asc":
+          return (left.step ?? 0) - (right.step ?? 0);
+        case "step_desc":
+          return (right.step ?? 0) - (left.step ?? 0);
+        case "reward_asc":
+          return (left.metadata?.reward ?? Number.NEGATIVE_INFINITY) - (right.metadata?.reward ?? Number.NEGATIVE_INFINITY);
+        case "reward_desc":
+          return (right.metadata?.reward ?? Number.NEGATIVE_INFINITY) - (left.metadata?.reward ?? Number.NEGATIVE_INFINITY);
+        case "request_time_asc":
+          return String(left.timestamp || "").localeCompare(String(right.timestamp || ""));
+        case "request_time_desc":
         default:
-          return right.step - left.step;
+          return String(right.timestamp || "").localeCompare(String(left.timestamp || ""));
       }
     });
   });
 
   $effect(() => {
-    filteredTraces;
-    if (expandedTraceId && !filteredTraces.find((trace) => trace.id === expandedTraceId)) {
-      expandedTraceId = null;
-    }
+    project;
+    selectedRuns;
+    loadTraces();
   });
 
   function toggleTrace(traceId) {
     expandedTraceId = expandedTraceId === traceId ? null : traceId;
   }
 
-  function stateClass(state) {
-    return state.toLowerCase() === "error" ? "error" : "success";
+  function stateLabel(trace) {
+    const reward = trace.metadata?.reward;
+    if (typeof reward === "number") {
+      return reward < 0.3 ? "Needs review" : "Logged";
+    }
+    return "Logged";
+  }
+
+  function stateClass(trace) {
+    const reward = trace.metadata?.reward;
+    return typeof reward === "number" && reward < 0.3 ? "warning" : "neutral";
+  }
+
+  function modelLabel(trace) {
+    return trace.metadata?.model_version || "—";
+  }
+
+  function renderableParts(message) {
+    const content = message?.content;
+    if (typeof content === "string" || content == null) return [];
+    if (Array.isArray(content)) return content;
+    return [content];
+  }
+
+  function hasRenderableParts(message) {
+    return renderableParts(message).length > 0;
+  }
+
+  function isImagePart(part) {
+    return (
+      part?._type === "trackio.image" ||
+      part?.type === "image" ||
+      part?.type === "input_image" ||
+      part?.type === "image_url"
+    );
+  }
+
+  function imageSrc(part) {
+    if (part?.file_path) return getMediaUrl(part.file_path);
+    if (part?.image_url?.url) return part.image_url.url;
+    if (typeof part?.url === "string") return part.url;
+    return "";
+  }
+
+  function imageAlt(part) {
+    return part?.caption || part?.alt || "Trace image";
+  }
+
+  function longText(text) {
+    return typeof text === "string" && text.length > 500;
+  }
+
+  function metadataEntries(trace) {
+    return Object.entries(trace.metadata || {});
   }
 </script>
 
 <div class="traces-page">
-  <div class="toolbar">
-    <div class="search-wrap">
-      <input type="text" bind:value={search} placeholder="Search traces by request" />
+  {#if loading}
+    <LoadingTrackio />
+  {:else if !project}
+    <div class="empty-state">
+      <h2>Select a project</h2>
+      <p>Pick a project to browse trace logs.</p>
     </div>
-
-    <label class="sort-wrap">
-      <span>Sort:</span>
-      <select bind:value={sortBy}>
-        <option value="request-time">Request time</option>
-        <option value="step-desc">Step descending</option>
-        <option value="step-asc">Step ascending</option>
-        <option value="reward-desc">Reward descending</option>
-        <option value="reward-asc">Reward ascending</option>
-      </select>
-    </label>
-
-    <div class="count">{filteredTraces.length} of {traces.length}</div>
-  </div>
-
-  {#if filteredTraces.length === 0}
+  {:else if selectedRuns.length === 0}
+    <div class="empty-state">
+      <h2>No runs selected</h2>
+      <p>Select one or more runs in the sidebar to browse traces.</p>
+    </div>
+  {:else if visibleTraces.length === 0}
+    <div class="toolbar">
+      <div class="search-wrap">
+        <input type="text" bind:value={search} placeholder="Search traces by request" />
+      </div>
+      <label class="sort-wrap">
+        <span>Sort:</span>
+        <select bind:value={sortBy}>
+          <option value="request_time_desc">Request time</option>
+          <option value="request_time_asc">Oldest first</option>
+          <option value="step_desc">Step descending</option>
+          <option value="step_asc">Step ascending</option>
+          <option value="reward_desc">Reward descending</option>
+          <option value="reward_asc">Reward ascending</option>
+        </select>
+      </label>
+      <div class="count">0 of {traces.length}</div>
+    </div>
     <div class="empty-state">
       <h2>No traces match the current filters</h2>
-      <p>Adjust the sidebar filters or search query to show more mock traces.</p>
+      <p>Try a different search query or model filter.</p>
     </div>
   {:else}
+    <div class="toolbar">
+      <div class="search-wrap">
+        <input type="text" bind:value={search} placeholder="Search traces by request" />
+      </div>
+      <label class="sort-wrap">
+        <span>Sort:</span>
+        <select bind:value={sortBy}>
+          <option value="request_time_desc">Request time</option>
+          <option value="request_time_asc">Oldest first</option>
+          <option value="step_desc">Step descending</option>
+          <option value="step_asc">Step ascending</option>
+          <option value="reward_desc">Reward descending</option>
+          <option value="reward_asc">Reward ascending</option>
+        </select>
+      </label>
+      <div class="count">{visibleTraces.length} of {traces.length}</div>
+    </div>
+
     <div class="traces-table-wrap">
       <table class="traces-table">
         <thead>
           <tr>
             <th>Trace ID</th>
             <th>Request</th>
+            <th>Run</th>
             <th>Step</th>
-            <th>Reward</th>
             <th>Model</th>
             <th>Request time</th>
             <th>State</th>
           </tr>
         </thead>
         <tbody>
-          {#each filteredTraces as trace}
+          {#each visibleTraces as trace}
             <tr class="trace-row" onclick={() => toggleTrace(trace.id)}>
               <td class="trace-id-cell">
                 <span class="trace-id">{trace.id}</span>
@@ -273,12 +267,12 @@
                 <div class="request">{trace.request}</div>
                 <div class="preview">{trace.preview}</div>
               </td>
-              <td>{trace.step}</td>
-              <td>{trace.reward.toFixed(2)}</td>
-              <td>{trace.modelVersion}</td>
-              <td>{trace.timestamp}</td>
+              <td>{trace.run || "—"}</td>
+              <td>{trace.step ?? "—"}</td>
+              <td>{modelLabel(trace)}</td>
+              <td>{trace.timestamp || "—"}</td>
               <td>
-                <span class="state {stateClass(trace.state)}">{trace.state}</span>
+                <span class="state {stateClass(trace)}">{stateLabel(trace)}</span>
               </td>
             </tr>
             {#if expandedTraceId === trace.id}
@@ -286,17 +280,57 @@
                 <td colspan="7">
                   <div class="trace-detail">
                     <div class="detail-meta">
-                      <span>Project: {project || "demo-project"}</span>
-                      <span>Run: {trace.run}</span>
-                      <span>Latency: {trace.latency}</span>
-                      <span>Group: {trace.groupId}</span>
+                      <span>Logged as: {trace.key}</span>
+                      {#each metadataEntries(trace) as [key, value]}
+                        <span>{key}: {value}</span>
+                      {/each}
                     </div>
 
                     <div class="conversation">
                       {#each trace.messages as message}
-                        <div class="message">
-                          <div class="message-role">{message.role}</div>
-                          <pre class="message-content">{message.content}</pre>
+                        <div class="message" data-role={message.role || "unknown"}>
+                          <div class="message-role">
+                            {message.role || "message"}
+                            {#if message.tool_calls?.length}
+                              <span class="message-tag">tool calls</span>
+                            {/if}
+                            {#if message.function_call}
+                              <span class="message-tag">function call</span>
+                            {/if}
+                          </div>
+
+                          {#if typeof message.content === "string"}
+                            {#if longText(message.content)}
+                              <details class="message-details">
+                                <summary>Expand content</summary>
+                                <pre class="message-content">{message.content}</pre>
+                              </details>
+                            {:else}
+                              <pre class="message-content">{message.content}</pre>
+                            {/if}
+                          {:else if hasRenderableParts(message)}
+                            <div class="message-parts">
+                              {#each renderableParts(message) as part}
+                                {#if isImagePart(part)}
+                                  <img class="trace-image" src={imageSrc(part)} alt={imageAlt(part)} />
+                                {:else}
+                                  <pre class="message-content">{JSON.stringify(part, null, 2)}</pre>
+                                {/if}
+                              {/each}
+                            </div>
+                          {/if}
+
+                          {#if message.tool_calls?.length}
+                            <div class="tool-blocks">
+                              {#each message.tool_calls as toolCall}
+                                <pre class="tool-block">{JSON.stringify(toolCall, null, 2)}</pre>
+                              {/each}
+                            </div>
+                          {/if}
+
+                          {#if message.function_call}
+                            <pre class="tool-block">{JSON.stringify(message.function_call, null, 2)}</pre>
+                          {/if}
                         </div>
                       {/each}
                     </div>
@@ -392,6 +426,7 @@
     border-radius: var(--radius-md, 6px);
     padding: 6px 10px;
     font-size: 13px;
+    word-break: break-all;
   }
   .request {
     font-weight: 500;
@@ -415,10 +450,10 @@
     border-radius: 999px;
     background: currentColor;
   }
-  .state.error {
-    color: #b91c1c;
+  .state.warning {
+    color: #b45309;
   }
-  .state.success {
+  .state.neutral {
     color: #4b5563;
   }
   .expanded-row td {
@@ -454,14 +489,56 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
   }
-  .message-content {
+  .message-tag {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .message-content,
+  .tool-block {
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
     font-family: inherit;
     color: var(--body-text-color, #1f2937);
     line-height: 1.5;
+  }
+  .message-details summary {
+    cursor: pointer;
+    margin-bottom: 8px;
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .tool-blocks {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .tool-block {
+    background: var(--background-fill-secondary, #f9fafb);
+    border-radius: var(--radius-md, 6px);
+    padding: 10px;
+    overflow-x: auto;
+  }
+  .message-parts {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .trace-image {
+    max-width: 100%;
+    max-height: 360px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
   }
   .empty-state {
     max-width: 640px;

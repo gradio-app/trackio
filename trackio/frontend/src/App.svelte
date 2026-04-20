@@ -71,17 +71,7 @@
   let availableSystemDevices = $state([]);
   let selectedSystemDevices = $state([]);
   let traceModel = $state("All models");
-  let traceMinReward = $state(0);
-  let traceModelChoices = $state([
-    "All models",
-    "step-1800",
-    "step-2000",
-    "step-2150",
-    "step-2300",
-    "step-2450",
-    "step-2600",
-    "step-2800",
-  ]);
+  let traceModelChoices = $state(["All models"]);
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -370,7 +360,6 @@
       {availableSystemDevices}
       bind:selectedSystemDevices
       bind:traceModel
-      bind:traceMinReward
       {traceModelChoices}
       {logoUrls}
       {darkMode}
@@ -402,7 +391,7 @@
           project={selectedProject}
           selectedRuns={selectedRunRecords}
           bind:traceModel
-          bind:traceMinReward
+          bind:traceModelChoices
         />
       {:else if currentPage === "system"}
         <SystemMetrics

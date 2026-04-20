@@ -174,6 +174,116 @@ export async function getLogs(_project, run) {
   });
 }
 
+function flattenTraceSearchText(trace) {
+  const parts = [];
+
+  function visit(value) {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (typeof value === "object") {
+      Object.values(value).forEach(visit);
+      return;
+    }
+    parts.push(String(value));
+  }
+
+  visit(trace.messages || []);
+  visit(trace.metadata || {});
+  return parts.join(" ").toLowerCase();
+}
+
+function sortTraces(traces, sort) {
+  const rewardValue = (trace) =>
+    typeof trace.metadata?.reward === "number" ? trace.metadata.reward : -Infinity;
+
+  switch (sort) {
+    case "reward_asc":
+      return [...traces].sort((a, b) => rewardValue(a) - rewardValue(b));
+    case "reward_desc":
+      return [...traces].sort((a, b) => rewardValue(b) - rewardValue(a));
+    case "step_asc":
+      return [...traces].sort((a, b) => (a.step ?? 0) - (b.step ?? 0));
+    case "step_desc":
+      return [...traces].sort((a, b) => (b.step ?? 0) - (a.step ?? 0));
+    case "request_time_asc":
+      return [...traces].sort((a, b) => String(a.timestamp || "").localeCompare(String(b.timestamp || "")));
+    case "request_time_desc":
+    default:
+      return [...traces].sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")));
+  }
+}
+
+export async function getTraces(_project, run, options = {}) {
+  const logs = await getLogs(_project, run);
+  const traces = [];
+
+  function maybeParseStructured(value) {
+    if (
+      typeof value === "string" &&
+      (value.startsWith("{") || value.startsWith("[")) &&
+      value.includes("_type")
+    ) {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+
+  for (const log of logs) {
+    for (const [key, value] of Object.entries(log)) {
+      if (key === "step" || key === "timestamp") continue;
+      const parsedValue = maybeParseStructured(value);
+      const candidates = Array.isArray(parsedValue) ? parsedValue : [parsedValue];
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        if (!candidate || typeof candidate !== "object" || candidate._type !== "trackio.trace") {
+          continue;
+        }
+        const traceIndex = Array.isArray(parsedValue) ? index : null;
+        const trace = {
+          id: `${normalizeRun(run).id || normalizeRun(run).name || "run"}:${log.step}:${key}${traceIndex !== null ? `:${traceIndex}` : ""}`,
+          key,
+          index: traceIndex,
+          run: normalizeRun(run).name,
+          run_id: normalizeRun(run).id,
+          step: log.step,
+          timestamp: log.timestamp,
+          messages: candidate.messages || [],
+          metadata: candidate.metadata || {},
+        };
+        trace._search_text = `${trace.id} ${key} ${flattenTraceSearchText(trace)}`.toLowerCase();
+        traces.push(trace);
+      }
+    }
+  }
+
+  let filtered = traces;
+  if (options.search && options.search.trim()) {
+    const needle = options.search.trim().toLowerCase();
+    filtered = filtered.filter((trace) => trace._search_text.includes(needle));
+  }
+  if (options.model_version) {
+    filtered = filtered.filter(
+      (trace) => trace.metadata?.model_version === options.model_version,
+    );
+  }
+  filtered = sortTraces(filtered, options.sort || "request_time_desc");
+  if (options.offset) {
+    filtered = filtered.slice(options.offset);
+  }
+  if (options.limit != null) {
+    filtered = filtered.slice(0, options.limit);
+  }
+
+  return filtered.map(({ _search_text, ...trace }) => trace);
+}
+
 export async function getProjectSummary() {
   const runs = await getRunsJson();
   const lastSteps = runs.map((r) => r.last_step || 0);

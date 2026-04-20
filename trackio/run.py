@@ -25,6 +25,7 @@ from trackio.media import TrackioMedia, get_project_media_path
 from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
+from trackio.trace import Trace
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namespace
 
@@ -763,33 +764,26 @@ class Run:
             self._queue_upload(value._get_absolute_file_path(), step)
         return value._to_dict()
 
-    def _scan_and_queue_media_uploads(self, table_dict: dict, step: int | None):
+    def _scan_and_queue_media_uploads(self, value: Any, step: int | None):
         if not self._space_id and not self._server_base_url:
             return
-
-        table_data = table_dict.get("_value", [])
-        for row in table_data:
-            for value in row.values():
-                if isinstance(value, dict) and value.get("_type") in [
-                    "trackio.image",
-                    "trackio.video",
-                    "trackio.audio",
-                ]:
-                    file_path = value.get("file_path")
-                    if file_path:
-                        absolute_path = MEDIA_DIR / file_path
-                        self._queue_upload(absolute_path, step)
-                elif isinstance(value, list):
-                    for item in value:
-                        if isinstance(item, dict) and item.get("_type") in [
-                            "trackio.image",
-                            "trackio.video",
-                            "trackio.audio",
-                        ]:
-                            file_path = item.get("file_path")
-                            if file_path:
-                                absolute_path = MEDIA_DIR / file_path
-                                self._queue_upload(absolute_path, step)
+        if isinstance(value, dict):
+            if value.get("_type") in [
+                "trackio.image",
+                "trackio.video",
+                "trackio.audio",
+            ]:
+                file_path = value.get("file_path")
+                if file_path:
+                    absolute_path = MEDIA_DIR / file_path
+                    self._queue_upload(absolute_path, step)
+                return
+            for nested in value.values():
+                self._scan_and_queue_media_uploads(nested, step)
+            return
+        if isinstance(value, list):
+            for nested in value:
+                self._scan_and_queue_media_uploads(nested, step)
 
     def _ensure_sender_alive(self):
         if self._is_local:
@@ -836,6 +830,11 @@ class Run:
             metrics = new_metrics
             for key, value in metrics.items():
                 if isinstance(value, Table):
+                    metrics[key] = value._to_dict(
+                        project=self.project, run=self.name, step=step
+                    )
+                    self._scan_and_queue_media_uploads(metrics[key], step)
+                elif isinstance(value, Trace):
                     metrics[key] = value._to_dict(
                         project=self.project, run=self.name, step=step
                     )
