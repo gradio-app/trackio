@@ -349,7 +349,7 @@ def experiment_multi_objective(project):
     commands_issued = 0
 
     for cfg in configs:
-        run_name = f"multi-{i}-d{cfg['depth']}-lr{cfg['lr']}"
+        run_name = f"multi-d{cfg['depth']}-lr{cfg['lr']}-bs{cfg['batch_size']}"
         run_training(project, run_name, steps=300, seed=42, **cfg)
 
     runs = get_runs(project)
