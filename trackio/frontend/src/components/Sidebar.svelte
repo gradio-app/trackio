@@ -32,6 +32,7 @@
     mutationAuth = "local",
     readOnlySource = null,
     projectLocked = false,
+    spaceId = null,
     logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
     darkMode = false,
   } = $props();
@@ -80,6 +81,7 @@
   let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
 
   let latestOnly = $state(false);
+  let shareTab = $state("share");
 
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
@@ -106,6 +108,60 @@
       selectedSystemDevices = selectedSystemDevices.filter((d) => d !== device);
     } else {
       selectedSystemDevices = [...selectedSystemDevices, device];
+    }
+  }
+
+  function buildSpaceHost(spaceIdValue) {
+    if (!spaceIdValue || !spaceIdValue.includes("/")) return "";
+    const [namespace, name] = spaceIdValue.split("/", 2);
+    if (!namespace || !name) return "";
+    return `${namespace}-${name}.hf.space`;
+  }
+
+  function selectedRunNamesFromIds(selectedIds, allRuns) {
+    const byId = new Map(allRuns.map((run) => [run.id ?? run.name, run.name]));
+    return selectedIds.map((id) => byId.get(id)).filter(Boolean);
+  }
+
+  let shareUrl = $derived.by(() => {
+    const host = buildSpaceHost(spaceId);
+    if (!host || !selectedProject) return "";
+    const params = new URLSearchParams();
+    params.set("project", selectedProject);
+    if (metricFilter?.trim()) {
+      params.set("metrics", metricFilter.trim());
+    }
+    const runNames = selectedRunNamesFromIds(selectedRuns, runs);
+    if (runNames.length) {
+      params.set("runs", runNames.join(","));
+    }
+    if (!showHeaders) {
+      params.set("accordion", "hidden");
+    }
+    params.set("sidebar", "hidden");
+    params.set("navbar", "hidden");
+    return `https://${host}?${params.toString()}`;
+  });
+
+  let embedCode = $derived.by(() => {
+    if (!shareUrl) return "";
+    return `<iframe src="${shareUrl}" style="width:1600px; height:500px; border:0;"></iframe>`;
+  });
+
+  async function copyText(value) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
     }
   }
 </script>
@@ -149,6 +205,48 @@
       </div>
 
       {#if variant === "full"}
+        {#if spaceId}
+          <div class="section">
+            <div class="share-tabs">
+              <button
+                class="share-tab-btn"
+                class:active={shareTab === "share"}
+                onclick={() => { shareTab = "share"; }}
+              >
+                Share
+              </button>
+              <button
+                class="share-tab-btn"
+                class:active={shareTab === "embed"}
+                onclick={() => { shareTab = "embed"; }}
+              >
+                Embed
+              </button>
+            </div>
+            {#if shareTab === "share"}
+              <div class="share-field">
+                <span class="section-label">Share this view</span>
+                <div class="share-input-row">
+                  <input type="text" value={shareUrl} readonly />
+                  <button class="copy-btn" onclick={() => copyText(shareUrl)}>
+                    Copy
+                  </button>
+                </div>
+              </div>
+            {:else}
+              <div class="share-field">
+                <span class="section-label">Embed this view</span>
+                <div class="share-input-row">
+                  <textarea readonly rows="2" value={embedCode}></textarea>
+                  <button class="copy-btn" onclick={() => copyText(embedCode)}>
+                    Copy
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+
         <div class="section">
           <div class="runs-header">
             <label class="select-all-label">
@@ -466,6 +564,57 @@
   .section {
     margin-top: 2px;
     margin-bottom: 18px;
+  }
+  .share-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .share-tab-btn {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--body-text-color-subdued, #6b7280);
+    background: var(--background-fill-primary, white);
+    cursor: pointer;
+  }
+  .share-tab-btn.active {
+    color: var(--body-text-color, #1f2937);
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .share-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .share-input-row {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .share-input-row input,
+  .share-input-row textarea {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color: var(--body-text-color, #1f2937);
+    background: var(--background-fill-secondary, #f9fafb);
+    resize: vertical;
+  }
+  .copy-btn {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--body-text-color, #1f2937);
+    background: var(--background-fill-primary, white);
+    cursor: pointer;
+    flex-shrink: 0;
   }
   .section-label {
     font-size: 13px;

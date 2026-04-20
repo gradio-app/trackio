@@ -355,6 +355,7 @@
       {metricColumns}
       {availableSystemDevices}
       bind:selectedSystemDevices
+      {spaceId}
       {logoUrls}
       {darkMode}
     />
