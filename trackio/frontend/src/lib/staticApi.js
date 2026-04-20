@@ -211,6 +211,8 @@ function sortTraces(traces, sort) {
 
 export async function getTraces(_project, run, options = {}) {
   const logs = await getLogs(_project, run);
+  const normalizedRun = normalizeRun(run);
+  const runIdent = normalizedRun.id || normalizedRun.name || "run";
   const traces = [];
 
   function maybeParseStructured(value) {
@@ -240,11 +242,11 @@ export async function getTraces(_project, run, options = {}) {
         }
         const traceIndex = Array.isArray(parsedValue) ? index : null;
         const trace = {
-          id: `${normalizeRun(run).id || normalizeRun(run).name || "run"}:${log.step}:${key}${traceIndex !== null ? `:${traceIndex}` : ""}`,
+          id: `${runIdent}:${log.step}:${key}${traceIndex !== null ? `:${traceIndex}` : ""}`,
           key,
           index: traceIndex,
-          run: normalizeRun(run).name,
-          run_id: normalizeRun(run).id,
+          run: normalizedRun.name,
+          run_id: normalizedRun.id,
           step: log.step,
           timestamp: log.timestamp,
           messages: candidate.messages || [],

@@ -12,6 +12,7 @@
   let sortBy = $state("request_time_desc");
   let expandedTraceId = $state(null);
   let traces = $state([]);
+  let loadRequestId = 0;
 
   function textFromContent(content) {
     if (typeof content === "string") return content;
@@ -44,6 +45,7 @@
   }
 
   async function loadTraces() {
+    const requestId = ++loadRequestId;
     if (!project || selectedRuns.length === 0) {
       traces = [];
       expandedTraceId = null;
@@ -58,15 +60,19 @@
           return runTraces.map((trace) => normalizeTrace(trace, run.name));
         }),
       );
+      if (requestId !== loadRequestId) return;
       traces = batches.flat();
       if (!traces.find((trace) => trace.id === expandedTraceId)) {
         expandedTraceId = null;
       }
     } catch (error) {
+      if (requestId !== loadRequestId) return;
       console.error("Failed to load traces:", error);
       traces = [];
     } finally {
-      loading = false;
+      if (requestId === loadRequestId) {
+        loading = false;
+      }
     }
   }
 
@@ -114,6 +120,13 @@
 
   function toggleTrace(traceId) {
     expandedTraceId = expandedTraceId === traceId ? null : traceId;
+  }
+
+  function handleRowKeydown(event, traceId) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleTrace(traceId);
+    }
   }
 
   function formatRelativeTime(timestamp) {
@@ -250,7 +263,14 @@
         </thead>
         <tbody>
           {#each visibleTraces as trace}
-            <tr class="trace-row" onclick={() => toggleTrace(trace.id)}>
+            <tr
+              class="trace-row"
+              role="button"
+              tabindex="0"
+              aria-expanded={expandedTraceId === trace.id}
+              onclick={() => toggleTrace(trace.id)}
+              onkeydown={(event) => handleRowKeydown(event, trace.id)}
+            >
               <td class="trace-id-cell">
                 <span class="trace-id">{trace.id}</span>
               </td>

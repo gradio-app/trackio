@@ -828,23 +828,24 @@ class Run:
                 )
 
             metrics = new_metrics
+            media_step = step if step is not None else self._next_step
             for key, value in metrics.items():
                 if isinstance(value, Table):
                     metrics[key] = value._to_dict(
-                        project=self.project, run=self.name, step=step
+                        project=self.project, run=self.name, step=media_step
                     )
-                    self._scan_and_queue_media_uploads(metrics[key], step)
+                    self._scan_and_queue_media_uploads(metrics[key], media_step)
                 elif isinstance(value, Trace):
                     metrics[key] = value._to_dict(
-                        project=self.project, run=self.name, step=step
+                        project=self.project, run=self.name, step=media_step
                     )
-                    self._scan_and_queue_media_uploads(metrics[key], step)
+                    self._scan_and_queue_media_uploads(metrics[key], media_step)
                 elif isinstance(value, Histogram):
                     metrics[key] = value._to_dict()
                 elif isinstance(value, Markdown):
                     metrics[key] = value._to_dict()
                 elif isinstance(value, TrackioMedia):
-                    metrics[key] = self._process_media(value, step)
+                    metrics[key] = self._process_media(value, media_step)
             metrics = utils.serialize_values(metrics)
 
             if step is None:

@@ -1977,6 +1977,16 @@ class SQLiteStorage:
         offset: int = 0,
         run_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        try:
+            offset = max(0, int(offset or 0))
+        except (TypeError, ValueError):
+            offset = 0
+        if limit is not None:
+            try:
+                limit = max(0, int(limit))
+            except (TypeError, ValueError):
+                limit = None
+
         logs = SQLiteStorage.get_logs(project, run, max_points=None, run_id=run_id)
         traces = SQLiteStorage._extract_traces_from_logs(logs, run=run, run_id=run_id)
 
