@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Proposal: trackio.Trace for GRPO rollout logging
+feat:Traces in Trackio
