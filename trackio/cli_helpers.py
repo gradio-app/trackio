@@ -226,6 +226,52 @@ def format_summary(summary: dict) -> str:
     return "\n".join(output)
 
 
+def format_query_result(result: dict[str, Any]) -> str:
+    """Format SQL query results in human-readable format."""
+    columns = result.get("columns", [])
+    rows = result.get("rows", [])
+    row_count = result.get("row_count", 0)
+
+    if not columns:
+        return f"Query returned {row_count} row(s)."
+
+    rendered_rows = []
+    for row in rows:
+        rendered_rows.append(
+            [
+                "" if row.get(column) is None else str(row.get(column))
+                for column in columns
+            ]
+        )
+
+    widths = []
+    for idx, column in enumerate(columns):
+        cell_width = max(
+            (len(rendered_row[idx]) for rendered_row in rendered_rows), default=0
+        )
+        widths.append(max(len(column), cell_width))
+
+    header = " | ".join(
+        column.ljust(width) for column, width in zip(columns, widths, strict=False)
+    )
+    separator = "-+-".join("-" * width for width in widths)
+    output = [f"Query returned {row_count} row(s).", header, separator]
+
+    if not rendered_rows:
+        output.append("(no rows)")
+        return "\n".join(output)
+
+    for rendered_row in rendered_rows:
+        output.append(
+            " | ".join(
+                value.ljust(width)
+                for value, width in zip(rendered_row, widths, strict=False)
+            )
+        )
+
+    return "\n".join(output)
+
+
 def error_exit(message: str, code: int = 1) -> None:
     """Print error message and exit."""
     print(f"Error: {message}", file=sys.stderr)

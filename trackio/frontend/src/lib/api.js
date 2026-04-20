@@ -1,4 +1,5 @@
 import * as staticApi from "./staticApi.js";
+import { registerRateLimitHit } from "./hostPolling.js";
 
 const BASE = window.__trackio_base || "";
 
@@ -39,49 +40,25 @@ function getOauthSessionHeader() {
 }
 
 export async function callApi(apiName, params = {}) {
-  const url = `${BASE}/gradio_api/call${apiName}`;
+  const cleanApiName = apiName.startsWith("/") ? apiName.slice(1) : apiName;
+  const url = `${BASE}/api/${cleanApiName}`;
   const resp = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...getOauthSessionHeader() },
-    body: JSON.stringify({ data: Object.values(params) }),
+    body: JSON.stringify(params),
   });
+  if (resp.status === 429) {
+    registerRateLimitHit();
+  }
   if (!resp.ok) {
     throw new Error(`API call ${apiName} failed: ${resp.status}`);
   }
   const json = await resp.json();
-  const eventId = json.event_id;
-
-  const dataResp = await fetch(`${BASE}/gradio_api/call${apiName}/${eventId}`, {
-    credentials: "include",
-  });
-  if (!dataResp.ok) {
-    throw new Error(`API result ${apiName} failed: ${dataResp.status}`);
+  if (json.error) {
+    throw new Error(json.error);
   }
-
-  const text = await dataResp.text();
-  const lines = text.trim().split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith("event: complete")) {
-      const dataLine = lines[i + 1];
-      if (dataLine && dataLine.startsWith("data: ")) {
-        const raw = dataLine.slice(6);
-        const sanitized = raw
-          .replace(/:\s*Infinity\b/g, ": null")
-          .replace(/:\s*-Infinity\b/g, ": null")
-          .replace(/:\s*NaN\b/g, ": null");
-        const parsed = JSON.parse(sanitized);
-        return Array.isArray(parsed) ? parsed[0] : parsed;
-      }
-    }
-    if (lines[i].startsWith("event: error")) {
-      const dataLine = lines[i + 1];
-      if (dataLine && dataLine.startsWith("data: ")) {
-        throw new Error(JSON.parse(dataLine.slice(6)));
-      }
-    }
-  }
-  throw new Error(`No complete event for ${apiName}`);
+  return json.data;
 }
 
 export async function getAllProjects() {
@@ -94,14 +71,38 @@ export async function getRunsForProject(project) {
   return await callApi("/get_runs_for_project", { project });
 }
 
+function normalizeRun(run) {
+  if (run == null) return { run: null, run_id: null };
+  if (typeof run === "string") return { run, run_id: null };
+  return { run: run.name ?? null, run_id: run.id ?? null };
+}
+
 export async function getMetricsForRun(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getMetricsForRun(project, run);
-  return await callApi("/get_metrics_for_run", { project, run });
+  return await callApi("/get_metrics_for_run", params);
 }
 
 export async function getLogs(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getLogs(project, run);
-  return await callApi("/get_logs", { project, run });
+  return await callApi("/get_logs", params);
+}
+
+export async function getLogsBatch(project, runs) {
+  if (await isStaticMode()) {
+    const out = [];
+    for (const run of runs) {
+      const logs = await staticApi.getLogs(project, run);
+      out.push({ ...normalizeRun(run), logs });
+    }
+    return out;
+  }
+  const payload = {
+    project,
+    runs: runs.map((run) => normalizeRun(run)),
+  };
+  return await callApi("/get_logs_batch", payload);
 }
 
 export async function getProjectSummary(project) {
@@ -110,30 +111,49 @@ export async function getProjectSummary(project) {
 }
 
 export async function getRunSummary(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getRunSummary(project, run);
-  return await callApi("/get_run_summary", { project, run });
+  return await callApi("/get_run_summary", params);
 }
 
 export async function getAlerts(project, run, level, since) {
+  const params = { project, ...normalizeRun(run), level, since };
   if (await isStaticMode()) return staticApi.getAlerts(project, run, level, since);
-  return await callApi("/get_alerts", { project, run, level, since });
+  return await callApi("/get_alerts", params);
 }
 
 export async function getSystemMetricsForRun(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSystemMetricsForRun(project, run);
-  return await callApi("/get_system_metrics_for_run", { project, run });
+  return await callApi("/get_system_metrics_for_run", params);
 }
 
 export async function getSystemLogs(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSystemLogs(project, run);
-  return await callApi("/get_system_logs", { project, run });
+  return await callApi("/get_system_logs", params);
+}
+
+export async function getSystemLogsBatch(project, runs) {
+  if (await isStaticMode()) {
+    const out = [];
+    for (const run of runs) {
+      const logs = await staticApi.getSystemLogs(project, run);
+      out.push({ ...normalizeRun(run), logs });
+    }
+    return out;
+  }
+  return await callApi("/get_system_logs_batch", {
+    project,
+    runs: runs.map((run) => normalizeRun(run)),
+  });
 }
 
 export async function getSnapshot(project, run, step) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSnapshot(project, run, step);
   return await callApi("/get_snapshot", {
-    project,
-    run,
+    ...params,
     step,
     around_step: null,
     at_time: null,
@@ -144,9 +164,9 @@ export async function getSnapshot(project, run, step) {
 export async function getMetricValues(project, run, metricName) {
   if (await isStaticMode())
     return staticApi.getMetricValues(project, run, metricName);
+  const params = { project, ...normalizeRun(run) };
   return await callApi("/get_metric_values", {
-    project,
-    run,
+    ...params,
     metric_name: metricName,
     step: null,
     around_step: null,
@@ -171,15 +191,18 @@ export async function getRunMutationStatus() {
 }
 
 export async function deleteRun(project, run) {
+  const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.deleteRun(project, run);
-  return await callApi("/delete_run", { project, run });
+  return await callApi("/delete_run", params);
 }
 
-export async function renameRun(project, oldName, newName) {
-  if (await isStaticMode()) return staticApi.renameRun(project, oldName, newName);
+export async function renameRun(project, oldRun, newName) {
+  const run = normalizeRun(oldRun);
+  if (await isStaticMode()) return staticApi.renameRun(project, oldRun, newName);
   return await callApi("/rename_run", {
     project,
-    old_name: oldName,
+    old_name: run.run,
+    run_id: run.run_id,
     new_name: newName,
   });
 }
@@ -190,17 +213,17 @@ export function setMediaDir(dir) {
 
 export function getAssetUrl(path) {
   if (_staticMode) return staticApi.getAssetUrl(path);
-  return `${BASE}/gradio_api/file=${_mediaDir}${path}`;
+  return `${BASE}/file?path=${encodeURIComponent(`${_mediaDir}${path}`)}`;
 }
 
 export function getMediaUrl(path) {
   if (_staticMode) return staticApi.getMediaUrl(path);
-  return `${BASE}/gradio_api/file=${_mediaDir}${path}`;
+  return `${BASE}/file?path=${encodeURIComponent(`${_mediaDir}${path}`)}`;
 }
 
 export function getFileUrl(path) {
   if (_staticMode) return staticApi.getMediaUrl(path);
-  return `${BASE}/gradio_api/file=${path}`;
+  return `${BASE}/file?path=${encodeURIComponent(path)}`;
 }
 
 export async function getReadOnlySource() {

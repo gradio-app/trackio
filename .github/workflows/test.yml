@@ -68,6 +68,12 @@ jobs:
         npm ci
         npm run build
 
+    - name: Run frontend unit tests
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd trackio/frontend
+        npm test
+
     - name: Install Playwright
       if: matrix.os == 'ubuntu-latest'
       run: |

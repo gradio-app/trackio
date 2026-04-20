@@ -11,7 +11,6 @@
   } = $props();
 
   let filterInput;
-  let listElement;
   let showOptions = $state(false);
   let inputText = $state("");
   let activeIndex = $state(null);
@@ -26,6 +25,7 @@
   );
 
   $effect(() => {
+    if (showOptions) return;
     if (value !== null && choices.includes(value)) {
       inputText = value;
     } else {
@@ -34,7 +34,7 @@
   });
 
   $effect(() => {
-    filteredIndices = choices.map((_, i) => i);
+    filteredIndices = showOptions ? filterChoices(inputText) : choices.map((_, i) => i);
   });
 
   function filterChoices(text) {
@@ -46,6 +46,7 @@
   }
 
   function handleFocus() {
+    inputText = "";
     filteredIndices = choices.map((_, i) => i);
     showOptions = true;
     if (filterInput) {
@@ -170,7 +171,6 @@
         style:bottom={bottom}
         style:max-height="{maxHeight}px"
         style:width="{inputWidth}px"
-        bind:this={listElement}
         role="listbox"
       >
         {#each filteredIndices as index}
@@ -194,6 +194,7 @@
 <style>
   .dropdown-container {
     width: 100%;
+    margin-bottom: 4px;
   }
   .label {
     display: block;

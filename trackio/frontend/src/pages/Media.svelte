@@ -1,9 +1,23 @@
 <script>
-  import GradioTable from "../components/GradioTable.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
+  import WaveformAudio from "../components/WaveformAudio.svelte";
   import { getLogs, getMediaUrl, isStaticMode, fetchMediaBlob } from "../lib/api.js";
+  import { buildColorMap } from "../lib/stores.js";
 
-  let { project = null, selectedRuns = [], tableTruncateLength = 250 } = $props();
+  let {
+    project = null,
+    selectedRuns = [],
+    allRuns = [],
+    tableTruncateLength = 250,
+  } = $props();
+
+  let runColorMap = $derived(
+    buildColorMap(allRuns.length ? allRuns : selectedRuns),
+  );
+
+  function runColor(item) {
+    return runColorMap[item._runId] ?? runColorMap[item._run] ?? "#9ca3af";
+  }
 
   let mediaItems = $state({ images: [], videos: [], audios: [], tables: [] });
   let loading = $state(false);
@@ -20,7 +34,14 @@
       const allLogs = [];
       for (const run of runsToLoad) {
         const logs = await getLogs(project, run);
-        if (logs) allLogs.push(...logs.map((l) => ({ ...l, _run: run })));
+        if (logs)
+          allLogs.push(
+            ...logs.map((l) => ({
+              ...l,
+              _run: run.name,
+              _runId: run.id ?? run.name,
+            })),
+          );
       }
       const logs = allLogs;
       const images = [];
@@ -35,6 +56,8 @@
               const item = {
                 key,
                 step: log.step || step,
+                _run: log._run,
+                _runId: log._runId,
                 ...value,
               };
               switch (value._type) {
@@ -66,10 +89,28 @@
               return item;
             }),
           );
+        const tableImageItems = [];
+        for (const tbl of tables) {
+          if (!Array.isArray(tbl._value)) continue;
+          for (const row of tbl._value) {
+            for (const value of Object.values(row)) {
+              if (value && typeof value === "object" && !Array.isArray(value) && value._type === "trackio.image") {
+                tableImageItems.push(value);
+              } else if (Array.isArray(value)) {
+                for (const v of value) {
+                  if (v && typeof v === "object" && v._type === "trackio.image") {
+                    tableImageItems.push(v);
+                  }
+                }
+              }
+            }
+          }
+        }
         await Promise.all([
           resolveAll(images),
           resolveAll(videos),
           resolveAll(audios),
+          resolveAll(tableImageItems),
         ]);
       }
 
@@ -91,6 +132,23 @@
     if (item._resolvedUrl) return item._resolvedUrl;
     if (item.file_path) return getMediaUrl(item.file_path);
     return "";
+  }
+
+  function isImageCell(cell) {
+    return (
+      cell &&
+      typeof cell === "object" &&
+      !Array.isArray(cell) &&
+      cell._type === "trackio.image"
+    );
+  }
+
+  function isImageList(cell) {
+    return (
+      Array.isArray(cell) &&
+      cell.length > 0 &&
+      cell.every((v) => v && typeof v === "object" && v._type === "trackio.image")
+    );
   }
 </script>
 
@@ -114,74 +172,138 @@
       {/if}
     </div>
   {:else}
+    {#snippet meta(item)}
+      <div class="meta">
+        <span class="run-dot" style:background={runColor(item)}></span>
+        <span class="meta-text">Run: {item._run}, Step: {item.step}</span>
+      </div>
+    {/snippet}
     {#if mediaItems.images.length > 0}
-      <section>
-        <h3 class="section-title">Images ({mediaItems.images.length})</h3>
+      <details class="section" open>
+        <summary class="section-summary">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-title">Images ({mediaItems.images.length})</span>
+        </summary>
         <div class="gallery">
           {#each mediaItems.images as img}
             <div class="gallery-item">
+              <div class="media-label">{img.key}</div>
               <img src={getFilePath(img)} alt={img.caption || img.key} loading="lazy" />
               {#if img.caption}
                 <div class="caption">{img.caption}</div>
               {/if}
-              <div class="step-label">Step {img.step}</div>
+              {@render meta(img)}
             </div>
           {/each}
         </div>
-      </section>
+      </details>
     {/if}
 
     {#if mediaItems.videos.length > 0}
-      <section>
-        <h3 class="section-title">Videos ({mediaItems.videos.length})</h3>
+      <details class="section" open>
+        <summary class="section-summary">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-title">Videos ({mediaItems.videos.length})</span>
+        </summary>
         <div class="gallery">
           {#each mediaItems.videos as vid}
             <div class="gallery-item">
+              <div class="media-label">{vid.key}</div>
               <video controls src={getFilePath(vid)} preload="metadata">
                 <track kind="captions" />
               </video>
-              <div class="step-label">Step {vid.step}</div>
+              {@render meta(vid)}
             </div>
           {/each}
         </div>
-      </section>
+      </details>
     {/if}
 
     {#if mediaItems.audios.length > 0}
-      <section>
-        <h3 class="section-title">Audio ({mediaItems.audios.length})</h3>
-        <div class="audio-list">
+      <details class="section" open>
+        <summary class="section-summary">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-title">Audio ({mediaItems.audios.length})</span>
+        </summary>
+        <div class="gallery">
           {#each mediaItems.audios as aud}
-            <div class="audio-item">
-              <span class="audio-label">{aud.key} (step {aud.step})</span>
-              <audio controls src={getFilePath(aud)} preload="metadata">
-                <track kind="captions" />
-              </audio>
+            <div class="gallery-item audio-gallery-item">
+              <div class="media-label">{aud.key}</div>
+              <WaveformAudio src={getFilePath(aud)} />
+              {@render meta(aud)}
             </div>
           {/each}
         </div>
-      </section>
+      </details>
     {/if}
 
     {#if mediaItems.tables.length > 0}
-      <section>
-        <h3 class="section-title">Tables ({mediaItems.tables.length})</h3>
+      <details class="section" open>
+        <summary class="section-summary">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-title">Tables ({mediaItems.tables.length})</span>
+        </summary>
         {#each mediaItems.tables as tbl}
-          <div class="table-section">
-            {#if tbl._value && tbl._value.length > 0}
-              <GradioTable
-                label="{tbl.key} (step {tbl.step})"
-                headers={Object.keys(tbl._value[0])}
-                rows={tbl._value.map(row => Object.values(row).map(v =>
-                  typeof v === "string" && v.length > tableTruncateLength
-                    ? v.slice(0, tableTruncateLength) + "…"
-                    : v
-                ))}
-              />
-            {/if}
-          </div>
+          {#if tbl._value && tbl._value.length > 0}
+            <div class="table-section">
+              <div class="table-header">
+                <div class="media-label">{tbl.key}</div>
+                {@render meta(tbl)}
+              </div>
+              <table class="runs-table">
+                <thead>
+                  <tr>
+                    {#each Object.keys(tbl._value[0]) as header}
+                      <th>{header}</th>
+                    {/each}
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each tbl._value as row}
+                    <tr>
+                      {#each Object.values(row) as cell}
+                        <td>
+                          {#if isImageCell(cell)}
+                            <img
+                              class="table-image"
+                              src={getFilePath(cell)}
+                              alt={cell.caption || ""}
+                              loading="lazy"
+                            />
+                          {:else if isImageList(cell)}
+                            <div class="table-image-list">
+                              {#each cell as img}
+                                <img
+                                  class="table-image"
+                                  src={getFilePath(img)}
+                                  alt={img.caption || ""}
+                                  loading="lazy"
+                                />
+                              {/each}
+                            </div>
+                          {:else}
+                            {typeof cell === "string" && cell.length > tableTruncateLength
+                              ? cell.slice(0, tableTruncateLength) + "…"
+                              : (cell ?? "")}
+                          {/if}
+                        </td>
+                      {/each}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
         {/each}
-      </section>
+      </details>
     {/if}
   {/if}
 </div>
@@ -192,11 +314,109 @@
     overflow-y: auto;
     flex: 1;
   }
+  .section {
+    margin: 16px 0;
+  }
+  .section-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    padding: 4px 0;
+    margin-bottom: 8px;
+  }
+  .section-summary::-webkit-details-marker {
+    display: none;
+  }
+  .chevron {
+    color: var(--body-text-color-subdued, #6b7280);
+    transform: rotate(-90deg);
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+  }
+  details[open] > .section-summary .chevron {
+    transform: rotate(0deg);
+  }
   .section-title {
     font-size: var(--text-lg, 16px);
     font-weight: 600;
     color: var(--body-text-color, #1f2937);
-    margin: 16px 0 8px;
+  }
+  .media-label {
+    font-size: var(--text-sm, 12px);
+    font-weight: 500;
+    color: var(--body-text-color, #1f2937);
+    word-break: break-word;
+  }
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--text-xs, 11px);
+    color: var(--body-text-color-subdued, #9ca3af);
+    font-variant-numeric: tabular-nums;
+  }
+  .meta .run-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin: 0 2px;
+  }
+  .meta-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .runs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-md, 14px);
+  }
+  .runs-table th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 2px solid var(--border-color-primary, #e5e7eb);
+    color: var(--body-text-color-subdued, #6b7280);
+    font-weight: 600;
+    font-size: var(--text-sm, 12px);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .runs-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
+    color: var(--body-text-color, #1f2937);
+  }
+  .runs-table tbody tr:nth-child(odd) {
+    background: var(--table-odd-background-fill, var(--background-fill-primary, white));
+  }
+  .runs-table tbody tr:nth-child(even) {
+    background: var(--table-even-background-fill, var(--background-fill-secondary, #f9fafb));
+  }
+  .runs-table tr:hover {
+    background: var(--background-fill-secondary, #f3f4f6);
+  }
+  .table-image {
+    max-height: 80px;
+    max-width: 120px;
+    border-radius: var(--radius-sm, 4px);
+    display: block;
+    object-fit: contain;
+  }
+  .table-image-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
   }
   .gallery {
     display: grid;
@@ -204,46 +424,31 @@
     gap: 12px;
   }
   .gallery-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-lg, 8px);
-    overflow: hidden;
     background: var(--background-fill-secondary, #f9fafb);
+    overflow: hidden;
   }
   .gallery-item img,
   .gallery-item video {
     width: 100%;
     display: block;
+    border-radius: var(--radius-sm, 4px);
+  }
+  .audio-gallery-item {
+    justify-content: space-between;
   }
   .caption {
-    padding: 4px 8px;
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color-subdued, #9ca3af);
-  }
-  .step-label {
-    padding: 4px 8px;
-    font-size: var(--text-xs, 10px);
-    color: var(--body-text-color-subdued, #9ca3af);
-  }
-  .audio-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .audio-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-lg, 8px);
-  }
-  .audio-label {
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color-subdued, #9ca3af);
-    min-width: 120px;
   }
   .table-section {
     margin-bottom: 16px;
+    overflow-x: auto;
   }
   .empty-state {
     max-width: 640px;

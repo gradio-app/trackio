@@ -270,6 +270,38 @@ def test_get_runs_returns_chronological_order(temp_dir):
     assert runs == ["run-z", "run-a", "run-m"]
 
 
+def test_get_metric_values_respects_run_id_and_name_resolves_latest_run(temp_dir):
+    project = "proj_metric_values"
+    run_name = "dup-run"
+
+    SQLiteStorage.bulk_log(
+        project,
+        run_name,
+        [{"loss": 1.0}],
+        run_id="run-id-1",
+        timestamps=["2024-01-01T00:00:00+00:00"],
+    )
+    SQLiteStorage.bulk_log(
+        project,
+        run_name,
+        [{"loss": 2.0}],
+        run_id="run-id-2",
+        timestamps=["2024-01-02T00:00:00+00:00"],
+    )
+
+    latest_by_name = SQLiteStorage.get_metric_values(project, run_name, "loss")
+    first_by_id = SQLiteStorage.get_metric_values(
+        project, run_name, "loss", run_id="run-id-1"
+    )
+    second_by_id = SQLiteStorage.get_metric_values(
+        project, run_name, "loss", run_id="run-id-2"
+    )
+
+    assert [row["value"] for row in latest_by_name] == [2.0]
+    assert [row["value"] for row in first_by_id] == [1.0]
+    assert [row["value"] for row in second_by_id] == [2.0]
+
+
 def test_rename_run(temp_dir):
     project = "test_project"
     old_name = "old_run"
@@ -295,7 +327,7 @@ def test_rename_run(temp_dir):
     assert new_logs[0]["loss"] == 0.1
 
 
-def test_rename_run_duplicate_name(temp_dir):
+def test_rename_run_allows_duplicate_name_in_new_schema(temp_dir):
     project = "test_project"
     run1 = "run1"
     run2 = "run2"
@@ -303,11 +335,11 @@ def test_rename_run_duplicate_name(temp_dir):
     SQLiteStorage.bulk_log(project, run1, [{"a": 1}])
     SQLiteStorage.bulk_log(project, run2, [{"b": 2}])
 
-    with pytest.raises(ValueError, match="already exists"):
-        SQLiteStorage.rename_run(project, run1, run2)
+    SQLiteStorage.rename_run(project, run1, run2)
 
-    assert len(SQLiteStorage.get_logs(project, run1)) > 0
-    assert len(SQLiteStorage.get_logs(project, run2)) > 0
+    records = SQLiteStorage.get_run_records(project)
+    duplicate_names = [record for record in records if record["name"] == run2]
+    assert len(duplicate_names) == 2
 
 
 def test_rename_run_with_media(temp_dir):
@@ -417,3 +449,54 @@ def test_bucket_upload_paths_match_mount_layout(temp_dir):
             f"outside TRACKIO_DIR={trackio_dir}"
         )
         assert Path(local_path).exists()
+
+
+def test_query_project_allows_select(temp_dir):
+    SQLiteStorage.log(project="qproj", run="r1", metrics={"acc": 0.9})
+    result = SQLiteStorage.query_project("qproj", "SELECT run_name FROM metrics")
+    assert result["project"] == "qproj"
+    assert result["columns"] == ["run_name"]
+    assert result["row_count"] == 1
+    assert result["rows"][0]["run_name"] == "r1"
+
+
+def test_query_project_allows_with_and_safe_pragma(temp_dir):
+    SQLiteStorage.log(project="qproj", run="r1", metrics={"acc": 0.9})
+    cte = SQLiteStorage.query_project(
+        "qproj", "WITH t AS (SELECT 1 AS x) SELECT x FROM t"
+    )
+    assert cte["rows"] == [{"x": 1}]
+    pragma = SQLiteStorage.query_project("qproj", "PRAGMA table_info(metrics)")
+    assert pragma["row_count"] > 0
+
+
+def test_query_project_denies_writes(temp_dir):
+    SQLiteStorage.log(project="qproj", run="r1", metrics={"acc": 0.9})
+    for bad in [
+        "INSERT INTO metrics (project_name, run_name, step, metrics, timestamp) VALUES ('x','y',0,'{}','t')",
+        "UPDATE metrics SET run_name='x'",
+        "DELETE FROM metrics",
+        "DROP TABLE metrics",
+        "PRAGMA journal_mode = DELETE",
+    ]:
+        with pytest.raises(ValueError):
+            SQLiteStorage.query_project("qproj", bad)
+
+
+def test_query_project_row_limit(temp_dir):
+    for i in range(5):
+        SQLiteStorage.log(project="qproj", run=f"r{i}", metrics={"a": i})
+    with pytest.raises(ValueError, match="more than"):
+        SQLiteStorage.query_project("qproj", "SELECT * FROM metrics", max_rows=2)
+
+
+def test_query_project_normalizes_bytes(temp_dir):
+    SQLiteStorage.log(project="qproj", run="r1", metrics={"a": 1})
+    result = SQLiteStorage.query_project("qproj", "SELECT randomblob(4) AS b")
+    assert isinstance(result["rows"][0]["b"], str)
+    assert len(result["rows"][0]["b"]) == 8
+
+
+def test_query_project_missing_project(temp_dir):
+    with pytest.raises(FileNotFoundError):
+        SQLiteStorage.query_project("nonexistent", "SELECT 1")

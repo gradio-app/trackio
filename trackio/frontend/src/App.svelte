@@ -20,11 +20,21 @@
     isStaticMode,
     setMediaDir,
   } from "./lib/api.js";
+  import {
+    getAppPollIntervalMs,
+    isRateLimitCooldownActive,
+    isTabHidden,
+  } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
+  import { reconcileSelectedRuns } from "./lib/selection.js";
   import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
-  import { applyTheme, detectSystemTheme } from "./lib/theme.js";
+  import Settings from "./pages/Settings.svelte";
+  import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
 
-  applyTheme(getQueryParam("__theme") || detectSystemTheme());
+  initTheme();
+
+  let darkMode = $state(isDark());
+  onThemeChange((dark) => { darkMode = dark; });
 
   let currentPage = $state("metrics");
   let projects = $state([]);
@@ -56,6 +66,17 @@
   let plotOrder = $state([]);
   let tableTruncateLength = $state(250);
   let readOnlySource = $state(null);
+  let spaceId = $state(null);
+  let availableSystemDevices = $state([]);
+  let selectedSystemDevices = $state([]);
+
+  function runKey(run) {
+    return run?.id ?? run?.name;
+  }
+
+  let selectedRunRecords = $derived(
+    runs.filter((run) => selectedRuns.includes(runKey(run))),
+  );
 
   function handleNavigate(page) {
     currentPage = page;
@@ -98,24 +119,18 @@
     if (!selectedProject) {
       runs = [];
       selectedRuns = [];
+      availableSystemDevices = [];
+      selectedSystemDevices = [];
       return;
     }
     try {
       const data = await getRunsForProject(selectedProject);
-      const newRuns = data || [];
-      const newRunNames = new Set(newRuns);
+      const newRuns = [...(data || [])].reverse();
 
       if (JSON.stringify(runs) !== JSON.stringify(newRuns)) {
-        const prevSelected = new Set(selectedRuns);
+        const prevSelected = selectedRuns;
         runs = newRuns;
-
-        const kept = selectedRuns.filter((r) => newRunNames.has(r));
-
-        if (kept.length === 0 && selectedRuns.length === 0) {
-          selectedRuns = [...newRuns];
-        } else {
-          selectedRuns = [...kept, ...newRuns.filter((r) => !new Set([...kept, ...Array.from(prevSelected)]).has(r))];
-        }
+        selectedRuns = reconcileSelectedRuns(prevSelected, newRuns.map(runKey));
       }
     } catch (e) {
       console.error("Failed to load runs:", e);
@@ -136,9 +151,12 @@
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (!realtimeEnabled) return;
+      if (isTabHidden()) return;
+      if (isRateLimitCooldownActive()) return;
+      await refreshProjects();
       await refreshRuns();
       await refreshAlerts();
-    }, 1000);
+    }, getAppPollIntervalMs());
   }
 
   function applyUrlTokens() {
@@ -186,6 +204,8 @@
 
   $effect(() => {
     selectedProject;
+    availableSystemDevices = [];
+    selectedSystemDevices = [];
     refreshRuns();
   });
 
@@ -256,6 +276,7 @@
             if (settings.plot_order) plotOrder = settings.plot_order;
             if (settings.table_truncate_length) tableTruncateLength = settings.table_truncate_length;
             if (settings.media_dir) setMediaDir(settings.media_dir);
+            if (settings.space_id) spaceId = settings.space_id;
           }
         } catch {
           // settings endpoint may not be available
@@ -332,7 +353,10 @@
       bind:showHeaders
       bind:filterText
       {metricColumns}
+      {availableSystemDevices}
+      bind:selectedSystemDevices
       {logoUrls}
+      {darkMode}
     />
   {/if}
 
@@ -343,7 +367,7 @@
       {#if currentPage === "metrics"}
         <Metrics
           project={selectedProject}
-          {selectedRuns}
+          selectedRuns={selectedRunRecords}
           allRuns={runs}
           {smoothing}
           {xAxis}
@@ -353,19 +377,29 @@
           {showHeaders}
           {appBootstrapReady}
           {plotOrder}
+          {realtimeEnabled}
           bind:metricColumns
         />
       {:else if currentPage === "system"}
         <SystemMetrics
           project={selectedProject}
-          {selectedRuns}
+          selectedRuns={selectedRunRecords}
+          allRuns={runs}
           {smoothing}
           {appBootstrapReady}
+          {realtimeEnabled}
+          bind:availableDevices={availableSystemDevices}
+          bind:selectedDevices={selectedSystemDevices}
         />
       {:else if currentPage === "media"}
-        <Media project={selectedProject} {selectedRuns} {tableTruncateLength} />
+        <Media
+          project={selectedProject}
+          selectedRuns={selectedRunRecords}
+          allRuns={runs}
+          {tableTruncateLength}
+        />
       {:else if currentPage === "reports"}
-        <Reports project={selectedProject} {selectedRuns} />
+        <Reports project={selectedProject} selectedRuns={selectedRunRecords} />
       {:else if currentPage === "runs"}
         <Runs
           project={selectedProject}
@@ -377,6 +411,8 @@
         <RunDetail project={selectedProject} />
       {:else if currentPage === "files"}
         <Files project={selectedProject} />
+      {:else if currentPage === "settings"}
+        <Settings {spaceId} selectedProject={selectedProject} {projects} />
       {/if}
     </div>
   </div>

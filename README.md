@@ -20,13 +20,24 @@
 
 </div>
 
-Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face 🤗. Trackio is local-first, supports very high logging throughputs for many parallel experiments, and provides an easy CLI interface for querying, perfect for LLM-driven experimenting.
+Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face for humans and AI agents 🤗. 
 
-For human users, Trackio ships with a Gradio-based dashboard so you can view metrics, media, tables, alerts, etc.:
+**Why Trackio when other experiment-tracking libraries exist?** Trackio has a few qualities that make it particularly useful for  agents: 
+* It is local-first, because you shouldn't need to make an account to log data
+* Logs are stored in SQLite database (with support for "freezing" logs to Parquet), which not only lets Trackio supports very high throughputs for parallel experiments, but also
+* provides an easy CLI interface for querying data (including directly on the SQL data), perfect for LLM-driven analysis.
 
-![Screen Recording 2025-11-06 at 5 34 50 PM](https://github.com/user-attachments/assets/8c9c1b96-f17a-401c-83a4-26ac754f89c7)
+So whether you are using agents to run entire research experiments autonomously or whether you are just using LLMs to analyze data, Trackio is for you.
 
-Trackio's main features:
+For human users, Trackio _also_ ships with a Gradio-inspired dashboard so you can view metrics, media, tables, alerts, etc.:
+
+
+
+https://github.com/user-attachments/assets/2683cf27-7520-4fff-9ee9-bdc08a8ca404
+
+
+
+### Trackio's main features:
 
 - **API compatible** with `wandb.init`, `wandb.log`, and `wandb.finish`. Drop-in replacement: just 
 
@@ -35,14 +46,14 @@ Trackio's main features:
   ```
   and keep your existing logging code.
 
-- **Local-first** design: dashboard runs locally by default. You can also host it on Spaces by specifying a `space_id` in `trackio.init()`.
-  - Persists logs in a Sqlite database locally (or, if you provide a `space_id`, in a private Hugging Face Dataset)
-  - Visualize experiments with a **Svelte 5** dashboard locally (or, if you provide a `space_id`, on Hugging Face Spaces)
+- **Local-first, cloud-optional** design: dashboard runs locally by default. But note that you can also log metrics to a Hugging Face Space with `space_id` which is _also_ free and useful for collaborative experiments.
 - **LLM-friendly**: Built with autonomous ML experiments in mind, Trackio includes a CLI for programmatic access and a Python API for run management, making it easy for LLMs to log metrics and query experiment data.
+  - Use `trackio query project --project <name> --sql "SELECT ..."` for read-only SQL when `trackio list` and `trackio get` are not enough
+  - See the storage schema and direct query reference at https://huggingface.co/docs/trackio/storage_schema
 
 - **Free**: Everything here, including hosting on Hugging Face, is free!
 
-Trackio is designed to be lightweight and _forkable_: **Python** for the backend and API, **Svelte 5** for the dashboard, and **Gradio component** code where UI widgets need to match Gradio behavior—so developers can fork the repository and extend either side.
+Trackio is designed to be lightweight and _forkable_: **Python** for the backend and API, **Svelte 5** for the dashboard, so developers can fork the repository and extend either side.
 
 ## Installation
 
@@ -153,6 +164,18 @@ trackio.init(project="my-project", space_id="username/space_id")
 
 it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
 
+## Self-hosted Trackio server
+
+You can run the Trackio dashboard and API on your own machine or infrastructure and point training jobs at it over HTTP. Pass the write-access URL from `trackio.show()` (which may include `write_token` in the query), or a base URL plus the `TRACKIO_WRITE_TOKEN` environment variable. The client sends that token on requests; it is not your Hugging Face token.
+
+```py
+trackio.init(project="my-project", server_url="http://127.0.0.1:7860?write_token=YOUR_TOKEN")
+```
+
+You can also set `TRACKIO_SERVER_URL` (and optionally `TRACKIO_WRITE_TOKEN` if the URL has no query string). If `space_id` / `TRACKIO_SPACE_ID` and `server_url` / `TRACKIO_SERVER_URL` are both set, Trackio uses the Hugging Face Space and ignores the self-hosted URL.
+
+See the documentation: [Self-host the Server](https://huggingface.co/docs/trackio/self_hosted_server).
+
 ## Syncing Offline Projects to Spaces
 
 If you've been tracking experiments locally and want to move them to Hugging Face Spaces for sharing or collaboration, use the `sync` function:
@@ -245,6 +268,8 @@ To get started and see basic examples of usage, see these files:
 
 `trackio.log()` is a non-blocking call that appends to an in-memory queue and returns immediately. A background thread drains the queue every **0.5 s** and writes to the local SQLite database. Because log calls never touch the network or disk on the calling thread, the client-side throughput is effectively **unlimited** -- you can burst thousands of calls per second without slowing down your training loop.
 
+Trackio is written defensively so Trackio-side failures should never take down your main experiment code. Under normal usage, issues inside Trackio's logging, flushing, or delivery paths degrade to warnings and local buffering rather than exceptions from your training loop.
+
 ### Logging to a Hugging Face Space
 
 When a `space_id` is provided, the same background thread batches queued entries and pushes them to the Space via the Gradio client API. The main factors that affect end-to-end throughput are:
@@ -262,7 +287,9 @@ These numbers were measured against a free-tier Hugging Face Space (2 vCPU / 16 
 
 ## Note: Trackio is in Beta (DB Schema May Change)
 
-Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio sqlite database may change, which may require migrating or deleting existing database files (located by default at: `~/.cache/huggingface/trackio`).  
+Note that Trackio is in pre-release right now and we may release breaking changes. In particular, the schema of the Trackio sqlite database may change. Newer Trackio databases now use a stable `run_id` plus a non-unique `run_name`, while older databases remain readable in compatibility mode by treating `run_name` as the effective run identifier. Existing database files are located by default at: `~/.cache/huggingface/trackio`.  
+
+The current SQLite and parquet layout is documented in the [Storage Schema and Direct Queries](https://huggingface.co/docs/trackio/storage_schema) guide, including examples for `trackio query`.
 
 Since Trackio is in beta, your feedback is welcome! Please create issues with bug reports or feature requests.
 

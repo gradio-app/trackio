@@ -4,20 +4,23 @@ from trackio.sqlite_storage import SQLiteStorage
 
 
 class Run:
-    def __init__(self, project: str, name: str):
+    def __init__(self, project: str, name: str, run_id: str | None = None):
         self.project = project
         self.name = name
+        self._id = run_id or name
         self._config = None
         self._summary = None
 
     @property
     def id(self) -> str:
-        return self.name
+        return self._id
 
     @property
     def config(self) -> dict | None:
         if self._config is None:
-            self._config = SQLiteStorage.get_run_config(self.project, self.name)
+            self._config = SQLiteStorage.get_run_config(
+                self.project, self.name, run_id=self.id
+            )
         return self._config
 
     @property
@@ -66,20 +69,22 @@ class Run:
 
     def alerts(self, level: str | None = None, since: str | None = None) -> list[dict]:
         return SQLiteStorage.get_alerts(
-            self.project, run_name=self.name, level=level, since=since
+            self.project, run_name=self.name, run_id=self.id, level=level, since=since
         )
 
     def delete(self) -> bool:
-        return SQLiteStorage.delete_run(self.project, self.name)
+        return SQLiteStorage.delete_run(self.project, self.name, run_id=self.id)
 
     def move(self, new_project: str) -> bool:
-        success = SQLiteStorage.move_run(self.project, self.name, new_project)
+        success = SQLiteStorage.move_run(
+            self.project, self.name, new_project, run_id=self.id
+        )
         if success:
             self.project = new_project
         return success
 
     def rename(self, new_name: str) -> "Run":
-        SQLiteStorage.rename_run(self.project, self.name, new_name)
+        SQLiteStorage.rename_run(self.project, self.name, new_name, run_id=self.id)
         self.name = new_name
         return self
 
@@ -94,8 +99,11 @@ class Runs:
 
     def _load_runs(self):
         if self._runs is None:
-            run_names = SQLiteStorage.get_runs(self.project)
-            self._runs = [Run(self.project, name) for name in run_names]
+            records = SQLiteStorage.get_run_records(self.project)
+            self._runs = [
+                Run(self.project, str(record["name"]), run_id=str(record["id"]))
+                for record in records
+            ]
 
     def __iter__(self) -> Iterator[Run]:
         self._load_runs()

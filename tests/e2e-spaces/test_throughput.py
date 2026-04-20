@@ -2,9 +2,8 @@ import secrets
 import threading
 import time
 
-from gradio_client import Client
-
 import trackio
+from trackio.remote_client import RemoteClient as Client
 
 
 def test_burst_2000_logs_single_process(test_space_id, wait_for_client):
@@ -96,9 +95,10 @@ def test_32_parallel_threads_1000_logs_each(test_space_id, wait_for_client):
     deadline = time.time() + 120
     while time.time() < deadline:
         try:
-            runs = verify_client.predict(
+            run_records = verify_client.predict(
                 project=project_name, api_name="/get_runs_for_project"
             )
+            runs = [r["name"] if isinstance(r, dict) else r for r in run_records]
             if len(runs) == num_threads:
                 break
         except Exception:

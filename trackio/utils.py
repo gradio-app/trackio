@@ -6,12 +6,11 @@ import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
-from urllib.parse import urlencode
+from typing import TYPE_CHECKING, Any
+from urllib.parse import quote, urlencode
 
 import huggingface_hub
 import numpy as np
-import pandas as pd
 from huggingface_hub.constants import HF_HOME
 
 if TYPE_CHECKING:
@@ -23,15 +22,22 @@ RESERVED_KEYS = ["project", "run", "timestamp", "step", "time", "metrics"]
 TRACKIO_LOGO_DIR = Path(__file__).parent / "assets"
 
 
+def _emit_nonfatal_warning(message: str, *args, **kwargs) -> None:
+    try:
+        warnings.warn(message, *args, **kwargs)
+    except Exception:
+        print(f"* Trackio warning: {message}")
+
+
 def get_logo_urls() -> dict[str, str]:
     """Get logo URLs from environment variables or use defaults."""
     light_url = os.environ.get(
         "TRACKIO_LOGO_LIGHT_URL",
-        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_light_transparent.png",
+        f"/file?path={quote(str(TRACKIO_LOGO_DIR / 'trackio_logo_type_light_transparent.png'))}",
     )
     dark_url = os.environ.get(
         "TRACKIO_LOGO_DARK_URL",
-        f"/gradio_api/file={TRACKIO_LOGO_DIR}/trackio_logo_type_dark_transparent.png",
+        f"/file?path={quote(str(TRACKIO_LOGO_DIR / 'trackio_logo_type_dark_transparent.png'))}",
     )
     return {"light": light_url, "dark": dark_url}
 
@@ -123,15 +129,40 @@ def order_metrics_by_plot_preference(metrics: list[str]) -> tuple[list[str], dic
     return ordered_groups, result
 
 
-def persistent_storage_enabled() -> bool:
-    return (
-        os.environ.get("PERSISTANT_STORAGE_ENABLED") == "true"
-    )  # typo in the name of the environment variable
+def on_spaces() -> bool:
+    return os.environ.get("SYSTEM") == "spaces"
+
+
+def resolve_space_id_and_server_url(
+    space_id: str | None, server_url: str | None
+) -> tuple[str | None, str | None]:
+    space_id = space_id or os.environ.get("TRACKIO_SPACE_ID")
+    server_url = server_url or os.environ.get("TRACKIO_SERVER_URL")
+    if space_id is not None:
+        server_url = None
+    return space_id, server_url
+
+
+def parse_trackio_server_url(url: str) -> tuple[str, str | None]:
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    p = urlparse(url.strip())
+    if p.scheme not in ("http", "https"):
+        return url, None
+    pairs = parse_qsl(p.query, keep_blank_values=True)
+    write_token: str | None = None
+    rest: list[tuple[str, str]] = []
+    for k, v in pairs:
+        if k == "write_token":
+            write_token = v
+        else:
+            rest.append((k, v))
+    new_query = urlencode(rest)
+    rebuilt = urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
+    return rebuilt, write_token
 
 
 def _get_trackio_dir() -> Path:
-    if persistent_storage_enabled():
-        return Path("/data/trackio")
     if os.environ.get("TRACKIO_DIR"):
         return Path(os.environ.get("TRACKIO_DIR"))
     return Path(HF_HOME) / "trackio"
@@ -427,6 +458,15 @@ def print_dashboard_instructions(project: str) -> None:
     print(f'* or by running in Python: trackio.show(project="{project}")')
 
 
+def print_write_token_instructions(full_url: str) -> None:
+    print()
+    print(f"* Trackio dashboard opened in browser with write access at: {full_url}")
+    print(
+        "* Only share this write_token with trusted users, as it allows them to write logs, "
+        "rename/delete runs, and connect MCP tools."
+    )
+
+
 def preprocess_space_and_dataset_ids(
     space_id: str | None,
     dataset_id: str | None,
@@ -467,7 +507,7 @@ def fibo():
 
 def format_timestamp(timestamp_str):
     """Convert ISO timestamp to human-readable format like '3 minutes ago'."""
-    if not timestamp_str or pd.isna(timestamp_str):
+    if not timestamp_str or is_missing_value(timestamp_str):
         return "Unknown"
 
     try:
@@ -537,13 +577,56 @@ def get_color_mapping(
     return color_map
 
 
+def is_missing_value(value: object) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return False
+    try:
+        return bool(math.isnan(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _to_records_with_columns(
+    data: object,
+) -> tuple[list[dict[str, Any]], list[str], Any]:
+    if hasattr(data, "to_dict"):
+        try:
+            records = data.to_dict(orient="records")
+        except Exception:
+            pass
+        else:
+            columns = [str(column) for column in getattr(data, "columns", [])]
+            return [dict(row) for row in records], columns, data.__class__
+
+    if isinstance(data, list):
+        records = [dict(row) for row in data]
+        columns = list(records[0].keys()) if records else []
+        return records, columns, None
+
+    raise TypeError(
+        "downsample() expects a list of row dictionaries or a dataframe-like object."
+    )
+
+
+def _restore_records_shape(
+    records: list[dict[str, Any]],
+    columns: list[str],
+    dataframe_class: Any,
+) -> Any:
+    if dataframe_class is None or not hasattr(dataframe_class, "from_records"):
+        return records
+    return dataframe_class.from_records(records, columns=columns)
+
+
 def downsample(
-    df: pd.DataFrame,
+    data: object,
     x: str,
     y: str,
     color: str | None,
     x_lim: tuple[float | None, float | None] | None = None,
-) -> tuple[pd.DataFrame, tuple[float, float] | None]:
+) -> tuple[Any, tuple[float, float] | None]:
     """
     Downsample the dataframe to reduce the number of points plotted.
     Also updates the x-axis limits to the data min/max if either of the x-axis limits are None.
@@ -558,18 +641,23 @@ def downsample(
     Returns:
         A tuple containing the downsampled dataframe and the updated x-axis limits.
     """
-    if df.empty:
+    rows, columns, dataframe_class = _to_records_with_columns(data)
+
+    if not rows:
         if x_lim is not None:
             x_lim = (x_lim[0] or 0, x_lim[1] or 0)
-        return df, x_lim
+        return _restore_records_shape([], columns, dataframe_class), x_lim
 
     columns_to_keep = [x, y]
-    if color is not None and color in df.columns:
+    if color is not None and any(color in row for row in rows):
         columns_to_keep.append(color)
-    df = df[columns_to_keep].copy()
+    filtered_rows = [
+        {column: row.get(column) for column in columns_to_keep} for row in rows
+    ]
 
-    data_x_min = df[x].min()
-    data_x_max = df[x].max()
+    data_x_values = [row[x] for row in filtered_rows]
+    data_x_min = min(data_x_values)
+    data_x_max = max(data_x_values)
 
     if x_lim is not None:
         x_min, x_max = x_lim
@@ -583,83 +671,95 @@ def downsample(
 
     n_bins = 100
 
-    if color is not None and color in df.columns:
-        groups = df.groupby(color)
+    groups: dict[Any, list[tuple[int, dict[str, Any]]]] = {}
+    if color is not None and color in columns_to_keep:
+        for idx, row in enumerate(filtered_rows):
+            groups.setdefault(row.get(color), []).append((idx, row))
     else:
-        groups = [(None, df)]
+        groups[None] = list(enumerate(filtered_rows))
 
-    downsampled_indices = []
+    downsampled_indices: list[int] = []
 
-    for _, group_df in groups:
-        if group_df.empty:
+    for group_rows in groups.values():
+        if not group_rows:
             continue
 
-        group_df = group_df.sort_values(x)
+        group_rows = sorted(group_rows, key=lambda item: item[1][x])
 
         if updated_x_lim is not None:
             x_min, x_max = updated_x_lim
-            before_point = group_df[group_df[x] < x_min].tail(1)
-            after_point = group_df[group_df[x] > x_max].head(1)
-            group_df = group_df[(group_df[x] >= x_min) & (group_df[x] <= x_max)]
+            before_point = [item for item in group_rows if item[1][x] < x_min]
+            after_point = [item for item in group_rows if item[1][x] > x_max]
+            group_rows = [item for item in group_rows if x_min <= item[1][x] <= x_max]
         else:
             before_point = after_point = None
-            x_min = group_df[x].min()
-            x_max = group_df[x].max()
+            x_min = group_rows[0][1][x]
+            x_max = group_rows[-1][1][x]
 
-        if before_point is not None and not before_point.empty:
-            downsampled_indices.extend(before_point.index.tolist())
-        if after_point is not None and not after_point.empty:
-            downsampled_indices.extend(after_point.index.tolist())
+        if before_point:
+            downsampled_indices.append(before_point[-1][0])
+        if after_point:
+            downsampled_indices.append(after_point[0][0])
 
-        if group_df.empty:
+        if not group_rows:
             continue
 
         if x_min == x_max:
-            min_y_idx = group_df[y].idxmin()
-            max_y_idx = group_df[y].idxmax()
+            min_y_idx = min(group_rows, key=lambda item: item[1][y])[0]
+            max_y_idx = max(group_rows, key=lambda item: item[1][y])[0]
             if min_y_idx != max_y_idx:
                 downsampled_indices.extend([min_y_idx, max_y_idx])
             else:
                 downsampled_indices.append(min_y_idx)
             continue
 
-        if len(group_df) < 500:
-            downsampled_indices.extend(group_df.index.tolist())
+        if len(group_rows) < 500:
+            downsampled_indices.extend(idx for idx, _ in group_rows)
             continue
 
         bins = np.linspace(x_min, x_max, n_bins + 1)
-        group_df["bin"] = pd.cut(
-            group_df[x], bins=bins, labels=False, include_lowest=True
-        )
+        binned_rows: dict[int, list[tuple[int, dict[str, Any]]]] = {}
+        for idx, row in group_rows:
+            bin_idx = int(
+                np.clip(np.digitize(row[x], bins, right=False) - 1, 0, n_bins - 1)
+            )
+            binned_rows.setdefault(bin_idx, []).append((idx, row))
 
-        for bin_idx in group_df["bin"].dropna().unique():
-            bin_data = group_df[group_df["bin"] == bin_idx]
-            if bin_data.empty:
+        for bin_rows in binned_rows.values():
+            if not bin_rows:
                 continue
 
-            min_y_idx = bin_data[y].idxmin()
-            max_y_idx = bin_data[y].idxmax()
+            min_y_idx = min(bin_rows, key=lambda item: item[1][y])[0]
+            max_y_idx = max(bin_rows, key=lambda item: item[1][y])[0]
 
             downsampled_indices.append(min_y_idx)
             if min_y_idx != max_y_idx:
                 downsampled_indices.append(max_y_idx)
 
-    unique_indices = list(set(downsampled_indices))
+    unique_indices = sorted(set(downsampled_indices))
+    selected_rows = [filtered_rows[idx] for idx in unique_indices]
 
-    downsampled_df = df.loc[unique_indices].copy()
-
-    if color is not None:
-        downsampled_df = (
-            downsampled_df.groupby(color, sort=False)[downsampled_df.columns]
-            .apply(lambda group: group.sort_values(x))
-            .reset_index(drop=True)
-        )
+    if color is not None and color in columns_to_keep:
+        grouped_rows: dict[Any, list[dict[str, Any]]] = {}
+        group_order: list[Any] = []
+        for row in selected_rows:
+            group_key = row.get(color)
+            if group_key not in grouped_rows:
+                grouped_rows[group_key] = []
+                group_order.append(group_key)
+            grouped_rows[group_key].append(row)
+        downsampled_rows = []
+        for group_key in group_order:
+            downsampled_rows.extend(
+                sorted(grouped_rows[group_key], key=lambda row: row[x])
+            )
     else:
-        downsampled_df = downsampled_df.sort_values(x).reset_index(drop=True)
+        downsampled_rows = sorted(selected_rows, key=lambda row: row[x])
 
-    downsampled_df = downsampled_df.drop(columns=["bin"], errors="ignore")
-
-    return downsampled_df, updated_x_lim
+    return (
+        _restore_records_shape(downsampled_rows, columns_to_keep, dataframe_class),
+        updated_x_lim,
+    )
 
 
 def sort_metrics_by_prefix(metrics: list[str]) -> list[str]:
@@ -797,8 +897,7 @@ def generate_embed_code(
 
 def serialize_values(metrics):
     """
-    Serialize infinity and NaN values in metrics dict to make it JSON-compliant.
-    Only handles top-level float values.
+    Serialize values to make them JSON-compliant.
 
     Converts:
     - float('inf') -> "Infinity"
@@ -808,29 +907,25 @@ def serialize_values(metrics):
     Example:
         {"loss": float('inf'), "accuracy": 0.95} -> {"loss": "Infinity", "accuracy": 0.95}
     """
-    if not isinstance(metrics, dict):
-        return metrics
 
-    result = {}
-    for key, value in metrics.items():
+    def _serialize(value):
+        if isinstance(value, dict):
+            return {str(key): _serialize(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [_serialize(item) for item in value]
+        if isinstance(value, np.generic):
+            value = value.item()
+        if isinstance(value, bool | int):
+            return value
         if isinstance(value, float):
             if math.isinf(value):
-                result[key] = "Infinity" if value > 0 else "-Infinity"
-            elif math.isnan(value):
-                result[key] = "NaN"
-            else:
-                result[key] = value
-        elif isinstance(value, np.floating):
-            float_val = float(value)
-            if math.isinf(float_val):
-                result[key] = "Infinity" if float_val > 0 else "-Infinity"
-            elif math.isnan(float_val):
-                result[key] = "NaN"
-            else:
-                result[key] = float_val
-        else:
-            result[key] = value
-    return result
+                return "Infinity" if value > 0 else "-Infinity"
+            if math.isnan(value):
+                return "NaN"
+            return float(value)
+        return value
+
+    return _serialize(metrics)
 
 
 def deserialize_values(metrics):

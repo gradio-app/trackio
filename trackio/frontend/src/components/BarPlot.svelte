@@ -7,6 +7,7 @@
     data = [],
     y = "",
     colorField = "run",
+    colorDisplayField = "",
     colorMap = {},
     title = "",
     draggable = false,
@@ -26,10 +27,14 @@
     const seen = new Set();
     const entries = [];
     for (const d of data) {
-      const name = d[colorField];
-      if (name && !seen.has(name)) {
-        seen.add(name);
-        entries.push({ name, color: colorMap[name] || "#999" });
+      const key = d[colorField];
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        entries.push({
+          key,
+          name: d[colorDisplayField] || key,
+          color: colorMap[key] || "#999",
+        });
       }
     }
     return entries;
@@ -37,16 +42,34 @@
 
   let colorSpecKey = $derived(buildColorSpecKey(data, colorField, colorMap));
 
+  const LEGEND_COLLAPSED_COUNT = 6;
+  let legendExpanded = $state(false);
+  let legendExpandedFs = $state(false);
+  let visibleLegendEntries = $derived(
+    legendExpanded || legendEntries.length <= LEGEND_COLLAPSED_COUNT
+      ? legendEntries
+      : legendEntries.slice(0, LEGEND_COLLAPSED_COUNT),
+  );
+  let visibleLegendEntriesFs = $derived(
+    legendExpandedFs || legendEntries.length <= LEGEND_COLLAPSED_COUNT
+      ? legendEntries
+      : legendEntries.slice(0, LEGEND_COLLAPSED_COUNT),
+  );
+
   function getBarData() {
     const runValues = new Map();
     for (const d of data) {
       if (d.data_type === "smoothed") continue;
       const run = d[colorField];
       if (run && d[y] != null) {
-        runValues.set(run, d[y]);
+        runValues.set(run, {
+          run,
+          label: d[colorDisplayField] || run,
+          value: d[y],
+        });
       }
     }
-    return Array.from(runValues, ([run, value]) => ({ run, value }));
+    return Array.from(runValues.values());
   }
 
   function cssVar(name, fallback) {
@@ -85,6 +108,7 @@
           type: "nominal",
           sort: runs,
           axis: {
+            labelExpr: "datum.label",
             labelAngle: runs.length > 4 ? -45 : 0,
             labelLimit: 120,
           },
@@ -103,7 +127,7 @@
           legend: null,
         },
         tooltip: [
-          { field: "run", type: "nominal", title: "Run" },
+          { field: colorDisplayField || "label", type: "nominal", title: "Run" },
           { field: "value", type: "quantitative", title: yTitle },
         ],
       },
@@ -154,11 +178,11 @@
     const yHeader = /[,"]/.test(y) ? `"${y.replace(/"/g, '""')}"` : y;
     const header = "run," + yHeader;
     const rows = barData.map((row) => {
-      const run =
-        typeof row.run === "string" && (row.run.includes(",") || row.run.includes('"'))
-          ? `"${row.run.replace(/"/g, '""')}"`
-          : row.run;
-      return `${run},${row.value}`;
+      const label =
+        typeof row.label === "string" && (row.label.includes(",") || row.label.includes('"'))
+          ? `"${row.label.replace(/"/g, '""')}"`
+          : row.label;
+      return `${label},${row.value}`;
     });
     const csv = [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -208,6 +232,13 @@
     return Promise.resolve();
   }
 
+  function relocateTooltipElement(target) {
+    const tooltipEl = document.getElementById("vg-tooltip-element");
+    if (tooltipEl && target && tooltipEl.parentElement !== target) {
+      target.appendChild(tooltipEl);
+    }
+  }
+
   async function enterFullscreen() {
     fullscreen = true;
     document.body.style.overflow = "hidden";
@@ -216,6 +247,7 @@
     try {
       await requestFullscreenEl(fullscreenHost);
       await tick();
+      relocateTooltipElement(fullscreenHost);
       view?.resize();
     } catch {
       document.body.style.overflow = "";
@@ -230,6 +262,7 @@
     }
     document.body.style.overflow = "";
     fullscreen = false;
+    relocateTooltipElement(document.body);
   }
 
   async function toggleFullscreen() {
@@ -249,6 +282,7 @@
     if (!active && fullscreen) {
       document.body.style.overflow = "";
       fullscreen = false;
+      relocateTooltipElement(document.body);
     }
     if (active && fullscreen) {
       tick().then(() => view?.resize());
@@ -376,13 +410,23 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend">
-        <span class="legend-title">{colorField}</span>
-        {#each legendEntries as entry}
+        {#each visibleLegendEntries as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
             <span class="legend-label">{entry.name}</span>
           </span>
         {/each}
+        {#if legendEntries.length > LEGEND_COLLAPSED_COUNT}
+          <button
+            type="button"
+            class="legend-toggle"
+            onclick={(e) => { e.stopPropagation(); legendExpanded = !legendExpanded; }}
+          >
+            {legendExpanded
+              ? "Show less"
+              : `+${legendEntries.length - LEGEND_COLLAPSED_COUNT} more`}
+          </button>
+        {/if}
       </div>
     {/if}
   {/if}
@@ -440,13 +484,23 @@
     </div>
     {#if legendEntries.length > 0}
       <div class="custom-legend fullscreen-legend">
-        <span class="legend-title">{colorField}</span>
-        {#each legendEntries as entry}
+        {#each visibleLegendEntriesFs as entry}
           <span class="legend-item">
             <span class="legend-dot" style="background: {entry.color}"></span>
             <span class="legend-label">{entry.name}</span>
           </span>
         {/each}
+        {#if legendEntries.length > LEGEND_COLLAPSED_COUNT}
+          <button
+            type="button"
+            class="legend-toggle"
+            onclick={(e) => { e.stopPropagation(); legendExpandedFs = !legendExpandedFs; }}
+          >
+            {legendExpandedFs
+              ? "Show less"
+              : `+${legendEntries.length - LEGEND_COLLAPSED_COUNT} more`}
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -623,5 +677,17 @@
   .legend-label {
     font-size: 11px;
     color: var(--body-text-color-subdued, #6b7280);
+  }
+  .legend-toggle {
+    font-size: 11px;
+    color: var(--body-text-color-subdued, #6b7280);
+    background: none;
+    border: none;
+    padding: 0 4px;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .legend-toggle:hover {
+    color: var(--body-text-color, #1f2937);
   }
 </style>

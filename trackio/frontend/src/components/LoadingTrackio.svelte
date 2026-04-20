@@ -64,12 +64,6 @@
     background: transparent;
   }
 
-  .logo-overlay picture {
-    display: block;
-    width: 100%;
-    background: transparent;
-  }
-
   .logo-overlay .logo-img {
     width: 100%;
     height: auto;

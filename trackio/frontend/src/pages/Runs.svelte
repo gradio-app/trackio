@@ -1,4 +1,5 @@
 <script>
+  import { tick } from "svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
@@ -19,6 +20,7 @@
   let loading = $state(false);
   let renamingIndex = $state(-1);
   let renameValue = $state("");
+  let renameInput = $state(null);
 
   async function loadRuns() {
     if (!project) {
@@ -29,12 +31,13 @@
     loading = true;
     try {
       const summary = await getProjectSummary(project);
-      const runNames = summary.runs || [];
+      const runRecords = summary.runs || [];
       const summaries = await Promise.all(
-        runNames.map((name) => getRunSummary(project, name)),
+        runRecords.map((run) => getRunSummary(project, run)),
       );
       const data = summaries.map((s, i) => ({
-        name: runNames[i],
+        id: runRecords[i].id ?? runRecords[i].name,
+        name: runRecords[i].name,
         numSteps: s.num_logs || 0,
         lastStep: s.last_step || 0,
       }));
@@ -52,11 +55,11 @@
     loadRuns();
   });
 
-  async function handleDelete(runName) {
+  async function handleDelete(run) {
     if (!canMutateRuns) return;
-    if (!confirm(`Delete run "${runName}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete run "${run.name}"? This cannot be undone.`)) return;
     try {
-      await deleteRun(project, runName);
+      await deleteRun(project, run);
       await loadRuns();
       if (onRunsChanged) onRunsChanged();
     } catch (e) {
@@ -64,21 +67,24 @@
     }
   }
 
-  function startRename(index, currentName) {
+  async function startRename(index, currentName) {
     if (!canMutateRuns) return;
     renamingIndex = index;
     renameValue = currentName;
+    await tick();
+    renameInput?.focus();
+    renameInput?.select();
   }
 
-  async function submitRename(oldName) {
+  async function submitRename(run) {
     if (!canMutateRuns) return;
     const newName = renameValue.trim();
-    if (!newName || newName === oldName) {
+    if (!newName || newName === run.name) {
       renamingIndex = -1;
       return;
     }
     try {
-      await renameRun(project, oldName, newName);
+      await renameRun(project, run, newName);
       renamingIndex = -1;
       await loadRuns();
       if (onRunsChanged) onRunsChanged();
@@ -87,8 +93,8 @@
     }
   }
 
-  function handleRenameKeydown(e, oldName) {
-    if (e.key === "Enter") submitRename(oldName);
+  function handleRenameKeydown(e, run) {
+    if (e.key === "Enter") submitRename(run);
     if (e.key === "Escape") renamingIndex = -1;
   }
 </script>
@@ -117,6 +123,7 @@
         {#each runsData as run, i}
           <tr>
             <td class="actions-cell">
+              <div class="actions-wrap">
               <button
                 class="action-btn"
                 title={canMutateRuns ? "Rename" : "Sign in with Hugging Face (write access) to rename runs"}
@@ -131,7 +138,7 @@
                 class="action-btn delete-btn"
                 title={canMutateRuns ? "Delete" : "Sign in with Hugging Face (write access) to delete runs"}
                 disabled={!canMutateRuns}
-                onclick={() => handleDelete(run.name)}
+                onclick={() => handleDelete(run)}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"/>
@@ -141,6 +148,7 @@
                   <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
                 </svg>
               </button>
+              </div>
             </td>
             <td class="run-name-cell">
               {#if renamingIndex === i}
@@ -148,16 +156,17 @@
                   class="rename-input"
                   type="text"
                   bind:value={renameValue}
-                  onkeydown={(e) => handleRenameKeydown(e, run.name)}
-                  onblur={() => submitRename(run.name)}
+                  bind:this={renameInput}
+                  onkeydown={(e) => handleRenameKeydown(e, run)}
+                  onblur={() => submitRename(run)}
                 />
               {:else}
                 <div class="run-name-with-dot">
                   <span
                     class="run-dot"
-                    style:background={runColorMap[run.name] ?? "#9ca3af"}
+                    style:background={runColorMap[run.id] ?? "#9ca3af"}
                   ></span>
-                  <button class="link-btn" onclick={() => { setQueryParam("selected_run", run.name); navigateTo("run-detail"); }}>
+                  <button class="link-btn" onclick={() => { setQueryParam("selected_run_id", run.id); setQueryParam("selected_run", run.name); navigateTo("run-detail"); }}>
                     {run.name}
                   </button>
                 </div>
@@ -275,9 +284,10 @@
     outline: none;
     width: 100%;
   }
-  .actions-cell {
+  .actions-wrap {
     display: flex;
     gap: 4px;
+    align-items: center;
   }
   .action-btn {
     background: none;

@@ -13,14 +13,15 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pandas<3.0.0",
-    "huggingface-hub>=1.9.2,<2",
-    "gradio[oauth]>=6.10.0,<7.0.0",
+    "huggingface-hub>=1.10.0,<2",
+    "gradio-client>=2.0.0,<3.0.0",
+    "starlette>=1.0.0,<2",
+    "python-multipart>=0.0.9,<1.0.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
     "numpy<3.0.0",
-    "pillow<12.0.0",
+    "pillow<13.0.0",
     "orjson>=3.0,<4.0.0",
     "pydub<1.0.0",
-    "plotly>=6.0.0,<7.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
 ]
 classifiers = [
@@ -54,6 +55,9 @@ apple-gpu = [
 ]
 spaces = [
     "pyarrow>=21.0",
+]
+mcp = [
+    "mcp>=1.0.0,<2.0.0",
 ]
 
 [project.scripts]

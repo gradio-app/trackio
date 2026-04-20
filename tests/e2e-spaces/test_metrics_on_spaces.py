@@ -3,10 +3,50 @@ import time
 
 import huggingface_hub
 import pytest
-from gradio_client import Client
 
 import trackio
 from trackio import utils
+from trackio.remote_client import RemoteClient as Client
+
+
+def _predict_run_summary(
+    test_space_id: str,
+    project_name: str,
+    run_name: str,
+    *,
+    min_num_logs: int = 0,
+    timeout: float = 240,
+):
+    deadline = time.time() + timeout
+    last_err: Exception | None = None
+    flush_attempted = False
+    while time.time() < deadline:
+        try:
+            client = Client(test_space_id, verbose=False)
+            summary = client.predict(
+                project=project_name, run=run_name, api_name="/get_run_summary"
+            )
+            if summary["num_logs"] >= min_num_logs:
+                return summary
+            last_err = None
+        except Exception as e:
+            last_err = e
+        if not flush_attempted and time.time() > deadline - max(timeout - 60, 0):
+            flush_run = trackio.init(
+                project=project_name,
+                name=f"flush_{secrets.token_urlsafe(4)}",
+                space_id=test_space_id,
+                auto_log_gpu=False,
+            )
+            flush_deadline = time.time() + 30
+            while flush_run._client is None and time.time() < flush_deadline:
+                time.sleep(0.1)
+            flush_run.finish()
+            flush_attempted = True
+        time.sleep(5)
+    if last_err is not None:
+        raise last_err
+    raise TimeoutError("get_run_summary timed out before logs appeared")
 
 
 def test_basic_logging(test_space_id):
@@ -18,15 +58,14 @@ def test_basic_logging(test_space_id):
     trackio.log(metrics={"loss": 0.2, "acc": 0.9})
     trackio.finish()
 
-    client = Client(test_space_id)
-
-    summary = client.predict(
-        project=project_name, run=run_name, api_name="/get_run_summary"
+    summary = _predict_run_summary(
+        test_space_id, project_name, run_name, min_num_logs=2
     )
     assert summary["num_logs"] == 2
     assert "loss" in summary["metrics"]
     assert "acc" in summary["metrics"]
 
+    client = Client(test_space_id)
     loss_values = client.predict(
         project=project_name,
         run=run_name,
@@ -89,9 +128,10 @@ def test_runs_data_persisted_after_restart(test_space_id):
     deadline = time.time() + 300
     while time.time() < deadline:
         try:
-            run_names = client.predict(
+            run_records = client.predict(
                 project=project_name, api_name="/get_runs_for_project"
             )
+            run_names = [r["name"] if isinstance(r, dict) else r for r in run_records]
             if run_name in run_names:
                 break
         except Exception:
@@ -159,8 +199,8 @@ def test_bucket_space_preserves_logged_metrics_after_restart(test_space_id):
             time.sleep(10)
     assert client is not None, "Space did not come back up after restart"
 
-    summary = client.predict(
-        project=project_name, run=run_name, api_name="/get_run_summary"
+    summary = _predict_run_summary(
+        test_space_id, project_name, run_name, min_num_logs=1, timeout=360
     )
     assert summary["num_logs"] == 1
     assert "loss" in summary["metrics"] and "acc" in summary["metrics"]

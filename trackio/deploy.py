@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import Counter
 from importlib.resources import files
 from pathlib import Path
 
@@ -15,13 +16,16 @@ if sys.version_info >= (3, 11):
 else:
     import tomli as tomllib
 
-import gradio
 import httpx
 import huggingface_hub
-from gradio_client import Client, handle_file
+from gradio_client import handle_file
 from httpx import ReadTimeout
 from huggingface_hub import Volume
-from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
+from huggingface_hub.errors import (
+    BucketNotFoundError,
+    HfHubHTTPError,
+    RepositoryNotFoundError,
+)
 
 import trackio
 from trackio.bucket_storage import (
@@ -30,10 +34,12 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
+from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     MEDIA_DIR,
     get_or_create_project_hash,
+    on_spaces,
     preprocess_space_and_dataset_ids,
 )
 
@@ -91,7 +97,9 @@ def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1
             delay = min(delay * 2, 12)
 
 
-def _get_space_volumes(space_id: str) -> list[Volume]:
+def _get_space_volumes(
+    space_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> list[Volume]:
     """
     Return mounted volumes for a Space.
 
@@ -99,7 +107,7 @@ def _get_space_volumes(space_id: str) -> list[Volume]:
     mount exists. Fall back to `space_info().runtime.volumes`, which currently
     carries the volume metadata for running Spaces.
     """
-    hf_api = huggingface_hub.HfApi()
+    hf_api = hf_api or huggingface_hub.HfApi()
     runtime = hf_api.get_space_runtime(space_id)
     if runtime.volumes:
         return list(runtime.volumes)
@@ -109,6 +117,151 @@ def _get_space_volumes(space_id: str) -> list[Volume]:
         return list(info.runtime.volumes)
 
     return []
+
+
+def _get_space_bucket_at_data_mount(
+    space_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> str | None:
+    for volume in _get_space_volumes(space_id, hf_api=hf_api):
+        if volume.type == "bucket" and volume.mount_path == "/data":
+            return volume.source
+    return None
+
+
+def _get_existing_space_bucket(
+    space_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> str | None:
+    """Return the Trackio bucket for a Space, preferring the canonical /data mount."""
+    bucket_at_data = _get_space_bucket_at_data_mount(space_id, hf_api=hf_api)
+    if bucket_at_data is not None:
+        return bucket_at_data
+
+    for volume in _get_space_volumes(space_id, hf_api=hf_api):
+        if volume.type == "bucket":
+            return volume.source
+    return None
+
+
+def _get_existing_static_space_bucket(
+    space_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> str | None:
+    hf_api = hf_api or huggingface_hub.HfApi()
+    try:
+        config_path = hf_api.hf_hub_download(
+            repo_id=space_id,
+            repo_type="space",
+            filename="config.json",
+        )
+    except (FileNotFoundError, HfHubHTTPError, OSError, ValueError):
+        return None
+
+    try:
+        with open(config_path, encoding="utf-8") as config_file:
+            config = json_mod.load(config_file)
+    except (OSError, ValueError, TypeError):
+        return None
+
+    bucket_id = config.get("bucket_id")
+    if isinstance(bucket_id, str) and bucket_id:
+        return bucket_id
+    return None
+
+
+def _ensure_bucket_mounted_at_data(
+    space_id: str,
+    bucket_id: str,
+    hf_api: huggingface_hub.HfApi | None = None,
+) -> None:
+    hf_api = hf_api or huggingface_hub.HfApi()
+    existing = _get_space_volumes(space_id, hf_api=hf_api)
+    already_mounted = any(
+        v.type == "bucket" and v.source == bucket_id and v.mount_path == "/data"
+        for v in existing
+    )
+    if not already_mounted:
+        preserved = [
+            v
+            for v in existing
+            if not (
+                v.type == "bucket"
+                and (v.source == bucket_id or v.mount_path == "/data")
+            )
+        ]
+        hf_api.set_space_volumes(
+            space_id,
+            preserved + [Volume(type="bucket", source=bucket_id, mount_path="/data")],
+        )
+        print(f"* Attached bucket {bucket_id} at '/data'")
+
+    existing_variables = hf_api.get_space_variables(space_id)
+    current_trackio_dir = getattr(existing_variables.get("TRACKIO_DIR"), "value", None)
+    if current_trackio_dir != "/data/trackio":
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
+    current_bucket_id = getattr(
+        existing_variables.get("TRACKIO_BUCKET_ID"), "value", None
+    )
+    if current_bucket_id != bucket_id:
+        huggingface_hub.add_space_variable(space_id, "TRACKIO_BUCKET_ID", bucket_id)
+
+
+def _bucket_exists(bucket_id: str, hf_api: huggingface_hub.HfApi | None = None) -> bool:
+    hf_api = hf_api or huggingface_hub.HfApi()
+    try:
+        hf_api.bucket_info(bucket_id)
+        return True
+    except BucketNotFoundError:
+        return False
+
+
+def _find_available_bucket_id(
+    preferred_bucket_id: str, hf_api: huggingface_hub.HfApi | None = None
+) -> str:
+    hf_api = hf_api or huggingface_hub.HfApi()
+    if not _bucket_exists(preferred_bucket_id, hf_api):
+        return preferred_bucket_id
+
+    suffix = 2
+    while True:
+        candidate = f"{preferred_bucket_id}-{suffix}"
+        if not _bucket_exists(candidate, hf_api):
+            return candidate
+        suffix += 1
+
+
+def resolve_auto_bucket_id(
+    space_id: str,
+    preferred_bucket_id: str,
+    hf_api: huggingface_hub.HfApi | None = None,
+) -> str:
+    """
+    Resolve the bucket to use for an auto-generated bucket ID.
+
+    Rules:
+    - Existing Space with a bucket mounted at /data -> reuse that bucket.
+    - Existing static Space with a bucket_id in config.json -> reuse that bucket.
+    - Otherwise -> use the preferred auto bucket ID if free, or a suffixed variant.
+    """
+    hf_api = hf_api or huggingface_hub.HfApi()
+    try:
+        info = hf_api.space_info(space_id)
+    except RepositoryNotFoundError:
+        pass
+    else:
+        existing_bucket_id = _get_existing_space_bucket(space_id, hf_api=hf_api)
+        if existing_bucket_id is None and getattr(info, "sdk", None) == "static":
+            existing_bucket_id = _get_existing_static_space_bucket(
+                space_id, hf_api=hf_api
+            )
+        if existing_bucket_id is not None:
+            return existing_bucket_id
+
+    bucket_id = _find_available_bucket_id(preferred_bucket_id, hf_api)
+    if bucket_id != preferred_bucket_id:
+        print(
+            f"* Auto-generated bucket {preferred_bucket_id} already exists; "
+            f"using {bucket_id} instead"
+        )
+    return bucket_id
 
 
 def _get_source_install_dependencies() -> str:
@@ -121,7 +274,12 @@ def _get_source_install_dependencies() -> str:
     spaces_deps = (
         pyproject["project"].get("optional-dependencies", {}).get("spaces", [])
     )
-    return "\n".join(deps + spaces_deps)
+    mcp_deps = pyproject["project"].get("optional-dependencies", {}).get("mcp", [])
+    return "\n".join(deps + spaces_deps + mcp_deps)
+
+
+def _get_space_install_requirement() -> str:
+    return f"trackio[spaces,mcp]=={trackio.__version__}"
 
 
 def _is_trackio_installed_from_source() -> bool:
@@ -156,9 +314,7 @@ def deploy_as_space(
     bucket_id: str | None = None,
     private: bool | None = None,
 ):
-    if (
-        os.getenv("SYSTEM") == "spaces"
-    ):  # in case a repo with this function is uploaded to spaces
+    if on_spaces():  # in case a repo with this function is uploaded to spaces
         return
 
     if dataset_id is not None and bucket_id is not None:
@@ -194,7 +350,7 @@ def deploy_as_space(
         else:
             raise ValueError(f"Failed to create Space: {e}")
 
-    # We can assume pandas, gradio, and huggingface-hub are already installed in a Gradio Space.
+    # We can assume huggingface-hub is available; requirements.txt pins trackio.
     # Make sure necessary dependencies are installed by creating a requirements.txt.
     is_source_install = _is_trackio_installed_from_source()
 
@@ -203,7 +359,7 @@ def deploy_as_space(
 
     with open(Path(trackio_path, "README.md"), "r") as f:
         readme_content = f.read()
-        readme_content = readme_content.replace("{GRADIO_VERSION}", gradio.__version__)
+        readme_content = readme_content.replace("sdk_version: {GRADIO_VERSION}\n", "")
         readme_content = readme_content.replace("{APP_FILE}", "app.py")
         readme_content = readme_content.replace(
             "{LINKED_HUB_METADATA}", _readme_linked_hub_yaml(dataset_id)
@@ -219,7 +375,7 @@ def deploy_as_space(
     if is_source_install:
         requirements_content = _get_source_install_dependencies()
     else:
-        requirements_content = f"trackio[spaces]=={trackio.__version__}"
+        requirements_content = _get_space_install_requirement()
 
     requirements_buffer = io.BytesIO(requirements_content.encode("utf-8"))
     hf_api.upload_file(
@@ -271,24 +427,7 @@ def deploy_as_space(
     if hf_token := huggingface_hub.utils.get_token():
         huggingface_hub.add_space_secret(space_id, "HF_TOKEN", hf_token)
     if bucket_id is not None:
-        existing = _get_space_volumes(space_id)
-        already_mounted = any(
-            v.type == "bucket" and v.source == bucket_id and v.mount_path == "/data"
-            for v in existing
-        )
-        if not already_mounted:
-            non_bucket = [
-                v
-                for v in existing
-                if not (v.type == "bucket" and v.source == bucket_id)
-            ]
-            hf_api.set_space_volumes(
-                space_id,
-                non_bucket
-                + [Volume(type="bucket", source=bucket_id, mount_path="/data")],
-            )
-            print(f"* Attached bucket {bucket_id} at '/data'")
-        huggingface_hub.add_space_variable(space_id, "TRACKIO_DIR", "/data/trackio")
+        _ensure_bucket_mounted_at_data(space_id, bucket_id, hf_api)
     elif dataset_id is not None:
         huggingface_hub.add_space_variable(space_id, "TRACKIO_DATASET_ID", dataset_id)
     if logo_light_url := os.environ.get("TRACKIO_LOGO_LIGHT_URL"):
@@ -348,6 +487,13 @@ def create_space_if_not_exists(
         print(
             f"* Found existing space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
         )
+        if bucket_id is not None:
+            create_bucket_if_not_exists(bucket_id, private=private)
+            _ensure_bucket_mounted_at_data(space_id, bucket_id)
+        elif dataset_id is not None:
+            huggingface_hub.add_space_variable(
+                space_id, "TRACKIO_DATASET_ID", dataset_id
+            )
         return
     except RepositoryNotFoundError:
         pass
@@ -433,8 +579,8 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
     """
     Uploads the database of a local Trackio project to a Hugging Face Space.
 
-    This uses the Gradio Client to upload since we do not want to trigger a new build of
-    the Space, which would happen if we used `huggingface_hub.upload_file`.
+    This uses the Trackio remote client so newer Trackio Spaces can speak the direct
+    HTTP API while older Gradio-based Spaces still work through `gradio_client`.
 
     Args:
         project (`str`):
@@ -446,7 +592,11 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
             prompts for confirmation.
     """
     db_path = SQLiteStorage.get_project_db_path(project)
-    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
+    client = RemoteClient(
+        space_id,
+        hf_token=huggingface_hub.utils.get_token(),
+        httpx_kwargs={"timeout": 90},
+    )
 
     if not force:
         try:
@@ -495,14 +645,20 @@ def sync_incremental(
     )
     create_space_if_not_exists(space_id, private=private)
     wait_until_space_exists(space_id)
-
-    client = Client(space_id, verbose=False, httpx_kwargs={"timeout": 90})
     hf_token = huggingface_hub.utils.get_token()
+    expected_run_counts: Counter[str] = Counter()
+
+    client = RemoteClient(
+        space_id,
+        hf_token=hf_token,
+        httpx_kwargs={"timeout": 90},
+    )
 
     if pending_only:
         pending_logs = SQLiteStorage.get_pending_logs(project)
         if pending_logs:
             logs = pending_logs["logs"]
+            expected_run_counts.update(log["run"] for log in logs)
             for i in range(0, len(logs), SYNC_BATCH_SIZE):
                 batch = logs[i : i + SYNC_BATCH_SIZE]
                 print(
@@ -550,6 +706,7 @@ def sync_incremental(
     else:
         all_logs = SQLiteStorage.get_all_logs_for_sync(project)
         if all_logs:
+            expected_run_counts.update(log["run"] for log in all_logs)
             for i in range(0, len(all_logs), SYNC_BATCH_SIZE):
                 batch = all_logs[i : i + SYNC_BATCH_SIZE]
                 print(
@@ -568,10 +725,70 @@ def sync_incremental(
                     api_name="/bulk_log_system", logs=batch, hf_token=hf_token
                 )
 
+    _wait_for_remote_sync(client, project, expected_run_counts)
     SQLiteStorage.set_project_metadata(project, "space_id", space_id)
     print(
         f"* Synced successfully to space: {_BOLD_ORANGE}{SPACE_URL.format(space_id=space_id)}{_RESET}"
     )
+
+
+def _build_remote_client_with_retry(
+    space_id: str,
+    timeout: int = 360,
+    verbose: bool = False,
+) -> RemoteClient:
+    deadline = time.time() + timeout
+    delay = 2
+    last_error: Exception | None = None
+    while time.time() < deadline:
+        try:
+            return RemoteClient(space_id, verbose=verbose, httpx_kwargs={"timeout": 90})
+        except (ValueError, ConnectionError) as e:
+            last_error = e
+            time.sleep(delay)
+            delay = min(delay * 1.5, 15)
+    raise ConnectionError(
+        f"Could not connect to Space '{space_id}' within {timeout}s: {last_error}"
+    )
+
+
+def _wait_for_remote_sync(
+    client: RemoteClient,
+    project: str,
+    expected_run_counts: Counter[str],
+    timeout: int = 180,
+) -> None:
+    if not expected_run_counts:
+        return
+
+    deadline = time.time() + timeout
+    delay = 2
+    last_error: Exception | None = None
+    pending = dict(expected_run_counts)
+
+    while time.time() < deadline and pending:
+        completed = []
+        for run_name, expected_num_logs in pending.items():
+            try:
+                summary = client.predict(
+                    project=project, run=run_name, api_name="/get_run_summary"
+                )
+                if summary.get("num_logs") == expected_num_logs:
+                    completed.append(run_name)
+            except Exception as e:
+                last_error = e
+        for run_name in completed:
+            pending.pop(run_name, None)
+        if pending:
+            time.sleep(delay)
+            delay = min(delay * 1.5, 15)
+
+    if pending:
+        raise TimeoutError(
+            f"Remote sync for project '{project}' did not become visible for runs "
+            f"{sorted(pending.items())} within {timeout}s. "
+            f"Last error: {last_error!r}"
+        )
 
 
 def upload_dataset_for_static(
@@ -630,7 +847,7 @@ def deploy_as_static_space(
     private: bool | None = None,
     hf_token: str | None = None,
 ) -> None:
-    if os.getenv("SYSTEM") == "spaces":
+    if on_spaces():
         return
 
     hf_api = huggingface_hub.HfApi()
@@ -743,10 +960,10 @@ def sync(
     Syncs a local Trackio project's database to a Hugging Face Space.
     If the Space does not exist, it will be created. Local data is never deleted.
 
-    **Freezing:** Passing ``sdk="static"`` *freezes* the Space: it converts a live Gradio
-    Space into a static Space backed by an HF Bucket (read-only dashboard, no Gradio
-    server). You cannot log new metrics to a frozen Space; use a different ``space_id``
-    or a new Gradio Space for further training runs.
+    **Freezing:** Passing ``sdk="static"`` deploys a static Space backed by an HF Bucket
+    (read-only dashboard, no Gradio server). You can sync the same project again later to
+    refresh that static Space. If you want a one-time snapshot of an existing Gradio Space,
+    use ``freeze()`` instead.
 
     Args:
         project (`str`): The name of the project to upload.
@@ -776,6 +993,8 @@ def sync(
     """
     if sdk not in ("gradio", "static"):
         raise ValueError(f"sdk must be 'gradio' or 'static', got '{sdk}'")
+    bucket_id_was_explicit = bucket_id is not None
+
     if space_id is None:
         space_id = SQLiteStorage.get_space_id(project)
     if space_id is None:
@@ -783,6 +1002,8 @@ def sync(
     space_id, dataset_id, bucket_id = preprocess_space_and_dataset_ids(
         space_id, dataset_id, bucket_id
     )
+    if dataset_id is None and bucket_id is not None and not bucket_id_was_explicit:
+        bucket_id = resolve_auto_bucket_id(space_id, bucket_id)
 
     def _do_sync():
         try:
@@ -831,6 +1052,15 @@ def sync(
                 create_space_if_not_exists(
                     space_id, bucket_id=bucket_id, private=private
                 )
+                _wait_until_space_running(space_id)
+                _wait_for_remote_sync(
+                    _build_remote_client_with_retry(space_id),
+                    project,
+                    Counter(
+                        log["run"]
+                        for log in SQLiteStorage.get_all_logs_for_sync(project)
+                    ),
+                )
             else:
                 sync_incremental(project, space_id, private=private, pending_only=False)
         SQLiteStorage.set_project_metadata(project, "space_id", space_id)
@@ -843,10 +1073,10 @@ def sync(
 
 
 def _get_source_bucket(space_id: str) -> str:
-    volumes = _get_space_volumes(space_id)
-    for v in volumes:
-        if v.type == "bucket" and v.mount_path == "/data":
-            return v.source
+    bucket_id = _get_existing_space_bucket(space_id)
+    if bucket_id is not None:
+        _ensure_bucket_mounted_at_data(space_id, bucket_id)
+        return bucket_id
     raise ValueError(
         f"Space '{space_id}' has no bucket mounted at '/data'. "
         f"freeze() requires the source Space to use bucket storage."
@@ -863,8 +1093,9 @@ def freeze(
     """
     Creates a new static Hugging Face Space containing a read-only snapshot of
     the data for the specified project from the source Gradio Space. The data is
-    read from the bucket attached to the source Space, so it always reflects the
-    remote state. The original Space is not modified.
+    read from the bucket attached to the source Space at freeze time. The original
+    Space is not modified, and the new static Space does not automatically reflect
+    metrics uploaded to the original Gradio Space after the freeze completes.
 
     Args:
         space_id (`str`):
@@ -903,11 +1134,15 @@ def freeze(
     source_bucket_id = _get_source_bucket(space_id)
     print(f"* Reading project data from bucket: {source_bucket_id}")
 
+    bucket_id_was_explicit = bucket_id is not None
+
     if new_space_id is None:
         new_space_id = f"{space_id}_static"
     new_space_id, _dataset_id, bucket_id = preprocess_space_and_dataset_ids(
         new_space_id, None, bucket_id
     )
+    if bucket_id is not None and not bucket_id_was_explicit:
+        bucket_id = resolve_auto_bucket_id(new_space_id, bucket_id)
 
     hf_api = huggingface_hub.HfApi()
     try:

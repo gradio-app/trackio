@@ -6,7 +6,7 @@
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
-  import { isDark } from "../lib/theme.js";
+  import { latestOnlySelection } from "../lib/selection.js";
 
   let {
     open = $bindable(true),
@@ -16,6 +16,8 @@
     selectedProject = $bindable(null),
     runs = [],
     selectedRuns = $bindable([]),
+    availableSystemDevices = [],
+    selectedSystemDevices = $bindable([]),
     smoothing = $bindable(10),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
@@ -31,6 +33,7 @@
     readOnlySource = null,
     projectLocked = false,
     logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
+    darkMode = false,
   } = $props();
 
   let navTick = $state(0);
@@ -69,20 +72,40 @@
 
   let filteredRuns = $derived(
     filterText
-      ? runs.filter((r) => r.toLowerCase().includes(filterText.toLowerCase()))
+      ? runs.filter((r) => r.name.toLowerCase().includes(filterText.toLowerCase()))
       : runs,
   );
 
   let runColorMap = $derived(buildColorMap(runs));
+  let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
 
   let latestOnly = $state(false);
 
   function toggleLatestOnly() {
     latestOnly = !latestOnly;
     if (latestOnly && filteredRuns.length > 0) {
-      selectedRuns = [filteredRuns[filteredRuns.length - 1]];
+      selectedRuns = latestOnlySelection(filteredRunIds);
     } else if (!latestOnly) {
-      selectedRuns = [...filteredRuns];
+      selectedRuns = [...filteredRunIds];
+    }
+  }
+
+  $effect(() => {
+    if (!latestOnly || filteredRunIds.length === 0) return;
+    const desired = latestOnlySelection(filteredRunIds);
+    if (
+      selectedRuns.length !== desired.length ||
+      selectedRuns[0] !== desired[0]
+    ) {
+      selectedRuns = desired;
+    }
+  });
+
+  function toggleDevice(device) {
+    if (selectedSystemDevices.includes(device)) {
+      selectedSystemDevices = selectedSystemDevices.filter((d) => d !== device);
+    } else {
+      selectedSystemDevices = [...selectedSystemDevices, device];
     }
   }
 </script>
@@ -105,7 +128,7 @@
       <div class="sidebar-scroll">
       <div class="logo-section">
         <img
-          src={isDark() ? logoUrls.dark : logoUrls.light}
+          src={darkMode ? logoUrls.dark : logoUrls.light}
           alt="Trackio"
           class="logo"
         />
@@ -132,18 +155,18 @@
               <input
                 type="checkbox"
                 class="select-all-cb"
-                checked={selectedRuns.length === filteredRuns.length && filteredRuns.length > 0}
-                use:setIndeterminate={selectedRuns.length > 0 && selectedRuns.length < filteredRuns.length}
+                checked={selectedRuns.length === filteredRunIds.length && filteredRunIds.length > 0}
+                use:setIndeterminate={selectedRuns.length > 0 && selectedRuns.length < filteredRunIds.length}
                 onchange={() => {
-                  if (selectedRuns.length === filteredRuns.length) {
+                  if (selectedRuns.length === filteredRunIds.length) {
                     selectedRuns = [];
                   } else {
-                    selectedRuns = [...filteredRuns];
+                    selectedRuns = [...filteredRunIds];
                   }
                   latestOnly = false;
                 }}
               />
-              <span class="section-label">Runs ({filteredRuns.length})</span>
+              <span class="section-label">Runs ({filteredRunIds.length})</span>
             </label>
             <label class="latest-toggle">
               <span>Latest only</span>
@@ -163,12 +186,46 @@
             <ColoredCheckbox
               choices={filteredRuns}
               bind:selected={selectedRuns}
+              getKey={(run) => run.id ?? run.name}
+              getLabel={(run) => run.name}
               colors={filteredRuns.map(
-              (r) => runColorMap[r] ?? getColorForIndex(Math.max(0, runs.indexOf(r))),
+              (r) => runColorMap[r.id ?? r.name] ?? getColorForIndex(Math.max(0, runs.indexOf(r))),
             )}
               ontoggle={() => { latestOnly = false; }}
             />
           </div>
+          {#if currentPage === "system" && availableSystemDevices.length > 0}
+            <div class="device-group">
+              <label class="select-all-label">
+                <input
+                  type="checkbox"
+                  class="select-all-cb"
+                  checked={selectedSystemDevices.length === availableSystemDevices.length && availableSystemDevices.length > 0}
+                  use:setIndeterminate={selectedSystemDevices.length > 0 && selectedSystemDevices.length < availableSystemDevices.length}
+                  onchange={() => {
+                    if (selectedSystemDevices.length === availableSystemDevices.length) {
+                      selectedSystemDevices = [];
+                    } else {
+                      selectedSystemDevices = [...availableSystemDevices];
+                    }
+                  }}
+                />
+                <span class="section-sublabel">Devices ({availableSystemDevices.length})</span>
+              </label>
+              <div class="checkbox-group">
+                {#each availableSystemDevices as device}
+                  <label class="checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={selectedSystemDevices.includes(device)}
+                      onchange={() => toggleDevice(device)}
+                    />
+                    <span class="run-name" title={device}>{device}</span>
+                  </label>
+                {/each}
+              </div>
+            </div>
+          {/if}
         </div>
 
         {#if currentPage === "metrics" || currentPage === "system"}
@@ -407,6 +464,7 @@
     max-width: 200px;
   }
   .section {
+    margin-top: 2px;
     margin-bottom: 18px;
   }
   .section-label {
@@ -493,5 +551,56 @@
     max-height: 300px;
     overflow-y: auto;
     margin-top: 8px;
+  }
+  .device-group {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color-primary, #e5e7eb);
+  }
+  .section-sublabel {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .checkbox-group {
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+  }
+  .checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .checkbox-item input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 1px solid var(--checkbox-border-color, #d1d5db);
+    border-radius: var(--checkbox-border-radius, 4px);
+    background-color: var(--checkbox-background-color, white);
+    box-shadow: var(--checkbox-shadow);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .checkbox-item input[type="checkbox"]:checked {
+    background-image: var(--checkbox-check);
+    background-color: var(--checkbox-background-color-selected, #f97316);
+    border-color: var(--checkbox-border-color-selected, #f97316);
+  }
+  .checkbox-item input[type="checkbox"]:hover {
+    border-color: var(--checkbox-border-color-hover, #d1d5db);
+  }
+  .run-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--body-text-color, #1f2937);
   }
 </style>

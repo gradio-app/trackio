@@ -84,6 +84,7 @@ async function getSettingsJson() {
 
 const STRUCTURAL_KEYS = new Set([
   "id",
+  "run_id",
   "run_name",
   "timestamp",
   "step",
@@ -97,13 +98,33 @@ function parseRows(raw) {
   return { rows: raw, columns: Object.keys(raw[0]) };
 }
 
+function normalizeRun(run) {
+  if (run == null) return { name: null, id: null };
+  if (typeof run === "string") return { name: run, id: null };
+  return { name: run.name ?? null, id: run.id ?? null };
+}
+
+function matchesRun(row, run) {
+  const target = normalizeRun(run);
+  if (target.id != null && row.run_id != null) {
+    return row.run_id === target.id;
+  }
+  return target.name == null ? true : row.run_name === target.name;
+}
+
 export async function getAllProjects() {
   return [config.project];
 }
 
 export async function getRunsForProject() {
   const runs = await getRunsJson();
-  return runs.map((r) => r.name);
+  return runs.map((r) => ({
+    id: r.id ?? r.run_id ?? r.name,
+    name: r.name,
+    created_at: r.created_at ?? null,
+    last_step: r.last_step ?? null,
+    log_count: r.log_count ?? 0,
+  }));
 }
 
 export async function getMetricsForRun(_project, run) {
@@ -111,7 +132,7 @@ export async function getMetricsForRun(_project, run) {
   const { rows, columns } = parseRows(raw);
   const metricCols = columns.filter((c) => !STRUCTURAL_KEYS.has(c));
 
-  const runRows = rows.filter((r) => r.run_name === run);
+  const runRows = rows.filter((r) => matchesRun(r, run));
   const present = new Set();
   for (const row of runRows) {
     for (const col of metricCols) {
@@ -126,7 +147,7 @@ export async function getMetricsForRun(_project, run) {
 export async function getLogs(_project, run) {
   const raw = await getMetricsData();
   const { rows } = parseRows(raw);
-  const runRows = rows.filter((r) => r.run_name === run);
+  const runRows = rows.filter((r) => matchesRun(r, run));
 
   return runRows.map((row) => {
     const entry = {};
@@ -155,23 +176,34 @@ export async function getLogs(_project, run) {
 
 export async function getProjectSummary() {
   const runs = await getRunsJson();
-  const runNames = runs.map((r) => r.name);
   const lastSteps = runs.map((r) => r.last_step || 0);
   return {
     project: config.project,
     num_runs: runs.length,
-    runs: runNames,
+    runs: runs.map((r) => ({
+      id: r.id ?? r.run_id ?? r.name,
+      name: r.name,
+      created_at: r.created_at ?? null,
+      last_step: r.last_step ?? null,
+      log_count: r.log_count ?? 0,
+    })),
     last_activity: lastSteps.length ? Math.max(...lastSteps) : null,
   };
 }
 
 export async function getRunSummary(_project, run) {
   const runs = await getRunsJson();
-  const runMeta = runs.find((r) => r.name === run);
+  const target = normalizeRun(run);
+  const runMeta = runs.find((r) =>
+    target.id != null && (r.id ?? r.run_id ?? r.name) != null
+      ? (r.id ?? r.run_id ?? r.name) === target.id
+      : r.name === target.name,
+  );
   if (!runMeta) {
     return {
       project: config.project,
-      run,
+      run: target.name,
+      run_id: target.id,
       num_logs: 0,
       metrics: [],
       config: null,
@@ -184,7 +216,9 @@ export async function getRunSummary(_project, run) {
   let runConfig = null;
   const cfgRaw = await getConfigsData();
   const { rows: cfgRows } = parseRows(cfgRaw);
-  const cfgRow = cfgRows.find((r) => r.run_name === run);
+  const cfgRow = cfgRows.find((r) =>
+    target.id != null && r.run_id != null ? r.run_id === target.id : r.run_name === target.name,
+  );
   if (cfgRow) {
     runConfig = {};
     for (const [key, value] of Object.entries(cfgRow)) {
@@ -196,7 +230,8 @@ export async function getRunSummary(_project, run) {
 
   return {
     project: config.project,
-    run,
+    run: runMeta.name,
+    run_id: runMeta.id ?? runMeta.run_id ?? runMeta.name,
     num_logs: runMeta.log_count || 0,
     metrics,
     config: runConfig,
@@ -213,7 +248,7 @@ export async function getSystemMetricsForRun(_project, run) {
   const { rows, columns } = parseRows(raw);
   const metricCols = columns.filter((c) => !STRUCTURAL_KEYS.has(c));
 
-  const runRows = rows.filter((r) => r.run_name === run);
+  const runRows = rows.filter((r) => matchesRun(r, run));
   const present = new Set();
   for (const row of runRows) {
     for (const col of metricCols) {
@@ -228,7 +263,7 @@ export async function getSystemMetricsForRun(_project, run) {
 export async function getSystemLogs(_project, run) {
   const raw = await getSystemData();
   const { rows } = parseRows(raw);
-  const runRows = rows.filter((r) => r.run_name === run);
+  const runRows = rows.filter((r) => matchesRun(r, run));
 
   return runRows.map((row) => {
     const entry = {};
@@ -245,7 +280,7 @@ export async function getSystemLogs(_project, run) {
 export async function getSnapshot(_project, run, step) {
   const raw = await getMetricsData();
   const { rows } = parseRows(raw);
-  let runRows = rows.filter((r) => r.run_name === run);
+  let runRows = rows.filter((r) => matchesRun(r, run));
 
   if (step !== null && step !== undefined) {
     runRows = runRows.filter((r) => r.step === step);
@@ -270,7 +305,7 @@ export async function getSnapshot(_project, run, step) {
 export async function getMetricValues(_project, run, metricName) {
   const raw = await getMetricsData();
   const { rows } = parseRows(raw);
-  const runRows = rows.filter((r) => r.run_name === run);
+  const runRows = rows.filter((r) => matchesRun(r, run));
 
   return runRows
     .filter((r) => r[metricName] !== null && r[metricName] !== undefined)

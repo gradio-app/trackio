@@ -49,8 +49,10 @@
     loading = true;
     try {
       const data = await getAlerts(project, null, null, null);
-      const runSet = new Set(selectedRuns);
-      allAlerts = (data || []).filter((a) => !a.run || runSet.has(a.run));
+      const selectedRunNames = new Set(selectedRuns.map((run) => run.name));
+      allAlerts = (data || []).filter(
+        (alert) => !alert.run || selectedRunNames.has(alert.run),
+      );
 
       const runsToLoad = selectedRuns;
       const reports = [];
@@ -63,7 +65,7 @@
                 if (value && typeof value === "object" && value._type === "trackio.markdown") {
                   reports.push({
                     key,
-                    run,
+                    run: run.name,
                     step: log.step,
                     content: value._value || "",
                   });
@@ -210,13 +212,6 @@
   }
   .control {
     min-width: 200px;
-  }
-  .block-title {
-    display: block;
-    font-size: var(--block-title-text-size, 14px);
-    font-weight: var(--block-title-text-weight, 400);
-    color: var(--block-title-text-color, #6b7280);
-    margin-bottom: var(--spacing-lg, 8px);
   }
   .filter-pills {
     display: flex;

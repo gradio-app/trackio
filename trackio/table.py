@@ -1,7 +1,6 @@
 import os
 from typing import Any, Literal
-
-from pandas import DataFrame
+from urllib.parse import quote
 
 from trackio.media.media import TrackioMedia
 from trackio.utils import MEDIA_DIR
@@ -40,7 +39,7 @@ class Table:
         self,
         columns: list[str] | None = None,
         data: list[list[Any]] | None = None,
-        dataframe: DataFrame | None = None,
+        dataframe: Any | None = None,
         rows: list[list[Any]] | None = None,
         optional: bool | list[bool] = True,
         allow_mixed_types: bool = False,
@@ -48,52 +47,79 @@ class Table:
     ):
         # TODO: implement support for columns, dtype, optional, allow_mixed_types, and log_mode.
         # for now (like `rows`) they are included for API compat but don't do anything.
-        if dataframe is None:
-            self.data = DataFrame(data) if data is not None else DataFrame()
-        else:
-            self.data = dataframe
+        self.data = self._normalize_rows(
+            columns=columns, data=data, dataframe=dataframe
+        )
 
-    def _has_media_objects(self, dataframe: DataFrame) -> bool:
-        """Check if dataframe contains any TrackioMedia objects or lists of TrackioMedia objects."""
-        for col in dataframe.columns:
-            if dataframe[col].apply(lambda x: isinstance(x, TrackioMedia)).any():
-                return True
-            if (
-                dataframe[col]
-                .apply(
-                    lambda x: (
-                        isinstance(x, list)
-                        and len(x) > 0
-                        and isinstance(x[0], TrackioMedia)
-                    )
-                )
-                .any()
-            ):
-                return True
+    @staticmethod
+    def _normalize_rows(
+        columns: list[str] | None,
+        data: list[list[Any]] | None,
+        dataframe: Any | None,
+    ) -> list[dict[str, Any]]:
+        if dataframe is not None:
+            try:
+                records = dataframe.to_dict(orient="records")
+            except Exception as e:
+                raise TypeError(
+                    "The `dataframe` argument must support `to_dict(orient='records')`."
+                ) from e
+            return [dict(row) for row in records]
+
+        if data is None:
+            return []
+
+        if data and isinstance(data[0], dict):
+            return [dict(row) for row in data]
+
+        normalized_rows: list[dict[str, Any]] = []
+        for row in data:
+            row_dict: dict[str, Any] = {}
+            if columns is None:
+                for idx, value in enumerate(row):
+                    row_dict[idx] = value
+            else:
+                for idx, column in enumerate(columns):
+                    row_dict[column] = row[idx] if idx < len(row) else None
+                for idx in range(len(columns), len(row)):
+                    row_dict[idx] = row[idx]
+            normalized_rows.append(row_dict)
+        return normalized_rows
+
+    def _has_media_objects(self, rows: list[dict[str, Any]]) -> bool:
+        """Check if rows contain any TrackioMedia objects or lists of TrackioMedia objects."""
+        for row in rows:
+            for value in row.values():
+                if isinstance(value, TrackioMedia):
+                    return True
+                if (
+                    isinstance(value, list)
+                    and len(value) > 0
+                    and isinstance(value[0], TrackioMedia)
+                ):
+                    return True
         return False
 
     def _process_data(self, project: str, run: str, step: int = 0):
-        """Convert dataframe to dict format, processing any TrackioMedia objects if present."""
-        df = self.data
-        if not self._has_media_objects(df):
-            return df.to_dict(orient="records")
+        """Convert rows to dict format, processing any TrackioMedia objects if present."""
+        if not self._has_media_objects(self.data):
+            return [dict(row) for row in self.data]
 
-        processed_df = df.copy()
-        for col in processed_df.columns:
-            for idx in processed_df.index:
-                value = processed_df.at[idx, col]
+        processed_rows = [dict(row) for row in self.data]
+        for row in processed_rows:
+            for key, value in list(row.items()):
                 if isinstance(value, TrackioMedia):
                     value._save(project, run, step)
-                    processed_df.at[idx, col] = value._to_dict()
+                    row[key] = value._to_dict()
                 if (
                     isinstance(value, list)
                     and len(value) > 0
                     and isinstance(value[0], TrackioMedia)
                 ):
                     [v._save(project, run, step) for v in value]
-                    processed_df.at[idx, col] = [v._to_dict() for v in value]
+                    row[key] = [v._to_dict() for v in value]
 
-        return processed_df.to_dict(orient="records")
+        return processed_rows
 
     @staticmethod
     def to_display_format(table_data: list[dict]) -> list[dict]:
@@ -118,7 +144,9 @@ class Table:
             relative_path = image_data.get("file_path", "")
             caption = image_data.get("caption", "")
             absolute_path = MEDIA_DIR / relative_path
-            return f'<img src="/gradio_api/file={absolute_path}" alt="{caption}" />'
+            return (
+                f'<img src="/file?path={quote(str(absolute_path))}" alt="{caption}" />'
+            )
 
         processed_data = []
         for row in table_data:

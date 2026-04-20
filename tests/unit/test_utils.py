@@ -159,24 +159,12 @@ def test_trackio_dir_env_var(monkeypatch):
         test_path = str(tmpdir)
 
         monkeypatch.setenv("TRACKIO_DIR", test_path)
-        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
         result_dir = utils._get_trackio_dir()
         assert str(result_dir) == test_path
 
         monkeypatch.delenv("TRACKIO_DIR", raising=False)
-        monkeypatch.delenv("PERSISTANT_STORAGE_ENABLED", raising=False)
         result_dir = utils._get_trackio_dir()
         assert "huggingface/trackio" in Path(result_dir).as_posix()
-
-        monkeypatch.delenv("TRACKIO_DIR", raising=False)
-        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
-        result_dir = utils._get_trackio_dir()
-        assert Path(result_dir).as_posix() == "/data/trackio"
-
-        monkeypatch.setenv("TRACKIO_DIR", test_path)
-        monkeypatch.setenv("PERSISTANT_STORAGE_ENABLED", "true")
-        result_dir = utils._get_trackio_dir()
-        assert Path(result_dir).as_posix() == "/data/trackio"
 
 
 def test_plot_ordering():
@@ -238,31 +226,37 @@ def test_plot_ordering():
 
 def test_downsample_with_none_x_lim():
     """Test downsample function handles None values in x_lim correctly."""
-    import pandas as pd
+    rows = [
+        {"x": 0, "y": 1},
+        {"x": 1, "y": 2},
+        {"x": 2, "y": 3},
+        {"x": 3, "y": 4},
+        {"x": 4, "y": 5},
+        {"x": 5, "y": 6},
+        {"x": 6, "y": 7},
+        {"x": 7, "y": 8},
+        {"x": 8, "y": 9},
+        {"x": 9, "y": 10},
+        {"x": 10, "y": 11},
+    ]
 
-    data = {
-        "x": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        "y": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    }
-    df = pd.DataFrame(data)
-
-    result_df, result_x_lim = utils.downsample(df, "x", "y", None, None)
+    result_df, result_x_lim = utils.downsample(rows, "x", "y", None, None)
     assert result_x_lim is None
-    assert len(result_df) <= len(df)
+    assert len(result_df) <= len(rows)
 
-    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (None, 5))
+    result_df, result_x_lim = utils.downsample(rows, "x", "y", None, (None, 5))
     assert result_x_lim == (0, 5)
-    assert len(result_df) <= len(df)
+    assert len(result_df) <= len(rows)
 
-    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (2, None))
+    result_df, result_x_lim = utils.downsample(rows, "x", "y", None, (2, None))
     assert result_x_lim == (2, 10)
-    assert len(result_df) <= len(df)
+    assert len(result_df) <= len(rows)
 
-    result_df, result_x_lim = utils.downsample(df, "x", "y", None, (None, None))
+    result_df, result_x_lim = utils.downsample(rows, "x", "y", None, (None, None))
     assert result_x_lim == (0, 10)
-    assert len(result_df) <= len(df)
+    assert len(result_df) <= len(rows)
 
-    empty_df = pd.DataFrame({"x": [], "y": []})
+    empty_df = []
     result_df, result_x_lim = utils.downsample(empty_df, "x", "y", None, (2, None))
     assert result_x_lim == (2, 0)
     assert len(result_df) == 0

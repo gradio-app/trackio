@@ -5,13 +5,19 @@
   import BarPlot from "../components/BarPlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getLogs } from "../lib/api.js";
+  import { getLogsBatch } from "../lib/api.js";
+  import {
+    getMetricsPollIntervalMs,
+    isRateLimitCooldownActive,
+    isTabHidden,
+  } from "../lib/hostPolling.js";
   import {
     processRunData,
     getMetricColumns,
     groupMetricsByPrefix,
     filterMetricsByRegex,
     computeMetricPlotData,
+    logsHaveNewData,
   } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
 
@@ -27,6 +33,7 @@
     showHeaders = true,
     appBootstrapReady = false,
     plotOrder = [],
+    realtimeEnabled = true,
     // eslint-disable-next-line no-useless-assignment -- bindable out-prop to parent
     metricColumns = $bindable([]),
   } = $props();
@@ -42,6 +49,7 @@
 
   let rawDataCache = new Map();
   let refreshTimer = null;
+  const MAX_BATCH_RUNS = 64;
 
   let colorMap = $derived(buildColorMap(allRuns));
 
@@ -119,7 +127,7 @@
 
     const allRows = [];
     for (const run of selectedRuns) {
-      const logs = rawDataCache.get(run);
+      const logs = rawDataCache.get(run.id ?? run.name);
       if (!logs) continue;
       const result = processRunData(logs, run, smoothing, xAxis, logScaleX, logScaleY);
       if (result) {
@@ -140,7 +148,7 @@
 
     const countPerRunMetric = new Map();
     for (const r of originals) {
-      const run = r.run;
+      const run = r.series_key;
       for (const col of cols) {
         if (r[col] == null) continue;
         const key = `${col}\0${run}`;
@@ -156,6 +164,16 @@
     singlePointMetrics = sp;
   }
 
+  async function fetchLogsForRuns(runs) {
+    const results = [];
+    for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
+      const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
+      const batch = await getLogsBatch(project, chunk);
+      results.push(...batch);
+    }
+    return results;
+  }
+
   async function fetchNewRuns() {
     if (!appBootstrapReady) {
       hasLoaded = false;
@@ -168,12 +186,21 @@
       return;
     }
 
+    const needFetch = selectedRuns.filter((run) => {
+      const runKey = run.id ?? run.name;
+      return !rawDataCache.has(runKey);
+    });
     let fetched = false;
-    for (const run of selectedRuns) {
-      if (!rawDataCache.has(run)) {
-        const logs = await getLogs(project, run);
-        rawDataCache.set(run, logs);
-        fetched = true;
+    if (needFetch.length > 0) {
+      try {
+        const batch = await fetchLogsForRuns(needFetch);
+        for (const entry of batch) {
+          const runKey = entry.run_id ?? entry.run;
+          rawDataCache.set(runKey, entry.logs);
+          fetched = true;
+        }
+      } catch (e) {
+        console.error("Failed to load metric logs:", e);
       }
     }
 
@@ -184,19 +211,28 @@
   }
 
   async function refreshCachedRuns() {
+    if (!realtimeEnabled) return;
     if (!project || selectedRuns.length === 0) return;
+    if (isTabHidden()) return;
+    if (isRateLimitCooldownActive()) return;
 
-    let changed = false;
-    for (const run of selectedRuns) {
-      const logs = await getLogs(project, run);
-      const prev = rawDataCache.get(run);
-      if (!prev || logs.length !== prev.length) {
-        rawDataCache.set(run, logs);
-        changed = true;
+    try {
+      const batch = await fetchLogsForRuns(selectedRuns);
+      let changed = false;
+      for (const entry of batch) {
+        const runKey = entry.run_id ?? entry.run;
+        const logs = entry.logs;
+        const prev = rawDataCache.get(runKey);
+        if (!prev || logsHaveNewData(prev, logs)) {
+          rawDataCache.set(runKey, logs);
+          changed = true;
+        }
       }
-    }
-    if (changed) {
-      processFromCache();
+      if (changed) {
+        processFromCache();
+      }
+    } catch (e) {
+      console.error("Failed to refresh metric logs:", e);
     }
   }
 
@@ -228,7 +264,10 @@
         xLim = [lo, hi];
       }
     }
-    refreshTimer = setInterval(refreshCachedRuns, 1000);
+    refreshTimer = setInterval(
+      refreshCachedRuns,
+      getMetricsPollIntervalMs(),
+    );
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
     };
@@ -299,6 +338,8 @@
                     data={plotData}
                     y={metric}
                     title={directTitle}
+                    colorField="series_key"
+                    colorDisplayField="run"
                     {colorMap}
                     draggable={true}
                     ondragstart={(e) => handleDragStart(directKey, i, e)}
@@ -311,6 +352,8 @@
                     x={xColumn}
                     y={metric}
                     title={directTitle}
+                    colorField="series_key"
+                    colorDisplayField="run"
                     {colorMap}
                     {xLim}
                     {yExtent}
@@ -349,6 +392,8 @@
                         data={plotData}
                         y={metric}
                         title={subTitle}
+                        colorField="series_key"
+                        colorDisplayField="run"
                         {colorMap}
                         draggable={true}
                         ondragstart={(e) => handleDragStart(subKey, i, e)}
@@ -361,6 +406,8 @@
                         x={xColumn}
                         y={metric}
                         title={subTitle}
+                        colorField="series_key"
+                        colorDisplayField="run"
                         {colorMap}
                         {xLim}
                         {yExtent}

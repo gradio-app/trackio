@@ -9,7 +9,7 @@ const RESERVED_KEYS = [
 
 export function processRunData(
   logs,
-  runName,
+  run,
   smoothingGranularity,
   xAxis,
   logScaleX,
@@ -59,20 +59,37 @@ export function processRunData(
     });
   }
 
+  const runId = typeof run === "string" ? run : (run?.id ?? run?.name);
+  const runName = typeof run === "string" ? run : (run?.name ?? run?.id);
+
   if (smoothingGranularity > 0) {
     const originals = rows.map((r) => ({
       ...r,
       run: runName,
+      run_id: runId,
+      series_key: runId,
       data_type: "original",
     }));
     const smoothed = smoothData(rows, yCols, smoothingGranularity).map(
-      (r) => ({ ...r, run: runName, data_type: "smoothed" }),
+      (r) => ({
+        ...r,
+        run: runName,
+        run_id: runId,
+        series_key: runId,
+        data_type: "smoothed",
+      }),
     );
     return { rows: [...originals, ...smoothed], xColumn };
   }
 
   return {
-    rows: rows.map((r) => ({ ...r, run: runName, data_type: "original" })),
+    rows: rows.map((r) => ({
+      ...r,
+      run: runName,
+      run_id: runId,
+      series_key: runId,
+      data_type: "original",
+    })),
     xColumn,
   };
 }
@@ -123,7 +140,7 @@ export function computeMetricPlotData(masterData, xColumn, metric, xLim) {
   if (xLim) {
     const groups = new Map();
     for (const r of relevant) {
-      const key = `${r.run || ""}\0${r.data_type || "original"}`;
+        const key = `${r.series_key || r.run || ""}\0${r.data_type || "original"}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(r);
     }
@@ -156,18 +173,25 @@ export function computeMetricPlotData(masterData, xColumn, metric, xLim) {
     }
     if (yMin !== Infinity) yExtent = [yMin, yMax];
   }
-  return { data: downsample(relevant, xColumn, metric, "run", xLim).data, yExtent };
+  return {
+    data: downsample(relevant, xColumn, metric, "series_key", xLim, [
+      "run",
+      "series_key",
+    ]).data,
+    yExtent,
+  };
 }
 
-function downsampleImpl(data, x, y, colorField, xLim) {
+function downsampleImpl(data, x, y, colorField, xLim, extraFields = []) {
   const columns = [x, y];
   if (colorField && Object.hasOwn(data[0], colorField)) {
     columns.push(colorField);
   }
+  columns.push(...extraFields);
 
   let filtered = data.map((r) => {
     const out = {};
-    columns.forEach((c) => (out[c] = r[c]));
+    [...new Set(columns)].forEach((c) => (out[c] = r[c]));
     if (r.data_type) out.data_type = r.data_type;
     if (r.run) out.run = r.run;
     return out;
@@ -243,7 +267,7 @@ function downsampleImpl(data, x, y, colorField, xLim) {
   return { data: result, xLim: updatedXLim };
 }
 
-export function downsample(data, x, y, colorField, xLim) {
+export function downsample(data, x, y, colorField, xLim, extraFields = []) {
   if (!data || data.length === 0) return { data, xLim };
 
   const splitByDataType =
@@ -262,7 +286,7 @@ export function downsample(data, x, y, colorField, xLim) {
     const merged = [];
     let mergedXLim = xLim;
     for (const chunk of chunks.values()) {
-      const out = downsampleImpl(chunk, x, y, colorField, xLim);
+      const out = downsampleImpl(chunk, x, y, colorField, xLim, extraFields);
       merged.push(...out.data);
       mergedXLim = out.xLim;
     }
@@ -270,7 +294,7 @@ export function downsample(data, x, y, colorField, xLim) {
     return { data: merged, xLim: mergedXLim };
   }
 
-  return downsampleImpl(data, x, y, colorField, xLim);
+  return downsampleImpl(data, x, y, colorField, xLim, extraFields);
 }
 
 export function groupMetricsByPrefix(metrics, plotOrder = []) {
@@ -384,6 +408,29 @@ export function buildColorSpecKey(data, colorField, colorMap) {
   }
   parts.sort();
   return parts.join("|");
+}
+
+function logMarker(log) {
+  if (!log) return null;
+  const step = typeof log.step === "number" ? log.step : null;
+  const ts = log.timestamp ?? null;
+  return { step, ts };
+}
+
+// Returns true when the freshly fetched `next` log array carries data the
+// cached `prev` array doesn't. We can't use `next.length !== prev.length`
+// because the backend caps each response at ~1500 points — once a run
+// crosses that threshold, length stops changing and realtime charts freeze.
+// Instead compare the last (step, timestamp) pair, which advances with every
+// new log even when the returned slice is truncated.
+export function logsHaveNewData(prev, next) {
+  if (!prev || !next) return Boolean(next);
+  if (next.length !== prev.length) return true;
+  if (next.length === 0) return false;
+  const a = logMarker(prev[prev.length - 1]);
+  const b = logMarker(next[next.length - 1]);
+  if (!a || !b) return true;
+  return a.step !== b.step || a.ts !== b.ts;
 }
 
 export function filterMetricsByRegex(metrics, pattern) {
