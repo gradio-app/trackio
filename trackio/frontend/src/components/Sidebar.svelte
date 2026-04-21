@@ -158,6 +158,9 @@
     if (runIds.length) {
       params.set("run_ids", runIds.join(","));
     }
+    if (smoothing != null && smoothing !== 10) {
+      params.set("smoothing", smoothing.toString());
+    }
     if (!showHeaders) {
       params.set("accordion", "hidden");
     }

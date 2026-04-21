@@ -21,6 +21,13 @@
   let renamingIndex = $state(-1);
   let renameValue = $state("");
   let renameInput = $state(null);
+  let filterText = $state("");
+
+  let filteredRuns = $derived(
+    filterText
+      ? runsData.filter((r) => r.name.toLowerCase().includes(filterText.toLowerCase()))
+      : runsData,
+  );
 
   async function loadRuns() {
     if (!project) {
@@ -110,6 +117,17 @@
       <p>Refresh this page or wait for the dashboard to poll; new runs appear in the table with step counts.</p>
     </div>
   {:else}
+    <div class="filter-section">
+      <input
+        type="text"
+        class="filter-input"
+        placeholder="Filter runs..."
+        bind:value={filterText}
+      />
+      {#if filterText}
+        <span class="filter-count">{filteredRuns.length} of {runsData.length} runs</span>
+      {/if}
+    </div>
     <table class="runs-table">
       <thead>
         <tr>
@@ -120,7 +138,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each runsData as run, i}
+        {#each filteredRuns as run, i}
           <tr>
             <td class="actions-cell">
               <div class="actions-wrap">
@@ -218,6 +236,30 @@
   .empty-state pre code {
     background: none;
     padding: 0;
+  }
+  .filter-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .filter-input {
+    flex: 1;
+    max-width: 400px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-sm, 4px);
+    font-size: var(--text-md, 14px);
+    background: var(--background-fill-primary, white);
+    color: var(--body-text-color, #1f2937);
+  }
+  .filter-input:focus {
+    outline: none;
+    border-color: var(--color-accent, #f97316);
+  }
+  .filter-count {
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
   }
   .runs-table {
     width: 100%;

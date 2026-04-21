@@ -9,11 +9,9 @@ export function reconcileSelectedRuns(prevSelected, newOrderedIds) {
   const newIdSet = new Set(ordered);
   const kept = prev.filter((r) => newIdSet.has(r));
 
-  if (kept.length === 0 && prev.length === 0) {
+  if (prev.length === 0) {
     return [...ordered];
   }
 
-  const prevSet = new Set(prev);
-  const additions = ordered.filter((r) => !prevSet.has(r));
-  return [...kept, ...additions];
+  return kept;
 }

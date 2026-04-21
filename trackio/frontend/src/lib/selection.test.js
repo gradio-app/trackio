@@ -22,14 +22,14 @@ describe("reconcileSelectedRuns", () => {
     expect(reconcileSelectedRuns([], ["a", "b", "c"])).toEqual(["a", "b", "c"]);
   });
 
-  test("keeps the previously selected run and appends new runs as selected", () => {
-    expect(reconcileSelectedRuns(["a"], ["a", "b", "c"])).toEqual(["a", "b", "c"]);
+  test("keeps the previously selected run without auto-selecting new runs", () => {
+    expect(reconcileSelectedRuns(["a"], ["a", "b", "c"])).toEqual(["a"]);
   });
 
-  test("preserves the chosen run when the run list is unchanged on refresh", () => {
+  test("preserves the chosen runs when the run list is unchanged on refresh", () => {
     const prev = ["b"];
     const next = ["a", "b", "c"];
-    expect(reconcileSelectedRuns(prev, next)).toEqual(["b", "a", "c"]);
+    expect(reconcileSelectedRuns(prev, next)).toEqual(["b"]);
     expect(reconcileSelectedRuns(["b", "a", "c"], next)).toEqual(["b", "a", "c"]);
   });
 
