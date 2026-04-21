@@ -36,4 +36,13 @@ describe("reconcileSelectedRuns", () => {
   test("drops runs that no longer exist on the server", () => {
     expect(reconcileSelectedRuns(["a", "b", "c"], ["a", "c"])).toEqual(["a", "c"]);
   });
+
+  test("falls back to all runs when none of the previously selected runs exist anymore", () => {
+    expect(reconcileSelectedRuns(["a"], ["b"])).toEqual(["b"]);
+    expect(reconcileSelectedRuns(["x", "y"], ["a", "b", "c"])).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
 });

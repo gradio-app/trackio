@@ -121,6 +121,7 @@
       <input
         type="text"
         class="filter-input"
+        aria-label="Filter runs"
         placeholder="Filter runs..."
         bind:value={filterText}
       />
