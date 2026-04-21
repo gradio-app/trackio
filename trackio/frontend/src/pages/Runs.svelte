@@ -4,10 +4,12 @@
   import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
+  import { filterMetricsByRegex } from "../lib/dataProcessing.js";
 
   let {
     project = null,
     runs = [],
+    filterText = "",
     onRunsChanged = null,
     runMutationAllowed = true,
   } = $props();
@@ -21,13 +23,12 @@
   let renamingIndex = $state(-1);
   let renameValue = $state("");
   let renameInput = $state(null);
-  let filterText = $state("");
 
-  let filteredRuns = $derived(
-    filterText
-      ? runsData.filter((r) => r.name.toLowerCase().includes(filterText.toLowerCase()))
-      : runsData,
-  );
+  let filteredRuns = $derived.by(() => {
+    if (!filterText || !filterText.trim()) return runsData;
+    const matches = new Set(filterMetricsByRegex(runsData.map((r) => r.name), filterText));
+    return runsData.filter((r) => matches.has(r.name));
+  });
 
   async function loadRuns() {
     if (!project) {
@@ -117,18 +118,11 @@
       <p>Refresh this page or wait for the dashboard to poll; new runs appear in the table with step counts.</p>
     </div>
   {:else}
-    <div class="filter-section">
-      <input
-        type="text"
-        class="filter-input"
-        aria-label="Filter runs"
-        placeholder="Filter runs..."
-        bind:value={filterText}
-      />
-      {#if filterText}
+    {#if filterText}
+      <div class="filter-count-row">
         <span class="filter-count">{filteredRuns.length} of {runsData.length} runs</span>
-      {/if}
-    </div>
+      </div>
+    {/if}
     <table class="runs-table">
       <thead>
         <tr>
@@ -238,25 +232,8 @@
     background: none;
     padding: 0;
   }
-  .filter-section {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-  .filter-input {
-    flex: 1;
-    max-width: 400px;
-    padding: 8px 12px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-sm, 4px);
-    font-size: var(--text-md, 14px);
-    background: var(--background-fill-primary, white);
-    color: var(--body-text-color, #1f2937);
-  }
-  .filter-input:focus {
-    outline: none;
-    border-color: var(--color-accent, #f97316);
+  .filter-count-row {
+    margin-bottom: 12px;
   }
   .filter-count {
     font-size: var(--text-sm, 12px);

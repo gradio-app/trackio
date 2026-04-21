@@ -463,6 +463,7 @@
         <Runs
           project={selectedProject}
           {runs}
+          {filterText}
           onRunsChanged={refreshRunsAndMutation}
           runMutationAllowed={mutationStatus.allowed}
         />
