@@ -12,9 +12,10 @@
         <p class="eyebrow">Trackio Starter</p>
         <h1>Custom frontend, same Trackio API.</h1>
         <p class="lede">
-          This is the fallback template Trackio can serve when you point it at a
-          custom frontend directory or when the bundled UI is unavailable.
+          This starter is meant to be copied into your custom frontend directory,
+          edited with your LLM, and live reloaded by Trackio while you iterate.
         </p>
+        <p id="status" class="status">Loading projects...</p>
       </section>
 
       <section class="panel">
@@ -44,10 +45,11 @@
 
         <article class="panel">
           <div class="panel-header">
-            <div>
-              <p class="label">Metrics</p>
-              <h2>Run Metrics</h2>
-            </div>
+          <div>
+            <p class="label">Metrics</p>
+            <h2 id="metric-header">Run Metrics</h2>
+          </div>
+          <p class="hint">Each card below calls <code>/api/get_metric_values</code> and plots the response.</p>
           </div>
           <div id="metrics" class="list"></div>
         </article>
@@ -63,8 +65,9 @@
         <ul class="notes">
           <li>Keep using the existing Trackio backend routes under <code>/api</code>.</li>
           <li>Read <code>?project=...</code> from the URL to preserve deep links.</li>
-          <li>Start by redesigning the HTML and CSS, then add richer charts.</li>
-          <li>Move this file structure anywhere and pass it to <code>trackio show --frontend</code>.</li>
+          <li>Start with <code>trackio show --frontend ./my-trackio-frontend</code>.</li>
+          <li>Edit the copied files with your LLM while the page live reloads in the browser.</li>
+          <li>Replace the simple SVG charts in <code>app.js</code> with your own layout and visuals.</li>
         </ul>
       </section>
     </main>

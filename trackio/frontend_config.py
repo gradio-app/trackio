@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +30,34 @@ def is_valid_frontend_dir(path: str | Path | None) -> bool:
         return False
     frontend_dir = _normalize_frontend_path(path)
     return frontend_dir.is_dir() and (frontend_dir / "index.html").is_file()
+
+
+def _is_empty_directory(path: Path) -> bool:
+    return path.is_dir() and not any(path.iterdir())
+
+
+def _copy_starter_template(destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for child in STARTER_FRONTEND_DIR.iterdir():
+        target = destination / child.name
+        if child.is_dir():
+            shutil.copytree(child, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(child, target)
+
+
+def _materialize_argument_frontend_dir(candidate: Path) -> bool:
+    existed_before = candidate.exists()
+    if existed_before and not _is_empty_directory(candidate):
+        return False
+
+    _copy_starter_template(candidate)
+    state = "did not exist" if not existed_before else "was empty"
+    print(
+        f"* Trackio frontend directory from argument {state}: {candidate}. "
+        "Copied the starter template into it and serving that directory."
+    )
+    return True
 
 
 def load_trackio_config() -> dict:
@@ -105,6 +134,10 @@ def resolve_frontend_dir(
     announce: bool = False,
 ) -> ResolvedFrontend:
     for source, candidate in _configured_frontend_candidates(frontend_dir):
+        if source == "argument":
+            if not candidate.exists() or _is_empty_directory(candidate):
+                _materialize_argument_frontend_dir(candidate)
+
         if is_valid_frontend_dir(candidate):
             if source == "config" and announce:
                 _announce_config_frontend(candidate)

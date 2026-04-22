@@ -41,7 +41,7 @@ When set, Trackio uses that frontend for `trackio.show()` and for deploy flows s
 export TRACKIO_FRONTEND_DIR="/path/to/my-trackio-frontend"
 ```
 
-If the configured directory is missing or invalid, Trackio falls back to the built-in starter template.
+If the configured directory is invalid, Trackio ignores it and falls back to the built-in frontend selection logic. The automatic starter-template copy behavior only applies when an explicit `frontend_dir` / `--frontend` argument points to a missing or empty directory.
 
 ### `TRACKIO_LOGO_LIGHT_URL` and `TRACKIO_LOGO_DARK_URL`
 
@@ -176,4 +176,3 @@ export GRADIO_MCP_SERVER="True"
 
 
 See [this more comprehensive list](https://www.gradio.app/guides/environment-variables) of environment variables used by Gradio.
-

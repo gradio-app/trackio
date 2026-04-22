@@ -1054,8 +1054,9 @@ def show(
         frontend_dir (`str | Path`, *optional*):
             Directory containing a custom static frontend. Must contain `index.html`.
             If not provided, Trackio checks `TRACKIO_FRONTEND_DIR`, then the persistent
-            Trackio config, then the bundled frontend. Invalid configured frontends
-            fall back to the starter template.
+            Trackio config, then the bundled frontend. If an explicit `frontend_dir`
+            points to a missing or empty directory, Trackio copies in the starter
+            template and serves that directory.
 
         Returns:
             `app`: The dashboard handle (`.close()` stops the server).

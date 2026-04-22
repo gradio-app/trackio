@@ -141,6 +141,32 @@ def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
         app.close()
 
 
+def test_local_dashboard_injects_live_reload_for_custom_frontend(temp_dir):
+    frontend_dir = Path(temp_dir) / "custom-frontend"
+    frontend_dir.mkdir()
+    (frontend_dir / "index.html").write_text("<!doctype html><html><body><h1>Custom</h1></body></html>")
+
+    app, url, _, _ = trackio.show(
+        block_thread=False,
+        open_browser=False,
+        frontend_dir=frontend_dir,
+    )
+
+    try:
+        response = httpx.get(url, timeout=5)
+        version_response = httpx.get(
+            f"{url.rstrip('/')}/__trackio/frontend_version",
+            timeout=5,
+        )
+
+        assert response.status_code == 200
+        assert "/__trackio/frontend_version" in response.text
+        assert version_response.status_code == 200
+        assert "version" in version_response.json()
+    finally:
+        app.close()
+
+
 def test_local_dashboard_file_endpoint_only_serves_trackio_paths(
     temp_dir, image_ndarray
 ):
