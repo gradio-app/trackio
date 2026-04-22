@@ -113,17 +113,19 @@ def resolve_frontend_dir(
                 source=source,
                 is_custom=True,
             )
-        print(
-            f"* Trackio frontend from {source} is invalid: {candidate}. "
-            f"Falling back to starter template at {STARTER_FRONTEND_DIR}."
-        )
-        return ResolvedFrontend(
-            path=STARTER_FRONTEND_DIR,
-            source="starter",
-            is_custom=True,
-            used_fallback=True,
-            requested_path=candidate,
-        )
+        if source == "argument":
+            print(
+                f"* Trackio frontend from {source} is invalid: {candidate}. "
+                f"Falling back to starter template at {STARTER_FRONTEND_DIR}."
+            )
+            return ResolvedFrontend(
+                path=STARTER_FRONTEND_DIR,
+                source="starter",
+                is_custom=True,
+                used_fallback=True,
+                requested_path=candidate,
+            )
+        print(f"* Trackio frontend from {source} is invalid: {candidate}. Ignoring it.")
 
     if is_valid_frontend_dir(BUNDLED_FRONTEND_DIR):
         return ResolvedFrontend(

@@ -90,7 +90,9 @@ def test_deploy_as_space_uploads_custom_frontend(tmp_path, monkeypatch):
     deploy.deploy_as_space("abidlabs/demo-space", frontend_dir=frontend_dir)
 
     custom_uploads = [
-        call for call in fake_api.uploaded_folders if call.get("path_in_repo") == "trackio_custom_frontend"
+        call
+        for call in fake_api.uploaded_folders
+        if call.get("path_in_repo") == "trackio_custom_frontend"
     ]
     assert len(custom_uploads) == 1
     assert custom_uploads[0]["folder_path"] == str(frontend_dir)
@@ -98,7 +100,9 @@ def test_deploy_as_space_uploads_custom_frontend(tmp_path, monkeypatch):
     app_upload = next(
         item for item in fake_api.uploaded_files if item["path_in_repo"] == "app.py"
     )
-    assert 'trackio.show(frontend_dir="trackio_custom_frontend")' in app_upload["payload"]
+    assert (
+        'trackio.show(frontend_dir="trackio_custom_frontend")' in app_upload["payload"]
+    )
 
 
 def test_deploy_as_static_space_uploads_resolved_frontend(tmp_path, monkeypatch):

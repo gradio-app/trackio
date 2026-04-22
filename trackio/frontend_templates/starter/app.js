@@ -47,13 +47,19 @@ function renderRuns(runRecords) {
     return;
   }
 
-  for (const record of runRecords.slice(0, 8)) {
+  for (const record of runRecords.slice(-8).reverse()) {
     const item = document.createElement("div");
     item.className = "item";
-    item.innerHTML = `
-      <strong>${record.name || "Unnamed run"}</strong>
-      <div class="meta">Created: ${record.created_at || "unknown"} | Updated: ${record.updated_at || "unknown"}</div>
-    `;
+
+    const title = document.createElement("strong");
+    title.textContent = record.name || "Unnamed run";
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `Created: ${record.created_at || "unknown"}`;
+
+    item.appendChild(title);
+    item.appendChild(meta);
     runsEl.appendChild(item);
   }
 }
@@ -68,7 +74,13 @@ function renderMetrics(metrics) {
   for (const metric of metrics.slice(0, 12)) {
     const item = document.createElement("div");
     item.className = "item";
-    item.innerHTML = `<strong>${metric}</strong><div class="meta">Use this starter as the place to fetch values and draw charts.</div>`;
+    const title = document.createElement("strong");
+    title.textContent = metric;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = "Use this starter as the place to fetch values and draw charts.";
+    item.appendChild(title);
+    item.appendChild(meta);
     metricsEl.appendChild(item);
   }
 }
@@ -102,7 +114,17 @@ async function load() {
     renderMetrics(metrics);
   } catch (error) {
     projectTitle.textContent = "Frontend error";
-    runsEl.innerHTML = `<div class="item"><strong>Could not load Trackio data</strong><div class="meta">${error.message}</div></div>`;
+    runsEl.innerHTML = "";
+    const item = document.createElement("div");
+    item.className = "item";
+    const title = document.createElement("strong");
+    title.textContent = "Could not load Trackio data";
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = error.message;
+    item.appendChild(title);
+    item.appendChild(meta);
+    runsEl.appendChild(item);
     metricsEl.innerHTML = "";
   }
 }

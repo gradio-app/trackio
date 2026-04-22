@@ -129,7 +129,10 @@ def _handle_config(args):
         return
 
     if args.config_command == "set":
-        frontend_dir = set_persisted_frontend_dir(args.frontend)
+        try:
+            frontend_dir = set_persisted_frontend_dir(args.frontend)
+        except ValueError as e:
+            error_exit(str(e))
         print(f"Saved Trackio default frontend: {frontend_dir}")
         print("Reset with `trackio config unset frontend`.")
         return
