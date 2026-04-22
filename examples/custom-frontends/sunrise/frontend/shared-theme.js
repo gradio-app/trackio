@@ -79,9 +79,9 @@ function buildAreaPath(points, height) {
 
 function renderMetricCard(metric, rows) {
   const chartableRows = getChartableRows(rows);
-  const width = 360;
-  const height = 140;
-  const padding = 10;
+  const width = 560;
+  const height = 190;
+  const padding = 18;
   const values = chartableRows.map((row) => row.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -94,6 +94,12 @@ function renderMetricCard(metric, rows) {
   const latest = chartableRows[chartableRows.length - 1];
   const first = chartableRows[0];
   const skippedPoints = rows.length - chartableRows.length;
+  const markers = points
+    .map(
+      ([x, y], index) =>
+        `<circle class="chart-marker" cx="${x}" cy="${y}" r="${index === points.length - 1 ? 5 : 3.6}"></circle>`,
+    )
+    .join("");
   const card = document.createElement("article");
   card.className = "metric-card";
   card.innerHTML = `
@@ -102,9 +108,10 @@ function renderMetricCard(metric, rows) {
     <div class="chart-frame">
       <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${metric} line chart">
         <line class="chart-axis" x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}"></line>
+        <line class="chart-axis faint" x1="${padding}" y1="${padding}" x2="${width - padding}" y2="${padding}"></line>
         <path class="chart-fill" d="${buildAreaPath(points, height - padding)}"></path>
         <path class="chart-line" d="${buildPath(points)}"></path>
-        <circle class="chart-point" cx="${points[points.length - 1][0]}" cy="${points[points.length - 1][1]}" r="3"></circle>
+        ${markers}
       </svg>
     </div>
     <div class="metric-value">${formatValue(first.value)} -> ${formatValue(latest.value)}</div>
@@ -178,7 +185,7 @@ export async function mountTheme({
       params.get("project") && projects.includes(params.get("project")) ? params.get("project") : projects[0];
 
     title.textContent = selectedProject || "No project";
-    projectSummary.textContent = selectedProject ? "Soft gradients, tighter controls, real plots." : "Choose a project and run.";
+    projectSummary.textContent = selectedProject ? "Wide charts, visible markers, and deliberate spacing." : "Choose a project and run.";
     renderOptions(projectSelect, projects.map((project) => ({ value: project })), selectedProject, (option) => option.value);
     projectSelect.onchange = () => updateProjectParam(projectSelect.value);
 

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Starter</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Starter</p>
+        <h1>Custom frontend, same Trackio API.</h1>
+        <p class="lede">
+          This starter is meant to be copied into your custom frontend directory,
+          edited with your LLM, and live reloaded by Trackio while you iterate.
+        </p>
+        <p id="status" class="status">Loading projects...</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="label">Projects</p>
+            <h2 id="project-title">Loading...</h2>
+          </div>
+          <p class="hint">
+            Read query params, call <code>/api/*</code>, and replace this with your
+            own interface.
+          </p>
+        </div>
+        <div id="projects" class="chip-row"></div>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">Runs</p>
+              <h2>Latest Runs</h2>
+            </div>
+          </div>
+          <div id="runs" class="list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+          <div>
+            <p class="label">Metrics</p>
+            <h2 id="metric-header">Run Metrics</h2>
+          </div>
+          <p class="hint">Each card below calls <code>/api/get_metric_values</code> and plots the response.</p>
+          </div>
+          <div id="metrics" class="list"></div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="label">Notes For Your LLM</p>
+            <h2>What to change first</h2>
+          </div>
+        </div>
+        <ul class="notes">
+          <li>Keep using the existing Trackio backend routes under <code>/api</code>.</li>
+          <li>Read <code>?project=...</code> from the URL to preserve deep links.</li>
+          <li>Start with <code>trackio show --frontend ./my-trackio-frontend</code>.</li>
+          <li>Edit the copied files with your LLM while the page live reloads in the browser.</li>
+          <li>Replace the simple SVG charts in <code>app.js</code> with your own layout and visuals.</li>
+        </ul>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -6,10 +6,10 @@ from pathlib import Path
 import trackio
 
 THEME_DIRS = {
-    "brutalist-lab": "examples/custom-frontends/brutalist-lab/frontend",
-    "signal-console": "examples/custom-frontends/signal-console/frontend",
-    "sunrise-cards": "examples/custom-frontends/sunrise-cards/frontend",
-    "editorial-grid": "examples/custom-frontends/editorial-grid/frontend",
+    "editorial": "examples/custom-frontends/editorial/frontend",
+    "signal": "examples/custom-frontends/signal/frontend",
+    "starter": "examples/custom-frontends/starter/frontend",
+    "sunrise": "examples/custom-frontends/sunrise/frontend",
 }
 
 

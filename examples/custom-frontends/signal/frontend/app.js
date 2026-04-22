@@ -6,8 +6,8 @@ mountTheme({
   runSelect: document.querySelector("#run-select"),
   metricsEl: document.querySelector("#metrics"),
   metricsSubtitle: document.querySelector("#metrics-subtitle"),
-  projectSummary: document.querySelector("#project-summary"),
+  statusLine: document.querySelector("#status-line"),
   runsCount: document.querySelector("#runs-count"),
-  metricsCount: document.querySelector("#metrics-count"),
+  traceCount: document.querySelector("#trace-count"),
   selectedRunName: document.querySelector("#selected-run-name"),
 });

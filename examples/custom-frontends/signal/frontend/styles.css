@@ -91,92 +91,71 @@ h2 {
   color: rgba(200, 255, 231, 0.68);
 }
 
-.metric-grid {
+.trace-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
   margin-top: 18px;
 }
 
-.metric-card {
+.trace-card {
   min-width: 0;
-  padding-top: 14px;
-  border-top: 1px solid rgba(85, 255, 148, 0.2);
+  padding: 14px;
+  border: 1px solid rgba(85, 255, 148, 0.2);
+  background: rgba(4, 18, 24, 0.82);
 }
 
-.metric-grid > .metric-card:nth-child(-n + 2) {
-  border-top: none;
-  padding-top: 0;
+.trace-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.metric-card h3,
-.metric-extras h3 {
-  margin: 0;
-  font-size: 24px;
-  overflow-wrap: anywhere;
+.trace-heading,
+.trace-step {
+  color: #55ff94;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
 }
 
-.metric-meta,
-.metric-value {
+.trace-meta {
   margin-top: 8px;
   color: rgba(200, 255, 231, 0.74);
   font-size: 13px;
 }
 
-.chart-frame {
+.trace-transcript {
+  margin: 12px 0 0;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid rgba(85, 255, 148, 0.15);
+  background: rgba(85, 255, 148, 0.04);
+  color: #d6ffee;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.trace-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 12px;
 }
 
-.chart-frame svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.chart-axis {
-  stroke: rgba(85, 255, 148, 0.2);
-}
-
-.chart-line {
-  fill: none;
-  stroke: #55ff94;
-  stroke-width: 2;
-}
-
-.chart-fill {
-  fill: rgba(85, 255, 148, 0.08);
-}
-
-.chart-point {
-  fill: #c8ffe7;
-}
-
-.metric-extras {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(85, 255, 148, 0.2);
-}
-
-.metric-pill {
-  display: inline-block;
-  margin: 8px 8px 0 0;
-  padding: 7px 10px;
+.trace-tag {
+  display: inline-flex;
+  padding: 6px 8px;
   border: 1px solid rgba(85, 255, 148, 0.25);
+  color: #9dfdc1;
 }
 
 @media (max-width: 760px) {
   .control-grid,
-  .metric-grid {
+  .trace-list {
     grid-template-columns: 1fr;
-  }
-
-  .metric-grid > .metric-card:nth-child(-n + 2) {
-    border-top: 1px solid rgba(85, 255, 148, 0.2);
-    padding-top: 14px;
-  }
-
-  .metric-grid > .metric-card:first-child {
-    border-top: none;
-    padding-top: 0;
   }
 }

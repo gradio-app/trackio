@@ -106,19 +106,16 @@ h2 {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  grid-template-columns: 1fr;
+  gap: 24px;
   margin-top: 18px;
 }
 
 .metric-card {
-  padding-top: 14px;
-  border-top: 1px solid rgba(59, 36, 65, 0.12);
-}
-
-.metric-grid > .metric-card:nth-child(-n + 2) {
-  border-top: none;
-  padding-top: 0;
+  padding: 18px 20px;
+  border: 1px solid rgba(59, 36, 65, 0.12);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 245, 239, 0.92));
 }
 
 .metric-card h3,
@@ -136,11 +133,12 @@ h2 {
 
 .chart-frame {
   margin-top: 12px;
+  overflow-x: auto;
 }
 
 .chart-frame svg {
   display: block;
-  width: 100%;
+  width: min(100%, 560px);
   height: auto;
 }
 
@@ -148,18 +146,24 @@ h2 {
   stroke: rgba(59, 36, 65, 0.14);
 }
 
+.chart-axis.faint {
+  stroke-dasharray: 5 7;
+}
+
 .chart-line {
   fill: none;
   stroke: #f06c54;
-  stroke-width: 2.5;
+  stroke-width: 3;
 }
 
 .chart-fill {
   fill: rgba(240, 108, 84, 0.08);
 }
 
-.chart-point {
-  fill: #3b2441;
+.chart-marker {
+  fill: #fff8f1;
+  stroke: #3b2441;
+  stroke-width: 2;
 }
 
 .metric-extras {
@@ -177,18 +181,7 @@ h2 {
 }
 
 @media (max-width: 760px) {
-  .toolbar,
-  .metric-grid {
+  .toolbar {
     grid-template-columns: 1fr;
-  }
-
-  .metric-grid > .metric-card:nth-child(-n + 2) {
-    border-top: 1px solid rgba(59, 36, 65, 0.12);
-    padding-top: 14px;
-  }
-
-  .metric-grid > .metric-card:first-child {
-    border-top: none;
-    padding-top: 0;
   }
 }

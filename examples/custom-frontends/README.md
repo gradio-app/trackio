@@ -8,11 +8,11 @@ that are easy to screenshot, copy, and remix.
 Each example includes:
 
 - `frontend/`: a complete static frontend directory that can be passed to `trackio show --frontend`
-- `screenshot.svg`: a lightweight mock screenshot for docs, PRs, and social posts
+- `screenshot.png`: a screenshot for docs, PRs, and social posts
 
 Examples:
 
-- `brutalist-lab`
-- `signal-console`
-- `sunrise-cards`
-- `editorial-grid`
+- `editorial`
+- `signal`
+- `starter`
+- `sunrise`

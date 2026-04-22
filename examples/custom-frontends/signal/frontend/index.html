@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Signal Console</title>
+    <title>Signal</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="shell">
       <header>
-        <p>Signal Console</p>
+        <p>Signal</p>
         <h1 id="title">Booting</h1>
-        <div id="status-line" class="status-line">One run, live plots, compact controls.</div>
+        <div id="status-line" class="status-line">Trace-first view. Metrics intentionally omitted.</div>
       </header>
       <section class="panel controls">
         <div class="control-grid">
@@ -29,14 +29,14 @@
           </div>
           <div class="summary-box duo">
             <div><span class="label">Runs</span><strong id="runs-count">0</strong></div>
-            <div><span class="label">Metrics</span><strong id="metrics-count">0</strong></div>
+            <div><span class="label">Traces</span><strong id="trace-count">0</strong></div>
           </div>
         </div>
       </section>
       <section class="panel">
         <div class="metrics-head">
-          <h2>Metrics</h2>
-          <div id="metrics-subtitle" class="metrics-subtitle">Waiting for Trackio data.</div>
+          <h2>Traces</h2>
+          <div id="metrics-subtitle" class="metrics-subtitle">Waiting for Trackio trace data.</div>
         </div>
         <div id="metrics"></div>
       </section>
