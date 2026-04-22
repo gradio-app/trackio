@@ -1,0 +1,74 @@
+body {
+  margin: 0;
+  color: #3b2441;
+  background:
+    linear-gradient(180deg, rgba(255, 196, 120, 0.42), transparent 30%),
+    linear-gradient(180deg, #fff6ef, #ffe6da);
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+}
+
+.shell {
+  width: min(1100px, calc(100vw - 28px));
+  margin: 0 auto;
+  padding: 42px 0 60px;
+}
+
+.hero p {
+  margin: 0;
+  color: #f06c54;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 12px;
+}
+
+.hero h1,
+h2 {
+  margin: 8px 0 0;
+}
+
+.projects,
+.grid {
+  margin-top: 18px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.panel,
+button,
+.item {
+  border-radius: 24px;
+}
+
+.panel {
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 18px 40px rgba(134, 76, 85, 0.12);
+}
+
+button,
+.item {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: none;
+  background: rgba(255, 132, 105, 0.12);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.active {
+  background: #f06c54;
+  color: white;
+}
+
+@media (max-width: 760px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

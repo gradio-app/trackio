@@ -66,7 +66,7 @@ trackio = "trackio.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["trackio"]
-artifacts = ["trackio/frontend/dist/**"]
+artifacts = ["trackio/frontend/dist/**", "trackio/frontend_templates/**"]
 
 [tool.hatch.version]
 path = "trackio/package.json"

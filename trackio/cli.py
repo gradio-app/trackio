@@ -15,6 +15,12 @@ from trackio.cli_helpers import (
     format_system_metric_names,
     format_system_metrics,
 )
+from trackio.frontend_config import (
+    TRACKIO_CONFIG_PATH,
+    get_persisted_frontend_dir,
+    set_persisted_frontend_dir,
+    unset_persisted_frontend_dir,
+)
 from trackio.markdown import Markdown
 from trackio.server import get_project_summary, get_run_summary
 from trackio.sqlite_storage import SQLiteStorage
@@ -88,7 +94,11 @@ def _handle_sync(args):
             space_id = SQLiteStorage.get_space_id(project)
             if space_id and SQLiteStorage.has_pending_data(project):
                 sync_incremental(
-                    project, space_id, private=args.private, pending_only=True
+                    project,
+                    space_id,
+                    private=args.private,
+                    pending_only=True,
+                    frontend_dir=args.frontend,
                 )
                 synced_any = True
         if not synced_any:
@@ -103,7 +113,34 @@ def _handle_sync(args):
             private=args.private,
             force=args.force,
             sdk=args.sdk,
+            frontend_dir=args.frontend,
         )
+
+
+def _handle_config(args):
+    if args.config_command == "get":
+        frontend_dir = get_persisted_frontend_dir()
+        if frontend_dir is None:
+            print("No Trackio frontend config is set.")
+            print(f"Config file: {TRACKIO_CONFIG_PATH}")
+            return
+        print(f"frontend: {frontend_dir}")
+        print(f"config: {TRACKIO_CONFIG_PATH}")
+        return
+
+    if args.config_command == "set":
+        frontend_dir = set_persisted_frontend_dir(args.frontend)
+        print(f"Saved Trackio default frontend: {frontend_dir}")
+        print("Reset with `trackio config unset frontend`.")
+        return
+
+    if args.config_command == "unset":
+        removed = unset_persisted_frontend_dir()
+        if removed:
+            print("Removed Trackio default frontend.")
+        else:
+            print("No Trackio default frontend was set.")
+        return
 
 
 def _extract_reports(
@@ -202,6 +239,11 @@ def main():
         required=False,
         help="Host to bind the server to (e.g. '0.0.0.0' for remote access). If not provided, defaults to '127.0.0.1' (localhost only).",
     )
+    ui_parser.add_argument(
+        "--frontend",
+        required=False,
+        help="Custom frontend directory to serve. Must contain index.html.",
+    )
 
     subparsers.add_parser(
         "status",
@@ -244,6 +286,11 @@ def main():
         default="gradio",
         help="The type of Space to deploy. 'gradio' (default) deploys a live Gradio server. 'static' deploys a static Space that reads from an HF Bucket.",
     )
+    sync_parser.add_argument(
+        "--frontend",
+        required=False,
+        help="Custom frontend directory to deploy. Must contain index.html.",
+    )
 
     freeze_parser = subparsers.add_parser(
         "freeze",
@@ -268,6 +315,43 @@ def main():
         "--private",
         action="store_true",
         help="Make the new static Space private.",
+    )
+    freeze_parser.add_argument(
+        "--frontend",
+        required=False,
+        help="Custom frontend directory to deploy to the frozen static Space.",
+    )
+
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Manage persistent Trackio configuration.",
+    )
+    config_subparsers = config_parser.add_subparsers(
+        dest="config_command",
+        required=True,
+    )
+    config_subparsers.add_parser("get", help="Show current Trackio config.")
+    config_set_parser = config_subparsers.add_parser(
+        "set",
+        help="Set a persistent Trackio config value.",
+    )
+    config_set_parser.add_argument(
+        "key",
+        choices=["frontend"],
+        help="Config key to set.",
+    )
+    config_set_parser.add_argument(
+        "frontend",
+        help="Frontend directory to persist.",
+    )
+    config_unset_parser = config_subparsers.add_parser(
+        "unset",
+        help="Unset a persistent Trackio config value.",
+    )
+    config_unset_parser.add_argument(
+        "key",
+        choices=["frontend"],
+        help="Config key to unset.",
     )
 
     list_parser = subparsers.add_parser(
@@ -712,6 +796,7 @@ def main():
             footer=args.footer,
             color_palette=color_palette,
             host=args.host,
+            frontend_dir=args.frontend,
         )
     elif args.command == "status":
         _handle_status()
@@ -723,7 +808,10 @@ def main():
             project=args.project,
             new_space_id=args.new_space_id,
             private=args.private,
+            frontend_dir=args.frontend,
         )
+    elif args.command == "config":
+        _handle_config(args)
     elif args.command == "list":
         remote = _get_remote(args)
         if args.list_type == "projects":

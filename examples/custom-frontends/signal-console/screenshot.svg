@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <rect width="1200" height="720" fill="#07131a"/>
+  <rect x="70" y="140" width="1060" height="110" fill="#081d27" stroke="#55ff94" stroke-opacity="0.35"/>
+  <rect x="70" y="280" width="510" height="300" fill="#081d27" stroke="#55ff94" stroke-opacity="0.35"/>
+  <rect x="620" y="280" width="510" height="300" fill="#081d27" stroke="#55ff94" stroke-opacity="0.35"/>
+  <text x="70" y="90" font-size="52" font-family="Lucida Console, monospace" fill="#c8ffe7">SIGNAL CONSOLE</text>
+</svg>

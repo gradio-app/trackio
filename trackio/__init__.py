@@ -20,6 +20,7 @@ from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
 from trackio.deploy import freeze, sync
+from trackio.frontend_config import resolve_frontend_dir
 from trackio.gpu import gpu_available
 from trackio.gpu import log_gpu as _log_nvidia_gpu
 from trackio.histogram import Histogram
@@ -1010,6 +1011,7 @@ def show(
     host: str | None = None,
     share: bool | None = None,
     server_port: int | None = None,
+    frontend_dir: str | Path | None = None,
 ):
     """
     Launches the Trackio dashboard.
@@ -1047,6 +1049,11 @@ def show(
             or hosted notebooks, defaults to `True` unless overridden.
         server_port (`int`, *optional*):
             Port to bind. If not set, scans from `GRADIO_SERVER_PORT` (default 7860).
+        frontend_dir (`str | Path`, *optional*):
+            Directory containing a custom static frontend. Must contain `index.html`.
+            If not provided, Trackio checks `TRACKIO_FRONTEND_DIR`, then the persistent
+            Trackio config, then the bundled frontend. Invalid configured frontends
+            fall back to the starter template.
 
         Returns:
             `app`: The dashboard handle (`.close()` stops the server).
@@ -1070,7 +1077,11 @@ def show(
         else os.environ.get("GRADIO_MCP_SERVER", "False") == "True"
     )
 
-    starlette_app, wt = build_starlette_app_only(mcp_server=_mcp_server)
+    resolved_frontend = resolve_frontend_dir(frontend_dir, announce=True)
+    starlette_app, wt = build_starlette_app_only(
+        mcp_server=_mcp_server,
+        frontend_dir=str(resolved_frontend.path),
+    )
     local_url, share_url, _local_api_url, uv_server = launch_trackio_dashboard(
         starlette_app,
         server_name=host,

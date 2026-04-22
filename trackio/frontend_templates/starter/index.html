@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trackio Starter Frontend</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Trackio Starter</p>
+        <h1>Custom frontend, same Trackio API.</h1>
+        <p class="lede">
+          This is the fallback template Trackio can serve when you point it at a
+          custom frontend directory or when the bundled UI is unavailable.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="label">Projects</p>
+            <h2 id="project-title">Loading...</h2>
+          </div>
+          <p class="hint">
+            Read query params, call <code>/api/*</code>, and replace this with your
+            own interface.
+          </p>
+        </div>
+        <div id="projects" class="chip-row"></div>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">Runs</p>
+              <h2>Latest Runs</h2>
+            </div>
+          </div>
+          <div id="runs" class="list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="label">Metrics</p>
+              <h2>Run Metrics</h2>
+            </div>
+          </div>
+          <div id="metrics" class="list"></div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="label">Notes For Your LLM</p>
+            <h2>What to change first</h2>
+          </div>
+        </div>
+        <ul class="notes">
+          <li>Keep using the existing Trackio backend routes under <code>/api</code>.</li>
+          <li>Read <code>?project=...</code> from the URL to preserve deep links.</li>
+          <li>Start by redesigning the HTML and CSS, then add richer charts.</li>
+          <li>Move this file structure anywhere and pass it to <code>trackio show --frontend</code>.</li>
+        </ul>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

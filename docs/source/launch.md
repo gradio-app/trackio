@@ -46,15 +46,15 @@ trackio.show(project="my-project")
 </hfoption>
 </hfoptions>
 
-## Changing the Theme
+## Using a Custom Frontend
 
-You can change the theme of the dashboard by providing an optional `theme` argument.
+You can replace the bundled dashboard with your own static frontend directory. The directory only needs an `index.html` file; your frontend can call the existing Trackio API under `/api/*`.
 
 <hfoptions id="language">
 <hfoption id="Shell">
 
 ```sh
-trackio show --theme "soft"
+trackio show --frontend ./my-trackio-frontend
 ```
 
 </hfoption>
@@ -63,13 +63,27 @@ trackio show --theme "soft"
 ```py
 import trackio 
 
-trackio.show(theme="soft")
+trackio.show(frontend_dir="./my-trackio-frontend")
 ```
 
 </hfoption>
 </hfoptions>
 
-To see the available themes, check out the [themes gallery](https://huggingface.co/spaces/gradio/theme-gallery).
+If the provided frontend directory is missing or invalid, Trackio falls back to a shipped starter template.
+
+## Setting a Persistent Default Frontend
+
+If you want the same custom frontend to be used by `trackio show`, `trackio sync`, and deploy flows by default, save it in Trackio's persistent config:
+
+```sh
+trackio config set frontend ./my-trackio-frontend
+```
+
+Reset it with:
+
+```sh
+trackio config unset frontend
+```
 
 ## Customizing Plot Colors
 

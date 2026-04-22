@@ -34,6 +34,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
+from trackio.frontend_config import resolve_frontend_dir
 from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
@@ -70,7 +71,31 @@ def _readme_linked_hub_yaml(dataset_id: str | None) -> str:
     return ""
 
 
-_SPACE_APP_PY = "import trackio\ntrackio.show()\n"
+_CUSTOM_SPACE_FRONTEND_DIR = "trackio_custom_frontend"
+
+
+def _space_app_py(frontend_dir: str | None = None) -> str:
+    if frontend_dir is None:
+        return "import trackio\ntrackio.show()\n"
+    return f'import trackio\ntrackio.show(frontend_dir="{frontend_dir}")\n'
+
+
+def _upload_frontend_folder(
+    hf_api: huggingface_hub.HfApi,
+    *,
+    repo_id: str,
+    repo_type: str,
+    folder_path: str | Path,
+    path_in_repo: str | None = None,
+) -> None:
+    kwargs = {
+        "repo_id": repo_id,
+        "repo_type": repo_type,
+        "folder_path": str(folder_path),
+    }
+    if path_in_repo is not None:
+        kwargs["path_in_repo"] = path_in_repo
+    hf_api.upload_folder(**kwargs)
 
 
 def _retry_hf_write(op_name: str, fn, retries: int = 4, initial_delay: float = 1.5):
@@ -313,6 +338,7 @@ def deploy_as_space(
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
+    frontend_dir: str | Path | None = None,
 ):
     if on_spaces():  # in case a repo with this function is uploaded to spaces
         return
@@ -353,6 +379,7 @@ def deploy_as_space(
     # We can assume huggingface-hub is available; requirements.txt pins trackio.
     # Make sure necessary dependencies are installed by creating a requirements.txt.
     is_source_install = _is_trackio_installed_from_source()
+    resolved_frontend = resolve_frontend_dir(frontend_dir, announce=True)
 
     if bucket_id is not None:
         create_bucket_if_not_exists(bucket_id, private=private)
@@ -391,7 +418,7 @@ def deploy_as_space(
         dist_index = (
             Path(trackio.__file__).resolve().parent / "frontend" / "dist" / "index.html"
         )
-        if not dist_index.is_file():
+        if not dist_index.is_file() and not resolved_frontend.is_custom:
             raise ValueError(
                 "The Trackio frontend build is missing. From the repository root run "
                 "`cd trackio/frontend && npm ci && npm run build`, then deploy again."
@@ -415,7 +442,18 @@ def deploy_as_space(
             ],
         )
 
-    app_file_content = _SPACE_APP_PY
+    if resolved_frontend.is_custom:
+        _upload_frontend_folder(
+            hf_api,
+            repo_id=space_id,
+            repo_type="space",
+            folder_path=resolved_frontend.path,
+            path_in_repo=_CUSTOM_SPACE_FRONTEND_DIR,
+        )
+
+    app_file_content = _space_app_py(
+        _CUSTOM_SPACE_FRONTEND_DIR if resolved_frontend.is_custom else None
+    )
     app_file_buffer = io.BytesIO(app_file_content.encode("utf-8"))
     hf_api.upload_file(
         path_or_fileobj=app_file_buffer,
@@ -451,6 +489,7 @@ def create_space_if_not_exists(
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
+    frontend_dir: str | Path | None = None,
 ) -> None:
     """
     Creates a new Hugging Face Space if it does not exist.
@@ -494,6 +533,16 @@ def create_space_if_not_exists(
             huggingface_hub.add_space_variable(
                 space_id, "TRACKIO_DATASET_ID", dataset_id
             )
+        resolved_frontend = resolve_frontend_dir(frontend_dir, announce=False)
+        if resolved_frontend.is_custom:
+            deploy_as_space(
+                space_id,
+                space_storage,
+                dataset_id,
+                bucket_id,
+                private,
+                frontend_dir=frontend_dir,
+            )
         return
     except RepositoryNotFoundError:
         pass
@@ -513,6 +562,7 @@ def create_space_if_not_exists(
         dataset_id,
         bucket_id,
         private,
+        frontend_dir=frontend_dir,
     )
     print("* Waiting for Space to be ready...")
     _wait_until_space_running(space_id)
@@ -629,6 +679,7 @@ def sync_incremental(
     space_id: str,
     private: bool | None = None,
     pending_only: bool = False,
+    frontend_dir: str | Path | None = None,
 ) -> None:
     """
     Syncs a local Trackio project to a Space via the bulk_log API endpoints
@@ -643,7 +694,7 @@ def sync_incremental(
     print(
         f"* Syncing project '{project}' to: {SPACE_URL.format(space_id=space_id)} (please wait...)"
     )
-    create_space_if_not_exists(space_id, private=private)
+    create_space_if_not_exists(space_id, private=private, frontend_dir=frontend_dir)
     wait_until_space_exists(space_id)
     hf_token = huggingface_hub.utils.get_token()
     expected_run_counts: Counter[str] = Counter()
@@ -846,6 +897,7 @@ def deploy_as_static_space(
     bucket_id: str | None = None,
     private: bool | None = None,
     hf_token: str | None = None,
+    frontend_dir: str | Path | None = None,
 ) -> None:
     if on_spaces():
         return
@@ -888,22 +940,14 @@ def deploy_as_static_space(
         ),
     )
 
-    trackio_path = files("trackio")
-    dist_dir = Path(trackio_path).parent / "trackio" / "frontend" / "dist"
-    if not dist_dir.is_dir():
-        dist_dir = Path(trackio.__file__).resolve().parent / "frontend" / "dist"
-    if not dist_dir.is_dir():
-        raise ValueError(
-            "The Trackio frontend build is missing. From the repository root run "
-            "`cd trackio/frontend && npm ci && npm run build`, then deploy again."
-        )
+    resolved_frontend = resolve_frontend_dir(frontend_dir, announce=True)
 
     _retry_hf_write(
         "Static Space frontend upload",
         lambda: hf_api.upload_folder(
             repo_id=space_id,
             repo_type="space",
-            folder_path=str(dist_dir),
+            folder_path=str(resolved_frontend.path),
         ),
     )
 
@@ -955,6 +999,7 @@ def sync(
     sdk: str = "gradio",
     dataset_id: str | None = None,
     bucket_id: str | None = None,
+    frontend_dir: str | Path | None = None,
 ) -> str:
     """
     Syncs a local Trackio project's database to a Hugging Face Space.
@@ -1027,6 +1072,7 @@ def sync(
                     project,
                     private=private,
                     hf_token=hf_token,
+                    frontend_dir=frontend_dir,
                 )
             elif bucket_id is not None:
                 create_bucket_if_not_exists(bucket_id, private=private)
@@ -1041,6 +1087,7 @@ def sync(
                     bucket_id=bucket_id,
                     private=private,
                     hf_token=huggingface_hub.utils.get_token() if private else None,
+                    frontend_dir=frontend_dir,
                 )
         else:
             if bucket_id is not None:
@@ -1050,7 +1097,10 @@ def sync(
                     f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
                 )
                 create_space_if_not_exists(
-                    space_id, bucket_id=bucket_id, private=private
+                    space_id,
+                    bucket_id=bucket_id,
+                    private=private,
+                    frontend_dir=frontend_dir,
                 )
                 _wait_until_space_running(space_id)
                 _wait_for_remote_sync(
@@ -1062,7 +1112,13 @@ def sync(
                     ),
                 )
             else:
-                sync_incremental(project, space_id, private=private, pending_only=False)
+                sync_incremental(
+                    project,
+                    space_id,
+                    private=private,
+                    pending_only=False,
+                    frontend_dir=frontend_dir,
+                )
         SQLiteStorage.set_project_metadata(project, "space_id", space_id)
 
     if run_in_background:
@@ -1089,6 +1145,7 @@ def freeze(
     new_space_id: str | None = None,
     private: bool | None = None,
     bucket_id: str | None = None,
+    frontend_dir: str | Path | None = None,
 ) -> str:
     """
     Creates a new static Hugging Face Space containing a read-only snapshot of
@@ -1169,5 +1226,6 @@ def freeze(
         bucket_id=bucket_id,
         private=private,
         hf_token=huggingface_hub.utils.get_token() if private else None,
+        frontend_dir=frontend_dir,
     )
     return new_space_id

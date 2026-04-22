@@ -23,13 +23,17 @@ it will use an existing or automatically deploy a new Hugging Face Space as need
 If you've been logging locally and want to upload your data to a Space after the fact, use `sync`:
 
 ```py
-trackio.sync(project="my-project", space_id="username/space_id")
+trackio.sync(
+    project="my-project",
+    space_id="username/space_id",
+    frontend_dir="./my-trackio-frontend",
+)
 ```
 
 Or from the CLI:
 
 ```sh
-trackio sync --project "my-project" --space-id "username/space_id"
+trackio sync --project "my-project" --space-id "username/space_id" --frontend ./my-trackio-frontend
 ```
 
 By default, `sync` deploys a **Gradio Space** with a live server. You can also deploy a **static Space** that reads from an HF Bucket (no server needed):
@@ -49,16 +53,22 @@ Static Spaces are lightweight and free — they serve a read-only dashboard back
 If you have a live Gradio Space and want to create a read-only static snapshot of a project's data, use `freeze`:
 
 ```py
-trackio.freeze(space_id="username/my-space", project="my-project")
+trackio.freeze(
+    space_id="username/my-space",
+    project="my-project",
+    frontend_dir="./my-trackio-frontend",
+)
 ```
 
 Or from the CLI:
 
 ```sh
-trackio freeze --space-id "username/my-space" --project "my-project"
+trackio freeze --space-id "username/my-space" --project "my-project" --frontend ./my-trackio-frontend
 ```
 
 This creates a new static Space (by default named `{space_id}_static`) containing a snapshot of the project's data from the source Space's bucket. The original Space is not modified.
+
+If a custom frontend is configured globally or passed explicitly, Trackio uploads that frontend into the Space so the deployed dashboard uses the same UI.
 
 Note that`freeze()` is a one-time snapshot. If new metrics are later uploaded to the original Gradio Space, the frozen static Space will not update automatically.
 

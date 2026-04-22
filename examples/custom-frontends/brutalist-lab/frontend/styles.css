@@ -1,0 +1,59 @@
+body {
+  margin: 0;
+  background: #f5ef19;
+  color: #111;
+  font-family: "Courier New", monospace;
+}
+
+.shell {
+  padding: 20px;
+}
+
+header h1,
+.panel h2 {
+  margin: 0;
+  text-transform: uppercase;
+}
+
+header p {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.panel {
+  min-height: 240px;
+  padding: 16px;
+  border: 4px solid #111;
+  background: white;
+  box-shadow: 10px 10px 0 #111;
+}
+
+button,
+.item {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  border: 3px solid #111;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+}
+
+button.active {
+  background: #ff7a00;
+  color: white;
+}
+
+@media (max-width: 760px) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+}

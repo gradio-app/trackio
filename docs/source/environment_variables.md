@@ -31,6 +31,18 @@ export TRACKIO_WRITE_TOKEN="YOUR_TOKEN"
 
 The dashboard **write token** for a self-hosted Trackio server (same value as the `write_token` query parameter in the write-access URL). Use this when `TRACKIO_SERVER_URL` or `server_url` is a base URL without query parameters. The client sends this token on each request (for example as the `X-Trackio-Write-Token` header) so metric ingestion and uploads are authenticated when not running on Hugging Face Spaces.
 
+### `TRACKIO_FRONTEND_DIR`
+
+Path to a custom static frontend directory for Trackio. The directory must contain `index.html`.
+
+When set, Trackio uses that frontend for `trackio.show()` and for deploy flows such as `trackio.sync()` and `trackio.freeze()`, unless an explicit `frontend_dir` / `--frontend` argument is passed.
+
+```bash
+export TRACKIO_FRONTEND_DIR="/path/to/my-trackio-frontend"
+```
+
+If the configured directory is missing or invalid, Trackio falls back to the built-in starter template.
+
 ### `TRACKIO_LOGO_LIGHT_URL` and `TRACKIO_LOGO_DARK_URL`
 
 Customize the logos displayed in the Trackio dashboard for light and dark themes. You can provide URLs to custom logos. Note that both environment variables should be supplied; otherwise, the Trackio default will be used for any variable that is not provided.
@@ -164,5 +176,4 @@ export GRADIO_MCP_SERVER="True"
 
 
 See [this more comprehensive list](https://www.gradio.app/guides/environment-variables) of environment variables used by Gradio.
-
 
