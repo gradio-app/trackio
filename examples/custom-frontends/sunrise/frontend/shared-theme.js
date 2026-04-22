@@ -79,7 +79,7 @@ function buildAreaPath(points, height) {
 
 function renderMetricCard(metric, rows) {
   const chartableRows = getChartableRows(rows);
-  const width = 560;
+  const width = 1000;
   const height = 190;
   const padding = 18;
   const values = chartableRows.map((row) => row.value);

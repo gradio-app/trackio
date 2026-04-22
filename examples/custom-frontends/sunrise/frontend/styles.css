@@ -138,7 +138,7 @@ h2 {
 
 .chart-frame svg {
   display: block;
-  width: min(100%, 560px);
+  width: 100%;
   height: auto;
 }
 

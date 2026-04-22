@@ -7,7 +7,4 @@ mountTheme({
   metricsEl: document.querySelector("#metrics"),
   metricsSubtitle: document.querySelector("#metrics-subtitle"),
   statusLine: document.querySelector("#status-line"),
-  runsCount: document.querySelector("#runs-count"),
-  traceCount: document.querySelector("#trace-count"),
-  selectedRunName: document.querySelector("#selected-run-name"),
 });

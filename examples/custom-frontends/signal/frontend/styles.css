@@ -40,7 +40,7 @@ h2 {
 
 .control-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -63,22 +63,6 @@ h2 {
   color: inherit;
   font: inherit;
   text-align: left;
-}
-
-.summary-box {
-  padding: 12px;
-  border: 1px solid rgba(85, 255, 148, 0.25);
-  background: rgba(85, 255, 148, 0.05);
-}
-
-.summary-box strong {
-  font-size: 22px;
-}
-
-.summary-box.duo {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .metrics-head {

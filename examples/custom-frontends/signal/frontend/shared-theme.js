@@ -148,9 +148,6 @@ export async function mountTheme({
   metricsEl,
   metricsSubtitle,
   statusLine,
-  runsCount,
-  traceCount,
-  selectedRunName,
 }) {
   try {
     const projects = await api("get_all_projects");
@@ -174,18 +171,13 @@ export async function mountTheme({
     projectSelect.onchange = () => updateQueryParam("project", projectSelect.value);
 
     if (!selectedProject) {
-      selectedRunName.textContent = "No run";
-      traceCount.textContent = "0";
       renderEmptyState(metricsEl, "No traces yet");
       return;
     }
 
     const runs = await api("get_runs_for_project", { project: selectedProject });
-    runsCount.textContent = String(runs.length);
     if (!runs.length) {
       runSelect.innerHTML = "";
-      selectedRunName.textContent = "No run";
-      traceCount.textContent = "0";
       renderEmptyState(metricsEl, "No traces yet");
       return;
     }
@@ -202,17 +194,14 @@ export async function mountTheme({
     const updateSelectedRun = async (runId) => {
       selectedRun = runs.find((run) => run.id === runId) || runs[0];
       runSelect.value = selectedRun.id;
-      selectedRunName.textContent = selectedRun.name || "Unnamed run";
       metricsSubtitle.textContent = `Recent traces for ${selectedRun.name || "the selected run"}.`;
-      traceCount.textContent = String(await renderTraces(metricsEl, selectedProject, selectedRun));
+      await renderTraces(metricsEl, selectedProject, selectedRun);
     };
 
     runSelect.onchange = () => updateQueryParam("run_id", runSelect.value);
     await updateSelectedRun(selectedRun.id);
   } catch (error) {
     title.textContent = "Error";
-    selectedRunName.textContent = "Error";
-    traceCount.textContent = "0";
     renderEmptyState(metricsEl, error.message);
   }
 }
