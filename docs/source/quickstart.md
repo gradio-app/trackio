@@ -70,27 +70,6 @@ trackio.show()
 </hfoption>
 </hfoptions>
 
-You can also point Trackio at a custom frontend:
-
-<hfoptions id="language">
-<hfoption id="Shell">
-
-```sh
-trackio show --frontend ./my-trackio-frontend
-```
-
-</hfoption>
-<hfoption id="Python">
-
-```py
-import trackio
-
-trackio.show(frontend_dir="./my-trackio-frontend")
-```
-
-</hfoption>
-</hfoptions>
-
 You can also provide an optional `project` name as the argument to load a specific project directly:
 
 <hfoptions id="language">
@@ -143,11 +122,7 @@ trackio sync --project "my-project" --space-id "username/space_id"
 <hfoption id="Python">
 
 ```py
-trackio.sync(
-    project="my-project",
-    space_id="username/space_id",
-    frontend_dir="./my-trackio-frontend",
-)
+trackio.sync(project="my-project", space_id="username/space_id")
 ```
 
 </hfoption>
