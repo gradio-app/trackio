@@ -5,7 +5,6 @@ from pathlib import Path
 
 import trackio
 
-
 THEME_DIRS = {
     "brutalist-lab": "examples/custom-frontends/brutalist-lab/frontend",
     "signal-console": "examples/custom-frontends/signal-console/frontend",
