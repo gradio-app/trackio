@@ -44,7 +44,23 @@
     };
   }
 
-  async function loadTraces() {
+  function sortTraces(items, sort) {
+    return [...items].sort((left, right) => {
+      switch (sort) {
+        case "step_asc":
+          return (left.step ?? 0) - (right.step ?? 0);
+        case "step_desc":
+          return (right.step ?? 0) - (left.step ?? 0);
+        case "request_time_asc":
+          return String(left.timestamp || "").localeCompare(String(right.timestamp || ""));
+        case "request_time_desc":
+        default:
+          return String(right.timestamp || "").localeCompare(String(left.timestamp || ""));
+      }
+    });
+  }
+
+  async function loadTraces(searchQuery, sort) {
     const requestId = ++loadRequestId;
     if (!project || selectedRuns.length === 0) {
       traces = [];
@@ -56,12 +72,15 @@
     try {
       const batches = await Promise.all(
         selectedRuns.map(async (run) => {
-          const runTraces = await getTraces(project, run);
+          const runTraces = await getTraces(project, run, {
+            search: searchQuery,
+            sort,
+          });
           return runTraces.map((trace) => normalizeTrace(trace, run.name));
         }),
       );
       if (requestId !== loadRequestId) return;
-      traces = batches.flat();
+      traces = sortTraces(batches.flat(), sort);
       if (!traces.find((trace) => trace.id === expandedTraceId)) {
         expandedTraceId = null;
       }
@@ -76,46 +95,17 @@
     }
   }
 
-  let visibleTraces = $derived.by(() => {
-    const needle = search.trim().toLowerCase();
-    const filtered = traces.filter((trace) => {
-      if (!needle) return true;
-      const haystack = [
-        trace.id,
-        trace.key,
-        trace.run,
-        trace.request,
-        trace.preview,
-        JSON.stringify(trace.metadata || {}),
-        ...trace.messages.map((message) => {
-          if (typeof message?.content === "string") return message.content;
-          return JSON.stringify(message?.content || "");
-        }),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(needle);
-    });
-
-    return filtered.sort((left, right) => {
-      switch (sortBy) {
-        case "step_asc":
-          return (left.step ?? 0) - (right.step ?? 0);
-        case "step_desc":
-          return (right.step ?? 0) - (left.step ?? 0);
-        case "request_time_asc":
-          return String(left.timestamp || "").localeCompare(String(right.timestamp || ""));
-        case "request_time_desc":
-        default:
-          return String(right.timestamp || "").localeCompare(String(left.timestamp || ""));
-      }
-    });
-  });
-
   $effect(() => {
     project;
     selectedRuns;
-    loadTraces();
+    search;
+    sortBy;
+
+    const timeout = setTimeout(() => {
+      loadTraces(search.trim(), sortBy);
+    }, 150);
+
+    return () => clearTimeout(timeout);
   });
 
   function toggleTrace(traceId) {
@@ -198,6 +188,11 @@
   function metadataEntries(trace) {
     return Object.entries(trace.metadata || {});
   }
+
+  function countLabel() {
+    if (!search.trim()) return `${traces.length} trace${traces.length === 1 ? "" : "s"}`;
+    return `${traces.length} match${traces.length === 1 ? "" : "es"}`;
+  }
 </script>
 
 <div class="traces-page">
@@ -213,26 +208,6 @@
       <h2>No runs selected</h2>
       <p>Select one or more runs in the sidebar to browse traces.</p>
     </div>
-  {:else if visibleTraces.length === 0}
-    <div class="toolbar">
-      <div class="search-wrap">
-        <input type="text" bind:value={search} placeholder="Search traces by request" />
-      </div>
-      <label class="sort-wrap">
-        <span>Sort:</span>
-        <select bind:value={sortBy}>
-          <option value="request_time_desc">Request time</option>
-          <option value="request_time_asc">Oldest first</option>
-          <option value="step_desc">Step descending</option>
-          <option value="step_asc">Step ascending</option>
-        </select>
-      </label>
-      <div class="count">0 of {traces.length}</div>
-    </div>
-    <div class="empty-state">
-      <h2>No traces match the current filters</h2>
-      <p>Try a different search query or model filter.</p>
-    </div>
   {:else}
     <div class="toolbar">
       <div class="search-wrap">
@@ -247,109 +222,116 @@
           <option value="step_asc">Step ascending</option>
         </select>
       </label>
-      <div class="count">{visibleTraces.length} of {traces.length}</div>
+      <div class="count">{countLabel()}</div>
     </div>
 
-    <div class="traces-table-wrap">
-      <table class="traces-table">
-        <thead>
-          <tr>
-            <th>Trace ID</th>
-            <th>Request</th>
-            <th>Run</th>
-            <th>Step</th>
-            <th>Request time</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each visibleTraces as trace}
-            <tr
-              class="trace-row"
-              role="button"
-              tabindex="0"
-              aria-expanded={expandedTraceId === trace.id}
-              onclick={() => toggleTrace(trace.id)}
-              onkeydown={(event) => handleRowKeydown(event, trace.id)}
-            >
-              <td class="trace-id-cell">
-                <span class="trace-id">{trace.id}</span>
-              </td>
-              <td class="request-cell">
-                <div class="request">{trace.request}</div>
-                <div class="preview">{trace.preview}</div>
-              </td>
-              <td>{trace.run || "—"}</td>
-              <td>{trace.step ?? "—"}</td>
-              <td>{formatRelativeTime(trace.timestamp)}</td>
+    {#if traces.length === 0}
+      <div class="empty-state">
+        <h2>No traces match the current filters</h2>
+        <p>Try a different search query or model filter.</p>
+      </div>
+    {:else}
+      <div class="traces-table-wrap">
+        <table class="traces-table">
+          <thead>
+            <tr>
+              <th>Trace ID</th>
+              <th>Request</th>
+              <th>Run</th>
+              <th>Step</th>
+              <th>Request time</th>
             </tr>
-            {#if expandedTraceId === trace.id}
-              <tr class="expanded-row">
-                <td colspan="5">
-                  <div class="trace-detail">
-                    <div class="detail-meta">
-                      <span>Logged as: {trace.key}</span>
-                      <span>Timestamp: {trace.timestamp || "—"}</span>
-                      {#each metadataEntries(trace) as [key, value]}
-                        <span>{key}: {value}</span>
-                      {/each}
-                    </div>
+          </thead>
+          <tbody>
+            {#each traces as trace}
+              <tr
+                class="trace-row"
+                role="button"
+                tabindex="0"
+                aria-expanded={expandedTraceId === trace.id}
+                onclick={() => toggleTrace(trace.id)}
+                onkeydown={(event) => handleRowKeydown(event, trace.id)}
+              >
+                <td class="trace-id-cell">
+                  <span class="trace-id">{trace.id}</span>
+                </td>
+                <td class="request-cell">
+                  <div class="request">{trace.request}</div>
+                  <div class="preview">{trace.preview}</div>
+                </td>
+                <td>{trace.run || "—"}</td>
+                <td>{trace.step ?? "—"}</td>
+                <td>{formatRelativeTime(trace.timestamp)}</td>
+              </tr>
+              {#if expandedTraceId === trace.id}
+                <tr class="expanded-row">
+                  <td colspan="5">
+                    <div class="trace-detail">
+                      <div class="detail-meta">
+                        <span>Logged as: {trace.key}</span>
+                        <span>Timestamp: {trace.timestamp || "—"}</span>
+                        {#each metadataEntries(trace) as [key, value]}
+                          <span>{key}: {value}</span>
+                        {/each}
+                      </div>
 
-                    <div class="conversation">
-                      {#each trace.messages as message}
-                        <div class="message" data-role={message.role || "unknown"}>
-                          <div class="message-role">
-                            {message.role || "message"}
-                            {#if message.tool_calls?.length}
-                              <span class="message-tag">tool calls</span>
+                      <div class="conversation">
+                        {#each trace.messages as message}
+                          <div class="message" data-role={message.role || "unknown"}>
+                            <div class="message-role">
+                              {message.role || "message"}
+                              {#if message.tool_calls?.length}
+                                <span class="message-tag">tool calls</span>
+                              {/if}
+                              {#if message.function_call}
+                                <span class="message-tag">function call</span>
+                              {/if}
+                            </div>
+
+                            {#if typeof message.content === "string"}
+                              {#if longText(message.content)}
+                                <details class="message-details">
+                                  <summary>Expand content</summary>
+                                  <pre class="message-content">{message.content}</pre>
+                                </details>
+                              {:else}
+                                <pre class="message-content">{message.content}</pre>
+                              {/if}
+                            {:else if hasRenderableParts(message)}
+                              <div class="message-parts">
+                                {#each renderableParts(message) as part}
+                                  {#if isImagePart(part)}
+                                    <img class="trace-image" src={imageSrc(part)} alt={imageAlt(part)} />
+                                  {:else}
+                                    <pre class="message-content">{JSON.stringify(part, null, 2)}</pre>
+                                  {/if}
+                                {/each}
+                              </div>
                             {/if}
+
+                            {#if message.tool_calls?.length}
+                              <div class="tool-blocks">
+                                {#each message.tool_calls as toolCall}
+                                  <pre class="tool-block">{JSON.stringify(toolCall, null, 2)}</pre>
+                                {/each}
+                              </div>
+                            {/if}
+
                             {#if message.function_call}
-                              <span class="message-tag">function call</span>
+                              <pre class="tool-block">{JSON.stringify(message.function_call, null, 2)}</pre>
                             {/if}
                           </div>
-
-                          {#if typeof message.content === "string"}
-                            {#if longText(message.content)}
-                              <details class="message-details">
-                                <summary>Expand content</summary>
-                                <pre class="message-content">{message.content}</pre>
-                              </details>
-                            {:else}
-                              <pre class="message-content">{message.content}</pre>
-                            {/if}
-                          {:else if hasRenderableParts(message)}
-                            <div class="message-parts">
-                              {#each renderableParts(message) as part}
-                                {#if isImagePart(part)}
-                                  <img class="trace-image" src={imageSrc(part)} alt={imageAlt(part)} />
-                                {:else}
-                                  <pre class="message-content">{JSON.stringify(part, null, 2)}</pre>
-                                {/if}
-                              {/each}
-                            </div>
-                          {/if}
-
-                          {#if message.tool_calls?.length}
-                            <div class="tool-blocks">
-                              {#each message.tool_calls as toolCall}
-                                <pre class="tool-block">{JSON.stringify(toolCall, null, 2)}</pre>
-                              {/each}
-                            </div>
-                          {/if}
-
-                          {#if message.function_call}
-                            <pre class="tool-block">{JSON.stringify(message.function_call, null, 2)}</pre>
-                          {/if}
-                        </div>
-                      {/each}
+                        {/each}
+                      </div>
                     </div>
-                  </div>
-                </td>
-              </tr>
-            {/if}
-          {/each}
-        </tbody>
-      </table>
-    </div>
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
   {/if}
 </div>
 
