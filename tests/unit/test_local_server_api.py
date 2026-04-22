@@ -35,7 +35,9 @@ def test_move_run_via_api_updates_media_paths(temp_dir, image_ndarray):
 
     image1_path = source_logs[0]["img1"].get("file_path")
     assert image1_path is not None
-    assert str(image1_path).replace("\\", "/").startswith(f"{source_project}/{run_name}/")
+    assert (
+        str(image1_path).replace("\\", "/").startswith(f"{source_project}/{run_name}/")
+    )
 
     api = Api()
     runs = api.runs(source_project)
@@ -54,14 +56,18 @@ def test_move_run_via_api_updates_media_paths(temp_dir, image_ndarray):
 
     target_image1_path = target_logs[0]["img1"].get("file_path")
     assert target_image1_path is not None
-    assert str(target_image1_path).replace("\\", "/").startswith(
-        f"{target_project}/{run_name}/"
+    assert (
+        str(target_image1_path)
+        .replace("\\", "/")
+        .startswith(f"{target_project}/{run_name}/")
     )
 
     target_image2_path = target_logs[1]["img2"].get("file_path")
     assert target_image2_path is not None
-    assert str(target_image2_path).replace("\\", "/").startswith(
-        f"{target_project}/{run_name}/"
+    assert (
+        str(target_image2_path)
+        .replace("\\", "/")
+        .startswith(f"{target_project}/{run_name}/")
     )
 
     assert SQLiteStorage.get_logs(project=source_project, run=run_name) == []
