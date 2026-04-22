@@ -180,10 +180,7 @@ function renderRunList() {
   }
 }
 
-function chartPoints(rows, width, height, padding) {
-  const values = rows.map((row) => row.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+function chartPoints(rows, width, height, padding, min, max) {
   const span = max - min || 1;
   return rows.map((row, index) => {
     const x = padding + (index / Math.max(rows.length - 1, 1)) * (width - padding * 2);
@@ -196,15 +193,16 @@ function pathFromPoints(points) {
   return points.map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x} ${y}`).join(" ");
 }
 
-function renderMetricCard(metricName, rows, runName, color) {
+function renderMetricCard(metricName, seriesByRun) {
   const card = document.createElement("article");
   card.className = "metric-card";
-  if (!rows.length) {
+  const nonEmptySeries = seriesByRun.filter((entry) => entry.rows.length);
+  if (!nonEmptySeries.length) {
     card.innerHTML = `
       <div class="metric-card-head">
         <div>
           <h3>${metricName}</h3>
-          <div class="metric-run">${runName}</div>
+          <div class="metric-run">Selected runs</div>
         </div>
       </div>
       <div class="metric-empty">No numeric values logged for this metric.</div>
@@ -215,28 +213,51 @@ function renderMetricCard(metricName, rows, runName, color) {
   const width = 640;
   const height = 220;
   const padding = 20;
-  const points = chartPoints(rows, width, height, padding);
-  const markers = points
-    .map(([x, y]) => `<circle class="plot-marker" cx="${x}" cy="${y}" r="3.5"></circle>`)
+  const values = nonEmptySeries.flatMap((entry) => entry.rows.map((row) => row.value));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const lineMarkup = nonEmptySeries
+    .map((entry) => {
+      const points = chartPoints(entry.rows, width, height, padding, min, max);
+      const markers = points
+        .map(([x, y]) => `<circle class="plot-marker" cx="${x}" cy="${y}" r="3.5" style="stroke:${entry.color}"></circle>`)
+        .join("");
+      return `
+        <path class="plot-line" d="${pathFromPoints(points)}" stroke="${entry.color}"></path>
+        ${markers}
+      `;
+    })
     .join("");
-  const latest = rows.at(-1);
+  const legendMarkup = nonEmptySeries
+    .map(
+      (entry) => `
+        <span class="metric-legend-item">
+          <span class="metric-legend-dot" style="background:${entry.color}"></span>
+          ${entry.runName}
+        </span>
+      `,
+    )
+    .join("");
+  const latestSummary = nonEmptySeries
+    .map((entry) => `${entry.runName}: ${formatValue(entry.rows.at(-1).value)}`)
+    .join(" | ");
 
   card.innerHTML = `
     <div class="metric-card-head">
       <div>
         <h3>${metricName}</h3>
-        <div class="metric-run">${runName}</div>
+        <div class="metric-run">${nonEmptySeries.length} run${nonEmptySeries.length === 1 ? "" : "s"} overlaid</div>
       </div>
-      <div class="metric-latest">${formatValue(latest.value)}</div>
+      <div class="metric-latest">${latestSummary}</div>
     </div>
     <div class="plot-shell">
       <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${metricName} line plot">
         <line class="plot-axis" x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}"></line>
-        <path class="plot-line" d="${pathFromPoints(points)}" stroke="${color}"></path>
-        ${markers}
+        ${lineMarkup}
       </svg>
     </div>
-    <div class="metric-meta">Latest step ${latest.step ?? "?"} with ${rows.length} points</div>
+    <div class="metric-legend">${legendMarkup}</div>
+    <div class="metric-meta">Comparing ${nonEmptySeries.length} selected runs on the same metric scale.</div>
   `;
   return card;
 }
@@ -256,6 +277,60 @@ function textFromContent(content) {
   }
   if (typeof content?.text === "string") return content.text;
   return "";
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderMessageContent(content) {
+  if (typeof content === "string") {
+    return `<div class="trace-message-text">${escapeHtml(content)}</div>`;
+  }
+  if (Array.isArray(content)) {
+    const items = content
+      .map((part) => {
+        if (typeof part === "string") {
+          return `<div class="trace-message-text">${escapeHtml(part)}</div>`;
+        }
+        if (typeof part?.text === "string") {
+          return `<div class="trace-message-text">${escapeHtml(part.text)}</div>`;
+        }
+        if (typeof part?.content === "string") {
+          return `<div class="trace-message-text">${escapeHtml(part.content)}</div>`;
+        }
+        return `<div class="trace-message-text trace-message-muted">[non-text content]</div>`;
+      })
+      .join("");
+    return items || '<div class="trace-message-text trace-message-muted">(empty)</div>';
+  }
+  if (typeof content?.text === "string") {
+    return `<div class="trace-message-text">${escapeHtml(content.text)}</div>`;
+  }
+  return '<div class="trace-message-text trace-message-muted">(empty)</div>';
+}
+
+function renderTraceDetail(trace) {
+  const messages = Array.isArray(trace.messages) ? trace.messages : [];
+  if (!messages.length) {
+    return '<div class="trace-message-text trace-message-muted">No trace messages.</div>';
+  }
+  return messages
+    .map((message) => {
+      const role = escapeHtml(message?.role || "unknown");
+      return `
+        <div class="trace-message">
+          <div class="trace-message-role">${role}</div>
+          ${renderMessageContent(message?.content)}
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function formatTraceTime(timestamp) {
@@ -281,6 +356,10 @@ function renderTraceRows(traces) {
       (trace.messages || []).find((message) => message?.role === "user")?.content,
     ) || "(no user message)";
     const row = document.createElement("tr");
+    row.className = "trace-summary-row";
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
+    row.setAttribute("aria-expanded", "false");
     row.innerHTML = `
       <td><span class="trace-id">${trace.id}</span></td>
       <td class="trace-request">${request}</td>
@@ -288,7 +367,39 @@ function renderTraceRows(traces) {
       <td>${trace.step ?? "—"}</td>
       <td>${formatTraceTime(trace.timestamp)}</td>
     `;
+    const detailRow = document.createElement("tr");
+    detailRow.className = "trace-detail-row";
+    detailRow.hidden = true;
+    detailRow.innerHTML = `
+      <td colspan="5">
+        <div class="trace-detail-shell">
+          <div class="trace-detail-head">
+            <div>
+              <strong>${escapeHtml(trace.id)}</strong>
+              <div class="trace-detail-meta">${escapeHtml(trace.run || "—")} | step ${escapeHtml(trace.step ?? "—")} | ${escapeHtml(formatTraceTime(trace.timestamp))}</div>
+            </div>
+          </div>
+          <div class="trace-message-list">
+            ${renderTraceDetail(trace)}
+          </div>
+        </div>
+      </td>
+    `;
+    const toggleRow = () => {
+      const expanded = row.getAttribute("aria-expanded") === "true";
+      row.setAttribute("aria-expanded", expanded ? "false" : "true");
+      row.classList.toggle("expanded", !expanded);
+      detailRow.hidden = expanded;
+    };
+    row.addEventListener("click", toggleRow);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleRow();
+      }
+    });
     tracesBodyEl.appendChild(row);
+    tracesBodyEl.appendChild(detailRow);
   }
 }
 
@@ -332,6 +443,7 @@ async function renderDashboard() {
   tracesSubtitleEl.textContent = `Recent traces for ${selectedRuns.length} selected run${selectedRuns.length === 1 ? "" : "s"}.`;
 
   const traceGroups = [];
+  const metricMap = new Map();
 
   for (const run of selectedRuns) {
     const metrics = await api("get_metrics_for_run", {
@@ -354,9 +466,14 @@ async function renderDashboard() {
 
     metricSeries.forEach(({ metricName, rows }) => {
       const numericRows = rows.filter((row) => typeof row.value === "number" && Number.isFinite(row.value));
-      metricsGridEl.appendChild(
-        renderMetricCard(metricName, numericRows, run.name || "Unnamed run", colorForRun(run)),
-      );
+      if (!metricMap.has(metricName)) {
+        metricMap.set(metricName, []);
+      }
+      metricMap.get(metricName).push({
+        runName: run.name || "Unnamed run",
+        color: colorForRun(run),
+        rows: numericRows,
+      });
     });
 
     const runTraces = await api("get_traces", {
@@ -367,6 +484,10 @@ async function renderDashboard() {
       limit: 6,
     });
     traceGroups.push(...runTraces);
+  }
+
+  for (const [metricName, seriesByRun] of metricMap.entries()) {
+    metricsGridEl.appendChild(renderMetricCard(metricName, seriesByRun));
   }
 
   if (!metricsGridEl.children.length) {

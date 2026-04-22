@@ -258,8 +258,10 @@ table {
 
 .metric-latest {
   color: var(--body-text-color);
-  font-size: 18px;
+  max-width: 50%;
+  font-size: 13px;
   font-weight: 600;
+  text-align: right;
 }
 
 .plot-shell {
@@ -292,6 +294,27 @@ table {
   fill: var(--background-fill-primary);
   stroke: var(--body-text-color);
   stroke-width: 1.5;
+}
+
+.metric-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 12px;
+}
+
+.metric-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--body-text-color-subdued);
+  font-size: 13px;
+}
+
+.metric-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
 }
 
 .traces-table-wrap {
@@ -328,6 +351,18 @@ table {
   text-transform: uppercase;
 }
 
+.trace-summary-row {
+  cursor: pointer;
+}
+
+.trace-summary-row:hover {
+  background: var(--background-fill-secondary);
+}
+
+.trace-summary-row.expanded {
+  background: var(--background-fill-secondary);
+}
+
 .trace-id {
   color: var(--body-text-color);
   font-family:
@@ -341,6 +376,62 @@ table {
 .trace-request {
   max-width: 520px;
   color: var(--body-text-color);
+}
+
+.trace-detail-row td {
+  padding: 0;
+  background: var(--background-fill-secondary);
+}
+
+.trace-detail-shell {
+  padding: 18px 20px;
+  border-top: 1px solid var(--border-color-primary);
+}
+
+.trace-detail-head strong {
+  display: block;
+  color: var(--body-text-color);
+  font-size: 14px;
+}
+
+.trace-detail-meta {
+  margin-top: 4px;
+  color: var(--body-text-color-subdued);
+  font-size: 12px;
+}
+
+.trace-message-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.trace-message {
+  padding: 12px 14px;
+  border: 1px solid var(--border-color-primary);
+  border-radius: 12px;
+  background: var(--background-fill-primary);
+}
+
+.trace-message-role {
+  margin-bottom: 8px;
+  color: var(--body-text-color-subdued);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trace-message-text {
+  color: var(--body-text-color);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.trace-message-muted {
+  color: var(--body-text-color-subdued);
 }
 
 .empty-row,
