@@ -1,8 +1,9 @@
 import time
 from pathlib import Path
 
-import trackio
 from playwright.sync_api import sync_playwright
+
+import trackio
 from trackio import Trace
 
 THEMES = {
