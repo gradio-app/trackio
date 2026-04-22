@@ -1,5 +1,13 @@
 # trackio
 
+## 0.24.2
+
+### Features
+
+- [#527](https://github.com/gradio-app/trackio/pull/527) [`7d1c0b9`](https://github.com/gradio-app/trackio/commit/7d1c0b9c37ce9a9845e6bbe6c083da9d36084caf) - Fix dashboard UX issues: smoothing in share URL, run selection, and run filtering.  Thanks @abidlabs!
+- [#526](https://github.com/gradio-app/trackio/pull/526) [`643878a`](https://github.com/gradio-app/trackio/commit/643878a82985fab9e6675f769ff0107cb46e042a) - Add emoji to README and deploy README content.  Thanks @qgallouedec!
+- [#529](https://github.com/gradio-app/trackio/pull/529) [`a77972b`](https://github.com/gradio-app/trackio/commit/a77972b68541ebe9e056824e69c9bbca3979ece4) - Remove pydub dependency.  Thanks @abidlabs!
+
 ## 0.24.1
 
 ### Features
