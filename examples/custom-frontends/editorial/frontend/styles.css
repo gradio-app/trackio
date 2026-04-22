@@ -19,6 +19,13 @@ body {
   background: rgba(255, 255, 255, 0.28);
 }
 
+.editorial-logo {
+  display: block;
+  width: 136px;
+  max-width: 100%;
+  margin-bottom: 20px;
+}
+
 .kicker {
   margin: 0;
   font-size: 12px;

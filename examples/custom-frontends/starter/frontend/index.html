@@ -7,70 +7,89 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">Starter</p>
-        <h1>Custom frontend, same Trackio API.</h1>
-        <p class="lede">
-          This starter is meant to be copied into your custom frontend directory,
-          edited with your LLM, and live reloaded by Trackio while you iterate.
-        </p>
-        <p id="status" class="status">Loading projects...</p>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="label">Projects</p>
-            <h2 id="project-title">Loading...</h2>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-scroll">
+          <div class="logo-section">
+            <img
+              src="/static/trackio/trackio_logo_type_light_transparent.png"
+              alt="Trackio"
+              class="logo"
+            />
           </div>
-          <p class="hint">
-            Read query params, call <code>/api/*</code>, and replace this with your
-            own interface.
-          </p>
-        </div>
-        <div id="projects" class="chip-row"></div>
-      </section>
 
-      <section class="grid">
-        <article class="panel">
-          <div class="panel-header">
-            <div>
-              <p class="label">Runs</p>
-              <h2>Latest Runs</h2>
+          <section class="sidebar-section">
+            <div class="section-label">Project</div>
+            <div class="dropdown-wrap">
+              <select id="project-select" class="project-select" aria-label="Project"></select>
+              <div class="dropdown-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+                  <path d="M5.25 7.5L9 11.25L12.75 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
             </div>
-          </div>
-          <div id="runs" class="list"></div>
-        </article>
+          </section>
 
-        <article class="panel">
-          <div class="panel-header">
-          <div>
-            <p class="label">Metrics</p>
-            <h2 id="metric-header">Run Metrics</h2>
-          </div>
-          <p class="hint">Each card below calls <code>/api/get_metric_values</code> and plots the response.</p>
-          </div>
-          <div id="metrics" class="list"></div>
-        </article>
-      </section>
+          <section class="sidebar-section">
+            <div class="section-label">Runs</div>
+            <div id="run-list" class="run-list"></div>
+          </section>
 
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <p class="label">Notes For Your LLM</p>
-            <h2>What to change first</h2>
-          </div>
+          <section class="sidebar-section">
+            <div class="section-label">Notes</div>
+            <p class="sidebar-note">
+              This starter mirrors the Trackio dashboard structure, but stays plain
+              HTML, CSS, and JavaScript so you can replace pieces quickly.
+            </p>
+          </section>
         </div>
-        <ul class="notes">
-          <li>Keep using the existing Trackio backend routes under <code>/api</code>.</li>
-          <li>Read <code>?project=...</code> from the URL to preserve deep links.</li>
-          <li>Start with <code>trackio show --frontend ./my-trackio-frontend</code>.</li>
-          <li>Edit the copied files with your LLM while the page live reloads in the browser.</li>
-          <li>Replace the simple SVG charts in <code>app.js</code> with your own layout and visuals.</li>
-        </ul>
-      </section>
-    </main>
+      </aside>
+
+      <main class="main-shell">
+        <nav class="navbar">
+          <div class="nav-spacer"></div>
+          <div class="nav-tabs">
+            <button class="nav-link active" data-page-target="metrics">Metrics</button>
+            <button class="nav-link" data-page-target="traces">Traces</button>
+          </div>
+        </nav>
+
+        <section class="page active" data-page="metrics">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Starter Dashboard</p>
+              <h1 id="metrics-title">Metrics</h1>
+              <p id="metrics-subtitle" class="page-subtitle">Loading Trackio data.</p>
+            </div>
+          </header>
+          <div id="metrics-grid" class="metrics-grid"></div>
+        </section>
+
+        <section class="page" data-page="traces">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Starter Dashboard</p>
+              <h1>Traces</h1>
+              <p id="traces-subtitle" class="page-subtitle">Recent traces for the selected runs.</p>
+            </div>
+          </header>
+          <div class="traces-table-wrap">
+            <table class="traces-table">
+              <thead>
+                <tr>
+                  <th>Trace ID</th>
+                  <th>Request</th>
+                  <th>Run</th>
+                  <th>Step</th>
+                  <th>Request time</th>
+                </tr>
+              </thead>
+              <tbody id="traces-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
 
     <script type="module" src="./app.js"></script>
   </body>

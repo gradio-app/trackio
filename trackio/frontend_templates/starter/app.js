@@ -1,16 +1,32 @@
-const projectTitle = document.querySelector("#project-title");
-const projectsEl = document.querySelector("#projects");
-const runsEl = document.querySelector("#runs");
-const metricsEl = document.querySelector("#metrics");
-const statusEl = document.querySelector("#status");
-const metricHeaderEl = document.querySelector("#metric-header");
+const projectSelectEl = document.querySelector("#project-select");
+const runListEl = document.querySelector("#run-list");
+const metricsTitleEl = document.querySelector("#metrics-title");
+const metricsSubtitleEl = document.querySelector("#metrics-subtitle");
+const metricsGridEl = document.querySelector("#metrics-grid");
+const tracesSubtitleEl = document.querySelector("#traces-subtitle");
+const tracesBodyEl = document.querySelector("#traces-body");
+const navButtons = Array.from(document.querySelectorAll(".nav-link"));
+const pages = Array.from(document.querySelectorAll(".page"));
 
 const state = {
   projects: [],
   selectedProject: null,
-  runRecords: [],
-  selectedRun: null,
+  runs: [],
+  selectedRunIds: [],
 };
+
+const RUN_COLORS = [
+  "#1f77b4",
+  "#ff7f0e",
+  "#2ca02c",
+  "#d62728",
+  "#9467bd",
+  "#8c564b",
+  "#e377c2",
+  "#7f7f7f",
+  "#bcbd22",
+  "#17becf",
+];
 
 async function api(name, payload = {}) {
   const response = await fetch(`/api/${name}`, {
@@ -25,37 +41,13 @@ async function api(name, payload = {}) {
   return json.data;
 }
 
-function updateQueryParams(params) {
-  const next = new URL(window.location.href);
-  for (const [key, value] of Object.entries(params)) {
-    if (value) {
-      next.searchParams.set(key, value);
-    } else {
-      next.searchParams.delete(key);
-    }
-  }
-  window.history.replaceState({}, "", next);
+function runKey(run) {
+  return run.id || run.name;
 }
 
-function getInitialProject(projects) {
-  const params = new URLSearchParams(window.location.search);
-  const fromUrl = params.get("project");
-  if (fromUrl && projects.includes(fromUrl)) {
-    return fromUrl;
-  }
-  return projects[0] || null;
-}
-
-function getInitialRun(runRecords) {
-  const params = new URLSearchParams(window.location.search);
-  const fromUrl = params.get("run");
-  if (fromUrl) {
-    const match = runRecords.find((record) => record.name === fromUrl);
-    if (match) {
-      return match;
-    }
-  }
-  return runRecords[0] || null;
+function colorForRun(run) {
+  const index = state.runs.findIndex((candidate) => runKey(candidate) === runKey(run));
+  return RUN_COLORS[((index >= 0 ? index : 0) % RUN_COLORS.length + RUN_COLORS.length) % RUN_COLORS.length];
 }
 
 function formatValue(value) {
@@ -65,236 +57,346 @@ function formatValue(value) {
   if (Math.abs(value) >= 1000 || Math.abs(value) < 0.01) {
     return value.toExponential(2);
   }
-  return value.toFixed(4);
+  return value.toFixed(3);
 }
 
-function metricStroke(index) {
-  const palette = ["#d85f3d", "#2b6cb0", "#15803d", "#9a3412", "#7c3aed", "#0f766e"];
-  return palette[index % palette.length];
+function getQueryParams() {
+  return new URLSearchParams(window.location.search);
 }
 
-function renderProjects(projects, selectedProject) {
-  projectsEl.innerHTML = "";
-  for (const project of projects) {
-    const button = document.createElement("button");
-    button.className = `chip${project === selectedProject ? " active" : ""}`;
-    button.textContent = project;
-    button.addEventListener("click", async () => {
-      state.selectedProject = project;
-      updateQueryParams({ project, run: null });
-      await loadRuns(project);
-      renderProjects(state.projects, state.selectedProject);
-    });
-    projectsEl.appendChild(button);
+function setQueryParams(params) {
+  const next = new URL(window.location.href);
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) {
+      next.searchParams.delete(key);
+      continue;
+    }
+    next.searchParams.set(key, Array.isArray(value) ? value.join(",") : value);
   }
+  window.history.replaceState({}, "", next);
 }
 
-function renderRuns(runRecords, selectedRun) {
-  runsEl.innerHTML = "";
-  if (!runRecords.length) {
-    runsEl.innerHTML = '<div class="item"><strong>No runs yet</strong><div class="meta">Log a run and this panel will populate.</div></div>';
+function setActivePage(pageName) {
+  navButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.pageTarget === pageName);
+  });
+  pages.forEach((page) => {
+    page.classList.toggle("active", page.dataset.page === pageName);
+  });
+}
+
+function bindNavigation() {
+  navButtons.forEach((button) => {
+    button.addEventListener("click", () => setActivePage(button.dataset.pageTarget));
+  });
+}
+
+function pickInitialProject(projects) {
+  const params = getQueryParams();
+  const project = params.get("project");
+  if (project && projects.includes(project)) {
+    return project;
+  }
+  return projects[0] || null;
+}
+
+function pickInitialRunIds(runs) {
+  const params = getQueryParams();
+  const fromUrl = (params.get("run_ids") || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const validIds = runs.map(runKey);
+  const selected = fromUrl.filter((id) => validIds.includes(id));
+  if (selected.length) {
+    return selected;
+  }
+  return runs.slice(0, 2).map(runKey);
+}
+
+function renderProjectSelect() {
+  projectSelectEl.innerHTML = "";
+  if (!state.projects.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No projects";
+    projectSelectEl.appendChild(option);
+    projectSelectEl.disabled = true;
     return;
   }
 
-  for (const record of runRecords.slice().reverse()) {
-    const button = document.createElement("button");
-    button.className = `run-card${selectedRun?.id === record.id ? " active" : ""}`;
-    button.type = "button";
-    button.addEventListener("click", async () => {
-      state.selectedRun = record;
-      updateQueryParams({ project: state.selectedProject, run: record.name || null });
-      renderRuns(state.runRecords, state.selectedRun);
-      await loadMetrics();
-    });
-
-    const title = document.createElement("strong");
-    title.textContent = record.name || "Unnamed run";
-
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = `Created: ${record.created_at || "unknown"}`;
-
-    const idMeta = document.createElement("div");
-    idMeta.className = "subtle";
-    idMeta.textContent = `Run ID: ${record.id || "unknown"}`;
-
-    button.appendChild(title);
-    button.appendChild(meta);
-    button.appendChild(idMeta);
-    runsEl.appendChild(button);
+  projectSelectEl.disabled = false;
+  for (const project of state.projects) {
+    const option = document.createElement("option");
+    option.value = project;
+    option.textContent = project;
+    option.selected = project === state.selectedProject;
+    projectSelectEl.appendChild(option);
   }
 }
 
-function buildPolyline(points, width, height, padding) {
-  const values = points.map((point) => point.value);
+function renderRunList() {
+  runListEl.innerHTML = "";
+  if (!state.runs.length) {
+    const empty = document.createElement("div");
+    empty.className = "sidebar-empty";
+    empty.textContent = "No runs yet";
+    runListEl.appendChild(empty);
+    return;
+  }
+
+  for (const run of state.runs) {
+    const wrapper = document.createElement("label");
+    wrapper.className = "run-option";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = state.selectedRunIds.includes(runKey(run));
+    input.addEventListener("change", async () => {
+      if (input.checked) {
+        state.selectedRunIds = [...new Set([...state.selectedRunIds, runKey(run)])];
+      } else {
+        state.selectedRunIds = state.selectedRunIds.filter((id) => id !== runKey(run));
+      }
+      setQueryParams({
+        project: state.selectedProject,
+        run_ids: state.selectedRunIds,
+      });
+      await renderDashboard();
+    });
+
+    const marker = document.createElement("span");
+    marker.className = "run-color-dot";
+    marker.style.backgroundColor = colorForRun(run);
+
+    const text = document.createElement("span");
+    text.className = "run-option-text";
+    text.innerHTML = `<strong>${run.name || "Unnamed run"}</strong>`;
+
+    wrapper.appendChild(input);
+    wrapper.appendChild(marker);
+    wrapper.appendChild(text);
+    runListEl.appendChild(wrapper);
+  }
+}
+
+function chartPoints(rows, width, height, padding) {
+  const values = rows.map((row) => row.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const range = max - min || 1;
-  const stepX = points.length > 1 ? (width - padding * 2) / (points.length - 1) : 0;
-
-  return points
-    .map((point, index) => {
-      const x = padding + index * stepX;
-      const y = height - padding - ((point.value - min) / range) * (height - padding * 2);
-      return `${x},${y}`;
-    })
-    .join(" ");
-}
-
-function createMetricCard(metricName, series, index) {
-  const item = document.createElement("article");
-  item.className = "metric-card";
-
-  const header = document.createElement("div");
-  header.className = "metric-card-header";
-
-  const title = document.createElement("strong");
-  title.textContent = metricName;
-
-  const latest = document.createElement("div");
-  latest.className = "metric-value";
-  latest.textContent = series.length ? formatValue(series.at(-1).value) : "No values";
-
-  header.appendChild(title);
-  header.appendChild(latest);
-
-  if (!series.length) {
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = "No points logged for this metric yet.";
-    item.appendChild(header);
-    item.appendChild(meta);
-    return item;
-  }
-
-  const chart = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  chart.setAttribute("viewBox", "0 0 320 120");
-  chart.setAttribute("class", "metric-chart");
-
-  const grid = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  grid.setAttribute("d", "M 12 108 H 308");
-  grid.setAttribute("class", "metric-grid");
-
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-  line.setAttribute("points", buildPolyline(series, 320, 120, 12));
-  line.setAttribute("fill", "none");
-  line.setAttribute("stroke", metricStroke(index));
-  line.setAttribute("stroke-width", "3");
-  line.setAttribute("stroke-linecap", "round");
-  line.setAttribute("stroke-linejoin", "round");
-
-  chart.appendChild(grid);
-  chart.appendChild(line);
-
-  const meta = document.createElement("div");
-  meta.className = "metric-meta";
-  const latestPoint = series.at(-1);
-  meta.textContent = `Latest step ${latestPoint.step ?? "?"} with ${series.length} points`;
-
-  item.appendChild(header);
-  item.appendChild(chart);
-  item.appendChild(meta);
-  return item;
-}
-
-function renderMetrics(metricSeries) {
-  metricsEl.innerHTML = "";
-  if (!metricSeries.length) {
-    metricsEl.innerHTML = '<div class="item"><strong>No metrics yet</strong><div class="meta">This run has not logged any chartable metric values.</div></div>';
-    return;
-  }
-
-  metricSeries.forEach(({ metricName, series }, index) => {
-    metricsEl.appendChild(createMetricCard(metricName, series, index));
+  const span = max - min || 1;
+  return rows.map((row, index) => {
+    const x = padding + (index / Math.max(rows.length - 1, 1)) * (width - padding * 2);
+    const y = height - padding - ((row.value - min) / span) * (height - padding * 2);
+    return [x, y];
   });
 }
 
-async function loadRuns(project) {
-  if (!project) {
-    state.runRecords = [];
-    state.selectedRun = null;
-    renderRuns([], null);
-    renderMetrics([]);
-    metricHeaderEl.textContent = "Run Metrics";
-    return;
-  }
-
-  statusEl.textContent = "Loading runs...";
-  const runRecords = await api("get_runs_for_project", { project });
-  state.runRecords = runRecords;
-  state.selectedRun = getInitialRun(runRecords);
-  renderRuns(state.runRecords, state.selectedRun);
-  await loadMetrics();
+function pathFromPoints(points) {
+  return points.map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x} ${y}`).join(" ");
 }
 
-async function loadMetrics() {
-  const selectedRun = state.selectedRun;
-  if (!state.selectedProject || !selectedRun) {
-    metricHeaderEl.textContent = "Run Metrics";
-    renderMetrics([]);
-    statusEl.textContent = "Ready";
+function renderMetricCard(metricName, rows, runName, color) {
+  const card = document.createElement("article");
+  card.className = "metric-card";
+  if (!rows.length) {
+    card.innerHTML = `
+      <div class="metric-card-head">
+        <div>
+          <h3>${metricName}</h3>
+          <div class="metric-run">${runName}</div>
+        </div>
+      </div>
+      <div class="metric-empty">No numeric values logged for this metric.</div>
+    `;
+    return card;
+  }
+
+  const width = 640;
+  const height = 220;
+  const padding = 20;
+  const points = chartPoints(rows, width, height, padding);
+  const markers = points
+    .map(([x, y]) => `<circle class="plot-marker" cx="${x}" cy="${y}" r="3.5"></circle>`)
+    .join("");
+  const latest = rows.at(-1);
+
+  card.innerHTML = `
+    <div class="metric-card-head">
+      <div>
+        <h3>${metricName}</h3>
+        <div class="metric-run">${runName}</div>
+      </div>
+      <div class="metric-latest">${formatValue(latest.value)}</div>
+    </div>
+    <div class="plot-shell">
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${metricName} line plot">
+        <line class="plot-axis" x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}"></line>
+        <path class="plot-line" d="${pathFromPoints(points)}" stroke="${color}"></path>
+        ${markers}
+      </svg>
+    </div>
+    <div class="metric-meta">Latest step ${latest.step ?? "?"} with ${rows.length} points</div>
+  `;
+  return card;
+}
+
+function textFromContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (typeof part?.text === "string") return part.text;
+        if (typeof part?.content === "string") return part.content;
+        return "";
+      })
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (typeof content?.text === "string") return content.text;
+  return "";
+}
+
+function formatTraceTime(timestamp) {
+  if (!timestamp) return "—";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+  return date.toLocaleString();
+}
+
+function renderTraceRows(traces) {
+  tracesBodyEl.innerHTML = "";
+  if (!traces.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = '<td colspan="5" class="empty-row">No traces for the selected runs.</td>';
+    tracesBodyEl.appendChild(row);
     return;
   }
 
-  statusEl.textContent = "Loading metrics...";
-  metricHeaderEl.textContent = `Metrics for ${selectedRun.name || "selected run"}`;
+  for (const trace of traces) {
+    const request = textFromContent(
+      (trace.messages || []).find((message) => message?.role === "user")?.content,
+    ) || "(no user message)";
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td><span class="trace-id">${trace.id}</span></td>
+      <td class="trace-request">${request}</td>
+      <td>${trace.run || "—"}</td>
+      <td>${trace.step ?? "—"}</td>
+      <td>${formatTraceTime(trace.timestamp)}</td>
+    `;
+    tracesBodyEl.appendChild(row);
+  }
+}
 
-  const metricNames = await api("get_metrics_for_run", {
-    project: state.selectedProject,
-    run: selectedRun.name,
-    run_id: selectedRun.id,
-  });
+async function loadRuns() {
+  if (!state.selectedProject) {
+    state.runs = [];
+    state.selectedRunIds = [];
+    renderRunList();
+    await renderDashboard();
+    return;
+  }
 
-  const metricSeries = await Promise.all(
-    metricNames.slice(0, 6).map(async (metricName) => {
-      const series = await api("get_metric_values", {
-        project: state.selectedProject,
-        run: selectedRun.name,
-        run_id: selectedRun.id,
-        metric_name: metricName,
-      });
-      return { metricName, series };
-    })
-  );
+  state.runs = await api("get_runs_for_project", { project: state.selectedProject });
+  state.selectedRunIds = pickInitialRunIds(state.runs);
+  renderRunList();
+  await renderDashboard();
+}
 
-  renderMetrics(metricSeries);
-  statusEl.textContent = "Ready";
+async function renderDashboard() {
+  metricsGridEl.innerHTML = "";
+  tracesBodyEl.innerHTML = "";
+
+  const selectedRuns = state.runs.filter((run) => state.selectedRunIds.includes(runKey(run)));
+  metricsTitleEl.textContent = state.selectedProject || "Metrics";
+
+  if (!state.selectedProject) {
+    metricsSubtitleEl.textContent = "No Trackio projects found.";
+    tracesSubtitleEl.textContent = "No traces available.";
+    return;
+  }
+
+  if (!selectedRuns.length) {
+    metricsSubtitleEl.textContent = "Select one or more runs in the sidebar.";
+    tracesSubtitleEl.textContent = "Select one or more runs to load traces.";
+    metricsGridEl.innerHTML = '<div class="empty-panel">No runs selected.</div>';
+    renderTraceRows([]);
+    return;
+  }
+
+  metricsSubtitleEl.textContent = `Plot cards for ${selectedRuns.length} selected run${selectedRuns.length === 1 ? "" : "s"}.`;
+  tracesSubtitleEl.textContent = `Recent traces for ${selectedRuns.length} selected run${selectedRuns.length === 1 ? "" : "s"}.`;
+
+  const traceGroups = [];
+
+  for (const run of selectedRuns) {
+    const metrics = await api("get_metrics_for_run", {
+      project: state.selectedProject,
+      run: run.name,
+      run_id: run.id,
+    });
+
+    const metricSeries = await Promise.all(
+      metrics.slice(0, 3).map(async (metricName) => ({
+        metricName,
+        rows: await api("get_metric_values", {
+          project: state.selectedProject,
+          run: run.name,
+          run_id: run.id,
+          metric_name: metricName,
+        }),
+      })),
+    );
+
+    metricSeries.forEach(({ metricName, rows }) => {
+      const numericRows = rows.filter((row) => typeof row.value === "number" && Number.isFinite(row.value));
+      metricsGridEl.appendChild(
+        renderMetricCard(metricName, numericRows, run.name || "Unnamed run", colorForRun(run)),
+      );
+    });
+
+    const runTraces = await api("get_traces", {
+      project: state.selectedProject,
+      run: run.name,
+      run_id: run.id,
+      sort: "request_time_desc",
+      limit: 6,
+    });
+    traceGroups.push(...runTraces);
+  }
+
+  if (!metricsGridEl.children.length) {
+    metricsGridEl.innerHTML = '<div class="empty-panel">No numeric metrics available.</div>';
+  }
+
+  traceGroups.sort((left, right) => String(right.timestamp || "").localeCompare(String(left.timestamp || "")));
+  renderTraceRows(traceGroups.slice(0, 12));
 }
 
 async function load() {
+  bindNavigation();
+  projectSelectEl.addEventListener("change", async () => {
+    state.selectedProject = projectSelectEl.value || null;
+    setQueryParams({ project: state.selectedProject, run_ids: null });
+    await loadRuns();
+    renderProjectSelect();
+  });
   try {
-    statusEl.textContent = "Loading projects...";
     state.projects = await api("get_all_projects");
-    state.selectedProject = getInitialProject(state.projects);
-    projectTitle.textContent = state.selectedProject || "No local Trackio projects";
-    renderProjects(state.projects, state.selectedProject);
-
-    if (!state.selectedProject) {
-      renderRuns([], null);
-      renderMetrics([]);
-      metricHeaderEl.textContent = "Run Metrics";
-      statusEl.textContent = "Ready";
-      return;
-    }
-
-    updateQueryParams({ project: state.selectedProject });
-    await loadRuns(state.selectedProject);
-    projectTitle.textContent = state.selectedProject;
+    state.selectedProject = pickInitialProject(state.projects);
+    renderProjectSelect();
+    await loadRuns();
   } catch (error) {
-    projectTitle.textContent = "Frontend error";
-    runsEl.innerHTML = "";
-    const item = document.createElement("div");
-    item.className = "item";
-    const title = document.createElement("strong");
-    title.textContent = "Could not load Trackio data";
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = error.message;
-    item.appendChild(title);
-    item.appendChild(meta);
-    runsEl.appendChild(item);
-    metricsEl.innerHTML = "";
-    statusEl.textContent = "Error";
+    projectSelectEl.innerHTML = '<option value="">Error</option>';
+    projectSelectEl.disabled = true;
+    metricsSubtitleEl.textContent = "Could not load Trackio data.";
+    metricsGridEl.innerHTML = '<div class="empty-panel">The starter could not reach the Trackio API.</div>';
+    tracesSubtitleEl.textContent = "Could not load traces.";
+    renderTraceRows([]);
   }
 }
 

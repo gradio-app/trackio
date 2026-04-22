@@ -20,6 +20,14 @@ header p {
   font-size: 12px;
 }
 
+.signal-logo {
+  display: block;
+  width: 142px;
+  max-width: 100%;
+  margin-bottom: 14px;
+  opacity: 0.92;
+}
+
 header h1,
 h2 {
   margin: 8px 0 0;
