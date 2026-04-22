@@ -147,8 +147,13 @@
 
       if (JSON.stringify(runs) !== JSON.stringify(newRuns)) {
         const prevSelected = selectedRuns;
+        const prevOrdered = runs.map(runKey);
         runs = newRuns;
-        selectedRuns = reconcileSelectedRuns(prevSelected, newRuns.map(runKey));
+        selectedRuns = reconcileSelectedRuns(
+          prevSelected,
+          newRuns.map(runKey),
+          prevOrdered,
+        );
       }
     } catch (e) {
       console.error("Failed to load runs:", e);
@@ -458,6 +463,7 @@
         <Runs
           project={selectedProject}
           {runs}
+          {filterText}
           onRunsChanged={refreshRunsAndMutation}
           runMutationAllowed={mutationStatus.allowed}
         />

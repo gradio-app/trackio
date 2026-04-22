@@ -7,6 +7,7 @@
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
   import { latestOnlySelection } from "../lib/selection.js";
+  import { filterMetricsByRegex } from "../lib/dataProcessing.js";
 
   let {
     open = $bindable(true),
@@ -78,11 +79,11 @@
     };
   }
 
-  let filteredRuns = $derived(
-    filterText
-      ? runs.filter((r) => r.name.toLowerCase().includes(filterText.toLowerCase()))
-      : runs,
-  );
+  let filteredRuns = $derived.by(() => {
+    if (!filterText || !filterText.trim()) return runs;
+    const matches = new Set(filterMetricsByRegex(runs.map((r) => r.name), filterText));
+    return runs.filter((r) => matches.has(r.name));
+  });
 
   let runColorMap = $derived(buildColorMap(runs));
   let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
@@ -157,6 +158,9 @@
     const runIds = selectedRunIdsForShare(selectedRuns, runs);
     if (runIds.length) {
       params.set("run_ids", runIds.join(","));
+    }
+    if (smoothing != null && smoothing !== 10) {
+      params.set("smoothing", smoothing.toString());
     }
     if (!showHeaders) {
       params.set("accordion", "hidden");
@@ -236,6 +240,17 @@
           />
         {/if}
       </div>
+
+      {#if variant === "compact" && currentPage === "runs"}
+        <div class="section">
+          <GradioTextbox
+            label="Run Filter"
+            info="Filter runs using regex patterns. Leave empty to show all runs."
+            placeholder="e.g., baseline|exp-.*|v2"
+            bind:value={filterText}
+          />
+        </div>
+      {/if}
 
       {#if variant === "full"}
         {#if currentPage === "metrics" && spacesMode}

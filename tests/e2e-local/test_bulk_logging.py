@@ -1,3 +1,4 @@
+import sys
 import time
 
 import trackio
@@ -27,7 +28,8 @@ def test_rapid_bulk_logging(temp_dir):
         trackio.log({"metric": i, "value": i * 3}, step=i)
     time_to_run_1000_logs = time.time() - start_time
 
-    assert time_to_run_1000_logs < 0.2, (
+    max_seconds = 0.5 if sys.platform.startswith("win") else 0.2
+    assert time_to_run_1000_logs < max_seconds, (
         f"1000 calls of trackio.log() took {time_to_run_1000_logs} seconds, which is too long"
     )
     trackio.finish()

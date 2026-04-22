@@ -4,10 +4,12 @@
   import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
+  import { filterMetricsByRegex } from "../lib/dataProcessing.js";
 
   let {
     project = null,
     runs = [],
+    filterText = "",
     onRunsChanged = null,
     runMutationAllowed = true,
   } = $props();
@@ -21,6 +23,12 @@
   let renamingIndex = $state(-1);
   let renameValue = $state("");
   let renameInput = $state(null);
+
+  let filteredRuns = $derived.by(() => {
+    if (!filterText || !filterText.trim()) return runsData;
+    const matches = new Set(filterMetricsByRegex(runsData.map((r) => r.name), filterText));
+    return runsData.filter((r) => matches.has(r.name));
+  });
 
   async function loadRuns() {
     if (!project) {
@@ -110,6 +118,11 @@
       <p>Refresh this page or wait for the dashboard to poll; new runs appear in the table with step counts.</p>
     </div>
   {:else}
+    {#if filterText}
+      <div class="filter-count-row">
+        <span class="filter-count">{filteredRuns.length} of {runsData.length} runs</span>
+      </div>
+    {/if}
     <table class="runs-table">
       <thead>
         <tr>
@@ -120,7 +133,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each runsData as run, i}
+        {#each filteredRuns as run, i}
           <tr>
             <td class="actions-cell">
               <div class="actions-wrap">
@@ -218,6 +231,13 @@
   .empty-state pre code {
     background: none;
     padding: 0;
+  }
+  .filter-count-row {
+    margin-bottom: 12px;
+  }
+  .filter-count {
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
   }
   .runs-table {
     width: 100%;
