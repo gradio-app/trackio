@@ -4,6 +4,7 @@
   import Sidebar from "./components/Sidebar.svelte";
   import AlertPanel from "./components/AlertPanel.svelte";
   import Metrics from "./pages/Metrics.svelte";
+  import Traces from "./pages/Traces.svelte";
   import SystemMetrics from "./pages/SystemMetrics.svelte";
   import Media from "./pages/Media.svelte";
   import Reports from "./pages/Reports.svelte";
@@ -372,6 +373,7 @@
 
   let showSidebar = $derived(
     currentPage === "metrics" ||
+      currentPage === "traces" ||
       currentPage === "system" ||
       currentPage === "media" ||
       currentPage === "reports" ||
@@ -438,6 +440,11 @@
           {plotOrder}
           {realtimeEnabled}
           bind:metricColumns
+        />
+      {:else if currentPage === "traces"}
+        <Traces
+          project={selectedProject}
+          selectedRuns={selectedRunRecords}
         />
       {:else if currentPage === "system"}
         <SystemMetrics
