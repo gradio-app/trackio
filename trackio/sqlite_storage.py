@@ -1883,6 +1883,133 @@ class SQLiteStorage:
         return out
 
     @staticmethod
+    def _flatten_trace_search_text(trace: dict[str, Any]) -> str:
+        parts: list[str] = []
+
+        def visit(value: Any):
+            if value is None:
+                return
+            if isinstance(value, dict):
+                for nested in value.values():
+                    visit(nested)
+                return
+            if isinstance(value, list):
+                for nested in value:
+                    visit(nested)
+                return
+            parts.append(str(value))
+
+        visit(trace.get("messages", []))
+        visit(trace.get("metadata", {}))
+        return " ".join(parts).lower()
+
+    @staticmethod
+    def _extract_traces_from_logs(
+        logs: list[dict[str, Any]],
+        run: str | None,
+        run_id: str | None,
+    ) -> list[dict[str, Any]]:
+        traces: list[dict[str, Any]] = []
+
+        for log in logs:
+            step = log.get("step")
+            timestamp = log.get("timestamp")
+            for key, value in log.items():
+                if key in {"step", "timestamp"}:
+                    continue
+
+                candidates = value if isinstance(value, list) else [value]
+                for index, candidate in enumerate(candidates):
+                    if (
+                        not isinstance(candidate, dict)
+                        or candidate.get("_type") != "trackio.trace"
+                    ):
+                        continue
+
+                    trace_index = index if isinstance(value, list) else None
+                    trace_id_parts = [run_id or run or "run", str(step), key]
+                    if trace_index is not None:
+                        trace_id_parts.append(str(trace_index))
+
+                    trace_record = {
+                        "id": ":".join(trace_id_parts),
+                        "key": key,
+                        "index": trace_index,
+                        "run": run,
+                        "run_id": run_id,
+                        "step": step,
+                        "timestamp": timestamp,
+                        "messages": candidate.get("messages", []),
+                        "metadata": candidate.get("metadata", {}),
+                    }
+                    trace_record["_search_text"] = (
+                        f"{trace_record['id']} {key} "
+                        f"{SQLiteStorage._flatten_trace_search_text(trace_record)}"
+                    ).lower()
+                    traces.append(trace_record)
+
+        return traces
+
+    @staticmethod
+    def _sort_traces(
+        traces: list[dict[str, Any]], sort: str | None
+    ) -> list[dict[str, Any]]:
+        sort_key = sort or "request_time_desc"
+        if sort_key == "step_asc":
+            return sorted(traces, key=lambda trace: trace.get("step") or 0)
+        if sort_key == "step_desc":
+            return sorted(
+                traces, key=lambda trace: trace.get("step") or 0, reverse=True
+            )
+        if sort_key == "request_time_asc":
+            return sorted(traces, key=lambda trace: trace.get("timestamp") or "")
+        return sorted(
+            traces, key=lambda trace: trace.get("timestamp") or "", reverse=True
+        )
+
+    @staticmethod
+    def get_traces(
+        project: str,
+        run: str | None = None,
+        search: str | None = None,
+        sort: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+        run_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        try:
+            offset = max(0, int(offset or 0))
+        except (TypeError, ValueError):
+            offset = 0
+        if limit is not None:
+            try:
+                limit = max(0, int(limit))
+            except (TypeError, ValueError):
+                limit = None
+
+        logs = SQLiteStorage.get_logs(project, run, max_points=None, run_id=run_id)
+        traces = SQLiteStorage._extract_traces_from_logs(logs, run=run, run_id=run_id)
+
+        if search:
+            needle = search.strip().lower()
+            if needle:
+                traces = [
+                    trace for trace in traces if needle in trace.get("_search_text", "")
+                ]
+
+        traces = SQLiteStorage._sort_traces(traces, sort)
+
+        if offset > 0:
+            traces = traces[offset:]
+        if limit is not None:
+            traces = traces[:limit]
+
+        return [
+            {key: value for key, value in trace.items() if key != "_search_text"}
+            for trace in traces
+        ]
+
+    @staticmethod
     def load_from_dataset():
         bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
         if bucket_id is not None:

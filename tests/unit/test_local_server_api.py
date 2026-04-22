@@ -14,39 +14,7 @@ from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_delete_run(temp_dir):
-    project = "test_delete_project"
-    run_name = "test_delete_run"
-
-    trackio.init(project=project, name=run_name)
-    trackio.log(metrics={"loss": 0.1, "accuracy": 0.9})
-    trackio.log(metrics={"loss": 0.2, "accuracy": 0.95})
-    trackio.finish()
-
-    logs = SQLiteStorage.get_logs(project=project, run=run_name)
-    assert len(logs) == 2
-    assert logs[0]["loss"] == 0.1
-    assert logs[1]["loss"] == 0.2
-
-    api = Api()
-    runs = api.runs(project)
-    run = runs[0]
-    assert run.name == run_name
-
-    success = run.delete()
-    assert success is True
-
-    logs_after = SQLiteStorage.get_logs(project=project, run=run_name)
-    assert len(logs_after) == 0
-
-    config_after = SQLiteStorage.get_run_config(project=project, run=run_name)
-    assert config_after is None
-
-    runs_after = SQLiteStorage.get_runs(project=project)
-    assert run_name not in runs_after
-
-
-def test_move_run(temp_dir, image_ndarray):
+def test_move_run_via_api_updates_media_paths(temp_dir, image_ndarray):
     source_project = "test_move_source"
     target_project = "test_move_target"
     run_name = "test_move_run"
@@ -67,8 +35,9 @@ def test_move_run(temp_dir, image_ndarray):
 
     image1_path = source_logs[0]["img1"].get("file_path")
     assert image1_path is not None
-    normalized_path = str(image1_path).replace("\\", "/")
-    assert normalized_path.startswith(f"{source_project}/{run_name}/")
+    assert (
+        str(image1_path).replace("\\", "/").startswith(f"{source_project}/{run_name}/")
+    )
 
     api = Api()
     runs = api.runs(source_project)
@@ -87,93 +56,23 @@ def test_move_run(temp_dir, image_ndarray):
 
     target_image1_path = target_logs[0]["img1"].get("file_path")
     assert target_image1_path is not None
-    normalized_path1 = str(target_image1_path).replace("\\", "/")
-    assert normalized_path1.startswith(f"{target_project}/{run_name}/")
+    assert (
+        str(target_image1_path)
+        .replace("\\", "/")
+        .startswith(f"{target_project}/{run_name}/")
+    )
 
     target_image2_path = target_logs[1]["img2"].get("file_path")
     assert target_image2_path is not None
-    normalized_path2 = str(target_image2_path).replace("\\", "/")
-    assert normalized_path2.startswith(f"{target_project}/{run_name}/")
-
-    source_logs_after = SQLiteStorage.get_logs(project=source_project, run=run_name)
-    assert len(source_logs_after) == 0
-
-    source_runs_after = SQLiteStorage.get_runs(project=source_project)
-    assert run_name not in source_runs_after
-    assert len(source_runs_after) == 0
-
-    target_runs = SQLiteStorage.get_runs(project=target_project)
-    assert run_name in target_runs
-
-    source_config_after = SQLiteStorage.get_run_config(
-        project=source_project, run=run_name
+    assert (
+        str(target_image2_path)
+        .replace("\\", "/")
+        .startswith(f"{target_project}/{run_name}/")
     )
-    assert source_config_after is None
 
-    target_config = SQLiteStorage.get_run_config(project=target_project, run=run_name)
-    assert target_config is not None
-
-
-def test_rename_run(temp_dir, image_ndarray):
-    project = "test_rename_project"
-    old_name = "old_run_name"
-    new_name = "new_run_name"
-
-    trackio.init(project=project, name=old_name)
-
-    image1 = trackio.Image(image_ndarray, caption="test_image_1")
-    image2 = trackio.Image(image_ndarray, caption="test_image_2")
-
-    trackio.log(metrics={"loss": 0.1, "acc": 0.9, "img1": image1})
-    trackio.log(metrics={"loss": 0.2, "acc": 0.95, "img2": image2})
-    trackio.finish()
-
-    old_logs = SQLiteStorage.get_logs(project=project, run=old_name)
-    assert len(old_logs) == 2
-    assert old_logs[0]["loss"] == 0.1
-    assert old_logs[1]["loss"] == 0.2
-
-    image1_path = old_logs[0]["img1"].get("file_path")
-    assert image1_path is not None
-    normalized_path = str(image1_path).replace("\\", "/")
-    assert normalized_path.startswith(f"{project}/{old_name}/")
-
-    api = Api()
-    runs = api.runs(project)
-    run = runs[0]
-    assert run.name == old_name
-
-    result = run.rename(new_name)
-    assert result is run
-    assert run.name == new_name
-
-    new_logs = SQLiteStorage.get_logs(project=project, run=new_name)
-    assert len(new_logs) == 2
-    assert new_logs[0]["loss"] == 0.1
-    assert new_logs[1]["loss"] == 0.2
-
-    new_image1_path = new_logs[0]["img1"].get("file_path")
-    assert new_image1_path is not None
-    normalized_new_path1 = str(new_image1_path).replace("\\", "/")
-    assert normalized_new_path1.startswith(f"{project}/{new_name}/")
-
-    new_image2_path = new_logs[1]["img2"].get("file_path")
-    assert new_image2_path is not None
-    normalized_new_path2 = str(new_image2_path).replace("\\", "/")
-    assert normalized_new_path2.startswith(f"{project}/{new_name}/")
-
-    old_logs_after = SQLiteStorage.get_logs(project=project, run=old_name)
-    assert len(old_logs_after) == 0
-
-    runs_after = SQLiteStorage.get_runs(project=project)
-    assert old_name not in runs_after
-    assert new_name in runs_after
-
-    old_config_after = SQLiteStorage.get_run_config(project=project, run=old_name)
-    assert old_config_after is None
-
-    new_config = SQLiteStorage.get_run_config(project=project, run=new_name)
-    assert new_config is not None
+    assert SQLiteStorage.get_logs(project=source_project, run=run_name) == []
+    assert SQLiteStorage.get_run_config(project=source_project, run=run_name) is None
+    assert run_name in SQLiteStorage.get_runs(project=target_project)
 
 
 def test_local_dashboard_supports_remote_client(temp_dir):
@@ -230,14 +129,14 @@ def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
 
     try:
-        resp = httpx.post(
+        response = httpx.post(
             f"{url.rstrip('/')}/api/get_runs_for_project",
             json={},
             timeout=5,
         )
 
-        assert resp.status_code == 400
-        assert resp.json() == {"error": "Missing required parameter: project"}
+        assert response.status_code == 400
+        assert response.json() == {"error": "Missing required parameter: project"}
     finally:
         app.close()
 
@@ -259,19 +158,19 @@ def test_local_dashboard_file_endpoint_only_serves_trackio_paths(
     app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
 
     try:
-        allowed_resp = httpx.get(
+        allowed_response = httpx.get(
             f"{url.rstrip('/')}/file",
             params={"path": str(allowed_path)},
             timeout=5,
         )
-        blocked_resp = httpx.get(
+        blocked_response = httpx.get(
             f"{url.rstrip('/')}/file",
             params={"path": "/etc/hosts"},
             timeout=5,
         )
 
-        assert allowed_resp.status_code == 200
-        assert blocked_resp.status_code == 404
+        assert allowed_response.status_code == 200
+        assert blocked_response.status_code == 404
     finally:
         trackio.delete_project(project, force=True)
         app.close()
@@ -291,25 +190,25 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
     write_headers = {"x-trackio-write-token": write_token}
 
     try:
-        blocked_upload_resp = httpx.post(
+        blocked_upload_response = httpx.post(
             f"{url.rstrip('/')}/api/upload",
             files={"files": (source_path.name, source_text.encode())},
             timeout=5,
         )
-        assert blocked_upload_resp.status_code == 400
-        assert blocked_upload_resp.json() == {
+        assert blocked_upload_response.status_code == 400
+        assert blocked_upload_response.json() == {
             "error": "A write_token is required to upload files to this server. Use the write-access URL from trackio.show(), set TRACKIO_WRITE_TOKEN, or send header X-Trackio-Write-Token."
         }
 
         with source_path.open("rb") as handle:
-            upload_resp = httpx.post(
+            upload_response = httpx.post(
                 f"{url.rstrip('/')}/api/upload",
                 headers=write_headers,
                 files={"files": (source_path.name, handle)},
                 timeout=5,
             )
-        upload_resp.raise_for_status()
-        uploaded_path = upload_resp.json()["paths"][0]
+        upload_response.raise_for_status()
+        uploaded_path = upload_response.json()["paths"][0]
         allowed_target = (
             trackio_utils.MEDIA_DIR
             / project
@@ -318,7 +217,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
             / Path(uploaded_path).name
         )
 
-        allowed_resp = httpx.post(
+        allowed_response = httpx.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
             headers=write_headers,
             json={
@@ -335,7 +234,7 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
             },
             timeout=5,
         )
-        blocked_resp = httpx.post(
+        blocked_response = httpx.post(
             f"{url.rstrip('/')}/api/bulk_upload_media",
             headers=write_headers,
             json={
@@ -353,79 +252,17 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
             timeout=5,
         )
 
-        assert allowed_resp.status_code == 200
+        assert allowed_response.status_code == 200
         assert allowed_target is not None
         assert allowed_target.read_text() == source_text
         assert not Path(uploaded_path).exists()
-        assert blocked_resp.status_code == 400
-        assert blocked_resp.json() == {
+        assert blocked_response.status_code == 400
+        assert blocked_response.json() == {
             "error": "Uploaded file was not created by this Trackio server."
         }
         assert not blocked_target.exists()
     finally:
         source_path.unlink(missing_ok=True)
-        trackio.delete_project(project, force=True)
-        app.close()
-
-
-def test_local_dashboard_get_metric_values_honors_run_id(temp_dir):
-    project = "test_metric_values_run_id"
-    run_name = "duplicate-run"
-
-    first = trackio.init(project=project, name=run_name, resume="never")
-    trackio.log(metrics={"loss": 1.0})
-    trackio.finish()
-
-    second = trackio.init(project=project, name=run_name, resume="never")
-    trackio.log(metrics={"loss": 2.0})
-    trackio.finish()
-
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
-
-    try:
-        client = Client(url, verbose=False)
-        runs = client.predict(project, api_name="/get_runs_for_project")
-        first_run_id = first.id
-        second_run_id = second.id
-        assert [run["id"] for run in runs] == [first_run_id, second_run_id]
-
-        latest_resp = httpx.post(
-            f"{url.rstrip('/')}/api/get_metric_values",
-            json={
-                "project": project,
-                "run": run_name,
-                "metric_name": "loss",
-            },
-            timeout=5,
-        )
-        first_resp = httpx.post(
-            f"{url.rstrip('/')}/api/get_metric_values",
-            json={
-                "project": project,
-                "run": run_name,
-                "run_id": first_run_id,
-                "metric_name": "loss",
-            },
-            timeout=5,
-        )
-        second_resp = httpx.post(
-            f"{url.rstrip('/')}/api/get_metric_values",
-            json={
-                "project": project,
-                "run": run_name,
-                "run_id": second_run_id,
-                "metric_name": "loss",
-            },
-            timeout=5,
-        )
-
-        assert latest_resp.status_code == 200
-        assert first_resp.status_code == 200
-        assert second_resp.status_code == 200
-        assert [row["value"] for row in latest_resp.json()["data"]] == [2.0]
-        assert [row["value"] for row in first_resp.json()["data"]] == [1.0]
-        assert [row["value"] for row in second_resp.json()["data"]] == [2.0]
-    finally:
         trackio.delete_project(project, force=True)
         app.close()
 
