@@ -1,4 +1,5 @@
 ---
+emoji: 🎯
 sdk: gradio
 sdk_version: {GRADIO_VERSION}
 app_file: {APP_FILE}
