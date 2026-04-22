@@ -140,4 +140,6 @@ def mount_frontend(app, frontend_dir: str | Path):
         index_html_path=index_html_path,
     )
     app.routes.append(Mount("/static/trackio", app=static_assets))
-    app.routes.append(Route("/__trackio/frontend_version", frontend_version, methods=["GET"]))
+    app.routes.append(
+        Route("/__trackio/frontend_version", frontend_version, methods=["GET"])
+    )

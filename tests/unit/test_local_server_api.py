@@ -144,7 +144,9 @@ def test_local_dashboard_returns_400_for_missing_required_parameter(temp_dir):
 def test_local_dashboard_injects_live_reload_for_custom_frontend(temp_dir):
     frontend_dir = Path(temp_dir) / "custom-frontend"
     frontend_dir.mkdir()
-    (frontend_dir / "index.html").write_text("<!doctype html><html><body><h1>Custom</h1></body></html>")
+    (frontend_dir / "index.html").write_text(
+        "<!doctype html><html><body><h1>Custom</h1></body></html>"
+    )
 
     app, url, _, _ = trackio.show(
         block_thread=False,

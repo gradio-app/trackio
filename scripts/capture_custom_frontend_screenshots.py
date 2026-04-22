@@ -32,14 +32,23 @@ def seed_demo_project() -> None:
                     "lr": round(0.0008 - step * 0.00006, 6),
                     "conversation": Trace(
                         messages=[
-                            {"role": "system", "content": "You are monitoring a training job."},
-                            {"role": "user", "content": f"Summarize step {step} for run {run_name}."},
+                            {
+                                "role": "system",
+                                "content": "You are monitoring a training job.",
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Summarize step {step} for run {run_name}.",
+                            },
                             {
                                 "role": "assistant",
                                 "content": f"Loss is trending down and accuracy is trending up at step {step}.",
                             },
                         ],
-                        metadata={"label": f"{run_name}-step-{step}", "group": "monitoring"},
+                        metadata={
+                            "label": f"{run_name}-step-{step}",
+                            "group": "monitoring",
+                        },
                     ),
                 }
             )
@@ -66,9 +75,19 @@ def capture() -> None:
 
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch()
-                page = browser.new_page(viewport={"width": 1440, "height": 1100}, device_scale_factor=1)
+                page = browser.new_page(
+                    viewport={"width": 1440, "height": 1100}, device_scale_factor=1
+                )
                 page.goto(f"{local_url}?project={PROJECT}", wait_until="networkidle")
-                page.screenshot(path=str(repo_root / "examples" / "custom-frontends" / theme_name / "screenshot.png"))
+                page.screenshot(
+                    path=str(
+                        repo_root
+                        / "examples"
+                        / "custom-frontends"
+                        / theme_name
+                        / "screenshot.png"
+                    )
+                )
                 browser.close()
             time.sleep(0.2)
     finally:
