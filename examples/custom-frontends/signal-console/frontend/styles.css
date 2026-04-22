@@ -7,6 +7,8 @@ body {
 }
 
 .shell {
+  max-width: 1400px;
+  margin: 0 auto;
   padding: 28px;
 }
 
@@ -23,11 +25,9 @@ h2 {
   margin: 8px 0 0;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  margin-top: 18px;
+.status-line {
+  margin-top: 12px;
+  color: rgba(200, 255, 231, 0.68);
 }
 
 .panel {
@@ -38,11 +38,25 @@ h2 {
   box-shadow: inset 0 0 0 1px rgba(85, 255, 148, 0.08);
 }
 
-button,
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.label {
+  display: block;
+  margin-bottom: 8px;
+  color: #55ff94;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+}
+
+.selector,
 .item {
   display: block;
   width: 100%;
-  margin-top: 10px;
   padding: 12px;
   border: 1px solid rgba(85, 255, 148, 0.25);
   background: rgba(85, 255, 148, 0.05);
@@ -51,12 +65,118 @@ button,
   text-align: left;
 }
 
-button.active {
-  background: rgba(85, 255, 148, 0.18);
+.summary-box {
+  padding: 12px;
+  border: 1px solid rgba(85, 255, 148, 0.25);
+  background: rgba(85, 255, 148, 0.05);
+}
+
+.summary-box strong {
+  font-size: 22px;
+}
+
+.summary-box.duo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metrics-head {
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(85, 255, 148, 0.25);
+}
+
+.metrics-subtitle {
+  margin-top: 8px;
+  color: rgba(200, 255, 231, 0.68);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.metric-card {
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(85, 255, 148, 0.2);
+}
+
+.metric-grid > .metric-card:nth-child(-n + 2) {
+  border-top: none;
+  padding-top: 0;
+}
+
+.metric-card h3,
+.metric-extras h3 {
+  margin: 0;
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+
+.metric-meta,
+.metric-value {
+  margin-top: 8px;
+  color: rgba(200, 255, 231, 0.74);
+  font-size: 13px;
+}
+
+.chart-frame {
+  margin-top: 12px;
+}
+
+.chart-frame svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-axis {
+  stroke: rgba(85, 255, 148, 0.2);
+}
+
+.chart-line {
+  fill: none;
+  stroke: #55ff94;
+  stroke-width: 2;
+}
+
+.chart-fill {
+  fill: rgba(85, 255, 148, 0.08);
+}
+
+.chart-point {
+  fill: #c8ffe7;
+}
+
+.metric-extras {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(85, 255, 148, 0.2);
+}
+
+.metric-pill {
+  display: inline-block;
+  margin: 8px 8px 0 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(85, 255, 148, 0.25);
 }
 
 @media (max-width: 760px) {
-  .grid {
+  .control-grid,
+  .metric-grid {
     grid-template-columns: 1fr;
+  }
+
+  .metric-grid > .metric-card:nth-child(-n + 2) {
+    border-top: 1px solid rgba(85, 255, 148, 0.2);
+    padding-top: 14px;
+  }
+
+  .metric-grid > .metric-card:first-child {
+    border-top: none;
+    padding-top: 0;
   }
 }

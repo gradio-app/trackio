@@ -8,7 +8,7 @@ body {
 }
 
 .shell {
-  width: min(1100px, calc(100vw - 28px));
+  width: min(1240px, calc(100vw - 28px));
   margin: 0 auto;
   padding: 42px 0 60px;
 }
@@ -26,49 +26,169 @@ h2 {
   margin: 8px 0 0;
 }
 
-.projects,
+.hero-note {
+  margin: 16px 0 0;
+  max-width: 560px;
+  color: rgba(59, 36, 65, 0.72);
+  font-size: 18px;
+}
+
 .grid {
   margin-top: 18px;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
 .panel,
-button,
 .item {
   border-radius: 24px;
 }
 
 .panel {
+  min-width: 0;
   padding: 20px;
   background: rgba(255, 255, 255, 0.85);
   box-shadow: 0 18px 40px rgba(134, 76, 85, 0.12);
 }
 
-button,
+.toolbar {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr repeat(3, minmax(0, 0.6fr));
+  gap: 14px;
+  align-items: end;
+  margin-top: 18px;
+}
+
+.control-label,
+.mini-card span {
+  display: block;
+  margin-bottom: 8px;
+  color: #f06c54;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 12px;
+}
+
+.selector,
 .item {
   display: block;
   width: 100%;
-  margin-top: 10px;
   padding: 14px 16px;
   border: none;
+  border-radius: 18px;
   background: rgba(255, 132, 105, 0.12);
   color: inherit;
   font: inherit;
   text-align: left;
 }
 
-button.active {
-  background: #f06c54;
-  color: white;
+.mini-card {
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: rgba(255, 132, 105, 0.12);
+}
+
+.mini-card strong {
+  font-size: 26px;
+}
+
+.run-card strong {
+  font-size: 20px;
+}
+
+.metrics-head {
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(59, 36, 65, 0.12);
+}
+
+.metrics-subtitle {
+  margin-top: 8px;
+  color: rgba(59, 36, 65, 0.68);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.metric-card {
+  padding-top: 14px;
+  border-top: 1px solid rgba(59, 36, 65, 0.12);
+}
+
+.metric-grid > .metric-card:nth-child(-n + 2) {
+  border-top: none;
+  padding-top: 0;
+}
+
+.metric-card h3,
+.metric-extras h3 {
+  margin: 0;
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+
+.metric-meta,
+.metric-value {
+  margin-top: 8px;
+  color: rgba(59, 36, 65, 0.68);
+}
+
+.chart-frame {
+  margin-top: 12px;
+}
+
+.chart-frame svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-axis {
+  stroke: rgba(59, 36, 65, 0.14);
+}
+
+.chart-line {
+  fill: none;
+  stroke: #f06c54;
+  stroke-width: 2.5;
+}
+
+.chart-fill {
+  fill: rgba(240, 108, 84, 0.08);
+}
+
+.chart-point {
+  fill: #3b2441;
+}
+
+.metric-extras {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(59, 36, 65, 0.12);
+}
+
+.metric-pill {
+  display: inline-block;
+  margin: 8px 8px 0 0;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 132, 105, 0.12);
 }
 
 @media (max-width: 760px) {
-  .grid {
+  .toolbar,
+  .metric-grid {
     grid-template-columns: 1fr;
+  }
+
+  .metric-grid > .metric-card:nth-child(-n + 2) {
+    border-top: 1px solid rgba(59, 36, 65, 0.12);
+    padding-top: 14px;
+  }
+
+  .metric-grid > .metric-card:first-child {
+    border-top: none;
+    padding-top: 0;
   }
 }

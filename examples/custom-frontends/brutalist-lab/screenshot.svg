@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
-  <rect width="1200" height="720" fill="#f5ef19"/>
-  <rect x="60" y="120" width="320" height="470" fill="#fff" stroke="#111" stroke-width="10"/>
-  <rect x="430" y="120" width="320" height="470" fill="#fff" stroke="#111" stroke-width="10"/>
-  <rect x="800" y="120" width="320" height="470" fill="#fff" stroke="#111" stroke-width="10"/>
-  <text x="60" y="70" font-size="60" font-family="Courier New, monospace" fill="#111">BRUTALIST LAB</text>
-</svg>

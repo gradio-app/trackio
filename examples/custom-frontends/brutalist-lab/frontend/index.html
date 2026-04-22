@@ -8,23 +8,36 @@
   </head>
   <body>
     <main class="shell">
-      <header>
+      <header class="hero">
         <p>BRUTALIST LAB</p>
         <h1 id="title">Loading project</h1>
+        <p id="project-summary" class="summary">Punchy charts. Minimal chrome.</p>
       </header>
       <section class="columns">
-        <div class="panel">
-          <h2>Projects</h2>
-          <div id="projects"></div>
-        </div>
-        <div class="panel">
-          <h2>Runs</h2>
-          <div id="runs"></div>
-        </div>
-        <div class="panel">
-          <h2>Metrics</h2>
+        <aside class="panel controls-panel">
+          <h2>Controls</h2>
+          <label class="field-label" for="project-select">Project</label>
+          <select id="project-select" class="selector"></select>
+          <label class="field-label" for="run-select">Run</label>
+          <select id="run-select" class="selector"></select>
+          <div class="stat-row">
+            <div class="stat-card"><span>Runs</span><strong id="runs-count">0</strong></div>
+            <div class="stat-card"><span>Metrics</span><strong id="metrics-count">0</strong></div>
+          </div>
+          <div class="run-badge">
+            <span>Selected Run</span>
+            <strong id="selected-run-name">Loading</strong>
+          </div>
+        </aside>
+        <section class="panel metrics-panel">
+          <div class="metrics-head">
+            <div>
+              <h2>Metrics</h2>
+              <p id="metrics-subtitle" class="metrics-subtitle">Waiting for Trackio data.</p>
+            </div>
+          </div>
           <div id="metrics"></div>
-        </div>
+        </section>
       </section>
     </main>
     <script type="module" src="./app.js"></script>

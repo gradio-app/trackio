@@ -11,19 +11,34 @@
       <header>
         <p>Signal Console</p>
         <h1 id="title">Booting</h1>
+        <div id="status-line" class="status-line">One run, live plots, compact controls.</div>
       </header>
-      <section class="panel">
-        <div id="projects"></div>
+      <section class="panel controls">
+        <div class="control-grid">
+          <label>
+            <span class="label">Project</span>
+            <select id="project-select" class="selector"></select>
+          </label>
+          <label>
+            <span class="label">Run</span>
+            <select id="run-select" class="selector"></select>
+          </label>
+          <div class="summary-box">
+            <span class="label">Selected Run</span>
+            <strong id="selected-run-name">Loading</strong>
+          </div>
+          <div class="summary-box duo">
+            <div><span class="label">Runs</span><strong id="runs-count">0</strong></div>
+            <div><span class="label">Metrics</span><strong id="metrics-count">0</strong></div>
+          </div>
+        </div>
       </section>
-      <section class="grid">
-        <div class="panel">
-          <h2>Runs</h2>
-          <div id="runs"></div>
-        </div>
-        <div class="panel">
+      <section class="panel">
+        <div class="metrics-head">
           <h2>Metrics</h2>
-          <div id="metrics"></div>
+          <div id="metrics-subtitle" class="metrics-subtitle">Waiting for Trackio data.</div>
         </div>
+        <div id="metrics"></div>
       </section>
     </main>
     <script type="module" src="./app.js"></script>

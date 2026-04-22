@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
-  <rect width="1200" height="720" fill="#f2f2ee"/>
-  <rect x="280" y="0" width="1" height="720" fill="#181818"/>
-  <rect x="740" y="0" width="1" height="720" fill="#181818"/>
-  <text x="50" y="80" font-size="52" font-family="Baskerville, serif" fill="#181818">EDITORIAL</text>
-  <text x="50" y="135" font-size="52" font-family="Baskerville, serif" fill="#181818">GRID</text>
-</svg>

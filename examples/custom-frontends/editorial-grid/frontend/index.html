@@ -9,17 +9,44 @@
   <body>
     <main class="shell">
       <aside class="sidebar">
-        <p>Editorial Grid</p>
+        <p class="kicker">Editorial Grid</p>
         <h1 id="title">Loading</h1>
-        <div id="projects"></div>
+        <p id="project-summary" class="sidebar-note">Choose a project and run.</p>
+
+        <section class="control-block">
+          <label class="control-label" for="project-select">Project</label>
+          <select id="project-select" class="selector"></select>
+        </section>
+
+        <section class="control-block">
+          <label class="control-label" for="run-select">Run</label>
+          <select id="run-select" class="selector"></select>
+        </section>
+
+        <section class="stat-grid">
+          <div class="stat-card">
+            <span class="stat-label">Runs</span>
+            <strong id="runs-count">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Metrics</span>
+            <strong id="metrics-count">0</strong>
+          </div>
+        </section>
       </aside>
+
       <section class="content">
-        <div class="panel">
-          <h2>Runs</h2>
-          <div id="runs"></div>
-        </div>
-        <div class="panel">
-          <h2>Metrics</h2>
+        <div class="panel metrics-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Metrics</h2>
+              <p id="metrics-subtitle" class="section-note">Metric plots for the selected run.</p>
+            </div>
+            <div class="panel-meta">
+              <span id="selected-run-name">Loading run</span>
+              <span id="selected-run-meta">Waiting for Trackio data.</span>
+            </div>
+          </div>
           <div id="metrics"></div>
         </div>
       </section>

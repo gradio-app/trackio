@@ -11,15 +11,29 @@
       <header class="hero">
         <p>Sunrise Cards</p>
         <h1 id="title">Gathering runs</h1>
+        <p id="project-summary" class="hero-note">Soft gradients, tighter controls, real plots.</p>
       </header>
-      <div id="projects" class="projects"></div>
+      <section class="toolbar panel">
+        <label class="control">
+          <span class="control-label">Project</span>
+          <select id="project-select" class="selector"></select>
+        </label>
+        <label class="control">
+          <span class="control-label">Run</span>
+          <select id="run-select" class="selector"></select>
+        </label>
+        <div class="mini-card"><span>Runs</span><strong id="runs-count">0</strong></div>
+        <div class="mini-card"><span>Metrics</span><strong id="metrics-count">0</strong></div>
+        <div class="mini-card run-card"><span>Selected</span><strong id="selected-run-name">Loading</strong></div>
+      </section>
       <section class="grid">
-        <article class="panel">
-          <h2>Runs</h2>
-          <div id="runs"></div>
-        </article>
-        <article class="panel">
-          <h2>Metrics</h2>
+        <article class="panel metrics-panel">
+          <div class="metrics-head">
+            <div>
+              <h2>Metrics</h2>
+              <p id="metrics-subtitle" class="metrics-subtitle">Waiting for Trackio data.</p>
+            </div>
+          </div>
           <div id="metrics"></div>
         </article>
       </section>
