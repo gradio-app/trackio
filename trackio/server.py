@@ -821,6 +821,47 @@ def get_logs_batch(
     return SQLiteStorage.get_logs_batch(project, runs_clean, max_points=mp)
 
 
+_ALLOWED_TRACE_SORTS = {
+    "request_time_desc",
+    "request_time_asc",
+    "step_asc",
+    "step_desc",
+}
+
+
+def get_traces(
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+    search: str | None = None,
+    sort: str | None = None,
+    limit: int | None = None,
+    offset: int | None = 0,
+) -> list[dict[str, Any]]:
+    try:
+        normalized_offset = max(0, int(offset)) if offset is not None else 0
+    except (TypeError, ValueError):
+        normalized_offset = 0
+    normalized_limit: int | None
+    if limit is None:
+        normalized_limit = None
+    else:
+        try:
+            normalized_limit = max(0, int(limit))
+        except (TypeError, ValueError):
+            normalized_limit = None
+    normalized_sort = sort if sort in _ALLOWED_TRACE_SORTS else None
+    return SQLiteStorage.get_traces(
+        project,
+        run,
+        search=search,
+        sort=normalized_sort,
+        limit=normalized_limit,
+        offset=normalized_offset,
+        run_id=run_id,
+    )
+
+
 def query_project(project: str, query: str) -> dict[str, Any]:
     return SQLiteStorage.query_project(project, query)
 
@@ -918,6 +959,7 @@ def _api_registry() -> dict[str, Any]:
         "get_snapshot": get_snapshot,
         "get_logs": get_logs,
         "get_logs_batch": get_logs_batch,
+        "get_traces": get_traces,
         "query_project": query_project,
         "get_settings": get_settings,
         "get_project_files": get_project_files,

@@ -105,6 +105,12 @@ export async function getLogsBatch(project, runs) {
   return await callApi("/get_logs_batch", payload);
 }
 
+export async function getTraces(project, run, options = {}) {
+  const params = { project, ...normalizeRun(run), ...options };
+  if (await isStaticMode()) return staticApi.getTraces(project, run, options);
+  return await callApi("/get_traces", params);
+}
+
 export async function getProjectSummary(project) {
   if (await isStaticMode()) return staticApi.getProjectSummary(project);
   return await callApi("/get_project_summary", { project });
