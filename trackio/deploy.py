@@ -357,7 +357,7 @@ def deploy_as_space(
     if bucket_id is not None:
         create_bucket_if_not_exists(bucket_id, private=private)
 
-    with open(Path(trackio_path, "README.md"), "r") as f:
+    with open(Path(trackio_path, "README.md"), "r", encoding="utf-8") as f:
         readme_content = f.read()
         readme_content = readme_content.replace("sdk_version: {GRADIO_VERSION}\n", "")
         readme_content = readme_content.replace("{APP_FILE}", "app.py")
