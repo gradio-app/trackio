@@ -51,6 +51,17 @@
           <div class="nav-tabs">
             <button class="nav-link active" data-page-target="metrics">Metrics</button>
             <button class="nav-link" data-page-target="traces">Traces</button>
+            <!--
+            Trackio's full dashboard also includes tabs like these.
+            Uncomment them when you implement the corresponding page sections.
+
+            <button class="nav-link" data-page-target="system">System Metrics</button>
+            <button class="nav-link" data-page-target="media">Media & Tables</button>
+            <button class="nav-link" data-page-target="reports">Alerts & Reports</button>
+            <button class="nav-link" data-page-target="runs">Runs</button>
+            <button class="nav-link" data-page-target="files">Files</button>
+            <button class="nav-link" data-page-target="settings">Settings</button>
+            -->
           </div>
         </nav>
 
@@ -88,6 +99,34 @@
             </table>
           </div>
         </section>
+
+        <!--
+        Future page shells you may want to add:
+
+        <section class="page" data-page="system">
+          Build this from /api/get_system_metrics_for_run and /api/get_system_logs.
+        </section>
+
+        <section class="page" data-page="media">
+          Build this from /api/get_logs, /api/get_snapshot, /api/get_project_files, and /file?path=...
+        </section>
+
+        <section class="page" data-page="reports">
+          Build this from /api/get_alerts and /api/query_project.
+        </section>
+
+        <section class="page" data-page="runs">
+          Build this from /api/get_runs_for_project, /api/get_run_summary, /api/delete_run, and /api/rename_run.
+        </section>
+
+        <section class="page" data-page="files">
+          Build this from /api/get_project_files and /file?path=...
+        </section>
+
+        <section class="page" data-page="settings">
+          Build this from /api/get_settings, /api/force_sync, and /api/get_run_mutation_status.
+        </section>
+        -->
       </main>
     </div>
 
