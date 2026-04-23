@@ -146,6 +146,32 @@ import trackio
 trackio.show(project="my-project")
 ```
 
+You can also point Trackio at a custom static frontend directory:
+
+```bash
+trackio show --frontend ./my-trackio-frontend
+```
+
+```py
+import trackio
+
+trackio.show(frontend_dir="./my-trackio-frontend")
+```
+
+The directory only needs an `index.html` file. Trackio keeps serving the same backend API under `/api/*`, so you can replace the UI without forking the backend. If the directory is missing or invalid, Trackio falls back to a minimal starter template.
+
+To make a custom frontend apply everywhere by default:
+
+```bash
+trackio config set frontend ./my-trackio-frontend
+```
+
+Reset it with:
+
+```bash
+trackio config unset frontend
+```
+
 ## Deploying to Hugging Face Spaces
 
 When calling `trackio.init()`, by default the service will run locally and store project data on the local machine.
@@ -183,10 +209,14 @@ If you've been tracking experiments locally and want to move them to Hugging Fac
 ```py
 import trackio
 
-trackio.sync(project="my-project", space_id="username/space_id")
+trackio.sync(
+    project="my-project",
+    space_id="username/space_id",
+    frontend_dir="./my-trackio-frontend",
+)
 ```
 
-This uploads your local project database to a new or existing Space. The Space will display all your logged experiments and metrics.
+This uploads your local project database to a new or existing Space. The Space will display all your logged experiments and metrics, and if a custom frontend is configured or passed explicitly it will be deployed there too.
 
 **Example workflow:**
 
@@ -199,7 +229,11 @@ trackio.log({"loss": 0.5})
 trackio.finish()
 
 # Later, sync to Spaces
-trackio.sync(project="my-project", space_id="username/my-experiments")
+trackio.sync(
+    project="my-project",
+    space_id="username/my-experiments",
+    frontend_dir="./my-trackio-frontend",
+)
 ```
 
 ## Embedding a Trackio Dashboard

@@ -46,15 +46,56 @@ trackio.show(project="my-project")
 </hfoption>
 </hfoptions>
 
-## Changing the Theme
+## Using a Custom Frontend
 
-You can change the theme of the dashboard by providing an optional `theme` argument.
+You can replace the bundled dashboard with your own static frontend directory. The directory only needs an `index.html` file; your frontend can call the existing Trackio API under `/api/*`.
+
+The intended workflow is:
+
+1. Run `trackio show --frontend ./my-trackio-frontend`.
+2. Ask your LLM to edit the files in that directory.
+3. Keep the browser open while Trackio live reloads the frontend as those files change.
+
+If the directory passed to `--frontend` does not exist, or exists but is empty, Trackio copies in the starter frontend automatically, prints that it did so, and then serves that directory. The starter is a complete plain-HTML/CSS/JS template: it calls the Trackio API, loads projects and runs, fetches metric values, and draws simple charts that you can replace with your own UI.
+
+The currently available HTTP endpoints are:
+
+- `POST /api/get_run_mutation_status`
+- `POST /api/upload_db_to_space`
+- `POST /api/bulk_upload_media`
+- `POST /api/log`
+- `POST /api/bulk_log`
+- `POST /api/bulk_log_system`
+- `POST /api/bulk_alert`
+- `POST /api/get_alerts`
+- `POST /api/get_metric_values`
+- `POST /api/get_runs_for_project`
+- `POST /api/get_metrics_for_run`
+- `POST /api/get_all_projects`
+- `POST /api/get_project_summary`
+- `POST /api/get_run_summary`
+- `POST /api/get_system_metrics_for_run`
+- `POST /api/get_system_logs`
+- `POST /api/get_system_logs_batch`
+- `POST /api/get_snapshot`
+- `POST /api/get_logs`
+- `POST /api/get_logs_batch`
+- `POST /api/get_traces`
+- `POST /api/query_project`
+- `POST /api/get_settings`
+- `POST /api/get_project_files`
+- `POST /api/delete_run`
+- `POST /api/rename_run`
+- `POST /api/force_sync`
+- `POST /api/upload` for multipart file uploads used by media and file-related flows
+
+For reading stored files returned by the API, Trackio also serves `GET /file?path=...`.
 
 <hfoptions id="language">
 <hfoption id="Shell">
 
 ```sh
-trackio show --theme "soft"
+trackio show --frontend ./my-trackio-frontend
 ```
 
 </hfoption>
@@ -63,13 +104,27 @@ trackio show --theme "soft"
 ```py
 import trackio 
 
-trackio.show(theme="soft")
+trackio.show(frontend_dir="./my-trackio-frontend")
 ```
 
 </hfoption>
 </hfoptions>
 
-To see the available themes, check out the [themes gallery](https://huggingface.co/spaces/gradio/theme-gallery).
+If the provided frontend directory is non-empty but invalid, Trackio falls back to the shipped starter template.
+
+## Setting a Persistent Default Frontend
+
+If you want the same custom frontend to be used by `trackio show`, `trackio sync`, and deploy flows by default, save it in Trackio's persistent config:
+
+```sh
+trackio config set frontend ./my-trackio-frontend
+```
+
+Reset it with:
+
+```sh
+trackio config unset frontend
+```
 
 ## Customizing Plot Colors
 

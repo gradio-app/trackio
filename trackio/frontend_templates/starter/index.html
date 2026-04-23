@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Starter</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-scroll">
+          <div class="logo-section">
+            <img
+              src="/static/trackio/trackio_logo_type_light_transparent.png"
+              alt="Trackio"
+              class="logo"
+            />
+          </div>
+
+          <section class="sidebar-section">
+            <div class="section-label">Project</div>
+            <div class="dropdown-wrap">
+              <select id="project-select" class="project-select" aria-label="Project"></select>
+              <div class="dropdown-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+                  <path d="M5.25 7.5L9 11.25L12.75 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+            </div>
+          </section>
+
+          <section class="sidebar-section">
+            <div class="section-label">Runs</div>
+            <div id="run-list" class="run-list"></div>
+          </section>
+
+          <section class="sidebar-section">
+            <div class="section-label">Notes</div>
+            <p class="sidebar-note">
+              This starter mirrors the Trackio dashboard structure, but stays plain
+              HTML, CSS, and JavaScript so you can replace pieces quickly.
+            </p>
+          </section>
+        </div>
+      </aside>
+
+      <main class="main-shell">
+        <nav class="navbar">
+          <div class="nav-spacer"></div>
+          <div class="nav-tabs">
+            <button class="nav-link active" data-page-target="metrics">Metrics</button>
+            <button class="nav-link" data-page-target="traces">Traces</button>
+          </div>
+        </nav>
+
+        <section class="page active" data-page="metrics">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Starter Dashboard</p>
+              <h1 id="metrics-title">Metrics</h1>
+              <p id="metrics-subtitle" class="page-subtitle">Loading Trackio data.</p>
+            </div>
+          </header>
+          <div id="metrics-grid" class="metrics-grid"></div>
+        </section>
+
+        <section class="page" data-page="traces">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Starter Dashboard</p>
+              <h1>Traces</h1>
+              <p id="traces-subtitle" class="page-subtitle">Recent traces for the selected runs.</p>
+            </div>
+          </header>
+          <div class="traces-table-wrap">
+            <table class="traces-table">
+              <thead>
+                <tr>
+                  <th>Trace ID</th>
+                  <th>Request</th>
+                  <th>Run</th>
+                  <th>Step</th>
+                  <th>Request time</th>
+                </tr>
+              </thead>
+              <tbody id="traces-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

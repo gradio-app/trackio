@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sunrise</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <img
+          src="/static/trackio/trackio_logo_type_light_transparent.png"
+          alt="Trackio"
+          class="hero-logo"
+        />
+        <p>Sunrise</p>
+        <h1 id="title">Gathering runs</h1>
+        <p id="project-summary" class="hero-note">Soft gradients, tighter controls, real plots.</p>
+      </header>
+      <section class="toolbar panel">
+        <label class="control">
+          <span class="control-label">Project</span>
+          <select id="project-select" class="selector"></select>
+        </label>
+        <label class="control">
+          <span class="control-label">Run</span>
+          <select id="run-select" class="selector"></select>
+        </label>
+        <div class="mini-card"><span>Runs</span><strong id="runs-count">0</strong></div>
+        <div class="mini-card"><span>Metrics</span><strong id="metrics-count">0</strong></div>
+        <div class="mini-card run-card"><span>Selected</span><strong id="selected-run-name">Loading</strong></div>
+      </section>
+      <section class="grid">
+        <article class="panel metrics-panel">
+          <div class="metrics-head">
+            <div>
+              <h2>Metrics</h2>
+              <p id="metrics-subtitle" class="metrics-subtitle">Waiting for Trackio data.</p>
+            </div>
+          </div>
+          <div id="metrics"></div>
+        </article>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
