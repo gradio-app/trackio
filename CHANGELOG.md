@@ -1,5 +1,13 @@
 # trackio
 
+## 0.25.0
+
+### Features
+
+- [#533](https://github.com/gradio-app/trackio/pull/533) [`08bc5eb`](https://github.com/gradio-app/trackio/commit/08bc5eb090525d3ff5f7fa4233c30c42162aa74c) - Fix Windows-only emoji mojibake when uploading Space README.  Thanks @tomaarsen!
+- [#518](https://github.com/gradio-app/trackio/pull/518) [`e7ed176`](https://github.com/gradio-app/trackio/commit/e7ed176da53d8b49290fddd890b3d18c0b9b958f) - Traces in Trackio.  Thanks @abidlabs!
+- [#531](https://github.com/gradio-app/trackio/pull/531) [`27a50a3`](https://github.com/gradio-app/trackio/commit/27a50a37362020304b774344b4c774ff548985b6) - Add configurable custom frontends for Trackio.  Thanks @abidlabs!
+
 ## 0.24.2
 
 ### Features
