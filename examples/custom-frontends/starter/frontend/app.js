@@ -15,6 +15,37 @@ const state = {
   selectedRunIds: [],
 };
 
+/*
+Trackio routes used by this starter today:
+- /api/get_all_projects
+- /api/get_runs_for_project
+- /api/get_metrics_for_run
+- /api/get_metric_values
+- /api/get_traces
+
+Useful routes for expanding this starter toward the full dashboard:
+- /api/get_system_metrics_for_run
+- /api/get_system_logs
+- /api/get_system_logs_batch
+- /api/get_logs
+- /api/get_logs_batch
+- /api/get_snapshot
+- /api/get_alerts
+- /api/query_project
+- /api/get_project_summary
+- /api/get_run_summary
+- /api/get_project_files
+- /api/get_settings
+- /api/get_run_mutation_status
+- /api/delete_run
+- /api/rename_run
+- /api/force_sync
+- /api/bulk_upload_media
+- /api/upload
+
+File/media URLs:
+- /file?path=ABSOLUTE_PATH_FROM_API
+*/
 const RUN_COLORS = [
   "#1f77b4",
   "#ff7f0e",
