@@ -45,6 +45,8 @@ def format_run_summary(summary: dict) -> str:
     """Format run summary in human-readable format."""
     output = [f"Project: {summary['project']}"]
     output.append(f"Run: {summary['run']}")
+    if summary.get("status"):
+        output.append(f"Status: {summary['status']}")
     output.append(f"Number of logs: {summary['num_logs']}")
 
     if summary.get("last_step") is not None:
@@ -148,6 +150,78 @@ def format_alerts(alerts: list[dict]) -> str:
         text = a.get("text", "") or ""
         step = a.get("step", "N/A")
         output.append(f"{ts} | {run} | {level} | {title} | {text} | {step}")
+
+    return "\n".join(output)
+
+
+def format_best(
+    project: str,
+    metric: str,
+    minimize: bool,
+    mode: str,
+    ranking: list[dict],
+) -> str:
+    direction = "minimize" if minimize else "maximize"
+    output = [f"Project: {project}"]
+    output.append(f"Metric: {metric} ({direction}, mode={mode})")
+    output.append(f"Best run: {ranking[0]['run']} = {ranking[0]['value']}")
+    output.append(f"\nRanking ({len(ranking)} runs):")
+    output.append(f"  {'#':<4} {'Run':<30} {'Value':<15} {'Step':<10}")
+    output.append("  " + "-" * 60)
+    for i, r in enumerate(ranking, 1):
+        output.append(
+            f"  {i:<4} {r['run']:<30} {r['value']:<15} {r.get('step', 'N/A'):<10}"
+        )
+    return "\n".join(output)
+
+
+def format_compare(
+    project: str,
+    metric_names: list[str],
+    comparison: list[dict],
+) -> str:
+    output = [f"Project: {project}"]
+    output.append(
+        f"Comparing {len(comparison)} runs across {len(metric_names)} metrics\n"
+    )
+
+    header = f"  {'Run':<25} {'Status':<10}"
+    for m in metric_names:
+        header += f" {m:<15}"
+    output.append(header)
+    output.append("  " + "-" * (35 + 15 * len(metric_names)))
+
+    for entry in comparison:
+        line = f"  {entry['run']:<25} {(entry.get('status') or '?'):<10}"
+        for m in metric_names:
+            val = entry["metrics"].get(m)
+            if val is not None:
+                line += f" {val:<15.4f}" if isinstance(val, float) else f" {val!s:<15}"
+            else:
+                line += f" {'N/A':<15}"
+        output.append(line)
+    return "\n".join(output)
+
+
+def format_summary(summary: dict) -> str:
+    output = [f"Project: {summary['project']}"]
+    output.append(f"Total runs: {summary['num_runs']}")
+    output.append(f"Total alerts: {summary['total_alerts']}")
+
+    if summary.get("metric"):
+        output.append(f"Primary metric: {summary['metric']}")
+
+    output.append("\nRuns:")
+    for r in summary["runs"]:
+        status = r.get("status") or "?"
+        line = f"  {r['run']} [{status}] - {r['num_logs']} logs, last_step={r.get('last_step', 'N/A')}"
+        if summary.get("metric") and r.get("metric_value") is not None:
+            line += f", {summary['metric']}={r['metric_value']}"
+        output.append(line)
+
+        if r.get("config"):
+            cfg_str = ", ".join(f"{k}={v}" for k, v in r["config"].items())
+            output.append(f"    config: {cfg_str}")
 
     return "\n".join(output)
 

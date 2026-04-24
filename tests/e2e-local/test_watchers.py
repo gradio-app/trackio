@@ -1,0 +1,170 @@
+from trackio.watchers import MetricWatcher, WatcherManager
+
+
+def test_nan_triggers_stop():
+    w = MetricWatcher("loss", nan=True)
+    alerts = w.check(float("nan"), step=10)
+    assert len(alerts) == 1
+    assert alerts[0]["data"]["reason"] == "nan_inf"
+    assert w.should_stop
+
+
+def test_inf_triggers_stop():
+    w = MetricWatcher("loss", nan=True)
+    alerts = w.check(float("inf"), step=5)
+    assert len(alerts) == 1
+    assert w.should_stop
+
+
+def test_nan_disabled():
+    w = MetricWatcher("loss", nan=False)
+    alerts = w.check(float("nan"), step=10)
+    assert len(alerts) == 0
+    assert not w.should_stop
+
+
+def test_max_value_triggers_stop():
+    w = MetricWatcher("loss", max_value=10.0)
+    alerts = w.check(5.0, step=0)
+    assert len(alerts) == 0
+    alerts = w.check(15.0, step=1)
+    assert len(alerts) == 1
+    assert alerts[0]["data"]["reason"] == "max_exceeded"
+    assert w.should_stop
+
+
+def test_max_value_dedup():
+    w = MetricWatcher("loss", max_value=10.0)
+    w.check(15.0, step=0)
+    alerts = w.check(15.0, step=1)
+    assert len(alerts) == 0
+    w.check(5.0, step=2)
+    alerts = w.check(15.0, step=3)
+    assert len(alerts) == 1
+
+
+def test_min_value():
+    w = MetricWatcher("acc", min_value=0.5)
+    alerts = w.check(0.8, step=0)
+    assert len(alerts) == 0
+    alerts = w.check(0.3, step=1)
+    assert len(alerts) == 1
+    assert alerts[0]["data"]["reason"] == "min_exceeded"
+
+
+def test_min_value_dedup():
+    w = MetricWatcher("acc", min_value=0.5)
+    w.check(0.3, step=0)
+    alerts = w.check(0.3, step=1)
+    assert len(alerts) == 0
+    w.check(0.8, step=2)
+    alerts = w.check(0.3, step=3)
+    assert len(alerts) == 1
+
+
+def test_spike_detection():
+    w = MetricWatcher("loss", spike_factor=3.0, window=3)
+    for i in range(3):
+        w.check(1.0, step=i)
+    alerts = w.check(10.0, step=3)
+    assert len(alerts) == 1
+    assert alerts[0]["data"]["reason"] == "spike"
+
+
+def test_spike_dedup():
+    w = MetricWatcher("loss", spike_factor=3.0, window=3)
+    for i in range(3):
+        w.check(1.0, step=i)
+    w.check(10.0, step=3)
+    alerts = w.check(10.0, step=4)
+    assert len(alerts) == 0
+
+
+def test_spike_resets_after_normal():
+    w = MetricWatcher("loss", spike_factor=3.0, window=3)
+    for i in range(3):
+        w.check(1.0, step=i)
+    w.check(10.0, step=3)
+    for i in range(3):
+        w.check(1.0, step=4 + i)
+    alerts = w.check(10.0, step=7)
+    assert len(alerts) == 1
+
+
+def test_patience_min_mode():
+    w = MetricWatcher("loss", patience=3, mode="min")
+    w.check(1.0, step=0)
+    w.check(0.9, step=1)
+    w.check(0.95, step=2)
+    w.check(0.95, step=3)
+    alerts = w.check(0.95, step=4)
+    assert len(alerts) == 1
+    assert alerts[0]["data"]["reason"] == "stagnation"
+    assert w.should_stop
+
+
+def test_patience_max_mode():
+    w = MetricWatcher("accuracy", patience=3, mode="max")
+    w.check(0.5, step=0)
+    w.check(0.6, step=1)
+    w.check(0.55, step=2)
+    w.check(0.55, step=3)
+    alerts = w.check(0.55, step=4)
+    assert len(alerts) == 1
+    assert alerts[0]["data"]["reason"] == "stagnation"
+    assert w.should_stop
+
+
+def test_patience_max_mode_improves():
+    w = MetricWatcher("accuracy", patience=3, mode="max")
+    w.check(0.5, step=0)
+    w.check(0.6, step=1)
+    w.check(0.55, step=2)
+    w.check(0.7, step=3)
+    alerts = w.check(0.65, step=4)
+    assert len(alerts) == 0
+    assert not w.should_stop
+
+
+def test_patience_stagnation_fires_once():
+    w = MetricWatcher("loss", patience=2, mode="min")
+    w.check(1.0, step=0)
+    w.check(1.1, step=1)
+    alerts1 = w.check(1.1, step=2)
+    assert len(alerts1) == 1
+    alerts2 = w.check(1.1, step=3)
+    assert len(alerts2) == 0
+
+
+def test_window_bounds_memory():
+    w = MetricWatcher("loss", window=5)
+    for i in range(100):
+        w.check(float(i), step=i)
+    assert len(w._values) == 5
+
+
+def test_should_stop_propagation():
+    mgr = WatcherManager()
+    w1 = MetricWatcher("loss", max_value=10.0)
+    w2 = MetricWatcher("acc", min_value=0.5)
+    mgr.add(w1)
+    mgr.add(w2)
+    assert not mgr.should_stop
+    mgr.check({"loss": 15.0, "acc": 0.8}, step=0)
+    assert mgr.should_stop
+
+
+def test_manager_clear():
+    mgr = WatcherManager()
+    mgr.add(MetricWatcher("loss", max_value=10.0))
+    mgr.check({"loss": 15.0}, step=0)
+    assert mgr.should_stop
+    mgr.clear()
+    assert not mgr.should_stop
+    assert len(mgr._watchers) == 0
+
+
+def test_non_numeric_ignored():
+    w = MetricWatcher("loss", max_value=10.0)
+    alerts = w.check("not a number", step=0)
+    assert len(alerts) == 0

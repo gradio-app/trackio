@@ -166,6 +166,9 @@ class Run:
                 description="remote Trackio logging thread",
             )
 
+        SQLiteStorage.set_run_status(self.project, self.name, "running", run_id=self.id)
+        self._finished = False
+
         self._gpu_monitor: "GpuMonitor | AppleGpuMonitor | None" = None
         if auto_log_gpu:
             try:
@@ -393,6 +396,7 @@ class Run:
                         "steps": [],
                         "timestamps": [],
                         "alert_ids": [],
+                        "data_list": [],
                     }
                 alerts_by_run[key]["titles"].append(entry["title"])
                 alerts_by_run[key]["texts"].append(entry.get("text"))
@@ -400,9 +404,11 @@ class Run:
                 alerts_by_run[key]["steps"].append(entry.get("step"))
                 alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
                 alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
+                alerts_by_run[key]["data_list"].append(entry.get("data"))
 
             for (project, run, run_id), data in alerts_by_run.items():
                 has_alert_ids = any(aid is not None for aid in data["alert_ids"])
+                has_data = any(d is not None for d in data["data_list"])
                 SQLiteStorage.bulk_alert(
                     project=project,
                     run=run,
@@ -413,6 +419,7 @@ class Run:
                     steps=data["steps"],
                     timestamps=data["timestamps"],
                     alert_ids=data["alert_ids"] if has_alert_ids else None,
+                    data_list=data["data_list"] if has_data else None,
                 )
         except Exception as e:
             self._warn_once(
@@ -884,6 +891,7 @@ class Run:
         level: AlertLevel = AlertLevel.WARN,
         step: int | None = None,
         webhook_url: str | None = None,
+        data: dict | None = None,
     ):
         try:
             if step is None:
@@ -902,6 +910,7 @@ class Run:
                 "step": step,
                 "timestamp": timestamp,
                 "alert_id": uuid.uuid4().hex,
+                "data": data,
             }
 
             with self._client_lock:
@@ -956,7 +965,11 @@ class Run:
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log_system() failed: {e}")
 
-    def finish(self):
+    def finish(self, status: str = "finished"):
+        if self._finished:
+            return
+        self._finished = True
+
         try:
             if self._gpu_monitor is not None:
                 try:
@@ -1015,3 +1028,5 @@ class Run:
                     )
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")
+
+        SQLiteStorage.set_run_status(self.project, self.name, status, run_id=self.id)
