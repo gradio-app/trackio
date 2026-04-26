@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import time
+import warnings
 from collections import Counter
 from importlib.resources import files
 from pathlib import Path
@@ -48,17 +49,6 @@ SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
 SPACE_URL = "https://huggingface.co/spaces/{space_id}"
 _BOLD_ORANGE = "\033[1m\033[38;5;208m"
 _RESET = "\033[0m"
-
-
-def _raise_if_private_static_requested(action: str, private: bool | None) -> None:
-    if private is True:
-        raise ValueError(
-            f"Cannot {action} a private static Trackio Space. Static Spaces run "
-            "entirely in the browser, so reading private datasets or buckets would "
-            "require exposing a Hugging Face token to viewers. Use sdk='gradio' for "
-            "a private dashboard, or omit private=True to create a public static "
-            "snapshot."
-        )
 
 
 def raise_if_space_is_frozen_for_logging(space_id: str) -> None:
@@ -913,7 +903,14 @@ def deploy_as_static_space(
     if on_spaces():
         return
 
-    _raise_if_private_static_requested("deploy", private)
+    if private is True:
+        warnings.warn(
+            "private=True is ignored for static Trackio Spaces. Static Spaces run "
+            "entirely in the browser, so their snapshot data must be public. Use "
+            "sdk='gradio' for a private dashboard.",
+            stacklevel=2,
+        )
+        private = False
     hf_api = huggingface_hub.HfApi()
 
     try:
@@ -1049,8 +1046,14 @@ def sync(
     """
     if sdk not in ("gradio", "static"):
         raise ValueError(f"sdk must be 'gradio' or 'static', got '{sdk}'")
-    if sdk == "static":
-        _raise_if_private_static_requested("sync", private)
+    if sdk == "static" and private is True:
+        warnings.warn(
+            "private=True is ignored for static Trackio Spaces. Static Spaces run "
+            "entirely in the browser, so their snapshot data must be public. Use "
+            "sdk='gradio' for a private dashboard.",
+            stacklevel=2,
+        )
+        private = False
     bucket_id_was_explicit = bucket_id is not None
 
     if space_id is None:
@@ -1184,7 +1187,14 @@ def freeze(
     Returns:
         `str`: The Space ID of the newly created static Space.
     """
-    _raise_if_private_static_requested("freeze", private)
+    if private is True:
+        warnings.warn(
+            "private=True is ignored for frozen static Trackio Spaces. Static Spaces "
+            "run entirely in the browser, so their snapshot data must be public. Use "
+            "a Gradio Space if the frozen dashboard must stay private.",
+            stacklevel=2,
+        )
+        private = False
     space_id, _, _ = preprocess_space_and_dataset_ids(space_id, None, None)
 
     try:

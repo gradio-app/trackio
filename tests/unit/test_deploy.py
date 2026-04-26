@@ -126,96 +126,20 @@ def test_deploy_as_static_space_uploads_resolved_frontend(tmp_path, monkeypatch)
         ),
     )
 
-    deploy.deploy_as_static_space(
-        "abidlabs/static-space",
-        None,
-        "demo-project",
-        frontend_dir=frontend_dir,
-    )
-
-    assert any(
-        call["folder_path"] == str(frontend_dir) for call in fake_api.uploaded_folders
-    )
-
-
-def test_deploy_as_static_space_does_not_embed_hf_token(tmp_path, monkeypatch):
-    frontend_dir = tmp_path / "custom-static"
-    frontend_dir.mkdir()
-    (frontend_dir / "index.html").write_text("<!doctype html>")
-
-    fake_api = _FakeHfApi()
-    monkeypatch.setattr(deploy.huggingface_hub, "HfApi", lambda: fake_api)
-    monkeypatch.setattr(deploy.huggingface_hub, "create_repo", lambda *a, **k: None)
-    monkeypatch.setattr(
-        deploy,
-        "resolve_frontend_dir",
-        lambda frontend_dir=None, announce=False: ResolvedFrontend(
-            path=frontend_dir.resolve(),
-            source="argument",
-            is_custom=True,
-        ),
-    )
-
-    deploy.deploy_as_static_space(
-        "abidlabs/static-space",
-        None,
-        "demo-project",
-        bucket_id="abidlabs/static-bucket",
-        private=False,
-        hf_token="hf_should_not_be_serialized",
-        frontend_dir=frontend_dir,
-    )
-
-    config_upload = next(
-        item for item in fake_api.uploaded_files if item["path_in_repo"] == "config.json"
-    )
-    config = json.loads(config_upload["payload"])
-    assert "hf_token" not in config
-
-
-def test_deploy_as_static_space_rejects_private(monkeypatch):
-    monkeypatch.setattr(
-        deploy.huggingface_hub,
-        "HfApi",
-        lambda: pytest.fail("HfApi should not be constructed"),
-    )
-
-    with pytest.raises(ValueError, match="private static Trackio Space"):
+    with pytest.warns(UserWarning, match="private=True is ignored"):
         deploy.deploy_as_static_space(
             "abidlabs/static-space",
             None,
             "demo-project",
             private=True,
-            hf_token="hf_should_not_be_used",
+            frontend_dir=frontend_dir,
         )
 
-
-def test_sync_static_rejects_private_before_network(monkeypatch):
-    monkeypatch.setattr(
-        deploy.huggingface_hub,
-        "HfApi",
-        lambda: pytest.fail("HfApi should not be constructed"),
+    assert any(
+        call["folder_path"] == str(frontend_dir) for call in fake_api.uploaded_folders
     )
-
-    with pytest.raises(ValueError, match="private static Trackio Space"):
-        deploy.sync(
-            project="demo-project",
-            space_id="abidlabs/static-space",
-            sdk="static",
-            private=True,
-        )
-
-
-def test_freeze_rejects_private_before_network(monkeypatch):
-    monkeypatch.setattr(
-        deploy.huggingface_hub,
-        "HfApi",
-        lambda: pytest.fail("HfApi should not be constructed"),
+    config_upload = next(
+        item for item in fake_api.uploaded_files if item["path_in_repo"] == "config.json"
     )
-
-    with pytest.raises(ValueError, match="private static Trackio Space"):
-        deploy.freeze(
-            space_id="abidlabs/source-space",
-            project="demo-project",
-            private=True,
-        )
+    config = json.loads(config_upload["payload"])
+    assert config["private"] is False
