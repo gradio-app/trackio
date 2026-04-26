@@ -969,6 +969,13 @@ def deploy_as_static_space(
         config["bucket_id"] = bucket_id
     if dataset_id is not None:
         config["dataset_id"] = dataset_id
+    if hf_token is not None:
+        warnings.warn(
+            "`hf_token` is ignored by deploy_as_static_space() for static Space "
+            "deployment and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     _retry_hf_write(
         "Static Space config upload",
