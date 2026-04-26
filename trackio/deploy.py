@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import time
+import warnings
 from collections import Counter
 from importlib.resources import files
 from pathlib import Path
@@ -902,12 +903,18 @@ def deploy_as_static_space(
     if on_spaces():
         return
 
+    if private is True:
+        raise ValueError(
+            "private=True is not supported for static Trackio Spaces. Static Spaces "
+            "run entirely in the browser, so their snapshot data must be public. "
+            "Use sdk='gradio' for a private dashboard."
+        )
     hf_api = huggingface_hub.HfApi()
 
     try:
         huggingface_hub.create_repo(
             space_id,
-            private=private,
+            private=False,
             space_sdk="static",
             repo_type="space",
             exist_ok=True,
@@ -918,7 +925,7 @@ def deploy_as_static_space(
             huggingface_hub.login(add_to_git_credential=False)
             huggingface_hub.create_repo(
                 space_id,
-                private=private,
+                private=False,
                 space_sdk="static",
                 repo_type="space",
                 exist_ok=True,
@@ -960,8 +967,13 @@ def deploy_as_static_space(
         config["bucket_id"] = bucket_id
     if dataset_id is not None:
         config["dataset_id"] = dataset_id
-    if hf_token and private:
-        config["hf_token"] = hf_token
+    if hf_token is not None:
+        warnings.warn(
+            "`hf_token` is ignored by deploy_as_static_space() for static Space "
+            "deployment and will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     _retry_hf_write(
         "Static Space config upload",
@@ -1017,7 +1029,8 @@ def sync(
         private (`bool`, *optional*):
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored
-            if the repo already exists.
+            if the repo already exists. Not supported with ``sdk="static"`` because
+            static Trackio dashboards read snapshot data directly from the browser.
         force (`bool`, *optional*, defaults to `False`):
             If `True`, overwrite the existing database without prompting for confirmation.
             If `False`, prompt the user before overwriting an existing database.
@@ -1038,6 +1051,12 @@ def sync(
     """
     if sdk not in ("gradio", "static"):
         raise ValueError(f"sdk must be 'gradio' or 'static', got '{sdk}'")
+    if sdk == "static" and private is True:
+        raise ValueError(
+            "private=True is not supported for static Trackio Spaces. Static Spaces "
+            "run entirely in the browser, so their snapshot data must be public. "
+            "Use sdk='gradio' for a private dashboard."
+        )
     bucket_id_was_explicit = bucket_id is not None
 
     if space_id is None:
@@ -1064,18 +1083,16 @@ def sync(
 
         if sdk == "static":
             if dataset_id is not None:
-                upload_dataset_for_static(project, dataset_id, private=private)
-                hf_token = huggingface_hub.utils.get_token() if private else None
+                upload_dataset_for_static(project, dataset_id, private=False)
                 deploy_as_static_space(
                     space_id,
                     dataset_id,
                     project,
-                    private=private,
-                    hf_token=hf_token,
+                    private=False,
                     frontend_dir=frontend_dir,
                 )
             elif bucket_id is not None:
-                create_bucket_if_not_exists(bucket_id, private=private)
+                create_bucket_if_not_exists(bucket_id, private=False)
                 upload_project_to_bucket_for_static(project, bucket_id)
                 print(
                     f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
@@ -1085,8 +1102,7 @@ def sync(
                     None,
                     project,
                     bucket_id=bucket_id,
-                    private=private,
-                    hf_token=huggingface_hub.utils.get_token() if private else None,
+                    private=False,
                     frontend_dir=frontend_dir,
                 )
         else:
@@ -1165,8 +1181,8 @@ def freeze(
             The ID for the new static Space. If not provided, defaults to
             `"{space_id}_static"`.
         private (`bool`, *optional*):
-            Whether to make the new Space private. If None (default), the repo
-            will be public unless the organization's default is private.
+            Not supported. Frozen static dashboards read snapshot data directly
+            from the browser, so the destination snapshot must be public.
         bucket_id (`str`, *optional*):
             The ID of the HF Bucket for the new static Space's data storage.
             If not provided, one is auto-generated from the new Space ID.
@@ -1174,6 +1190,12 @@ def freeze(
     Returns:
         `str`: The Space ID of the newly created static Space.
     """
+    if private is True:
+        raise ValueError(
+            "private=True is not supported for frozen static Trackio Spaces. Static "
+            "Spaces run entirely in the browser, so their snapshot data must be "
+            "public. Use a Gradio Space if the frozen dashboard must stay private."
+        )
     space_id, _, _ = preprocess_space_and_dataset_ids(space_id, None, None)
 
     try:
@@ -1214,7 +1236,7 @@ def freeze(
     except RepositoryNotFoundError:
         pass
 
-    create_bucket_if_not_exists(bucket_id, private=private)
+    create_bucket_if_not_exists(bucket_id, private=False)
     export_from_bucket_for_static(source_bucket_id, bucket_id, project)
     print(
         f"* Project data uploaded to bucket: https://huggingface.co/buckets/{bucket_id}"
@@ -1224,8 +1246,7 @@ def freeze(
         None,
         project,
         bucket_id=bucket_id,
-        private=private,
-        hf_token=huggingface_hub.utils.get_token() if private else None,
+        private=False,
         frontend_dir=frontend_dir,
     )
     return new_space_id

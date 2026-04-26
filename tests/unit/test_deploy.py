@@ -1,6 +1,9 @@
 import io
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from trackio import deploy
 from trackio.bucket_storage import _list_bucket_file_paths
@@ -133,3 +136,64 @@ def test_deploy_as_static_space_uploads_resolved_frontend(tmp_path, monkeypatch)
     assert any(
         call["folder_path"] == str(frontend_dir) for call in fake_api.uploaded_folders
     )
+
+
+def _make_static_deploy_env(tmp_path, monkeypatch):
+    frontend_dir = tmp_path / "static-frontend"
+    frontend_dir.mkdir()
+    (frontend_dir / "index.html").write_text("<!doctype html>")
+
+    fake_api = _FakeHfApi()
+    monkeypatch.setattr(deploy.huggingface_hub, "HfApi", lambda: fake_api)
+    monkeypatch.setattr(deploy.huggingface_hub, "create_repo", lambda *a, **k: None)
+    monkeypatch.setattr(
+        deploy,
+        "resolve_frontend_dir",
+        lambda frontend_dir=None, announce=False: ResolvedFrontend(
+            path=frontend_dir.resolve(),
+            source="argument",
+            is_custom=True,
+        ),
+    )
+    return fake_api, frontend_dir
+
+
+def _get_uploaded_config(fake_api):
+    config_upload = next(
+        item
+        for item in fake_api.uploaded_files
+        if item["path_in_repo"] == "config.json"
+    )
+    return json.loads(config_upload["payload"])
+
+
+def test_deploy_as_static_space_config_omits_hf_token(tmp_path, monkeypatch):
+    fake_api, frontend_dir = _make_static_deploy_env(tmp_path, monkeypatch)
+
+    deploy.deploy_as_static_space(
+        "abidlabs/static-space",
+        None,
+        "demo-project",
+        bucket_id="abidlabs/static-bucket",
+        hf_token="hf_supersecrettoken",
+        frontend_dir=frontend_dir,
+    )
+
+    config = _get_uploaded_config(fake_api)
+    assert "hf_token" not in config
+    assert "token" not in config
+    assert "hf_supersecrettoken" not in json.dumps(config)
+
+
+def test_deploy_as_static_space_rejects_private_true(tmp_path, monkeypatch):
+    _, frontend_dir = _make_static_deploy_env(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="private=True is not supported"):
+        deploy.deploy_as_static_space(
+            "abidlabs/static-space",
+            None,
+            "demo-project",
+            bucket_id="abidlabs/static-bucket",
+            private=True,
+            frontend_dir=frontend_dir,
+        )

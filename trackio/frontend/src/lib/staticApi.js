@@ -15,13 +15,6 @@ function resolveUrl(filename) {
   return `https://huggingface.co/datasets/${config.dataset_id}/resolve/main/${filename}`;
 }
 
-function authHeaders() {
-  if (config.hf_token) {
-    return { Authorization: `Bearer ${config.hf_token}` };
-  }
-  return {};
-}
-
 export async function initialize(cfg) {
   config = cfg;
 }
@@ -41,28 +34,25 @@ export function getReadOnlySource() {
 
 async function getMetricsData() {
   if (metricsData) return metricsData;
-  metricsData = await readParquet(resolveUrl("metrics.parquet"), authHeaders());
+  metricsData = await readParquet(resolveUrl("metrics.parquet"));
   return metricsData;
 }
 
 async function getSystemData() {
   if (systemData) return systemData;
-  systemData = await readParquet(
-    resolveUrl("aux/system_metrics.parquet"),
-    authHeaders(),
-  );
+  systemData = await readParquet(resolveUrl("aux/system_metrics.parquet"));
   return systemData;
 }
 
 async function getConfigsData() {
   if (configsData) return configsData;
-  configsData = await readParquet(resolveUrl("aux/configs.parquet"), authHeaders());
+  configsData = await readParquet(resolveUrl("aux/configs.parquet"));
   return configsData;
 }
 
 async function getRunsJson() {
   if (runsData) return runsData;
-  const resp = await fetch(resolveUrl("runs.json"), { headers: authHeaders() });
+  const resp = await fetch(resolveUrl("runs.json"));
   if (!resp.ok) {
     runsData = [];
     return runsData;
@@ -73,7 +63,7 @@ async function getRunsJson() {
 
 async function getSettingsJson() {
   if (settingsData) return settingsData;
-  const resp = await fetch(resolveUrl("settings.json"), { headers: authHeaders() });
+  const resp = await fetch(resolveUrl("settings.json"));
   if (!resp.ok) {
     settingsData = {};
     return settingsData;
@@ -435,7 +425,6 @@ export async function getProjectFiles() {
   if (config.bucket_id) {
     const resp = await fetch(
       `https://huggingface.co/api/buckets/${config.bucket_id}/tree?prefix=media/files/&recursive=true`,
-      { headers: authHeaders() },
     );
     if (!resp.ok) {
       fileListData = [];
@@ -453,7 +442,6 @@ export async function getProjectFiles() {
 
   const resp = await fetch(
     `https://huggingface.co/api/datasets/${config.dataset_id}`,
-    { headers: authHeaders() },
   );
   if (!resp.ok) {
     fileListData = [];
@@ -497,7 +485,7 @@ export async function fetchMediaBlob(path) {
   const url = resolveUrl(`media/${relative}`);
   if (blobCache.has(url)) return blobCache.get(url);
 
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(url);
   if (!resp.ok) return url;
   const blob = await resp.blob();
   const blobUrl = URL.createObjectURL(blob);

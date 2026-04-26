@@ -218,6 +218,8 @@ trackio.sync(
 
 This uploads your local project database to a new or existing Space. The Space will display all your logged experiments and metrics, and if a custom frontend is configured or passed explicitly it will be deployed there too.
 
+Static Trackio Spaces (`sdk="static"`) are read-only browser-only snapshots, so their snapshot data must be public. Use the default Gradio Space for private dashboards; `sdk="static"` does not support `private=True`.
+
 **Example workflow:**
 
 ```py

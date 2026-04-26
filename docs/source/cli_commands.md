@@ -39,6 +39,8 @@ Deploy as a static Space (reads from an HF Bucket, no server needed):
 trackio sync --project "my-project" --space-id "username/space_id" --sdk static
 ```
 
+Static Spaces serve data directly from the browser and therefore require public snapshot data. `--sdk static --private` is not supported; use the default Gradio SDK for private dashboards.
+
 Sync all projects that have unsynced data to their configured Spaces:
 
 ```sh
@@ -51,7 +53,7 @@ trackio sync --all
 | `--space-id` | The HF Space ID to sync to (e.g. `username/space_id`). If not provided, uses the previously-configured Space |
 | `--all` | Sync all projects with unsynced data |
 | `--sdk` | `gradio` (default) for a live server, or `static` for a read-only bucket-backed Space |
-| `--private` | Make the Space private if creating a new one |
+| `--private` | Make the Space private if creating a new Gradio Space. Not supported with `--sdk static` |
 | `--force` | Overwrite the existing database without prompting |
 
 ## Freeze Command
@@ -73,10 +75,11 @@ trackio freeze --space-id "username/my-space" --project "my-project" --new-space
 | `--space-id` | The source Gradio Space ID (required) |
 | `--project` | The project to freeze (required) |
 | `--new-space-id` | The destination static Space ID. Defaults to `{space_id}_static` |
-| `--private` | Make the new static Space private |
+| `--private` | Not supported for static frozen snapshots |
 
 > **Note:** The source must be a Gradio Space with a bucket mounted at `/data`. If the destination Space already exists and is not a Trackio static Space, `freeze` will refuse to overwrite it.
 > The frozen Space is a snapshot. Later metrics synced to the original Gradio Space do not appear in the frozen static Space unless you run `freeze` again.
+> Static frozen snapshots require public destination data, so `trackio freeze --private` is not supported.
 
 ## List Commands
 
