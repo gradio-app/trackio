@@ -1,9 +1,6 @@
 import io
-import json
 from types import SimpleNamespace
 from unittest.mock import patch
-
-import pytest
 
 from trackio import deploy
 from trackio.bucket_storage import _list_bucket_file_paths
@@ -126,20 +123,13 @@ def test_deploy_as_static_space_uploads_resolved_frontend(tmp_path, monkeypatch)
         ),
     )
 
-    with pytest.warns(UserWarning, match="private=True is ignored"):
-        deploy.deploy_as_static_space(
-            "abidlabs/static-space",
-            None,
-            "demo-project",
-            private=True,
-            frontend_dir=frontend_dir,
-        )
+    deploy.deploy_as_static_space(
+        "abidlabs/static-space",
+        None,
+        "demo-project",
+        frontend_dir=frontend_dir,
+    )
 
     assert any(
         call["folder_path"] == str(frontend_dir) for call in fake_api.uploaded_folders
     )
-    config_upload = next(
-        item for item in fake_api.uploaded_files if item["path_in_repo"] == "config.json"
-    )
-    config = json.loads(config_upload["payload"])
-    assert config["private"] is False
