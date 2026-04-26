@@ -904,13 +904,11 @@ def deploy_as_static_space(
         return
 
     if private is True:
-        warnings.warn(
-            "private=True is ignored for static Trackio Spaces. Static Spaces run "
-            "entirely in the browser, so their snapshot data must be public. Use "
-            "sdk='gradio' for a private dashboard.",
-            stacklevel=2,
+        raise ValueError(
+            "private=True is not supported for static Trackio Spaces. Static Spaces "
+            "run entirely in the browser, so their snapshot data must be public. "
+            "Use sdk='gradio' for a private dashboard."
         )
-        private = False
     hf_api = huggingface_hub.HfApi()
 
     try:
@@ -1054,13 +1052,11 @@ def sync(
     if sdk not in ("gradio", "static"):
         raise ValueError(f"sdk must be 'gradio' or 'static', got '{sdk}'")
     if sdk == "static" and private is True:
-        warnings.warn(
-            "private=True is ignored for static Trackio Spaces. Static Spaces run "
-            "entirely in the browser, so their snapshot data must be public. Use "
-            "sdk='gradio' for a private dashboard.",
-            stacklevel=2,
+        raise ValueError(
+            "private=True is not supported for static Trackio Spaces. Static Spaces "
+            "run entirely in the browser, so their snapshot data must be public. "
+            "Use sdk='gradio' for a private dashboard."
         )
-        private = False
     bucket_id_was_explicit = bucket_id is not None
 
     if space_id is None:
@@ -1195,13 +1191,11 @@ def freeze(
         `str`: The Space ID of the newly created static Space.
     """
     if private is True:
-        warnings.warn(
-            "private=True is ignored for frozen static Trackio Spaces. Static Spaces "
-            "run entirely in the browser, so their snapshot data must be public. Use "
-            "a Gradio Space if the frozen dashboard must stay private.",
-            stacklevel=2,
+        raise ValueError(
+            "private=True is not supported for frozen static Trackio Spaces. Static "
+            "Spaces run entirely in the browser, so their snapshot data must be "
+            "public. Use a Gradio Space if the frozen dashboard must stay private."
         )
-        private = False
     space_id, _, _ = preprocess_space_and_dataset_ids(space_id, None, None)
 
     try:
