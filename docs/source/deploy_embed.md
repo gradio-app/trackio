@@ -42,7 +42,7 @@ trackio.sync(project="my-project", space_id="username/space_id", sdk="static")
 trackio sync --project "my-project" --space-id "username/space_id" --sdk static
 ```
 
-Static Spaces are lightweight and free — they serve a read-only dashboard backed by Parquet files in an HF Bucket.
+Static Spaces are lightweight and free — they serve a read-only dashboard backed by Parquet files in an HF Bucket. Because the dashboard runs entirely in the browser, static Trackio Spaces require public snapshot data and do not support `private=True`. Use the default Gradio Space (`sdk="gradio"`) for private dashboards.
 
 ## Freezing a Space Snapshot
 
@@ -61,6 +61,7 @@ trackio freeze --space-id "username/my-space" --project "my-project"
 This creates a new static Space (by default named `{space_id}_static`) containing a snapshot of the project's data from the source Space's bucket. The original Space is not modified.
 
 Note that`freeze()` is a one-time snapshot. If new metrics are later uploaded to the original Gradio Space, the frozen static Space will not update automatically.
+The source Gradio Space can use a private bucket, but the frozen static snapshot is public data. `freeze(private=True)` is not supported; use a Gradio Space if the frozen dashboard must stay private.
 
 You can customize the destination:
 
@@ -69,7 +70,6 @@ trackio.freeze(
     space_id="username/my-space",
     project="my-project",
     new_space_id="username/my-snapshot",
-    private=True,
 )
 ```
 

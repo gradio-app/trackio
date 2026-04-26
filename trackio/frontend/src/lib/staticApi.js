@@ -16,9 +16,6 @@ function resolveUrl(filename) {
 }
 
 function authHeaders() {
-  if (config.hf_token) {
-    return { Authorization: `Bearer ${config.hf_token}` };
-  }
   return {};
 }
 
