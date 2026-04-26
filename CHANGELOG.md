@@ -1,5 +1,11 @@
 # trackio
 
+## 0.25.1
+
+### Features
+
+- [#535](https://github.com/gradio-app/trackio/pull/535) [`d7f1b27`](https://github.com/gradio-app/trackio/commit/d7f1b27a98f185d2d97ef54975d5865e0b5243c9) - Avoid HF token leaks in static snapshots.  Thanks @abidlabs!
+
 ## 0.25.0
 
 ### Features
