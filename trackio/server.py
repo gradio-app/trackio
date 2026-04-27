@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 import httpx
 import huggingface_hub as hf
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 import trackio.utils as utils
@@ -933,6 +933,39 @@ def force_sync() -> bool:
     return True
 
 
+async def otel_traces_handler(request: Request) -> Response:
+    hf_token = _authorization_bearer_token(request) if on_spaces() else None
+    try:
+        assert_can_write_metrics(request, hf_token)
+        from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (  # noqa: PLC0415
+            ExportTraceServiceResponse,
+        )
+
+        from trackio.otel import ingest_otlp_trace_bytes  # noqa: PLC0415
+
+        result = ingest_otlp_trace_bytes(
+            await request.body(),
+            project=request.query_params.get("project"),
+            run=request.query_params.get("run"),
+            run_id=request.query_params.get("run_id"),
+        )
+        logger.info(
+            "otel: accepted %d spans into projects=%s runs=%s",
+            result["accepted_spans"],
+            result["projects"],
+            result["runs"],
+        )
+        return Response(
+            ExportTraceServiceResponse().SerializeToString(),
+            media_type="application/x-protobuf",
+        )
+    except TrackioAPIError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        logger.exception("otel: failed to ingest traces")
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
 CSS = ""
 HEAD = ""
 
@@ -1005,6 +1038,7 @@ def build_starlette_app_only(
                 UserWarning,
                 stacklevel=2,
             )
+    mcp_routes.append(Route("/otel/v1/traces", otel_traces_handler, methods=["POST"]))
     starlette_app = create_trackio_starlette_app(
         oauth_routes,
         _api_registry(),

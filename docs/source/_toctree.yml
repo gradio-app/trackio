@@ -29,6 +29,8 @@
     title: API and MCP Server
   - local: alerts
     title: Alerts
+  - local: otel_tracing
+    title: OpenTelemetry Traces
   - local: ml_agents
     title: ML Agents
   - local: environment_variables
