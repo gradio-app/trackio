@@ -25,12 +25,12 @@ prompts = [
     {"role": "user", "content": "What is the largest planet?"},
 ] * 4
 completions = [
-    "Paris.",
-    "Shakespeare.",
-    "4.",
-    "Blue.",
-    "Red.",
-    "Jupiter.",
+    {"role": "assistant", "content": "Paris."},
+    {"role": "assistant", "content": "Shakespeare."},
+    {"role": "assistant", "content": "4."},
+    {"role": "assistant", "content": "Blue."},
+    {"role": "assistant", "content": "Red."},
+    {"role": "assistant", "content": "Jupiter."},
 ] * 4
 dataset = Dataset.from_dict({"prompt": prompts, "completion": completions})
 
