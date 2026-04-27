@@ -35,7 +35,7 @@ completions = [
 dataset = Dataset.from_dict({"prompt": prompts, "completion": completions})
 
 trainer = SFTTrainer(
-    model="trl-internal-testing/tiny-LlamaForCausalLM-3",
+    model="Qwen/Qwen3-0.6B",
     args=SFTConfig(
         output_dir="./model_output",
         num_train_epochs=1,
