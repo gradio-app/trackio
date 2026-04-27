@@ -7,8 +7,8 @@ from datasets import Dataset
 from trl import SFTConfig, SFTTrainer
 
 # Create a small fake dataset
-prompts = ["What is the capital of France?", "Who wrote Hamlet?"] * 12
-completions = ["Paris.", "Shakespeare."] * 12
+prompts = ["The capital of France is", "Hamlet was written by"] * 12
+completions = [" Paris.", " Shakespeare."] * 12
 dataset = Dataset.from_dict({"prompt": prompts, "completion": completions})
 
 # Train a model using the TRL SFTTrainer API
