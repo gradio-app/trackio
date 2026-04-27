@@ -1,5 +1,10 @@
 <script>
-  let { currentPage = "metrics", onNavigate } = $props();
+  let {
+    currentPage = "metrics",
+    tabAvailability = {},
+    optionalEmptyTabs = new Set(),
+    onNavigate,
+  } = $props();
 
   const links = [
     { id: "metrics", label: "Metrics" },
@@ -14,6 +19,10 @@
   function handleClick(id) {
     onNavigate?.(id);
   }
+
+  function isOptionalEmpty(id) {
+    return optionalEmptyTabs.has(id) && tabAvailability[id] === false;
+  }
 </script>
 
 <nav class="navbar">
@@ -23,7 +32,9 @@
       <button
         class="nav-link"
         class:active={currentPage === link.id}
+        class:empty={isOptionalEmpty(link.id)}
         onclick={() => handleClick(link.id)}
+        title={isOptionalEmpty(link.id) ? `${link.label} is empty for this selection` : link.label}
       >
         {link.label}
       </button>
@@ -75,8 +86,13 @@
     transition: color 0.15s;
     font-weight: 400;
   }
+  .nav-link.empty:not(.active) {
+    color: var(--body-text-color-subdued, #9ca3af);
+    opacity: 0.48;
+  }
   .nav-link:hover {
     color: var(--body-text-color, #1f2937);
+    opacity: 1;
   }
   .nav-link.active {
     color: var(--body-text-color, #1f2937);
