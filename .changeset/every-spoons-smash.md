@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Add autonomous ML experiment support
+feat:Add additional support for autonomous ML experiments
