@@ -2,9 +2,6 @@
 # dependencies = [
 #   "trackio>=0.23.0",
 #   "trl>=1.2.0",
-#   "datasets>=4.4.0",
-#   "transformers[torch]>=5.0.0rc2",
-#   "huggingface_hub>=1.0.0",
 # ]
 # ///
 
