@@ -35,8 +35,3 @@ args = SFTConfig(
 )
 ```
 
-<iframe 
-    src="https://trackio-documentation.hf.space/?project=trl-integration&sidebar=hidden" 
-    style="width: 100%; border:0;" 
-    height="1530">
-</iframe>
