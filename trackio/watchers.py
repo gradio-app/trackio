@@ -28,6 +28,23 @@ from typing import Literal
 from trackio.alerts import AlertLevel
 
 
+class AlertReason:
+    """String constants for the ``reason`` field in watcher-generated alert data.
+
+    Use these to match alerts programmatically::
+
+        for alert in run.alerts():
+            if alert.get("data", {}).get("reason") == trackio.AlertReason.NAN_INF:
+                ...
+    """
+
+    NAN_INF = "nan_inf"
+    MAX_EXCEEDED = "max_exceeded"
+    MIN_EXCEEDED = "min_exceeded"
+    SPIKE = "spike"
+    STAGNATION = "stagnation"
+
+
 class MetricWatcher:
     def __init__(
         self,
@@ -83,7 +100,7 @@ class MetricWatcher:
                         "metric": self.metric_name,
                         "value": value,
                         "step": step,
-                        "reason": "nan_inf",
+                        "reason": AlertReason.NAN_INF,
                     },
                 }
             )
@@ -102,7 +119,7 @@ class MetricWatcher:
                             "value": value,
                             "threshold": self.max_value,
                             "step": step,
-                            "reason": "max_exceeded",
+                            "reason": AlertReason.MAX_EXCEEDED,
                         },
                     }
                 )
@@ -123,7 +140,7 @@ class MetricWatcher:
                             "value": value,
                             "threshold": self.min_value,
                             "step": step,
-                            "reason": "min_exceeded",
+                            "reason": AlertReason.MIN_EXCEEDED,
                         },
                     }
                 )
@@ -133,20 +150,23 @@ class MetricWatcher:
 
         if self.spike_factor is not None and len(self._values) >= self.window:
             recent_avg = sum(self._values) / len(self._values)
-            if recent_avg > 0 and value > recent_avg * self.spike_factor:
+            abs_avg = abs(recent_avg)
+            if abs_avg > 0 and abs(value - recent_avg) > abs_avg * (
+                self.spike_factor - 1
+            ):
                 if not self._spike_alerted:
                     alerts.append(
                         {
                             "title": f"Spike detected in {self.metric_name}",
-                            "text": f"{self.metric_name}={value:.4f} is {value / recent_avg:.1f}x the recent average ({recent_avg:.4f}) at step {step}",
+                            "text": f"{self.metric_name}={value:.4f} deviated {abs(value - recent_avg) / abs_avg:.1f}x from the recent average ({recent_avg:.4f}) at step {step}",
                             "level": AlertLevel.WARN,
                             "data": {
                                 "metric": self.metric_name,
                                 "value": value,
                                 "recent_avg": recent_avg,
-                                "factor": value / recent_avg,
+                                "factor": abs(value - recent_avg) / abs_avg,
                                 "step": step,
-                                "reason": "spike",
+                                "reason": AlertReason.SPIKE,
                             },
                         }
                     )
@@ -177,7 +197,7 @@ class MetricWatcher:
                             "best_value": self._best_value,
                             "steps_without_improvement": self._steps_without_improvement,
                             "step": step,
-                            "reason": "stagnation",
+                            "reason": AlertReason.STAGNATION,
                         },
                     }
                 )

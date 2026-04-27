@@ -1522,7 +1522,7 @@ class SQLiteStorage:
                         raw_data = row["data"]
                         if raw_data:
                             alert_dict["data"] = orjson.loads(raw_data)
-                    except (IndexError, KeyError):
+                    except (IndexError, KeyError, ValueError):
                         pass
                     results.append(alert_dict)
                 return results
@@ -3049,12 +3049,18 @@ class SQLiteStorage:
         metric_name: str,
         mode: str = "last",
         run_names: list[str] | None = None,
+        status_filter: str | None = "finished",
     ) -> list[dict]:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
 
         runs = run_names or SQLiteStorage.get_runs(project)
+
+        if status_filter is not None:
+            statuses = SQLiteStorage.get_run_statuses(project)
+            runs = [r for r in runs if statuses.get(r) == status_filter]
+
         results = []
 
         with SQLiteStorage._get_connection(db_path) as conn:

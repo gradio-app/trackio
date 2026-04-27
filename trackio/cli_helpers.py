@@ -139,17 +139,22 @@ def format_alerts(alerts: list[dict]) -> str:
         return "No alerts found."
 
     output = [f"Found {len(alerts)} alert(s):\n"]
-    output.append("Timestamp | Run | Level | Title | Text | Step")
-    output.append("-" * 80)
 
     for a in alerts:
         ts = a.get("timestamp", "N/A")
         run = a.get("run", "N/A")
-        level = a.get("level", "N/A").upper()
+        level = (a.get("level") or "N/A").upper()
         title = a.get("title", "")
         text = a.get("text", "") or ""
         step = a.get("step", "N/A")
-        output.append(f"{ts} | {run} | {level} | {title} | {text} | {step}")
+        line = f"[{level}] {title} | run={run} step={step} ts={ts}"
+        if text:
+            line += f"\n  {text}"
+        data = a.get("data")
+        if data:
+            data_str = ", ".join(f"{k}={v}" for k, v in data.items())
+            line += f"\n  data: {data_str}"
+        output.append(line)
 
     return "\n".join(output)
 
@@ -185,20 +190,39 @@ def format_compare(
         f"Comparing {len(comparison)} runs across {len(metric_names)} metrics\n"
     )
 
-    header = f"  {'Run':<25} {'Status':<10}"
+    run_w = max((len(e["run"]) for e in comparison), default=3)
+    run_w = max(run_w, 3)
+    status_w = 10
+
+    col_ws = []
     for m in metric_names:
-        header += f" {m:<15}"
+        vals = [e["metrics"].get(m) for e in comparison]
+        val_w = max(
+            (
+                len(f"{v:.4f}" if isinstance(v, float) else str(v))
+                for v in vals
+                if v is not None
+            ),
+            default=3,
+        )
+        col_ws.append(max(len(m), val_w))
+
+    header = f"  {'Run':<{run_w}} {'Status':<{status_w}}"
+    for m, w in zip(metric_names, col_ws):
+        header += f"  {m:<{w}}"
     output.append(header)
-    output.append("  " + "-" * (35 + 15 * len(metric_names)))
+    sep_w = run_w + status_w + sum(w + 2 for w in col_ws) + 2
+    output.append("  " + "-" * sep_w)
 
     for entry in comparison:
-        line = f"  {entry['run']:<25} {(entry.get('status') or '?'):<10}"
-        for m in metric_names:
+        line = f"  {entry['run']:<{run_w}} {(entry.get('status') or '?'):<{status_w}}"
+        for m, w in zip(metric_names, col_ws):
             val = entry["metrics"].get(m)
             if val is not None:
-                line += f" {val:<15.4f}" if isinstance(val, float) else f" {val!s:<15}"
+                formatted = f"{val:.4f}" if isinstance(val, float) else str(val)
             else:
-                line += f" {'N/A':<15}"
+                formatted = "N/A"
+            line += f"  {formatted:<{w}}"
         output.append(line)
     return "\n".join(output)
 

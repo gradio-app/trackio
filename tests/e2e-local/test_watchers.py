@@ -1,11 +1,11 @@
-from trackio.watchers import MetricWatcher, WatcherManager
+from trackio.watchers import AlertReason, MetricWatcher, WatcherManager
 
 
 def test_nan_inf_triggers_stop():
     w = MetricWatcher("loss", nan=True)
     alerts = w.check(float("nan"), step=10)
     assert len(alerts) == 1
-    assert alerts[0]["data"]["reason"] == "nan_inf"
+    assert alerts[0]["data"]["reason"] == AlertReason.NAN_INF
     assert w.should_stop
 
     w2 = MetricWatcher("loss", nan=False)
@@ -17,7 +17,7 @@ def test_max_value_with_dedup():
     assert len(w.check(5.0, step=0)) == 0
     alerts = w.check(15.0, step=1)
     assert len(alerts) == 1
-    assert alerts[0]["data"]["reason"] == "max_exceeded"
+    assert alerts[0]["data"]["reason"] == AlertReason.MAX_EXCEEDED
     assert w.should_stop
     assert len(w.check(15.0, step=2)) == 0
     w.check(5.0, step=3)
@@ -27,7 +27,9 @@ def test_max_value_with_dedup():
 def test_min_value_with_dedup():
     w = MetricWatcher("acc", min_value=0.5)
     assert len(w.check(0.8, step=0)) == 0
-    assert len(w.check(0.3, step=1)) == 1
+    alerts = w.check(0.3, step=1)
+    assert len(alerts) == 1
+    assert alerts[0]["data"]["reason"] == AlertReason.MIN_EXCEEDED
     assert len(w.check(0.3, step=2)) == 0
     w.check(0.8, step=3)
     assert len(w.check(0.3, step=4)) == 1
@@ -39,11 +41,21 @@ def test_spike_detection_with_dedup_and_reset():
         w.check(1.0, step=i)
     alerts = w.check(10.0, step=3)
     assert len(alerts) == 1
-    assert alerts[0]["data"]["reason"] == "spike"
+    assert alerts[0]["data"]["reason"] == AlertReason.SPIKE
     assert len(w.check(10.0, step=4)) == 0
     for i in range(3):
         w.check(1.0, step=5 + i)
     assert len(w.check(10.0, step=8)) == 1
+
+
+def test_spike_detection_works_for_negative_metrics():
+    w = MetricWatcher("reward", spike_factor=3.0, window=3)
+    for i in range(3):
+        w.check(-1.0, step=i)
+    assert len(w.check(-1.1, step=3)) == 0
+    alerts = w.check(2.0, step=4)
+    assert len(alerts) == 1
+    assert alerts[0]["data"]["reason"] == AlertReason.SPIKE
 
 
 def test_patience_min_mode():
@@ -54,7 +66,7 @@ def test_patience_min_mode():
     w.check(0.95, step=3)
     alerts = w.check(0.95, step=4)
     assert len(alerts) == 1
-    assert alerts[0]["data"]["reason"] == "stagnation"
+    assert alerts[0]["data"]["reason"] == AlertReason.STAGNATION
     assert w.should_stop
     assert len(w.check(0.95, step=5)) == 0
 

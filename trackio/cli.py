@@ -713,6 +713,11 @@ def main():
         action="store_true",
         help="Output in JSON format",
     )
+    best_parser.add_argument(
+        "--include-all",
+        action="store_true",
+        help="Include runs of all statuses (default: only finished runs)",
+    )
 
     compare_parser = subparsers.add_parser(
         "compare",
@@ -743,6 +748,11 @@ def main():
         "--json",
         action="store_true",
         help="Output in JSON format",
+    )
+    compare_parser.add_argument(
+        "--include-all",
+        action="store_true",
+        help="Include runs of all statuses (default: only finished runs)",
     )
 
     summary_parser = subparsers.add_parser(
@@ -833,9 +843,16 @@ def main():
                     error_exit(f"Project '{args.project}' not found.")
                 runs = SQLiteStorage.get_runs(args.project)
             if args.json:
-                print(format_json({"project": args.project, "runs": runs}))
+                statuses = SQLiteStorage.get_run_statuses(args.project)
+                run_records = [{"name": r, "status": statuses.get(r)} for r in runs]
+                print(format_json({"project": args.project, "runs": run_records}))
             else:
-                print(format_list(runs, f"Runs in '{args.project}'"))
+                statuses = SQLiteStorage.get_run_statuses(args.project)
+                annotated = [
+                    f"{r}  [{statuses[r]}]" if r in statuses and statuses[r] else r
+                    for r in runs
+                ]
+                print(format_list(annotated, f"Runs in '{args.project}'"))
         elif args.list_type == "metrics":
             if remote:
                 metrics = remote.predict(
@@ -1294,12 +1311,14 @@ def main():
             error_exit(f"Project '{args.project}' not found.")
 
         minimize = args.direction == "min"
+        status_filter = None if args.include_all else "finished"
         results = SQLiteStorage.get_final_metric_for_runs(
-            args.project, args.metric, mode=args.mode
+            args.project, args.metric, mode=args.mode, status_filter=status_filter
         )
         if not results:
+            qualifier = "" if args.include_all else " finished"
             error_exit(
-                f"No runs with metric '{args.metric}' found in project '{args.project}'."
+                f"No{qualifier} runs with metric '{args.metric}' found in project '{args.project}'."
             )
 
         configs = SQLiteStorage.get_all_run_configs(args.project)
@@ -1339,7 +1358,17 @@ def main():
         if args.runs:
             run_names = [r.strip() for r in args.runs.split(",")]
 
-        all_runs = run_names or SQLiteStorage.get_runs(args.project)
+        status_filter = None if args.include_all else "finished"
+        if run_names:
+            all_runs = run_names
+        else:
+            all_runs = SQLiteStorage.get_runs(args.project)
+            if status_filter is not None:
+                statuses_for_filter = SQLiteStorage.get_run_statuses(args.project)
+                all_runs = [
+                    r for r in all_runs if statuses_for_filter.get(r) == status_filter
+                ]
+
         metric_names = None
         if args.metrics:
             metric_names = [m.strip() for m in args.metrics.split(",")]
@@ -1359,7 +1388,11 @@ def main():
             run_metrics = {}
             for metric in metric_names:
                 values = SQLiteStorage.get_final_metric_for_runs(
-                    args.project, metric, mode=args.mode, run_names=[run]
+                    args.project,
+                    metric,
+                    mode=args.mode,
+                    run_names=[run],
+                    status_filter=None,
                 )
                 if values:
                     run_metrics[metric] = values[0]["value"]
@@ -1404,7 +1437,11 @@ def main():
             metric_value = None
             if args.metric:
                 values = SQLiteStorage.get_final_metric_for_runs(
-                    args.project, args.metric, mode="last", run_names=[run]
+                    args.project,
+                    args.metric,
+                    mode="last",
+                    run_names=[run],
+                    status_filter=None,
                 )
                 if values:
                     metric_value = values[0]["value"]

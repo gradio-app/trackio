@@ -39,7 +39,7 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.typehints import UploadEntry
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
-from trackio.watchers import MetricWatcher, WatcherManager
+from trackio.watchers import AlertReason, MetricWatcher, WatcherManager
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -63,6 +63,7 @@ __all__ = [
     "watch",
     "should_stop",
     "AlertLevel",
+    "AlertReason",
     "show",
     "sync",
     "freeze",
@@ -97,8 +98,6 @@ def _cleanup_current_run():
         try:
             if not run._finished:
                 run.finish(status="failed")
-            else:
-                run.finish()
         except Exception:
             pass
 
