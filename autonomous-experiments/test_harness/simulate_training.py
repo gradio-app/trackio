@@ -6,7 +6,6 @@ No ML framework dependencies - runs in seconds on CPU.
 
 Usage:
     python simulate_training.py --project my_exp --run-name lr-0.01 --steps 500 --lr 0.01
-    python simulate_training.py --project my_exp --run-name crash-test --steps 500 --lr 1.0 --crash-at-step 200
     python simulate_training.py --project my_exp --run-name spike-test --steps 500 --lr 0.01 --spike-at-step 300
 """
 
@@ -19,8 +18,10 @@ import time
 import trackio
 from trackio.alerts import AlertLevel
 
+NOISE_SCALE = 0.05
 
-def simulate_loss(step, total_steps, lr, depth, batch_size, noise_scale, base_loss=3.0):
+
+def simulate_loss(step, total_steps, lr, depth, batch_size, base_loss=3.0):
     convergence_rate = 2.0 / (1.0 + lr * 100)
     if lr > 0.5:
         convergence_rate = -0.5
@@ -32,7 +33,7 @@ def simulate_loss(step, total_steps, lr, depth, batch_size, noise_scale, base_lo
     base = base_loss * math.exp(
         -convergence_rate * depth_factor * batch_factor * progress * 5
     )
-    noise = random.gauss(0, noise_scale * (1 - progress * 0.5))
+    noise = random.gauss(0, NOISE_SCALE * (1 - progress * 0.5))
 
     if lr > 0.1:
         oscillation = 0.3 * lr * math.sin(step * lr * 0.5)
@@ -68,15 +69,10 @@ def main():
     parser.add_argument("--lr", type=float, default=0.01, help="Learning rate")
     parser.add_argument("--depth", type=int, default=6, help="Model depth (layers)")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
-    parser.add_argument("--noise", type=float, default=0.05, help="Noise scale")
-    parser.add_argument(
-        "--crash-at-step", type=int, default=None, help="Simulate crash at step N"
-    )
     parser.add_argument(
         "--spike-at-step", type=int, default=None, help="Simulate loss spike at step N"
     )
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
-    parser.add_argument("--log-interval", type=int, default=1, help="Log every N steps")
     parser.add_argument(
         "--sleep",
         type=float,
@@ -92,7 +88,6 @@ def main():
         "lr": args.lr,
         "depth": args.depth,
         "batch_size": args.batch_size,
-        "noise": args.noise,
         "steps": args.steps,
     }
 
@@ -103,7 +98,7 @@ def main():
 
     for step in range(args.steps):
         train_loss = simulate_loss(
-            step, args.steps, args.lr, args.depth, args.batch_size, args.noise
+            step, args.steps, args.lr, args.depth, args.batch_size
         )
 
         if args.spike_at_step and step == args.spike_at_step:
@@ -113,9 +108,6 @@ def main():
                 text=f"Loss spiked to {train_loss:.4f} at step {step}",
                 level=AlertLevel.WARN,
             )
-
-        if args.crash_at_step and step == args.crash_at_step:
-            train_loss = float("nan")
 
         if math.isnan(train_loss) or math.isinf(train_loss):
             trackio.alert(
@@ -172,17 +164,16 @@ def main():
                 level=AlertLevel.WARN,
             )
 
-        if step % args.log_interval == 0:
-            trackio.log(
-                {
-                    "train/loss": round(train_loss, 4),
-                    "val/loss": round(val_loss, 4),
-                    "accuracy": round(accuracy, 4),
-                    "best_val_loss": round(best_val_loss, 4),
-                    "lr": args.lr,
-                },
-                step=step,
-            )
+        trackio.log(
+            {
+                "train/loss": round(train_loss, 4),
+                "val/loss": round(val_loss, 4),
+                "accuracy": round(accuracy, 4),
+                "best_val_loss": round(best_val_loss, 4),
+                "lr": args.lr,
+            },
+            step=step,
+        )
 
         if args.sleep > 0:
             time.sleep(args.sleep)

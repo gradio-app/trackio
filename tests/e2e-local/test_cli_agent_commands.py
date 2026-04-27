@@ -2,118 +2,49 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
-
-import pytest
 
 import trackio
-from trackio import context_vars
 
 PROJECT = "cli_agent_test"
+FILTER_PROJECT = "filter_test"
 
 
-@pytest.fixture(scope="module")
-def seeded_dir():
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
-        import trackio.media.media as mm
-        import trackio.media.utils as mu
-        import trackio.sqlite_storage as ss
-        import trackio.utils as tu
-
-        orig_trackio = ss.TRACKIO_DIR
-        orig_media = [mm.MEDIA_DIR, mu.MEDIA_DIR, tu.MEDIA_DIR, ss.MEDIA_DIR]
-        ss.TRACKIO_DIR = Path(tmpdir)
-        mm.MEDIA_DIR = mu.MEDIA_DIR = tu.MEDIA_DIR = ss.MEDIA_DIR = (
-            Path(tmpdir) / "media"
+def _seed(temp_dir):
+    trackio.init(project=PROJECT, name="run-lr0.01", config={"lr": 0.01, "depth": 4})
+    for step in range(10):
+        trackio.log(
+            {"val/loss": 1.0 - step * 0.08, "accuracy": 0.5 + step * 0.04}, step=step
         )
+    trackio.finish()
 
-        context_vars.current_run.set(None)
-        context_vars.current_project.set(None)
-        context_vars.current_server.set(None)
-        context_vars.current_space_id.set(None)
-
-        trackio.init(
-            project=PROJECT, name="run-lr0.01", config={"lr": 0.01, "depth": 4}
+    trackio.init(project=PROJECT, name="run-lr0.1", config={"lr": 0.1, "depth": 6})
+    for step in range(10):
+        trackio.log(
+            {"val/loss": 1.5 - step * 0.05, "accuracy": 0.3 + step * 0.03}, step=step
         )
-        for step in range(10):
-            trackio.log(
-                {"val/loss": 1.0 - step * 0.08, "accuracy": 0.5 + step * 0.04},
-                step=step,
-            )
-        trackio.finish()
+    trackio.finish()
 
-        trackio.init(project=PROJECT, name="run-lr0.1", config={"lr": 0.1, "depth": 6})
-        for step in range(10):
-            trackio.log(
-                {"val/loss": 1.5 - step * 0.05, "accuracy": 0.3 + step * 0.03},
-                step=step,
-            )
-        trackio.finish()
+    trackio.init(project=PROJECT, name="run-lr1.0", config={"lr": 1.0, "depth": 8})
+    for step in range(5):
+        trackio.log({"val/loss": 5.0 + step * 0.5, "accuracy": 0.1}, step=step)
+    trackio.alert("Diverging", text="Loss too high", level=trackio.AlertLevel.ERROR)
+    trackio.finish()
 
-        trackio.init(project=PROJECT, name="run-lr1.0", config={"lr": 1.0, "depth": 8})
-        for step in range(5):
-            trackio.log({"val/loss": 5.0 + step * 0.5, "accuracy": 0.1}, step=step)
-        trackio.alert("Diverging", text="Loss too high", level=trackio.AlertLevel.ERROR)
-        trackio.finish()
+    trackio.init(project=FILTER_PROJECT, name="done-run", config={"lr": 0.01})
+    for step in range(5):
+        trackio.log({"val/loss": 1.0 - step * 0.1}, step=step)
+    trackio.finish()
 
-        context_vars.current_run.set(None)
-        context_vars.current_project.set(None)
-        context_vars.current_server.set(None)
-        context_vars.current_space_id.set(None)
+    trackio.init(project=FILTER_PROJECT, name="also-done", config={"lr": 0.1})
+    for step in range(5):
+        trackio.log({"val/loss": 2.0 - step * 0.1}, step=step)
+    trackio.finish()
 
-        yield tmpdir
+    trackio.init(project=FILTER_PROJECT, name="still-running", config={"lr": 1.0})
+    for step in range(5):
+        trackio.log({"val/loss": 5.0 + step * 0.5}, step=step)
 
-        ss.TRACKIO_DIR = orig_trackio
-        mm.MEDIA_DIR, mu.MEDIA_DIR, tu.MEDIA_DIR, ss.MEDIA_DIR = orig_media
-
-
-@pytest.fixture(scope="module")
-def seeded_dir_with_unfinished():
-    """Fixture with two finished runs and one still-running run."""
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
-        import trackio.media.media as mm
-        import trackio.media.utils as mu
-        import trackio.sqlite_storage as ss
-        import trackio.utils as tu
-
-        orig_trackio = ss.TRACKIO_DIR
-        orig_media = [mm.MEDIA_DIR, mu.MEDIA_DIR, tu.MEDIA_DIR, ss.MEDIA_DIR]
-        ss.TRACKIO_DIR = Path(tmpdir)
-        mm.MEDIA_DIR = mu.MEDIA_DIR = tu.MEDIA_DIR = ss.MEDIA_DIR = (
-            Path(tmpdir) / "media"
-        )
-
-        context_vars.current_run.set(None)
-        context_vars.current_project.set(None)
-        context_vars.current_server.set(None)
-        context_vars.current_space_id.set(None)
-
-        proj = "filter_test"
-
-        trackio.init(project=proj, name="done-run", config={"lr": 0.01})
-        for step in range(5):
-            trackio.log({"val/loss": 1.0 - step * 0.1}, step=step)
-        trackio.finish()
-
-        trackio.init(project=proj, name="also-done", config={"lr": 0.1})
-        for step in range(5):
-            trackio.log({"val/loss": 2.0 - step * 0.1}, step=step)
-        trackio.finish()
-
-        trackio.init(project=proj, name="still-running", config={"lr": 1.0})
-        for step in range(5):
-            trackio.log({"val/loss": 5.0 + step * 0.5}, step=step)
-
-        context_vars.current_run.set(None)
-        context_vars.current_project.set(None)
-        context_vars.current_server.set(None)
-        context_vars.current_space_id.set(None)
-
-        yield (tmpdir, proj)
-
-        ss.TRACKIO_DIR = orig_trackio
-        mm.MEDIA_DIR, mu.MEDIA_DIR, tu.MEDIA_DIR, ss.MEDIA_DIR = orig_media
+    return temp_dir
 
 
 def _cli(args, env_dir):
@@ -127,10 +58,9 @@ def _cli(args, env_dir):
     )
 
 
-def test_best(seeded_dir):
-    r = _cli(
-        ["best", "--project", PROJECT, "--metric", "val/loss", "--json"], seeded_dir
-    )
+def test_best(temp_dir):
+    _seed(temp_dir)
+    r = _cli(["best", "--project", PROJECT, "--metric", "val/loss", "--json"], temp_dir)
     assert r.returncode == 0
     data = json.loads(r.stdout)
     assert data["best_run"] == "run-lr0.01"
@@ -140,49 +70,41 @@ def test_best(seeded_dir):
         assert {"value", "step", "config", "run"} <= entry.keys()
 
     r2 = _cli(
-        [
-            "best",
-            "--project",
-            PROJECT,
-            "--metric",
-            "accuracy",
-            "--direction",
-            "max",
-            "--json",
-        ],
-        seeded_dir,
+        ["best", "--project", PROJECT, "--metric", "accuracy", "--direction", "max", "--json"],
+        temp_dir,
     )
     assert r2.returncode == 0
     assert json.loads(r2.stdout)["best_run"] == "run-lr0.01"
 
 
-def test_best_excludes_unfinished_by_default(seeded_dir_with_unfinished):
-    tmpdir, proj = seeded_dir_with_unfinished
-    r = _cli(["best", "--project", proj, "--metric", "val/loss", "--json"], tmpdir)
+def test_best_excludes_unfinished_by_default(temp_dir):
+    _seed(temp_dir)
+    r = _cli(
+        ["best", "--project", FILTER_PROJECT, "--metric", "val/loss", "--json"], temp_dir
+    )
     assert r.returncode == 0
-    data = json.loads(r.stdout)
-    run_names = [e["run"] for e in data["ranking"]]
+    run_names = [e["run"] for e in json.loads(r.stdout)["ranking"]]
     assert "still-running" not in run_names
     assert len(run_names) == 2
 
 
-def test_best_include_all(seeded_dir_with_unfinished):
-    tmpdir, proj = seeded_dir_with_unfinished
+def test_best_include_all(temp_dir):
+    _seed(temp_dir)
     r = _cli(
-        ["best", "--project", proj, "--metric", "val/loss", "--include-all", "--json"],
-        tmpdir,
+        ["best", "--project", FILTER_PROJECT, "--metric", "val/loss", "--include-all", "--json"],
+        temp_dir,
     )
     assert r.returncode == 0
-    data = json.loads(r.stdout)
-    run_names = [e["run"] for e in data["ranking"]]
+    run_names = [e["run"] for e in json.loads(r.stdout)["ranking"]]
     assert "still-running" in run_names
     assert len(run_names) == 3
 
 
-def test_compare(seeded_dir):
+def test_compare(temp_dir):
+    _seed(temp_dir)
     r = _cli(
         ["compare", "--project", PROJECT, "--metrics", "val/loss,accuracy", "--json"],
-        seeded_dir,
+        temp_dir,
     )
     assert r.returncode == 0
     data = json.loads(r.stdout)
@@ -191,74 +113,52 @@ def test_compare(seeded_dir):
         assert {"val/loss", "accuracy"} <= run_entry["metrics"].keys()
 
     r2 = _cli(
-        [
-            "compare",
-            "--project",
-            PROJECT,
-            "--runs",
-            "run-lr0.01,run-lr0.1",
-            "--metrics",
-            "val/loss",
-            "--json",
-        ],
-        seeded_dir,
+        ["compare", "--project", PROJECT, "--runs", "run-lr0.01,run-lr0.1", "--metrics", "val/loss", "--json"],
+        temp_dir,
     )
     assert r2.returncode == 0
     assert len(json.loads(r2.stdout)["runs"]) == 2
 
 
-def test_compare_excludes_unfinished_by_default(seeded_dir_with_unfinished):
-    tmpdir, proj = seeded_dir_with_unfinished
-    r = _cli(["compare", "--project", proj, "--metrics", "val/loss", "--json"], tmpdir)
+def test_compare_excludes_unfinished_by_default(temp_dir):
+    _seed(temp_dir)
+    r = _cli(
+        ["compare", "--project", FILTER_PROJECT, "--metrics", "val/loss", "--json"], temp_dir
+    )
     assert r.returncode == 0
-    data = json.loads(r.stdout)
-    run_names = [e["run"] for e in data["runs"]]
+    run_names = [e["run"] for e in json.loads(r.stdout)["runs"]]
     assert "still-running" not in run_names
     assert len(run_names) == 2
 
 
-def test_compare_include_all(seeded_dir_with_unfinished):
-    tmpdir, proj = seeded_dir_with_unfinished
+def test_compare_include_all(temp_dir):
+    _seed(temp_dir)
     r = _cli(
-        [
-            "compare",
-            "--project",
-            proj,
-            "--metrics",
-            "val/loss",
-            "--include-all",
-            "--json",
-        ],
-        tmpdir,
+        ["compare", "--project", FILTER_PROJECT, "--metrics", "val/loss", "--include-all", "--json"],
+        temp_dir,
     )
     assert r.returncode == 0
-    data = json.loads(r.stdout)
-    run_names = [e["run"] for e in data["runs"]]
+    run_names = [e["run"] for e in json.loads(r.stdout)["runs"]]
     assert "still-running" in run_names
     assert len(run_names) == 3
 
 
-def test_summary(seeded_dir):
+def test_summary(temp_dir):
+    _seed(temp_dir)
     r = _cli(
-        ["summary", "--project", PROJECT, "--metric", "val/loss", "--json"], seeded_dir
+        ["summary", "--project", PROJECT, "--metric", "val/loss", "--json"], temp_dir
     )
     assert r.returncode == 0
     data = json.loads(r.stdout)
     assert data["num_runs"] == 3
     assert data["total_alerts"] >= 1
     for run_entry in data["runs"]:
-        assert {
-            "run",
-            "status",
-            "last_step",
-            "num_logs",
-            "config",
-            "metric_value",
-        } <= run_entry.keys()
+        assert {"run", "status", "last_step", "num_logs", "config", "metric_value"} <= run_entry.keys()
 
 
-def test_list_runs_json_includes_status(seeded_dir):
-    r = _cli(["list", "runs", "--project", PROJECT, "--json"], seeded_dir)
+def test_list_runs_json_includes_status(temp_dir):
+    _seed(temp_dir)
+    r = _cli(["list", "runs", "--project", PROJECT, "--json"], temp_dir)
     assert r.returncode == 0
     data = json.loads(r.stdout)
     assert "runs" in data
@@ -271,17 +171,7 @@ def test_list_runs_json_includes_status(seeded_dir):
     assert statuses.get("run-lr1.0") == "finished"
 
 
-def test_best_error_cases(seeded_dir):
-    assert (
-        _cli(
-            ["best", "--project", "nope", "--metric", "loss", "--json"], seeded_dir
-        ).returncode
-        != 0
-    )
-    assert (
-        _cli(
-            ["best", "--project", PROJECT, "--metric", "nonexistent", "--json"],
-            seeded_dir,
-        ).returncode
-        != 0
-    )
+def test_best_error_cases(temp_dir):
+    _seed(temp_dir)
+    assert _cli(["best", "--project", "nope", "--metric", "loss", "--json"], temp_dir).returncode != 0
+    assert _cli(["best", "--project", PROJECT, "--metric", "nonexistent", "--json"], temp_dir).returncode != 0
