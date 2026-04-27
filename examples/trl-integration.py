@@ -17,12 +17,12 @@ suffix = random.randint(100000, 999999)
 project_name = f"trackio-trl-demo-{suffix}"
 
 prompts = [
-    "What is the capital of France?",
-    "Who wrote Hamlet?",
-    "What is 2 + 2?",
-    "What color is the sky?",
-    "Name a primary color.",
-    "What is the largest planet?",
+    {"role": "user", "content": "What is the capital of France?"},
+    {"role": "user", "content": "Who wrote Hamlet?"},
+    {"role": "user", "content": "What is 2 + 2?"},
+    {"role": "user", "content": "What color is the sky?"},
+    {"role": "user", "content": "Name a primary color."},
+    {"role": "user", "content": "What is the largest planet?"},
 ] * 4
 completions = [
     "Paris.",
