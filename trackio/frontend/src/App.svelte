@@ -15,6 +15,10 @@
     getAllProjects,
     getRunsForProject,
     getAlerts,
+    getLogsBatch,
+    getTraces,
+    getSystemMetricsForRun,
+    getProjectFiles,
     getRunMutationStatus,
     getSettings,
     getReadOnlySource,
@@ -88,6 +92,37 @@
   let spaceId = $state(null);
   let availableSystemDevices = $state([]);
   let selectedSystemDevices = $state([]);
+  let tabAvailability = $state({});
+  let tabAvailabilityRequestId = 0;
+  let lastTabAvailabilityRefreshAt = 0;
+  let shouldOpenFirstNonEmptyTab = false;
+  let openedFirstNonEmptyTab = false;
+  const TAB_AVAILABILITY_POLL_INTERVAL_MS = 15000;
+
+  const OPTIONAL_EMPTY_TABS = new Set([
+    "system",
+    "traces",
+    "media",
+    "reports",
+    "files",
+  ]);
+  const AUTO_OPEN_TAB_ORDER = [
+    "metrics",
+    "system",
+    "traces",
+    "media",
+    "reports",
+    "runs",
+    "files",
+  ];
+  const RESERVED_METRIC_KEYS = new Set([
+    "project",
+    "run",
+    "timestamp",
+    "step",
+    "time",
+    "metrics",
+  ]);
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -98,8 +133,14 @@
   );
 
   function handleNavigate(page) {
+    openedFirstNonEmptyTab = true;
     currentPage = page;
     navigateTo(page);
+  }
+
+  function isBareDashboardPath() {
+    const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+    return pathname === "/";
   }
 
   function lockedProjectName() {
@@ -171,6 +212,139 @@
     }
   }
 
+  function initialAvailability() {
+    return {
+      metrics: false,
+      system: false,
+      traces: false,
+      media: false,
+      reports: false,
+      runs: false,
+      files: false,
+    };
+  }
+
+  function logHasScalarMetric(log) {
+    return Object.entries(log || {}).some(([key, value]) => (
+      !RESERVED_METRIC_KEYS.has(key) &&
+      typeof value === "number" &&
+      Number.isFinite(value)
+    ));
+  }
+
+  function logHasMedia(log) {
+    return Object.values(log || {}).some((value) => (
+      value &&
+      typeof value === "object" &&
+      ["trackio.image", "trackio.video", "trackio.audio", "trackio.table"].includes(value._type)
+    ));
+  }
+
+  function logHasMarkdownReport(log) {
+    return Object.values(log || {}).some((value) => (
+      value &&
+      typeof value === "object" &&
+      value._type === "trackio.markdown"
+    ));
+  }
+
+  async function anyRunHasSystemMetrics(project, runRecords) {
+    const results = await Promise.all(
+      runRecords.map(async (run) => {
+        try {
+          const metrics = await getSystemMetricsForRun(project, run);
+          return (metrics || []).length > 0;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    return results.some(Boolean);
+  }
+
+  async function anyRunHasTraces(project, runRecords) {
+    const results = await Promise.all(
+      runRecords.map(async (run) => {
+        try {
+          const traces = await getTraces(project, run, { limit: 1 });
+          return (traces || []).length > 0;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    return results.some(Boolean);
+  }
+
+  async function refreshTabAvailability({ force = false } = {}) {
+    const now = Date.now();
+    if (
+      !force &&
+      now - lastTabAvailabilityRefreshAt < TAB_AVAILABILITY_POLL_INTERVAL_MS
+    ) {
+      return;
+    }
+    lastTabAvailabilityRefreshAt = now;
+    const requestId = ++tabAvailabilityRequestId;
+    if (!selectedProject) {
+      tabAvailability = initialAvailability();
+      return;
+    }
+
+    const availability = {
+      ...initialAvailability(),
+      runs: runs.length > 0,
+    };
+    const runRecords = selectedRunRecords;
+
+    try {
+      const [
+        logsBatch,
+        projectAlerts,
+        hasSystem,
+        hasTraces,
+        projectFiles,
+      ] = await Promise.all([
+        runRecords.length ? getLogsBatch(selectedProject, runRecords) : [],
+        getAlerts(selectedProject, null, null, null).catch(() => []),
+        runRecords.length ? anyRunHasSystemMetrics(selectedProject, runRecords) : false,
+        runRecords.length ? anyRunHasTraces(selectedProject, runRecords) : false,
+        getProjectFiles(selectedProject).catch(() => []),
+      ]);
+      if (requestId !== tabAvailabilityRequestId) return;
+
+      const selectedRunNames = new Set(runRecords.map((run) => run.name));
+      const selectedAlerts = (projectAlerts || []).filter(
+        (alert) => !alert.run || selectedRunNames.has(alert.run),
+      );
+      for (const entry of logsBatch || []) {
+        for (const log of entry.logs || []) {
+          availability.metrics ||= logHasScalarMetric(log);
+          availability.media ||= logHasMedia(log);
+          availability.reports ||= logHasMarkdownReport(log);
+        }
+      }
+      availability.system = hasSystem;
+      availability.traces = hasTraces;
+      availability.reports ||= selectedAlerts.length > 0;
+      availability.files = (projectFiles || []).length > 0;
+      tabAvailability = availability;
+
+      if (shouldOpenFirstNonEmptyTab && !openedFirstNonEmptyTab && isBareDashboardPath()) {
+        const first = AUTO_OPEN_TAB_ORDER.find((page) => availability[page]);
+        if (first && first !== currentPage) {
+          currentPage = first;
+          navigateTo(first);
+        }
+        openedFirstNonEmptyTab = true;
+      }
+    } catch (e) {
+      if (requestId !== tabAvailabilityRequestId) return;
+      console.error("Failed to load tab availability:", e);
+      tabAvailability = availability;
+    }
+  }
+
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
@@ -180,6 +354,7 @@
       await refreshProjects();
       await refreshRuns();
       await refreshAlerts();
+      await refreshTabAvailability();
     }, getAppPollIntervalMs());
   }
 
@@ -268,6 +443,7 @@
       showHeaders = false;
     }
 
+    shouldOpenFirstNonEmptyTab = isBareDashboardPath();
     currentPage = getPageFromPath();
 
     window.addEventListener("popstate", () => {
@@ -309,6 +485,7 @@
         await refreshRuns();
 
         await refreshAlerts();
+        await refreshTabAvailability({ force: true });
       } catch (e) {
         console.error("Failed to load projects:", e);
       } finally {
@@ -337,6 +514,13 @@
     projects;
     urlTick;
     if (projectLocked) applyLockedProject();
+  });
+
+  $effect(() => {
+    selectedProject;
+    selectedRuns;
+    runs;
+    if (appBootstrapReady) refreshTabAvailability({ force: true });
   });
 
   let urlRunsFromQueryApplied = $state(false);
@@ -421,7 +605,12 @@
 
   <div class="main">
     {#if !navbarHidden}
-      <Navbar {currentPage} onNavigate={handleNavigate} />
+      <Navbar
+        {currentPage}
+        {tabAvailability}
+        optionalEmptyTabs={OPTIONAL_EMPTY_TABS}
+        onNavigate={handleNavigate}
+      />
     {/if}
 
     <div class="page-content">
