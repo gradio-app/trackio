@@ -22,6 +22,46 @@ class Run:
             )
         return self._config
 
+    @property
+    def status(self) -> str | None:
+        return SQLiteStorage.get_run_status(self.project, self.name, run_id=self.id)
+
+    @property
+    def final_metrics(self) -> dict:
+        """Last recorded value for each numeric metric, keyed by metric name."""
+        metric_names = SQLiteStorage.get_all_metrics_for_run(self.project, self.name)
+        result = {}
+        for m in metric_names:
+            rows = SQLiteStorage.get_final_metric_for_runs(
+                self.project, m, mode="last", run_names=[self.name], status_filter=None
+            )
+            if rows:
+                result[m] = rows[0]["value"]
+        return result
+
+    def metrics(self) -> list[str]:
+        return SQLiteStorage.get_all_metrics_for_run(self.project, self.name)
+
+    def history(
+        self,
+        metric: str | None = None,
+        step: int | None = None,
+        around_step: int | None = None,
+        at_time: str | None = None,
+        window: int | None = None,
+    ) -> list[dict]:
+        if metric is not None:
+            return SQLiteStorage.get_metric_values(
+                self.project,
+                self.name,
+                metric,
+                step=step,
+                around_step=around_step,
+                at_time=at_time,
+                window=window,
+            )
+        return SQLiteStorage.get_logs(self.project, self.name)
+
     def alerts(self, level: str | None = None, since: str | None = None) -> list[dict]:
         return SQLiteStorage.get_alerts(
             self.project, run_name=self.name, run_id=self.id, level=level, since=since

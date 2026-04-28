@@ -41,6 +41,7 @@ from trackio.table import Table
 from trackio.trace import Trace
 from trackio.typehints import UploadEntry
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
+from trackio.watchers import AlertReason, MetricWatcher, WatcherManager
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -61,7 +62,10 @@ __all__ = [
     "log_gpu",
     "finish",
     "alert",
+    "watch",
+    "should_stop",
     "AlertLevel",
+    "AlertReason",
     "show",
     "sync",
     "freeze",
@@ -95,7 +99,8 @@ def _cleanup_current_run():
     run = context_vars.current_run.get()
     if run is not None:
         try:
-            run.finish()
+            if not run._finished:
+                run.finish(status="failed")
         except Exception:
             pass
 
@@ -672,6 +677,11 @@ def init(
 
     context_vars.current_run.set(run)
     globals()["config"] = run.config
+    if _watcher_manager._watchers:
+        _emit_nonfatal_warning(
+            "trackio.init() cleared existing metric watchers. Call trackio.watch() after trackio.init()."
+        )
+    _watcher_manager.clear()
 
     if _should_embed_local:
         try:
@@ -702,6 +712,15 @@ def log(metrics: dict, step: int | None = None) -> None:
         metrics=metrics,
         step=step,
     )
+    if _watcher_manager._watchers:
+        watcher_alerts = _watcher_manager.check(metrics, step=step)
+        for wa in watcher_alerts:
+            alert(
+                title=wa["title"],
+                text=wa.get("text"),
+                level=wa["level"],
+                data=wa.get("data"),
+            )
 
 
 def log_system(metrics: dict) -> None:
@@ -778,6 +797,7 @@ def alert(
     text: str | None = None,
     level: AlertLevel = AlertLevel.WARN,
     webhook_url: str | None = None,
+    data: dict | None = None,
 ) -> None:
     """
     Fires an alert immediately on the current run. The alert is printed to the
@@ -799,11 +819,85 @@ def alert(
             URL set in `trackio.init()` or the `TRACKIO_WEBHOOK_URL`
             environment variable. Supports Slack and Discord webhook
             URLs natively.
+        data (`dict`, *optional*):
+            Structured data to attach to the alert. Stored as JSON and
+            returned in alert queries. Useful for machine-readable alert
+            payloads that agents can parse programmatically.
     """
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.alert().")
-    run.alert(title=title, text=text, level=level, webhook_url=webhook_url)
+    run.alert(title=title, text=text, level=level, webhook_url=webhook_url, data=data)
+
+
+_watcher_manager = WatcherManager()
+
+
+def watch(
+    metric: str,
+    nan: bool = True,
+    spike_factor: float | None = None,
+    patience: int | None = None,
+    min_delta: float = 0.0,
+    max_value: float | None = None,
+    min_value: float | None = None,
+    window: int = 5,
+    mode: str = "min",
+) -> None:
+    """
+    Register a metric watcher that automatically fires alerts when conditions
+    are met during ``trackio.log()`` calls. Must be called after
+    ``trackio.init()`` — watchers are cleared when a new run starts.
+
+    Args:
+        metric (`str`):
+            The metric name to watch (e.g., ``"train/loss"``).
+        nan (`bool`, *optional*, defaults to `True`):
+            Fire an ERROR alert if the metric becomes NaN or Inf.
+        spike_factor (`float`, *optional*):
+            Fire a WARN alert if the value exceeds the recent moving average
+            by this factor (e.g., ``3.0`` means 3x the recent average).
+        patience (`int`, *optional*):
+            Fire a WARN alert if no improvement is seen for this many log
+            steps. Also sets ``should_stop()`` to True.
+        min_delta (`float`, *optional*, defaults to `0.0`):
+            Minimum change to qualify as an improvement (used with patience).
+        max_value (`float`, *optional*):
+            Fire an ERROR alert if the metric exceeds this value. Also sets
+            ``should_stop()`` to True.
+        min_value (`float`, *optional*):
+            Fire a WARN alert if the metric drops below this value.
+        window (`int`, *optional*, defaults to `5`):
+            Number of recent values to use for spike detection averaging.
+        mode (`str`, *optional*, defaults to ``"min"``):
+            Whether lower (``"min"``) or higher (``"max"``) values are better.
+            Affects patience-based stagnation detection.
+    """
+    watcher = MetricWatcher(
+        metric_name=metric,
+        nan=nan,
+        spike_factor=spike_factor,
+        patience=patience,
+        min_delta=min_delta,
+        max_value=max_value,
+        min_value=min_value,
+        window=window,
+        mode=mode,
+    )
+    _watcher_manager.add(watcher)
+
+
+def should_stop() -> bool:
+    """
+    Returns True if any registered watcher has triggered a stop condition
+    (NaN/Inf, max_value exceeded, or patience exhausted).
+
+    Designed for use in training loops::
+
+        if trackio.should_stop():
+            break
+    """
+    return _watcher_manager.should_stop
 
 
 def delete_project(project: str, force: bool = False) -> bool:

@@ -45,6 +45,8 @@ def format_run_summary(summary: dict) -> str:
     """Format run summary in human-readable format."""
     output = [f"Project: {summary['project']}"]
     output.append(f"Run: {summary['run']}")
+    if summary.get("status"):
+        output.append(f"Status: {summary['status']}")
     output.append(f"Number of logs: {summary['num_logs']}")
 
     if summary.get("last_step") is not None:
@@ -137,17 +139,113 @@ def format_alerts(alerts: list[dict]) -> str:
         return "No alerts found."
 
     output = [f"Found {len(alerts)} alert(s):\n"]
-    output.append("Timestamp | Run | Level | Title | Text | Step")
-    output.append("-" * 80)
 
     for a in alerts:
         ts = a.get("timestamp", "N/A")
         run = a.get("run", "N/A")
-        level = a.get("level", "N/A").upper()
+        level = (a.get("level") or "N/A").upper()
         title = a.get("title", "")
         text = a.get("text", "") or ""
         step = a.get("step", "N/A")
-        output.append(f"{ts} | {run} | {level} | {title} | {text} | {step}")
+        line = f"[{level}] {title} | run={run} step={step} ts={ts}"
+        if text:
+            line += f"\n  {text}"
+        data = a.get("data")
+        if data:
+            data_str = ", ".join(f"{k}={v}" for k, v in data.items())
+            line += f"\n  data: {data_str}"
+        output.append(line)
+
+    return "\n".join(output)
+
+
+def format_best(
+    project: str,
+    metric: str,
+    minimize: bool,
+    mode: str,
+    ranking: list[dict],
+) -> str:
+    direction = "minimize" if minimize else "maximize"
+    output = [f"Project: {project}"]
+    output.append(f"Metric: {metric} ({direction}, mode={mode})")
+    output.append(f"Best run: {ranking[0]['run']} = {ranking[0]['value']}")
+    output.append(f"\nRanking ({len(ranking)} runs):")
+    output.append(f"  {'#':<4} {'Run':<30} {'Value':<15} {'Step':<10}")
+    output.append("  " + "-" * 60)
+    for i, r in enumerate(ranking, 1):
+        output.append(
+            f"  {i:<4} {r['run']:<30} {r['value']:<15} {r.get('step', 'N/A'):<10}"
+        )
+    return "\n".join(output)
+
+
+def format_compare(
+    project: str,
+    metric_names: list[str],
+    comparison: list[dict],
+) -> str:
+    output = [f"Project: {project}"]
+    output.append(
+        f"Comparing {len(comparison)} runs across {len(metric_names)} metrics\n"
+    )
+
+    run_w = max((len(e["run"]) for e in comparison), default=3)
+    run_w = max(run_w, 3)
+    status_w = 10
+
+    col_ws = []
+    for m in metric_names:
+        vals = [e["metrics"].get(m) for e in comparison]
+        val_w = max(
+            (
+                len(f"{v:.4f}" if isinstance(v, float) else str(v))
+                for v in vals
+                if v is not None
+            ),
+            default=3,
+        )
+        col_ws.append(max(len(m), val_w))
+
+    header = f"  {'Run':<{run_w}} {'Status':<{status_w}}"
+    for m, w in zip(metric_names, col_ws):
+        header += f"  {m:<{w}}"
+    output.append(header)
+    sep_w = run_w + status_w + sum(w + 2 for w in col_ws) + 2
+    output.append("  " + "-" * sep_w)
+
+    for entry in comparison:
+        line = f"  {entry['run']:<{run_w}} {(entry.get('status') or '?'):<{status_w}}"
+        for m, w in zip(metric_names, col_ws):
+            val = entry["metrics"].get(m)
+            if val is not None:
+                formatted = f"{val:.4f}" if isinstance(val, float) else str(val)
+            else:
+                formatted = "N/A"
+            line += f"  {formatted:<{w}}"
+        output.append(line)
+    return "\n".join(output)
+
+
+def format_summary(summary: dict) -> str:
+    output = [f"Project: {summary['project']}"]
+    output.append(f"Total runs: {summary['num_runs']}")
+    output.append(f"Total alerts: {summary['total_alerts']}")
+
+    if summary.get("metric"):
+        output.append(f"Primary metric: {summary['metric']}")
+
+    output.append("\nRuns:")
+    for r in summary["runs"]:
+        status = r.get("status") or "?"
+        line = f"  {r['run']} [{status}] - {r['num_logs']} logs, last_step={r.get('last_step', 'N/A')}"
+        if summary.get("metric") and r.get("metric_value") is not None:
+            line += f", {summary['metric']}={r['metric_value']}"
+        output.append(line)
+
+        if r.get("config"):
+            cfg_str = ", ".join(f"{k}={v}" for k, v in r["config"].items())
+            output.append(f"    config: {cfg_str}")
 
     return "\n".join(output)
 
