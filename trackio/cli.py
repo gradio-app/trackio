@@ -134,6 +134,16 @@ def _extract_reports(
     return reports
 
 
+def _require_project(project: str):
+    db_path = SQLiteStorage.get_project_db_path(project)
+    if not db_path.exists():
+        error_exit(f"Project '{project}' not found.")
+
+
+def _public_config(cfg: dict) -> dict:
+    return {k: v for k, v in cfg.items() if not k.startswith("_")}
+
+
 def _handle_query(args):
     remote = _get_remote(args)
     try:
@@ -838,9 +848,7 @@ def main():
                 )
                 runs = [r["name"] if isinstance(r, dict) else r for r in run_records]
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
             if args.json:
                 statuses = SQLiteStorage.get_run_statuses(args.project)
@@ -859,9 +867,7 @@ def main():
                     args.project, args.run, api_name="/get_metrics_for_run"
                 )
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
                 if args.run not in runs:
                     error_exit(
@@ -886,9 +892,7 @@ def main():
                     args.project, args.run, api_name="/get_system_metrics_for_run"
                 )
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
                 if args.run not in runs:
                     error_exit(
@@ -919,9 +923,7 @@ def main():
                     api_name="/get_alerts",
                 )
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 alerts = SQLiteStorage.get_alerts(
                     args.project,
                     run_name=args.run,
@@ -949,9 +951,7 @@ def main():
                 )
                 runs = [r["name"] if isinstance(r, dict) else r for r in run_records]
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
             if args.run and args.run not in runs:
                 error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
@@ -995,9 +995,7 @@ def main():
             if remote:
                 summary = remote.predict(args.project, api_name="/get_project_summary")
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 summary = get_project_summary(args.project)
             if args.json:
                 print(format_json(summary))
@@ -1009,9 +1007,7 @@ def main():
                     args.project, args.run, api_name="/get_run_summary"
                 )
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
                 if args.run not in runs:
                     error_exit(
@@ -1036,9 +1032,7 @@ def main():
                     api_name="/get_metric_values",
                 )
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
                 if args.run not in runs:
                     error_exit(
@@ -1088,9 +1082,7 @@ def main():
                     api_name="/get_snapshot",
                 )
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
                 if args.run not in runs:
                     error_exit(
@@ -1172,9 +1164,7 @@ def main():
                     else:
                         print(format_system_metrics(system_metrics))
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
                 if args.run not in runs:
                     error_exit(
@@ -1241,9 +1231,7 @@ def main():
                     api_name="/get_alerts",
                 )
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 alerts = SQLiteStorage.get_alerts(
                     args.project,
                     run_name=args.run,
@@ -1268,9 +1256,7 @@ def main():
             if remote:
                 logs = remote.predict(args.project, args.run, api_name="/get_logs")
             else:
-                db_path = SQLiteStorage.get_project_db_path(args.project)
-                if not db_path.exists():
-                    error_exit(f"Project '{args.project}' not found.")
+                _require_project(args.project)
                 runs = SQLiteStorage.get_runs(args.project)
                 if args.run not in runs:
                     error_exit(
@@ -1306,9 +1292,7 @@ def main():
                         output.append("-" * 80)
                 print("\n".join(output))
     elif args.command == "best":
-        db_path = SQLiteStorage.get_project_db_path(args.project)
-        if not db_path.exists():
-            error_exit(f"Project '{args.project}' not found.")
+        _require_project(args.project)
 
         minimize = args.direction == "min"
         status_filter = None if args.include_all else "finished"
@@ -1323,11 +1307,7 @@ def main():
 
         configs = SQLiteStorage.get_all_run_configs(args.project)
         for r in results:
-            cfg = configs.get(r["run"])
-            if cfg:
-                r["config"] = {k: v for k, v in cfg.items() if not k.startswith("_")}
-            else:
-                r["config"] = {}
+            r["config"] = _public_config(configs.get(r["run"]) or {})
 
         results.sort(key=lambda x: x["value"], reverse=not minimize)
         best = results[0]
@@ -1350,9 +1330,7 @@ def main():
         else:
             print(format_best(args.project, args.metric, minimize, args.mode, results))
     elif args.command == "compare":
-        db_path = SQLiteStorage.get_project_db_path(args.project)
-        if not db_path.exists():
-            error_exit(f"Project '{args.project}' not found.")
+        _require_project(args.project)
 
         run_names = None
         if args.runs:
@@ -1396,12 +1374,11 @@ def main():
                 )
                 if values:
                     run_metrics[metric] = values[0]["value"]
-            cfg = configs.get(run, {})
             comparison.append(
                 {
                     "run": run,
                     "status": statuses.get(run),
-                    "config": {k: v for k, v in cfg.items() if not k.startswith("_")},
+                    "config": _public_config(configs.get(run, {})),
                     "metrics": run_metrics,
                 }
             )
@@ -1419,9 +1396,7 @@ def main():
         else:
             print(format_compare(args.project, metric_names, comparison))
     elif args.command == "summary":
-        db_path = SQLiteStorage.get_project_db_path(args.project)
-        if not db_path.exists():
-            error_exit(f"Project '{args.project}' not found.")
+        _require_project(args.project)
 
         runs = SQLiteStorage.get_runs(args.project)
         configs = SQLiteStorage.get_all_run_configs(args.project)
@@ -1432,8 +1407,6 @@ def main():
         for run in runs:
             last_step = SQLiteStorage.get_last_step(args.project, run)
             num_logs = SQLiteStorage.get_log_count(args.project, run)
-            cfg = configs.get(run, {})
-
             metric_value = None
             if args.metric:
                 values = SQLiteStorage.get_final_metric_for_runs(
@@ -1452,7 +1425,7 @@ def main():
                     "status": statuses.get(run),
                     "last_step": last_step,
                     "num_logs": num_logs,
-                    "config": {k: v for k, v in cfg.items() if not k.startswith("_")},
+                    "config": _public_config(configs.get(run, {})),
                     "metric_value": metric_value,
                 }
             )
