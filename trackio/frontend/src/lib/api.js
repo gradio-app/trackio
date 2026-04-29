@@ -105,6 +105,156 @@ export async function getLogsBatch(project, runs) {
   return await callApi("/get_logs_batch", payload);
 }
 
+function sqlString(value) {
+  return `'${String(value ?? "").replaceAll("'", "''")}'`;
+}
+
+const DEFAULT_METRIC_MAX_POINTS = 1500;
+
+function scalarLogsFromQueryRows(rows) {
+  return (rows || []).map((row) => {
+    const metrics = (() => {
+      try {
+        return JSON.parse(row.metrics || "{}");
+      } catch {
+        return {};
+      }
+    })();
+    return {
+      ...metrics,
+      timestamp: row.timestamp,
+      step: row.step,
+    };
+  });
+}
+
+function scalarOnlyLogs(logs) {
+  return (logs || []).map((row) => {
+    const out = {
+      timestamp: row.timestamp,
+      step: row.step,
+    };
+    for (const [key, value] of Object.entries(row)) {
+      if (key === "timestamp" || key === "step") continue;
+      if (typeof value === "number" && Number.isFinite(value)) out[key] = value;
+    }
+    return out;
+  });
+}
+
+async function queryProject(project, query) {
+  return await callApi("/query_project", { project, query });
+}
+
+export async function getTraceStepCounts(project, run) {
+  if (await isStaticMode()) return [];
+
+  const normalized = normalizeRun(run);
+  const where = normalized.run_id
+    ? `m.run_id = ${sqlString(normalized.run_id)}`
+    : `m.run_name = ${sqlString(normalized.run)}`;
+  const result = await queryProject(
+    project,
+    `
+      WITH trace_metrics AS (
+        SELECT
+          m.step AS step,
+          j.type AS value_type,
+          j.value AS value
+        FROM metrics m, json_each(CAST(m.metrics AS TEXT)) j
+        WHERE ${where}
+          AND m.step IS NOT NULL
+          AND j.type IN ('array', 'object')
+      )
+      SELECT
+        step,
+        SUM(
+          CASE
+            WHEN value_type = 'array' THEN json_array_length(value)
+            ELSE 1
+          END
+        ) AS trace_count
+      FROM trace_metrics
+      WHERE (
+        value_type = 'array'
+        AND (
+          json_extract(value, '$[0]._type') = 'trackio.trace'
+          OR json_extract(value, '$[0].messages') IS NOT NULL
+        )
+      )
+      OR (
+        value_type = 'object'
+        AND (
+          json_extract(value, '$._type') = 'trackio.trace'
+          OR json_extract(value, '$.messages') IS NOT NULL
+        )
+      )
+      GROUP BY step
+      ORDER BY step
+    `,
+  );
+  return (result.rows || []).map((row) => ({
+    step: Number(row.step),
+    count: Number(row.trace_count || 0),
+  })).filter((row) => Number.isFinite(row.step) && row.count > 0);
+}
+
+export async function getScalarLogsBatch(project, runs) {
+  if (await isStaticMode()) {
+    const out = [];
+    for (const run of runs) {
+      const logs = await staticApi.getLogs(project, run);
+      out.push({ ...normalizeRun(run), logs: scalarOnlyLogs(logs) });
+    }
+    return out;
+  }
+
+  const out = [];
+  for (const run of runs) {
+    const normalized = normalizeRun(run);
+    const where = normalized.run_id
+      ? `m.run_id = ${sqlString(normalized.run_id)}`
+      : `m.run_name = ${sqlString(normalized.run)}`;
+    const result = await queryProject(
+      project,
+      `
+        WITH scalar_rows AS (
+          SELECT
+            m.timestamp,
+            m.step,
+            json_group_object(j.key, j.value) AS metrics
+          FROM metrics m, json_each(CAST(m.metrics AS TEXT)) j
+          WHERE ${where}
+            AND j.type IN ('integer', 'real')
+          GROUP BY m.id, m.timestamp, m.step
+        ),
+        numbered AS (
+          SELECT
+            timestamp,
+            step,
+            metrics,
+            ROW_NUMBER() OVER (ORDER BY timestamp) - 1 AS row_index,
+            COUNT(*) OVER () AS row_count
+          FROM scalar_rows
+        )
+        SELECT timestamp, step, metrics
+        FROM numbered
+        WHERE row_count <= ${DEFAULT_METRIC_MAX_POINTS}
+          OR row_index = 0
+          OR row_index = row_count - 1
+          OR CAST(row_index * ${DEFAULT_METRIC_MAX_POINTS} / row_count AS INTEGER)
+            != CAST((row_index - 1) * ${DEFAULT_METRIC_MAX_POINTS} / row_count AS INTEGER)
+        ORDER BY timestamp
+      `,
+    );
+    out.push({
+      ...normalized,
+      logs: scalarLogsFromQueryRows(result.rows),
+    });
+  }
+  return out;
+}
+
 export async function getTraces(project, run, options = {}) {
   const params = { project, ...normalizeRun(run), ...options };
   if (await isStaticMode()) return staticApi.getTraces(project, run, options);
