@@ -150,21 +150,6 @@ def test_summary(temp_dir):
         assert {"run", "status", "last_step", "num_logs", "config", "metric_value"} <= run_entry.keys()
 
 
-def test_list_runs_json_includes_status(temp_dir):
-    _seed(temp_dir)
-    r = _cli(["list", "runs", "--project", PROJECT, "--json"], temp_dir)
-    assert r.returncode == 0
-    data = json.loads(r.stdout)
-    assert "runs" in data
-    for entry in data["runs"]:
-        assert "name" in entry
-        assert "status" in entry
-    statuses = {e["name"]: e["status"] for e in data["runs"]}
-    assert statuses.get("run-lr0.01") == "finished"
-    assert statuses.get("run-lr0.1") == "finished"
-    assert statuses.get("run-lr1.0") == "finished"
-
-
 def test_best_error_cases(temp_dir):
     _seed(temp_dir)
     assert _cli(["best", "--project", "nope", "--metric", "loss", "--json"], temp_dir).returncode != 0

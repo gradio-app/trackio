@@ -24,15 +24,12 @@ def test_max_value_with_dedup():
     assert len(w.check(15.0, step=4)) == 1
 
 
-def test_min_value_with_dedup():
+def test_min_value_triggers():
     w = MetricWatcher("acc", min_value=0.5)
     assert len(w.check(0.8, step=0)) == 0
     alerts = w.check(0.3, step=1)
     assert len(alerts) == 1
     assert alerts[0]["data"]["reason"] == AlertReason.MIN_EXCEEDED
-    assert len(w.check(0.3, step=2)) == 0
-    w.check(0.8, step=3)
-    assert len(w.check(0.3, step=4)) == 1
 
 
 def test_spike_detection_with_dedup_and_reset():

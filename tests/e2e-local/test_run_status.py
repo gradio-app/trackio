@@ -32,22 +32,14 @@ def test_status_failed_not_overwritten_by_finish(temp_dir):
     )
 
 
-def test_api_run_status(temp_dir):
-    trackio.init(project="api_status", name="run1")
-    trackio.log({"loss": 0.5}, step=0)
-    trackio.finish()
-
-    run = trackio.Api().runs("api_status")[0]
-    assert run.status == "finished"
-
-
-def test_api_run_final_metrics(temp_dir):
-    trackio.init(project="final_metrics_test", name="run1")
+def test_api_run_access(temp_dir):
+    trackio.init(project="api_test", name="run1")
     trackio.log({"loss": 1.0, "acc": 0.5}, step=0)
     trackio.log({"loss": 0.5, "acc": 0.8}, step=1)
     trackio.finish()
 
-    run = trackio.Api().runs("final_metrics_test")[0]
+    run = trackio.Api().runs("api_test")[0]
+    assert run.status == "finished"
     fm = run.final_metrics
     assert abs(fm["loss"] - 0.5) < 1e-6
     assert abs(fm["acc"] - 0.8) < 1e-6
