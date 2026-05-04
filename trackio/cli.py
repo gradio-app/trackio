@@ -1427,7 +1427,11 @@ def main():
         statuses_map = SQLiteStorage.get_run_statuses(args.project)
         all_records = SQLiteStorage.get_run_records(args.project)
         if status_filter is not None:
-            all_records = [rec for rec in all_records if statuses_map.get(rec["name"]) == status_filter]
+            all_records = [
+                rec
+                for rec in all_records
+                if statuses_map.get(rec["name"]) == status_filter
+            ]
         records_by_name: dict[str, list[dict]] = {}
         for rec in all_records:
             records_by_name.setdefault(rec["name"], []).append(rec)
@@ -1461,7 +1465,12 @@ def main():
             )
         else:
             display = [
-                {**r, "run": f"{r['run']} ({r['id'][:8]})" if has_dupes and r.get("id") else r["run"]}
+                {
+                    **r,
+                    "run": f"{r['run']} ({r['id'][:8]})"
+                    if has_dupes and r.get("id")
+                    else r["run"],
+                }
                 for r in results
             ]
             print(format_best(args.project, args.metric, minimize, args.mode, display))
@@ -1476,7 +1485,9 @@ def main():
             names_filter = {r.strip() for r in args.runs.split(",")}
             all_records = [r for r in all_records if r["name"] in names_filter]
         elif status_filter is not None:
-            all_records = [r for r in all_records if statuses.get(r["name"]) == status_filter]
+            all_records = [
+                r for r in all_records if statuses.get(r["name"]) == status_filter
+            ]
 
         metric_names = None
         if args.metrics:
@@ -1532,7 +1543,12 @@ def main():
             )
         else:
             display = [
-                {**e, "run": f"{e['run']} ({e['id'][:8]})" if has_dupes and e.get("id") else e["run"]}
+                {
+                    **e,
+                    "run": f"{e['run']} ({e['id'][:8]})"
+                    if has_dupes and e.get("id")
+                    else e["run"],
+                }
                 for e in comparison
             ]
             print(format_compare(args.project, metric_names, display))
