@@ -20,7 +20,7 @@ def check_ffmpeg_installed() -> None:
     """Raise an error if ffmpeg is not available on the system PATH."""
     if shutil.which("ffmpeg") is None:
         raise RuntimeError(
-            "ffmpeg is required to write video but was not found on your system. "
+            "ffmpeg is required to write this media format but was not found on your system. "
             "Please install ffmpeg and ensure it is available on your PATH."
         )
 

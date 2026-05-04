@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editorial</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <img
+          src="/static/trackio/trackio_logo_type_light_transparent.png"
+          alt="Trackio"
+          class="editorial-logo"
+        />
+        <p class="kicker">Editorial</p>
+        <h1 id="title">Loading</h1>
+        <p id="project-summary" class="sidebar-note">Choose a project and run.</p>
+
+        <section class="control-block">
+          <label class="control-label" for="project-select">Project</label>
+          <select id="project-select" class="selector"></select>
+        </section>
+
+        <section class="control-block">
+          <label class="control-label" for="run-select">Run</label>
+          <select id="run-select" class="selector"></select>
+        </section>
+
+        <section class="stat-grid">
+          <div class="stat-card">
+            <span class="stat-label">Runs</span>
+            <strong id="runs-count">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Metrics</span>
+            <strong id="metrics-count">0</strong>
+          </div>
+        </section>
+      </aside>
+
+      <section class="content">
+        <div class="panel metrics-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Metrics</h2>
+              <p id="metrics-subtitle" class="section-note">Metric plots for the selected run.</p>
+            </div>
+            <div class="panel-meta">
+              <span id="selected-run-name">Loading run</span>
+              <span id="selected-run-meta">Waiting for Trackio data.</span>
+            </div>
+          </div>
+          <div id="metrics"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

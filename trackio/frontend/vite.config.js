@@ -4,4 +4,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   base: "/",
   plugins: [svelte()],
+  build: {
+    chunkSizeWarningLimit: 1200,
+  },
 });

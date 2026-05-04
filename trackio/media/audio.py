@@ -1,11 +1,12 @@
 import os
 import shutil
+import subprocess
 import warnings
+import wave
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from pydub import AudioSegment
 
 from trackio.media.media import TrackioMedia
 from trackio.media.utils import check_ffmpeg_installed, check_path
@@ -156,12 +157,33 @@ class TrackioAudio(TrackioMedia):
             check_ffmpeg_installed()
 
         channels = 1 if pcm.ndim == 1 else pcm.shape[1]
-        audio = AudioSegment(
-            pcm.tobytes(),
-            frame_rate=sample_rate,
-            sample_width=2,  # int16
-            channels=channels,
-        )
+        pcm_bytes = pcm.tobytes()
 
-        file = audio.export(str(filename), format=format)
-        file.close()
+        if format == "wav":
+            with wave.open(str(filename), "wb") as wf:
+                wf.setnchannels(channels)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                wf.writeframes(pcm_bytes)
+        else:
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "s16le",
+                "-ar",
+                str(sample_rate),
+                "-ac",
+                str(channels),
+                "-i",
+                "pipe:0",
+                str(filename),
+            ]
+            proc = subprocess.run(
+                cmd, input=pcm_bytes, capture_output=True, check=False
+            )
+            if proc.returncode != 0:
+                stderr = proc.stderr.decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"ffmpeg failed to encode {format} audio: {stderr}")

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Signal</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <img
+          src="/static/trackio/trackio_logo_type_dark_transparent.png"
+          alt="Trackio"
+          class="signal-logo"
+        />
+        <p>Signal</p>
+        <h1 id="title">Booting</h1>
+        <div id="status-line" class="status-line">Trace-first view. Metrics intentionally omitted.</div>
+      </header>
+      <section class="panel controls">
+        <div class="control-grid">
+          <label>
+            <span class="label">Project</span>
+            <select id="project-select" class="selector"></select>
+          </label>
+          <label>
+            <span class="label">Run</span>
+            <select id="run-select" class="selector"></select>
+          </label>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="metrics-head">
+          <h2>Traces</h2>
+          <div id="metrics-subtitle" class="metrics-subtitle">Waiting for Trackio trace data.</div>
+        </div>
+        <div id="metrics"></div>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

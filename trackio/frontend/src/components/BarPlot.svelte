@@ -658,11 +658,6 @@
     padding: 6px 0 0;
     flex-wrap: wrap;
   }
-  .legend-title {
-    font-size: 11px;
-    color: var(--body-text-color-subdued, #6b7280);
-    font-weight: 600;
-  }
   .legend-item {
     display: flex;
     align-items: center;

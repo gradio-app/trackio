@@ -22,15 +22,8 @@ The restart behavior is controlled by `--resume`:
 import argparse
 import math
 import uuid
-import warnings
 
-warnings.filterwarnings(
-    "ignore",
-    category=SyntaxWarning,
-    module=r"pydub\.utils",
-)
-
-import trackio  # noqa: E402
+import trackio
 
 DEFAULT_PROJECT = f"crash-and-resume-demo-{uuid.uuid4().hex[:8]}"
 DEFAULT_RUN_NAME = "trainer-job-42"

@@ -1,0 +1,153 @@
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #07131a;
+  color: #c8ffe7;
+  font-family: "Lucida Console", Monaco, monospace;
+}
+
+.shell {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+header p {
+  margin: 0;
+  color: #55ff94;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 12px;
+}
+
+.signal-logo {
+  display: block;
+  width: 142px;
+  max-width: 100%;
+  margin-bottom: 14px;
+  opacity: 0.92;
+}
+
+header h1,
+h2 {
+  margin: 8px 0 0;
+}
+
+.status-line {
+  margin-top: 12px;
+  color: rgba(200, 255, 231, 0.68);
+}
+
+.panel {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(85, 255, 148, 0.35);
+  background: linear-gradient(180deg, rgba(8, 29, 39, 0.95), rgba(4, 15, 20, 0.95));
+  box-shadow: inset 0 0 0 1px rgba(85, 255, 148, 0.08);
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.label {
+  display: block;
+  margin-bottom: 8px;
+  color: #55ff94;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+}
+
+.selector,
+.item {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(85, 255, 148, 0.25);
+  background: rgba(85, 255, 148, 0.05);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.metrics-head {
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(85, 255, 148, 0.25);
+}
+
+.metrics-subtitle {
+  margin-top: 8px;
+  color: rgba(200, 255, 231, 0.68);
+}
+
+.trace-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.trace-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(85, 255, 148, 0.2);
+  background: rgba(4, 18, 24, 0.82);
+}
+
+.trace-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trace-heading,
+.trace-step {
+  color: #55ff94;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.trace-meta {
+  margin-top: 8px;
+  color: rgba(200, 255, 231, 0.74);
+  font-size: 13px;
+}
+
+.trace-transcript {
+  margin: 12px 0 0;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid rgba(85, 255, 148, 0.15);
+  background: rgba(85, 255, 148, 0.04);
+  color: #d6ffee;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.trace-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.trace-tag {
+  display: inline-flex;
+  padding: 6px 8px;
+  border: 1px solid rgba(85, 255, 148, 0.25);
+  color: #9dfdc1;
+}
+
+@media (max-width: 760px) {
+  .control-grid,
+  .trace-list {
+    grid-template-columns: 1fr;
+  }
+}

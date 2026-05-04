@@ -46,9 +46,10 @@ jobs:
         
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
-      run: |
-        # FFmpeg installation for Windows (using chocolatey)
-        choco install ffmpeg -y
+      uses: AnimMouse/setup-ffmpeg@27e66fd2fe1d643b73a7c5cb105f3b4116bfb8db # v1.2.1
+
+    - name: Verify ffmpeg
+      run: ffmpeg -version
         
     - name: Install Python dependencies
       run: |

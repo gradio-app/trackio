@@ -15,13 +15,6 @@ function resolveUrl(filename) {
   return `https://huggingface.co/datasets/${config.dataset_id}/resolve/main/${filename}`;
 }
 
-function authHeaders() {
-  if (config.hf_token) {
-    return { Authorization: `Bearer ${config.hf_token}` };
-  }
-  return {};
-}
-
 export async function initialize(cfg) {
   config = cfg;
 }
@@ -41,28 +34,25 @@ export function getReadOnlySource() {
 
 async function getMetricsData() {
   if (metricsData) return metricsData;
-  metricsData = await readParquet(resolveUrl("metrics.parquet"), authHeaders());
+  metricsData = await readParquet(resolveUrl("metrics.parquet"));
   return metricsData;
 }
 
 async function getSystemData() {
   if (systemData) return systemData;
-  systemData = await readParquet(
-    resolveUrl("aux/system_metrics.parquet"),
-    authHeaders(),
-  );
+  systemData = await readParquet(resolveUrl("aux/system_metrics.parquet"));
   return systemData;
 }
 
 async function getConfigsData() {
   if (configsData) return configsData;
-  configsData = await readParquet(resolveUrl("aux/configs.parquet"), authHeaders());
+  configsData = await readParquet(resolveUrl("aux/configs.parquet"));
   return configsData;
 }
 
 async function getRunsJson() {
   if (runsData) return runsData;
-  const resp = await fetch(resolveUrl("runs.json"), { headers: authHeaders() });
+  const resp = await fetch(resolveUrl("runs.json"));
   if (!resp.ok) {
     runsData = [];
     return runsData;
@@ -73,7 +63,7 @@ async function getRunsJson() {
 
 async function getSettingsJson() {
   if (settingsData) return settingsData;
-  const resp = await fetch(resolveUrl("settings.json"), { headers: authHeaders() });
+  const resp = await fetch(resolveUrl("settings.json"));
   if (!resp.ok) {
     settingsData = {};
     return settingsData;
@@ -172,6 +162,106 @@ export async function getLogs(_project, run) {
     entry.step = row.step;
     return entry;
   });
+}
+
+function flattenTraceSearchText(trace) {
+  const parts = [];
+
+  function visit(value) {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (typeof value === "object") {
+      Object.values(value).forEach(visit);
+      return;
+    }
+    parts.push(String(value));
+  }
+
+  visit(trace.messages || []);
+  visit(trace.metadata || {});
+  return parts.join(" ").toLowerCase();
+}
+
+function sortTraces(traces, sort) {
+  switch (sort) {
+    case "step_asc":
+      return [...traces].sort((a, b) => (a.step ?? 0) - (b.step ?? 0));
+    case "step_desc":
+      return [...traces].sort((a, b) => (b.step ?? 0) - (a.step ?? 0));
+    case "request_time_asc":
+      return [...traces].sort((a, b) => String(a.timestamp || "").localeCompare(String(b.timestamp || "")));
+    case "request_time_desc":
+    default:
+      return [...traces].sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")));
+  }
+}
+
+export async function getTraces(_project, run, options = {}) {
+  const logs = await getLogs(_project, run);
+  const normalizedRun = normalizeRun(run);
+  const runIdent = normalizedRun.id || normalizedRun.name || "run";
+  const traces = [];
+
+  function maybeParseStructured(value) {
+    if (
+      typeof value === "string" &&
+      (value.startsWith("{") || value.startsWith("[")) &&
+      value.includes("_type")
+    ) {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+
+  for (const log of logs) {
+    for (const [key, value] of Object.entries(log)) {
+      if (key === "step" || key === "timestamp") continue;
+      const parsedValue = maybeParseStructured(value);
+      const candidates = Array.isArray(parsedValue) ? parsedValue : [parsedValue];
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        if (!candidate || typeof candidate !== "object" || candidate._type !== "trackio.trace") {
+          continue;
+        }
+        const traceIndex = Array.isArray(parsedValue) ? index : null;
+        const trace = {
+          id: `${runIdent}:${log.step}:${key}${traceIndex !== null ? `:${traceIndex}` : ""}`,
+          key,
+          index: traceIndex,
+          run: normalizedRun.name,
+          run_id: normalizedRun.id,
+          step: log.step,
+          timestamp: log.timestamp,
+          messages: candidate.messages || [],
+          metadata: candidate.metadata || {},
+        };
+        trace._search_text = `${trace.id} ${key} ${flattenTraceSearchText(trace)}`.toLowerCase();
+        traces.push(trace);
+      }
+    }
+  }
+
+  let filtered = traces;
+  if (options.search && options.search.trim()) {
+    const needle = options.search.trim().toLowerCase();
+    filtered = filtered.filter((trace) => trace._search_text.includes(needle));
+  }
+  filtered = sortTraces(filtered, options.sort || "request_time_desc");
+  if (options.offset) {
+    filtered = filtered.slice(options.offset);
+  }
+  if (options.limit != null) {
+    filtered = filtered.slice(0, options.limit);
+  }
+
+  return filtered.map(({ _search_text, ...trace }) => trace);
 }
 
 export async function getProjectSummary() {
@@ -335,7 +425,6 @@ export async function getProjectFiles() {
   if (config.bucket_id) {
     const resp = await fetch(
       `https://huggingface.co/api/buckets/${config.bucket_id}/tree?prefix=media/files/&recursive=true`,
-      { headers: authHeaders() },
     );
     if (!resp.ok) {
       fileListData = [];
@@ -353,7 +442,6 @@ export async function getProjectFiles() {
 
   const resp = await fetch(
     `https://huggingface.co/api/datasets/${config.dataset_id}`,
-    { headers: authHeaders() },
   );
   if (!resp.ok) {
     fileListData = [];
@@ -397,7 +485,7 @@ export async function fetchMediaBlob(path) {
   const url = resolveUrl(`media/${relative}`);
   if (blobCache.has(url)) return blobCache.get(url);
 
-  const resp = await fetch(url, { headers: authHeaders() });
+  const resp = await fetch(url);
   if (!resp.ok) return url;
   const blob = await resp.blob();
   const blobUrl = URL.createObjectURL(blob);

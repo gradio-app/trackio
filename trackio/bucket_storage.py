@@ -3,7 +3,6 @@ import tempfile
 from pathlib import Path
 
 import huggingface_hub
-from huggingface_hub import copy_files, sync_bucket
 
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import MEDIA_DIR, TRACKIO_DIR
@@ -24,7 +23,7 @@ def _list_bucket_file_paths(bucket_id: str, prefix: str | None = None) -> list[s
 
 def download_bucket_to_trackio_dir(bucket_id: str) -> None:
     TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
-    sync_bucket(
+    huggingface_hub.sync_bucket(
         source=f"hf://buckets/{bucket_id}/trackio",
         dest=str(TRACKIO_DIR),
         quiet=True,
@@ -119,7 +118,7 @@ def _copy_project_media_between_buckets(
     if not media_to_copy:
         return
 
-    copy_files(
+    huggingface_hub.copy_files(
         f"hf://buckets/{source_bucket_id}/{source_media_prefix}",
         f"hf://buckets/{dest_bucket_id}/media/",
     )

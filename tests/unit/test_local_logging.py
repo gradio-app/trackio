@@ -8,44 +8,7 @@ from trackio import gpu
 from trackio.sqlite_storage import SQLiteStorage
 
 
-def test_basic_logging(temp_dir):
-    trackio.init(project="test_project", name="test_run")
-    trackio.log(metrics={"loss": 0.1})
-    trackio.log(metrics={"loss": 0.2, "acc": 0.9})
-    trackio.finish()
-
-    results = SQLiteStorage.get_logs(project="test_project", run="test_run")
-    assert len(results) == 2
-    assert results[0]["loss"] == 0.1
-    assert results[0]["step"] == 0
-
-    assert results[1]["loss"] == 0.2
-    assert results[1]["acc"] == 0.9
-    assert results[1]["step"] == 1
-    assert "timestamp" in results[0]
-    assert "timestamp" in results[1]
-
-
-def test_basic_logging_with_step(temp_dir):
-    trackio.init(project="test_project", name="test_run")
-    trackio.log(metrics={"loss": 0.1}, step=0)
-    trackio.log(metrics={"loss": 0.2, "acc": 0.9}, step=2)
-    trackio.finish()
-
-    results = SQLiteStorage.get_logs(project="test_project", run="test_run")
-    assert len(results) == 2
-    assert results[0]["loss"] == 0.1
-    assert results[0]["step"] == 0
-
-    assert results[1]["loss"] == 0.2
-    assert results[1]["acc"] == 0.9
-    assert results[1]["step"] == 2
-    assert "timestamp" in results[0]
-    assert "timestamp" in results[1]
-
-
 def test_infinity_logging(temp_dir):
-    """Test end-to-end logging of infinity and NaN values."""
     trackio.init(project="test_infinity", name="test_run")
     trackio.log(
         metrics={
@@ -67,38 +30,57 @@ def test_infinity_logging(temp_dir):
     assert log["normal_value"] == 0.95
 
 
-def test_class_config_storage_in_database(temp_dir):
-    class LoraConfig:
-        def __init__(self):
-            self.r = 8
-            self.lora_alpha = 16
-            self.target_modules = ["q_proj", "v_proj"]
-            self.lora_dropout = 0.1
-            self._private_config = "hidden"
+def test_import_from_csv(temp_dir, tmp_path):
+    csv_path = tmp_path / "logs.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "step,timestamp,train/loss,train/acc",
+                "4,2024-01-01T00:00:00+00:00,12.2,82.2",
+                "52,2024-01-01T00:01:00+00:00,9.5,93.5",
+                "72,2024-01-01T00:02:00+00:00,8.9,94.9",
+                "82,2024-01-01T00:03:00+00:00,8.8,95.8",
+            ]
+        )
+    )
 
-    lora_config = LoraConfig()
+    trackio.import_csv(
+        csv_path=str(csv_path),
+        project="test_project",
+        name="test_run",
+    )
 
-    trackio.init(project="test_project", name="test_run", config=lora_config)
-    trackio.log(metrics={"loss": 0.5})
-    trackio.finish()
-
-    stored_config = SQLiteStorage.get_run_config("test_project", "test_run")
-    assert stored_config["r"] == 8
-    assert stored_config["lora_alpha"] == 16
-    assert stored_config["target_modules"] == ["q_proj", "v_proj"]
-    assert stored_config["lora_dropout"] == 0.1
-    assert "_private_config" not in stored_config
+    results = SQLiteStorage.get_logs(project="test_project", run="test_run")
+    assert len(results) == 4
+    assert results[0]["train/loss"] == 12.2
+    assert results[0]["train/acc"] == 82.2
+    assert results[0]["step"] == 4
+    assert results[1]["train/loss"] == 9.5
+    assert results[1]["train/acc"] == 93.5
+    assert results[1]["step"] == 52
+    assert results[2]["train/loss"] == 8.9
+    assert results[2]["train/acc"] == 94.9
+    assert results[2]["step"] == 72
+    assert results[3]["train/loss"] == 8.8
+    assert results[3]["train/acc"] == 95.8
+    assert results[3]["step"] == 82
+    assert "timestamp" in results[0]
+    assert "timestamp" in results[1]
+    assert "timestamp" in results[2]
+    assert "timestamp" in results[3]
 
 
 def test_reserved_keys_are_renamed(temp_dir):
-    with warnings.catch_warnings(record=True) as w:
+    with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
         run = trackio.init(project="test_reserved", name="test_run")
 
         run.log({"step": 100, "time": 200, "project": "test", "normal_key": 42})
 
         reserved_warnings = [
-            warning for warning in w if "Reserved keys renamed" in str(warning.message)
+            warning
+            for warning in captured
+            if "Reserved keys renamed" in str(warning.message)
         ]
         assert len(reserved_warnings) == 1
         assert "['step', 'time', 'project']" in str(reserved_warnings[0].message)

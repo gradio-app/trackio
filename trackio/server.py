@@ -824,6 +824,47 @@ def get_logs_batch(
     return SQLiteStorage.get_logs_batch(project, runs_clean, max_points=mp)
 
 
+_ALLOWED_TRACE_SORTS = {
+    "request_time_desc",
+    "request_time_asc",
+    "step_asc",
+    "step_desc",
+}
+
+
+def get_traces(
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+    search: str | None = None,
+    sort: str | None = None,
+    limit: int | None = None,
+    offset: int | None = 0,
+) -> list[dict[str, Any]]:
+    try:
+        normalized_offset = max(0, int(offset)) if offset is not None else 0
+    except (TypeError, ValueError):
+        normalized_offset = 0
+    normalized_limit: int | None
+    if limit is None:
+        normalized_limit = None
+    else:
+        try:
+            normalized_limit = max(0, int(limit))
+        except (TypeError, ValueError):
+            normalized_limit = None
+    normalized_sort = sort if sort in _ALLOWED_TRACE_SORTS else None
+    return SQLiteStorage.get_traces(
+        project,
+        run,
+        search=search,
+        sort=normalized_sort,
+        limit=normalized_limit,
+        offset=normalized_offset,
+        run_id=run_id,
+    )
+
+
 def query_project(project: str, query: str) -> dict[str, Any]:
     return SQLiteStorage.query_project(project, query)
 
@@ -921,6 +962,7 @@ def _api_registry() -> dict[str, Any]:
         "get_snapshot": get_snapshot,
         "get_logs": get_logs,
         "get_logs_batch": get_logs_batch,
+        "get_traces": get_traces,
         "query_project": query_project,
         "get_settings": get_settings,
         "get_project_files": get_project_files,
@@ -941,7 +983,10 @@ class TrackioDashboardApp:
             self._uvicorn_server.should_exit = True
 
 
-def build_starlette_app_only(mcp_server: bool = False) -> tuple[Any, str]:
+def build_starlette_app_only(
+    mcp_server: bool = False,
+    frontend_dir: str | None = None,
+) -> tuple[Any, str]:
     oauth_routes = [
         Route(OAUTH_START_PATH, oauth_hf_start, methods=["GET"]),
         Route(OAUTH_CALLBACK_PATH, oauth_hf_callback, methods=["GET"]),
@@ -975,12 +1020,20 @@ def build_starlette_app_only(mcp_server: bool = False) -> tuple[Any, str]:
         ],
         upload_authorizer=assert_can_stage_upload,
     )
+    from trackio.frontend_config import resolve_frontend_dir  # noqa: PLC0415
     from trackio.frontend_server import mount_frontend  # noqa: PLC0415
 
-    mount_frontend(starlette_app)
+    resolved_frontend = resolve_frontend_dir(frontend_dir)
+    mount_frontend(starlette_app, frontend_dir=resolved_frontend.path)
     return starlette_app, write_token
 
 
-def make_trackio_server(mcp_server: bool = False) -> TrackioDashboardApp:
-    app, wt = build_starlette_app_only(mcp_server=mcp_server)
+def make_trackio_server(
+    mcp_server: bool = False,
+    frontend_dir: str | None = None,
+) -> TrackioDashboardApp:
+    app, wt = build_starlette_app_only(
+        mcp_server=mcp_server,
+        frontend_dir=frontend_dir,
+    )
     return TrackioDashboardApp(app, None, wt)

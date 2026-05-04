@@ -1,5 +1,35 @@
 # trackio
 
+## 0.25.1
+
+### Features
+
+- [#535](https://github.com/gradio-app/trackio/pull/535) [`d7f1b27`](https://github.com/gradio-app/trackio/commit/d7f1b27a98f185d2d97ef54975d5865e0b5243c9) - Avoid HF token leaks in static snapshots.  Thanks @abidlabs!
+
+## 0.25.0
+
+### Features
+
+- [#533](https://github.com/gradio-app/trackio/pull/533) [`08bc5eb`](https://github.com/gradio-app/trackio/commit/08bc5eb090525d3ff5f7fa4233c30c42162aa74c) - Fix Windows-only emoji mojibake when uploading Space README.  Thanks @tomaarsen!
+- [#518](https://github.com/gradio-app/trackio/pull/518) [`e7ed176`](https://github.com/gradio-app/trackio/commit/e7ed176da53d8b49290fddd890b3d18c0b9b958f) - Traces in Trackio.  Thanks @abidlabs!
+- [#531](https://github.com/gradio-app/trackio/pull/531) [`27a50a3`](https://github.com/gradio-app/trackio/commit/27a50a37362020304b774344b4c774ff548985b6) - Add configurable custom frontends for Trackio.  Thanks @abidlabs!
+
+## 0.24.2
+
+### Features
+
+- [#527](https://github.com/gradio-app/trackio/pull/527) [`7d1c0b9`](https://github.com/gradio-app/trackio/commit/7d1c0b9c37ce9a9845e6bbe6c083da9d36084caf) - Fix dashboard UX issues: smoothing in share URL, run selection, and run filtering.  Thanks @abidlabs!
+- [#526](https://github.com/gradio-app/trackio/pull/526) [`643878a`](https://github.com/gradio-app/trackio/commit/643878a82985fab9e6675f769ff0107cb46e042a) - Add emoji to README and deploy README content.  Thanks @qgallouedec!
+- [#529](https://github.com/gradio-app/trackio/pull/529) [`a77972b`](https://github.com/gradio-app/trackio/commit/a77972b68541ebe9e056824e69c9bbca3979ece4) - Remove pydub dependency.  Thanks @abidlabs!
+
+## 0.24.1
+
+### Features
+
+- [#524](https://github.com/gradio-app/trackio/pull/524) [`65a6897`](https://github.com/gradio-app/trackio/commit/65a6897561b465fc8f05550562f8da1ba3c99060) - Fix `trackio skills add`.  Thanks @abidlabs!
+- [#522](https://github.com/gradio-app/trackio/pull/522) [`05aaca7`](https://github.com/gradio-app/trackio/commit/05aaca7f166bf7667b60b40656d677532a4bdd6e) - relax `starlette` dependency and fix import style.  Thanks @abidlabs!
+- [#525](https://github.com/gradio-app/trackio/pull/525) [`32c05c5`](https://github.com/gradio-app/trackio/commit/32c05c5d5e3aa84ca7099a6fa08a9093ccd4b95f) - Restore sidebar share and embed snippets, and fix query parameter regression.  Thanks @abidlabs!
+
 ## 0.24.0
 
 ### Features

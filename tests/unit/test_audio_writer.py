@@ -1,5 +1,7 @@
+import json
 import math
 import shutil
+import subprocess
 import wave
 from pathlib import Path
 
@@ -34,6 +36,29 @@ def _has_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
+def _has_ffprobe() -> bool:
+    return shutil.which("ffprobe") is not None
+
+
+def _probe_audio(path: Path) -> tuple[int, int]:
+    out = subprocess.check_output(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=sample_rate,channels",
+            "-of",
+            "json",
+            str(path),
+        ]
+    )
+    stream = json.loads(out)["streams"][0]
+    return int(stream["sample_rate"]), int(stream["channels"])
+
+
 @pytest.mark.parametrize("channels", [1, 2])
 def test_write_wav_mono_and_stereo_with_float_normalization(
     tmp_path: Path, channels: int
@@ -56,11 +81,11 @@ def test_write_wav_mono_and_stereo_with_float_normalization(
     assert 32000 <= max_abs <= 32767
 
 
-@pytest.mark.skipif(not _has_ffmpeg(), reason="ffmpeg not available")
+@pytest.mark.skipif(
+    not (_has_ffmpeg() and _has_ffprobe()), reason="ffmpeg/ffprobe not available"
+)
 @pytest.mark.parametrize("channels", [1, 2])
 def test_write_mp3_mono_and_stereo(tmp_path: Path, channels: int) -> None:
-    from pydub import AudioSegment
-
     mono = _tone(0.1, 440.0, SAMPLE_RATE, amp=0.5)
     data = mono if channels == 1 else np.stack([mono, mono], axis=1)
 
@@ -69,9 +94,10 @@ def test_write_mp3_mono_and_stereo(tmp_path: Path, channels: int) -> None:
         data=data, sample_rate=SAMPLE_RATE, filename=out, format="mp3"
     )
 
-    seg = AudioSegment.from_file(str(out), format="mp3")
-    assert seg.frame_rate == SAMPLE_RATE
-    assert seg.channels == channels
+    assert out.exists() and out.stat().st_size > 0
+    sr, ch = _probe_audio(out)
+    assert sr == SAMPLE_RATE
+    assert ch == channels
 
 
 @pytest.mark.parametrize(
