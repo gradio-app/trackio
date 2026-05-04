@@ -2173,10 +2173,12 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 try:
-                    has_run_id_col = SQLiteStorage._supports_run_ids(conn, "configs")
+                    configs_has_run_id = SQLiteStorage._supports_run_ids(
+                        conn, "configs"
+                    )
                     resolved_id = run_id or run
                     current_timestamp = datetime.now(timezone.utc).isoformat()
-                    if has_run_id_col:
+                    if configs_has_run_id:
                         cursor.execute(
                             "INSERT OR IGNORE INTO configs (run_id, run_name, config, created_at) VALUES (?, ?, '{}', ?)",
                             (resolved_id, run, current_timestamp),

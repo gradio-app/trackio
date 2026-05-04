@@ -1,9 +1,6 @@
 """
 Synthetic training simulator for testing autonomous ML workflows with Trackio.
 
-Simulates realistic training curves parameterized by hyperparameters.
-No ML framework dependencies - runs in seconds on CPU.
-
 Usage:
     python simulate_training.py --project my_exp --run-name lr-0.01 --steps 500 --lr 0.01
     python simulate_training.py --project my_exp --run-name spike-test --steps 500 --lr 0.01 --spike-at-step 300

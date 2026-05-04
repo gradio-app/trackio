@@ -7,13 +7,6 @@ Acts as an autonomous agent that:
 3. Reads results via trackio CLI
 4. Decides next hyperparameters based on results
 5. Iterates for N rounds
-
-Usage:
-    python agent_runner.py --experiment lr_search
-    python agent_runner.py --experiment architecture_search
-    python agent_runner.py --experiment failure_recovery
-    python agent_runner.py --experiment long_monitoring
-    python agent_runner.py --experiment multi_objective
 """
 
 import argparse
