@@ -934,24 +934,48 @@ def main():
                 print(format_list(projects, "Projects"))
         elif args.list_type == "runs":
             if remote:
-                run_records = remote.predict(
+                remote_records = remote.predict(
                     args.project, api_name="/get_runs_for_project"
                 )
-                runs = [r["name"] if isinstance(r, dict) else r for r in run_records]
+                runs = [r["name"] if isinstance(r, dict) else r for r in remote_records]
+                statuses = SQLiteStorage.get_run_statuses(args.project)
+                if args.json:
+                    out = [{"name": r, "status": statuses.get(r)} for r in runs]
+                    print(format_json({"project": args.project, "runs": out}))
+                else:
+                    annotated = [
+                        f"{r}  [{statuses[r]}]" if r in statuses and statuses[r] else r
+                        for r in runs
+                    ]
+                    print(format_list(annotated, f"Runs in '{args.project}'"))
             else:
                 _require_project(args.project)
-                runs = SQLiteStorage.get_runs(args.project)
-            if args.json:
+                records = SQLiteStorage.get_run_records(args.project)
                 statuses = SQLiteStorage.get_run_statuses(args.project)
-                run_records = [{"name": r, "status": statuses.get(r)} for r in runs]
-                print(format_json({"project": args.project, "runs": run_records}))
-            else:
-                statuses = SQLiteStorage.get_run_statuses(args.project)
-                annotated = [
-                    f"{r}  [{statuses[r]}]" if r in statuses and statuses[r] else r
-                    for r in runs
-                ]
-                print(format_list(annotated, f"Runs in '{args.project}'"))
+                names = [r["name"] for r in records]
+                has_dupes = len(names) != len(set(names))
+                if args.json:
+                    out = [
+                        {
+                            "id": r["id"],
+                            "name": r["name"],
+                            "status": statuses.get(r["name"]),
+                            "started_at": r["created_at"],
+                            "finished_at": r["finished_at"],
+                        }
+                        for r in records
+                    ]
+                    print(format_json({"project": args.project, "runs": out}))
+                else:
+                    annotated = []
+                    for r in records:
+                        label = r["name"]
+                        if has_dupes:
+                            label += f" ({r['id'][:8]})"
+                        if statuses.get(r["name"]):
+                            label += f"  [{statuses[r['name']]}]"
+                        annotated.append(label)
+                    print(format_list(annotated, f"Runs in '{args.project}'"))
         elif args.list_type == "metrics":
             if remote:
                 metrics = remote.predict(
@@ -1400,8 +1424,25 @@ def main():
         for r in results:
             r["config"] = _public_config(configs.get(r["run"]) or {})
 
+        statuses_map = SQLiteStorage.get_run_statuses(args.project)
+        all_records = SQLiteStorage.get_run_records(args.project)
+        if status_filter is not None:
+            all_records = [rec for rec in all_records if statuses_map.get(rec["name"]) == status_filter]
+        records_by_name: dict[str, list[dict]] = {}
+        for rec in all_records:
+            records_by_name.setdefault(rec["name"], []).append(rec)
+        for r in results:
+            pool = records_by_name.get(r["run"], [])
+            matched = pool.pop(0) if pool else {}
+            r["id"] = matched.get("id")
+            r["started_at"] = matched.get("created_at")
+            r["finished_at"] = matched.get("finished_at")
+
         results.sort(key=lambda x: x["value"], reverse=not minimize)
         best = results[0]
+
+        run_names = [r["run"] for r in results]
+        has_dupes = len(run_names) != len(set(run_names))
 
         if args.json:
             print(
@@ -1419,24 +1460,23 @@ def main():
                 )
             )
         else:
-            print(format_best(args.project, args.metric, minimize, args.mode, results))
+            display = [
+                {**r, "run": f"{r['run']} ({r['id'][:8]})" if has_dupes and r.get("id") else r["run"]}
+                for r in results
+            ]
+            print(format_best(args.project, args.metric, minimize, args.mode, display))
     elif args.command == "compare":
         _require_project(args.project)
 
-        run_names = None
-        if args.runs:
-            run_names = [r.strip() for r in args.runs.split(",")]
-
         status_filter = None if args.include_all else "finished"
-        if run_names:
-            all_runs = run_names
-        else:
-            all_runs = SQLiteStorage.get_runs(args.project)
-            if status_filter is not None:
-                statuses_for_filter = SQLiteStorage.get_run_statuses(args.project)
-                all_runs = [
-                    r for r in all_runs if statuses_for_filter.get(r) == status_filter
-                ]
+        statuses = SQLiteStorage.get_run_statuses(args.project)
+
+        all_records = SQLiteStorage.get_run_records(args.project)
+        if args.runs:
+            names_filter = {r.strip() for r in args.runs.split(",")}
+            all_records = [r for r in all_records if r["name"] in names_filter]
+        elif status_filter is not None:
+            all_records = [r for r in all_records if statuses.get(r["name"]) == status_filter]
 
         metric_names = None
         if args.metrics:
@@ -1444,16 +1484,19 @@ def main():
 
         if not metric_names:
             metric_set = set()
-            for run in all_runs:
+            for rec in all_records:
                 metric_set.update(
-                    SQLiteStorage.get_all_metrics_for_run(args.project, run)
+                    SQLiteStorage.get_all_metrics_for_run(args.project, rec["name"])
                 )
             metric_names = sorted(metric_set)
 
         configs = SQLiteStorage.get_all_run_configs(args.project)
-        statuses = SQLiteStorage.get_run_statuses(args.project)
+        run_names = [r["name"] for r in all_records]
+        has_dupes = len(run_names) != len(set(run_names))
+
         comparison = []
-        for run in all_runs:
+        for rec in all_records:
+            run = rec["name"]
             run_metrics = {}
             for metric in metric_names:
                 values = SQLiteStorage.get_final_metric_for_runs(
@@ -1467,8 +1510,11 @@ def main():
                     run_metrics[metric] = values[0]["value"]
             comparison.append(
                 {
+                    "id": rec["id"],
                     "run": run,
                     "status": statuses.get(run),
+                    "started_at": rec["created_at"],
+                    "finished_at": rec["finished_at"],
                     "config": _public_config(configs.get(run, {})),
                     "metrics": run_metrics,
                 }
@@ -1485,7 +1531,11 @@ def main():
                 )
             )
         else:
-            print(format_compare(args.project, metric_names, comparison))
+            display = [
+                {**e, "run": f"{e['run']} ({e['id'][:8]})" if has_dupes and e.get("id") else e["run"]}
+                for e in comparison
+            ]
+            print(format_compare(args.project, metric_names, display))
     elif args.command == "summary":
         _require_project(args.project)
 

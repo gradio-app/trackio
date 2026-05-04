@@ -607,9 +607,11 @@ class SQLiteStorage:
                 if SQLiteStorage._supports_run_ids(conn):
                     cursor.execute(
                         """
-                        SELECT run_id, run_name, MIN(timestamp) as created_at
-                        FROM metrics
-                        GROUP BY run_id, run_name
+                        SELECT m.run_id, m.run_name, MIN(m.timestamp) as created_at,
+                               c.finished_at
+                        FROM metrics m
+                        LEFT JOIN configs c ON c.run_id = m.run_id
+                        GROUP BY m.run_id, m.run_name
                         ORDER BY created_at ASC
                         """
                     )
@@ -618,15 +620,18 @@ class SQLiteStorage:
                             "id": row["run_id"],
                             "name": row["run_name"],
                             "created_at": row["created_at"],
+                            "finished_at": row["finished_at"],
                         }
                         for row in cursor.fetchall()
                     ]
 
                 cursor.execute(
                     """
-                    SELECT run_name, MIN(timestamp) as created_at
-                    FROM metrics
-                    GROUP BY run_name
+                    SELECT m.run_name, MIN(m.timestamp) as created_at,
+                           c.finished_at
+                    FROM metrics m
+                    LEFT JOIN configs c ON c.run_name = m.run_name
+                    GROUP BY m.run_name
                     ORDER BY created_at ASC
                     """
                 )
@@ -635,6 +640,7 @@ class SQLiteStorage:
                         "id": row["run_name"],
                         "name": row["run_name"],
                         "created_at": row["created_at"],
+                        "finished_at": row["finished_at"],
                     }
                     for row in cursor.fetchall()
                 ]
