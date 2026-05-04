@@ -87,18 +87,35 @@ def experiment_failure_recovery(project):
         error_alerts = [a for a in alerts if a.get("level") == "error"]
 
         if returncode != 0 or error_alerts:
-            error_msg = error_alerts[0]["title"] if error_alerts else "non-zero exit code"
+            error_msg = (
+                error_alerts[0]["title"] if error_alerts else "non-zero exit code"
+            )
             print(f"  [AGENT] Attempt {attempt} failed: {error_msg}")
             lr *= 0.1
             print(f"  [AGENT] Reducing LR to {lr}")
             attempts.append({"run": run_name, "status": "failed", "lr": lr * 10})
         else:
             result = run_cli(
-                ["get", "metric", "--project", project, "--run", run_name, "--metric", "val/loss"]
+                [
+                    "get",
+                    "metric",
+                    "--project",
+                    project,
+                    "--run",
+                    run_name,
+                    "--metric",
+                    "val/loss",
+                ]
             )
-            val_loss = result["values"][-1]["value"] if result and result.get("values") else None
+            val_loss = (
+                result["values"][-1]["value"]
+                if result and result.get("values")
+                else None
+            )
             print(f"  [AGENT] Attempt {attempt} succeeded! val_loss={val_loss}")
-            attempts.append({"run": run_name, "status": "success", "val_loss": val_loss})
+            attempts.append(
+                {"run": run_name, "status": "success", "val_loss": val_loss}
+            )
             break
 
     print("\n[AGENT] Recovery history:")
@@ -136,7 +153,9 @@ def experiment_long_monitoring(project):
     ]
 
     print("  [AGENT] Starting long training run in background...")
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
 
     all_alerts = []
 
@@ -147,7 +166,9 @@ def experiment_long_monitoring(project):
         new_alerts = [a for a in alerts if a not in all_alerts]
         if new_alerts:
             for alert in new_alerts:
-                print(f"  [AGENT] New alert: [{alert.get('level', '?')}] {alert.get('title', '?')}")
+                print(
+                    f"  [AGENT] New alert: [{alert.get('level', '?')}] {alert.get('title', '?')}"
+                )
                 all_alerts.append(alert)
             since = datetime.now(timezone.utc).isoformat()
 

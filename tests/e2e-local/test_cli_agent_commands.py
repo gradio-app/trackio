@@ -70,7 +70,16 @@ def test_best(temp_dir):
         assert {"value", "step", "config", "run"} <= entry.keys()
 
     r2 = _cli(
-        ["best", "--project", PROJECT, "--metric", "accuracy", "--direction", "max", "--json"],
+        [
+            "best",
+            "--project",
+            PROJECT,
+            "--metric",
+            "accuracy",
+            "--direction",
+            "max",
+            "--json",
+        ],
         temp_dir,
     )
     assert r2.returncode == 0
@@ -80,7 +89,8 @@ def test_best(temp_dir):
 def test_best_finished_filter(temp_dir):
     _seed(temp_dir)
     r = _cli(
-        ["best", "--project", FILTER_PROJECT, "--metric", "val/loss", "--json"], temp_dir
+        ["best", "--project", FILTER_PROJECT, "--metric", "val/loss", "--json"],
+        temp_dir,
     )
     assert r.returncode == 0
     run_names = [e["run"] for e in json.loads(r.stdout)["ranking"]]
@@ -88,7 +98,15 @@ def test_best_finished_filter(temp_dir):
     assert len(run_names) == 2
 
     r2 = _cli(
-        ["best", "--project", FILTER_PROJECT, "--metric", "val/loss", "--include-all", "--json"],
+        [
+            "best",
+            "--project",
+            FILTER_PROJECT,
+            "--metric",
+            "val/loss",
+            "--include-all",
+            "--json",
+        ],
         temp_dir,
     )
     assert r2.returncode == 0
@@ -110,7 +128,16 @@ def test_compare(temp_dir):
         assert {"val/loss", "accuracy"} <= run_entry["metrics"].keys()
 
     r2 = _cli(
-        ["compare", "--project", PROJECT, "--runs", "run-lr0.01,run-lr0.1", "--metrics", "val/loss", "--json"],
+        [
+            "compare",
+            "--project",
+            PROJECT,
+            "--runs",
+            "run-lr0.01,run-lr0.1",
+            "--metrics",
+            "val/loss",
+            "--json",
+        ],
         temp_dir,
     )
     assert r2.returncode == 0
@@ -120,7 +147,8 @@ def test_compare(temp_dir):
 def test_compare_finished_filter(temp_dir):
     _seed(temp_dir)
     r = _cli(
-        ["compare", "--project", FILTER_PROJECT, "--metrics", "val/loss", "--json"], temp_dir
+        ["compare", "--project", FILTER_PROJECT, "--metrics", "val/loss", "--json"],
+        temp_dir,
     )
     assert r.returncode == 0
     run_names = [e["run"] for e in json.loads(r.stdout)["runs"]]
@@ -128,7 +156,15 @@ def test_compare_finished_filter(temp_dir):
     assert len(run_names) == 2
 
     r2 = _cli(
-        ["compare", "--project", FILTER_PROJECT, "--metrics", "val/loss", "--include-all", "--json"],
+        [
+            "compare",
+            "--project",
+            FILTER_PROJECT,
+            "--metrics",
+            "val/loss",
+            "--include-all",
+            "--json",
+        ],
         temp_dir,
     )
     assert r2.returncode == 0
@@ -147,10 +183,28 @@ def test_summary(temp_dir):
     assert data["num_runs"] == 3
     assert data["total_alerts"] >= 1
     for run_entry in data["runs"]:
-        assert {"run", "status", "last_step", "num_logs", "config", "metric_value"} <= run_entry.keys()
+        assert {
+            "run",
+            "status",
+            "last_step",
+            "num_logs",
+            "config",
+            "metric_value",
+        } <= run_entry.keys()
 
 
 def test_best_error_cases(temp_dir):
     _seed(temp_dir)
-    assert _cli(["best", "--project", "nope", "--metric", "loss", "--json"], temp_dir).returncode != 0
-    assert _cli(["best", "--project", PROJECT, "--metric", "nonexistent", "--json"], temp_dir).returncode != 0
+    assert (
+        _cli(
+            ["best", "--project", "nope", "--metric", "loss", "--json"], temp_dir
+        ).returncode
+        != 0
+    )
+    assert (
+        _cli(
+            ["best", "--project", PROJECT, "--metric", "nonexistent", "--json"],
+            temp_dir,
+        ).returncode
+        != 0
+    )
