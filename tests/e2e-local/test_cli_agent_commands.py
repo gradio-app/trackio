@@ -77,7 +77,7 @@ def test_best(temp_dir):
     assert json.loads(r2.stdout)["best_run"] == "run-lr0.01"
 
 
-def test_best_excludes_unfinished_by_default(temp_dir):
+def test_best_finished_filter(temp_dir):
     _seed(temp_dir)
     r = _cli(
         ["best", "--project", FILTER_PROJECT, "--metric", "val/loss", "--json"], temp_dir
@@ -87,17 +87,14 @@ def test_best_excludes_unfinished_by_default(temp_dir):
     assert "still-running" not in run_names
     assert len(run_names) == 2
 
-
-def test_best_include_all(temp_dir):
-    _seed(temp_dir)
-    r = _cli(
+    r2 = _cli(
         ["best", "--project", FILTER_PROJECT, "--metric", "val/loss", "--include-all", "--json"],
         temp_dir,
     )
-    assert r.returncode == 0
-    run_names = [e["run"] for e in json.loads(r.stdout)["ranking"]]
-    assert "still-running" in run_names
-    assert len(run_names) == 3
+    assert r2.returncode == 0
+    run_names2 = [e["run"] for e in json.loads(r2.stdout)["ranking"]]
+    assert "still-running" in run_names2
+    assert len(run_names2) == 3
 
 
 def test_compare(temp_dir):
@@ -120,7 +117,7 @@ def test_compare(temp_dir):
     assert len(json.loads(r2.stdout)["runs"]) == 2
 
 
-def test_compare_excludes_unfinished_by_default(temp_dir):
+def test_compare_finished_filter(temp_dir):
     _seed(temp_dir)
     r = _cli(
         ["compare", "--project", FILTER_PROJECT, "--metrics", "val/loss", "--json"], temp_dir
@@ -130,17 +127,14 @@ def test_compare_excludes_unfinished_by_default(temp_dir):
     assert "still-running" not in run_names
     assert len(run_names) == 2
 
-
-def test_compare_include_all(temp_dir):
-    _seed(temp_dir)
-    r = _cli(
+    r2 = _cli(
         ["compare", "--project", FILTER_PROJECT, "--metrics", "val/loss", "--include-all", "--json"],
         temp_dir,
     )
-    assert r.returncode == 0
-    run_names = [e["run"] for e in json.loads(r.stdout)["runs"]]
-    assert "still-running" in run_names
-    assert len(run_names) == 3
+    assert r2.returncode == 0
+    run_names2 = [e["run"] for e in json.loads(r2.stdout)["runs"]]
+    assert "still-running" in run_names2
+    assert len(run_names2) == 3
 
 
 def test_summary(temp_dir):

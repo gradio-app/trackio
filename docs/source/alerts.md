@@ -44,6 +44,117 @@ AlertLevel.WARN   # Warning — something may need attention
 AlertLevel.ERROR  # Error — something is definitely wrong
 ```
 
+---
+
+## Metric Watchers
+
+Watchers let you define rules upfront and have Trackio fire alerts automatically during training — no manual `trackio.alert()` calls needed. Every call to [`log`] checks all registered watchers and fires the appropriate alerts if a condition is met.
+
+```python
+import trackio
+
+trackio.init(project="my-project")
+
+trackio.watch("train/loss", nan=True, spike_factor=3.0, patience=100, max_value=50.0)
+trackio.watch("val/accuracy", patience=200, min_delta=0.001, mode="max")
+
+for step in range(1000):
+    loss, val_acc = train_step()
+    trackio.log({"train/loss": loss, "val/accuracy": val_acc}, step=step)
+    if trackio.should_stop():
+        break
+```
+
+Watcher-generated alerts are stored, displayed in the dashboard, and delivered to webhooks exactly like manually-fired alerts.
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `metric` | `str` | *(required)* | The metric name to watch (e.g., `"train/loss"`). |
+| `nan` | `bool` | `True` | Fire an ERROR alert if the value becomes NaN or Inf. |
+| `spike_factor` | `float \| None` | `None` | Fire a WARN alert when the value deviates from the recent moving average by this factor (e.g., `3.0` = 3× the average). |
+| `patience` | `int \| None` | `None` | Fire a WARN alert if no improvement is seen for this many log steps. Also sets `should_stop()` to `True`. |
+| `min_delta` | `float` | `0.0` | Minimum change to count as an improvement (used with `patience`). |
+| `max_value` | `float \| None` | `None` | Fire an ERROR alert if the value exceeds this threshold. Also sets `should_stop()` to `True`. |
+| `min_value` | `float \| None` | `None` | Fire a WARN alert if the value drops below this threshold. |
+| `window` | `int` | `5` | Number of recent values to average for spike detection. |
+| `mode` | `"min" \| "max"` | `"min"` | Whether lower (`"min"`) or higher (`"max"`) values indicate improvement. Affects `patience`-based stagnation. |
+
+### Conditions
+
+#### NaN / Inf
+
+Enabled by default (`nan=True`). Fires an **ERROR** alert and sets `should_stop()` to `True` the moment the metric becomes `NaN` or `Inf`.
+
+```python
+trackio.watch("train/loss", nan=True)
+```
+
+#### Max / Min Thresholds
+
+`max_value` fires an **ERROR** alert (and stops) when the metric exceeds the threshold. `min_value` fires a **WARN** alert when it falls below. Each alert fires once when the threshold is crossed and resets if the value recovers.
+
+```python
+trackio.watch("train/loss", max_value=20.0)
+trackio.watch("val/accuracy", min_value=0.5)
+```
+
+#### Spike Detection
+
+Fires a **WARN** alert when the value deviates from the recent moving average by more than `(spike_factor - 1) × avg`. The alert resets automatically once the value returns to normal.
+
+```python
+trackio.watch("train/loss", spike_factor=3.0, window=10)
+```
+
+#### Stagnation
+
+Fires a **WARN** alert (and sets `should_stop()` to `True`) when no improvement is seen for `patience` consecutive log steps. Set `mode="max"` for metrics where higher is better.
+
+```python
+trackio.watch("val/accuracy", patience=50, min_delta=0.001, mode="max")
+```
+
+### Early Stopping
+
+[`should_stop`] returns `True` if any watcher has triggered a stop condition (NaN/Inf, `max_value` exceeded, or `patience` exhausted):
+
+```python
+for step in range(1000):
+    trackio.log({"train/loss": loss}, step=step)
+    if trackio.should_stop():
+        print("Stopping early.")
+        break
+```
+
+Watchers are cleared automatically when `trackio.init()` is called for a new run.
+
+### Filtering Watcher Alerts Programmatically
+
+Every watcher-generated alert includes a `data["reason"]` field you can match against `trackio.AlertReason` constants:
+
+```python
+alerts = trackio.Api().alerts("my-project", run="brave-sunset-0")
+
+for alert in alerts:
+    reason = (alert.get("data") or {}).get("reason")
+    if reason == trackio.AlertReason.NAN_INF:
+        print("NaN/Inf detected:", alert["title"])
+    elif reason == trackio.AlertReason.STAGNATION:
+        print("Stagnated:", alert["data"]["steps_without_improvement"], "steps")
+```
+
+| Constant | Value | Condition |
+|---|---|---|
+| `AlertReason.NAN_INF` | `"nan_inf"` | Metric became NaN or Inf |
+| `AlertReason.MAX_EXCEEDED` | `"max_exceeded"` | Metric exceeded `max_value` |
+| `AlertReason.MIN_EXCEEDED` | `"min_exceeded"` | Metric dropped below `min_value` |
+| `AlertReason.SPIKE` | `"spike"` | Spike detected vs. recent average |
+| `AlertReason.STAGNATION` | `"stagnation"` | No improvement for `patience` steps |
+
+---
+
 ## Terminal Output
 
 Every alert is printed to the terminal immediately, with a color-coded label:
