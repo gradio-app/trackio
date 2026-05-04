@@ -23,7 +23,7 @@ Usage:
 
 import math
 from collections import deque
-from typing import Literal
+from typing import Callable, Literal
 
 from trackio.alerts import AlertLevel
 
@@ -43,6 +43,7 @@ class AlertReason:
     MIN_EXCEEDED = "min_exceeded"
     SPIKE = "spike"
     STAGNATION = "stagnation"
+    CUSTOM = "custom"
 
 
 class MetricWatcher:
@@ -212,11 +213,45 @@ class MetricWatcher:
         return self._triggered_stop
 
 
+class CustomMetricWatcher:
+    def __init__(self, metric_name: str, fn: Callable):
+        self.metric_name = metric_name
+        self._fn = fn
+        self._triggered_stop = False
+
+    def check(self, value, step: int | None = None) -> list[dict]:
+        result = self._fn(value, step)
+        if not result:
+            return []
+        if result is True:
+            return [
+                {
+                    "title": f"Custom condition triggered for {self.metric_name}",
+                    "level": AlertLevel.WARN,
+                    "data": {
+                        "metric": self.metric_name,
+                        "value": value,
+                        "step": step,
+                        "reason": AlertReason.CUSTOM,
+                    },
+                }
+            ]
+        alerts = list(result)
+        for a in alerts:
+            if a.get("stop"):
+                self._triggered_stop = True
+        return alerts
+
+    @property
+    def should_stop(self) -> bool:
+        return self._triggered_stop
+
+
 class WatcherManager:
     def __init__(self):
-        self._watchers: list[MetricWatcher] = []
+        self._watchers: list[MetricWatcher | CustomMetricWatcher] = []
 
-    def add(self, watcher: MetricWatcher):
+    def add(self, watcher: MetricWatcher | CustomMetricWatcher):
         self._watchers.append(watcher)
 
     def check(self, metrics: dict, step: int | None = None) -> list[dict]:

@@ -7,7 +7,7 @@ import shutil
 import warnings
 import webbrowser
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import huggingface_hub
 from gradio_client import handle_file
@@ -41,7 +41,12 @@ from trackio.table import Table
 from trackio.trace import Trace
 from trackio.typehints import UploadEntry
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
-from trackio.watchers import AlertReason, MetricWatcher, WatcherManager
+from trackio.watchers import (
+    AlertReason,
+    CustomMetricWatcher,
+    MetricWatcher,
+    WatcherManager,
+)
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -843,6 +848,7 @@ def watch(
     min_value: float | None = None,
     window: int = 5,
     mode: str = "min",
+    fn: Callable | None = None,
 ) -> None:
     """
     Register a metric watcher that automatically fires alerts when conditions
@@ -872,6 +878,12 @@ def watch(
         mode (`str`, *optional*, defaults to ``"min"``):
             Whether lower (``"min"``) or higher (``"max"``) values are better.
             Affects patience-based stagnation detection.
+        fn (`Callable[[float, int | None], bool | list[dict] | None]`, *optional*):
+            A custom condition called as ``fn(value, step)`` on every
+            ``trackio.log()`` call. Return ``True`` to fire a default WARN
+            alert, a list of alert dicts for full control, or a falsy value
+            for no alert. Include ``"stop": True`` in a returned dict to
+            also set ``should_stop()`` to ``True``.
     """
     watcher = MetricWatcher(
         metric_name=metric,
@@ -885,6 +897,8 @@ def watch(
         mode=mode,
     )
     _watcher_manager.add(watcher)
+    if fn is not None:
+        _watcher_manager.add(CustomMetricWatcher(metric, fn))
 
 
 def should_stop() -> bool:

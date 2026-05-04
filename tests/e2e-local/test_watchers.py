@@ -1,4 +1,10 @@
-from trackio.watchers import AlertReason, MetricWatcher, WatcherManager
+from trackio.watchers import (
+    AlertLevel,
+    AlertReason,
+    CustomMetricWatcher,
+    MetricWatcher,
+    WatcherManager,
+)
 
 
 def test_nan_inf_triggers_stop():
@@ -108,3 +114,50 @@ def test_manager_should_stop_and_clear():
 def test_non_numeric_ignored():
     w = MetricWatcher("loss", max_value=10.0)
     assert len(w.check("not a number", step=0)) == 0
+
+
+def test_custom_watcher_bool_return():
+    w = CustomMetricWatcher("loss", fn=lambda v, s: v > 10.0)
+    assert len(w.check(5.0, step=0)) == 0
+    alerts = w.check(15.0, step=1)
+    assert len(alerts) == 1
+    assert alerts[0]["level"] == AlertLevel.WARN
+    assert alerts[0]["data"]["reason"] == AlertReason.CUSTOM
+    assert not w.should_stop
+
+
+def test_custom_watcher_dict_return_with_stop():
+    def fn(value, step):
+        if value > 10.0:
+            return [
+                {
+                    "title": "too high",
+                    "level": AlertLevel.ERROR,
+                    "stop": True,
+                    "data": {},
+                }
+            ]
+        return None
+
+    w = CustomMetricWatcher("loss", fn=fn)
+    assert len(w.check(5.0, step=0)) == 0
+    assert not w.should_stop
+    alerts = w.check(15.0, step=1)
+    assert len(alerts) == 1
+    assert alerts[0]["title"] == "too high"
+    assert w.should_stop
+
+
+def test_custom_watcher_none_return():
+    w = CustomMetricWatcher("loss", fn=lambda v, s: None)
+    assert len(w.check(99.0, step=0)) == 0
+
+
+def test_manager_mixes_builtin_and_custom():
+    mgr = WatcherManager()
+    mgr.add(MetricWatcher("loss", max_value=20.0))
+    mgr.add(CustomMetricWatcher("loss", fn=lambda v, s: v > 10.0))
+    alerts = mgr.check({"loss": 15.0}, step=0)
+    assert len(alerts) == 1
+    alerts2 = mgr.check({"loss": 25.0}, step=1)
+    assert len(alerts2) == 2

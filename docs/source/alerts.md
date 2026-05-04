@@ -152,6 +152,34 @@ for alert in alerts:
 | `AlertReason.MIN_EXCEEDED` | `"min_exceeded"` | Metric dropped below `min_value` |
 | `AlertReason.SPIKE` | `"spike"` | Spike detected vs. recent average |
 | `AlertReason.STAGNATION` | `"stagnation"` | No improvement for `patience` steps |
+| `AlertReason.CUSTOM` | `"custom"` | Custom condition returned `True` |
+
+### Custom Conditions
+
+Pass `fn` to [`watch`] to define your own condition. The function receives `(value, step)` and should return `True` to fire a default WARN alert, a list of alert dicts for full control, or a falsy value for no alert:
+
+```python
+def check_divergence(value, step):
+    if value > 50.0:
+        return [
+            {
+                "title": "Loss diverged",
+                "level": trackio.AlertLevel.ERROR,
+                "text": f"val_loss={value:.2f} at step {step}",
+                "data": {"reason": "diverged", "threshold": 50.0, "value": value},
+                "stop": True,
+            }
+        ]
+    return None
+
+trackio.watch("val/loss", fn=check_divergence)
+```
+
+Include `"stop": True` in a returned dict to set `should_stop()` to `True`. Custom conditions can be combined with built-in ones — both run independently on every `log()` call:
+
+```python
+trackio.watch("train/loss", nan=True, fn=check_divergence)
+```
 
 ---
 
