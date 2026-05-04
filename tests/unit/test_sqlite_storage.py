@@ -270,6 +270,43 @@ def test_get_runs_returns_chronological_order(temp_dir):
     assert runs == ["run-z", "run-a", "run-m"]
 
 
+def test_get_run_records_with_run_id_but_no_finished_at(temp_dir):
+    db_path = SQLiteStorage.get_project_db_path("proj2")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE metrics (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT,
+                run_id TEXT,
+                run_name TEXT,
+                step INTEGER,
+                metrics TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE configs (
+                id INTEGER PRIMARY KEY,
+                run_id TEXT,
+                run_name TEXT,
+                config TEXT,
+                created_at TEXT,
+                UNIQUE(run_id)
+            )
+        """)
+        conn.execute(
+            "INSERT INTO metrics (timestamp, run_id, run_name, step, metrics) VALUES (?, ?, ?, ?, ?)",
+            ("2024-01-01", "rid-1", "run-a", 0, orjson.dumps({"loss": 0.5})),
+        )
+
+    records = SQLiteStorage.get_run_records("proj2")
+    assert len(records) == 1
+    assert records[0]["name"] == "run-a"
+    assert records[0]["id"] == "rid-1"
+    assert records[0]["finished_at"] is None
+
+
 def test_get_metric_values_respects_run_id_and_name_resolves_latest_run(temp_dir):
     project = "proj_metric_values"
     run_name = "dup-run"
