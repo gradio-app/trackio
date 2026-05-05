@@ -459,6 +459,25 @@ export async function getProjectFiles() {
   return fileListData;
 }
 
+export async function getRunConfigs() {
+  const CONFIG_STRUCTURAL_KEYS = new Set(["id", "run_id", "run_name", "created_at"]);
+  const cfgRaw = await getConfigsData().catch(() => null);
+  if (!cfgRaw) return {};
+  const { rows } = parseRows(cfgRaw);
+  const result = {};
+  for (const row of rows) {
+    const runName = row.run_name;
+    if (!runName) continue;
+    const cfg = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (CONFIG_STRUCTURAL_KEYS.has(key)) continue;
+      if (value !== null && value !== undefined) cfg[key] = value;
+    }
+    result[runName] = cfg;
+  }
+  return result;
+}
+
 export async function getRunMutationStatus() {
   return { allowed: false };
 }

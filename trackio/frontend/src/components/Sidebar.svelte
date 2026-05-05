@@ -8,6 +8,7 @@
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
   import { latestOnlySelection } from "../lib/selection.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
+  import Accordion from "./Accordion.svelte";
 
   let {
     open = $bindable(true),
@@ -27,6 +28,7 @@
     realtimeEnabled = $bindable(true),
     showHeaders = $bindable(true),
     filterText = $bindable(""),
+    runConfigs = {},
     metricColumns = [],
     spacesMode = false,
     runMutationAllowed = true,
@@ -87,6 +89,40 @@
 
   let runColorMap = $derived(buildColorMap(runs));
   let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
+
+  let groupByRaw = $state("None");
+  let groupByField = $derived(groupByRaw === "None" ? null : groupByRaw);
+
+  $effect(() => {
+    selectedProject;
+    groupByRaw = "None";
+  });
+
+
+  let groupByOptions = $derived.by(() => {
+    const keys = new Set();
+    for (const cfg of Object.values(runConfigs)) {
+      if (cfg && typeof cfg === "object") {
+        for (const key of Object.keys(cfg)) {
+          if (cfg[key] !== null && cfg[key] !== undefined) keys.add(key);
+        }
+      }
+    }
+    return ["None", ...Array.from(keys).sort()];
+  });
+
+  let groupedRuns = $derived.by(() => {
+    if (!groupByField) return null;
+    const groups = new Map();
+    for (const run of filteredRuns) {
+      const cfg = runConfigs[run.name] ?? {};
+      const raw = cfg[groupByField];
+      const label = raw === null || raw === undefined ? "(unset)" : String(raw);
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(run);
+    }
+    return groups;
+  });
 
   let latestOnly = $state(false);
   let shareTab = $state("share");
@@ -380,18 +416,72 @@
             placeholder="Type to filter..."
             showLabel={false}
           />
-          <div class="checkbox-list">
-            <ColoredCheckbox
-              choices={filteredRuns}
-              bind:selected={selectedRuns}
-              getKey={(run) => run.id ?? run.name}
-              getLabel={(run) => run.name}
-              colors={filteredRuns.map(
-              (r) => runColorMap[r.id ?? r.name] ?? getColorForIndex(Math.max(0, runs.indexOf(r))),
-            )}
-              ontoggle={() => { latestOnly = false; }}
-            />
-          </div>
+          {#if groupByOptions.length > 1}
+            <div class="group-by-row">
+              <Dropdown
+                label="Group by"
+                choices={groupByOptions}
+                bind:value={groupByRaw}
+                filterable={false}
+              />
+            </div>
+          {/if}
+          {#if groupedRuns}
+            <div class="grouped-runs">
+              {#each [...groupedRuns.entries()] as [groupLabel, groupRunList]}
+                {@const groupIds = groupRunList.map((r) => r.id ?? r.name)}
+                {@const groupSelected = groupIds.filter((id) => selectedRuns.includes(id))}
+                <div class="run-group-section">
+                  <div class="run-group-header">
+                    <label class="select-all-label">
+                      <input
+                        type="checkbox"
+                        class="select-all-cb"
+                        checked={groupSelected.length === groupIds.length && groupIds.length > 0}
+                        use:setIndeterminate={groupSelected.length > 0 && groupSelected.length < groupIds.length}
+                        onchange={() => {
+                          if (groupSelected.length === groupIds.length) {
+                            selectedRuns = selectedRuns.filter((id) => !groupIds.includes(id));
+                          } else {
+                            const toAdd = groupIds.filter((id) => !selectedRuns.includes(id));
+                            selectedRuns = [...selectedRuns, ...toAdd];
+                          }
+                          latestOnly = false;
+                        }}
+                      />
+                      <span class="run-group-label" title={groupLabel}>{groupLabel}</span>
+                      <span class="run-group-count">({groupRunList.length})</span>
+                    </label>
+                  </div>
+                  <div class="checkbox-list group-checkbox-list">
+                    <ColoredCheckbox
+                      choices={groupRunList}
+                      bind:selected={selectedRuns}
+                      getKey={(run) => run.id ?? run.name}
+                      getLabel={(run) => run.name}
+                      colors={groupRunList.map(
+                        (r) => runColorMap[r.id ?? r.name] ?? getColorForIndex(Math.max(0, runs.indexOf(r))),
+                      )}
+                      ontoggle={() => { latestOnly = false; }}
+                    />
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="checkbox-list">
+              <ColoredCheckbox
+                choices={filteredRuns}
+                bind:selected={selectedRuns}
+                getKey={(run) => run.id ?? run.name}
+                getLabel={(run) => run.name}
+                colors={filteredRuns.map(
+                (r) => runColorMap[r.id ?? r.name] ?? getColorForIndex(Math.max(0, runs.indexOf(r))),
+              )}
+                ontoggle={() => { latestOnly = false; }}
+              />
+            </div>
+          {/if}
           {#if currentPage === "system" && availableSystemDevices.length > 0}
             <div class="device-group">
               <label class="select-all-label">
@@ -867,5 +957,45 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--body-text-color, #1f2937);
+  }
+  .group-by-row {
+    margin-top: 8px;
+  }
+  .grouped-runs {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .run-group-section {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    overflow: hidden;
+  }
+  .run-group-header {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    background: var(--background-fill-secondary, #f9fafb);
+    border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
+  }
+  .run-group-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--body-text-color, #1f2937);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 160px;
+  }
+  .run-group-count {
+    font-size: 11px;
+    color: var(--body-text-color-subdued, #9ca3af);
+    margin-left: 4px;
+    flex-shrink: 0;
+  }
+  .group-checkbox-list {
+    padding: 4px 10px;
+    max-height: none;
   }
 </style>

@@ -684,6 +684,10 @@ def get_runs_for_project(project: str) -> list[dict[str, Any]]:
     return SQLiteStorage.get_run_records(project)
 
 
+def get_run_configs(project: str) -> dict[str, Any]:
+    return SQLiteStorage.get_all_run_configs(project)
+
+
 def get_metrics_for_run(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[str]:
@@ -949,6 +953,7 @@ def _api_registry() -> dict[str, Any]:
         "get_alerts": get_alerts,
         "get_metric_values": get_metric_values,
         "get_runs_for_project": get_runs_for_project,
+        "get_run_configs": get_run_configs,
         "get_metrics_for_run": get_metrics_for_run,
         "get_all_projects": get_all_projects,
         "get_project_summary": get_project_summary,

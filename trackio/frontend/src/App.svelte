@@ -14,6 +14,7 @@
   import {
     getAllProjects,
     getRunsForProject,
+    getRunConfigs,
     getAlerts,
     getRunMutationStatus,
     getSettings,
@@ -88,6 +89,7 @@
   let spaceId = $state(null);
   let availableSystemDevices = $state([]);
   let selectedSystemDevices = $state([]);
+  let runConfigs = $state({});
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -140,10 +142,14 @@
       selectedRuns = [];
       availableSystemDevices = [];
       selectedSystemDevices = [];
+      runConfigs = {};
       return;
     }
     try {
-      const data = await getRunsForProject(selectedProject);
+      const [data, configs] = await Promise.all([
+        getRunsForProject(selectedProject),
+        getRunConfigs(selectedProject).catch(() => ({})),
+      ]);
       const newRuns = [...(data || [])].reverse();
 
       if (JSON.stringify(runs) !== JSON.stringify(newRuns)) {
@@ -156,6 +162,7 @@
           prevOrdered,
         );
       }
+      runConfigs = configs || {};
     } catch (e) {
       console.error("Failed to load runs:", e);
     }
@@ -401,6 +408,7 @@
       projectLocked={projectLocked}
       bind:selectedProject
       {runs}
+      {runConfigs}
       bind:selectedRuns
       bind:smoothing
       bind:xAxis

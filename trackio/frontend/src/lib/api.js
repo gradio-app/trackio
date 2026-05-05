@@ -71,6 +71,11 @@ export async function getRunsForProject(project) {
   return await callApi("/get_runs_for_project", { project });
 }
 
+export async function getRunConfigs(project) {
+  if (await isStaticMode()) return staticApi.getRunConfigs(project);
+  return await callApi("/get_run_configs", { project });
+}
+
 function normalizeRun(run) {
   if (run == null) return { run: null, run_id: null };
   if (typeof run === "string") return { run, run_id: null };
