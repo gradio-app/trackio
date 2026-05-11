@@ -150,7 +150,10 @@ def _handle_config(args):
 
 
 def _extract_reports(
-    run: str, logs: list[dict], report_name: str | None = None
+    run: str,
+    logs: list[dict],
+    report_name: str | None = None,
+    run_id: str | None = None,
 ) -> list[dict]:
     reports = []
     for log in logs:
@@ -165,6 +168,7 @@ def _extract_reports(
                     reports.append(
                         {
                             "run": run,
+                            "run_id": run_id,
                             "report": key,
                             "step": step,
                             "timestamp": timestamp,
@@ -887,9 +891,16 @@ def main():
         if trailing_globals.hf_token is not None:
             args.hf_token = trailing_globals.hf_token
 
-    if args.command in ("show", "status", "sync", "freeze", "skills") and _get_space(
-        args
-    ):
+    if args.command in (
+        "show",
+        "status",
+        "sync",
+        "freeze",
+        "skills",
+        "best",
+        "compare",
+        "summary",
+    ) and _get_space(args):
         error_exit(
             f"The '{args.command}' command does not support --space (remote mode)."
         )
@@ -1064,21 +1075,33 @@ def main():
                 run_records = remote.predict(
                     args.project, api_name="/get_runs_for_project"
                 )
-                runs = [r["name"] if isinstance(r, dict) else r for r in run_records]
+                records = [
+                    r if isinstance(r, dict) else {"name": r, "id": r}
+                    for r in run_records
+                ]
             else:
                 _require_project(args.project)
-                runs = SQLiteStorage.get_runs(args.project)
-            if args.run and args.run not in runs:
+                records = SQLiteStorage.get_run_records(args.project)
+
+            run_names = [r["name"] for r in records]
+            if args.run and args.run not in run_names:
                 error_exit(f"Run '{args.run}' not found in project '{args.project}'.")
 
-            target_runs = [args.run] if args.run else runs
+            target_records = (
+                [r for r in records if r["name"] == args.run] if args.run else records
+            )
+            target_names = [r["name"] for r in target_records]
+            has_dupes = len(target_names) != len(set(target_names))
+
             all_reports = []
-            for run_name in target_runs:
+            for rec in target_records:
+                run_name = rec["name"]
+                run_id = rec.get("id")
                 if remote:
                     logs = remote.predict(args.project, run_name, api_name="/get_logs")
                 else:
-                    logs = SQLiteStorage.get_logs(args.project, run_name)
-                all_reports.extend(_extract_reports(run_name, logs))
+                    logs = SQLiteStorage.get_logs(args.project, run_name, run_id=run_id)
+                all_reports.extend(_extract_reports(run_name, logs, run_id=run_id))
 
             if args.json:
                 print(
@@ -1091,10 +1114,14 @@ def main():
                     )
                 )
             else:
-                report_lines = [
-                    f"{entry['run']} | {entry['report']} | step={entry['step']} | {entry['timestamp']}"
-                    for entry in all_reports
-                ]
+                report_lines = []
+                for entry in all_reports:
+                    label = entry["run"]
+                    if has_dupes and entry.get("run_id"):
+                        label += f" ({entry['run_id'][:8]})"
+                    report_lines.append(
+                        f"{label} | {entry['report']} | step={entry['step']} | {entry['timestamp']}"
+                    )
                 if args.run:
                     print(
                         format_list(

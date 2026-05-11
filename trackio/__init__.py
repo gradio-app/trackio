@@ -684,7 +684,7 @@ def init(
     globals()["config"] = run.config
     if _watcher_manager._watchers:
         _emit_nonfatal_warning(
-            "trackio.init() cleared existing metric watchers. Call trackio.watch() after trackio.init()."
+            "trackio.init() will clear existing metric watchers. Call trackio.watch() after trackio.init()."
         )
     _watcher_manager.clear()
 
@@ -835,6 +835,7 @@ def alert(
     run.alert(title=title, text=text, level=level, webhook_url=webhook_url, data=data)
 
 
+# Not thread-safe: concurrent trackio.log() from multiple threads may race on watcher state.
 _watcher_manager = WatcherManager()
 
 
@@ -852,8 +853,9 @@ def watch(
 ) -> None:
     """
     Register a metric watcher that automatically fires alerts when conditions
-    are met during ``trackio.log()`` calls. Must be called after
-    ``trackio.init()`` — watchers are cleared when a new run starts.
+    are met during ``trackio.log()`` calls. Typically called after
+    ``trackio.init()`` — watchers registered earlier will persist until the
+    next ``trackio.init()`` clears them.
 
     Args:
         metric (`str`):
@@ -861,8 +863,9 @@ def watch(
         nan (`bool`, *optional*, defaults to `True`):
             Fire an ERROR alert if the metric becomes NaN or Inf.
         spike_factor (`float`, *optional*):
-            Fire a WARN alert if the value exceeds the recent moving average
-            by this factor (e.g., ``3.0`` means 3x the recent average).
+            Fire a WARN alert if the absolute deviation from the recent moving
+            average exceeds ``(spike_factor - 1) * |recent_avg|`` (e.g.,
+            ``3.0`` triggers when ``|value - avg| > 2 * |avg|``).
         patience (`int`, *optional*):
             Fire a WARN alert if no improvement is seen for this many log
             steps. Also sets ``should_stop()`` to True.
@@ -877,14 +880,18 @@ def watch(
             Number of recent values to use for spike detection averaging.
         mode (`str`, *optional*, defaults to ``"min"``):
             Whether lower (``"min"``) or higher (``"max"``) values are better.
-            Affects patience-based stagnation detection.
+            Must be ``"min"`` or ``"max"``. Affects patience-based stagnation
+            detection.
         fn (`Callable[[float, int | None], bool | list[dict] | None]`, *optional*):
             A custom condition called as ``fn(value, step)`` on every
-            ``trackio.log()`` call. Return ``True`` to fire a default WARN
-            alert, a list of alert dicts for full control, or a falsy value
-            for no alert. Include ``"stop": True`` in a returned dict to
-            also set ``should_stop()`` to ``True``.
+            ``trackio.log()`` call (where ``value`` is the most recent metric
+            value and ``step`` is the log step or ``None``). Return ``True``
+            to fire a default WARN alert, a list of alert dicts for full
+            control, or a falsy value for no alert. Include ``"stop": True``
+            in a returned dict to also set ``should_stop()`` to ``True``.
     """
+    if mode not in ("min", "max"):
+        raise ValueError(f"trackio.watch(): mode={mode!r}; expected 'min' or 'max'.")
     watcher = MetricWatcher(
         metric_name=metric,
         nan=nan,

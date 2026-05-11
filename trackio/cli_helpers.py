@@ -190,6 +190,11 @@ def format_compare(
         f"Comparing {len(comparison)} runs across {len(metric_names)} metrics\n"
     )
 
+    max_run_name_w = 40
+    for e in comparison:
+        if len(e["run"]) > max_run_name_w:
+            e["run"] = e["run"][: max_run_name_w - 1] + "…"
+
     run_w = max((len(e["run"]) for e in comparison), default=3)
     run_w = max(run_w, 3)
     status_w = 10

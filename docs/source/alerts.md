@@ -73,7 +73,7 @@ Watcher-generated alerts are stored, displayed in the dashboard, and delivered t
 |---|---|---|---|
 | `metric` | `str` | *(required)* | The metric name to watch (e.g., `"train/loss"`). |
 | `nan` | `bool` | `True` | Fire an ERROR alert if the value becomes NaN or Inf. |
-| `spike_factor` | `float \| None` | `None` | Fire a WARN alert when the value deviates from the recent moving average by this factor (e.g., `3.0` = 3× the average). |
+| `spike_factor` | `float \| None` | `None` | Fire a WARN alert when `\|value − recent_avg\| > (spike_factor − 1) × \|recent_avg\|` (e.g., `3.0` triggers when the deviation exceeds 2× `\|avg\|`). Symmetric — drops trigger too. |
 | `patience` | `int \| None` | `None` | Fire a WARN alert if no improvement is seen for this many log steps. Also sets `should_stop()` to `True`. |
 | `min_delta` | `float` | `0.0` | Minimum change to count as an improvement (used with `patience`). |
 | `max_value` | `float \| None` | `None` | Fire an ERROR alert if the value exceeds this threshold. Also sets `should_stop()` to `True`. |
@@ -93,7 +93,7 @@ trackio.watch("train/loss", nan=True)
 
 #### Max / Min Thresholds
 
-`max_value` fires an **ERROR** alert (and stops) when the metric exceeds the threshold. `min_value` fires a **WARN** alert when it falls below. Each alert fires once when the threshold is crossed and resets if the value recovers.
+`max_value` fires an **ERROR** alert (and stops) when the metric exceeds the threshold. `min_value` fires a **WARN** alert when it falls below, but — unlike `max_value` — does **not** set `should_stop()`. Each alert fires once when the threshold is crossed and resets if the value recovers.
 
 ```python
 trackio.watch("train/loss", max_value=20.0)
@@ -102,7 +102,7 @@ trackio.watch("val/accuracy", min_value=0.5)
 
 #### Spike Detection
 
-Fires a **WARN** alert when the value deviates from the recent moving average by more than `(spike_factor - 1) × avg`. The alert resets automatically once the value returns to normal.
+Fires a **WARN** alert when the value deviates from the recent moving average by more than `(spike_factor - 1) × |recent_avg|` — that is, when `|value − recent_avg| > (spike_factor − 1) × |recent_avg|`. Detection is symmetric: sudden drops trigger the alert in addition to sudden rises. With `spike_factor=3.0` and a recent average of `1.0`, the alert fires once `|value − 1.0| > 2.0`. The alert resets automatically once the value returns to normal.
 
 ```python
 trackio.watch("train/loss", spike_factor=3.0, window=10)
@@ -118,7 +118,7 @@ trackio.watch("val/accuracy", patience=50, min_delta=0.001, mode="max")
 
 ### Early Stopping
 
-[`should_stop`] returns `True` if any watcher has triggered a stop condition (NaN/Inf, `max_value` exceeded, or `patience` exhausted):
+[`should_stop`] returns `True` if any watcher has triggered a stop condition (NaN/Inf, `max_value` exceeded, `patience` exhausted, or a custom watcher returned `{"stop": True}`):
 
 ```python
 for step in range(1000):
