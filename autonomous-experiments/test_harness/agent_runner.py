@@ -13,7 +13,6 @@ import json
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 SIMULATOR = str(Path(__file__).parent / "simulate_training.py")
@@ -21,7 +20,7 @@ SIMULATOR = str(Path(__file__).parent / "simulate_training.py")
 
 def run_cli(args_list):
     result = subprocess.run(
-        ["trackio"] + args_list + ["--json"],
+        [sys.executable, "-m", "trackio.cli", *args_list, "--json"],
         capture_output=True,
         text=True,
     )
@@ -57,12 +56,10 @@ def run_training(project, run_name, **kwargs):
     return result.returncode
 
 
-def get_alerts(project, run_name=None, since=None):
+def get_alerts(project, run_name=None):
     args = ["list", "alerts", "--project", project]
     if run_name:
         args.extend(["--run", run_name])
-    if since:
-        args.extend(["--since", since])
     result = run_cli(args)
     if result and "alerts" in result:
         return result["alerts"]
@@ -91,9 +88,10 @@ def experiment_failure_recovery(project):
                 error_alerts[0]["title"] if error_alerts else "non-zero exit code"
             )
             print(f"  [AGENT] Attempt {attempt} failed: {error_msg}")
+            prev_lr = lr
             lr *= 0.1
             print(f"  [AGENT] Reducing LR to {lr}")
-            attempts.append({"run": run_name, "status": "failed", "lr": lr * 10})
+            attempts.append({"run": run_name, "status": "failed", "lr": prev_lr})
         else:
             result = run_cli(
                 [
@@ -127,11 +125,10 @@ def experiment_failure_recovery(project):
 def experiment_long_monitoring(project):
     print("\n" + "=" * 60)
     print("EXPERIMENT: Long-Running Monitoring")
-    print("Goal: Test alert polling with --since during active training")
+    print("Goal: Test alert polling with alert_id dedup during active training")
     print("=" * 60)
 
     run_name = "long-run"
-    since = datetime.now(timezone.utc).isoformat()
 
     cmd = [
         sys.executable,
@@ -154,23 +151,21 @@ def experiment_long_monitoring(project):
 
     print("  [AGENT] Starting long training run in background...")
     proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
     )
 
-    all_alerts = []
+    seen_ids: set[str] = set()
 
     while proc.poll() is None:
         time.sleep(0.5)
-        alerts = get_alerts(project, run_name, since=since)
-
-        new_alerts = [a for a in alerts if a not in all_alerts]
-        if new_alerts:
-            for alert in new_alerts:
-                print(
-                    f"  [AGENT] New alert: [{alert.get('level', '?')}] {alert.get('title', '?')}"
-                )
-                all_alerts.append(alert)
-            since = datetime.now(timezone.utc).isoformat()
+        alerts = get_alerts(project, run_name)
+        new_alerts = [a for a in alerts if a.get("alert_id") not in seen_ids]
+        for alert in new_alerts:
+            print(
+                f"  [AGENT] New alert: [{alert.get('level', '?')}] {alert.get('title', '?')}"
+            )
+            if alert.get("alert_id") is not None:
+                seen_ids.add(alert["alert_id"])
 
     stdout, _ = proc.communicate()
     print(f"  [AGENT] Training finished. Exit code: {proc.returncode}")
@@ -184,7 +179,6 @@ def experiment_long_monitoring(project):
 EXPERIMENTS = {
     "failure_recovery": experiment_failure_recovery,
     "long_monitoring": experiment_long_monitoring,
-    "all": None,
 }
 
 
@@ -192,7 +186,7 @@ def main():
     parser = argparse.ArgumentParser(description="Agent test runner for autonomous ML")
     parser.add_argument(
         "--experiment",
-        choices=list(EXPERIMENTS.keys()),
+        choices=[*EXPERIMENTS.keys(), "all"],
         default="all",
         help="Which experiment to run",
     )
@@ -203,10 +197,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.experiment == "all":
-        experiments = [k for k in EXPERIMENTS if k != "all"]
-    else:
-        experiments = [args.experiment]
+    experiments = list(EXPERIMENTS) if args.experiment == "all" else [args.experiment]
 
     results = {}
 

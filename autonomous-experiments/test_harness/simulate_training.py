@@ -9,7 +9,6 @@ Usage:
 import argparse
 import math
 import random
-import sys
 import time
 
 import trackio
@@ -90,69 +89,18 @@ def main():
 
     trackio.init(project=args.project, name=args.run_name, config=config)
 
-    best_val_loss = float("inf")
-    stagnation_count = 0
+    trackio.watch("train/loss", nan=True, max_value=10.0, spike_factor=3.0, window=10)
 
     for step in range(args.steps):
         train_loss = simulate_loss(
             step, args.steps, args.lr, args.depth, args.batch_size
         )
 
-        if args.spike_at_step and step == args.spike_at_step:
+        if args.spike_at_step is not None and step == args.spike_at_step:
             train_loss *= 10.0
-            trackio.alert(
-                "Loss spike detected",
-                text=f"Loss spiked to {train_loss:.4f} at step {step}",
-                level=AlertLevel.WARN,
-            )
-
-        if math.isnan(train_loss) or math.isinf(train_loss):
-            trackio.alert(
-                "NaN/Inf loss detected",
-                text=f"Loss became {train_loss} at step {step}. Training is diverging.",
-                level=AlertLevel.ERROR,
-            )
-            trackio.log({"train/loss": train_loss, "val/loss": train_loss}, step=step)
-            trackio.finish()
-            print(f"TERMINATED EARLY: NaN/Inf loss at step {step}")
-            sys.exit(1)
 
         val_loss = simulate_val_loss(train_loss, step, args.steps, args.depth)
         accuracy = simulate_accuracy(val_loss)
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            stagnation_count = 0
-        else:
-            stagnation_count += 1
-
-        if train_loss > 10.0 and step > 50:
-            trackio.alert(
-                "Training diverging",
-                text=f"Loss {train_loss:.4f} is very high at step {step}. Learning rate may be too high.",
-                level=AlertLevel.ERROR,
-            )
-            trackio.log(
-                {
-                    "train/loss": round(train_loss, 4),
-                    "val/loss": round(val_loss, 4),
-                    "accuracy": round(accuracy, 4),
-                    "best_val_loss": round(best_val_loss, 4),
-                    "lr": args.lr,
-                },
-                step=step,
-            )
-            trackio.finish()
-            print(f"TERMINATED EARLY: diverging at step {step}")
-            sys.exit(1)
-
-        if stagnation_count >= 100 and step > 100:
-            trackio.alert(
-                "Training stagnated",
-                text=f"Val loss has not improved for {stagnation_count} steps. Best: {best_val_loss:.4f}",
-                level=AlertLevel.WARN,
-            )
-            stagnation_count = 0
 
         if val_loss > train_loss * 1.5 and step > args.steps * 0.5:
             trackio.alert(
@@ -166,22 +114,25 @@ def main():
                 "train/loss": round(train_loss, 4),
                 "val/loss": round(val_loss, 4),
                 "accuracy": round(accuracy, 4),
-                "best_val_loss": round(best_val_loss, 4),
                 "lr": args.lr,
             },
             step=step,
         )
+
+        if trackio.should_stop():
+            print(f"TERMINATED EARLY: watcher triggered stop at step {step}")
+            break
 
         if args.sleep > 0:
             time.sleep(args.sleep)
 
     trackio.alert(
         "Training complete",
-        text=f"Finished {args.steps} steps. Best val loss: {best_val_loss:.4f}",
+        text=f"Finished at step {step}.",
         level=AlertLevel.INFO,
     )
     trackio.finish()
-    print(f"Training complete. Best val loss: {best_val_loss:.4f}")
+    print(f"Training complete. Final step: {step}")
 
 
 if __name__ == "__main__":
