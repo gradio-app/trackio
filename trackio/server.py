@@ -619,6 +619,7 @@ def bulk_alert(
                 "steps": [],
                 "timestamps": [],
                 "alert_ids": [],
+                "data_list": [],
             }
         alerts_by_run[key]["titles"].append(entry["title"])
         alerts_by_run[key]["texts"].append(entry.get("text"))
@@ -626,9 +627,11 @@ def bulk_alert(
         alerts_by_run[key]["steps"].append(entry.get("step"))
         alerts_by_run[key]["timestamps"].append(entry.get("timestamp"))
         alerts_by_run[key]["alert_ids"].append(entry.get("alert_id"))
+        alerts_by_run[key]["data_list"].append(entry.get("data"))
 
     for (project, run, run_id), data in alerts_by_run.items():
         has_alert_ids = any(aid is not None for aid in data["alert_ids"])
+        has_data = any(d is not None for d in data["data_list"])
         payload = dict(
             project=project,
             run=run,
@@ -639,11 +642,24 @@ def bulk_alert(
             steps=data["steps"],
             timestamps=data["timestamps"],
             alert_ids=data["alert_ids"] if has_alert_ids else None,
+            data_list=data["data_list"] if has_data else None,
         )
         try:
             SQLiteStorage.bulk_alert(**payload)
         except sqlite3.OperationalError:
             _enqueue_write("bulk_alert", payload)
+
+
+def set_run_status(
+    request: Request,
+    project: str,
+    run: str,
+    status: str,
+    run_id: str | None,
+    hf_token: str | None,
+) -> None:
+    assert_can_write_metrics(request, hf_token)
+    SQLiteStorage.set_run_status(project, run, status, run_id=run_id)
 
 
 def get_alerts(
@@ -949,6 +965,7 @@ def _api_registry() -> dict[str, Any]:
         "bulk_log": bulk_log,
         "bulk_log_system": bulk_log_system,
         "bulk_alert": bulk_alert,
+        "set_run_status": set_run_status,
         "get_alerts": get_alerts,
         "get_metric_values": get_metric_values,
         "get_runs_for_project": get_runs_for_project,

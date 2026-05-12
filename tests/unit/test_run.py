@@ -59,8 +59,12 @@ def test_run_log_calls_client_for_spaces(temp_dir):
     run.log(metrics)
 
     time.sleep(0.6)
-    _, kwargs = client.predict.call_args
-    assert kwargs["api_name"] == "/bulk_log"
+    bulk_log_calls = [
+        call for call in client.predict.call_args_list
+        if call.kwargs.get("api_name") == "/bulk_log"
+    ]
+    assert len(bulk_log_calls) >= 1
+    kwargs = bulk_log_calls[-1].kwargs
     assert len(kwargs["logs"]) == 1
     assert kwargs["logs"][0]["project"] == "proj"
     assert kwargs["logs"][0]["run"] == "run1"

@@ -35,6 +35,13 @@ class AlertEntry(TypedDict, total=False):
     data: dict | None
 
 
+class RunStatusEntry(TypedDict, total=False):
+    project: str
+    run: str
+    run_id: str | None
+    status: str
+
+
 class UploadEntry(TypedDict):
     project: str
     run: str | None

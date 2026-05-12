@@ -105,7 +105,7 @@ def _cleanup_current_run():
     if run is not None:
         try:
             if not run._finished:
-                run.finish(status="failed")
+                run.finish(status="failed", _atexit=True)
         except Exception:
             pass
 

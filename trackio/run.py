@@ -26,7 +26,13 @@ from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.trace import Trace
-from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
+from trackio.typehints import (
+    AlertEntry,
+    LogEntry,
+    RunStatusEntry,
+    SystemLogEntry,
+    UploadEntry,
+)
 from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namespace
 
 BATCH_SEND_INTERVAL = 0.5
@@ -139,6 +145,7 @@ class Run:
         self._queued_system_logs: list[SystemLogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._queued_alerts: list[AlertEntry] = []
+        self._queued_run_status: list[RunStatusEntry] = []
         self._stop_flag = threading.Event()
         self._config_logged = False
         max_step = self._safe_get_max_step_for_run()
@@ -166,7 +173,20 @@ class Run:
                 description="remote Trackio logging thread",
             )
 
-        SQLiteStorage.set_run_status(self.project, self.name, "running", run_id=self.id)
+        if self._is_local:
+            SQLiteStorage.set_run_status(
+                self.project, self.name, "running", run_id=self.id
+            )
+        else:
+            with self._client_lock:
+                self._queued_run_status.append(
+                    {
+                        "project": self.project,
+                        "run": self.name,
+                        "run_id": self.id,
+                        "status": "running",
+                    }
+                )
         self._finished = False
 
         self._gpu_monitor: "GpuMonitor | AppleGpuMonitor | None" = None
@@ -435,6 +455,7 @@ class Run:
             or len(self._queued_system_logs) > 0
             or len(self._queued_uploads) > 0
             or len(self._queued_alerts) > 0
+            or len(self._queued_run_status) > 0
             or self._has_local_buffer
         ):
             if not self._stop_flag.is_set():
@@ -520,6 +541,23 @@ class Run:
                             )
                         except Exception:
                             self._write_alerts_to_sqlite(alerts_to_send)
+                            failed = True
+
+                    if self._queued_run_status:
+                        status_to_send = self._queued_run_status.copy()
+                        self._queued_run_status.clear()
+                        try:
+                            for entry in status_to_send:
+                                self._client.predict(
+                                    api_name="/set_run_status",
+                                    project=entry["project"],
+                                    run=entry["run"],
+                                    status=entry["status"],
+                                    run_id=entry.get("run_id"),
+                                    hf_token=self._hf_token_for_remote(),
+                                )
+                        except Exception:
+                            self._queued_run_status[0:0] = status_to_send
                             failed = True
 
                     if failed:
@@ -965,10 +1003,23 @@ class Run:
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log_system() failed: {e}")
 
-    def finish(self, status: str = "finished"):
+    def finish(self, status: str = "finished", _atexit: bool = False):
         if self._finished:
             return
         self._finished = True
+
+        join_timeout = 2 if _atexit else 30
+
+        if not self._is_local:
+            with self._client_lock:
+                self._queued_run_status.append(
+                    {
+                        "project": self.project,
+                        "run": self.name,
+                        "run_id": self.id,
+                        "status": status,
+                    }
+                )
 
         try:
             if self._gpu_monitor is not None:
@@ -984,24 +1035,28 @@ class Run:
 
             if self._is_local:
                 if self._local_sender_thread is not None:
-                    print("* Run finished. Uploading logs to Trackio (please wait...)")
-                    self._local_sender_thread.join(timeout=30)
+                    if not _atexit:
+                        print(
+                            "* Run finished. Uploading logs to Trackio (please wait...)"
+                        )
+                    self._local_sender_thread.join(timeout=join_timeout)
                     if self._local_sender_thread.is_alive():
                         _emit_nonfatal_warning(
-                            "Could not flush all logs within 30s. Some data may be buffered locally."
+                            f"Could not flush all logs within {join_timeout}s. Some data may be buffered locally."
                         )
                 else:
                     with self._client_lock:
                         self._flush_queues_inline()
             else:
                 if self._client_thread is not None:
-                    print(
-                        "* Run finished. Uploading logs to the remote Trackio server (please wait...)"
-                    )
-                    self._client_thread.join(timeout=30)
+                    if not _atexit:
+                        print(
+                            "* Run finished. Uploading logs to the remote Trackio server (please wait...)"
+                        )
+                    self._client_thread.join(timeout=join_timeout)
                     if self._client_thread.is_alive():
                         _emit_nonfatal_warning(
-                            "Could not flush all logs within 30s. Some data may be buffered locally."
+                            f"Could not flush all logs within {join_timeout}s. Some data may be buffered locally."
                         )
                 else:
                     with self._client_lock:
@@ -1029,4 +1084,13 @@ class Run:
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")
 
-        SQLiteStorage.set_run_status(self.project, self.name, status, run_id=self.id)
+        if self._is_local:
+            SQLiteStorage.set_run_status(
+                self.project, self.name, status, run_id=self.id
+            )
+        elif self._queued_run_status:
+            self._warn_once(
+                "finish-remote-status",
+                f"trackio.finish() could not record run status '{status}' on the remote server. "
+                "The dashboard may not reflect the final state of this run.",
+            )
