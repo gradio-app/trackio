@@ -1531,21 +1531,28 @@ def main():
         configs = SQLiteStorage.get_all_run_configs(args.project)
         run_names = [r["name"] for r in all_records]
         has_dupes = len(run_names) != len(set(run_names))
+        target_ids = [r["id"] for r in all_records if r.get("id")]
+
+        metric_values_by_id: dict[str, dict[str, float]] = {}
+        if target_ids:
+            for metric in metric_names:
+                rows = SQLiteStorage.get_final_metric_for_runs(
+                    args.project,
+                    metric,
+                    mode=args.mode,
+                    run_ids=target_ids,
+                    status_filter=None,
+                )
+                for row in rows:
+                    rid = row.get("run_id")
+                    if rid:
+                        metric_values_by_id.setdefault(rid, {})[metric] = row["value"]
 
         comparison = []
         for rec in all_records:
             run = rec["name"]
-            run_metrics = {}
-            for metric in metric_names:
-                values = SQLiteStorage.get_final_metric_for_runs(
-                    args.project,
-                    metric,
-                    mode=args.mode,
-                    run_names=[run],
-                    status_filter=None,
-                )
-                if values:
-                    run_metrics[metric] = values[0]["value"]
+            rid = rec.get("id")
+            run_metrics = metric_values_by_id.get(rid, {}) if rid else {}
             comparison.append(
                 {
                     "id": rec["id"],
