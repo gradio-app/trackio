@@ -357,7 +357,7 @@ pip install -e ".[dev,tensorboard]"
 
 ## Forking Trackio
 
-Trackio is designed to be extremely forkable. The codebase is **not** Python-only: the **backend** lives in Python (SQLite, Gradio API, CLI), and the **dashboard** is **Svelte 5** under `trackio/frontend/` (with a production build bundled into the Python package). UI controls that mirror Gradio are implemented using **Gradio’s component source** as a starting point. You can fork the repo, change Python, frontend, or both (e.g. new dashboard pages, metrics, API routes), and see updates when running locally after installing in editable mode and rebuilding the frontend where needed.
+Trackio is designed to be extremely forkable. The Trackio the **backend** is written in Python, and the built-in **dashboard** is **Svelte 5** under `trackio/frontend/` (with a production build bundled into the Python package). UI controls that mirror Gradio are implemented using **Gradio’s component source** as a starting point. You can fork the repo, change Python, frontend, or both (e.g. new dashboard pages, metrics, API routes), and see updates when running locally after installing in editable mode and rebuilding the frontend where needed.
 
 If you deploy your Trackio dashboard to Hugging Face Spaces (by setting a `space_id` in `trackio.init()`), the Space UI reflects **your** checkout of Trackio—including any changes to the Python backend and the built Svelte assets.
 
