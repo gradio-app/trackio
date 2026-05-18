@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Feature/run grouping
+feat:add "group by" dropdown to sidebar
