@@ -57,7 +57,7 @@ export function computeGroupedRuns(filteredRuns, runConfigs, groupBy) {
   if (!realKey) return null;
   const groups = new Map();
   for (const run of filteredRuns) {
-    const cfg = (runConfigs ?? {})[run.name] ?? {};
+    const cfg = (runConfigs ?? {})[run.id] ?? (runConfigs ?? {})[run.name] ?? {};
     const raw = cfg[realKey];
     const label = raw === null || raw === undefined ? "(unset)" : String(raw);
     if (!groups.has(label)) groups.set(label, []);

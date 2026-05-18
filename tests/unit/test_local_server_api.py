@@ -103,20 +103,22 @@ def test_local_dashboard_supports_remote_client(temp_dir):
 def test_get_run_configs_returns_config_per_run(temp_dir):
     project = "test_run_configs"
 
-    trackio.init(
+    run_a = trackio.init(
         project=project,
         name="run-a",
         config={"lr": 0.01, "model": "resnet"},
         group="exp-1",
     )
+    run_a_id = run_a.id
     trackio.log(metrics={"loss": 0.1})
     trackio.finish()
 
-    trackio.init(
+    run_b = trackio.init(
         project=project,
         name="run-b",
         config={"lr": 0.02, "model": "vit"},
     )
+    run_b_id = run_b.id
     trackio.log(metrics={"loss": 0.2})
     trackio.finish()
 
@@ -126,12 +128,12 @@ def test_get_run_configs_returns_config_per_run(temp_dir):
         client = Client(url, verbose=False)
         configs = client.predict(project, api_name="/get_run_configs")
 
-        assert set(configs.keys()) == {"run-a", "run-b"}
-        assert configs["run-a"]["lr"] == 0.01
-        assert configs["run-a"]["model"] == "resnet"
-        assert configs["run-a"]["_Group"] == "exp-1"
-        assert configs["run-b"]["lr"] == 0.02
-        assert configs["run-b"]["model"] == "vit"
+        assert set(configs.keys()) == {run_a_id, run_b_id}
+        assert configs[run_a_id]["lr"] == 0.01
+        assert configs[run_a_id]["model"] == "resnet"
+        assert configs[run_a_id]["_Group"] == "exp-1"
+        assert configs[run_b_id]["lr"] == 0.02
+        assert configs[run_b_id]["model"] == "vit"
     finally:
         trackio.delete_project(project, force=True)
         app.close()

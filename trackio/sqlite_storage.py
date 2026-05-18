@@ -2874,14 +2874,14 @@ class SQLiteStorage:
             try:
                 cursor.execute(
                     """
-                    SELECT run_name, config FROM configs
+                    SELECT run_id, config FROM configs
                     """
                 )
 
                 results = {}
                 for row in cursor.fetchall():
                     config = orjson.loads(row["config"])
-                    results[row["run_name"]] = deserialize_values(config)
+                    results[row["run_id"]] = deserialize_values(config)
                 return results
             except sqlite3.OperationalError as e:
                 if "no such table: configs" in str(e):

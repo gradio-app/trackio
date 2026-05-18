@@ -473,7 +473,7 @@ export async function getRunConfigs() {
       if (CONFIG_STRUCTURAL_KEYS.has(key)) continue;
       if (value !== null && value !== undefined) cfg[key] = value;
     }
-    result[runName] = cfg;
+    result[row.run_id ?? runName] = cfg;
   }
   return result;
 }
