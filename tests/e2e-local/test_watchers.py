@@ -1,3 +1,6 @@
+import warnings
+
+import trackio
 from trackio.watchers import (
     AlertLevel,
     AlertReason,
@@ -161,3 +164,33 @@ def test_manager_mixes_builtin_and_custom():
     assert len(alerts) == 1
     alerts2 = mgr.check({"loss": 25.0}, step=1)
     assert len(alerts2) == 2
+
+
+def test_singleton_nan_fires_alert_and_stop(temp_dir):
+    """Exercise trackio.watch + trackio.log via the module-level _watcher_manager."""
+    trackio.init(project="watcher_nan", name="r1")
+    trackio.watch("loss", nan=True)
+    trackio.log({"loss": float("nan")}, step=0)
+    assert trackio.should_stop() is True
+    trackio.finish()
+
+    alerts = trackio.Api().alerts("watcher_nan")
+    assert any(
+        (a.get("data") or {}).get("reason") == AlertReason.NAN_INF for a in alerts
+    )
+
+
+def test_singleton_cleared_by_reinit(temp_dir):
+    """trackio.init() should clear the module-level watcher state and warn."""
+    trackio.init(project="watcher_clear", name="r1")
+    trackio.watch("loss", max_value=10.0)
+    from trackio import _watcher_manager
+
+    assert len(_watcher_manager._watchers) > 0
+
+    with warnings.catch_warnings(record=True) as recwarn:
+        warnings.simplefilter("always")
+        trackio.init(project="watcher_clear", name="r2")
+    assert len(_watcher_manager._watchers) == 0
+    assert any("clear existing metric watchers" in str(w.message) for w in recwarn)
+    trackio.finish()

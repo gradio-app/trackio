@@ -1,3 +1,7 @@
+import os
+import subprocess
+import sys
+
 import trackio
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -58,6 +62,7 @@ def test_api_run_history_with_metric_filter(temp_dir):
     loss_history = run.history(metric="loss")
     assert len(loss_history) == 5
     assert all("value" in entry for entry in loss_history)
+    assert all("acc" not in entry for entry in loss_history)
 
 
 def test_status_survives_multiple_runs(temp_dir):
@@ -81,3 +86,23 @@ def test_status_survives_multiple_runs(temp_dir):
         SQLiteStorage.get_run_status("multi_status", "run2", run_id=run2.id)
         == "finished"
     )
+
+
+def test_atexit_marks_run_failed(temp_dir):
+    """A run that exits without calling finish() should be marked 'failed' by the atexit hook."""
+    script = (
+        "import trackio\n"
+        "trackio.init(project='atexit_test', name='r1')\n"
+        "trackio.log({'loss': 1.0})\n"
+    )
+    env = {**os.environ, "TRACKIO_DIR": str(temp_dir)}
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+    assert SQLiteStorage.get_run_status("atexit_test", "r1") == "failed"

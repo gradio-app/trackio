@@ -537,3 +537,110 @@ def test_query_project_normalizes_bytes(temp_dir):
 def test_query_project_missing_project(temp_dir):
     with pytest.raises(FileNotFoundError):
         SQLiteStorage.query_project("nonexistent", "SELECT 1")
+
+
+def test_alerts_data_migration_on_legacy_db(temp_dir):
+    """A legacy `alerts` table without the `data` column should still accept bulk_alert
+    with a `data_list` argument: the migration in init_db adds the column."""
+    db_path = SQLiteStorage.get_project_db_path("legacy_alerts")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE metrics (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT,
+                run_id TEXT,
+                run_name TEXT,
+                step INTEGER,
+                metrics TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                run_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                text TEXT,
+                level TEXT NOT NULL DEFAULT 'warn',
+                step INTEGER,
+                alert_id TEXT
+            )
+        """)
+
+    SQLiteStorage.bulk_alert(
+        project="legacy_alerts",
+        run="r1",
+        titles=["NaN"],
+        texts=["loss became NaN"],
+        levels=["error"],
+        steps=[5],
+        run_id="rid-1",
+        data_list=[{"reason": "nan_inf", "metric": "loss"}],
+    )
+
+    stored = SQLiteStorage.get_alerts("legacy_alerts")
+    assert len(stored) == 1
+    assert stored[0]["data"] == {"reason": "nan_inf", "metric": "loss"}
+
+
+def test_get_final_metric_step_correctness(temp_dir):
+    """Returned step must match the step at which min/max/last was logged."""
+    SQLiteStorage.bulk_log(
+        "p",
+        "r1",
+        [{"loss": 1.0}, {"loss": 0.1}, {"loss": 0.5}],
+        steps=[0, 1, 2],
+        run_id="id-1",
+    )
+
+    last = SQLiteStorage.get_final_metric_for_runs(
+        "p", "loss", mode="last", status_filter=None
+    )
+    assert last == [{"run": "r1", "run_id": "id-1", "value": 0.5, "step": 2}]
+
+    mn = SQLiteStorage.get_final_metric_for_runs(
+        "p", "loss", mode="min", status_filter=None
+    )
+    assert mn == [{"run": "r1", "run_id": "id-1", "value": 0.1, "step": 1}]
+
+    mx = SQLiteStorage.get_final_metric_for_runs(
+        "p", "loss", mode="max", status_filter=None
+    )
+    assert mx == [{"run": "r1", "run_id": "id-1", "value": 1.0, "step": 0}]
+
+
+def test_get_final_metric_disambiguates_by_run_id(temp_dir):
+    """Two runs sharing a name but with different run_ids must be selectable by run_id."""
+    SQLiteStorage.bulk_log(
+        "p", "dup", [{"loss": 0.1}, {"loss": 0.2}], steps=[0, 1], run_id="id-A"
+    )
+    SQLiteStorage.bulk_log(
+        "p", "dup", [{"loss": 1.0}, {"loss": 2.0}], steps=[0, 1], run_id="id-B"
+    )
+
+    only_a = SQLiteStorage.get_final_metric_for_runs(
+        "p", "loss", mode="last", run_ids=["id-A"], status_filter=None
+    )
+    assert only_a == [{"run": "dup", "run_id": "id-A", "value": 0.2, "step": 1}]
+
+    only_b = SQLiteStorage.get_final_metric_for_runs(
+        "p", "loss", mode="last", run_ids=["id-B"], status_filter=None
+    )
+    assert only_b == [{"run": "dup", "run_id": "id-B", "value": 2.0, "step": 1}]
+
+    both = SQLiteStorage.get_final_metric_for_runs(
+        "p", "loss", mode="last", status_filter=None
+    )
+    assert len(both) == 2
+    by_id = {row["run_id"]: row["value"] for row in both}
+    assert by_id == {"id-A": 0.2, "id-B": 2.0}
+
+
+def test_get_final_metric_validates_mode(temp_dir):
+    with pytest.raises(ValueError, match="mode"):
+        SQLiteStorage.get_final_metric_for_runs(
+            "p", "loss", mode="invalid", status_filter=None
+        )

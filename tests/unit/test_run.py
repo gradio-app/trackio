@@ -60,7 +60,8 @@ def test_run_log_calls_client_for_spaces(temp_dir):
 
     time.sleep(0.6)
     bulk_log_calls = [
-        call for call in client.predict.call_args_list
+        call
+        for call in client.predict.call_args_list
         if call.kwargs.get("api_name") == "/bulk_log"
     ]
     assert len(bulk_log_calls) >= 1

@@ -3,13 +3,16 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 import trackio
 
 PROJECT = "cli_agent_test"
 FILTER_PROJECT = "filter_test"
 
 
-def _seed(temp_dir):
+@pytest.fixture(scope="module")
+def seeded(module_temp_dir):
     trackio.init(project=PROJECT, name="run-lr0.01", config={"lr": 0.01, "depth": 4})
     for step in range(10):
         trackio.log(
@@ -43,8 +46,9 @@ def _seed(temp_dir):
     trackio.init(project=FILTER_PROJECT, name="still-running", config={"lr": 1.0})
     for step in range(5):
         trackio.log({"val/loss": 5.0 + step * 0.5}, step=step)
+    # Intentionally do NOT finish — tests status filtering for "still-running" runs.
 
-    return temp_dir
+    return module_temp_dir
 
 
 def _cli(args, env_dir):
@@ -58,9 +62,8 @@ def _cli(args, env_dir):
     )
 
 
-def test_best(temp_dir):
-    _seed(temp_dir)
-    r = _cli(["best", "--project", PROJECT, "--metric", "val/loss", "--json"], temp_dir)
+def test_best(seeded):
+    r = _cli(["best", "--project", PROJECT, "--metric", "val/loss", "--json"], seeded)
     assert r.returncode == 0
     data = json.loads(r.stdout)
     assert data["best_run"] == "run-lr0.01"
@@ -80,17 +83,16 @@ def test_best(temp_dir):
             "max",
             "--json",
         ],
-        temp_dir,
+        seeded,
     )
     assert r2.returncode == 0
     assert json.loads(r2.stdout)["best_run"] == "run-lr0.01"
 
 
-def test_best_finished_filter(temp_dir):
-    _seed(temp_dir)
+def test_best_finished_filter(seeded):
     r = _cli(
         ["best", "--project", FILTER_PROJECT, "--metric", "val/loss", "--json"],
-        temp_dir,
+        seeded,
     )
     assert r.returncode == 0
     run_names = [e["run"] for e in json.loads(r.stdout)["ranking"]]
@@ -107,7 +109,7 @@ def test_best_finished_filter(temp_dir):
             "--include-all",
             "--json",
         ],
-        temp_dir,
+        seeded,
     )
     assert r2.returncode == 0
     run_names2 = [e["run"] for e in json.loads(r2.stdout)["ranking"]]
@@ -115,11 +117,10 @@ def test_best_finished_filter(temp_dir):
     assert len(run_names2) == 3
 
 
-def test_compare(temp_dir):
-    _seed(temp_dir)
+def test_compare(seeded):
     r = _cli(
         ["compare", "--project", PROJECT, "--metrics", "val/loss,accuracy", "--json"],
-        temp_dir,
+        seeded,
     )
     assert r.returncode == 0
     data = json.loads(r.stdout)
@@ -138,17 +139,16 @@ def test_compare(temp_dir):
             "val/loss",
             "--json",
         ],
-        temp_dir,
+        seeded,
     )
     assert r2.returncode == 0
     assert len(json.loads(r2.stdout)["runs"]) == 2
 
 
-def test_compare_finished_filter(temp_dir):
-    _seed(temp_dir)
+def test_compare_finished_filter(seeded):
     r = _cli(
         ["compare", "--project", FILTER_PROJECT, "--metrics", "val/loss", "--json"],
-        temp_dir,
+        seeded,
     )
     assert r.returncode == 0
     run_names = [e["run"] for e in json.loads(r.stdout)["runs"]]
@@ -165,7 +165,7 @@ def test_compare_finished_filter(temp_dir):
             "--include-all",
             "--json",
         ],
-        temp_dir,
+        seeded,
     )
     assert r2.returncode == 0
     run_names2 = [e["run"] for e in json.loads(r2.stdout)["runs"]]
@@ -173,15 +173,14 @@ def test_compare_finished_filter(temp_dir):
     assert len(run_names2) == 3
 
 
-def test_summary(temp_dir):
-    _seed(temp_dir)
+def test_summary(seeded):
     r = _cli(
-        ["summary", "--project", PROJECT, "--metric", "val/loss", "--json"], temp_dir
+        ["summary", "--project", PROJECT, "--metric", "val/loss", "--json"], seeded
     )
     assert r.returncode == 0
     data = json.loads(r.stdout)
     assert data["num_runs"] == 3
-    assert data["total_alerts"] >= 1
+    assert data["total_alerts"] == 1
     for run_entry in data["runs"]:
         assert {
             "run",
@@ -193,18 +192,39 @@ def test_summary(temp_dir):
         } <= run_entry.keys()
 
 
-def test_best_error_cases(temp_dir):
-    _seed(temp_dir)
-    assert (
-        _cli(
-            ["best", "--project", "nope", "--metric", "loss", "--json"], temp_dir
-        ).returncode
-        != 0
+def test_best_error_cases(seeded):
+    r = _cli(["best", "--project", "nope", "--metric", "loss", "--json"], seeded)
+    assert r.returncode != 0
+    assert "not found" in r.stderr.lower()
+
+    r = _cli(
+        ["best", "--project", PROJECT, "--metric", "nonexistent", "--json"],
+        seeded,
     )
-    assert (
-        _cli(
-            ["best", "--project", PROJECT, "--metric", "nonexistent", "--json"],
-            temp_dir,
-        ).returncode
-        != 0
+    assert r.returncode != 0
+    assert "no" in r.stderr.lower()
+
+
+def test_best_human_format(seeded):
+    r = _cli(["best", "--project", PROJECT, "--metric", "val/loss"], seeded)
+    assert r.returncode == 0
+    assert PROJECT in r.stdout
+    assert "Best run:" in r.stdout
+    assert "run-lr0.01" in r.stdout
+
+
+def test_compare_human_format(seeded):
+    r = _cli(
+        ["compare", "--project", PROJECT, "--metrics", "val/loss,accuracy"], seeded
     )
+    assert r.returncode == 0
+    assert PROJECT in r.stdout
+    assert "val/loss" in r.stdout
+    assert "accuracy" in r.stdout
+
+
+def test_summary_human_format(seeded):
+    r = _cli(["summary", "--project", PROJECT, "--metric", "val/loss"], seeded)
+    assert r.returncode == 0
+    assert PROJECT in r.stdout
+    assert "run-lr0.01" in r.stdout
