@@ -993,7 +993,7 @@ def deploy_as_static_space(
                 repo_id=space_id,
                 repo_type="space",
                 folder_path=str(assets_dir),
-                path_in_repo="assets",
+                path_in_repo="static/trackio",
             ),
         )
 
