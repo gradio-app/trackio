@@ -98,6 +98,12 @@
     groupByRaw = "None";
   });
 
+  $effect(() => {
+    if (!groupByOptions.includes(groupByRaw)) {
+      groupByRaw = "None";
+    }
+  });
+
 
   let groupByOptions = $derived(computeGroupByOptions(runConfigs));
   let groupedRuns = $derived(computeGroupedRuns(filteredRuns, runConfigs, groupByField));
