@@ -228,3 +228,99 @@ def test_summary_human_format(seeded):
     assert r.returncode == 0
     assert PROJECT in r.stdout
     assert "run-lr0.01" in r.stdout
+
+
+@pytest.fixture(scope="module")
+def seeded_server(seeded):
+    """Start a local trackio dashboard against the seeded data; tear down on exit."""
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    try:
+        yield seeded, url
+    finally:
+        app.close()
+
+
+def test_best_remote(seeded_server):
+    seeded_dir, url = seeded_server
+    r = _cli(
+        [
+            "--space",
+            url,
+            "best",
+            "--project",
+            PROJECT,
+            "--metric",
+            "val/loss",
+            "--json",
+        ],
+        seeded_dir,
+    )
+    assert r.returncode == 0, r.stderr
+    data = json.loads(r.stdout)
+    assert data["best_run"] == "run-lr0.01"
+    assert len(data["ranking"]) == 3
+
+
+def test_compare_remote(seeded_server):
+    seeded_dir, url = seeded_server
+    r = _cli(
+        [
+            "--space",
+            url,
+            "compare",
+            "--project",
+            PROJECT,
+            "--metrics",
+            "val/loss,accuracy",
+            "--json",
+        ],
+        seeded_dir,
+    )
+    assert r.returncode == 0, r.stderr
+    data = json.loads(r.stdout)
+    assert len(data["runs"]) == 3
+    for run_entry in data["runs"]:
+        assert {"val/loss", "accuracy"} <= run_entry["metrics"].keys()
+
+
+def test_summary_remote(seeded_server):
+    seeded_dir, url = seeded_server
+    r = _cli(
+        [
+            "--space",
+            url,
+            "summary",
+            "--project",
+            PROJECT,
+            "--metric",
+            "val/loss",
+            "--json",
+        ],
+        seeded_dir,
+    )
+    assert r.returncode == 0, r.stderr
+    data = json.loads(r.stdout)
+    assert data["num_runs"] == 3
+    assert data["total_alerts"] == 1
+    for run_entry in data["runs"]:
+        assert {
+            "run",
+            "status",
+            "last_step",
+            "num_logs",
+            "config",
+            "metric_value",
+        } <= run_entry.keys()
+
+
+def test_remote_matches_local(seeded_server):
+    """Remote and local CLI outputs should match for the same seed."""
+    seeded_dir, url = seeded_server
+    for cmd_args in [
+        ["best", "--project", PROJECT, "--metric", "val/loss", "--json"],
+        ["compare", "--project", PROJECT, "--metrics", "val/loss,accuracy", "--json"],
+        ["summary", "--project", PROJECT, "--metric", "val/loss", "--json"],
+    ]:
+        local = json.loads(_cli(cmd_args, seeded_dir).stdout)
+        remote = json.loads(_cli(["--space", url, *cmd_args], seeded_dir).stdout)
+        assert local == remote, f"mismatch for {cmd_args}"

@@ -897,9 +897,6 @@ def main():
         "sync",
         "freeze",
         "skills",
-        "best",
-        "compare",
-        "summary",
     ) and _get_space(args):
         error_exit(
             f"The '{args.command}' command does not support --space (remote mode)."
@@ -1434,25 +1431,52 @@ def main():
                         output.append("-" * 80)
                 print("\n".join(output))
     elif args.command == "best":
-        _require_project(args.project)
+        remote = _get_remote(args)
+        if not remote:
+            _require_project(args.project)
 
         minimize = args.direction == "min"
         status_filter = None if args.include_all else "finished"
-        results = SQLiteStorage.get_final_metric_for_runs(
-            args.project, args.metric, mode=args.mode, status_filter=status_filter
-        )
+        if remote:
+            results = (
+                remote.predict(
+                    args.project,
+                    args.metric,
+                    args.mode,
+                    None,
+                    None,
+                    status_filter,
+                    api_name="/get_final_metric_for_runs",
+                )
+                or []
+            )
+        else:
+            results = SQLiteStorage.get_final_metric_for_runs(
+                args.project, args.metric, mode=args.mode, status_filter=status_filter
+            )
         if not results:
             qualifier = "" if args.include_all else " finished"
             error_exit(
                 f"No{qualifier} runs with metric '{args.metric}' found in project '{args.project}'."
             )
 
-        configs = SQLiteStorage.get_all_run_configs(args.project)
+        if remote:
+            configs = (
+                remote.predict(args.project, api_name="/get_all_run_configs") or {}
+            )
+            statuses_map = (
+                remote.predict(args.project, api_name="/get_run_statuses") or {}
+            )
+            all_records = (
+                remote.predict(args.project, api_name="/get_runs_for_project") or []
+            )
+        else:
+            configs = SQLiteStorage.get_all_run_configs(args.project)
+            statuses_map = SQLiteStorage.get_run_statuses(args.project)
+            all_records = SQLiteStorage.get_run_records(args.project)
         for r in results:
             r["config"] = _public_config(configs.get(r["run"]) or {})
 
-        statuses_map = SQLiteStorage.get_run_statuses(args.project)
-        all_records = SQLiteStorage.get_run_records(args.project)
         if status_filter is not None:
             all_records = [
                 rec
@@ -1502,12 +1526,24 @@ def main():
             ]
             print(format_best(args.project, args.metric, minimize, args.mode, display))
     elif args.command == "compare":
-        _require_project(args.project)
+        remote = _get_remote(args)
+        if not remote:
+            _require_project(args.project)
 
         status_filter = None if args.include_all else "finished"
-        statuses = SQLiteStorage.get_run_statuses(args.project)
+        if remote:
+            statuses = remote.predict(args.project, api_name="/get_run_statuses") or {}
+            all_records = (
+                remote.predict(args.project, api_name="/get_runs_for_project") or []
+            )
+            configs = (
+                remote.predict(args.project, api_name="/get_all_run_configs") or {}
+            )
+        else:
+            statuses = SQLiteStorage.get_run_statuses(args.project)
+            all_records = SQLiteStorage.get_run_records(args.project)
+            configs = SQLiteStorage.get_all_run_configs(args.project)
 
-        all_records = SQLiteStorage.get_run_records(args.project)
         if args.runs:
             names_filter = {r.strip() for r in args.runs.split(",")}
             all_records = [r for r in all_records if r["name"] in names_filter]
@@ -1523,12 +1559,23 @@ def main():
         if not metric_names:
             metric_set = set()
             for rec in all_records:
-                metric_set.update(
-                    SQLiteStorage.get_all_metrics_for_run(args.project, rec["name"])
-                )
+                if remote:
+                    names = (
+                        remote.predict(
+                            args.project,
+                            rec["name"],
+                            rec.get("id"),
+                            api_name="/get_metrics_for_run",
+                        )
+                        or []
+                    )
+                else:
+                    names = SQLiteStorage.get_all_metrics_for_run(
+                        args.project, rec["name"]
+                    )
+                metric_set.update(names)
             metric_names = sorted(metric_set)
 
-        configs = SQLiteStorage.get_all_run_configs(args.project)
         run_names = [r["name"] for r in all_records]
         has_dupes = len(run_names) != len(set(run_names))
         target_ids = [r["id"] for r in all_records if r.get("id")]
@@ -1536,13 +1583,27 @@ def main():
         metric_values_by_id: dict[str, dict[str, float]] = {}
         if target_ids:
             for metric in metric_names:
-                rows = SQLiteStorage.get_final_metric_for_runs(
-                    args.project,
-                    metric,
-                    mode=args.mode,
-                    run_ids=target_ids,
-                    status_filter=None,
-                )
+                if remote:
+                    rows = (
+                        remote.predict(
+                            args.project,
+                            metric,
+                            args.mode,
+                            None,
+                            target_ids,
+                            None,
+                            api_name="/get_final_metric_for_runs",
+                        )
+                        or []
+                    )
+                else:
+                    rows = SQLiteStorage.get_final_metric_for_runs(
+                        args.project,
+                        metric,
+                        mode=args.mode,
+                        run_ids=target_ids,
+                        status_filter=None,
+                    )
                 for row in rows:
                     rid = row.get("run_id")
                     if rid:
@@ -1587,43 +1648,82 @@ def main():
             ]
             print(format_compare(args.project, metric_names, display))
     elif args.command == "summary":
-        _require_project(args.project)
+        remote = _get_remote(args)
+        if not remote:
+            _require_project(args.project)
 
-        runs = SQLiteStorage.get_runs(args.project)
-        configs = SQLiteStorage.get_all_run_configs(args.project)
-        statuses = SQLiteStorage.get_run_statuses(args.project)
-        alert_count = SQLiteStorage.get_alert_count(args.project)
+        if remote:
+            all_records = (
+                remote.predict(args.project, api_name="/get_runs_for_project") or []
+            )
+            configs = (
+                remote.predict(args.project, api_name="/get_all_run_configs") or {}
+            )
+            statuses = remote.predict(args.project, api_name="/get_run_statuses") or {}
+            alert_count = remote.predict(args.project, api_name="/get_alert_count") or 0
+            last_steps = (
+                remote.predict(args.project, api_name="/get_max_steps_for_runs") or {}
+            )
+            log_counts = (
+                remote.predict(args.project, api_name="/get_log_counts_for_runs") or {}
+            )
+        else:
+            all_records = SQLiteStorage.get_run_records(args.project)
+            configs = SQLiteStorage.get_all_run_configs(args.project)
+            statuses = SQLiteStorage.get_run_statuses(args.project)
+            alert_count = SQLiteStorage.get_alert_count(args.project)
+            last_steps = SQLiteStorage.get_max_steps_for_runs(args.project)
+            log_counts = SQLiteStorage.get_log_counts_for_runs(args.project)
+
+        metric_value_by_run: dict[str, float] = {}
+        if args.metric:
+            target_ids = [r["id"] for r in all_records if r.get("id")]
+            if target_ids:
+                if remote:
+                    rows = (
+                        remote.predict(
+                            args.project,
+                            args.metric,
+                            "last",
+                            None,
+                            target_ids,
+                            None,
+                            api_name="/get_final_metric_for_runs",
+                        )
+                        or []
+                    )
+                else:
+                    rows = SQLiteStorage.get_final_metric_for_runs(
+                        args.project,
+                        args.metric,
+                        mode="last",
+                        run_ids=target_ids,
+                        status_filter=None,
+                    )
+                for row in rows:
+                    rid = row.get("run_id")
+                    if rid:
+                        metric_value_by_run[rid] = row["value"]
 
         run_summaries = []
-        for run in runs:
-            last_step = SQLiteStorage.get_last_step(args.project, run)
-            num_logs = SQLiteStorage.get_log_count(args.project, run)
-            metric_value = None
-            if args.metric:
-                values = SQLiteStorage.get_final_metric_for_runs(
-                    args.project,
-                    args.metric,
-                    mode="last",
-                    run_names=[run],
-                    status_filter=None,
-                )
-                if values:
-                    metric_value = values[0]["value"]
-
+        for rec in all_records:
+            run = rec["name"]
+            rid = rec.get("id")
+            key = rid if rid in last_steps else run
             run_summaries.append(
                 {
                     "run": run,
                     "status": statuses.get(run),
-                    "last_step": last_step,
-                    "num_logs": num_logs,
+                    "last_step": last_steps.get(key),
+                    "num_logs": log_counts.get(key, 0),
                     "config": _public_config(configs.get(run, {})),
-                    "metric_value": metric_value,
+                    "metric_value": metric_value_by_run.get(rid) if rid else None,
                 }
             )
 
         summary_data = {
             "project": args.project,
-            "num_runs": len(runs),
+            "num_runs": len(all_records),
             "total_alerts": alert_count,
             "metric": args.metric,
             "runs": run_summaries,

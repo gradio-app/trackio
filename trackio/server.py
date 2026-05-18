@@ -738,6 +738,44 @@ def get_final_metrics_for_run(
     return result
 
 
+def get_run_statuses(project: str) -> dict[str, str | None]:
+    return SQLiteStorage.get_run_statuses(project)
+
+
+def get_all_run_configs(project: str) -> dict[str, dict]:
+    return SQLiteStorage.get_all_run_configs(project)
+
+
+def get_alert_count(project: str) -> int:
+    return SQLiteStorage.get_alert_count(project)
+
+
+def get_max_steps_for_runs(project: str) -> dict[str, int]:
+    return SQLiteStorage.get_max_steps_for_runs(project)
+
+
+def get_log_counts_for_runs(project: str) -> dict[str, int]:
+    return SQLiteStorage.get_log_counts_for_runs(project)
+
+
+def get_final_metric_for_runs(
+    project: str,
+    metric_name: str,
+    mode: str = "last",
+    run_names: list[str] | None = None,
+    run_ids: list[str] | None = None,
+    status_filter: str | None = "finished",
+) -> list[dict]:
+    return SQLiteStorage.get_final_metric_for_runs(
+        project,
+        metric_name,
+        mode=mode,
+        run_names=run_names,
+        run_ids=run_ids,
+        status_filter=status_filter,
+    )
+
+
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
     if not filter_pattern.strip():
         return metrics
@@ -1004,6 +1042,12 @@ def _api_registry() -> dict[str, Any]:
         "get_metrics_for_run": get_metrics_for_run,
         "get_run_status": get_run_status,
         "get_final_metrics_for_run": get_final_metrics_for_run,
+        "get_run_statuses": get_run_statuses,
+        "get_all_run_configs": get_all_run_configs,
+        "get_alert_count": get_alert_count,
+        "get_max_steps_for_runs": get_max_steps_for_runs,
+        "get_log_counts_for_runs": get_log_counts_for_runs,
+        "get_final_metric_for_runs": get_final_metric_for_runs,
         "get_all_projects": get_all_projects,
         "get_project_summary": get_project_summary,
         "get_run_summary": get_run_summary,

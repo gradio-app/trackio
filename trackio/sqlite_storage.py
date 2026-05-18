@@ -2232,6 +2232,42 @@ class SQLiteStorage:
             raise
 
     @staticmethod
+    def get_log_counts_for_runs(project: str) -> dict[str, int]:
+        """Get the metrics-row count for each run in a project, keyed by run_id
+        when available, else by run_name."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return {}
+
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                if SQLiteStorage._supports_run_ids(conn):
+                    cursor.execute(
+                        """
+                        SELECT run_id, COUNT(*) AS log_count
+                        FROM metrics
+                        GROUP BY run_id
+                        """
+                    )
+                    return {
+                        row["run_id"]: row["log_count"] for row in cursor.fetchall()
+                    }
+
+                cursor.execute(
+                    """
+                    SELECT run_name, COUNT(*) AS log_count
+                    FROM metrics
+                    GROUP BY run_name
+                    """
+                )
+                return {row["run_name"]: row["log_count"] for row in cursor.fetchall()}
+        except sqlite3.OperationalError as e:
+            if "no such table: metrics" in str(e):
+                return {}
+            raise
+
+    @staticmethod
     def get_max_step_for_run(
         project: str, run: str | None = None, run_id: str | None = None
     ) -> int | None:
