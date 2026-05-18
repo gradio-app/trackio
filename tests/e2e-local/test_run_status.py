@@ -40,7 +40,7 @@ def test_api_run_access(temp_dir):
 
     run = trackio.Api().runs("api_test")[0]
     assert run.status == "finished"
-    fm = run.final_metrics
+    fm = run.final_metrics()
     assert abs(fm["loss"] - 0.5) < 1e-6
     assert abs(fm["acc"] - 0.8) < 1e-6
 

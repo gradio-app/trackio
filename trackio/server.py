@@ -706,6 +706,38 @@ def get_metrics_for_run(
     return SQLiteStorage.get_all_metrics_for_run(project, run, run_id=run_id)
 
 
+def get_run_status(
+    project: str, run: str | None = None, run_id: str | None = None
+) -> str | None:
+    if run is None:
+        return None
+    return SQLiteStorage.get_run_status(project, run, run_id=run_id)
+
+
+def get_final_metrics_for_run(
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+    mode: str = "last",
+) -> dict[str, dict]:
+    if run is None:
+        return {}
+    metric_names = SQLiteStorage.get_all_metrics_for_run(project, run, run_id=run_id)
+    result: dict[str, dict] = {}
+    for m in metric_names:
+        rows = SQLiteStorage.get_final_metric_for_runs(
+            project,
+            m,
+            mode=mode,
+            run_names=[run],
+            run_ids=[run_id] if run_id else None,
+            status_filter=None,
+        )
+        if rows:
+            result[m] = {"value": rows[0]["value"], "step": rows[0]["step"]}
+    return result
+
+
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
     if not filter_pattern.strip():
         return metrics
@@ -970,6 +1002,8 @@ def _api_registry() -> dict[str, Any]:
         "get_metric_values": get_metric_values,
         "get_runs_for_project": get_runs_for_project,
         "get_metrics_for_run": get_metrics_for_run,
+        "get_run_status": get_run_status,
+        "get_final_metrics_for_run": get_final_metrics_for_run,
         "get_all_projects": get_all_projects,
         "get_project_summary": get_project_summary,
         "get_run_summary": get_run_summary,
