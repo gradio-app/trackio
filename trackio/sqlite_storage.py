@@ -1747,31 +1747,61 @@ class SQLiteStorage:
         underrepresented_threshold = 10
         max_injected_points = 50
 
-        step = len(rows) / max_points
-        indices_to_keep = {int(i * step) for i in range(max_points)}
-        indices_to_keep.add(len(rows) - 1)
+        # Build a tentative base sweep so we can measure representation
+        tentative_step = len(rows) / max_points
+        tentative_base = {int(i * tentative_step) for i in range(max_points)}
+        tentative_base.add(len(rows) - 1)
 
-        metric_to_indices: dict[str, list[int]] = {}
-        for i, row in enumerate(rows):
-            try:
-                metrics = orjson.loads(row["metrics"])
+        # Only scan for sparse metrics when downsampling is aggressive enough that a sparse
+        # metric could realistically be missed by the base sweep.  At a ratio below
+        # underrepresented_threshold the base sweep is already dense enough to capture
+        # every metric regardless of frequency, so the O(n) JSON decode is skipped.
+        injection_indices: set[int] = set()
+        if tentative_step >= underrepresented_threshold:
+            metric_to_indices: dict[str, list[int]] = {}
+            for i, row in enumerate(rows):
+                try:
+                    metrics = orjson.loads(row["metrics"])
+                except (KeyError, TypeError, orjson.JSONDecodeError):
+                    continue
+
+                if not isinstance(metrics, dict):
+                    continue
+
                 for k in metrics.keys():
                     if k not in metric_to_indices:
                         metric_to_indices[k] = []
                     metric_to_indices[k].append(i)
-            except Exception:
-                pass
 
-        for indices in metric_to_indices.values():
-            kept_count = sum(1 for idx in indices if idx in indices_to_keep)
+            # Collect injection candidates from underrepresented metrics
+            for indices in metric_to_indices.values():
+                kept_count = sum(1 for idx in indices if idx in tentative_base)
+                # Protect sparse metrics (like 'epoch') that may have been missed by the uniform sample.
+                if kept_count < underrepresented_threshold:
+                    inject_count = min(len(indices), max_injected_points)
+                    metric_step = len(indices) / inject_count
+                    for i in range(inject_count):
+                        injection_indices.add(indices[int(i * metric_step)])
+                    injection_indices.add(indices[-1])
 
-            # Protect sparse metrics (like 'epoch') that may have been missed by the uniform sample.
-            if kept_count < underrepresented_threshold:
-                inject_count = min(len(indices), max_injected_points)
-                metric_step = len(indices) / inject_count
-                for i in range(inject_count):
-                    indices_to_keep.add(indices[int(i * metric_step)])
-                indices_to_keep.add(indices[-1])
+        # --- Phase 2: enforce max_points as a strict hard cap ---
+        # Sparse-metric points are treated as "must-keep" slots.
+        # Fill the remaining budget with uniform base samples.
+        remaining_budget = max(0, max_points - len(injection_indices))
+        base_candidates = sorted(tentative_base - injection_indices)
+
+        if remaining_budget == 0 or not base_candidates:
+            base_kept = set()
+        elif remaining_budget >= len(base_candidates):
+            base_kept = set(base_candidates)
+        else:
+            base_step = len(base_candidates) / remaining_budget
+            base_kept = {
+                base_candidates[int(i * base_step)] for i in range(remaining_budget)
+            }
+
+        indices_to_keep = injection_indices | base_kept
+        indices_to_keep.add(len(rows) - 1)
 
         if not indices_to_keep:
             return rows

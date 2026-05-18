@@ -500,3 +500,63 @@ def test_query_project_normalizes_bytes(temp_dir):
 def test_query_project_missing_project(temp_dir):
     with pytest.raises(FileNotFoundError):
         SQLiteStorage.query_project("nonexistent", "SELECT 1")
+
+
+def _make_row(metrics_dict):
+    """Helper: create a fake row dict as returned by SQLiteStorage queries."""
+    return {"metrics": orjson.dumps(metrics_dict)}
+
+
+def test_subsample_preserves_sparse_metrics():
+    """Sparse metrics logged every N rows must survive aggressive subsampling.
+
+    Reproduces the bug reported in #543: when a dense metric (train/loss) is
+    logged every row and a sparse metric (epoch) is logged every 500 rows, the
+    old blind-sweep subsampler dropped nearly all epoch rows, causing the
+    frontend to treat epoch as a single-point bar chart instead of a line chart.
+    """
+    max_points = 150
+    # epoch appears every 500 rows – 10 times in 5 000 rows
+    rows = []
+    for step in range(5000):
+        m = {"train/loss": 1.0 / (step + 1)}
+        if step % 500 == 0:
+            m["epoch"] = step // 500
+        rows.append(_make_row(m))
+
+    result = SQLiteStorage._subsample_metric_rows(rows, max_points)
+
+    # At least 5 of the 10 epoch rows must survive so the frontend can draw a line
+    epoch_rows_kept = sum(
+        1
+        for r in result
+        if "epoch" in orjson.loads(r["metrics"])
+    )
+    assert epoch_rows_kept >= 5, (
+        f"Expected at least 5 epoch rows to be preserved, got {epoch_rows_kept}"
+    )
+
+
+def test_subsample_respects_max_points_strict_cap():
+    """_subsample_metric_rows must never return more than max_points * 2 rows.
+
+    Even when many sparse metrics trigger the injection phase the total payload
+    must stay bounded so the frontend is never overwhelmed.
+    """
+    max_points = 150
+    # 20 different sparse metrics each appearing once every 500 rows
+    sparse_keys = [f"sparse_{i}" for i in range(20)]
+    rows = []
+    for step in range(5000):
+        m = {"train/loss": 1.0 / (step + 1)}
+        for j, key in enumerate(sparse_keys):
+            if step % 500 == j % 500:
+                m[key] = step
+        rows.append(_make_row(m))
+
+    result = SQLiteStorage._subsample_metric_rows(rows, max_points)
+
+    # The strict cap: total rows must not exceed max_points * 2
+    assert len(result) <= max_points * 2, (
+        f"Expected at most {max_points * 2} rows, got {len(result)}"
+    )
