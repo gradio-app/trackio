@@ -1742,10 +1742,41 @@ class SQLiteStorage:
             return rows
         if len(rows) <= max_points:
             return rows
+
+        # Configuration for sparse metric protection
+        underrepresented_threshold = 10
+        max_injected_points = 50
+
         step = len(rows) / max_points
-        indices = {int(i * step) for i in range(max_points)}
-        indices.add(len(rows) - 1)
-        return [rows[i] for i in sorted(indices)]
+        indices_to_keep = {int(i * step) for i in range(max_points)}
+        indices_to_keep.add(len(rows) - 1)
+
+        metric_to_indices: dict[str, list[int]] = {}
+        for i, row in enumerate(rows):
+            try:
+                metrics = orjson.loads(row["metrics"])
+                for k in metrics.keys():
+                    if k not in metric_to_indices:
+                        metric_to_indices[k] = []
+                    metric_to_indices[k].append(i)
+            except Exception:
+                pass
+
+        for indices in metric_to_indices.values():
+            kept_count = sum(1 for idx in indices if idx in indices_to_keep)
+
+            # Protect sparse metrics (like 'epoch') that may have been missed by the uniform sample.
+            if kept_count < underrepresented_threshold:
+                inject_count = min(len(indices), max_injected_points)
+                metric_step = len(indices) / inject_count
+                for i in range(inject_count):
+                    indices_to_keep.add(indices[int(i * metric_step)])
+                indices_to_keep.add(indices[-1])
+
+        if not indices_to_keep:
+            return rows
+
+        return [rows[i] for i in sorted(indices_to_keep)]
 
     @staticmethod
     def _metric_rows_to_log_dicts(rows: list[Any]) -> list[dict[str, Any]]:
