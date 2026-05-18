@@ -100,6 +100,54 @@ def test_local_dashboard_supports_remote_client(temp_dir):
         app.close()
 
 
+def test_get_run_configs_returns_config_per_run(temp_dir):
+    project = "test_run_configs"
+
+    trackio.init(
+        project=project,
+        name="run-a",
+        config={"lr": 0.01, "model": "resnet"},
+        group="exp-1",
+    )
+    trackio.log(metrics={"loss": 0.1})
+    trackio.finish()
+
+    trackio.init(
+        project=project,
+        name="run-b",
+        config={"lr": 0.02, "model": "vit"},
+    )
+    trackio.log(metrics={"loss": 0.2})
+    trackio.finish()
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        client = Client(url, verbose=False)
+        configs = client.predict(project, api_name="/get_run_configs")
+
+        assert set(configs.keys()) == {"run-a", "run-b"}
+        assert configs["run-a"]["lr"] == 0.01
+        assert configs["run-a"]["model"] == "resnet"
+        assert configs["run-a"]["_Group"] == "exp-1"
+        assert configs["run-b"]["lr"] == 0.02
+        assert configs["run-b"]["model"] == "vit"
+    finally:
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_get_run_configs_returns_empty_for_unknown_project(temp_dir):
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        client = Client(url, verbose=False)
+        configs = client.predict("no_such_project", api_name="/get_run_configs")
+        assert configs == {}
+    finally:
+        app.close()
+
+
 def test_server_url_logs_to_self_hosted_server(temp_dir):
     project = "test_self_hosted"
     run_name = "self-hosted-run"

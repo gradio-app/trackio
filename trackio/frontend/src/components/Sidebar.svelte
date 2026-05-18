@@ -8,7 +8,7 @@
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
   import { latestOnlySelection } from "../lib/selection.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
-  import Accordion from "./Accordion.svelte";
+  import { computeGroupByOptions, computeGroupedRuns } from "../lib/grouping.js";
 
   let {
     open = $bindable(true),
@@ -99,30 +99,8 @@
   });
 
 
-  let groupByOptions = $derived.by(() => {
-    const keys = new Set();
-    for (const cfg of Object.values(runConfigs)) {
-      if (cfg && typeof cfg === "object") {
-        for (const key of Object.keys(cfg)) {
-          if (cfg[key] !== null && cfg[key] !== undefined) keys.add(key);
-        }
-      }
-    }
-    return ["None", ...Array.from(keys).sort()];
-  });
-
-  let groupedRuns = $derived.by(() => {
-    if (!groupByField) return null;
-    const groups = new Map();
-    for (const run of filteredRuns) {
-      const cfg = runConfigs[run.name] ?? {};
-      const raw = cfg[groupByField];
-      const label = raw === null || raw === undefined ? "(unset)" : String(raw);
-      if (!groups.has(label)) groups.set(label, []);
-      groups.get(label).push(run);
-    }
-    return groups;
-  });
+  let groupByOptions = $derived(computeGroupByOptions(runConfigs));
+  let groupedRuns = $derived(computeGroupedRuns(filteredRuns, runConfigs, groupByField));
 
   let latestOnly = $state(false);
   let shareTab = $state("share");
