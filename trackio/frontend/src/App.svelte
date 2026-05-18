@@ -148,7 +148,7 @@
     try {
       const [data, configs] = await Promise.all([
         getRunsForProject(selectedProject),
-        getRunConfigs(selectedProject).catch(() => ({})),
+        getRunConfigs(selectedProject).catch(() => null),
       ]);
       const newRuns = [...(data || [])].reverse();
 
@@ -162,7 +162,7 @@
           prevOrdered,
         );
       }
-      runConfigs = configs || {};
+      if (configs != null) runConfigs = configs;
     } catch (e) {
       console.error("Failed to load runs:", e);
     }
