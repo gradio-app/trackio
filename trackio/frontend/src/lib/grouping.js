@@ -1,4 +1,7 @@
-export const PROMOTED_RESERVED_KEYS = Object.freeze({ _Group: "Group" });
+export const PROMOTED_RESERVED_KEYS = Object.freeze({
+  _Group: "Group",
+  _Username: "Username",
+});
 
 const PROMOTED_LABELS = new Set(Object.values(PROMOTED_RESERVED_KEYS));
 
@@ -18,23 +21,32 @@ export function resolveGroupByKey(displayLabel) {
   return displayLabel;
 }
 
+function promotedKeyHasVariance(runConfigs, key) {
+  const seen = new Set();
+  for (const cfg of Object.values(runConfigs ?? {})) {
+    if (!cfg || typeof cfg !== "object") continue;
+    const raw = cfg[key];
+    const label = raw === null || raw === undefined ? "(unset)" : String(raw);
+    seen.add(label);
+    if (seen.size >= 2) return true;
+  }
+  return false;
+}
+
 export function computeGroupByOptions(runConfigs) {
-  const promotedFound = new Set();
   const regularKeys = new Set();
   for (const cfg of Object.values(runConfigs ?? {})) {
     if (!cfg || typeof cfg !== "object") continue;
     for (const key of Object.keys(cfg)) {
       if (cfg[key] === null || cfg[key] === undefined) continue;
       if (shouldHideKey(key)) continue;
-      if (key in PROMOTED_RESERVED_KEYS) {
-        promotedFound.add(key);
-      } else if (!PROMOTED_LABELS.has(key)) {
-        regularKeys.add(key);
-      }
+      if (key in PROMOTED_RESERVED_KEYS) continue;
+      if (PROMOTED_LABELS.has(key)) continue;
+      regularKeys.add(key);
     }
   }
   const promoted = Object.keys(PROMOTED_RESERVED_KEYS)
-    .filter((k) => promotedFound.has(k))
+    .filter((k) => promotedKeyHasVariance(runConfigs, k))
     .map(displayLabelForKey);
   const regular = [...regularKeys].sort();
   return ["None", ...promoted, ...regular];

@@ -76,11 +76,60 @@ describe("computeGroupByOptions", () => {
 
   test("does not surface a user-defined key named 'Group' as a duplicate", () => {
     const configs = {
-      "run-a": { _Group: "exp-1", Group: "user-named", lr: 0.01 },
+      "run-a": { _Group: "exp-1", Group: "user-1", lr: 0.01 },
+      "run-b": { _Group: "exp-2", Group: "user-2", lr: 0.02 },
     };
     const options = computeGroupByOptions(configs);
     expect(options.filter((o) => o === "Group")).toHaveLength(1);
     expect(options).toEqual(["None", "Group", "lr"]);
+  });
+
+  test("promotes _Username to 'Username' when usernames vary", () => {
+    const configs = {
+      "run-a": { _Username: "alice", lr: 0.01 },
+      "run-b": { _Username: "bob", lr: 0.02 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual([
+      "None",
+      "Username",
+      "lr",
+    ]);
+  });
+
+  test("hides 'Username' in a single-user project (all values equal)", () => {
+    const configs = {
+      "run-a": { _Username: "alice", lr: 0.01 },
+      "run-b": { _Username: "alice", lr: 0.02 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual(["None", "lr"]);
+  });
+
+  test("hides 'Group' when every run shares the same group value", () => {
+    const configs = {
+      "run-a": { _Group: "exp-1", lr: 0.01 },
+      "run-b": { _Group: "exp-1", lr: 0.02 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual(["None", "lr"]);
+  });
+
+  test("orders promoted keys by declaration: Group before Username", () => {
+    const configs = {
+      "run-a": { _Group: "exp-1", _Username: "alice" },
+      "run-b": { _Group: "exp-2", _Username: "bob" },
+    };
+    expect(computeGroupByOptions(configs)).toEqual([
+      "None",
+      "Group",
+      "Username",
+    ]);
+  });
+
+  test("includes 'Group' when some runs have a value and others are unset", () => {
+    const configs = {
+      "run-a": { _Group: "exp-1", lr: 0.01 },
+      "run-b": { _Group: null, lr: 0.02 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual(["None", "Group", "lr"]);
   });
 });
 
@@ -93,6 +142,10 @@ describe("resolveGroupByKey", () => {
 
   test("maps the 'Group' display label back to '_Group'", () => {
     expect(resolveGroupByKey("Group")).toBe("_Group");
+  });
+
+  test("maps the 'Username' display label back to '_Username'", () => {
+    expect(resolveGroupByKey("Username")).toBe("_Username");
   });
 
   test("passes regular keys through unchanged", () => {
