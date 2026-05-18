@@ -84,6 +84,14 @@ describe("computeGroupByOptions", () => {
     expect(options).toEqual(["None", "Group", "lr"]);
   });
 
+  test("surfaces a user-defined 'Group' key when _Group has no variance", () => {
+    const configs = {
+      "run-a": { Group: "team-a", lr: 0.01 },
+      "run-b": { Group: "team-b", lr: 0.02 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual(["None", "Group", "lr"]);
+  });
+
   test("promotes _Username to 'Username' when usernames vary", () => {
     const configs = {
       "run-a": { _Username: "alice", lr: 0.01 },
@@ -140,12 +148,25 @@ describe("resolveGroupByKey", () => {
     expect(resolveGroupByKey("")).toBeNull();
   });
 
-  test("maps the 'Group' display label back to '_Group'", () => {
-    expect(resolveGroupByKey("Group")).toBe("_Group");
+  test("maps 'Group' to '_Group' when _Group has variance", () => {
+    const configs = { "run-a": { _Group: "exp-1" }, "run-b": { _Group: "exp-2" } };
+    expect(resolveGroupByKey("Group", configs)).toBe("_Group");
   });
 
-  test("maps the 'Username' display label back to '_Username'", () => {
-    expect(resolveGroupByKey("Username")).toBe("_Username");
+  test("maps 'Username' to '_Username' when _Username has variance", () => {
+    const configs = { "run-a": { _Username: "alice" }, "run-b": { _Username: "bob" } };
+    expect(resolveGroupByKey("Username", configs)).toBe("_Username");
+  });
+
+  test("returns 'Group' literally when _Group has no variance", () => {
+    const configs = { "run-a": { _Group: "exp-1" }, "run-b": { _Group: "exp-1" } };
+    expect(resolveGroupByKey("Group", configs)).toBe("Group");
+  });
+
+  test("returns 'Group' literally when no runConfigs provided", () => {
+    expect(resolveGroupByKey("Group", null)).toBe("Group");
+    expect(resolveGroupByKey("Group", undefined)).toBe("Group");
+    expect(resolveGroupByKey("Group")).toBe("Group");
   });
 
   test("passes regular keys through unchanged", () => {
@@ -211,5 +232,17 @@ describe("computeGroupedRuns", () => {
     expect([...groups.keys()]).toEqual(["exp-1", "exp-2"]);
     expect(groups.get("exp-1").map((r) => r.name)).toEqual(["run-a", "run-c"]);
     expect(groups.get("exp-2").map((r) => r.name)).toEqual(["run-b"]);
+  });
+
+  test("groups by a literal 'Group' user config key when _Group has no variance", () => {
+    const groupedConfigs = {
+      "run-a": { Group: "team-a" },
+      "run-b": { Group: "team-b" },
+      "run-c": { Group: "team-a" },
+    };
+    const groups = computeGroupedRuns(runs, groupedConfigs, "Group");
+    expect([...groups.keys()]).toEqual(["team-a", "team-b"]);
+    expect(groups.get("team-a").map((r) => r.name)).toEqual(["run-a", "run-c"]);
+    expect(groups.get("team-b").map((r) => r.name)).toEqual(["run-b"]);
   });
 });

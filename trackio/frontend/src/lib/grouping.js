@@ -3,8 +3,6 @@ export const PROMOTED_RESERVED_KEYS = Object.freeze({
   _Username: "Username",
 });
 
-const PROMOTED_LABELS = new Set(Object.values(PROMOTED_RESERVED_KEYS));
-
 function shouldHideKey(key) {
   return key.startsWith("_") && !(key in PROMOTED_RESERVED_KEYS);
 }
@@ -13,10 +11,10 @@ function displayLabelForKey(key) {
   return PROMOTED_RESERVED_KEYS[key] ?? key;
 }
 
-export function resolveGroupByKey(displayLabel) {
+export function resolveGroupByKey(displayLabel, runConfigs) {
   if (!displayLabel) return null;
   for (const [key, label] of Object.entries(PROMOTED_RESERVED_KEYS)) {
-    if (label === displayLabel) return key;
+    if (label === displayLabel && promotedKeyHasVariance(runConfigs, key)) return key;
   }
   return displayLabel;
 }
@@ -34,6 +32,11 @@ function promotedKeyHasVariance(runConfigs, key) {
 }
 
 export function computeGroupByOptions(runConfigs) {
+  const promoted = Object.keys(PROMOTED_RESERVED_KEYS)
+    .filter((k) => promotedKeyHasVariance(runConfigs, k))
+    .map(displayLabelForKey);
+  const surfacedPromotedLabels = new Set(promoted);
+
   const regularKeys = new Set();
   for (const cfg of Object.values(runConfigs ?? {})) {
     if (!cfg || typeof cfg !== "object") continue;
@@ -41,19 +44,16 @@ export function computeGroupByOptions(runConfigs) {
       if (cfg[key] === null || cfg[key] === undefined) continue;
       if (shouldHideKey(key)) continue;
       if (key in PROMOTED_RESERVED_KEYS) continue;
-      if (PROMOTED_LABELS.has(key)) continue;
+      if (surfacedPromotedLabels.has(key)) continue;
       regularKeys.add(key);
     }
   }
-  const promoted = Object.keys(PROMOTED_RESERVED_KEYS)
-    .filter((k) => promotedKeyHasVariance(runConfigs, k))
-    .map(displayLabelForKey);
   const regular = [...regularKeys].sort();
   return ["None", ...promoted, ...regular];
 }
 
 export function computeGroupedRuns(filteredRuns, runConfigs, groupBy) {
-  const realKey = resolveGroupByKey(groupBy);
+  const realKey = resolveGroupByKey(groupBy, runConfigs);
   if (!realKey) return null;
   const groups = new Map();
   for (const run of filteredRuns) {
