@@ -100,6 +100,7 @@ function smoothData(rows, cols, windowSize) {
   return rows.map((row, i) => {
     const smoothed = { ...row };
     cols.forEach((col) => {
+      if (row[col] == null || typeof row[col] !== "number") return;
       const start = Math.max(0, i - half);
       const end = Math.min(rows.length, i + half + 1);
       let sum = 0;
