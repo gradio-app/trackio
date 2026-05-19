@@ -5,7 +5,7 @@
   import BarPlot from "../components/BarPlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getLogsBatch } from "../lib/api.js";
+  import { getScalarLogsBatch } from "../lib/api.js";
   import {
     getMetricsPollIntervalMs,
     isRateLimitCooldownActive,
@@ -168,7 +168,7 @@
     const results = [];
     for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
       const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
-      const batch = await getLogsBatch(project, chunk);
+      const batch = await getScalarLogsBatch(project, chunk);
       results.push(...batch);
     }
     return results;
