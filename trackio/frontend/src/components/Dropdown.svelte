@@ -68,6 +68,13 @@
     }
   }
 
+  function handleMouseDown(e) {
+    if (showOptions) {
+      e.preventDefault();
+      filterInput?.blur();
+    }
+  }
+
   function handleBlur() {
     if (choices.includes(inputText)) {
       value = inputText;
@@ -143,6 +150,7 @@
           autocomplete="off"
           bind:value={inputText}
           bind:this={filterInput}
+          onmousedown={handleMouseDown}
           onkeydown={handleKeydown}
           onblur={handleBlur}
           onfocus={handleFocus}
