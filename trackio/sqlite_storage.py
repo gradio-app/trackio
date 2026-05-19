@@ -414,6 +414,25 @@ class SQLiteStorage:
 
                 cursor.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS traces (
+                        id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        run_name TEXT NOT NULL,
+                        step INTEGER NOT NULL,
+                        key TEXT NOT NULL,
+                        trace_index INTEGER,
+                        messages TEXT NOT NULL,
+                        metadata TEXT NOT NULL,
+                        search_text TEXT NOT NULL,
+                        log_id TEXT,
+                        space_id TEXT
+                    )
+                    """
+                )
+
+                cursor.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS project_metadata (
                         key TEXT PRIMARY KEY,
                         value TEXT NOT NULL
@@ -477,6 +496,24 @@ class SQLiteStorage:
                     f"""
                     CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
                     ON system_metrics({system_run_key}, timestamp)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_traces_run_step
+                    ON traces(run_id, step)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_traces_run_timestamp
+                    ON traces(run_id, timestamp)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_traces_search
+                    ON traces(search_text)
                     """
                 )
                 alerts_cols = SQLiteStorage._table_columns(conn, "alerts")
@@ -845,6 +882,11 @@ class SQLiteStorage:
                 "config",
                 TRACKIO_DIR / (db_path.stem + "_configs.parquet"),
             )
+            trace_rows = SQLiteStorage._read_table_rows(db_path, "traces")
+            if trace_rows:
+                SQLiteStorage._write_parquet_rows(
+                    TRACKIO_DIR / (db_path.stem + "_traces.parquet"), trace_rows
+                )
 
     @staticmethod
     def export_for_static_space(
@@ -877,6 +919,10 @@ class SQLiteStorage:
         if sys_rows:
             flat = SQLiteStorage._flatten_json_rows(sys_rows, "metrics")
             SQLiteStorage._write_parquet_rows(aux_dir / "system_metrics.parquet", flat)
+
+        trace_rows = SQLiteStorage._read_table_rows(db_path, "traces")
+        if trace_rows:
+            SQLiteStorage._write_parquet_rows(aux_dir / "traces.parquet", trace_rows)
 
         configs_rows = SQLiteStorage._read_table_rows(db_path, "configs")
         if configs_rows:
@@ -966,6 +1012,7 @@ class SQLiteStorage:
             if f.endswith(".parquet")
             and not f.endswith("_system.parquet")
             and not f.endswith("_configs.parquet")
+            and not f.endswith("_traces.parquet")
         ]
         imported_projects = {Path(name).stem for name in parquet_names}
         for pq_name in parquet_names:
@@ -1067,6 +1114,37 @@ class SQLiteStorage:
                 ["id", "run_id", "run_name", "config", "created_at"],
             )
 
+        traces_parquet_names = [f for f in all_paths if f.endswith("_traces.parquet")]
+        for pq_name in traces_parquet_names:
+            parquet_path = TRACKIO_DIR / pq_name
+            db_name = pq_name.replace("_traces.parquet", DB_EXT)
+            db_path = TRACKIO_DIR / db_name
+            project_name = db_path.stem
+            if project_name not in imported_projects and not db_path.exists():
+                continue
+
+            rows = SQLiteStorage._read_parquet_rows(parquet_path)
+            SQLiteStorage.init_db(project_name)
+            SQLiteStorage._replace_table_rows(
+                db_path,
+                "traces",
+                rows,
+                [
+                    "id",
+                    "run_id",
+                    "timestamp",
+                    "run_name",
+                    "step",
+                    "key",
+                    "trace_index",
+                    "messages",
+                    "metadata",
+                    "search_text",
+                    "log_id",
+                    "space_id",
+                ],
+            )
+
     @staticmethod
     def get_scheduler():
         """
@@ -1089,6 +1167,8 @@ class SQLiteStorage:
                         "*.parquet",
                         "*_system.parquet",
                         "*_configs.parquet",
+                        "*_traces.parquet",
+                        "aux/*.parquet",
                         "media/**/*",
                     ],
                     squash_history=True,
@@ -1139,6 +1219,15 @@ class SQLiteStorage:
                     else (step if step is not None else last_step + 1)
                 )
                 current_timestamp = datetime.now(timezone.utc).isoformat()
+                clean_metrics, trace_rows = SQLiteStorage._split_trace_metrics(
+                    metrics,
+                    run=run,
+                    run_id=resolved_run_id,
+                    step=current_step,
+                    timestamp=current_timestamp,
+                    log_id=None,
+                    space_id=None,
+                )
                 if supports_run_ids:
                     cursor.execute(
                         """
@@ -1151,7 +1240,7 @@ class SQLiteStorage:
                             resolved_run_id,
                             run,
                             current_step,
-                            orjson.dumps(serialize_values(metrics)),
+                            orjson.dumps(serialize_values(clean_metrics)),
                         ),
                     )
                 else:
@@ -1165,9 +1254,10 @@ class SQLiteStorage:
                             current_timestamp,
                             run,
                             current_step,
-                            orjson.dumps(serialize_values(metrics)),
+                            orjson.dumps(serialize_values(clean_metrics)),
                         ),
                     )
+                SQLiteStorage._insert_trace_rows(cursor, trace_rows)
                 conn.commit()
 
     @staticmethod
@@ -1227,8 +1317,19 @@ class SQLiteStorage:
                     )
 
                 data = []
+                trace_rows = []
                 for i, metrics in enumerate(metrics_list):
                     lid = log_ids[i] if log_ids else None
+                    clean_metrics, rows = SQLiteStorage._split_trace_metrics(
+                        metrics,
+                        run=run,
+                        run_id=resolved_run_id,
+                        step=steps[i],
+                        timestamp=timestamps[i],
+                        log_id=lid,
+                        space_id=space_id,
+                    )
+                    trace_rows.extend(rows)
                     if supports_run_ids:
                         data.append(
                             (
@@ -1236,7 +1337,7 @@ class SQLiteStorage:
                                 resolved_run_id,
                                 run,
                                 steps[i],
-                                orjson.dumps(serialize_values(metrics)),
+                                orjson.dumps(serialize_values(clean_metrics)),
                                 lid,
                                 space_id,
                             )
@@ -1247,7 +1348,7 @@ class SQLiteStorage:
                                 timestamps[i],
                                 run,
                                 steps[i],
-                                orjson.dumps(serialize_values(metrics)),
+                                orjson.dumps(serialize_values(clean_metrics)),
                                 lid,
                                 space_id,
                             )
@@ -1271,6 +1372,8 @@ class SQLiteStorage:
                         """,
                         data,
                     )
+
+                SQLiteStorage._insert_trace_rows(cursor, trace_rows)
 
                 if config:
                     current_timestamp = datetime.now(timezone.utc).isoformat()
@@ -1883,6 +1986,89 @@ class SQLiteStorage:
         return out
 
     @staticmethod
+    def _is_trace_payload(value: Any) -> bool:
+        return isinstance(value, dict) and value.get("_type") == "trackio.trace"
+
+    @staticmethod
+    def _split_trace_metrics(
+        metrics: dict,
+        *,
+        run: str,
+        run_id: str,
+        step: int,
+        timestamp: str,
+        log_id: str | None,
+        space_id: str | None,
+    ) -> tuple[dict, list[dict[str, Any]]]:
+        clean_metrics = {}
+        trace_rows: list[dict[str, Any]] = []
+
+        for key, value in metrics.items():
+            candidates = value if isinstance(value, list) else [value]
+            traces_for_key = [
+                (index if isinstance(value, list) else None, candidate)
+                for index, candidate in enumerate(candidates)
+                if SQLiteStorage._is_trace_payload(candidate)
+            ]
+            if not traces_for_key:
+                clean_metrics[key] = value
+                continue
+
+            for trace_index, trace in traces_for_key:
+                trace_id_parts = [run_id or run, log_id or uuid.uuid4().hex, key]
+                if trace_index is not None:
+                    trace_id_parts.append(str(trace_index))
+                trace_record = {
+                    "id": ":".join(str(part) for part in trace_id_parts),
+                    "run_id": run_id,
+                    "timestamp": timestamp,
+                    "run_name": run,
+                    "step": step,
+                    "key": key,
+                    "trace_index": trace_index,
+                    "messages": trace.get("messages", []),
+                    "metadata": trace.get("metadata", {}),
+                    "log_id": log_id,
+                    "space_id": space_id,
+                }
+                trace_record["search_text"] = (
+                    f"{trace_record['id']} {key} "
+                    f"{SQLiteStorage._flatten_trace_search_text(trace_record)}"
+                ).lower()
+                trace_rows.append(trace_record)
+
+        return clean_metrics, trace_rows
+
+    @staticmethod
+    def _insert_trace_rows(cursor: sqlite3.Cursor, trace_rows: list[dict[str, Any]]):
+        if not trace_rows:
+            return
+        cursor.executemany(
+            """
+            INSERT OR IGNORE INTO traces
+            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    row["id"],
+                    row["run_id"],
+                    row["timestamp"],
+                    row["run_name"],
+                    row["step"],
+                    row["key"],
+                    row["trace_index"],
+                    orjson.dumps(serialize_values(row["messages"])),
+                    orjson.dumps(serialize_values(row["metadata"])),
+                    row["search_text"],
+                    row["log_id"],
+                    row["space_id"],
+                )
+                for row in trace_rows
+            ],
+        )
+
+    @staticmethod
     def _flatten_trace_search_text(trace: dict[str, Any]) -> str:
         parts: list[str] = []
 
@@ -1987,26 +2173,69 @@ class SQLiteStorage:
             except (TypeError, ValueError):
                 limit = None
 
-        logs = SQLiteStorage.get_logs(project, run, max_points=None, run_id=run_id)
-        traces = SQLiteStorage._extract_traces_from_logs(logs, run=run, run_id=run_id)
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
 
-        if search:
-            needle = search.strip().lower()
-            if needle:
-                traces = [
-                    trace for trace in traces if needle in trace.get("_search_text", "")
-                ]
+        order_by = {
+            "step_asc": "step ASC, timestamp ASC, id ASC",
+            "step_desc": "step DESC, timestamp DESC, id DESC",
+            "request_time_asc": "timestamp ASC, id ASC",
+            "request_time_desc": "timestamp DESC, id DESC",
+        }.get(sort or "request_time_desc", "timestamp DESC, id DESC")
 
-        traces = SQLiteStorage._sort_traces(traces, sort)
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                run_identity = SQLiteStorage._resolve_run_identity(
+                    conn, run_name=run, run_id=run_id, table="traces"
+                )
+                if run_identity is None:
+                    return []
 
-        if offset > 0:
-            traces = traces[offset:]
-        if limit is not None:
-            traces = traces[:limit]
+                where = [f"{run_identity[0]} = ?"]
+                params: list[Any] = [run_identity[1]]
+                if search:
+                    needle = search.strip().lower()
+                    if needle:
+                        where.append("search_text LIKE ?")
+                        params.append(f"%{needle}%")
+
+                query = f"""
+                    SELECT id, key, trace_index, run_name, run_id, step, timestamp, messages, metadata
+                    FROM traces
+                    WHERE {" AND ".join(where)}
+                    ORDER BY {order_by}
+                """
+                if limit is not None:
+                    query += " LIMIT ?"
+                    params.append(limit)
+                if offset > 0:
+                    if limit is None:
+                        query += " LIMIT -1"
+                    query += " OFFSET ?"
+                    params.append(offset)
+
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+        except sqlite3.OperationalError as e:
+            if "no such table: traces" in str(e):
+                return []
+            raise
 
         return [
-            {key: value for key, value in trace.items() if key != "_search_text"}
-            for trace in traces
+            {
+                "id": row["id"],
+                "key": row["key"],
+                "index": row["trace_index"],
+                "run": row["run_name"],
+                "run_id": row["run_id"],
+                "step": row["step"],
+                "timestamp": row["timestamp"],
+                "messages": deserialize_values(orjson.loads(row["messages"])),
+                "metadata": deserialize_values(orjson.loads(row["metadata"])),
+            }
+            for row in rows
         ]
 
     @staticmethod
@@ -2308,6 +2537,17 @@ class SQLiteStorage:
                         )
                     except sqlite3.OperationalError:
                         pass
+                    try:
+                        trace_identity = SQLiteStorage._resolve_run_identity(
+                            conn, run_name=run, run_id=run_id, table="traces"
+                        )
+                        if trace_identity is not None:
+                            cursor.execute(
+                                f"DELETE FROM traces WHERE {trace_identity[0]} = ?",
+                                (trace_identity[1],),
+                            )
+                    except sqlite3.OperationalError:
+                        pass
                     conn.commit()
                     return True
                 except sqlite3.Error:
@@ -2360,6 +2600,43 @@ class SQLiteStorage:
             if include_run_id:
                 values = values + (row["run_id"],)
             result.append(values)
+        return result
+
+    @staticmethod
+    def _rewrite_trace_rows(
+        trace_rows,
+        new_run_name,
+        old_prefix,
+        new_prefix,
+        *,
+        run_id: str | None = None,
+    ):
+        result = []
+        for row in trace_rows:
+            messages = deserialize_values(orjson.loads(row["messages"]))
+            metadata = deserialize_values(orjson.loads(row["metadata"]))
+            messages = SQLiteStorage._update_media_paths(
+                messages, old_prefix, new_prefix
+            )
+            metadata = SQLiteStorage._update_media_paths(
+                metadata, old_prefix, new_prefix
+            )
+            result.append(
+                (
+                    row["id"],
+                    run_id if run_id is not None else row["run_id"],
+                    row["timestamp"],
+                    new_run_name,
+                    row["step"],
+                    row["key"],
+                    row["trace_index"],
+                    orjson.dumps(serialize_values(messages)),
+                    orjson.dumps(serialize_values(metadata)),
+                    row["search_text"],
+                    row["log_id"],
+                    row["space_id"],
+                )
+            )
         return result
 
     @staticmethod
@@ -2496,6 +2773,35 @@ class SQLiteStorage:
                     except sqlite3.OperationalError:
                         pass
 
+                    try:
+                        cursor.execute(
+                            f"""
+                            SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id
+                            FROM traces WHERE {run_col} = ?
+                            """,
+                            (run_value,),
+                        )
+                        trace_rows = cursor.fetchall()
+                        updated_trace_rows = SQLiteStorage._rewrite_trace_rows(
+                            trace_rows,
+                            new_name,
+                            old_prefix,
+                            new_prefix,
+                        )
+                        cursor.execute(
+                            f"DELETE FROM traces WHERE {run_col} = ?", (run_value,)
+                        )
+                        cursor.executemany(
+                            """
+                            INSERT INTO traces
+                            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            updated_trace_rows,
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+
                     conn.commit()
 
                     SQLiteStorage._move_media_dir(
@@ -2560,6 +2866,9 @@ class SQLiteStorage:
                     alerts_identity = SQLiteStorage._resolve_run_identity(
                         source_conn, run_name=run, run_id=run_id, table="alerts"
                     )
+                    traces_identity = SQLiteStorage._resolve_run_identity(
+                        source_conn, run_name=run, run_id=run_id, table="traces"
+                    )
 
                     metrics_select = (
                         "SELECT timestamp, step, metrics"
@@ -2608,7 +2917,27 @@ class SQLiteStorage:
                         except sqlite3.OperationalError:
                             alert_rows = []
 
-                    if not metrics_rows and not config_row and not system_metrics_rows:
+                    trace_rows = []
+                    if traces_identity is not None:
+                        try:
+                            traces_col, traces_val = traces_identity
+                            source_cursor.execute(
+                                f"""
+                                SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id
+                                FROM traces WHERE {traces_col} = ?
+                                """,
+                                (traces_val,),
+                            )
+                            trace_rows = source_cursor.fetchall()
+                        except sqlite3.OperationalError:
+                            trace_rows = []
+
+                    if (
+                        not metrics_rows
+                        and not config_row
+                        and not system_metrics_rows
+                        and not trace_rows
+                    ):
                         return False
 
                     with SQLiteStorage._get_connection(target_db_path) as target_conn:
@@ -2628,12 +2957,16 @@ class SQLiteStorage:
                         target_alerts_run_id = SQLiteStorage._supports_run_ids(
                             target_conn, "alerts"
                         )
+                        target_traces_run_id = SQLiteStorage._supports_run_ids(
+                            target_conn, "traces"
+                        )
 
                         needs_generated_run_id = (
                             target_metrics_run_id
                             or target_configs_run_id
                             or target_system_run_id
                             or target_alerts_run_id
+                            or target_traces_run_id
                         ) and not (
                             metrics_has_run_id
                             or configs_has_run_id
@@ -2823,6 +3156,32 @@ class SQLiteStorage:
                             except sqlite3.OperationalError:
                                 pass
 
+                        if trace_rows:
+                            trace_run_id = None
+                            if target_traces_run_id:
+                                if traces_identity is not None and trace_rows:
+                                    trace_run_id = trace_rows[0]["run_id"]
+                                elif generated_run_id is not None:
+                                    trace_run_id = generated_run_id
+                            updated_trace_rows = SQLiteStorage._rewrite_trace_rows(
+                                trace_rows,
+                                run,
+                                old_prefix,
+                                new_prefix,
+                                run_id=trace_run_id,
+                            )
+                            try:
+                                target_cursor.executemany(
+                                    """
+                                    INSERT OR IGNORE INTO traces
+                                    (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """,
+                                    updated_trace_rows,
+                                )
+                            except sqlite3.OperationalError:
+                                pass
+
                         target_conn.commit()
 
                         SQLiteStorage._move_media_dir(
@@ -2855,6 +3214,15 @@ class SQLiteStorage:
                                 source_cursor.execute(
                                     f"DELETE FROM alerts WHERE {alerts_col} = ?",
                                     (alerts_val,),
+                                )
+                            except sqlite3.OperationalError:
+                                pass
+                        if traces_identity is not None:
+                            try:
+                                traces_col, traces_val = traces_identity
+                                source_cursor.execute(
+                                    f"DELETE FROM traces WHERE {traces_col} = ?",
+                                    (traces_val,),
                                 )
                             except sqlite3.OperationalError:
                                 pass

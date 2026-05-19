@@ -4,6 +4,7 @@ let config = null;
 let metricsData = null;
 let systemData = null;
 let configsData = null;
+let tracesData = null;
 let runsData = null;
 let settingsData = null;
 let fileListData = null;
@@ -48,6 +49,12 @@ async function getConfigsData() {
   if (configsData) return configsData;
   configsData = await readParquet(resolveUrl("aux/configs.parquet"));
   return configsData;
+}
+
+async function getTracesData() {
+  if (tracesData) return tracesData;
+  tracesData = await readParquet(resolveUrl("aux/traces.parquet"));
+  return tracesData;
 }
 
 async function getRunsJson() {
@@ -200,53 +207,23 @@ function sortTraces(traces, sort) {
 }
 
 export async function getTraces(_project, run, options = {}) {
-  const logs = await getLogs(_project, run);
   const normalizedRun = normalizeRun(run);
-  const runIdent = normalizedRun.id || normalizedRun.name || "run";
-  const traces = [];
-
-  function maybeParseStructured(value) {
-    if (
-      typeof value === "string" &&
-      (value.startsWith("{") || value.startsWith("[")) &&
-      value.includes("_type")
-    ) {
-      try {
-        return JSON.parse(value);
-      } catch {
-        return value;
-      }
-    }
-    return value;
-  }
-
-  for (const log of logs) {
-    for (const [key, value] of Object.entries(log)) {
-      if (key === "step" || key === "timestamp") continue;
-      const parsedValue = maybeParseStructured(value);
-      const candidates = Array.isArray(parsedValue) ? parsedValue : [parsedValue];
-      for (let index = 0; index < candidates.length; index += 1) {
-        const candidate = candidates[index];
-        if (!candidate || typeof candidate !== "object" || candidate._type !== "trackio.trace") {
-          continue;
-        }
-        const traceIndex = Array.isArray(parsedValue) ? index : null;
-        const trace = {
-          id: `${runIdent}:${log.step}:${key}${traceIndex !== null ? `:${traceIndex}` : ""}`,
-          key,
-          index: traceIndex,
-          run: normalizedRun.name,
-          run_id: normalizedRun.id,
-          step: log.step,
-          timestamp: log.timestamp,
-          messages: candidate.messages || [],
-          metadata: candidate.metadata || {},
-        };
-        trace._search_text = `${trace.id} ${key} ${flattenTraceSearchText(trace)}`.toLowerCase();
-        traces.push(trace);
-      }
-    }
-  }
+  const raw = await getTracesData();
+  const traces = raw.filter((r) => matchesRun(r, run)).map((row) => {
+    const trace = {
+      id: row.id,
+      key: row.key,
+      index: row.trace_index,
+      run: row.run_name || normalizedRun.name,
+      run_id: row.run_id || normalizedRun.id,
+      step: row.step,
+      timestamp: row.timestamp,
+      messages: JSON.parse(row.messages || "[]"),
+      metadata: JSON.parse(row.metadata || "{}"),
+    };
+    trace._search_text = (row.search_text || `${trace.id} ${trace.key} ${flattenTraceSearchText(trace)}`).toLowerCase();
+    return trace;
+  });
 
   let filtered = traces;
   if (options.search && options.search.trim()) {
