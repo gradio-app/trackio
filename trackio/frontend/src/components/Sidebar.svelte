@@ -400,16 +400,14 @@
             placeholder="Type to filter..."
             showLabel={false}
           />
-          {#if groupByOptions.length > 1}
-            <div class="group-by-row">
-              <Dropdown
-                label="Group by"
-                choices={groupByOptions}
-                bind:value={groupByRaw}
-                filterable={false}
-              />
-            </div>
-          {/if}
+          <div class="group-by-row">
+            <Dropdown
+              label="Group by"
+              choices={groupByOptions}
+              bind:value={groupByRaw}
+              filterable={false}
+            />
+          </div>
           {#if groupedRuns}
             <div class="grouped-runs">
               {#each [...groupedRuns.entries()] as [groupLabel, groupRunList]}
