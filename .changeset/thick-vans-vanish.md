@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat: Store traces separately from metrics
+feat:Store traces separately from metrics
