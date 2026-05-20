@@ -721,6 +721,26 @@ class SQLiteStorage:
             }
 
     @staticmethod
+    def _normalize_trace_rows_for_parquet(
+        rows: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        normalized: list[dict[str, object]] = []
+        for row in rows:
+            new_row = dict(row)
+            for col in ("messages", "metadata"):
+                value = new_row.get(col)
+                if value is None:
+                    continue
+                if isinstance(value, memoryview):
+                    value = value.tobytes()
+                if isinstance(value, (bytes, bytearray)):
+                    new_row[col] = bytes(value).decode("utf-8")
+                elif not isinstance(value, str):
+                    new_row[col] = orjson.dumps(value).decode("utf-8")
+            normalized.append(new_row)
+        return normalized
+
+    @staticmethod
     def _read_table_rows(db_path: Path, table: str) -> list[dict[str, object]]:
         try:
             with SQLiteStorage._get_connection(
@@ -885,7 +905,8 @@ class SQLiteStorage:
             trace_rows = SQLiteStorage._read_table_rows(db_path, "traces")
             if trace_rows:
                 SQLiteStorage._write_parquet_rows(
-                    TRACKIO_DIR / (db_path.stem + "_traces.parquet"), trace_rows
+                    TRACKIO_DIR / (db_path.stem + "_traces.parquet"),
+                    SQLiteStorage._normalize_trace_rows_for_parquet(trace_rows),
                 )
 
     @staticmethod
@@ -922,7 +943,10 @@ class SQLiteStorage:
 
         trace_rows = SQLiteStorage._read_table_rows(db_path, "traces")
         if trace_rows:
-            SQLiteStorage._write_parquet_rows(aux_dir / "traces.parquet", trace_rows)
+            SQLiteStorage._write_parquet_rows(
+                aux_dir / "traces.parquet",
+                SQLiteStorage._normalize_trace_rows_for_parquet(trace_rows),
+            )
 
         configs_rows = SQLiteStorage._read_table_rows(db_path, "configs")
         if configs_rows:
@@ -2004,15 +2028,25 @@ class SQLiteStorage:
         trace_rows: list[dict[str, Any]] = []
 
         for key, value in metrics.items():
-            candidates = value if isinstance(value, list) else [value]
+            is_list = isinstance(value, list)
+            candidates = value if is_list else [value]
             traces_for_key = [
-                (index if isinstance(value, list) else None, candidate)
+                (index if is_list else None, candidate)
                 for index, candidate in enumerate(candidates)
                 if SQLiteStorage._is_trace_payload(candidate)
             ]
             if not traces_for_key:
                 clean_metrics[key] = value
                 continue
+
+            if is_list:
+                non_trace_items = [
+                    candidate
+                    for candidate in candidates
+                    if not SQLiteStorage._is_trace_payload(candidate)
+                ]
+                if non_trace_items:
+                    clean_metrics[key] = non_trace_items
 
             for trace_index, trace in traces_for_key:
                 trace_id_parts = [run_id or run, log_id or uuid.uuid4().hex, key]
@@ -2787,6 +2821,7 @@ class SQLiteStorage:
                             new_name,
                             old_prefix,
                             new_prefix,
+                            run_id=new_name if not supports_run_ids else None,
                         )
                         cursor.execute(
                             f"DELETE FROM traces WHERE {run_col} = ?", (run_value,)
@@ -3159,10 +3194,10 @@ class SQLiteStorage:
                         if trace_rows:
                             trace_run_id = None
                             if target_traces_run_id:
-                                if traces_identity is not None and trace_rows:
-                                    trace_run_id = trace_rows[0]["run_id"]
-                                elif generated_run_id is not None:
+                                if generated_run_id is not None:
                                     trace_run_id = generated_run_id
+                                elif traces_identity is not None and trace_rows:
+                                    trace_run_id = trace_rows[0]["run_id"]
                             updated_trace_rows = SQLiteStorage._rewrite_trace_rows(
                                 trace_rows,
                                 run,

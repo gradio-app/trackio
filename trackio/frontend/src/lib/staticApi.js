@@ -206,6 +206,34 @@ function sortTraces(traces, sort) {
   }
 }
 
+function parseTraceJsonField(value, fallback) {
+  if (value == null) return fallback;
+  if (typeof value === "string") {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+  if (typeof value === "object" && !ArrayBuffer.isView(value) && !(value instanceof ArrayBuffer)) {
+    return value;
+  }
+  let text;
+  try {
+    const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer || value);
+    text = new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    return fallback;
+  }
+  if (!text) return fallback;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return fallback;
+  }
+}
+
 export async function getTraces(_project, run, options = {}) {
   const normalizedRun = normalizeRun(run);
   const raw = await getTracesData();
@@ -218,8 +246,8 @@ export async function getTraces(_project, run, options = {}) {
       run_id: row.run_id || normalizedRun.id,
       step: row.step,
       timestamp: row.timestamp,
-      messages: JSON.parse(row.messages || "[]"),
-      metadata: JSON.parse(row.metadata || "{}"),
+      messages: parseTraceJsonField(row.messages, []),
+      metadata: parseTraceJsonField(row.metadata, {}),
     };
     trace._search_text = (row.search_text || `${trace.id} ${trace.key} ${flattenTraceSearchText(trace)}`).toLowerCase();
     return trace;
