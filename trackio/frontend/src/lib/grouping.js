@@ -11,14 +11,6 @@ function displayLabelForKey(key) {
   return PROMOTED_RESERVED_KEYS[key] ?? key;
 }
 
-export function resolveGroupByKey(displayLabel, runConfigs) {
-  if (!displayLabel) return null;
-  for (const [key, label] of Object.entries(PROMOTED_RESERVED_KEYS)) {
-    if (label === displayLabel && promotedKeyHasVariance(runConfigs, key)) return key;
-  }
-  return displayLabel;
-}
-
 function promotedKeyHasVariance(runConfigs, key) {
   const seen = new Set();
   for (const cfg of Object.values(runConfigs ?? {})) {
@@ -34,8 +26,8 @@ function promotedKeyHasVariance(runConfigs, key) {
 export function computeGroupByOptions(runConfigs) {
   const promoted = Object.keys(PROMOTED_RESERVED_KEYS)
     .filter((k) => promotedKeyHasVariance(runConfigs, k))
-    .map(displayLabelForKey);
-  const surfacedPromotedLabels = new Set(promoted);
+    .map((k) => ({ label: displayLabelForKey(k), value: k }));
+  const surfacedPromotedLabels = new Set(promoted.map((o) => o.label));
 
   const regularKeys = new Set();
   for (const cfg of Object.values(runConfigs ?? {})) {
@@ -48,17 +40,16 @@ export function computeGroupByOptions(runConfigs) {
       regularKeys.add(key);
     }
   }
-  const regular = [...regularKeys].sort();
-  return ["None", ...promoted, ...regular];
+  const regular = [...regularKeys].sort().map((k) => ({ label: k, value: k }));
+  return [{ label: "None", value: null }, ...promoted, ...regular];
 }
 
 export function computeGroupedRuns(filteredRuns, runConfigs, groupBy) {
-  const realKey = resolveGroupByKey(groupBy, runConfigs);
-  if (!realKey) return null;
+  if (!groupBy) return null;
   const groups = new Map();
   for (const run of filteredRuns) {
     const cfg = (runConfigs ?? {})[run.id] ?? (runConfigs ?? {})[run.name] ?? {};
-    const raw = cfg[realKey];
+    const raw = cfg[groupBy];
     const label = raw === null || raw === undefined ? "(unset)" : String(raw);
     if (!groups.has(label)) groups.set(label, []);
     groups.get(label).push(run);

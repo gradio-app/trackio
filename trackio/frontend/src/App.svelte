@@ -90,6 +90,7 @@
   let availableSystemDevices = $state([]);
   let selectedSystemDevices = $state([]);
   let runConfigs = $state({});
+  let runConfigsProject = $state(null);
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -143,7 +144,11 @@
       availableSystemDevices = [];
       selectedSystemDevices = [];
       runConfigs = {};
+      runConfigsProject = null;
       return;
+    }
+    if (selectedProject !== runConfigsProject) {
+      runConfigs = {};
     }
     try {
       const [data, configs] = await Promise.all([
@@ -162,7 +167,10 @@
           prevOrdered,
         );
       }
-      if (configs != null) runConfigs = configs;
+      if (configs != null) {
+        runConfigs = configs;
+        runConfigsProject = selectedProject;
+      }
     } catch (e) {
       console.error("Failed to load runs:", e);
     }

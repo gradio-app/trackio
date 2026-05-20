@@ -2,14 +2,16 @@ import { describe, expect, test } from "vitest";
 import {
   computeGroupByOptions,
   computeGroupedRuns,
-  resolveGroupByKey,
 } from "./grouping.js";
 
+const none = { label: "None", value: null };
+const opt = (label, value) => ({ label, value: value ?? label });
+
 describe("computeGroupByOptions", () => {
-  test("returns just 'None' when there are no configs", () => {
-    expect(computeGroupByOptions({})).toEqual(["None"]);
-    expect(computeGroupByOptions(null)).toEqual(["None"]);
-    expect(computeGroupByOptions(undefined)).toEqual(["None"]);
+  test("returns just the None option when there are no configs", () => {
+    expect(computeGroupByOptions({})).toEqual([none]);
+    expect(computeGroupByOptions(null)).toEqual([none]);
+    expect(computeGroupByOptions(undefined)).toEqual([none]);
   });
 
   test("collects the union of keys across all runs, sorted", () => {
@@ -18,10 +20,10 @@ describe("computeGroupByOptions", () => {
       "run-b": { lr: 0.02, seed: 42 },
     };
     expect(computeGroupByOptions(configs)).toEqual([
-      "None",
-      "lr",
-      "model",
-      "seed",
+      none,
+      opt("lr"),
+      opt("model"),
+      opt("seed"),
     ]);
   });
 
@@ -30,7 +32,7 @@ describe("computeGroupByOptions", () => {
       "run-a": { lr: 0.01, dropped: null },
       "run-b": { lr: 0.02, dropped: undefined, kept: "yes" },
     };
-    expect(computeGroupByOptions(configs)).toEqual(["None", "kept", "lr"]);
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("kept"), opt("lr")]);
   });
 
   test("tolerates non-object config entries", () => {
@@ -39,7 +41,7 @@ describe("computeGroupByOptions", () => {
       "run-b": null,
       "run-c": "not-a-config",
     };
-    expect(computeGroupByOptions(configs)).toEqual(["None", "lr"]);
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("lr")]);
   });
 
   test("hides reserved underscore-prefixed keys", () => {
@@ -50,19 +52,19 @@ describe("computeGroupByOptions", () => {
         lr: 0.01,
       },
     };
-    expect(computeGroupByOptions(configs)).toEqual(["None", "lr"]);
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("lr")]);
   });
 
-  test("promotes _Group to 'Group' and pins it after 'None'", () => {
+  test("promotes _Group to 'Group' and pins it after None", () => {
     const configs = {
       "run-a": { _Group: "exp-1", framework: "pytorch", lr: 0.01 },
       "run-b": { _Group: "exp-2", framework: "pytorch", lr: 0.02 },
     };
     expect(computeGroupByOptions(configs)).toEqual([
-      "None",
-      "Group",
-      "framework",
-      "lr",
+      none,
+      { label: "Group", value: "_Group" },
+      opt("framework"),
+      opt("lr"),
     ]);
   });
 
@@ -71,7 +73,7 @@ describe("computeGroupByOptions", () => {
       "run-a": { _Group: null, lr: 0.01 },
       "run-b": { _Group: undefined, lr: 0.02 },
     };
-    expect(computeGroupByOptions(configs)).toEqual(["None", "lr"]);
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("lr")]);
   });
 
   test("does not surface a user-defined key named 'Group' as a duplicate", () => {
@@ -80,8 +82,8 @@ describe("computeGroupByOptions", () => {
       "run-b": { _Group: "exp-2", Group: "user-2", lr: 0.02 },
     };
     const options = computeGroupByOptions(configs);
-    expect(options.filter((o) => o === "Group")).toHaveLength(1);
-    expect(options).toEqual(["None", "Group", "lr"]);
+    expect(options.filter((o) => o.label === "Group")).toHaveLength(1);
+    expect(options).toEqual([none, { label: "Group", value: "_Group" }, opt("lr")]);
   });
 
   test("surfaces a user-defined 'Group' key when _Group has no variance", () => {
@@ -89,7 +91,7 @@ describe("computeGroupByOptions", () => {
       "run-a": { Group: "team-a", lr: 0.01 },
       "run-b": { Group: "team-b", lr: 0.02 },
     };
-    expect(computeGroupByOptions(configs)).toEqual(["None", "Group", "lr"]);
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("Group"), opt("lr")]);
   });
 
   test("promotes _Username to 'Username' when usernames vary", () => {
@@ -98,9 +100,9 @@ describe("computeGroupByOptions", () => {
       "run-b": { _Username: "bob", lr: 0.02 },
     };
     expect(computeGroupByOptions(configs)).toEqual([
-      "None",
-      "Username",
-      "lr",
+      none,
+      { label: "Username", value: "_Username" },
+      opt("lr"),
     ]);
   });
 
@@ -109,7 +111,7 @@ describe("computeGroupByOptions", () => {
       "run-a": { _Username: "alice", lr: 0.01 },
       "run-b": { _Username: "alice", lr: 0.02 },
     };
-    expect(computeGroupByOptions(configs)).toEqual(["None", "lr"]);
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("lr")]);
   });
 
   test("hides 'Group' when every run shares the same group value", () => {
@@ -117,7 +119,7 @@ describe("computeGroupByOptions", () => {
       "run-a": { _Group: "exp-1", lr: 0.01 },
       "run-b": { _Group: "exp-1", lr: 0.02 },
     };
-    expect(computeGroupByOptions(configs)).toEqual(["None", "lr"]);
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("lr")]);
   });
 
   test("orders promoted keys by declaration: Group before Username", () => {
@@ -126,9 +128,9 @@ describe("computeGroupByOptions", () => {
       "run-b": { _Group: "exp-2", _Username: "bob" },
     };
     expect(computeGroupByOptions(configs)).toEqual([
-      "None",
-      "Group",
-      "Username",
+      none,
+      { label: "Group", value: "_Group" },
+      { label: "Username", value: "_Username" },
     ]);
   });
 
@@ -137,41 +139,11 @@ describe("computeGroupByOptions", () => {
       "run-a": { _Group: "exp-1", lr: 0.01 },
       "run-b": { _Group: null, lr: 0.02 },
     };
-    expect(computeGroupByOptions(configs)).toEqual(["None", "Group", "lr"]);
-  });
-});
-
-describe("resolveGroupByKey", () => {
-  test("returns null for null/undefined/empty", () => {
-    expect(resolveGroupByKey(null)).toBeNull();
-    expect(resolveGroupByKey(undefined)).toBeNull();
-    expect(resolveGroupByKey("")).toBeNull();
-  });
-
-  test("maps 'Group' to '_Group' when _Group has variance", () => {
-    const configs = { "run-a": { _Group: "exp-1" }, "run-b": { _Group: "exp-2" } };
-    expect(resolveGroupByKey("Group", configs)).toBe("_Group");
-  });
-
-  test("maps 'Username' to '_Username' when _Username has variance", () => {
-    const configs = { "run-a": { _Username: "alice" }, "run-b": { _Username: "bob" } };
-    expect(resolveGroupByKey("Username", configs)).toBe("_Username");
-  });
-
-  test("returns 'Group' literally when _Group has no variance", () => {
-    const configs = { "run-a": { _Group: "exp-1" }, "run-b": { _Group: "exp-1" } };
-    expect(resolveGroupByKey("Group", configs)).toBe("Group");
-  });
-
-  test("returns 'Group' literally when no runConfigs provided", () => {
-    expect(resolveGroupByKey("Group", null)).toBe("Group");
-    expect(resolveGroupByKey("Group", undefined)).toBe("Group");
-    expect(resolveGroupByKey("Group")).toBe("Group");
-  });
-
-  test("passes regular keys through unchanged", () => {
-    expect(resolveGroupByKey("lr")).toBe("lr");
-    expect(resolveGroupByKey("model")).toBe("model");
+    expect(computeGroupByOptions(configs)).toEqual([
+      none,
+      { label: "Group", value: "_Group" },
+      opt("lr"),
+    ]);
   });
 });
 
@@ -222,19 +194,19 @@ describe("computeGroupedRuns", () => {
     expect([...groups.keys()]).toEqual(["resnet", "vit"]);
   });
 
-  test("looks up the underlying '_Group' key when given the 'Group' label", () => {
+  test("groups by _Group key directly", () => {
     const groupedConfigs = {
       "run-a": { _Group: "exp-1" },
       "run-b": { _Group: "exp-2" },
       "run-c": { _Group: "exp-1" },
     };
-    const groups = computeGroupedRuns(runs, groupedConfigs, "Group");
+    const groups = computeGroupedRuns(runs, groupedConfigs, "_Group");
     expect([...groups.keys()]).toEqual(["exp-1", "exp-2"]);
     expect(groups.get("exp-1").map((r) => r.name)).toEqual(["run-a", "run-c"]);
     expect(groups.get("exp-2").map((r) => r.name)).toEqual(["run-b"]);
   });
 
-  test("groups by a literal 'Group' user config key when _Group has no variance", () => {
+  test("groups by a literal 'Group' user config key", () => {
     const groupedConfigs = {
       "run-a": { Group: "team-a" },
       "run-b": { Group: "team-b" },

@@ -90,23 +90,21 @@
   let runColorMap = $derived(buildColorMap(runs));
   let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
 
-  let groupByRaw = $state("None");
-  let groupByField = $derived(groupByRaw === "None" ? null : groupByRaw);
+  let groupByRaw = $state(null);
 
   $effect(() => {
     selectedProject;
-    groupByRaw = "None";
+    groupByRaw = null;
   });
 
   $effect(() => {
-    if (!groupByOptions.includes(groupByRaw)) {
-      groupByRaw = "None";
+    if (!groupByOptions.some((o) => o.value === groupByRaw)) {
+      groupByRaw = null;
     }
   });
 
-
   let groupByOptions = $derived(computeGroupByOptions(runConfigs));
-  let groupedRuns = $derived(computeGroupedRuns(filteredRuns, runConfigs, groupByField));
+  let groupedRuns = $derived(computeGroupedRuns(filteredRuns, runConfigs, groupByRaw));
 
   let latestOnly = $state(false);
   let shareTab = $state("share");
