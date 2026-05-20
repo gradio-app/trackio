@@ -44,6 +44,14 @@ describe("computeGroupByOptions", () => {
     expect(computeGroupByOptions(configs)).toEqual([none, opt("lr")]);
   });
 
+  test("excludes keys with object or array values", () => {
+    const configs = {
+      "run-a": { optimizer: { lr: 0.01 }, tags: ["a", "b"], seed: 42 },
+      "run-b": { optimizer: { lr: 0.02 }, tags: ["c"], seed: 7 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("seed")]);
+  });
+
   test("hides reserved underscore-prefixed keys", () => {
     const configs = {
       "run-a": {

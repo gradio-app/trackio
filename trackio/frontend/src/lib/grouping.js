@@ -34,6 +34,7 @@ export function computeGroupByOptions(runConfigs) {
     if (!cfg || typeof cfg !== "object") continue;
     for (const key of Object.keys(cfg)) {
       if (cfg[key] === null || cfg[key] === undefined) continue;
+      if (typeof cfg[key] === "object") continue;
       if (shouldHideKey(key)) continue;
       if (key in PROMOTED_RESERVED_KEYS) continue;
       if (surfacedPromotedLabels.has(key)) continue;
