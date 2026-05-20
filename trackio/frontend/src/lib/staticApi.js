@@ -410,8 +410,8 @@ export async function getSettings() {
   const settings = await getSettingsJson();
   return {
     logo_urls: {
-      light: "/assets/trackio_logo_type_light_transparent.png",
-      dark: "/assets/trackio_logo_type_dark_transparent.png",
+      light: "/static/trackio/trackio_logo_type_light_transparent.png",
+      dark: "/static/trackio/trackio_logo_type_dark_transparent.png",
     },
     color_palette: settings.color_palette || [],
     plot_order: settings.plot_order || [],
