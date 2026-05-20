@@ -52,6 +52,14 @@ describe("computeGroupByOptions", () => {
     expect(computeGroupByOptions(configs)).toEqual([none, opt("seed")]);
   });
 
+  test("excludes keys where any run has an object value even if others are scalar", () => {
+    const configs = {
+      "run-a": { optimizer: "adam", seed: 42 },
+      "run-b": { optimizer: { type: "adam", lr: 0.01 }, seed: 7 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("seed")]);
+  });
+
   test("hides reserved underscore-prefixed keys", () => {
     const configs = {
       "run-a": {

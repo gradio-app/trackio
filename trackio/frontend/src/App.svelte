@@ -138,7 +138,8 @@
   }
 
   async function refreshRuns() {
-    if (!selectedProject) {
+    const project = selectedProject;
+    if (!project) {
       runs = [];
       selectedRuns = [];
       availableSystemDevices = [];
@@ -147,14 +148,15 @@
       runConfigsProject = null;
       return;
     }
-    if (selectedProject !== runConfigsProject) {
+    if (project !== runConfigsProject) {
       runConfigs = {};
     }
     try {
       const [data, configs] = await Promise.all([
-        getRunsForProject(selectedProject),
-        getRunConfigs(selectedProject).catch(() => null),
+        getRunsForProject(project),
+        getRunConfigs(project).catch(() => null),
       ]);
+      if (selectedProject !== project) return;
       const newRuns = [...(data || [])].reverse();
 
       if (JSON.stringify(runs) !== JSON.stringify(newRuns)) {
@@ -169,7 +171,7 @@
       }
       if (configs != null) {
         runConfigs = configs;
-        runConfigsProject = selectedProject;
+        runConfigsProject = project;
       }
     } catch (e) {
       console.error("Failed to load runs:", e);

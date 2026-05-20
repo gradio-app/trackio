@@ -4,7 +4,7 @@ export const PROMOTED_RESERVED_KEYS = Object.freeze({
 });
 
 function shouldHideKey(key) {
-  return key.startsWith("_") && !(key in PROMOTED_RESERVED_KEYS);
+  return key.startsWith("_") && !Object.hasOwn(PROMOTED_RESERVED_KEYS, key);
 }
 
 function displayLabelForKey(key) {
@@ -30,17 +30,22 @@ export function computeGroupByOptions(runConfigs) {
   const surfacedPromotedLabels = new Set(promoted.map((o) => o.label));
 
   const regularKeys = new Set();
+  const nonScalarKeys = new Set();
   for (const cfg of Object.values(runConfigs ?? {})) {
     if (!cfg || typeof cfg !== "object") continue;
     for (const key of Object.keys(cfg)) {
       if (cfg[key] === null || cfg[key] === undefined) continue;
-      if (typeof cfg[key] === "object") continue;
       if (shouldHideKey(key)) continue;
-      if (key in PROMOTED_RESERVED_KEYS) continue;
+      if (Object.hasOwn(PROMOTED_RESERVED_KEYS, key)) continue;
       if (surfacedPromotedLabels.has(key)) continue;
-      regularKeys.add(key);
+      if (typeof cfg[key] === "object") {
+        nonScalarKeys.add(key);
+      } else {
+        regularKeys.add(key);
+      }
     }
   }
+  for (const key of nonScalarKeys) regularKeys.delete(key);
   const regular = [...regularKeys].sort().map((k) => ({ label: k, value: k }));
   return [{ label: "None", value: null }, ...promoted, ...regular];
 }
