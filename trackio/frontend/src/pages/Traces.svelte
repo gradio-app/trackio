@@ -261,6 +261,30 @@
     return typeof text === "string" && text.length > 500;
   }
 
+  function displayTraceId(id) {
+    if (!id) return "—";
+    const parts = String(id).split(":");
+    if (parts.length >= 4) {
+      const logId = parts[1] || parts[0];
+      const index = parts[parts.length - 1];
+      return `${logId.slice(0, 12)}…:${index}`;
+    }
+    const text = String(id);
+    if (text.length <= 18) return text;
+    return `…${text.slice(-18)}`;
+  }
+
+  function formatMetadataValue(value) {
+    if (value == null) return "—";
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch (_error) {
+      return String(value);
+    }
+  }
+
   function metadataEntries(trace) {
     return Object.entries(trace.metadata || {});
   }
@@ -331,6 +355,13 @@
     {:else}
       <div class="traces-table-wrap" class:dim={loading}>
         <table class="traces-table">
+          <colgroup>
+            <col class="trace-id-col" />
+            <col class="request-col" />
+            <col class="run-col" />
+            <col class="step-col" />
+            <col class="request-time-col" />
+          </colgroup>
           <thead>
             <tr>
               <th>Trace ID</th>
@@ -351,7 +382,7 @@
                 onkeydown={(event) => handleRowKeydown(event, trace.id)}
               >
                 <td class="trace-id-cell">
-                  <span class="trace-id">{trace.id}</span>
+                  <span class="trace-id" title={trace.id}>{displayTraceId(trace.id)}</span>
                 </td>
                 <td class="request-cell">
                   <div class="request">{trace.request}</div>
@@ -366,10 +397,11 @@
                   <td colspan="5">
                     <div class="trace-detail">
                       <div class="detail-meta">
+                        <span>Trace ID: {trace.id}</span>
                         <span>Logged as: {trace.key}</span>
                         <span>Timestamp: {trace.timestamp || "—"}</span>
                         {#each metadataEntries(trace) as [key, value]}
-                          <span>{key}: {value}</span>
+                          <span>{key}: {formatMetadataValue(value)}</span>
                         {/each}
                       </div>
 
@@ -503,6 +535,22 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 14px;
+    table-layout: fixed;
+  }
+  .trace-id-col {
+    width: 160px;
+  }
+  .request-col {
+    width: auto;
+  }
+  .run-col {
+    width: 180px;
+  }
+  .step-col {
+    width: 76px;
+  }
+  .request-time-col {
+    width: 150px;
   }
   .traces-table th {
     text-align: left;
@@ -529,13 +577,16 @@
   }
   .trace-id {
     display: inline-block;
+    max-width: 136px;
     background: var(--background-fill-secondary, #f3f4f6);
     color: var(--body-text-color, #1f2937);
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-md, 6px);
     padding: 6px 10px;
     font-size: 13px;
-    word-break: break-all;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     line-height: 1.35;
   }
   .request {
