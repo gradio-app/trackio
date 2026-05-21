@@ -280,7 +280,7 @@
     if (typeof value === "number" || typeof value === "boolean") return String(value);
     try {
       return JSON.stringify(value);
-    } catch (_error) {
+    } catch {
       return String(value);
     }
   }
