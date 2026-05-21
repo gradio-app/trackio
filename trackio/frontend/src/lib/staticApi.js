@@ -234,6 +234,21 @@ function parseTraceJsonField(value, fallback) {
   }
 }
 
+export async function getTraceSteps(_project, run) {
+  const raw = await getTracesData();
+  const counts = new Map();
+  for (const row of raw) {
+    if (!matchesRun(row, run)) continue;
+    const step = row.step;
+    counts.set(step, (counts.get(step) || 0) + 1);
+  }
+  const steps = [...counts.entries()]
+    .map(([step, count]) => ({ step, count }))
+    .sort((a, b) => (a.step ?? 0) - (b.step ?? 0));
+  const total = steps.reduce((acc, item) => acc + item.count, 0);
+  return { total, steps };
+}
+
 export async function getTraces(_project, run, options = {}) {
   const normalizedRun = normalizeRun(run);
   const raw = await getTracesData();
@@ -254,6 +269,9 @@ export async function getTraces(_project, run, options = {}) {
   });
 
   let filtered = traces;
+  if (options.step != null) {
+    filtered = filtered.filter((trace) => trace.step === options.step);
+  }
   if (options.search && options.search.trim()) {
     const needle = options.search.trim().toLowerCase();
     filtered = filtered.filter((trace) => trace._search_text.includes(needle));
