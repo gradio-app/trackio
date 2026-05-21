@@ -1,18 +1,29 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getMediaUrl, getTraces } from "../lib/api.js";
+  import { getMediaUrl, getTraces, getTraceSteps } from "../lib/api.js";
 
   let {
     project = null,
     selectedRuns = [],
   } = $props();
 
+  const PAGE_SIZE = 50;
+
   let loading = $state(false);
   let search = $state("");
   let sortBy = $state("request_time_desc");
+  let stepFilter = $state("all");
+  let page = $state(0);
   let expandedTraceId = $state(null);
   let traces = $state([]);
+  let availableSteps = $state([]);
+  let totalCount = $state(0);
   let loadRequestId = 0;
+  let summaryRequestId = 0;
+
+  function runsKey(runs) {
+    return runs.map((r) => `${r.id || ""}:${r.name || ""}`).join("|");
+  }
 
   function textFromContent(content) {
     if (typeof content === "string") return content;
@@ -44,7 +55,7 @@
     };
   }
 
-  function sortTraces(items, sort) {
+  function mergeSortedTraces(items, sort) {
     return [...items].sort((left, right) => {
       switch (sort) {
         case "step_asc":
@@ -60,7 +71,39 @@
     });
   }
 
-  async function loadTraces(searchQuery, sort) {
+  async function loadSummary() {
+    const requestId = ++summaryRequestId;
+    if (!project || selectedRuns.length === 0) {
+      availableSteps = [];
+      totalCount = 0;
+      return;
+    }
+    try {
+      const results = await Promise.all(
+        selectedRuns.map((run) => getTraceSteps(project, run)),
+      );
+      if (requestId !== summaryRequestId) return;
+      const merged = new Map();
+      let total = 0;
+      for (const result of results) {
+        total += result?.total || 0;
+        for (const entry of result?.steps || []) {
+          merged.set(entry.step, (merged.get(entry.step) || 0) + entry.count);
+        }
+      }
+      availableSteps = [...merged.entries()]
+        .map(([step, count]) => ({ step, count }))
+        .sort((a, b) => (a.step ?? 0) - (b.step ?? 0));
+      totalCount = total;
+    } catch (error) {
+      if (requestId !== summaryRequestId) return;
+      console.error("Failed to load trace summary:", error);
+      availableSteps = [];
+      totalCount = 0;
+    }
+  }
+
+  async function loadTraces(searchQuery, sort, stepValue, currentPage) {
     const requestId = ++loadRequestId;
     if (!project || selectedRuns.length === 0) {
       traces = [];
@@ -70,17 +113,30 @@
 
     loading = true;
     try {
+      const stepNum = stepValue === "all" ? null : Number(stepValue);
+      const offset = currentPage * PAGE_SIZE;
+      const isSingleRun = selectedRuns.length === 1;
+      const perRunLimit = isSingleRun ? PAGE_SIZE : offset + PAGE_SIZE;
+      const perRunOffset = isSingleRun ? offset : 0;
+
       const batches = await Promise.all(
         selectedRuns.map(async (run) => {
           const runTraces = await getTraces(project, run, {
             search: searchQuery,
             sort,
+            step: stepNum,
+            limit: perRunLimit,
+            offset: perRunOffset,
           });
           return runTraces.map((trace) => normalizeTrace(trace, run.name));
         }),
       );
       if (requestId !== loadRequestId) return;
-      traces = sortTraces(batches.flat(), sort);
+      let merged = mergeSortedTraces(batches.flat(), sort);
+      if (!isSingleRun) {
+        merged = merged.slice(offset, offset + PAGE_SIZE);
+      }
+      traces = merged;
       if (!traces.find((trace) => trace.id === expandedTraceId)) {
         expandedTraceId = null;
       }
@@ -95,16 +151,36 @@
     }
   }
 
+  let lastRunsKey = "";
+  let lastSearch = "";
+  let lastSort = "";
+  let lastStep = "all";
+
   $effect(() => {
     project;
-    selectedRuns;
-    search;
-    sortBy;
+    const key = runsKey(selectedRuns);
+    if (key !== lastRunsKey) {
+      lastRunsKey = key;
+      page = 0;
+      stepFilter = "all";
+      loadSummary();
+    }
+  });
+
+  $effect(() => {
+    const trimmed = search.trim();
+    if (trimmed !== lastSearch || sortBy !== lastSort || stepFilter !== lastStep) {
+      if (lastSearch !== "" || trimmed !== "" || sortBy !== lastSort || stepFilter !== lastStep) {
+        page = 0;
+      }
+      lastSearch = trimmed;
+      lastSort = sortBy;
+      lastStep = stepFilter;
+    }
 
     const timeout = setTimeout(() => {
-      loadTraces(search.trim(), sortBy);
+      loadTraces(trimmed, sortBy, stepFilter, page);
     }, 150);
-
     return () => clearTimeout(timeout);
   });
 
@@ -189,16 +265,25 @@
     return Object.entries(trace.metadata || {});
   }
 
-  function countLabel() {
-    if (!search.trim()) return `${traces.length} trace${traces.length === 1 ? "" : "s"}`;
-    return `${traces.length} match${traces.length === 1 ? "" : "es"}`;
+  let activeTotal = $derived.by(() => {
+    if (stepFilter === "all") return totalCount;
+    const stepNum = Number(stepFilter);
+    const entry = availableSteps.find((s) => s.step === stepNum);
+    return entry ? entry.count * Math.max(1, selectedRuns.length) : 0;
+  });
+
+  let totalPages = $derived(Math.max(1, Math.ceil(activeTotal / PAGE_SIZE)));
+
+  function gotoPrev() {
+    if (page > 0) page -= 1;
+  }
+  function gotoNext() {
+    if (page < totalPages - 1) page += 1;
   }
 </script>
 
 <div class="traces-page">
-  {#if loading}
-    <LoadingTrackio />
-  {:else if !project}
+  {#if !project}
     <div class="empty-state">
       <h2>Select a project</h2>
       <p>Pick a project to browse trace logs.</p>
@@ -213,7 +298,16 @@
       <div class="search-wrap">
         <input type="text" bind:value={search} placeholder="Search traces by request" />
       </div>
-      <label class="sort-wrap">
+      <label class="filter-wrap">
+        <span>Step:</span>
+        <select bind:value={stepFilter}>
+          <option value="all">All steps ({totalCount})</option>
+          {#each availableSteps as entry}
+            <option value={String(entry.step)}>Step {entry.step} ({entry.count})</option>
+          {/each}
+        </select>
+      </label>
+      <label class="filter-wrap">
         <span>Sort:</span>
         <select bind:value={sortBy}>
           <option value="request_time_desc">Request time</option>
@@ -222,16 +316,20 @@
           <option value="step_asc">Step ascending</option>
         </select>
       </label>
-      <div class="count">{countLabel()}</div>
+      <div class="count">
+        {activeTotal} trace{activeTotal === 1 ? "" : "s"}
+      </div>
     </div>
 
-    {#if traces.length === 0}
+    {#if loading && traces.length === 0}
+      <LoadingTrackio />
+    {:else if traces.length === 0}
       <div class="empty-state">
         <h2>No traces match the current filters</h2>
-        <p>Try a different search query or model filter.</p>
+        <p>Try a different search query, step, or run selection.</p>
       </div>
     {:else}
-      <div class="traces-table-wrap">
+      <div class="traces-table-wrap" class:dim={loading}>
         <table class="traces-table">
           <thead>
             <tr>
@@ -243,7 +341,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each traces as trace}
+            {#each traces as trace (trace.id)}
               <tr
                 class="trace-row"
                 role="button"
@@ -331,6 +429,22 @@
           </tbody>
         </table>
       </div>
+
+      <div class="pagination">
+        <button type="button" onclick={gotoPrev} disabled={page === 0 || loading}>
+          ← Previous
+        </button>
+        <span class="page-info">
+          Page {page + 1} of {totalPages}
+        </span>
+        <button
+          type="button"
+          onclick={gotoNext}
+          disabled={page >= totalPages - 1 || loading}
+        >
+          Next →
+        </button>
+      </div>
     {/if}
   {/if}
 </div>
@@ -352,7 +466,7 @@
     flex: 1;
   }
   .search-wrap input,
-  .sort-wrap select {
+  .filter-wrap select {
     width: 100%;
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-md, 6px);
@@ -362,7 +476,7 @@
     padding: 10px 12px;
     font-family: inherit;
   }
-  .sort-wrap {
+  .filter-wrap {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -380,6 +494,10 @@
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-lg, 8px);
     overflow: hidden;
+    transition: opacity 0.15s ease;
+  }
+  .traces-table-wrap.dim {
+    opacity: 0.55;
   }
   .traces-table {
     width: 100%;
@@ -428,6 +546,10 @@
     color: var(--body-text-color-subdued, #6b7280);
     font-size: 13px;
     line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .expanded-row td {
     padding: 0;
@@ -526,6 +648,36 @@
   .empty-state p {
     margin: 12px 0 8px;
     color: var(--body-text-color-subdued, #6b7280);
+  }
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 16px 0 4px;
+  }
+  .pagination button {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    background: var(--background-fill-primary, white);
+    color: var(--body-text-color, #1f2937);
+    font-size: 14px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .pagination button:hover:not(:disabled) {
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .page-info {
+    color: var(--body-text-color-subdued, #6b7280);
+    font-size: 14px;
+    min-width: 120px;
+    text-align: center;
   }
   @media (max-width: 1100px) {
     .toolbar {

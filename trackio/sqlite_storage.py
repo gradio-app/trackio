@@ -2196,6 +2196,7 @@ class SQLiteStorage:
         limit: int | None = None,
         offset: int = 0,
         run_id: str | None = None,
+        step: int | None = None,
     ) -> list[dict[str, Any]]:
         try:
             offset = max(0, int(offset or 0))
@@ -2228,6 +2229,9 @@ class SQLiteStorage:
 
                 where = [f"{run_identity[0]} = ?"]
                 params: list[Any] = [run_identity[1]]
+                if step is not None:
+                    where.append("step = ?")
+                    params.append(step)
                 if search:
                     needle = search.strip().lower()
                     if needle:
@@ -2271,6 +2275,49 @@ class SQLiteStorage:
             }
             for row in rows
         ]
+
+    @staticmethod
+    def get_trace_steps(
+        project: str,
+        run: str | None = None,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Return per-step trace counts and total for a run.
+
+        Returns: {"total": int, "steps": [{"step": int, "count": int}, ...]}
+        Steps are returned in ascending order.
+        """
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return {"total": 0, "steps": []}
+
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                run_identity = SQLiteStorage._resolve_run_identity(
+                    conn, run_name=run, run_id=run_id, table="traces"
+                )
+                if run_identity is None:
+                    return {"total": 0, "steps": []}
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"""
+                    SELECT step, COUNT(*) AS c
+                    FROM traces
+                    WHERE {run_identity[0]} = ?
+                    GROUP BY step
+                    ORDER BY step ASC
+                    """,
+                    (run_identity[1],),
+                )
+                rows = cursor.fetchall()
+        except sqlite3.OperationalError as e:
+            if "no such table: traces" in str(e):
+                return {"total": 0, "steps": []}
+            raise
+
+        steps = [{"step": row["step"], "count": row["c"]} for row in rows]
+        total = sum(item["count"] for item in steps)
+        return {"total": total, "steps": steps}
 
     @staticmethod
     def load_from_dataset():
