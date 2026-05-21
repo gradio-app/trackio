@@ -62,9 +62,9 @@ def _normalize_logs_batch_runs(runs: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _normalize_logs_batch_max_points(max_points: Any) -> int | None:
+def _normalize_logs_batch_max_points(max_points: Any) -> int:
     if max_points is None:
-        return 1500
+        return 3000
     if isinstance(max_points, bool):
         raise TrackioAPIError("max_points must be a number or null")
     if isinstance(max_points, float):
@@ -74,7 +74,7 @@ def _normalize_logs_batch_max_points(max_points: Any) -> int | None:
     if not isinstance(max_points, int):
         raise TrackioAPIError("max_points must be an integer or null")
     if max_points < 1:
-        return 1500
+        return 3000
     return min(max_points, _LOGS_BATCH_MAX_POINTS)
 
 
@@ -772,13 +772,13 @@ def get_system_metrics_for_run(
 def get_system_logs(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_system_logs(project, run, run_id=run_id, max_points=1500)
+    return SQLiteStorage.get_system_logs(project, run, run_id=run_id, max_points=3000)
 
 
 def get_system_logs_batch(
     project: str,
     runs: list[dict[str, Any]],
-    max_points: int | None = 1500,
+    max_points: int | None = 3000,
 ) -> list[dict[str, Any]]:
     runs_clean = _normalize_logs_batch_runs(runs)
     mp = _normalize_logs_batch_max_points(max_points)
@@ -808,13 +808,13 @@ def get_snapshot(
 def get_logs(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_logs(project, run, max_points=1500, run_id=run_id)
+    return SQLiteStorage.get_logs(project, run, max_points=3000, run_id=run_id)
 
 
 def get_logs_batch(
     project: str,
     runs: list[dict[str, Any]],
-    max_points: int | None = 1500,
+    max_points: int | None = 3000,
 ) -> list[dict[str, Any]]:
     runs_clean = _normalize_logs_batch_runs(runs)
     mp = _normalize_logs_batch_max_points(max_points)
