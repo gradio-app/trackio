@@ -62,7 +62,7 @@ def _normalize_logs_batch_runs(runs: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _normalize_logs_batch_max_points(max_points: Any) -> int | None:
+def _normalize_logs_batch_max_points(max_points: Any) -> int:
     if max_points is None:
         return 3000
     if isinstance(max_points, bool):
