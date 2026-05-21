@@ -75,6 +75,13 @@
     }
   }
 
+  function handleMouseDown(e) {
+    if (showOptions) {
+      e.preventDefault();
+      filterInput?.blur();
+    }
+  }
+
   function handleBlur() {
     const matchIdx = normalizedChoices.findIndex((c) => c.label === inputText);
     if (matchIdx >= 0) {
@@ -152,6 +159,7 @@
           autocomplete="off"
           bind:value={inputText}
           bind:this={filterInput}
+          onmousedown={handleMouseDown}
           onkeydown={handleKeydown}
           onblur={handleBlur}
           onfocus={handleFocus}

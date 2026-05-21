@@ -140,11 +140,12 @@
     const originals = allRows.filter(
       (r) => r.data_type === "original" || !r.data_type,
     );
-    const cols = getMetricColumns(originals).filter(
-      (c) => c !== xColumn && c !== "run" && c !== "data_type" && c !== "x_axis",
+    const allCols = getMetricColumns(originals).filter(
+      (c) => c !== "run" && c !== "data_type" && c !== "x_axis",
     );
+    const cols = allCols.filter((c) => c !== xColumn);
     metrics = cols;
-    metricColumns = cols;
+    metricColumns = allCols;
 
     const countPerRunMetric = new Map();
     for (const r of originals) {
