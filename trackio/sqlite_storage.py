@@ -3322,16 +3322,17 @@ class SQLiteStorage:
         with SQLiteStorage._get_connection(db_path) as conn:
             cursor = conn.cursor()
             try:
-                cursor.execute(
-                    """
-                    SELECT run_name, config FROM configs
-                    """
+                config_col = (
+                    "run_id"
+                    if SQLiteStorage._supports_run_ids(conn, "configs")
+                    else "run_name"
                 )
+                cursor.execute(f"SELECT {config_col}, config FROM configs")
 
                 results = {}
                 for row in cursor.fetchall():
                     config = orjson.loads(row["config"])
-                    results[row["run_name"]] = deserialize_values(config)
+                    results[row[config_col]] = deserialize_values(config)
                 return results
             except sqlite3.OperationalError as e:
                 if "no such table: configs" in str(e):
