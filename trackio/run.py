@@ -840,6 +840,20 @@ class Run:
                         project=self.project, run=self.name, step=media_step
                     )
                     self._scan_and_queue_media_uploads(metrics[key], media_step)
+                elif (
+                    isinstance(value, list)
+                    and value
+                    and all(isinstance(item, Trace) for item in value)
+                ):
+                    converted = [
+                        item._to_dict(
+                            project=self.project, run=self.name, step=media_step
+                        )
+                        for item in value
+                    ]
+                    metrics[key] = converted
+                    for item in converted:
+                        self._scan_and_queue_media_uploads(item, media_step)
                 elif isinstance(value, Histogram):
                     metrics[key] = value._to_dict()
                 elif isinstance(value, Markdown):

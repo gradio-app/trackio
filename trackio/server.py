@@ -837,6 +837,7 @@ def get_traces(
     sort: str | None = None,
     limit: int | None = None,
     offset: int | None = 0,
+    step: int | None = None,
 ) -> list[dict[str, Any]]:
     try:
         normalized_offset = max(0, int(offset)) if offset is not None else 0
@@ -850,6 +851,14 @@ def get_traces(
             normalized_limit = max(0, int(limit))
         except (TypeError, ValueError):
             normalized_limit = None
+    normalized_step: int | None
+    if step is None:
+        normalized_step = None
+    else:
+        try:
+            normalized_step = int(step)
+        except (TypeError, ValueError):
+            normalized_step = None
     normalized_sort = sort if sort in _ALLOWED_TRACE_SORTS else None
     return SQLiteStorage.get_traces(
         project,
@@ -859,7 +868,16 @@ def get_traces(
         limit=normalized_limit,
         offset=normalized_offset,
         run_id=run_id,
+        step=normalized_step,
     )
+
+
+def get_trace_steps(
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    return SQLiteStorage.get_trace_steps(project, run, run_id=run_id)
 
 
 def query_project(project: str, query: str) -> dict[str, Any]:
@@ -960,6 +978,7 @@ def _api_registry() -> dict[str, Any]:
         "get_logs": get_logs,
         "get_logs_batch": get_logs_batch,
         "get_traces": get_traces,
+        "get_trace_steps": get_trace_steps,
         "query_project": query_project,
         "get_settings": get_settings,
         "get_project_files": get_project_files,
