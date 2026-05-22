@@ -202,6 +202,11 @@ export async function getProjectFiles(project) {
   return await callApi("/get_project_files", { project });
 }
 
+export async function getTabAvailability(project) {
+  if (await isStaticMode()) return staticApi.getTabAvailability(project);
+  return await callApi("/get_tab_availability", { project });
+}
+
 export async function getRunMutationStatus() {
   if (await isStaticMode()) return staticApi.getRunMutationStatus();
   return await callApi("/get_run_mutation_status", {});
