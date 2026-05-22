@@ -34,7 +34,7 @@
         class:active={currentPage === link.id}
         class:empty={isOptionalEmpty(link.id)}
         onclick={() => handleClick(link.id)}
-        title={isOptionalEmpty(link.id) ? `${link.label} is empty for this selection` : link.label}
+        title={isOptionalEmpty(link.id) ? `${link.label} is empty for this project` : link.label}
       >
         {link.label}
       </button>

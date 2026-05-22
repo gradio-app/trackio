@@ -500,3 +500,101 @@ def test_query_project_normalizes_bytes(temp_dir):
 def test_query_project_missing_project(temp_dir):
     with pytest.raises(FileNotFoundError):
         SQLiteStorage.query_project("nonexistent", "SELECT 1")
+
+
+def test_tab_availability_flags_missing_project(temp_dir):
+    flags = SQLiteStorage.get_tab_availability_flags("nonexistent")
+    assert flags == {
+        "metrics": False,
+        "system": False,
+        "traces": False,
+        "media": False,
+        "reports": False,
+        "alerts": False,
+    }
+
+
+def test_tab_availability_flags_empty_project(temp_dir):
+    SQLiteStorage.init_db("ta_proj")
+    flags = SQLiteStorage.get_tab_availability_flags("ta_proj")
+    assert flags["metrics"] is False
+    assert flags["media"] is False
+    assert flags["reports"] is False
+    assert flags["system"] is False
+    assert flags["traces"] is False
+    assert flags["alerts"] is False
+
+
+def test_tab_availability_flags_scalar_only(temp_dir):
+    SQLiteStorage.log(project="ta_proj", run="r1", metrics={"loss": 0.5})
+    flags = SQLiteStorage.get_tab_availability_flags("ta_proj")
+    assert flags["metrics"] is True
+    assert flags["media"] is False
+    assert flags["reports"] is False
+
+
+def test_tab_availability_flags_image_log_no_scalar(temp_dir):
+    SQLiteStorage.log(
+        project="ta_proj",
+        run="r1",
+        metrics={
+            "img": {"_type": "trackio.image", "file_path": "img.png", "caption": "x"}
+        },
+    )
+    flags = SQLiteStorage.get_tab_availability_flags("ta_proj")
+    assert flags["media"] is True
+    assert flags["metrics"] is False
+    assert flags["reports"] is False
+
+
+def test_tab_availability_flags_markdown(temp_dir):
+    SQLiteStorage.log(
+        project="ta_proj",
+        run="r1",
+        metrics={"md": {"_type": "trackio.markdown", "text": "hello"}},
+    )
+    flags = SQLiteStorage.get_tab_availability_flags("ta_proj")
+    assert flags["reports"] is True
+    assert flags["media"] is False
+
+
+def test_tab_availability_flags_system(temp_dir):
+    SQLiteStorage.init_db("ta_proj")
+    SQLiteStorage.bulk_log_system(
+        project="ta_proj", run="r1", metrics_list=[{"cpu_pct": 12.0}]
+    )
+    flags = SQLiteStorage.get_tab_availability_flags("ta_proj")
+    assert flags["system"] is True
+    assert flags["metrics"] is False
+
+
+def test_tab_availability_flags_traces(temp_dir):
+    SQLiteStorage.log(
+        project="ta_proj",
+        run="r1",
+        metrics={
+            "convo": {
+                "_type": "trackio.trace",
+                "messages": [{"role": "user", "content": "hi"}],
+                "metadata": {},
+            }
+        },
+    )
+    flags = SQLiteStorage.get_tab_availability_flags("ta_proj")
+    assert flags["traces"] is True
+    assert flags["metrics"] is False
+
+
+def test_tab_availability_flags_alerts(temp_dir):
+    SQLiteStorage.init_db("ta_proj")
+    SQLiteStorage.bulk_alert(
+        project="ta_proj",
+        run="r1",
+        titles=["something"],
+        texts=[None],
+        levels=["warn"],
+        steps=[None],
+    )
+    flags = SQLiteStorage.get_tab_availability_flags("ta_proj")
+    assert flags["alerts"] is True
+    assert flags["reports"] is False

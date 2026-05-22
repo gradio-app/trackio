@@ -345,6 +345,44 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
         app.close()
 
 
+def test_get_tab_availability_reflects_data(temp_dir):
+    from trackio.server import get_tab_availability
+    from trackio.utils import MEDIA_DIR
+
+    project = "ta_srv"
+
+    empty = get_tab_availability(project)
+    assert empty == {
+        "metrics": False,
+        "system": False,
+        "traces": False,
+        "media": False,
+        "reports": False,
+        "files": False,
+    }
+
+    SQLiteStorage.log(project=project, run="r1", metrics={"loss": 0.25})
+    SQLiteStorage.bulk_alert(
+        project=project,
+        run="r1",
+        titles=["alert"],
+        texts=[None],
+        levels=["warn"],
+        steps=[None],
+    )
+    files_dir = MEDIA_DIR / project / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "note.txt").write_text("hi")
+
+    result = get_tab_availability(project)
+    assert result["metrics"] is True
+    assert result["reports"] is True
+    assert result["files"] is True
+    assert result["media"] is False
+    assert result["system"] is False
+    assert result["traces"] is False
+
+
 def test_local_dashboard_supports_mcp(temp_dir):
     pytest.importorskip("mcp")
     from mcp import ClientSession

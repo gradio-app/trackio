@@ -16,10 +16,7 @@
     getRunsForProject,
     getRunConfigs,
     getAlerts,
-    getLogsBatch,
-    getTraces,
-    getSystemMetricsForRun,
-    getProjectFiles,
+    getTabAvailability,
     getRunMutationStatus,
     getSettings,
     getReadOnlySource,
@@ -116,14 +113,6 @@
     "runs",
     "files",
   ];
-  const RESERVED_METRIC_KEYS = new Set([
-    "project",
-    "run",
-    "timestamp",
-    "step",
-    "time",
-    "metrics",
-  ]);
   let runConfigs = $state({});
   let runConfigsProject = $state(null);
 
@@ -241,58 +230,6 @@
     };
   }
 
-  function logHasScalarMetric(log) {
-    return Object.entries(log || {}).some(([key, value]) => (
-      !RESERVED_METRIC_KEYS.has(key) &&
-      typeof value === "number" &&
-      Number.isFinite(value)
-    ));
-  }
-
-  function logHasMedia(log) {
-    return Object.values(log || {}).some((value) => (
-      value &&
-      typeof value === "object" &&
-      ["trackio.image", "trackio.video", "trackio.audio", "trackio.table"].includes(value._type)
-    ));
-  }
-
-  function logHasMarkdownReport(log) {
-    return Object.values(log || {}).some((value) => (
-      value &&
-      typeof value === "object" &&
-      value._type === "trackio.markdown"
-    ));
-  }
-
-  async function anyRunHasSystemMetrics(project, runRecords) {
-    const results = await Promise.all(
-      runRecords.map(async (run) => {
-        try {
-          const metrics = await getSystemMetricsForRun(project, run);
-          return (metrics || []).length > 0;
-        } catch {
-          return false;
-        }
-      }),
-    );
-    return results.some(Boolean);
-  }
-
-  async function anyRunHasTraces(project, runRecords) {
-    const results = await Promise.all(
-      runRecords.map(async (run) => {
-        try {
-          const traces = await getTraces(project, run, { limit: 1 });
-          return (traces || []).length > 0;
-        } catch {
-          return false;
-        }
-      }),
-    );
-    return results.some(Boolean);
-  }
-
   async function refreshTabAvailability({ force = false } = {}) {
     const now = Date.now();
     if (
@@ -308,43 +245,14 @@
       return;
     }
 
-    const availability = {
-      ...initialAvailability(),
-      runs: runs.length > 0,
-    };
-    const runRecords = selectedRunRecords;
-
     try {
-      const [
-        logsBatch,
-        projectAlerts,
-        hasSystem,
-        hasTraces,
-        projectFiles,
-      ] = await Promise.all([
-        runRecords.length ? getLogsBatch(selectedProject, runRecords) : [],
-        getAlerts(selectedProject, null, null, null).catch(() => []),
-        runRecords.length ? anyRunHasSystemMetrics(selectedProject, runRecords) : false,
-        runRecords.length ? anyRunHasTraces(selectedProject, runRecords) : false,
-        getProjectFiles(selectedProject).catch(() => []),
-      ]);
+      const flags = await getTabAvailability(selectedProject);
       if (requestId !== tabAvailabilityRequestId) return;
-
-      const selectedRunNames = new Set(runRecords.map((run) => run.name));
-      const selectedAlerts = (projectAlerts || []).filter(
-        (alert) => !alert.run || selectedRunNames.has(alert.run),
-      );
-      for (const entry of logsBatch || []) {
-        for (const log of entry.logs || []) {
-          availability.metrics ||= logHasScalarMetric(log);
-          availability.media ||= logHasMedia(log);
-          availability.reports ||= logHasMarkdownReport(log);
-        }
-      }
-      availability.system = hasSystem;
-      availability.traces = hasTraces;
-      availability.reports ||= selectedAlerts.length > 0;
-      availability.files = (projectFiles || []).length > 0;
+      const availability = {
+        ...initialAvailability(),
+        ...flags,
+        runs: runs.length > 0,
+      };
       tabAvailability = availability;
 
       if (shouldOpenFirstNonEmptyTab && !openedFirstNonEmptyTab && isBareDashboardPath()) {
@@ -358,7 +266,7 @@
     } catch (e) {
       if (requestId !== tabAvailabilityRequestId) return;
       console.error("Failed to load tab availability:", e);
-      tabAvailability = availability;
+      tabAvailability = initialAvailability();
     }
   }
 
@@ -535,7 +443,6 @@
 
   $effect(() => {
     selectedProject;
-    selectedRuns;
     runs;
     if (appBootstrapReady) refreshTabAvailability({ force: true });
   });
