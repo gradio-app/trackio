@@ -62,9 +62,9 @@ def _normalize_logs_batch_runs(runs: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _normalize_logs_batch_max_points(max_points: Any) -> int | None:
+def _normalize_logs_batch_max_points(max_points: Any) -> int:
     if max_points is None:
-        return 1500
+        return 3000
     if isinstance(max_points, bool):
         raise TrackioAPIError("max_points must be a number or null")
     if isinstance(max_points, float):
@@ -74,7 +74,7 @@ def _normalize_logs_batch_max_points(max_points: Any) -> int | None:
     if not isinstance(max_points, int):
         raise TrackioAPIError("max_points must be an integer or null")
     if max_points < 1:
-        return 1500
+        return 3000
     return min(max_points, _LOGS_BATCH_MAX_POINTS)
 
 
@@ -684,6 +684,10 @@ def get_runs_for_project(project: str) -> list[dict[str, Any]]:
     return SQLiteStorage.get_run_records(project)
 
 
+def get_run_configs(project: str) -> dict[str, Any]:
+    return SQLiteStorage.get_all_run_configs(project)
+
+
 def get_metrics_for_run(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[str]:
@@ -772,13 +776,13 @@ def get_system_metrics_for_run(
 def get_system_logs(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_system_logs(project, run, run_id=run_id, max_points=1500)
+    return SQLiteStorage.get_system_logs(project, run, run_id=run_id, max_points=3000)
 
 
 def get_system_logs_batch(
     project: str,
     runs: list[dict[str, Any]],
-    max_points: int | None = 1500,
+    max_points: int | None = 3000,
 ) -> list[dict[str, Any]]:
     runs_clean = _normalize_logs_batch_runs(runs)
     mp = _normalize_logs_batch_max_points(max_points)
@@ -808,13 +812,13 @@ def get_snapshot(
 def get_logs(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_logs(project, run, max_points=1500, run_id=run_id)
+    return SQLiteStorage.get_logs(project, run, max_points=3000, run_id=run_id)
 
 
 def get_logs_batch(
     project: str,
     runs: list[dict[str, Any]],
-    max_points: int | None = 1500,
+    max_points: int | None = 3000,
 ) -> list[dict[str, Any]]:
     runs_clean = _normalize_logs_batch_runs(runs)
     mp = _normalize_logs_batch_max_points(max_points)
@@ -837,6 +841,7 @@ def get_traces(
     sort: str | None = None,
     limit: int | None = None,
     offset: int | None = 0,
+    step: int | None = None,
 ) -> list[dict[str, Any]]:
     try:
         normalized_offset = max(0, int(offset)) if offset is not None else 0
@@ -850,6 +855,14 @@ def get_traces(
             normalized_limit = max(0, int(limit))
         except (TypeError, ValueError):
             normalized_limit = None
+    normalized_step: int | None
+    if step is None:
+        normalized_step = None
+    else:
+        try:
+            normalized_step = int(step)
+        except (TypeError, ValueError):
+            normalized_step = None
     normalized_sort = sort if sort in _ALLOWED_TRACE_SORTS else None
     return SQLiteStorage.get_traces(
         project,
@@ -859,7 +872,16 @@ def get_traces(
         limit=normalized_limit,
         offset=normalized_offset,
         run_id=run_id,
+        step=normalized_step,
     )
+
+
+def get_trace_steps(
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    return SQLiteStorage.get_trace_steps(project, run, run_id=run_id)
 
 
 def query_project(project: str, query: str) -> dict[str, Any]:
@@ -949,6 +971,7 @@ def _api_registry() -> dict[str, Any]:
         "get_alerts": get_alerts,
         "get_metric_values": get_metric_values,
         "get_runs_for_project": get_runs_for_project,
+        "get_run_configs": get_run_configs,
         "get_metrics_for_run": get_metrics_for_run,
         "get_all_projects": get_all_projects,
         "get_project_summary": get_project_summary,
@@ -960,6 +983,7 @@ def _api_registry() -> dict[str, Any]:
         "get_logs": get_logs,
         "get_logs_batch": get_logs_batch,
         "get_traces": get_traces,
+        "get_trace_steps": get_trace_steps,
         "query_project": query_project,
         "get_settings": get_settings,
         "get_project_files": get_project_files,

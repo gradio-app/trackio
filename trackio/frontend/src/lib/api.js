@@ -71,6 +71,11 @@ export async function getRunsForProject(project) {
   return await callApi("/get_runs_for_project", { project });
 }
 
+export async function getRunConfigs(project) {
+  if (await isStaticMode()) return staticApi.getRunConfigs(project);
+  return await callApi("/get_run_configs", { project });
+}
+
 function normalizeRun(run) {
   if (run == null) return { run: null, run_id: null };
   if (typeof run === "string") return { run, run_id: null };
@@ -109,6 +114,12 @@ export async function getTraces(project, run, options = {}) {
   const params = { project, ...normalizeRun(run), ...options };
   if (await isStaticMode()) return staticApi.getTraces(project, run, options);
   return await callApi("/get_traces", params);
+}
+
+export async function getTraceSteps(project, run) {
+  const params = { project, ...normalizeRun(run) };
+  if (await isStaticMode()) return staticApi.getTraceSteps(project, run);
+  return await callApi("/get_trace_steps", params);
 }
 
 export async function getProjectSummary(project) {

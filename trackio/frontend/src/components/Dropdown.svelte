@@ -20,34 +20,41 @@
   let bottom = $state(null);
   let maxHeight = $state(300);
 
+  let normalizedChoices = $derived(
+    choices.map((c) =>
+      typeof c === "object" && c !== null ? c : { label: String(c), value: c },
+    ),
+  );
+
   let selectedIndex = $derived(
-    value !== null ? choices.indexOf(value) : -1,
+    value !== null ? normalizedChoices.findIndex((c) => c.value === value) : -1,
   );
 
   $effect(() => {
     if (showOptions) return;
-    if (value !== null && choices.includes(value)) {
-      inputText = value;
+    const idx = normalizedChoices.findIndex((c) => c.value === value);
+    if (value !== null && idx >= 0) {
+      inputText = normalizedChoices[idx].label;
     } else {
       inputText = "";
     }
   });
 
   $effect(() => {
-    filteredIndices = showOptions ? filterChoices(inputText) : choices.map((_, i) => i);
+    filteredIndices = showOptions ? filterChoices(inputText) : normalizedChoices.map((_, i) => i);
   });
 
   function filterChoices(text) {
-    if (!text) return choices.map((_, i) => i);
+    if (!text) return normalizedChoices.map((_, i) => i);
     const lower = text.toLowerCase();
-    return choices
-      .map((c, i) => (c.toLowerCase().includes(lower) ? i : -1))
+    return normalizedChoices
+      .map((c, i) => (c.label.toLowerCase().includes(lower) ? i : -1))
       .filter((i) => i >= 0);
   }
 
   function handleFocus() {
     inputText = "";
-    filteredIndices = choices.map((_, i) => i);
+    filteredIndices = normalizedChoices.map((_, i) => i);
     showOptions = true;
     if (filterInput) {
       const rect = filterInput.closest(".wrap")?.getBoundingClientRect();
@@ -68,24 +75,33 @@
     }
   }
 
+  function handleMouseDown(e) {
+    if (showOptions) {
+      e.preventDefault();
+      filterInput?.blur();
+    }
+  }
+
   function handleBlur() {
-    if (choices.includes(inputText)) {
-      value = inputText;
+    const matchIdx = normalizedChoices.findIndex((c) => c.label === inputText);
+    if (matchIdx >= 0) {
+      value = normalizedChoices[matchIdx].value;
     } else if (value !== null) {
-      inputText = value;
+      const currentIdx = normalizedChoices.findIndex((c) => c.value === value);
+      inputText = currentIdx >= 0 ? normalizedChoices[currentIdx].label : "";
     } else {
       inputText = "";
     }
     showOptions = false;
     activeIndex = null;
-    filteredIndices = choices.map((_, i) => i);
+    filteredIndices = normalizedChoices.map((_, i) => i);
   }
 
   function handleOptionSelected(index) {
     const idx = parseInt(index);
     if (isNaN(idx)) return;
-    value = choices[idx];
-    inputText = choices[idx];
+    value = normalizedChoices[idx].value;
+    inputText = normalizedChoices[idx].label;
     showOptions = false;
     activeIndex = null;
     filterInput?.blur();
@@ -143,6 +159,7 @@
           autocomplete="off"
           bind:value={inputText}
           bind:this={filterInput}
+          onmousedown={handleMouseDown}
           onkeydown={handleKeydown}
           onblur={handleBlur}
           onfocus={handleFocus}
@@ -183,7 +200,7 @@
             aria-selected={index === selectedIndex}
           >
             <span class="check-mark" class:hide={index !== selectedIndex}>✓</span>
-            {choices[index]}
+            {normalizedChoices[index].label}
           </li>
         {/each}
       </ul>
