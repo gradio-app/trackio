@@ -442,6 +442,75 @@ export async function getSettings() {
   };
 }
 
+let tabAvailabilityCache = null;
+
+const MEDIA_TYPES = new Set([
+  "trackio.image",
+  "trackio.video",
+  "trackio.audio",
+  "trackio.table",
+]);
+
+const MARKDOWN_TYPES = new Set(["trackio.markdown"]);
+
+function rowHasScalarMetric(row) {
+  for (const [key, value] of Object.entries(row)) {
+    if (STRUCTURAL_KEYS.has(key)) continue;
+    if (value === null || value === undefined) continue;
+    if (typeof value === "number" && Number.isFinite(value)) return true;
+  }
+  return false;
+}
+
+function rowHasTypedValue(row, types) {
+  for (const [key, value] of Object.entries(row)) {
+    if (STRUCTURAL_KEYS.has(key)) continue;
+    if (value == null) continue;
+    let parsed = value;
+    if (typeof parsed === "string" && parsed.startsWith("{") && parsed.includes("_type")) {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        continue;
+      }
+    }
+    if (parsed && typeof parsed === "object" && types.has(parsed._type)) return true;
+  }
+  return false;
+}
+
+export async function getTabAvailability() {
+  if (tabAvailabilityCache) return tabAvailabilityCache;
+
+  const [metricsRaw, systemRaw, tracesRaw, files] = await Promise.all([
+    getMetricsData().catch(() => []),
+    getSystemData().catch(() => []),
+    getTracesData().catch(() => []),
+    getProjectFiles().catch(() => []),
+  ]);
+
+  const metricsRows = (metricsRaw || []);
+  let metrics = false;
+  let media = false;
+  let reports = false;
+  for (const row of metricsRows) {
+    if (!metrics && rowHasScalarMetric(row)) metrics = true;
+    if (!media && rowHasTypedValue(row, MEDIA_TYPES)) media = true;
+    if (!reports && rowHasTypedValue(row, MARKDOWN_TYPES)) reports = true;
+    if (metrics && media && reports) break;
+  }
+
+  tabAvailabilityCache = {
+    metrics,
+    media,
+    reports,
+    system: (systemRaw || []).length > 0,
+    traces: (tracesRaw || []).length > 0,
+    files: (files || []).length > 0,
+  };
+  return tabAvailabilityCache;
+}
+
 export async function getProjectFiles() {
   if (fileListData) return fileListData;
 

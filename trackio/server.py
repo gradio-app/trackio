@@ -923,6 +923,28 @@ def get_project_files(project: str) -> list[dict[str, Any]]:
     return results
 
 
+def _project_has_files(project: str) -> bool:
+    files_dir = utils.MEDIA_DIR / project / "files"
+    if not files_dir.exists():
+        return False
+    for entry in files_dir.rglob("*"):
+        if entry.is_file():
+            return True
+    return False
+
+
+def get_tab_availability(project: str) -> dict[str, bool]:
+    flags = SQLiteStorage.get_tab_availability_flags(project)
+    return {
+        "metrics": flags["metrics"],
+        "system": flags["system"],
+        "traces": flags["traces"],
+        "media": flags["media"],
+        "reports": flags["reports"] or flags["alerts"],
+        "files": _project_has_files(project),
+    }
+
+
 def delete_run(
     request: Request,
     project: str,
@@ -987,6 +1009,7 @@ def _api_registry() -> dict[str, Any]:
         "query_project": query_project,
         "get_settings": get_settings,
         "get_project_files": get_project_files,
+        "get_tab_availability": get_tab_availability,
         "delete_run": delete_run,
         "rename_run": rename_run,
         "force_sync": force_sync,

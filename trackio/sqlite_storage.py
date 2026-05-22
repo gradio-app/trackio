@@ -1864,6 +1864,62 @@ class SQLiteStorage:
             raise
 
     @staticmethod
+    def get_tab_availability_flags(project: str) -> dict[str, bool]:
+        SQLiteStorage._ensure_hub_loaded()
+        flags = {
+            "metrics": False,
+            "system": False,
+            "traces": False,
+            "media": False,
+            "reports": False,
+            "alerts": False,
+        }
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return flags
+
+        def _exists(conn, sql, params=()):
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                return cursor.fetchone() is not None
+            except sqlite3.OperationalError:
+                return False
+
+        with SQLiteStorage._get_connection(db_path) as conn:
+            flags["metrics"] = _exists(
+                conn,
+                "SELECT 1 FROM metrics "
+                "WHERE CAST(metrics AS TEXT) GLOB '*:[0-9]*' "
+                "OR CAST(metrics AS TEXT) GLOB '*:-[0-9]*' "
+                "LIMIT 1",
+            )
+            flags["media"] = _exists(
+                conn,
+                "SELECT 1 FROM metrics WHERE "
+                "CAST(metrics AS TEXT) GLOB ? "
+                "OR CAST(metrics AS TEXT) GLOB ? "
+                "OR CAST(metrics AS TEXT) GLOB ? "
+                "OR CAST(metrics AS TEXT) GLOB ? "
+                "LIMIT 1",
+                (
+                    '*"_type":"trackio.image"*',
+                    '*"_type":"trackio.video"*',
+                    '*"_type":"trackio.audio"*',
+                    '*"_type":"trackio.table"*',
+                ),
+            )
+            flags["reports"] = _exists(
+                conn,
+                "SELECT 1 FROM metrics WHERE CAST(metrics AS TEXT) GLOB ? LIMIT 1",
+                ('*"_type":"trackio.markdown"*',),
+            )
+            flags["system"] = _exists(conn, "SELECT 1 FROM system_metrics LIMIT 1")
+            flags["traces"] = _exists(conn, "SELECT 1 FROM traces LIMIT 1")
+            flags["alerts"] = _exists(conn, "SELECT 1 FROM alerts LIMIT 1")
+        return flags
+
+    @staticmethod
     def _subsample_metric_rows(rows: list[Any], max_points: int | None) -> list[Any]:
         if max_points is None or max_points < 1:
             return rows

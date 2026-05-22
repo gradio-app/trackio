@@ -16,6 +16,7 @@
     getRunsForProject,
     getRunConfigs,
     getAlerts,
+    getTabAvailability,
     getRunMutationStatus,
     getSettings,
     getReadOnlySource,
@@ -89,6 +90,29 @@
   let spaceId = $state(null);
   let availableSystemDevices = $state([]);
   let selectedSystemDevices = $state([]);
+  let tabAvailability = $state({});
+  let tabAvailabilityRequestId = 0;
+  let lastTabAvailabilityRefreshAt = 0;
+  let shouldOpenFirstNonEmptyTab = false;
+  let openedFirstNonEmptyTab = false;
+  const TAB_AVAILABILITY_POLL_INTERVAL_MS = 15000;
+
+  const OPTIONAL_EMPTY_TABS = new Set([
+    "system",
+    "traces",
+    "media",
+    "reports",
+    "files",
+  ]);
+  const AUTO_OPEN_TAB_ORDER = [
+    "metrics",
+    "system",
+    "traces",
+    "media",
+    "reports",
+    "runs",
+    "files",
+  ];
   let runConfigs = $state({});
   let runConfigsProject = $state(null);
 
@@ -101,8 +125,14 @@
   );
 
   function handleNavigate(page) {
+    openedFirstNonEmptyTab = true;
     currentPage = page;
     navigateTo(page);
+  }
+
+  function isBareDashboardPath() {
+    const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+    return pathname === "/";
   }
 
   function lockedProjectName() {
@@ -188,6 +218,58 @@
     }
   }
 
+  function initialAvailability() {
+    return {
+      metrics: false,
+      system: false,
+      traces: false,
+      media: false,
+      reports: false,
+      runs: false,
+      files: false,
+    };
+  }
+
+  async function refreshTabAvailability({ force = false } = {}) {
+    const now = Date.now();
+    if (
+      !force &&
+      now - lastTabAvailabilityRefreshAt < TAB_AVAILABILITY_POLL_INTERVAL_MS
+    ) {
+      return;
+    }
+    lastTabAvailabilityRefreshAt = now;
+    const requestId = ++tabAvailabilityRequestId;
+    if (!selectedProject) {
+      tabAvailability = initialAvailability();
+      return;
+    }
+
+    try {
+      const flags = await getTabAvailability(selectedProject);
+      if (requestId !== tabAvailabilityRequestId) return;
+      const availability = {
+        ...initialAvailability(),
+        ...flags,
+        runs: runs.length > 0,
+      };
+      tabAvailability = availability;
+
+      if (shouldOpenFirstNonEmptyTab && !openedFirstNonEmptyTab && isBareDashboardPath()) {
+        const first = AUTO_OPEN_TAB_ORDER.find((page) => availability[page]);
+        if (first && first !== currentPage) {
+          currentPage = first;
+          navigateTo(first);
+        }
+        openedFirstNonEmptyTab = true;
+      }
+    } catch (e) {
+      if (requestId !== tabAvailabilityRequestId) return;
+      console.error("Failed to load tab availability:", e);
+      tabAvailability = initialAvailability();
+    }
+  }
+
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
@@ -197,6 +279,7 @@
       await refreshProjects();
       await refreshRuns();
       await refreshAlerts();
+      await refreshTabAvailability();
     }, getAppPollIntervalMs());
   }
 
@@ -285,6 +368,7 @@
       showHeaders = false;
     }
 
+    shouldOpenFirstNonEmptyTab = isBareDashboardPath();
     currentPage = getPageFromPath();
 
     window.addEventListener("popstate", () => {
@@ -326,6 +410,7 @@
         await refreshRuns();
 
         await refreshAlerts();
+        await refreshTabAvailability({ force: true });
       } catch (e) {
         console.error("Failed to load projects:", e);
       } finally {
@@ -354,6 +439,12 @@
     projects;
     urlTick;
     if (projectLocked) applyLockedProject();
+  });
+
+  $effect(() => {
+    selectedProject;
+    runs;
+    if (appBootstrapReady) refreshTabAvailability({ force: true });
   });
 
   let urlRunsFromQueryApplied = $state(false);
@@ -439,7 +530,12 @@
 
   <div class="main">
     {#if !navbarHidden}
-      <Navbar {currentPage} onNavigate={handleNavigate} />
+      <Navbar
+        {currentPage}
+        {tabAvailability}
+        optionalEmptyTabs={OPTIONAL_EMPTY_TABS}
+        onNavigate={handleNavigate}
+      />
     {/if}
 
     <div class="page-content">
