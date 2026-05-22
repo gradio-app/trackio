@@ -451,6 +451,8 @@ const MEDIA_TYPES = new Set([
   "trackio.table",
 ]);
 
+const MARKDOWN_TYPES = new Set(["trackio.markdown"]);
+
 function rowHasScalarMetric(row) {
   for (const [key, value] of Object.entries(row)) {
     if (STRUCTURAL_KEYS.has(key)) continue;
@@ -494,7 +496,7 @@ export async function getTabAvailability() {
   for (const row of metricsRows) {
     if (!metrics && rowHasScalarMetric(row)) metrics = true;
     if (!media && rowHasTypedValue(row, MEDIA_TYPES)) media = true;
-    if (!reports && rowHasTypedValue(row, new Set(["trackio.markdown"]))) reports = true;
+    if (!reports && rowHasTypedValue(row, MARKDOWN_TYPES)) reports = true;
     if (metrics && media && reports) break;
   }
 

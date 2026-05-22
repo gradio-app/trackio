@@ -2,4 +2,4 @@
 "trackio": patch
 ---
 
-feat:Subdue empty dashboard tabs
+feat: Subdue empty dashboard tabs
