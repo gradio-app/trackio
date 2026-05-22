@@ -1890,13 +1890,17 @@ class SQLiteStorage:
             flags["metrics"] = _exists(
                 conn,
                 "SELECT 1 FROM metrics "
-                "WHERE metrics GLOB '*:[0-9]*' OR metrics GLOB '*:-[0-9]*' "
+                "WHERE CAST(metrics AS TEXT) GLOB '*:[0-9]*' "
+                "OR CAST(metrics AS TEXT) GLOB '*:-[0-9]*' "
                 "LIMIT 1",
             )
             flags["media"] = _exists(
                 conn,
                 "SELECT 1 FROM metrics WHERE "
-                "metrics GLOB ? OR metrics GLOB ? OR metrics GLOB ? OR metrics GLOB ? "
+                "CAST(metrics AS TEXT) GLOB ? "
+                "OR CAST(metrics AS TEXT) GLOB ? "
+                "OR CAST(metrics AS TEXT) GLOB ? "
+                "OR CAST(metrics AS TEXT) GLOB ? "
                 "LIMIT 1",
                 (
                     '*"_type":"trackio.image"*',
@@ -1907,7 +1911,7 @@ class SQLiteStorage:
             )
             flags["reports"] = _exists(
                 conn,
-                "SELECT 1 FROM metrics WHERE metrics GLOB ? LIMIT 1",
+                "SELECT 1 FROM metrics WHERE CAST(metrics AS TEXT) GLOB ? LIMIT 1",
                 ('*"_type":"trackio.markdown"*',),
             )
             flags["system"] = _exists(conn, "SELECT 1 FROM system_metrics LIMIT 1")
