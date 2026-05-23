@@ -151,23 +151,26 @@
     }
   }
 
-  let lastRunsKey = "";
+  let lastScopeKey = "";
   let lastSearch = "";
   let lastSort = "";
   let lastStep = "all";
 
   $effect(() => {
-    project;
-    const key = runsKey(selectedRuns);
-    if (key !== lastRunsKey) {
-      lastRunsKey = key;
+    const scopeKey = `${project || ""}::${runsKey(selectedRuns)}`;
+    if (scopeKey !== lastScopeKey) {
+      lastScopeKey = scopeKey;
       page = 0;
       stepFilter = "all";
+      expandedTraceId = null;
+      traces = [];
       loadSummary();
     }
   });
 
   $effect(() => {
+    project;
+    runsKey(selectedRuns);
     const trimmed = search.trim();
     if (trimmed !== lastSearch || sortBy !== lastSort || stepFilter !== lastStep) {
       if (lastSearch !== "" || trimmed !== "" || sortBy !== lastSort || stepFilter !== lastStep) {
@@ -261,18 +264,34 @@
     return typeof text === "string" && text.length > 500;
   }
 
-  function displayTraceId(id) {
-    if (!id) return "—";
+  function publicTraceId(id) {
+    if (!id) return "";
     const parts = String(id).split(":");
     if (parts.length >= 4) {
-      const logId = parts[1] || parts[0];
+      const logId = parts[1];
       const index = parts[parts.length - 1];
-      return `${logId.slice(0, 12)}…:${index}`;
+      return index !== "" && !Number.isNaN(Number(index)) ? `${logId}:${index}` : logId;
     }
-    const text = String(id);
-    if (text.length <= 18) return text;
-    return `…${text.slice(-18)}`;
+    return String(id);
   }
+
+  function traceHash(id) {
+    if (!id) return "";
+    const parts = String(id).split(":");
+    const source = parts.length >= 4 ? parts[1] || parts[0] : String(id);
+    return source.replace(/[^a-zA-Z0-9]/g, "").slice(0, 7) || source.slice(0, 7);
+  }
+
+  function traceIndex(id) {
+    if (!id) return null;
+    const parts = String(id).split(":");
+    if (parts.length >= 4) {
+      const last = parts[parts.length - 1];
+      if (last !== "" && !Number.isNaN(Number(last))) return last;
+    }
+    return null;
+  }
+
 
   function formatMetadataValue(value) {
     if (value == null) return "—";
@@ -382,7 +401,11 @@
                 onkeydown={(event) => handleRowKeydown(event, trace.id)}
               >
                 <td class="trace-id-cell">
-                  <span class="trace-id" title={trace.id}>{displayTraceId(trace.id)}</span>
+                  <span class="trace-id-chip" title={publicTraceId(trace.id)}
+                    >{traceHash(trace.id)}{traceIndex(trace.id) !== null
+                      ? `:${traceIndex(trace.id)}`
+                      : ""}</span
+                  >
                 </td>
                 <td class="request-cell">
                   <div class="request">{trace.request}</div>
@@ -397,7 +420,7 @@
                   <td colspan="5">
                     <div class="trace-detail">
                       <div class="detail-meta">
-                        <span>Trace ID: {trace.id}</span>
+                        <span>Trace ID: {publicTraceId(trace.id)}</span>
                         <span>Logged as: {trace.key}</span>
                         <span>Timestamp: {trace.timestamp || "—"}</span>
                         {#each metadataEntries(trace) as [key, value]}
@@ -538,7 +561,7 @@
     table-layout: fixed;
   }
   .trace-id-col {
-    width: 160px;
+    width: 140px;
   }
   .request-col {
     width: auto;
@@ -575,19 +598,10 @@
   .trace-row:hover {
     background: var(--background-fill-secondary, #f9fafb);
   }
-  .trace-id {
-    display: inline-block;
-    max-width: 136px;
-    background: var(--background-fill-secondary, #f3f4f6);
-    color: var(--body-text-color, #1f2937);
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-md, 6px);
-    padding: 6px 10px;
+  .trace-id-chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    line-height: 1.35;
+    color: #000;
   }
   .request {
     font-weight: 500;
