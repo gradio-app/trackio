@@ -1,5 +1,22 @@
 # trackio
 
+## 0.26.0
+
+### Features
+
+- [#553](https://github.com/gradio-app/trackio/pull/553) [`06011ac`](https://github.com/gradio-app/trackio/commit/06011acc9c73341fd234f9cd8eaf96d5a34ad8ce) - fix: serve static-Space assets at /static/trackio.  Thanks @abidlabs!
+- [#563](https://github.com/gradio-app/trackio/pull/563) [`551569c`](https://github.com/gradio-app/trackio/commit/551569c16fb56ec63249ebdc28348d326ccf7126) - Fix Traces UI a bit.  Thanks @abidlabs!
+- [#550](https://github.com/gradio-app/trackio/pull/550) [`5690acd`](https://github.com/gradio-app/trackio/commit/5690acda5da303c63ad332451afeab3e9750fd1a) - fix: keep sparse metrics sparse through smoothing.  Thanks @abidlabs!
+- [#551](https://github.com/gradio-app/trackio/pull/551) [`0ef7266`](https://github.com/gradio-app/trackio/commit/0ef72660695cf932f3906ddbf33d41d087280a22) - add "group by" dropdown to sidebar.  Thanks @Saba9!
+- [#538](https://github.com/gradio-app/trackio/pull/538) [`a15c1a8`](https://github.com/gradio-app/trackio/commit/a15c1a8877c07514e0596630bb7c7299299994a9) - Subdue empty dashboard tabs.  Thanks @abidlabs!
+- [#559](https://github.com/gradio-app/trackio/pull/559) [`0b53a41`](https://github.com/gradio-app/trackio/commit/0b53a413909598f92138b6b6395a91c2d5034faf) - Store traces separately from metrics.  Thanks @abidlabs!
+- [#556](https://github.com/gradio-app/trackio/pull/556) [`d110001`](https://github.com/gradio-app/trackio/commit/d110001dbd9f6b262dfe41f2b702e3a71aa0cfc9) - fix: keep selected x-axis option in dropdown and dismiss dropdown on re-click.  Thanks @Saba9!
+- [#560](https://github.com/gradio-app/trackio/pull/560) [`aee2923`](https://github.com/gradio-app/trackio/commit/aee2923d3ada4f74d62d065c16f1f6a56a295e48) - Paginate Traces tab with step filter.  Thanks @abidlabs!
+
+### Fixes
+
+- [#540](https://github.com/gradio-app/trackio/pull/540) [`0b674ac`](https://github.com/gradio-app/trackio/commit/0b674ac6438738de89bc5b3fb700ccfd8a39368c) - raise default metrics sampling cap from 1500 to 3000 so client-side smoothing on the Metrics tab runs over higher-resolution data.  Thanks @edbeeching!
+
 ## 0.25.1
 
 ### Features
