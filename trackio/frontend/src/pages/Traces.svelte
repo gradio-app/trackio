@@ -601,7 +601,7 @@
   .trace-id-chip {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 13px;
-    color: #000;
+    color: var(--body-text-color, #1f2937);
   }
   .request {
     font-weight: 500;
