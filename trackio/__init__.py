@@ -311,7 +311,7 @@ def init(
             The name of the run (if not provided, a default name will be generated).
         group (`str`, *optional*):
             The name of the group which this run belongs to in order to help organize
-            related runs together. You can toggle the entire group's visibilitiy in the
+            related runs together. You can toggle the entire group's visibility in the
             dashboard.
         space_id (`str`, *optional*):
             If provided, the project will be logged to a Hugging Face Space instead of
