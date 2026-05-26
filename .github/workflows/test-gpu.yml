@@ -1,0 +1,69 @@
+name: GPU Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'trackio/gpu.py'
+      - 'trackio/run.py'
+      - 'tests/unit/test_gpu_hardware.py'
+      - '.github/workflows/test-gpu.yml'
+      - 'pyproject.toml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'trackio/gpu.py'
+      - 'trackio/run.py'
+      - 'tests/unit/test_gpu_hardware.py'
+      - '.github/workflows/test-gpu.yml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+jobs:
+  gpu-test:
+    runs-on: hf-jobs-t4-small
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Show GPU
+      run: |
+        nvidia-smi
+        echo "---"
+        nvcc --version || echo "(no nvcc, runtime image)"
+
+    - name: Set up Python
+      id: setup-python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    - name: Install dependencies
+      run: |
+        uv pip install --system --prerelease=allow \
+          --python "${{ steps.setup-python.outputs.python-path }}" \
+          -e '.[dev,gpu]' pytest torch --index-strategy unsafe-best-match \
+          --extra-index-url https://download.pytorch.org/whl/cu121
+
+    - name: Verify CUDA visible to Python
+      run: |
+        "${{ steps.setup-python.outputs.python-path }}" -c "
+        import torch
+        assert torch.cuda.is_available(), 'CUDA not available'
+        print(f'torch={torch.__version__}, cuda={torch.version.cuda}')
+        print(f'device count={torch.cuda.device_count()}')
+        for i in range(torch.cuda.device_count()):
+            print(f'  device {i}: {torch.cuda.get_device_name(i)}')
+        "
+
+    - name: Run GPU hardware tests
+      run: |
+        "${{ steps.setup-python.outputs.python-path }}" -m pytest tests/unit/test_gpu_hardware.py -v
