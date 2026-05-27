@@ -18,6 +18,7 @@ from trackio.alerts import (
     should_send_webhook,
 )
 from trackio.apple_gpu import AppleGpuMonitor, apple_gpu_available
+from trackio.cpu import CpuMonitor, cpu_available
 from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
@@ -50,6 +51,8 @@ class Run:
         initial_last_step: int | None = None,
         auto_log_gpu: bool = False,
         gpu_log_interval: float = 10.0,
+        auto_log_cpu: bool = False,
+        cpu_log_interval: float = 10.0,
         webhook_url: str | None = None,
         webhook_min_level: AlertLevel | str | None = None,
     ):
@@ -78,6 +81,11 @@ class Run:
                 memory, temperature) at regular intervals.
             gpu_log_interval: The interval in seconds between GPU metric logs.
                 Only used when auto_log_gpu is True.
+            auto_log_cpu: Whether to automatically log CPU and RAM metrics
+                (utilization, memory, disk I/O, network I/O, sensors) at regular
+                intervals.
+            cpu_log_interval: The interval in seconds between CPU metric logs.
+                Only used when auto_log_cpu is True.
             webhook_url: A webhook URL to POST alert payloads to. Supports
                 Slack and Discord webhook URLs natively. Can also be set via
                 the TRACKIO_WEBHOOK_URL environment variable.
@@ -179,6 +187,18 @@ class Run:
                 self._warn_once(
                     "gpu-monitor",
                     f"trackio.init() failed to start automatic GPU logging: {e}. Continuing without system metric auto-logging.",
+                )
+
+        self._cpu_monitor: "CpuMonitor | None" = None
+        if auto_log_cpu:
+            try:
+                if cpu_available():
+                    self._cpu_monitor = CpuMonitor(self, interval=cpu_log_interval)
+                    self._cpu_monitor.start()
+            except Exception as e:
+                self._warn_once(
+                    "cpu-monitor",
+                    f"trackio.init() failed to start automatic CPU logging: {e}. Continuing without CPU metric auto-logging.",
                 )
 
     def _hf_token_for_remote(self) -> str | None:
@@ -979,6 +999,15 @@ class Run:
                     self._warn_once(
                         "finish-gpu-monitor",
                         f"trackio.finish() could not stop automatic GPU logging cleanly: {e}.",
+                    )
+
+            if self._cpu_monitor is not None:
+                try:
+                    self._cpu_monitor.stop()
+                except Exception as e:
+                    self._warn_once(
+                        "finish-cpu-monitor",
+                        f"trackio.finish() could not stop automatic CPU logging cleanly: {e}.",
                     )
 
             self._stop_flag.set()

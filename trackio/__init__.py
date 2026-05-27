@@ -19,6 +19,8 @@ from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
+from trackio.cpu import cpu_available
+from trackio.cpu import log_cpu as _log_cpu
 from trackio.deploy import freeze, sync
 from trackio.frontend_config import resolve_frontend_dir
 from trackio.gpu import gpu_available
@@ -59,6 +61,7 @@ __all__ = [
     "log",
     "log_system",
     "log_gpu",
+    "log_cpu",
     "finish",
     "alert",
     "AlertLevel",
@@ -297,6 +300,8 @@ def init(
     embed: bool = True,
     auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
+    auto_log_cpu: bool | None = None,
+    cpu_log_interval: float = 10.0,
     webhook_url: str | None = None,
     webhook_min_level: AlertLevel | str | None = None,
 ) -> Run:
@@ -374,6 +379,17 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
+        auto_log_cpu (`bool` or `None`, *optional*, defaults to `None`):
+            Controls automatic CPU and RAM metrics logging (utilization, memory,
+            disk I/O, network I/O, and sensors). If `None` (default), CPU logging
+            is automatically enabled when `psutil` is installed. Set to `True` to
+            force enable or `False` to disable. On Apple Silicon, CPU and RAM
+            metrics are already included in the Apple system metrics logged by
+            `auto_log_gpu`, so `auto_log_cpu` defaults to `False` on that platform
+            to avoid duplicate entries.
+        cpu_log_interval (`float`, *optional*, defaults to `10.0`):
+            The interval in seconds between automatic CPU metric logs.
+            Only used when `auto_log_cpu=True`.
         webhook_url (`str`, *optional*):
             A webhook URL to POST alert payloads to when `trackio.alert()` is
             called. Supports Slack and Discord webhook URLs natively (payloads
@@ -626,6 +642,18 @@ def init(
             if nvidia_available or apple_available:
                 _projects_notified_auto_log_hw.add(project)
 
+    if auto_log_cpu is None:
+        apple_available_for_cpu = apple_gpu_available()
+        if apple_available_for_cpu:
+            auto_log_cpu = False
+        else:
+            auto_log_cpu = cpu_available()
+            if auto_log_cpu and project not in _projects_notified_auto_log_hw:
+                print(
+                    "* psutil detected, enabling automatic CPU and RAM metrics logging"
+                )
+                _projects_notified_auto_log_hw.add(project)
+
     run = Run(
         url=url,
         project=project,
@@ -641,6 +669,8 @@ def init(
         initial_last_step=initial_last_step,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
+        auto_log_cpu=auto_log_cpu,
+        cpu_log_interval=cpu_log_interval,
         webhook_url=webhook_url,
         webhook_min_level=webhook_min_level,
     )
@@ -758,6 +788,34 @@ def log_gpu(run: Run | None = None, device: int | None = None) -> dict:
             "or psutil for Apple Silicon support."
         )
         return {}
+
+
+def log_cpu(run: Run | None = None) -> dict:
+    """
+    Log CPU, RAM, disk, network, and sensor metrics to the current or specified run
+    as system metrics.
+
+    Args:
+        run: Optional Run instance. If None, uses current run from context.
+
+    Returns:
+        dict: The CPU and system metrics that were logged.
+
+    Example:
+        ```python
+        import trackio
+
+        run = trackio.init(project="my-project")
+        trackio.log({"loss": 0.5})
+        trackio.log_cpu()
+        ```
+    """
+    if run is None:
+        run = context_vars.current_run.get()
+        if run is None:
+            raise RuntimeError("Call trackio.init() before trackio.log_cpu().")
+
+    return _log_cpu(run=run)
 
 
 def finish():
