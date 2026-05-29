@@ -25,12 +25,6 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Set up Node.js
-      if: matrix.os == 'hf-jobs-cpu-upgrade'
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
     - name: Install uv
       uses: astral-sh/setup-uv@v3
       with:
@@ -43,12 +37,6 @@ jobs:
         key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
         restore-keys: |
           ${{ runner.os }}-uv-
-
-    - name: Install system dependencies (Linux)
-      if: matrix.os == 'hf-jobs-cpu-upgrade'
-      run: |
-        sudo apt-get update -qy
-        sudo apt-get install -qy ffmpeg libsqlite3-0
 
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
@@ -74,11 +62,6 @@ jobs:
       run: |
         cd trackio/frontend
         npm test
-
-    - name: Install Playwright
-      if: matrix.os == 'hf-jobs-cpu-upgrade'
-      run: |
-        "${{ steps.setup-python.outputs.python-path }}" -m playwright install --with-deps chromium
 
     - name: Run backend unit tests
       run: |
