@@ -78,7 +78,7 @@ jobs:
     - name: Install Playwright
       if: matrix.os == 'hf-jobs-cpu-upgrade'
       run: |
-        "${{ steps.setup-python.outputs.python-path }}" -m playwright install chromium
+        "${{ steps.setup-python.outputs.python-path }}" -m playwright install --with-deps chromium
 
     - name: Run backend unit tests
       run: |
