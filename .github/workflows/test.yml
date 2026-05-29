@@ -82,7 +82,7 @@ jobs:
 
     - name: Run backend unit tests
       run: |
-        "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces
+        "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces --deselect=tests/unit/test_gpu_hardware.py
 
     - name: Run ui/ux interaction tests
       if: matrix.os == 'hf-jobs-cpu-upgrade'

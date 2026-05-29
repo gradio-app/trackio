@@ -1,9 +1,9 @@
 """GPU hardware tests.
 
 These tests exercise the real `trackio.gpu` integration against actual NVIDIA
-hardware (via pynvml). They are skipped automatically when no CUDA device is
-present, so they're safe to include in CPU-only runs — but they're intended
-to run in the dedicated `test-gpu.yml` workflow on `hf-jobs-t4-small`.
+hardware (via pynvml). They intentionally fail if no CUDA/NVML device is
+available, so they should only run in the dedicated `test-gpu.yml` workflow on
+`hf-jobs-t4-small`.
 """
 
 from __future__ import annotations
@@ -12,36 +12,6 @@ import pytest
 
 import trackio
 from trackio import gpu as trackio_gpu
-
-
-def _cuda_available() -> bool:
-    try:
-        import torch
-
-        return torch.cuda.is_available()
-    except ImportError:
-        return False
-
-
-def _pynvml_available() -> bool:
-    try:
-        import pynvml
-
-        pynvml.nvmlInit()
-        try:
-            return pynvml.nvmlDeviceGetCount() > 0
-        finally:
-            pynvml.nvmlShutdown()
-    except Exception:
-        return False
-
-
-requires_cuda = pytest.mark.skipif(
-    not _cuda_available(), reason="requires a CUDA-capable GPU"
-)
-requires_nvml = pytest.mark.skipif(
-    not _pynvml_available(), reason="requires NVML and at least one GPU device"
-)
 
 
 @pytest.fixture
@@ -55,7 +25,6 @@ def isolated_run(tmp_path, monkeypatch):
         trackio.finish()
 
 
-@requires_nvml
 def test_pynvml_detects_at_least_one_gpu():
     import pynvml
 
@@ -73,7 +42,6 @@ def test_pynvml_detects_at_least_one_gpu():
         pynvml.nvmlShutdown()
 
 
-@requires_nvml
 def test_collect_gpu_metrics_returns_real_values():
     metrics = trackio_gpu.collect_gpu_metrics()
     assert isinstance(metrics, dict), "expected a dict of metrics"
@@ -86,15 +54,12 @@ def test_collect_gpu_metrics_returns_real_values():
     assert gpu_keys, f"expected gpu-related metric keys, got {list(metrics)[:5]}"
 
 
-@requires_nvml
 def test_log_gpu_writes_to_run(isolated_run):
     metrics = trackio.log_gpu()
     assert isinstance(metrics, dict)
     assert len(metrics) > 0
 
 
-@requires_cuda
-@requires_nvml
 def test_log_gpu_during_torch_workload(isolated_run):
     """Run a small tensor op to ensure utilization registers, then log."""
     import torch
@@ -115,7 +80,6 @@ def test_log_gpu_during_torch_workload(isolated_run):
     assert used_bytes > 0, "expected non-zero GPU memory in use during workload"
 
 
-@requires_cuda
 def test_trackio_init_compatible_with_cuda(tmp_path, monkeypatch):
     """Smoke test: importing trackio + initializing a run should work on GPU hosts."""
     monkeypatch.setenv("TRACKIO_DIR", str(tmp_path))
