@@ -25,6 +25,12 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Set up Node.js
+      if: matrix.os == 'hf-jobs-cpu-upgrade'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
     - name: Install uv
       uses: astral-sh/setup-uv@v3
       with:
@@ -55,12 +61,6 @@ jobs:
       run: |
         uv pip install --system -e '.[dev,tensorboard,spaces]' --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
         uv pip install --system pytest --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
-
-    - name: Set up Node.js
-      if: matrix.os == 'hf-jobs-cpu-upgrade'
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
 
     - name: Build frontend
       if: matrix.os == 'hf-jobs-cpu-upgrade'
