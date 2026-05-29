@@ -48,7 +48,7 @@ jobs:
       if: matrix.os == 'hf-jobs-cpu-upgrade'
       run: |
         sudo apt-get update -qy
-        sudo apt-get install -qy ffmpeg
+        sudo apt-get install -qy ffmpeg libsqlite3-0
 
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
