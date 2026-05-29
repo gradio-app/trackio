@@ -8,9 +8,6 @@ to run in the dedicated `test-gpu.yml` workflow on `hf-jobs-t4-small`.
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 import trackio
@@ -122,7 +119,7 @@ def test_log_gpu_during_torch_workload(isolated_run):
 def test_trackio_init_compatible_with_cuda(tmp_path, monkeypatch):
     """Smoke test: importing trackio + initializing a run should work on GPU hosts."""
     monkeypatch.setenv("TRACKIO_DIR", str(tmp_path))
-    run = trackio.init(project="gpu-smoke")
+    trackio.init(project="gpu-smoke")
     trackio.log({"step": 1, "loss": 0.5})
     trackio.finish()
 
