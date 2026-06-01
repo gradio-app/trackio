@@ -3,6 +3,7 @@
   import WaveformAudio from "../components/WaveformAudio.svelte";
   import { getLogs, getMediaUrl, isStaticMode, fetchMediaBlob } from "../lib/api.js";
   import { buildColorMap } from "../lib/stores.js";
+  import { filterMetricsByRegex } from "../lib/dataProcessing.js";
 
   let {
     project = null,
@@ -21,6 +22,58 @@
 
   let mediaItems = $state({ images: [], videos: [], audios: [], tables: [] });
   let loading = $state(false);
+
+  let imageFilter = $state("");
+  let viewerIndex = $state(null);
+
+  let filteredImages = $derived.by(() => {
+    if (!imageFilter || !imageFilter.trim()) return mediaItems.images;
+    const matches = new Set(
+      filterMetricsByRegex(
+        mediaItems.images.map((img) => imageName(img)),
+        imageFilter,
+      ),
+    );
+    return mediaItems.images.filter((img) => matches.has(imageName(img)));
+  });
+
+  let currentImage = $derived(
+    viewerIndex !== null ? (filteredImages[viewerIndex] ?? null) : null,
+  );
+
+  function imageName(img) {
+    return img.caption ? `${img.key} ${img.caption}` : img.key;
+  }
+
+  function openViewer(index) {
+    viewerIndex = index;
+  }
+
+  function closeViewer() {
+    viewerIndex = null;
+  }
+
+  function nextImage() {
+    if (viewerIndex === null || filteredImages.length === 0) return;
+    viewerIndex = (viewerIndex + 1) % filteredImages.length;
+  }
+
+  function prevImage() {
+    if (viewerIndex === null || filteredImages.length === 0) return;
+    viewerIndex =
+      (viewerIndex - 1 + filteredImages.length) % filteredImages.length;
+  }
+
+  function handleKey(e) {
+    if (viewerIndex === null) return;
+    if (e.key === "Escape") {
+      closeViewer();
+    } else if (e.key === "ArrowRight") {
+      nextImage();
+    } else if (e.key === "ArrowLeft") {
+      prevImage();
+    }
+  }
 
   async function loadMedia() {
     if (!project || selectedRuns.length === 0) {
@@ -186,11 +239,24 @@
           </svg>
           <span class="section-title">Images ({mediaItems.images.length})</span>
         </summary>
+        <div class="image-filter">
+          <input
+            type="text"
+            bind:value={imageFilter}
+            placeholder="Filter images..."
+          />
+        </div>
         <div class="gallery">
-          {#each mediaItems.images as img}
+          {#each filteredImages as img, i}
             <div class="gallery-item">
               <div class="media-label">{img.key}</div>
-              <img src={getFilePath(img)} alt={img.caption || img.key} loading="lazy" />
+              <button
+                class="image-button"
+                onclick={() => openViewer(i)}
+                title="Click to open viewer"
+              >
+                <img src={getFilePath(img)} alt={img.caption || img.key} loading="lazy" />
+              </button>
               {#if img.caption}
                 <div class="caption">{img.caption}</div>
               {/if}
@@ -307,6 +373,58 @@
     {/if}
   {/if}
 </div>
+
+<svelte:window onkeydown={handleKey} />
+
+{#if currentImage}
+  <div class="viewer-overlay">
+    <button
+      class="viewer-backdrop"
+      onclick={closeViewer}
+      aria-label="Close viewer"
+    ></button>
+    <button class="viewer-close" onclick={closeViewer} aria-label="Close viewer">
+      ×
+    </button>
+    {#if filteredImages.length > 1}
+      <button
+        class="viewer-nav viewer-prev"
+        onclick={prevImage}
+        aria-label="Previous image"
+      >
+        ‹
+      </button>
+    {/if}
+    <div class="viewer-content">
+      <img
+        src={getFilePath(currentImage)}
+        alt={currentImage.caption || currentImage.key}
+      />
+      <div class="viewer-info">
+        <div class="viewer-name">{currentImage.key}</div>
+        {#if currentImage.caption}
+          <div class="viewer-caption">{currentImage.caption}</div>
+        {/if}
+        <div class="viewer-meta">
+          <span class="run-dot" style:background={runColor(currentImage)}></span>
+          Run: {currentImage._run}, Step: {currentImage.step}
+          <span class="viewer-count">
+            {viewerIndex + 1} / {filteredImages.length}
+          </span>
+        </div>
+      </div>
+    </div>
+    {#if filteredImages.length > 1}
+      <button
+        class="viewer-nav viewer-next"
+        onclick={nextImage}
+        aria-label="Next image"
+      >
+        ›
+      </button>
+    {/if}
+  </div>
+{/if}
 
 <style>
   .media-page {
@@ -445,6 +563,153 @@
   .caption {
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color-subdued, #9ca3af);
+  }
+  .image-filter {
+    margin-bottom: 12px;
+    max-width: 320px;
+  }
+  .image-filter input {
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: var(--input-radius, 8px);
+    background: var(--input-background-fill, white);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    color: var(--body-text-color, #1f2937);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .image-filter input:focus {
+    border-color: var(--input-border-color-focus, #fdba74);
+    box-shadow: 0 0 0 2px var(--primary-50, #fff7ed);
+  }
+  .image-filter input::placeholder {
+    color: var(--input-placeholder-color, #9ca3af);
+  }
+  .image-button {
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    border-radius: var(--radius-sm, 4px);
+  }
+  .image-button:focus-visible {
+    outline: 2px solid var(--input-border-color-focus, #fdba74);
+    outline-offset: 2px;
+  }
+  .viewer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.85);
+    padding: 48px;
+  }
+  .viewer-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: none;
+    cursor: zoom-out;
+    padding: 0;
+  }
+  .viewer-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    max-width: 100%;
+    max-height: 100%;
+    pointer-events: none;
+  }
+  .viewer-content img {
+    max-width: 100%;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: var(--radius-sm, 4px);
+    pointer-events: auto;
+  }
+  .viewer-info {
+    text-align: center;
+    color: #fff;
+  }
+  .viewer-name {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .viewer-caption {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.75);
+    margin-top: 2px;
+  }
+  .viewer-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .viewer-meta .run-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .viewer-count {
+    margin-left: 8px;
+  }
+  .viewer-close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 32px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.8;
+  }
+  .viewer-close:hover {
+    opacity: 1;
+  }
+  .viewer-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #fff;
+    font-size: 40px;
+    line-height: 1;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.8;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  .viewer-nav:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.2);
+  }
+  .viewer-prev {
+    left: 16px;
+  }
+  .viewer-next {
+    right: 16px;
   }
   .table-section {
     margin-bottom: 16px;
