@@ -15,9 +15,8 @@ from trackio import gpu as trackio_gpu
 
 
 @pytest.fixture
-def isolated_run(tmp_path, monkeypatch):
+def isolated_run(temp_dir):
     """Spin up a trackio run that writes to a temp dir, finish on teardown."""
-    monkeypatch.setenv("TRACKIO_DIR", str(tmp_path))
     run = trackio.init(project="gpu-tests")
     try:
         yield run
@@ -80,9 +79,8 @@ def test_log_gpu_during_torch_workload(isolated_run):
     assert used_bytes > 0, "expected non-zero GPU memory in use during workload"
 
 
-def test_trackio_init_compatible_with_cuda(tmp_path, monkeypatch):
+def test_trackio_init_compatible_with_cuda(temp_dir):
     """Smoke test: importing trackio + initializing a run should work on GPU hosts."""
-    monkeypatch.setenv("TRACKIO_DIR", str(tmp_path))
     trackio.init(project="gpu-smoke")
     trackio.log({"step": 1, "loss": 0.5})
     trackio.finish()
