@@ -50,8 +50,12 @@ jobs:
       run: |
         uv pip install --system --prerelease=allow \
           --python "${{ steps.setup-python.outputs.python-path }}" \
-          -e '.[dev,gpu]' pytest torch --index-strategy unsafe-best-match \
-          --extra-index-url https://download.pytorch.org/whl/cu121
+          -e '.[dev,gpu]' pytest
+        uv pip install --system --prerelease=allow \
+          --python "${{ steps.setup-python.outputs.python-path }}" \
+          --index-url https://download.pytorch.org/whl/cu121 \
+          --extra-index-url https://pypi.org/simple \
+          torch
 
     - name: Verify CUDA visible to Python
       run: |
