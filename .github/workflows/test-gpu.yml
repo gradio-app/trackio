@@ -47,6 +47,8 @@ jobs:
         version: "latest"
 
     - name: Install dependencies
+      env:
+        SKIP_FRONTEND_BUILD: "1"
       run: |
         uv pip install --system --prerelease=allow \
           --python "${{ steps.setup-python.outputs.python-path }}" \
