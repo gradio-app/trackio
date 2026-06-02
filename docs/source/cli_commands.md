@@ -23,7 +23,7 @@ For private Spaces, pass `--hf-token` or ensure you are logged in via `huggingfa
 trackio list projects --space username/private-space --hf-token hf_xxxxx
 ```
 
-> **Note:** The `show`, `status`, `sync`, `freeze`, and `skills` commands are local-only and do not support `--space`.
+> **Note:** The `show`, `status`, `sync`, `freeze`, `report`, and `skills` commands are local-only and do not support `--space`.
 
 ## Sync Command
 
@@ -80,6 +80,43 @@ trackio freeze --space-id "username/my-space" --project "my-project" --new-space
 > **Note:** The source must be a Gradio Space with a bucket mounted at `/data`. If the destination Space already exists and is not a Trackio static Space, `freeze` will refuse to overwrite it.
 > The frozen Space is a snapshot. Later metrics synced to the original Gradio Space do not appear in the frozen static Space unless you run `freeze` again.
 > Static frozen snapshots require public destination data, so `trackio freeze --private` is not supported.
+
+## Report Commands
+
+Create a static Trackio Report workspace:
+
+```sh
+trackio report init --space-id "username/my-report" --bucket-id "username/my-report-bucket"
+```
+
+Append an experiment entry and upload artifacts to the configured HF Bucket:
+
+```sh
+trackio report publish \
+  --page reports/experiments/data-mixtures.md \
+  --title "Run 003" \
+  --body notes.md \
+  --artifact outputs/chart.png \
+  --artifact outputs/checkpoint/
+```
+
+Validate, build, preview, and deploy the static report:
+
+```sh
+trackio report validate
+trackio report build
+trackio report preview --port 7860
+trackio report deploy
+```
+
+| Command | Description |
+|---------|-------------|
+| `trackio report init` | Create `REPORTS.md`, `.trackio/config.toml`, schema, and the root report page |
+| `trackio report publish` | Append Markdown to a page and upload artifacts |
+| `trackio report validate` | Check the local report structure |
+| `trackio report build` | Generate the static site in `dist/` |
+| `trackio report preview` | Serve the generated report locally |
+| `trackio report deploy` | Deploy the report as a public static Space |
 
 ## List Commands
 

@@ -130,6 +130,10 @@ You can log reports multiple times during a run (for example, one report per che
 
 For a complete runnable script, see `examples/training-with-report.py`.
 
+If you want a standalone, Notion-like static report with nested Markdown pages,
+uploaded artifacts, and embedded Trackio dashboards, see
+[Trackio Reports](reports.md).
+
 ### Logging images
 
 You can log images using the [`Image`] class.

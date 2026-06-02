@@ -717,6 +717,60 @@ def main():
         help="Output in JSON format",
     )
 
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Build and publish static Trackio Reports",
+    )
+    report_subparsers = report_parser.add_subparsers(
+        dest="report_action", required=True
+    )
+    report_init_parser = report_subparsers.add_parser(
+        "init",
+        help="Initialize a Trackio Report workspace",
+    )
+    report_init_parser.add_argument("--space-id", required=False)
+    report_init_parser.add_argument("--bucket-id", required=False)
+    report_init_parser.add_argument("--force", action="store_true")
+
+    report_publish_parser = report_subparsers.add_parser(
+        "publish",
+        help="Append a report entry and upload artifacts",
+    )
+    report_publish_parser.add_argument("--page", required=True)
+    report_publish_parser.add_argument("--title", required=True)
+    report_publish_body = report_publish_parser.add_mutually_exclusive_group()
+    report_publish_body.add_argument("--body", required=False)
+    report_publish_body.add_argument("--body-file", required=False)
+    report_publish_parser.add_argument(
+        "--artifact",
+        action="append",
+        default=[],
+        help="Artifact file or directory to upload. Can be passed multiple times.",
+    )
+    report_publish_parser.add_argument("--bucket-id", required=False)
+    report_publish_parser.add_argument(
+        "--no-upload",
+        action="store_true",
+        help="Do not upload artifacts; only write report entries.",
+    )
+
+    report_subparsers.add_parser("build", help="Build the static report site")
+    report_subparsers.add_parser("validate", help="Validate report structure")
+
+    report_preview_parser = report_subparsers.add_parser(
+        "preview",
+        help="Build and serve the static report locally",
+    )
+    report_preview_parser.add_argument("--port", type=int, default=7860)
+
+    report_deploy_parser = report_subparsers.add_parser(
+        "deploy",
+        help="Deploy the report as a static Hugging Face Space",
+    )
+    report_deploy_parser.add_argument("--space-id", required=False)
+    report_deploy_parser.add_argument("--bucket-id", required=False)
+    report_deploy_parser.add_argument("--output-dir", required=False)
+
     skills_parser = subparsers.add_parser(
         "skills",
         help="Manage Trackio skills for AI coding assistants",
@@ -781,9 +835,14 @@ def main():
         if trailing_globals.hf_token is not None:
             args.hf_token = trailing_globals.hf_token
 
-    if args.command in ("show", "status", "sync", "freeze", "skills") and _get_space(
-        args
-    ):
+    if args.command in (
+        "show",
+        "status",
+        "sync",
+        "freeze",
+        "skills",
+        "report",
+    ) and _get_space(args):
         error_exit(
             f"The '{args.command}' command does not support --space (remote mode)."
         )
@@ -815,6 +874,51 @@ def main():
         )
     elif args.command == "config":
         _handle_config(args)
+    elif args.command == "report":
+        from trackio import reports
+
+        try:
+            if args.report_action == "init":
+                reports.init_report(
+                    space_id=args.space_id,
+                    bucket_id=args.bucket_id,
+                    force=args.force,
+                )
+                print("Initialized Trackio Report workspace.")
+            elif args.report_action == "publish":
+                result = reports.publish_report(
+                    page=args.page,
+                    title=args.title,
+                    body=args.body,
+                    body_file=args.body_file,
+                    artifacts=args.artifact,
+                    bucket_id=args.bucket_id,
+                    upload=not args.no_upload,
+                )
+                print(format_json(result))
+            elif args.report_action == "build":
+                manifest = reports.build_report()
+                print(
+                    f"Built Trackio Report with {len(manifest['pages'])} page(s)."
+                )
+            elif args.report_action == "validate":
+                errors = reports.validate_report()
+                if errors:
+                    for err in errors:
+                        print(f"ERROR: {err}")
+                    raise SystemExit(1)
+                print("Trackio Report is valid.")
+            elif args.report_action == "preview":
+                reports.preview_report(port=args.port)
+            elif args.report_action == "deploy":
+                space_id = reports.deploy_report(
+                    space_id=args.space_id,
+                    bucket_id=args.bucket_id,
+                    output_dir=args.output_dir,
+                )
+                print(f"Deployed Trackio Report: https://huggingface.co/spaces/{space_id}")
+        except Exception as e:
+            error_exit(str(e))
     elif args.command == "list":
         remote = _get_remote(args)
         if args.list_type == "projects":
