@@ -69,5 +69,7 @@ jobs:
 
     - name: Run ui/ux interaction tests
       if: matrix.os == 'hf-jobs-cpu-upgrade'
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       run: |
         "${{ steps.setup-python.outputs.python-path }}" -m pytest tests/ui
