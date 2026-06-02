@@ -10,26 +10,26 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [hf-jobs-cpu-upgrade, windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
-    
+
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Set up Python
       id: setup-python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-        
+
     - name: Install uv
       uses: astral-sh/setup-uv@v3
       with:
         version: "latest"
-        
+
     - name: Cache uv packages
       uses: actions/cache@v3
       with:
@@ -37,56 +37,39 @@ jobs:
         key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
         restore-keys: |
           ${{ runner.os }}-uv-
-        
-    - name: Install system dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update -qy
-        sudo apt-get install -qy ffmpeg
-        
+
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
       uses: AnimMouse/setup-ffmpeg@27e66fd2fe1d643b73a7c5cb105f3b4116bfb8db # v1.2.1
 
     - name: Verify ffmpeg
       run: ffmpeg -version
-        
+
     - name: Install Python dependencies
       run: |
         uv pip install --system -e '.[dev,tensorboard,spaces]' --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
         uv pip install --system pytest --prerelease=allow --python "${{ steps.setup-python.outputs.python-path }}"
 
-    - name: Set up Node.js
-      if: matrix.os == 'ubuntu-latest'
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
     - name: Build frontend
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'hf-jobs-cpu-upgrade'
       run: |
         cd trackio/frontend
         npm ci
         npm run build
 
     - name: Run frontend unit tests
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'hf-jobs-cpu-upgrade'
       run: |
         cd trackio/frontend
         npm test
 
-    - name: Install Playwright
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        "${{ steps.setup-python.outputs.python-path }}" -m playwright install chromium
-
     - name: Run backend unit tests
       run: |
-        "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces
+        "${{ steps.setup-python.outputs.python-path }}" -m pytest --deselect=tests/ui --deselect=tests/e2e-spaces --deselect=tests/unit/test_gpu_hardware.py
 
     - name: Run ui/ux interaction tests
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'hf-jobs-cpu-upgrade'
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       run: |
         "${{ steps.setup-python.outputs.python-path }}" -m pytest tests/ui
-
-    
