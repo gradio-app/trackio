@@ -210,10 +210,18 @@ title: LLM Data Mixture Report
 
 # LLM Data Mixture Report
 
-We post-trained a mock 8B instruction model with four data mixtures and compared
-instruction-following, math, code, and safety-oriented proxy metrics.
+<section class="abstract">
+  <h2>Abstract</h2>
+  <p>
+    We post-trained a mock 8B instruction model with four data mixtures and
+    compared instruction-following, math, code, and safety-oriented proxy
+    metrics. The balanced mixture produced the best aggregate tradeoff, while
+    targeted mixtures improved their matching capabilities at the cost of
+    generality.
+  </p>
+</section>
 
-{{{{ trackio url="{dashboard_url}?project={PROJECT}&sidebar=hidden&footer=false" }}}}
+{{{{ trackio url="{dashboard_url}?project={PROJECT}&sidebar=hidden&footer=false" caption="Interactive Trackio dashboard for every mock post-training run in this report." }}}}
 
 ## Takeaways
 
@@ -221,6 +229,34 @@ instruction-following, math, code, and safety-oriented proxy metrics.
 - Code-heavy improved HumanEval but regressed chat quality.
 - Math-heavy improved GSM8K and hurt general instruction following.
 - Chat-heavy had the best MT-Bench score but weaker code and math transfer.
+
+## Results Summary
+
+<table>
+  <thead>
+    <tr>
+      <th>Mixture</th>
+      <th>MT-Bench</th>
+      <th>GSM8K</th>
+      <th>HumanEval</th>
+      <th>Toxicity</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>balanced</td><td>7.4</td><td>64.0</td><td>38.2</td><td>1.8</td></tr>
+    <tr><td>code-heavy</td><td>6.9</td><td>58.5</td><td>45.7</td><td>2.2</td></tr>
+    <tr><td>math-heavy</td><td>6.8</td><td>71.3</td><td>34.4</td><td>2.4</td></tr>
+    <tr><td>chat-heavy</td><td>7.7</td><td>55.8</td><td>31.0</td><td>1.6</td></tr>
+  </tbody>
+</table>
+
+## Linked Experiment Pages
+
+The generated report below inlines each source Markdown page as an anchored
+section. Start with [Experiments](#page-experiments-index), then inspect the
+[balanced](#page-experiments-balanced), [code-heavy](#page-experiments-code-heavy),
+[math-heavy](#page-experiments-math-heavy), and [chat-heavy](#page-experiments-chat-heavy)
+pages.
 """,
         encoding="utf-8",
     )
@@ -237,7 +273,7 @@ instruction-following, math, code, and safety-oriented proxy metrics.
 Final mock evals: MT-Bench `{mixture["mt_bench"]}`, GSM8K `{mixture["gsm8k"]}`,
 HumanEval `{mixture["humaneval"]}`, toxicity `{mixture["toxicity"]}`.
 
-{{{{ trackio url="{dashboard_url}?project={PROJECT}&metrics=train/loss,eval/reward&sidebar=hidden&footer=false" }}}}
+{{{{ trackio url="{dashboard_url}?project={PROJECT}&metrics=train/loss,eval/reward&sidebar=hidden&footer=false" caption="Filtered Trackio dashboard for training loss and reward curves." }}}}
 """
         reports.publish_report(
             workdir,

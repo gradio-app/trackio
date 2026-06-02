@@ -46,7 +46,9 @@ appended to the selected page.
 ## Report pages
 
 Reports are Markdown files in the `reports/` directory. Folder structure defines
-nesting:
+nesting. The deployed report is rendered as one article-style page: `index.md`
+appears first, and nested pages appear as linked inline sections with stable
+anchors.
 
 ```text
 reports/
@@ -73,11 +75,16 @@ Use shortcodes for artifacts and dashboards:
 ```md
 {{ artifact path="reports/artifacts/run/chart.png" caption="Evaluation chart" }}
 {{ file path="reports/artifacts/run/model.safetensors" caption="Model weights" }}
-{{ trackio url="https://username-space.hf.space/?project=my-project&sidebar=hidden" }}
+{{ trackio url="https://username-space.static.hf.space/?project=my-project&sidebar=hidden" }}
 ```
 
 Static report Spaces are public, so embedded dashboards and artifact URLs must be
 publicly readable.
+
+Trackio embeds are designed to be parseable by agents. The generated HTML
+includes `data-trackio-url`, `data-trackio-project`, and `data-trackio-metrics`
+attributes, and `dist/report.json` includes each dashboard URL, project, metric
+filters, and suggested `trackio` CLI commands.
 
 ## Build and deploy
 

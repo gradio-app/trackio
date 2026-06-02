@@ -52,8 +52,19 @@ title: Data mixtures
     assert len(manifest["pages"]) == 3
     assert any(page["parent"] == "index.md" for page in manifest["pages"])
     assert all(page["path"] != page["parent"] for page in manifest["pages"])
+    assert manifest["dashboards"][0]["project"] == "mixtures"
+    assert manifest["dashboards"][0]["space_url"] == "https://abidlabs-demo.hf.space"
+    assert manifest["dashboards"][0]["cli_commands"][0].startswith(
+        'trackio list runs --project "mixtures"'
+    )
+    assert "&sidebar=hidden" not in manifest["dashboards"][0]["cli_commands"][0]
     assert "https://huggingface.co/buckets/abidlabs/report-bucket/resolve/reports/artifacts/chart.png" in html
     assert '<iframe class="trackio-embed"' in html
+    assert '<aside>' not in html
+    assert 'class="linked-pages"' in html
+    assert 'id="page-experiments-mixtures"' in html
+    assert "Agents can query the same data with the Trackio CLI" in html
+    assert 'data-trackio-project="mixtures"' in html
     assert "Data mixtures" in html
 
 
