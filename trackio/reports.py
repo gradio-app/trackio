@@ -681,7 +681,7 @@ def _render_document_html(
   <title>{escaped_title}</title>
   <link rel="alternate" type="text/markdown" href="{_relative_url("agent.md", current_page or "index.html")}">
   <style>{_article_css()}</style>
-  <script>{_copy_script()}</script>
+  <script>{_report_interaction_script()}</script>
 </head>
 <body{current_attr}>
   <main class="article-shell">
@@ -689,18 +689,62 @@ def _render_document_html(
       <header class="article-header">
         <div class="header-kicker">
           <div class="eyebrow"><img class="eyebrow-logo" src="{html.escape(logo_src, quote=True)}" alt="Trackio"><span>{html.escape(eyebrow.removeprefix("Trackio ").strip())}</span></div>
-          <div class="report-url-control" data-report-url="{report_url_attr}">
-            <a class="report-url" href="{report_url_attr}">{report_url_html}</a>
-            <button class="copy-url-button" type="button" data-copy-url="{report_url_attr}" aria-label="Copy report URL" title="Copy report URL">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          <div class="header-actions">
+            <button class="hf-login-button" type="button" data-hf-login>
+              <span class="hf-mark">hf</span>
+              <span class="hf-login-label">Login with HF</span>
             </button>
+            <div class="report-url-control" data-report-url="{report_url_attr}">
+              <a class="report-url" href="{report_url_attr}">{report_url_html}</a>
+              <button class="copy-url-button" type="button" data-copy-url="{report_url_attr}" aria-label="Copy report URL" title="Copy report URL">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
           </div>
         </div>
         <h1 class="article-title">{escaped_title}</h1>
         <div class="article-meta">{meta_html}</div>
       </header>
-      {body_html}
+      <div data-report-article>
+        {body_html}
+      </div>
+      <section class="mock-mlintern-pages" data-mlintern-pages hidden>
+        <h2>Agent Generated Pages</h2>
+        <div class="page-link-grid" data-mlintern-links></div>
+      </section>
+      <section class="mock-subpage" data-mock-subpage hidden>
+        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="#" data-close-mock-page>{escaped_title}</a><span class="breadcrumb-separator">/</span><span data-mock-page-title>Mock Follow-up</span></nav>
+        <h1 data-mock-page-heading>Mock Follow-up</h1>
+        <p data-mock-page-summary></p>
+        <table>
+          <thead><tr><th>Mixture</th><th>MT-Bench</th><th>GSM8K</th><th>HumanEval</th><th>Toxicity</th></tr></thead>
+          <tbody>
+            <tr><td>code-20-followup</td><td>7.2</td><td>66.4</td><td>40.1</td><td>1.9</td></tr>
+            <tr><td>balanced-baseline</td><td>7.4</td><td>64.0</td><td>38.2</td><td>1.8</td></tr>
+          </tbody>
+        </table>
+        <p>The mocked follow-up suggests that reducing code to 20% recovers some math transfer while keeping HumanEval above the balanced baseline. In a real report, this page would be committed by the agent along with Trackio run metadata, raw artifacts, and dashboard links.</p>
+        <p><a href="#" data-close-mock-page>Back to report</a></p>
+      </section>
     </article>
+    <aside class="comment-rail" data-comment-rail aria-label="Report comments">
+      <div class="comment-rail-header">
+        <strong>Comments</strong>
+        <span data-comment-count>0</span>
+      </div>
+      <div class="comment-empty" data-comment-empty>Select report text to comment.</div>
+      <div class="comment-composer" data-comment-composer hidden>
+        <div class="selection-label">Comment on</div>
+        <blockquote data-selected-text></blockquote>
+        <div class="comment-editor" contenteditable="true" role="textbox" aria-label="Write a comment" data-comment-editor></div>
+        <div class="comment-preview" data-comment-preview hidden></div>
+        <div class="comment-actions">
+          <button type="button" class="secondary-button" data-cancel-comment>Cancel</button>
+          <button type="button" class="primary-button" data-submit-comment>Comment</button>
+        </div>
+      </div>
+      <div class="comment-thread-list" data-thread-list></div>
+    </aside>
   </main>
   <script type="application/json" id="report-manifest">{payload}</script>
 </body>
@@ -714,12 +758,18 @@ def _article_css() -> str:
     * { box-sizing: border-box; }
     body { margin: 0; color: var(--ink); background: var(--bg); font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif; }
     a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
-    .article-shell { max-width: 1080px; margin: 0 auto; padding: 34px 28px 88px; }
+    .article-shell { max-width: 1380px; margin: 0 auto; padding: 34px 28px 88px; display: grid; grid-template-columns: minmax(0, 1080px) 300px; gap: 28px; align-items: start; }
     .article-paper { background: var(--paper); padding: 16px min(6vw, 72px); }
     .article-header { padding-bottom: 18px; margin-bottom: 28px; }
     .header-kicker { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
     .eyebrow { color: var(--accent); font: 700 12px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 7px; }
     .eyebrow-logo { height: 1em; width: auto; border: 0; background: transparent; display: block; }
+    .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; flex: 1; }
+    .hf-login-button { min-height: 30px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #fff; color: #344054; padding: 4px 10px; cursor: pointer; font: 700 12px/1.3 ui-sans-serif, system-ui, sans-serif; white-space: nowrap; }
+    .hf-login-button:hover { border-color: #bfdbfe; background: var(--accent-soft); color: var(--accent); }
+    .hf-login-button.signed-in { border-color: #d1d5db; background: #f9fafb; color: #111827; }
+    .hf-mark { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #ffd21e; color: #111827; font: 800 10px/1 ui-sans-serif, system-ui, sans-serif; text-transform: lowercase; letter-spacing: 0; }
+    .hf-avatar { width: 22px; height: 22px; border-radius: 999px; border: 1px solid var(--line); display: block; }
     .report-url-control { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: min(460px, 52%); color: var(--muted); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .report-url { color: var(--muted); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .report-url:hover { color: var(--accent); text-decoration: underline; }
@@ -757,15 +807,65 @@ def _article_css() -> str:
     .trackio-embed { width: 100%; min-height: 560px; border: 1px solid var(--line); background: white; }
     .agent-note { margin-top: 8px; padding: 12px 14px; background: #f8fafc; border-left: 3px solid var(--accent); color: #344054; font: 13px/1.55 ui-sans-serif, system-ui, sans-serif; }
     .agent-note code { background: rgba(255,255,255,0.8); font-size: 12px; }
+    .comment-rail { position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; border-left: 1px solid var(--line); padding-left: 18px; font-family: ui-sans-serif, system-ui, sans-serif; }
+    .comment-rail-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; color: #111827; font-size: 14px; }
+    .comment-rail-header span { min-width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--soft); color: var(--muted); font-size: 12px; }
+    .comment-empty { color: var(--muted); border: 1px dashed var(--line); padding: 14px; font-size: 13px; line-height: 1.5; }
+    .comment-composer, .comment-thread { border: 1px solid var(--line); background: #fff; padding: 12px; margin-bottom: 12px; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06); }
+    .selection-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+    .comment-composer blockquote, .comment-selection { margin: 0 0 10px; padding-left: 10px; border-left: 3px solid #facc15; color: #344054; font-size: 12px; line-height: 1.45; }
+    .comment-editor { min-height: 78px; outline: none; border: 1px solid var(--line); padding: 9px; color: #111827; font-size: 13px; line-height: 1.45; }
+    .comment-editor:empty::before { content: "Write a comment. Try @lewis or @mlintern."; color: #98a2b3; }
+    .comment-preview { margin-top: 8px; color: #344054; font-size: 12px; line-height: 1.45; }
+    .hf-tag { color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 999px; padding: 0 5px; font-weight: 700; white-space: nowrap; }
+    .comment-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+    .primary-button, .secondary-button { min-height: 30px; border: 1px solid var(--line); padding: 5px 10px; cursor: pointer; font: 700 12px/1 ui-sans-serif, system-ui, sans-serif; }
+    .primary-button { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .secondary-button { background: #fff; color: var(--muted); }
+    .comment-author { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .comment-avatar { width: 24px; height: 24px; border-radius: 999px; border: 1px solid var(--line); flex: 0 0 24px; }
+    .comment-body { color: #344054; font-size: 13px; line-height: 1.5; }
+    .comment-reply { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+    .mlintern-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .mlintern-spinner { width: 12px; height: 12px; border: 2px solid #dbeafe; border-top-color: var(--accent); border-radius: 999px; animation: spin 0.85s linear infinite; }
+    .comment-result-link { display: inline-block; margin-top: 8px; font-weight: 700; }
+    .mock-mlintern-pages[hidden], .mock-subpage[hidden], [hidden] { display: none !important; }
+    .mock-subpage { border-top: 1px solid var(--line); margin-top: 34px; padding-top: 22px; }
+    mark.report-selection { background: #fef3c7; color: inherit; padding: 0 2px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     table { width: 100%; border-collapse: collapse; margin: 24px 0; font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
     th, td { border-bottom: 1px solid var(--line); padding: 10px 8px; text-align: left; vertical-align: top; }
     th { background: var(--soft); }
-    @media (max-width: 760px) { .article-shell { padding: 18px 10px 56px; } .article-paper { padding: 18px 10px; } .header-kicker { align-items: flex-start; flex-direction: column; gap: 8px; } .report-url-control { width: 100%; max-width: 100%; justify-content: flex-start; } .article-title { font-size: 30px; } p, li { font-size: 16px; } .trackio-embed { min-height: 460px; } }
+    @media (max-width: 1040px) { .article-shell { grid-template-columns: 1fr; } .comment-rail { position: static; max-height: none; border-left: 0; border-top: 1px solid var(--line); padding: 18px 0 0; } }
+    @media (max-width: 760px) { .article-shell { padding: 18px 10px 56px; } .article-paper { padding: 18px 10px; } .header-kicker { align-items: flex-start; flex-direction: column; gap: 8px; } .header-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; } .report-url-control { width: 100%; max-width: 100%; justify-content: flex-start; } .article-title { font-size: 30px; } p, li { font-size: 16px; } .trackio-embed { min-height: 460px; } }
     """
 
 
-def _copy_script() -> str:
-    return """document.addEventListener("click", async (event) => {
+def _report_interaction_script() -> str:
+    return """const TRACKIO_MOCK_USER = {
+  username: "abidlabs",
+  avatar: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='32' fill='%232563eb'/%3E%3Ctext x='32' y='39' text-anchor='middle' font-family='Arial, sans-serif' font-size='24' font-weight='700' fill='white'%3EA%3C/text%3E%3C/svg%3E"
+};
+const TRACKIO_MOCK_AGENT = {
+  username: "mlintern",
+  avatar: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='32' fill='%23111827'/%3E%3Ctext x='32' y='39' text-anchor='middle' font-family='Arial, sans-serif' font-size='20' font-weight='700' fill='%23ffd21e'%3EML%3C/text%3E%3C/svg%3E"
+};
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[char]));
+}
+
+function renderTaggedText(value) {
+  return escapeHtml(value).replace(/(^|\\s)(@[a-zA-Z0-9_-]+)/g, '$1<span class="hf-tag">$2</span>');
+}
+
+document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-copy-url]");
   if (!button) return;
   const url = button.getAttribute("data-copy-url");
@@ -784,6 +884,261 @@ def _copy_script() -> str:
   }
   button.classList.add("copied");
   window.setTimeout(() => button.classList.remove("copied"), 1200);
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  const article = document.querySelector("[data-report-article]");
+  const loginButton = document.querySelector("[data-hf-login]");
+  const composer = document.querySelector("[data-comment-composer]");
+  const selectedTextEl = document.querySelector("[data-selected-text]");
+  const editor = document.querySelector("[data-comment-editor]");
+  const preview = document.querySelector("[data-comment-preview]");
+  const cancelButton = document.querySelector("[data-cancel-comment]");
+  const submitButton = document.querySelector("[data-submit-comment]");
+  const threadList = document.querySelector("[data-thread-list]");
+  const emptyState = document.querySelector("[data-comment-empty]");
+  const countEl = document.querySelector("[data-comment-count]");
+  const mainArticle = document.querySelector(".article-paper");
+  const mockPages = document.querySelector("[data-mlintern-pages]");
+  const mockLinks = document.querySelector("[data-mlintern-links]");
+  const mockSubpage = document.querySelector("[data-mock-subpage]");
+  const mockTitle = document.querySelector("[data-mock-page-title]");
+  const mockHeading = document.querySelector("[data-mock-page-heading]");
+  const mockSummary = document.querySelector("[data-mock-page-summary]");
+  const threads = [];
+  const storageKey = `trackio-report-comments:${window.location.pathname}`;
+  let activeSelection = "";
+  let activeRange = null;
+  let generatedPage = null;
+
+  function signIn() {
+    if (!loginButton) return;
+    loginButton.classList.add("signed-in");
+    loginButton.innerHTML = `<img class="hf-avatar" src="${TRACKIO_MOCK_USER.avatar}" alt=""><span>@${TRACKIO_MOCK_USER.username}</span>`;
+  }
+
+  function updatePreview() {
+    if (!editor || !preview) return;
+    const text = editor.innerText.trim();
+    if (!text) {
+      preview.hidden = true;
+      preview.innerHTML = "";
+      return;
+    }
+    preview.hidden = false;
+    preview.innerHTML = renderTaggedText(text);
+  }
+
+  function resetComposer() {
+    activeSelection = "";
+    activeRange = null;
+    if (composer) composer.hidden = true;
+    if (selectedTextEl) selectedTextEl.textContent = "";
+    if (editor) editor.innerHTML = "";
+    if (preview) {
+      preview.hidden = true;
+      preview.innerHTML = "";
+    }
+  }
+
+  function showComposer(text, range) {
+    activeSelection = text;
+    activeRange = range;
+    if (selectedTextEl) selectedTextEl.textContent = text.length > 180 ? `${text.slice(0, 177)}...` : text;
+    if (composer) composer.hidden = false;
+    if (emptyState) emptyState.hidden = true;
+    if (editor) {
+      editor.innerHTML = "";
+      editor.focus();
+    }
+    updatePreview();
+  }
+
+  function updateCount() {
+    const total = threads.reduce((sum, thread) => sum + thread.comments.length, 0);
+    if (countEl) countEl.textContent = String(total);
+    if (emptyState) emptyState.hidden = threads.length > 0 || (composer && !composer.hidden);
+  }
+
+  function saveState() {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify({ threads, generatedPage }));
+    } catch {
+      // Ignore storage failures in the static demo.
+    }
+  }
+
+  function loadState() {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+      if (Array.isArray(stored.threads)) {
+        threads.splice(0, threads.length, ...stored.threads);
+      }
+      if (stored.generatedPage) {
+        generatedPage = stored.generatedPage;
+        appendGeneratedPageLink(generatedPage);
+      }
+    } catch {
+      // Ignore malformed demo state.
+    }
+  }
+
+  function renderThreads() {
+    if (!threadList) return;
+    threadList.innerHTML = threads.map((thread) => {
+      const comments = thread.comments.map((comment, index) => `
+        <div class="comment-body${index ? " comment-reply" : ""}">
+          <div class="comment-author"><img class="comment-avatar" src="${comment.avatar}" alt=""><span>@${comment.author}</span></div>
+          <div>${renderTaggedText(comment.text)}</div>
+          ${comment.status ? `<div class="mlintern-status"><span class="mlintern-spinner"></span>${escapeHtml(comment.status)}</div>` : ""}
+          ${comment.result ? `<a class="comment-result-link" href="#${comment.result.id}" data-open-mock-page="${comment.result.id}">${escapeHtml(comment.result.title)}</a>` : ""}
+        </div>
+      `).join("");
+      return `<section class="comment-thread" data-thread-id="${thread.id}">
+        <blockquote class="comment-selection">${escapeHtml(thread.selection)}</blockquote>
+        ${comments}
+        <div class="comment-actions"><button type="button" class="secondary-button" data-reply-thread="${thread.id}">Reply</button></div>
+      </section>`;
+    }).join("");
+    updateCount();
+    saveState();
+  }
+
+  function addThread(text) {
+    const thread = {
+      id: `thread-${Date.now()}-${threads.length}`,
+      selection: activeSelection,
+      comments: [{ author: TRACKIO_MOCK_USER.username, avatar: TRACKIO_MOCK_USER.avatar, text }],
+    };
+    threads.unshift(thread);
+    renderThreads();
+    if (/@(mlintern|mlitern)\\b/i.test(text)) {
+      runMockExperiment(thread, text);
+    }
+  }
+
+  function addReply(threadId, text) {
+    const thread = threads.find((item) => item.id === threadId);
+    if (!thread) return;
+    thread.comments.push({ author: TRACKIO_MOCK_USER.username, avatar: TRACKIO_MOCK_USER.avatar, text });
+    renderThreads();
+    if (/@(mlintern|mlitern)\\b/i.test(text)) {
+      runMockExperiment(thread, text);
+    }
+  }
+
+  function runMockExperiment(thread, prompt) {
+    const agentComment = {
+      author: TRACKIO_MOCK_AGENT.username,
+      avatar: TRACKIO_MOCK_AGENT.avatar,
+      text: "I picked up this request and am running a mocked follow-up experiment.",
+      status: "Running local training and evaluation...",
+    };
+    thread.comments.push(agentComment);
+    renderThreads();
+    window.setTimeout(() => {
+      const result = {
+        id: `mlintern-result-${Date.now()}`,
+        title: "20% Code Follow-up",
+        prompt,
+      };
+      generatedPage = result;
+      agentComment.status = "";
+      agentComment.text = "Finished the mocked follow-up. I added a linked report page with the result summary and mock eval table.";
+      agentComment.result = result;
+      appendGeneratedPageLink(result);
+      renderThreads();
+    }, 3000);
+  }
+
+  function appendGeneratedPageLink(result) {
+    if (!mockPages || !mockLinks) return;
+    mockPages.hidden = false;
+    mockLinks.innerHTML = `<a class="page-link" href="#${result.id}" data-open-mock-page="${result.id}">
+      <span class="page-link-title">${escapeHtml(result.title)}</span>
+      <span class="page-link-path">experiments/generated/code-20-followup.md</span>
+    </a>`;
+  }
+
+  function openMockPage() {
+    if (!generatedPage || !article || !mockSubpage) return;
+    article.hidden = true;
+    if (mockPages) mockPages.hidden = true;
+    mockSubpage.hidden = false;
+    if (mockTitle) mockTitle.textContent = generatedPage.title;
+    if (mockHeading) mockHeading.textContent = generatedPage.title;
+    if (mockSummary) {
+      mockSummary.textContent = `Mocked request: ${generatedPage.prompt}`;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function closeMockPage() {
+    if (!article || !mockSubpage) return;
+    article.hidden = false;
+    if (mockPages && generatedPage) mockPages.hidden = false;
+    mockSubpage.hidden = true;
+  }
+
+  loginButton?.addEventListener("click", signIn);
+  editor?.addEventListener("input", updatePreview);
+  cancelButton?.addEventListener("click", resetComposer);
+  submitButton?.addEventListener("click", () => {
+    const text = editor?.innerText.trim() || "";
+    if (!text || !activeSelection) return;
+    signIn();
+    addThread(text);
+    resetComposer();
+  });
+
+  document.addEventListener("mouseup", () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !article) return;
+    const text = selection.toString().trim().replace(/\\s+/g, " ");
+    if (!text) return;
+    const range = selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+    const anchor = selection.anchorNode;
+    if (!anchor || !article.contains(anchor.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor)) return;
+    showComposer(text, range);
+  });
+
+  threadList?.addEventListener("click", (event) => {
+    const replyButton = event.target.closest("[data-reply-thread]");
+    if (replyButton) {
+      const text = window.prompt("Reply to this thread");
+      if (text && text.trim()) {
+        signIn();
+        addReply(replyButton.getAttribute("data-reply-thread"), text.trim());
+      }
+      return;
+    }
+    const resultLink = event.target.closest("[data-open-mock-page]");
+    if (resultLink) {
+      event.preventDefault();
+      openMockPage();
+    }
+  });
+
+  mainArticle?.addEventListener("click", (event) => {
+    const openLink = event.target.closest("[data-open-mock-page]");
+    if (openLink) {
+      event.preventDefault();
+      openMockPage();
+      return;
+    }
+    const closeLink = event.target.closest("[data-close-mock-page]");
+    if (closeLink) {
+      event.preventDefault();
+      closeMockPage();
+    }
+  });
+
+  loadState();
+  renderThreads();
+
+  if (window.location.hash.startsWith("#mlintern-result")) {
+    openMockPage();
+  }
 });"""
 
 
