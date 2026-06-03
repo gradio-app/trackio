@@ -15,17 +15,20 @@ def _ensure_psutil():
     global PSUTIL_AVAILABLE, psutil
     if PSUTIL_AVAILABLE:
         return psutil
-    try:
-        import psutil as _psutil
+    with _psutil_lock:
+        if PSUTIL_AVAILABLE:
+            return psutil
+        try:
+            import psutil as _psutil
 
-        psutil = _psutil
-        PSUTIL_AVAILABLE = True
-        return psutil
-    except ImportError:
-        raise ImportError(
-            "psutil is required for CPU and RAM monitoring. "
-            "Install it with: pip install psutil"
-        )
+            psutil = _psutil
+            PSUTIL_AVAILABLE = True
+            return psutil
+        except ImportError:
+            raise ImportError(
+                "psutil is required for CPU and RAM monitoring. "
+                "Install it with: pip install psutil"
+            )
 
 
 def cpu_available() -> bool:
@@ -57,7 +60,7 @@ def collect_cpu_metrics(
         prev_net_counters: Previous network I/O counters for computing send/recv rates.
             If None, only cumulative values are reported.
         elapsed: Seconds since prev_disk_counters and prev_net_counters were captured.
-            Required when prev_disk_counters or prev_net_counters are provided.
+            If None or non-positive, cumulative values are reported instead of rates.
 
     Returns:
         Dictionary of system metrics.
@@ -71,15 +74,11 @@ def collect_cpu_metrics(
     metrics = {}
 
     try:
-        cpu_percent = psutil.cpu_percent(interval=0.1, percpu=False)
-        metrics["cpu/utilization"] = cpu_percent
-    except Exception:
-        pass
-
-    try:
-        per_core = psutil.cpu_percent(interval=None, percpu=True)
+        per_core = psutil.cpu_percent(interval=0.1, percpu=True)
         for i, pct in enumerate(per_core):
             metrics[f"cpu/{i}/utilization"] = pct
+        if per_core:
+            metrics["cpu/utilization"] = sum(per_core) / len(per_core)
     except Exception:
         pass
 
@@ -232,6 +231,8 @@ class CpuMonitor:
 
         while not self._stop_flag.is_set():
             self._stop_flag.wait(timeout=self._interval)
+            if self._stop_flag.is_set():
+                break
             try:
                 now = time.monotonic()
                 elapsed = now - self._last_time if self._last_time is not None else None
