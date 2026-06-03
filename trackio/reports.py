@@ -30,6 +30,7 @@ CONFIG_DIR = ".trackio"
 CONFIG_FILE = "config.toml"
 SCHEMA_FILE = "reports.schema.json"
 DEFAULT_BUILD_DIR = "dist"
+REPORT_LOGO_ASSET = "assets/trackio_logo_dark.png"
 
 
 @dataclass
@@ -238,6 +239,12 @@ def build_report(
     agent_markdown = _render_agent_markdown(pages, manifest)
     (out_path / "agent.md").write_text(agent_markdown, encoding="utf-8")
     (out_path / "llms.txt").write_text(agent_markdown, encoding="utf-8")
+    logo_out = out_path / REPORT_LOGO_ASSET
+    logo_out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(
+        Path(__file__).resolve().parent / "assets" / "trackio_logo_dark.png",
+        logo_out,
+    )
     (out_path / "index.html").write_text(
         _render_root_html(pages, manifest),
         encoding="utf-8",
@@ -657,6 +664,7 @@ def _render_document_html(
     escaped_title = html.escape(title)
     payload = json.dumps(manifest).replace("</", "<\\/")
     meta_html = "".join(f"<span>{html.escape(str(item))}</span>" for item in metadata)
+    logo_src = _relative_url(REPORT_LOGO_ASSET, current_page or "index.html")
     report_url = str(manifest.get("space_url") or "./")
     report_url_html = html.escape(report_url)
     report_url_attr = html.escape(report_url, quote=True)
@@ -680,7 +688,7 @@ def _render_document_html(
     <article class="article-paper">
       <header class="article-header">
         <div class="header-kicker">
-          <div class="eyebrow">{html.escape(eyebrow)}</div>
+          <div class="eyebrow"><img class="eyebrow-logo" src="{html.escape(logo_src, quote=True)}" alt="Trackio"><span>{html.escape(eyebrow.removeprefix("Trackio ").strip())}</span></div>
           <div class="report-url-control" data-report-url="{report_url_attr}">
             <a class="report-url" href="{report_url_attr}">{report_url_html}</a>
             <button class="copy-url-button" type="button" data-copy-url="{report_url_attr}" aria-label="Copy report URL" title="Copy report URL">
@@ -710,7 +718,8 @@ def _article_css() -> str:
     .article-paper { background: var(--paper); padding: 16px min(6vw, 72px); }
     .article-header { padding-bottom: 18px; margin-bottom: 28px; }
     .header-kicker { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
-    .eyebrow { color: var(--accent); font: 700 12px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
+    .eyebrow { color: var(--accent); font: 700 12px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 7px; }
+    .eyebrow-logo { height: 1em; width: auto; border: 0; background: transparent; display: block; }
     .report-url-control { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: min(460px, 52%); color: var(--muted); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .report-url { color: var(--muted); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .report-url:hover { color: var(--accent); text-decoration: underline; }
