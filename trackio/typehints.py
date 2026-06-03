@@ -1,6 +1,17 @@
-from typing import Any, TypedDict
+from typing import Any, NewType, TypedDict
 
 from gradio_client import FileData
+
+Sha256Digest = NewType("Sha256Digest", str)
+
+
+class ManifestEntry(TypedDict):
+    path: str
+    digest: Sha256Digest
+    size: int
+
+
+Manifest = list[ManifestEntry]
 
 
 class LogEntry(TypedDict, total=False):

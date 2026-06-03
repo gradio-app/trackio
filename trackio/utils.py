@@ -170,6 +170,23 @@ def _get_trackio_dir() -> Path:
 
 TRACKIO_DIR = _get_trackio_dir()
 MEDIA_DIR = TRACKIO_DIR / "media"
+ARTIFACTS_DIR = TRACKIO_DIR / "artifacts"
+
+_DEFAULT_ARTIFACT_BLOB_MAX_BYTES = 5 * 1024 * 1024 * 1024
+
+
+def _get_artifact_blob_max_bytes() -> int:
+    raw = os.environ.get("TRACKIO_ARTIFACT_BLOB_MAX_BYTES")
+    if not raw:
+        return _DEFAULT_ARTIFACT_BLOB_MAX_BYTES
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_ARTIFACT_BLOB_MAX_BYTES
+    return value if value > 0 else _DEFAULT_ARTIFACT_BLOB_MAX_BYTES
+
+
+ARTIFACT_BLOB_MAX_BYTES = _get_artifact_blob_max_bytes()
 
 
 def get_or_create_project_hash(project: str) -> str:

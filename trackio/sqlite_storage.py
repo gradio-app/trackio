@@ -1,6 +1,8 @@
 import atexit
+import hashlib
 import json as json_mod
 import os
+import re
 import shutil
 import sqlite3
 import time
@@ -25,8 +27,10 @@ except ImportError:
 import huggingface_hub as hf
 import orjson
 
+from trackio import utils as _trackio_utils
 from trackio.commit_scheduler import CommitScheduler
 from trackio.dummy_commit_scheduler import DummyCommitScheduler
+from trackio.typehints import Manifest, Sha256Digest
 from trackio.utils import (
     MEDIA_DIR,
     TRACKIO_DIR,
@@ -35,6 +39,8 @@ from trackio.utils import (
     on_spaces,
     serialize_values,
 )
+
+_ARTIFACT_VERSION_SPEC_RE = re.compile(r"^v(\d+)$")
 
 DB_EXT = ".db"
 
@@ -376,8 +382,7 @@ class SQLiteStorage:
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path, row_factory=None) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -386,10 +391,8 @@ class SQLiteStorage:
                         step INTEGER NOT NULL,
                         metrics TEXT NOT NULL
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS configs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -398,10 +401,8 @@ class SQLiteStorage:
                         created_at TEXT NOT NULL,
                         UNIQUE(run_id)
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS system_metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -409,11 +410,9 @@ class SQLiteStorage:
                         run_name TEXT NOT NULL,
                         metrics TEXT NOT NULL
                     )
-                    """
-                )
+                    """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS traces (
                         id TEXT PRIMARY KEY,
                         run_id TEXT NOT NULL,
@@ -428,20 +427,16 @@ class SQLiteStorage:
                         log_id TEXT,
                         space_id TEXT
                     )
-                    """
-                )
+                    """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS project_metadata (
                         key TEXT PRIMARY KEY,
                         value TEXT NOT NULL
                     )
-                    """
-                )
+                    """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS pending_uploads (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         space_id TEXT NOT NULL,
@@ -452,11 +447,9 @@ class SQLiteStorage:
                         relative_path TEXT,
                         created_at TEXT NOT NULL
                     )
-                    """
-                )
+                    """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS alerts (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -468,74 +461,114 @@ class SQLiteStorage:
                         step INTEGER,
                         alert_id TEXT
                     )
-                    """
-                )
+                    """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS artifacts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL UNIQUE,
+                        type TEXT NOT NULL,
+                        description TEXT,
+                        created_at TEXT NOT NULL
+                    )
+                    """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS artifact_versions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+                        version INTEGER NOT NULL,
+                        manifest_digest TEXT NOT NULL,
+                        manifest TEXT NOT NULL,
+                        metadata TEXT,
+                        size_bytes INTEGER NOT NULL,
+                        producer_run_id TEXT,
+                        producer_run_name TEXT,
+                        synced INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        UNIQUE(artifact_id, version),
+                        UNIQUE(artifact_id, manifest_digest)
+                    )
+                    """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS artifact_aliases (
+                        artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+                        alias TEXT NOT NULL,
+                        artifact_version_id INTEGER NOT NULL REFERENCES artifact_versions(id),
+                        PRIMARY KEY (artifact_id, alias)
+                    )
+                    """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS run_artifact_links (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id TEXT,
+                        run_name TEXT,
+                        artifact_version_id INTEGER NOT NULL REFERENCES artifact_versions(id),
+                        direction TEXT NOT NULL CHECK(direction IN ('input', 'output')),
+                        created_at TEXT NOT NULL
+                    )
+                    """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_run_artifact_links_run
+                    ON run_artifact_links(run_id, run_name)
+                    """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_run_artifact_links_version
+                    ON run_artifact_links(artifact_version_id)
+                    """)
+                for col in ("kind TEXT NOT NULL DEFAULT 'media'", "digest TEXT"):
+                    try:
+                        cursor.execute(f"ALTER TABLE pending_uploads ADD COLUMN {col}")
+                    except sqlite3.OperationalError:
+                        pass
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_pending_uploads_kind
+                    ON pending_uploads(kind)
+                    """)
                 metrics_cols = SQLiteStorage._table_columns(conn, "metrics")
                 metrics_run_key = "run_id" if "run_id" in metrics_cols else "run_name"
-                cursor.execute(
-                    f"""
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_step
                     ON metrics({metrics_run_key}, step)
-                    """
-                )
-                cursor.execute(
-                    f"""
+                    """)
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
                     ON metrics({metrics_run_key}, timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_configs_run_name
                     ON configs(run_name)
-                    """
-                )
+                    """)
                 system_cols = SQLiteStorage._table_columns(conn, "system_metrics")
                 system_run_key = "run_id" if "run_id" in system_cols else "run_name"
-                cursor.execute(
-                    f"""
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
                     ON system_metrics({system_run_key}, timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_traces_run_step
                     ON traces(run_id, step)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_traces_run_timestamp
                     ON traces(run_id, timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_traces_search
                     ON traces(search_text)
-                    """
-                )
+                    """)
                 alerts_cols = SQLiteStorage._table_columns(conn, "alerts")
                 alerts_run_key = "run_id" if "run_id" in alerts_cols else "run_name"
-                cursor.execute(
-                    f"""
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_alerts_run
                     ON alerts({alerts_run_key})
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_alerts_timestamp
                     ON alerts(timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_alert_id
                     ON alerts(alert_id) WHERE alert_id IS NOT NULL
-                    """
-                )
+                    """)
 
                 for table in ("metrics", "system_metrics"):
                     for col in ("log_id TEXT", "space_id TEXT"):
@@ -547,10 +580,8 @@ class SQLiteStorage:
                         f"""CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_log_id
                         ON {table}(log_id) WHERE log_id IS NOT NULL"""
                     )
-                    cursor.execute(
-                        f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
-                        ON {table}(space_id) WHERE space_id IS NOT NULL"""
-                    )
+                    cursor.execute(f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
+                        ON {table}(space_id) WHERE space_id IS NOT NULL""")
 
                 conn.commit()
         return db_path
@@ -631,14 +662,12 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 if SQLiteStorage._supports_run_ids(conn):
-                    cursor.execute(
-                        """
+                    cursor.execute("""
                         SELECT run_id, run_name, MIN(timestamp) as created_at
                         FROM metrics
                         GROUP BY run_id, run_name
                         ORDER BY created_at ASC
-                        """
-                    )
+                        """)
                     return [
                         {
                             "id": row["run_id"],
@@ -648,14 +677,12 @@ class SQLiteStorage:
                         for row in cursor.fetchall()
                     ]
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT run_name, MIN(timestamp) as created_at
                     FROM metrics
                     GROUP BY run_name
                     ORDER BY created_at ASC
-                    """
-                )
+                    """)
                 return [
                     {
                         "id": row["run_name"],
@@ -976,11 +1003,9 @@ class SQLiteStorage:
                         for row in rows
                     ]
                 else:
-                    cursor.execute(
-                        """SELECT run_name, MIN(timestamp) as created_at,
+                    cursor.execute("""SELECT run_name, MIN(timestamp) as created_at,
                         MAX(step) as last_step, COUNT(*) as log_count
-                        FROM metrics GROUP BY run_name ORDER BY created_at ASC"""
-                    )
+                        FROM metrics GROUP BY run_name ORDER BY created_at ASC""")
                     rows = cursor.fetchall()
                     runs_meta = [
                         {
@@ -2535,25 +2560,21 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 if SQLiteStorage._supports_run_ids(conn):
-                    cursor.execute(
-                        """
+                    cursor.execute("""
                         SELECT run_name, run_id, MAX(step) as max_step
                         FROM metrics
                         GROUP BY run_id, run_name
-                        """
-                    )
+                        """)
                     results = {}
                     for row in cursor.fetchall():
                         results[row["run_id"]] = row["max_step"]
                     return results
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT run_name, MAX(step) as max_step
                     FROM metrics
                     GROUP BY run_name
-                    """
-                )
+                    """)
 
                 results = {}
                 for row in cursor.fetchall():
@@ -3784,40 +3805,465 @@ class SQLiteStorage:
         step: int | None,
         file_path: str,
         relative_path: str | None,
+        *,
+        kind: str = "media",
+        digest: Sha256Digest | None = None,
     ) -> None:
+        db_path = SQLiteStorage.init_db(project)
+        now = datetime.now(timezone.utc).isoformat()
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                columns = SQLiteStorage._table_columns(conn, "pending_uploads")
+                candidate_fields = [
+                    ("space_id", space_id, True),
+                    ("run_id", run_id, "run_id" in columns),
+                    ("run_name", run_name, True),
+                    ("step", step, True),
+                    ("file_path", file_path, True),
+                    ("relative_path", relative_path, True),
+                    ("kind", kind, "kind" in columns),
+                    ("digest", digest, "digest" in columns),
+                    ("created_at", now, True),
+                ]
+                fields = [
+                    (col, val) for col, val, include in candidate_fields if include
+                ]
+                cols = [col for col, _ in fields]
+                vals = [val for _, val in fields]
+                placeholders = ", ".join("?" for _ in cols)
+                conn.execute(
+                    f"INSERT INTO pending_uploads ({', '.join(cols)}) VALUES ({placeholders})",
+                    vals,
+                )
+                conn.commit()
+
+    @staticmethod
+    def _canonical_manifest(
+        manifest: Manifest,
+    ) -> tuple[Manifest, Sha256Digest, int]:
+        canonical: Manifest = []
+        size_bytes = 0
+        for entry in manifest:
+            path = entry["path"]
+            digest = Sha256Digest(entry["digest"])
+            size = int(entry["size"])
+            canonical.append({"path": path, "digest": digest, "size": size})
+            size_bytes += size
+        canonical.sort(key=lambda e: e["path"])
+        payload = orjson.dumps(canonical, option=orjson.OPT_SORT_KEYS)
+        manifest_digest = Sha256Digest(hashlib.sha256(payload).hexdigest())
+        return canonical, manifest_digest, size_bytes
+
+    @staticmethod
+    def create_or_get_artifact(
+        project: str,
+        name: str,
+        type: str,
+        description: str | None,
+    ) -> int:
+        db_path = SQLiteStorage.init_db(project)
+        now = datetime.now(timezone.utc).isoformat()
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                row = cursor.execute(
+                    "SELECT id, type FROM artifacts WHERE name = ?", (name,)
+                ).fetchone()
+                if row is not None:
+                    if row["type"] != type:
+                        raise ValueError(
+                            f"Artifact '{name}' already exists with type "
+                            f"'{row['type']}'; cannot relog with type '{type}'."
+                        )
+                    return int(row["id"])
+                cursor.execute(
+                    """INSERT INTO artifacts (name, type, description, created_at)
+                    VALUES (?, ?, ?, ?)""",
+                    (name, type, description, now),
+                )
+                conn.commit()
+                return int(cursor.lastrowid)
+
+    @staticmethod
+    def insert_artifact_version(
+        project: str,
+        artifact_id: int,
+        manifest: Manifest,
+        metadata: dict | None,
+        producer_run_id: str | None,
+        producer_run_name: str | None,
+    ) -> tuple[int, int, bool]:
+        canonical, manifest_digest, size_bytes = SQLiteStorage._canonical_manifest(
+            manifest
+        )
+        db_path = SQLiteStorage.init_db(project)
+        now = datetime.now(timezone.utc).isoformat()
+        manifest_json = orjson.dumps(canonical).decode("utf-8")
+        metadata_json = (
+            orjson.dumps(metadata).decode("utf-8") if metadata is not None else None
+        )
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                existing = cursor.execute(
+                    """SELECT id, version FROM artifact_versions
+                    WHERE artifact_id = ? AND manifest_digest = ?""",
+                    (artifact_id, manifest_digest),
+                ).fetchone()
+                if existing is not None:
+                    return int(existing["id"]), int(existing["version"]), False
+                row = cursor.execute(
+                    "SELECT MAX(version) AS m FROM artifact_versions WHERE artifact_id = ?",
+                    (artifact_id,),
+                ).fetchone()
+                next_version = 0 if row["m"] is None else int(row["m"]) + 1
+                cursor.execute(
+                    """INSERT INTO artifact_versions
+                    (artifact_id, version, manifest_digest, manifest, metadata,
+                     size_bytes, producer_run_id, producer_run_name, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        artifact_id,
+                        next_version,
+                        manifest_digest,
+                        manifest_json,
+                        metadata_json,
+                        size_bytes,
+                        producer_run_id,
+                        producer_run_name,
+                        now,
+                    ),
+                )
+                conn.commit()
+                return int(cursor.lastrowid), next_version, True
+
+    @staticmethod
+    def reassign_alias(
+        project: str,
+        artifact_id: int,
+        alias: str,
+        version_id: int,
+    ) -> None:
+        if _ARTIFACT_VERSION_SPEC_RE.match(alias):
+            raise ValueError(
+                f"Alias '{alias}' is reserved for version pointers (vN); choose another."
+            )
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                if SQLiteStorage._supports_run_ids(conn, "pending_uploads"):
-                    conn.execute(
-                        """INSERT INTO pending_uploads
-                        (space_id, run_id, run_name, step, file_path, relative_path, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            space_id,
-                            run_id,
-                            run_name,
-                            step,
-                            file_path,
-                            relative_path,
-                            datetime.now(timezone.utc).isoformat(),
-                        ),
-                    )
-                else:
-                    conn.execute(
-                        """INSERT INTO pending_uploads
-                        (space_id, run_name, step, file_path, relative_path, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?)""",
-                        (
-                            space_id,
-                            run_name,
-                            step,
-                            file_path,
-                            relative_path,
-                            datetime.now(timezone.utc).isoformat(),
-                        ),
-                    )
+                conn.execute(
+                    """INSERT INTO artifact_aliases (artifact_id, alias, artifact_version_id)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(artifact_id, alias) DO UPDATE SET
+                        artifact_version_id = excluded.artifact_version_id""",
+                    (artifact_id, alias, version_id),
+                )
                 conn.commit()
+
+    @staticmethod
+    def resolve_artifact_version(
+        project: str,
+        name: str,
+        spec: str | None,
+    ) -> dict | None:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            art = cursor.execute(
+                "SELECT id FROM artifacts WHERE name = ?", (name,)
+            ).fetchone()
+            if art is None:
+                return None
+            artifact_id = int(art["id"])
+            spec = spec if spec else "latest"
+            m = _ARTIFACT_VERSION_SPEC_RE.match(spec)
+            if m:
+                version_int = int(m.group(1))
+                ver = cursor.execute(
+                    """SELECT id, version FROM artifact_versions
+                    WHERE artifact_id = ? AND version = ?""",
+                    (artifact_id, version_int),
+                ).fetchone()
+            else:
+                ver = cursor.execute(
+                    """SELECT av.id, av.version FROM artifact_versions av
+                    JOIN artifact_aliases aa ON aa.artifact_version_id = av.id
+                    WHERE aa.artifact_id = ? AND aa.alias = ?""",
+                    (artifact_id, spec),
+                ).fetchone()
+            if ver is None:
+                return None
+            return {
+                "artifact_id": artifact_id,
+                "version_id": int(ver["id"]),
+                "version": int(ver["version"]),
+            }
+
+    @staticmethod
+    def insert_run_artifact_link(
+        project: str,
+        run_name: str | None,
+        run_id: str | None,
+        version_id: int,
+        direction: str,
+    ) -> None:
+        if direction not in ("input", "output"):
+            raise ValueError(
+                f"direction must be 'input' or 'output', got {direction!r}"
+            )
+        db_path = SQLiteStorage.init_db(project)
+        now = datetime.now(timezone.utc).isoformat()
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                conn.execute(
+                    """INSERT INTO run_artifact_links
+                    (run_id, run_name, artifact_version_id, direction, created_at)
+                    VALUES (?, ?, ?, ?, ?)""",
+                    (run_id, run_name, version_id, direction, now),
+                )
+                conn.commit()
+
+    @staticmethod
+    def list_artifacts(project: str) -> list[dict]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            rows = cursor.execute("""
+                SELECT
+                    a.id, a.name, a.type, a.description, a.created_at,
+                    COUNT(av.id) AS version_count,
+                    MAX(av.version) AS latest_version,
+                    (SELECT size_bytes FROM artifact_versions
+                     WHERE artifact_id = a.id
+                     ORDER BY version DESC LIMIT 1) AS latest_size
+                FROM artifacts a
+                LEFT JOIN artifact_versions av ON av.artifact_id = a.id
+                GROUP BY a.id
+                ORDER BY a.name
+                """).fetchall()
+            result = []
+            for row in rows:
+                latest_aliases: list[str] = []
+                latest_version = row["latest_version"]
+                if latest_version is not None:
+                    alias_rows = cursor.execute(
+                        """SELECT aa.alias FROM artifact_aliases aa
+                        JOIN artifact_versions av ON av.id = aa.artifact_version_id
+                        WHERE aa.artifact_id = ? AND av.version = ?""",
+                        (row["id"], latest_version),
+                    ).fetchall()
+                    latest_aliases = [r["alias"] for r in alias_rows]
+                result.append(
+                    {
+                        "id": int(row["id"]),
+                        "name": row["name"],
+                        "type": row["type"],
+                        "description": row["description"],
+                        "created_at": row["created_at"],
+                        "version_count": int(row["version_count"]),
+                        "latest_version": (
+                            int(latest_version) if latest_version is not None else None
+                        ),
+                        "latest_size": (
+                            int(row["latest_size"])
+                            if row["latest_size"] is not None
+                            else None
+                        ),
+                        "latest_aliases": latest_aliases,
+                    }
+                )
+            return result
+
+    @staticmethod
+    def list_artifact_versions(project: str, name: str) -> list[dict]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            art = cursor.execute(
+                "SELECT id FROM artifacts WHERE name = ?", (name,)
+            ).fetchone()
+            if art is None:
+                return []
+            artifact_id = int(art["id"])
+            ver_rows = cursor.execute(
+                """SELECT id, version, manifest_digest, metadata, size_bytes,
+                       producer_run_id, producer_run_name, created_at
+                FROM artifact_versions
+                WHERE artifact_id = ?
+                ORDER BY version DESC""",
+                (artifact_id,),
+            ).fetchall()
+            alias_rows = cursor.execute(
+                """SELECT alias, artifact_version_id FROM artifact_aliases
+                WHERE artifact_id = ?""",
+                (artifact_id,),
+            ).fetchall()
+            aliases_by_version: dict[int, list[str]] = {}
+            for r in alias_rows:
+                aliases_by_version.setdefault(int(r["artifact_version_id"]), []).append(
+                    r["alias"]
+                )
+            result = []
+            for row in ver_rows:
+                vid = int(row["id"])
+                result.append(
+                    {
+                        "version_id": vid,
+                        "version": int(row["version"]),
+                        "manifest_digest": row["manifest_digest"],
+                        "metadata": (
+                            orjson.loads(row["metadata"])
+                            if row["metadata"] is not None
+                            else None
+                        ),
+                        "size_bytes": int(row["size_bytes"]),
+                        "producer_run_id": row["producer_run_id"],
+                        "producer_run_name": row["producer_run_name"],
+                        "created_at": row["created_at"],
+                        "aliases": aliases_by_version.get(vid, []),
+                    }
+                )
+            return result
+
+    @staticmethod
+    def get_artifact_manifest(
+        project: str,
+        name: str,
+        spec: str | None,
+    ) -> dict | None:
+        resolved = SQLiteStorage.resolve_artifact_version(project, name, spec)
+        if resolved is None:
+            return None
+        db_path = SQLiteStorage.get_project_db_path(project)
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            row = cursor.execute(
+                """SELECT av.id, av.version, av.manifest, av.manifest_digest,
+                       av.metadata, av.size_bytes, av.producer_run_id,
+                       av.producer_run_name, av.created_at,
+                       a.name, a.type, a.description
+                FROM artifact_versions av
+                JOIN artifacts a ON a.id = av.artifact_id
+                WHERE av.id = ?""",
+                (resolved["version_id"],),
+            ).fetchone()
+            if row is None:
+                return None
+            alias_rows = cursor.execute(
+                """SELECT alias FROM artifact_aliases
+                WHERE artifact_version_id = ?""",
+                (resolved["version_id"],),
+            ).fetchall()
+            return {
+                "artifact_id": resolved["artifact_id"],
+                "version_id": int(row["id"]),
+                "version": int(row["version"]),
+                "name": row["name"],
+                "type": row["type"],
+                "description": row["description"],
+                "manifest": orjson.loads(row["manifest"]),
+                "manifest_digest": row["manifest_digest"],
+                "metadata": (
+                    orjson.loads(row["metadata"])
+                    if row["metadata"] is not None
+                    else None
+                ),
+                "size_bytes": int(row["size_bytes"]),
+                "producer_run_id": row["producer_run_id"],
+                "producer_run_name": row["producer_run_name"],
+                "created_at": row["created_at"],
+                "aliases": [r["alias"] for r in alias_rows],
+            }
+
+    @staticmethod
+    def get_run_artifacts(
+        project: str,
+        run_name: str | None,
+        run_id: str | None,
+    ) -> dict[str, list[dict]]:
+        empty = {"input": [], "output": []}
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return empty
+        with SQLiteStorage._get_connection(db_path) as conn:
+            identity = SQLiteStorage._resolve_run_identity(
+                conn, run_name=run_name, run_id=run_id, table="run_artifact_links"
+            )
+            if identity is None:
+                col, val = (
+                    ("run_id", run_id) if run_id is not None else ("run_name", run_name)
+                )
+            else:
+                col, val = identity
+            if val is None:
+                return empty
+            cursor = conn.cursor()
+            rows = cursor.execute(
+                f"""SELECT ral.direction, ral.created_at,
+                       av.id AS version_id, av.version, av.size_bytes,
+                       a.name, a.type
+                FROM run_artifact_links ral
+                JOIN artifact_versions av ON av.id = ral.artifact_version_id
+                JOIN artifacts a ON a.id = av.artifact_id
+                WHERE ral.{col} = ?
+                ORDER BY ral.created_at""",
+                (val,),
+            ).fetchall()
+            result: dict[str, list[dict]] = {"input": [], "output": []}
+            for row in rows:
+                result[row["direction"]].append(
+                    {
+                        "version_id": int(row["version_id"]),
+                        "name": row["name"],
+                        "type": row["type"],
+                        "version": int(row["version"]),
+                        "size_bytes": int(row["size_bytes"]),
+                        "created_at": row["created_at"],
+                    }
+                )
+            return result
+
+    @staticmethod
+    def enqueue_artifact_blob_upload(
+        project: str,
+        space_id: str,
+        digest: Sha256Digest,
+        local_blob_path: str,
+        run_name: str | None,
+        run_id: str | None,
+    ) -> None:
+        SQLiteStorage.add_pending_upload(
+            project=project,
+            space_id=space_id,
+            run_id=run_id,
+            run_name=run_name,
+            step=None,
+            file_path=local_blob_path,
+            relative_path=None,
+            kind="artifact_blob",
+            digest=digest,
+        )
+
+    @staticmethod
+    def list_artifact_blobs_present(
+        project: str,
+        digests: list[Sha256Digest],
+    ) -> set[Sha256Digest]:
+        present: set[Sha256Digest] = set()
+        base = _trackio_utils.ARTIFACTS_DIR / project / "blobs" / "sha256"
+        for digest in digests:
+            if len(digest) < 2:
+                continue
+            blob_path = base / digest[:2] / digest
+            if blob_path.is_file():
+                present.add(digest)
+        return present
 
     @staticmethod
     def get_all_logs_for_sync(project: str) -> list[dict]:
