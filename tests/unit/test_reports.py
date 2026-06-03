@@ -88,6 +88,24 @@ title: Data mixtures
     assert "trackio list runs --project" in agent_md
 
 
+def test_render_markdown_treats_soft_line_breaks_as_spaces():
+    html = reports.render_markdown(
+        """# Summary
+
+This sentence is wrapped
+across source lines but should
+render as one paragraph.
+""",
+        reports.ReportConfig(),
+    )
+
+    assert (
+        "This sentence is wrapped across source lines but should render as one paragraph."
+        in html
+    )
+    assert "<br>" not in html
+
+
 def test_publish_appends_entry_and_uploads_artifacts(tmp_path, monkeypatch):
     reports.init_report(tmp_path, bucket_id="abidlabs/report-bucket")
     image = tmp_path / "chart.png"

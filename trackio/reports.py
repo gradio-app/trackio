@@ -404,12 +404,12 @@ def render_markdown(markdown: str, config: ReportConfig) -> str:
                 rendered.append(f"<h{level}>{_inline_markdown(text)}</h{level}>")
                 rest = "\n".join(lines[1:]).strip()
                 if rest:
-                    rendered.append(f"<p>{_inline_markdown(rest).replace(chr(10), '<br>')}</p>")
+                    rendered.append(f"<p>{_inline_markdown(_paragraph_text(rest))}</p>")
                 continue
         if block.lstrip().startswith("<"):
             rendered.append(block)
         else:
-            rendered.append(f"<p>{_inline_markdown(block).replace(chr(10), '<br>')}</p>")
+            rendered.append(f"<p>{_inline_markdown(_paragraph_text(block))}</p>")
 
     if in_list:
         rendered.append("</ul>")
@@ -1273,6 +1273,10 @@ def _inline_markdown(text: str) -> str:
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
     escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', escaped)
     return escaped
+
+
+def _paragraph_text(text: str) -> str:
+    return re.sub(r"\s*\n\s*", " ", text.strip())
 
 
 def _extract_heading(body: str) -> str | None:
