@@ -765,11 +765,20 @@ def main():
 
     report_deploy_parser = report_subparsers.add_parser(
         "deploy",
-        help="Deploy the report as a static Hugging Face Space",
+        help="Deploy the report to a Hugging Face Space",
     )
     report_deploy_parser.add_argument("--space-id", required=False)
     report_deploy_parser.add_argument("--bucket-id", required=False)
     report_deploy_parser.add_argument("--output-dir", required=False)
+    report_deploy_parser.add_argument(
+        "--sdk",
+        choices=["static", "docker"],
+        default="static",
+        help=(
+            "Space SDK to deploy. 'static' is free and default; 'docker' serves "
+            "agent markdown at the same URL for agent-like requests."
+        ),
+    )
 
     skills_parser = subparsers.add_parser(
         "skills",
@@ -915,6 +924,7 @@ def main():
                     space_id=args.space_id,
                     bucket_id=args.bucket_id,
                     output_dir=args.output_dir,
+                    sdk=args.sdk,
                 )
                 print(f"Deployed Trackio Report: https://huggingface.co/spaces/{space_id}")
         except Exception as e:

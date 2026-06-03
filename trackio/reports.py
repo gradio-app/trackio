@@ -215,6 +215,7 @@ def build_report(
     root: str | Path = ".",
     *,
     output_dir: str | Path | None = None,
+    space_url: str | None = None,
 ) -> dict[str, object]:
     root_path = Path(root)
     config = load_config(root_path)
@@ -223,7 +224,7 @@ def build_report(
     if not pages:
         raise ValueError(f"No Markdown pages found in {config.reports_dir}/")
 
-    manifest = _build_manifest(pages, config)
+    manifest = _build_manifest(pages, config, space_url=space_url)
     for page in pages:
         page.html = render_markdown(page.body, config)
 
@@ -234,6 +235,11 @@ def build_report(
         json.dumps(manifest, indent=2) + "\n",
         encoding="utf-8",
     )
+    agent_markdown = _render_agent_markdown(pages, manifest)
+    (out_path / "agent.md").write_text(agent_markdown, encoding="utf-8")
+    (out_path / "llms.txt").write_text(agent_markdown, encoding="utf-8")
+    (out_path / "_worker.js").write_text(_render_agent_worker(), encoding="utf-8")
+    (out_path / "_headers").write_text(_render_headers(), encoding="utf-8")
     (out_path / "index.html").write_text(
         _render_root_html(pages, manifest),
         encoding="utf-8",
@@ -256,6 +262,7 @@ def deploy_report(
     space_id: str | None = None,
     bucket_id: str | None = None,
     output_dir: str | Path | None = None,
+    sdk: str = "static",
 ) -> str:
     root_path = Path(root)
     config = load_config(root_path)
@@ -263,9 +270,18 @@ def deploy_report(
     target_bucket = bucket_id or config.bucket_id
     if not target_space:
         raise ValueError("A Space ID is required. Pass --space-id or configure one.")
+    if sdk not in {"static", "docker"}:
+        raise ValueError("Report deployment sdk must be 'static' or 'docker'.")
 
-    manifest = build_report(root_path, output_dir=output_dir)
+    report_url = (
+        _static_space_host(target_space)
+        if sdk == "static"
+        else _dynamic_space_host(target_space)
+    )
+    manifest = build_report(root_path, output_dir=output_dir, space_url=report_url)
     out_path = root_path / (output_dir or config.output_dir)
+    if sdk == "docker":
+        _write_dynamic_space_files(out_path)
 
     if target_bucket:
         create_bucket_if_not_exists(target_bucket, private=False)
@@ -276,12 +292,12 @@ def deploy_report(
         lambda: huggingface_hub.create_repo(
             target_space,
             private=False,
-            space_sdk="static",
+            space_sdk=sdk,
             repo_type="space",
             exist_ok=True,
         ),
     )
-    readme = _space_readme(target_space, target_bucket)
+    readme = _space_readme(target_space, target_bucket, sdk=sdk)
     _retry_hf_write(
         "Report Space README upload",
         lambda: hf_api.upload_file(
@@ -301,6 +317,7 @@ def deploy_report(
     )
     config_payload = {
         "mode": "trackio-report",
+        "sdk": sdk,
         "bucket_id": target_bucket,
         "manifest": "report.json",
         "pages": len(manifest["pages"]),
@@ -434,6 +451,10 @@ of editing generated files directly.
 - Trackio embeds expose `data-trackio-url`, `data-trackio-project`, and
   `data-trackio-metrics` attributes in HTML, plus dashboard metadata and CLI
   commands in `dist/report.json`.
+- `dist/agent.md` and `dist/llms.txt` are compact machine-readable summaries for
+  coding agents. When the static host supports edge workers, requests with
+  `Accept: text/markdown` or a known coding-agent User-Agent are served
+  `agent.md` instead of browser HTML.
 
 ## Commands
 
@@ -444,10 +465,15 @@ trackio report build
 trackio report deploy
 ```
 
+Use `trackio report deploy --sdk docker` when the deployed URL must return
+`agent.md` directly for `Accept: text/markdown` or coding-agent User-Agent
+requests. Static deployment remains the default and exposes `/agent.md`
+explicitly.
+
 ## Shortcodes
 
 ```md
-{{ artifact path="reports/artifacts/run/chart.png" caption="Evaluation chart" }}
+{{ artifact path="reports/artifacts/run/chart.png" data="reports/artifacts/run/chart.json" caption="Evaluation chart" }}
 {{ file path="reports/artifacts/run/model.safetensors" caption="Model weights" }}
 {{ trackio url="https://owner-space.static.hf.space/?project=my-project&sidebar=hidden" }}
 ```
@@ -485,6 +511,22 @@ def _schema() -> dict[str, object]:
                             "type": "array",
                             "items": {"type": "string"},
                         },
+                    },
+                },
+            },
+            "artifacts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["path", "url", "page", "kind"],
+                    "properties": {
+                        "path": {"type": "string"},
+                        "url": {"type": "string"},
+                        "page": {"type": "string"},
+                        "kind": {"type": "string"},
+                        "caption": {"type": "string"},
+                        "raw_data_path": {"type": "string"},
+                        "raw_data_url": {"type": "string"},
                     },
                 },
             },
@@ -545,7 +587,9 @@ def _collect_artifacts(
     return entries
 
 
-def _build_manifest(pages: list[ReportPage], config: ReportConfig) -> dict[str, object]:
+def _build_manifest(
+    pages: list[ReportPage], config: ReportConfig, *, space_url: str | None = None
+) -> dict[str, object]:
     page_items = []
     all_paths = {page.relative_path for page in pages}
     for page in pages:
@@ -563,9 +607,13 @@ def _build_manifest(pages: list[ReportPage], config: ReportConfig) -> dict[str, 
     return {
         "version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "space_id": config.space_id,
+        "space_url": space_url
+        or (_static_space_host(config.space_id) if config.space_id else None),
         "bucket_id": config.bucket_id,
         "pages": page_items,
         "dashboards": _extract_dashboards(pages),
+        "artifacts": _extract_artifacts(pages, config),
     }
 
 
@@ -638,7 +686,9 @@ def _render_document_html(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escaped_title}</title>
+  <link rel="alternate" type="text/markdown" href="{_relative_url("agent.md", current_page or "index.html")}">
   <style>{_article_css()}</style>
+  <script>{_agent_redirect_script()}</script>
 </head>
 <body{current_attr}>
   <main class="article-shell">
@@ -718,7 +768,12 @@ def _render_shortcodes(markdown: str, config: ReportConfig) -> str:
             command = html.escape(dashboard["cli_commands"][0])
             caption = html.escape(
                 attrs.get("caption")
-                or "Embedded Trackio dashboard. Agents can query the same data with the Trackio CLI."
+                or (
+                    "When a human reads this report, they get an embedded Trackio "
+                    "dashboard. When an agent is supplied this report, they see "
+                    "the dashboard URL, which they can query programmatically to "
+                    "get the full data."
+                )
             )
             return (
                 '<figure class="trackio-dashboard" '
@@ -729,21 +784,42 @@ def _render_shortcodes(markdown: str, config: ReportConfig) -> str:
                 'loading="lazy"></iframe>'
                 f'<figcaption class="trackio-caption">{caption}</figcaption>'
                 '<div class="agent-note">'
-                "This dashboard is backed by Trackio data. Human readers can inspect it here; "
-                "agents can read the same runs and metrics programmatically with "
-                f"<code>{command}</code>. The full dashboard URL and CLI hints are also "
-                "available in <code>report.json</code> and the embedded "
-                "<code>#report-manifest</code> JSON."
+                f'Agent data source: <a href="{html.escape(url, quote=True)}">'
+                f"{html.escape(url)}</a>. Query it with <code>{command}</code>. "
+                "The same URL and CLI hints are available in <code>agent.md</code>, "
+                "<code>report.json</code>, and the embedded <code>#report-manifest</code> JSON."
                 "</div>"
                 "</figure>"
             )
         path = attrs.get("path", "")
         caption = attrs.get("caption") or Path(path).name
         url = attrs.get("url") or _bucket_url(config.bucket_id, path)
+        raw_data_path = attrs.get("data") or attrs.get("raw_data")
+        raw_data_url = (
+            attrs.get("data_url")
+            or (_bucket_url(config.bucket_id, raw_data_path) if raw_data_path else "")
+        )
         if kind == "artifact" and _is_image_path(path):
+            data_attrs = (
+                f' data-raw-url="{html.escape(raw_data_url, quote=True)}"'
+                f' data-raw-path="{html.escape(raw_data_path or "", quote=True)}"'
+                if raw_data_path
+                else ""
+            )
+            note = ""
+            if raw_data_path:
+                note = (
+                    '<div class="agent-note">'
+                    "When a human reads this report, they see an embedded image, "
+                    "but agents get raw data so that they can easily parse raw "
+                    f'results and update them. Raw data: <a href="{html.escape(raw_data_url, quote=True)}">'
+                    f"{html.escape(raw_data_path)}</a>."
+                    "</div>"
+                )
             return (
-                f'<figure class="artifact"><img src="{html.escape(url, quote=True)}" '
-                f'alt="{html.escape(caption, quote=True)}"><figcaption>{html.escape(caption)}</figcaption></figure>'
+                f'<figure class="artifact"{data_attrs}><img src="{html.escape(url, quote=True)}" '
+                f'alt="{html.escape(caption, quote=True)}">'
+                f"<figcaption>{html.escape(caption)}</figcaption>{note}</figure>"
             )
         return f'<p><a class="file-link" href="{html.escape(url, quote=True)}">{html.escape(caption)}</a></p>'
 
@@ -812,6 +888,293 @@ def _relative_url(target_url: str, from_url: str) -> str:
     start = from_dir if from_dir else "."
     rel = posixpath.relpath(target_url, start=start)
     return rel if rel != "." else posixpath.basename(target_url)
+
+
+def _render_agent_markdown(
+    pages: list[ReportPage], manifest: dict[str, object]
+) -> str:
+    title = next((page.title for page in pages if page.relative_path == "index.md"), "Trackio Report")
+    lines = [
+        f"# {title}",
+        "",
+        "This is the agent-facing representation of the Trackio Report. It is",
+        "served instead of the browser HTML when the host supports markdown",
+        "content negotiation for `Accept: text/markdown` or known coding-agent",
+        "User-Agent headers.",
+        "",
+        "For browser rendering, request the same URL with `Accept: text/html`.",
+        "",
+    ]
+    if manifest.get("space_url"):
+        lines.extend(["## Report URL", "", str(manifest["space_url"]), ""])
+    if manifest.get("bucket_id"):
+        lines.extend(["## Artifact Bucket", "", str(manifest["bucket_id"]), ""])
+
+    lines.extend(["## Pages", ""])
+    for page in manifest.get("pages", []):
+        if not isinstance(page, dict):
+            continue
+        lines.append(
+            f"- `{page.get('path')}`: {page.get('title')} "
+            f"({page.get('url')})"
+        )
+    lines.append("")
+
+    dashboards = manifest.get("dashboards", [])
+    lines.extend(["## Trackio Dashboards", ""])
+    if dashboards:
+        for dashboard in dashboards:
+            if not isinstance(dashboard, dict):
+                continue
+            lines.append(f"### {dashboard.get('project') or dashboard.get('space_url')}")
+            lines.append("")
+            lines.append(f"- Page: `{dashboard.get('page')}`")
+            lines.append(f"- Dashboard URL: {dashboard.get('url')}")
+            if dashboard.get("metrics"):
+                lines.append(f"- Metrics: `{', '.join(dashboard['metrics'])}`")
+            lines.append("- CLI:")
+            for command in dashboard.get("cli_commands", []):
+                lines.append(f"  - `{command}`")
+            lines.append("")
+    else:
+        lines.extend(["No Trackio dashboard embeds were found.", ""])
+
+    artifacts = manifest.get("artifacts", [])
+    lines.extend(["## Artifacts And Raw Data", ""])
+    if artifacts:
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                continue
+            lines.append(f"### {artifact.get('caption') or artifact.get('path')}")
+            lines.append("")
+            lines.append(f"- Page: `{artifact.get('page')}`")
+            lines.append(f"- Kind: `{artifact.get('kind')}`")
+            lines.append(f"- Artifact URL: {artifact.get('url')}")
+            if artifact.get("raw_data_url"):
+                lines.append(f"- Raw data URL: {artifact.get('raw_data_url')}")
+                lines.append(f"- Raw data path: `{artifact.get('raw_data_path')}`")
+            lines.append("")
+    else:
+        lines.extend(["No artifacts were found.", ""])
+
+    lines.extend(
+        [
+            "## Update Workflow",
+            "",
+            "Use the Trackio CLI from the report checkout:",
+            "",
+            "```sh",
+            "trackio report publish --page reports/experiments/run.md --title \"Run summary\" --body notes.md --artifact outputs/",
+            "trackio report build",
+            "trackio report deploy",
+            "```",
+            "",
+            "The browser HTML embeds `report.json` in `#report-manifest`, but agents",
+            "should prefer this markdown document or `report.json` to avoid spending",
+            "tokens on layout markup.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_agent_worker() -> str:
+    return """const LLM_UA_PATTERNS = [
+  /\\bgptbot\\b/i,
+  /\\bchatgpt-user\\b/i,
+  /\\bclaudebot\\b/i,
+  /\\bclaude-web\\b/i,
+  /\\bclaude-user\\b/i,
+  /\\banthropic\\b/i,
+  /\\bperplexitybot\\b/i,
+  /\\bmeta-external(?:fetcher|agent)\\b/i,
+  /\\bfacebookbot\\b/i,
+  /\\bamazonbot\\b/i,
+  /\\bapplebot\\b/i,
+  /\\bbytespider\\b/i,
+  /\\bccbot\\b/i,
+  /\\bcohere\\b/i,
+  /\\bgoogle-extended\\b/i,
+  /\\bcodex\\b/i,
+  /\\bcursor\\b/i
+];
+
+function isAgentRequest(request) {
+  const accept = request.headers.get("accept") || "";
+  if (accept.includes("text/markdown")) return true;
+  const ua = request.headers.get("user-agent") || "";
+  return LLM_UA_PATTERNS.some((pattern) => pattern.test(ua));
+}
+
+function isHtmlRoute(pathname) {
+  return pathname === "/" || pathname.endsWith(".html");
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (isAgentRequest(request) && isHtmlRoute(url.pathname)) {
+      const agentUrl = new URL("/agent.md", request.url);
+      const response = await env.ASSETS.fetch(agentUrl.toString());
+      return new Response(response.body, {
+        status: response.status,
+        headers: {
+          "content-type": "text/markdown; charset=utf-8",
+          "cache-control": "public, max-age=60"
+        }
+      });
+    }
+    return env.ASSETS.fetch(request);
+  }
+};
+"""
+
+
+def _render_headers() -> str:
+    return """/agent.md
+  Content-Type: text/markdown; charset=utf-8
+
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+"""
+
+
+def _write_dynamic_space_files(out_path: Path) -> None:
+    (out_path / "Dockerfile").write_text(_render_dockerfile(), encoding="utf-8")
+    (out_path / "requirements.txt").write_text(
+        "fastapi\nuvicorn[standard]\n",
+        encoding="utf-8",
+    )
+    (out_path / "server.py").write_text(_render_dynamic_server(), encoding="utf-8")
+
+
+def _render_dockerfile() -> str:
+    return """FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "7860"]
+"""
+
+
+def _render_dynamic_server() -> str:
+    return '''from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+
+
+ROOT = Path(__file__).parent
+LLM_UA_PATTERNS = [
+    re.compile(r"\\bgptbot\\b", re.IGNORECASE),
+    re.compile(r"\\bchatgpt-user\\b", re.IGNORECASE),
+    re.compile(r"\\bclaudebot\\b", re.IGNORECASE),
+    re.compile(r"\\bclaude-web\\b", re.IGNORECASE),
+    re.compile(r"\\bclaude-user\\b", re.IGNORECASE),
+    re.compile(r"\\banthropic\\b", re.IGNORECASE),
+    re.compile(r"\\bperplexitybot\\b", re.IGNORECASE),
+    re.compile(r"\\bmeta-external(?:fetcher|agent)\\b", re.IGNORECASE),
+    re.compile(r"\\bfacebookbot\\b", re.IGNORECASE),
+    re.compile(r"\\bamazonbot\\b", re.IGNORECASE),
+    re.compile(r"\\bapplebot\\b", re.IGNORECASE),
+    re.compile(r"\\bbytespider\\b", re.IGNORECASE),
+    re.compile(r"\\bccbot\\b", re.IGNORECASE),
+    re.compile(r"\\bcohere\\b", re.IGNORECASE),
+    re.compile(r"\\bgoogle-extended\\b", re.IGNORECASE),
+    re.compile(r"\\bcodex\\b", re.IGNORECASE),
+    re.compile(r"\\bcursor\\b", re.IGNORECASE),
+]
+
+
+def is_agent_request(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    if "text/markdown" in accept:
+        return True
+    user_agent = request.headers.get("user-agent", "")
+    return any(pattern.search(user_agent) for pattern in LLM_UA_PATTERNS)
+
+
+def is_html_route(path: str) -> bool:
+    return path in {"", "index.html"} or path.endswith(".html")
+
+
+app = FastAPI()
+
+
+@app.get("/")
+async def root(request: Request):
+    return await serve_path(request, "index.html")
+
+
+@app.get("/{path:path}")
+async def serve_path(request: Request, path: str):
+    if is_agent_request(request) and is_html_route(path):
+        return FileResponse(ROOT / "agent.md", media_type="text/markdown")
+
+    target = (ROOT / path).resolve()
+    if not str(target).startswith(str(ROOT.resolve())):
+        raise HTTPException(status_code=404)
+    if target.is_dir():
+        target = target / "index.html"
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(target)
+'''
+
+
+def _agent_redirect_script() -> str:
+    return """(() => {
+  const ua = navigator.userAgent || "";
+  const patterns = [
+    /\\bgptbot\\b/i,
+    /\\bchatgpt-user\\b/i,
+    /\\bclaudebot\\b/i,
+    /\\bclaude-web\\b/i,
+    /\\bclaude-user\\b/i,
+    /\\banthropic\\b/i,
+    /\\bperplexitybot\\b/i,
+    /\\bcodex\\b/i,
+    /\\bcursor\\b/i
+  ];
+  if (!patterns.some((pattern) => pattern.test(ua))) return;
+  const explicitHtml = new URLSearchParams(location.search).get("format") === "html";
+  if (explicitHtml) return;
+  const link = document.querySelector('link[rel="alternate"][type="text/markdown"]');
+  if (link && link.href) location.replace(link.href);
+})();"""
+
+
+def _extract_artifacts(
+    pages: list[ReportPage], config: ReportConfig
+) -> list[dict[str, str]]:
+    artifacts: list[dict[str, str]] = []
+    pattern = re.compile(r"\{\{\s*(artifact|file)\s+([^}]+)\}\}")
+    for page in pages:
+        for match in pattern.finditer(page.body):
+            kind = match.group(1)
+            attrs = _parse_attrs(match.group(2))
+            path = attrs.get("path")
+            if not path:
+                continue
+            raw_data_path = attrs.get("data") or attrs.get("raw_data")
+            entry = {
+                "path": path,
+                "url": attrs.get("url") or _bucket_url(config.bucket_id, path),
+                "page": page.relative_path,
+                "kind": "image" if kind == "artifact" and _is_image_path(path) else kind,
+                "caption": attrs.get("caption") or Path(path).name,
+            }
+            if raw_data_path:
+                entry["raw_data_path"] = raw_data_path
+                entry["raw_data_url"] = attrs.get("data_url") or _bucket_url(
+                    config.bucket_id, raw_data_path
+                )
+            artifacts.append(entry)
+    return artifacts
 
 
 def _extract_dashboards(pages: list[ReportPage]) -> list[dict[str, object]]:
@@ -953,11 +1316,19 @@ def _bucket_url(bucket_id: str | None, path: str) -> str:
     return f"https://huggingface.co/buckets/{bucket_id}/resolve/{quote(path)}"
 
 
-def _space_readme(space_id: str, bucket_id: str | None) -> str:
+def _static_space_host(space_id: str) -> str:
+    return f"https://{space_id.replace('/', '-')}.static.hf.space"
+
+
+def _dynamic_space_host(space_id: str) -> str:
+    return f"https://{space_id.replace('/', '-')}.hf.space"
+
+
+def _space_readme(space_id: str, bucket_id: str | None, *, sdk: str = "static") -> str:
     bucket_line = "\nmodels: []\n" if bucket_id else ""
     return f"""---
 emoji: 📊
-sdk: static
+sdk: {sdk}
 pinned: false
 tags:
  - trackio

@@ -73,7 +73,7 @@ title: Data mixture experiments
 Use shortcodes for artifacts and dashboards:
 
 ```md
-{{ artifact path="reports/artifacts/run/chart.png" caption="Evaluation chart" }}
+{{ artifact path="reports/artifacts/run/chart.png" data="reports/artifacts/run/chart.json" caption="Evaluation chart" }}
 {{ file path="reports/artifacts/run/model.safetensors" caption="Model weights" }}
 {{ trackio url="https://username-space.static.hf.space/?project=my-project&sidebar=hidden" }}
 ```
@@ -86,6 +86,18 @@ includes `data-trackio-url`, `data-trackio-project`, and `data-trackio-metrics`
 attributes, and `dist/report.json` includes each dashboard URL, project, metric
 filters, and suggested `trackio` CLI commands.
 
+Image artifacts can include a `data=` attribute that points to the raw results
+behind the figure. The generated HTML keeps the image for human readers, while
+`dist/report.json`, `dist/agent.md`, and `dist/llms.txt` expose the raw data URL
+for agents.
+
+The build also writes `dist/agent.md`, a compact report contract for coding
+agents. The static output includes a best-effort edge worker that serves this
+markdown instead of the full HTML when the request includes
+`Accept: text/markdown` or a known coding-agent User-Agent. If a static host does
+not support workers, agents can still fetch `/agent.md` directly or discover it
+through the page's `<link rel="alternate" type="text/markdown">`.
+
 ## Build and deploy
 
 ```sh
@@ -96,3 +108,21 @@ trackio report deploy
 
 `trackio report build` writes a static site to `dist/`. `trackio report deploy`
 creates or updates the configured static Space.
+
+Static deployment is the default:
+
+```sh
+trackio report deploy --sdk static
+```
+
+If the report must serve the same URL differently to humans and agents, deploy
+with the Docker SDK:
+
+```sh
+trackio report deploy --sdk docker
+```
+
+Docker deployment uploads a tiny FastAPI server with the generated report. Normal
+browser requests receive the HTML article, while requests with
+`Accept: text/markdown` or a known coding-agent User-Agent receive `agent.md`
+directly from the same URL.

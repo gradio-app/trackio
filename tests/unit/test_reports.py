@@ -37,7 +37,7 @@ title: Data mixtures
 
 # Data mixtures
 
-{{ artifact path="reports/artifacts/chart.png" caption="Chart" }}
+{{ artifact path="reports/artifacts/chart.png" data="reports/artifacts/chart.json" caption="Chart" }}
 
 {{ file path="reports/artifacts/model.safetensors" caption="Weights" }}
 
@@ -60,9 +60,13 @@ title: Data mixtures
     assert manifest["dashboards"][0]["cli_commands"][0].startswith(
         'trackio list runs --project "mixtures"'
     )
+    assert manifest["artifacts"][0]["kind"] == "image"
+    assert manifest["artifacts"][0]["raw_data_path"] == "reports/artifacts/chart.json"
     assert "&sidebar=hidden" not in manifest["dashboards"][0]["cli_commands"][0]
     assert "https://huggingface.co/buckets/abidlabs/report-bucket/resolve/reports/artifacts/chart.png" in child_html
     assert '<iframe class="trackio-embed"' in child_html
+    assert "When a human reads this report, they get an embedded Trackio dashboard" in child_html
+    assert "When a human reads this report, they see an embedded image" in child_html
     assert '<aside>' not in html
     assert "background: var(--bg)" in html
     assert "#f2efe8" not in html
@@ -71,9 +75,17 @@ title: Data mixtures
     assert 'id="page-experiments-mixtures"' not in html
     assert 'class="breadcrumb"' in child_html
     assert 'href="../index.html"' in child_html
-    assert "Agents can query the same data with the Trackio CLI" in child_html
+    assert "Agent data source:" in child_html
     assert 'data-trackio-project="mixtures"' in child_html
     assert "Data mixtures" in child_html
+    assert (tmp_path / "dist" / "agent.md").exists()
+    assert (tmp_path / "dist" / "llms.txt").exists()
+    assert (tmp_path / "dist" / "_worker.js").exists()
+    assert (tmp_path / "dist" / "_headers").exists()
+    agent_md = (tmp_path / "dist" / "agent.md").read_text(encoding="utf-8")
+    assert "Dashboard URL: https://abidlabs-demo.hf.space/?project=mixtures&sidebar=hidden" in agent_md
+    assert "Raw data URL: https://huggingface.co/buckets/abidlabs/report-bucket/resolve/reports/artifacts/chart.json" in agent_md
+    assert "trackio list runs --project" in agent_md
 
 
 def test_publish_appends_entry_and_uploads_artifacts(tmp_path, monkeypatch):
@@ -160,3 +172,48 @@ def test_deploy_report_uploads_static_space(tmp_path, monkeypatch):
     )
     assert config["mode"] == "trackio-report"
     assert config["bucket_id"] == "abidlabs/report-bucket"
+
+
+def test_deploy_report_can_upload_docker_space(tmp_path, monkeypatch):
+    reports.init_report(
+        tmp_path,
+        space_id="abidlabs/report",
+        bucket_id="abidlabs/report-bucket",
+    )
+    created = []
+
+    class FakeApi:
+        def __init__(self):
+            self.files = []
+            self.folders = []
+
+        def upload_file(self, **kwargs):
+            payload = kwargs["path_or_fileobj"].getvalue().decode("utf-8")
+            self.files.append((kwargs["path_in_repo"], payload))
+
+        def upload_folder(self, **kwargs):
+            self.folders.append(kwargs)
+
+    fake_api = FakeApi()
+    monkeypatch.setattr(reports.huggingface_hub, "HfApi", lambda: fake_api)
+    monkeypatch.setattr(
+        reports.huggingface_hub,
+        "create_repo",
+        lambda *args, **kwargs: created.append((args, kwargs)),
+    )
+    monkeypatch.setattr(reports, "create_bucket_if_not_exists", lambda *a, **k: None)
+
+    reports.deploy_report(tmp_path, sdk="docker")
+
+    assert created[0][1]["space_sdk"] == "docker"
+    assert (tmp_path / "dist" / "Dockerfile").exists()
+    assert (tmp_path / "dist" / "server.py").exists()
+    assert "Accept: text/markdown" in (tmp_path / "dist" / "agent.md").read_text(
+        encoding="utf-8"
+    )
+    manifest = json.loads((tmp_path / "dist" / "report.json").read_text(encoding="utf-8"))
+    assert manifest["space_url"] == "https://abidlabs-report.hf.space"
+    config = json.loads(
+        next(payload for path, payload in fake_api.files if path == "config.json")
+    )
+    assert config["sdk"] == "docker"

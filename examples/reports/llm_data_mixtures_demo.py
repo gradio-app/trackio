@@ -20,6 +20,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import huggingface_hub
 from PIL import Image, ImageDraw
 
 import trackio
@@ -132,6 +133,53 @@ Mock LoRA adapter produced for the Trackio Reports demo.
     return [chart_path, config_path, card_path]
 
 
+def _write_overview_artifacts(workdir: Path, deploy: bool) -> tuple[str, str]:
+    artifact_dir = workdir / "artifacts" / "overview"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    raw_results = []
+    aggregate_scores = {}
+    for mixture in MIXTURES:
+        score = (
+            float(mixture["mt_bench"]) / 10 * 30
+            + float(mixture["gsm8k"]) / 100 * 30
+            + float(mixture["humaneval"]) / 100 * 25
+            + (100 - float(mixture["toxicity"])) / 100 * 15
+        )
+        aggregate_scores[str(mixture["name"])] = round(score, 2)
+        raw_results.append(
+            {
+                "mixture": mixture["name"],
+                "chat_pct": mixture["chat"],
+                "code_pct": mixture["code"],
+                "math_pct": mixture["math"],
+                "safety_pct": mixture["safety"],
+                "mt_bench": mixture["mt_bench"],
+                "gsm8k": mixture["gsm8k"],
+                "humaneval": mixture["humaneval"],
+                "toxicity": mixture["toxicity"],
+                "aggregate_score": round(score, 2),
+            }
+        )
+
+    chart_path = artifact_dir / "aggregate_eval_bar_plot.png"
+    raw_path = artifact_dir / "final_eval_results.json"
+    _draw_bar_chart(chart_path, "Aggregate post-training score", aggregate_scores)
+    raw_path.write_text(json.dumps(raw_results, indent=2) + "\n", encoding="utf-8")
+
+    remote_chart_path = "reports/artifacts/overview/aggregate_eval_bar_plot.png"
+    remote_raw_path = "reports/artifacts/overview/final_eval_results.json"
+    if deploy:
+        reports.create_bucket_if_not_exists(REPORT_BUCKET_ID, private=False)
+        huggingface_hub.batch_bucket_files(
+            REPORT_BUCKET_ID,
+            add=[
+                (str(chart_path), remote_chart_path),
+                (str(raw_path), remote_raw_path),
+            ],
+        )
+    return remote_chart_path, remote_raw_path
+
+
 def _log_trackio_runs() -> None:
     for mixture in MIXTURES:
         random.seed(str(mixture["name"]))
@@ -202,6 +250,7 @@ This section contains one page per mock data mixture.
         encoding="utf-8",
     )
 
+    overview_chart_path, overview_raw_path = _write_overview_artifacts(workdir, deploy)
     overview = workdir / "reports" / "index.md"
     overview.write_text(
         f"""---
@@ -222,7 +271,29 @@ the kind of report an agent should be able to update after every local
 experiment: the prose records what changed, the artifacts preserve generated
 evidence, and the embedded Trackio dashboards remain queryable.
 
-{{{{ trackio url="{dashboard_url}?project={PROJECT}&sidebar=hidden&footer=false" caption="Interactive Trackio dashboard for every mock post-training run in this report." }}}}
+The report is intentionally written as a working research note rather than a
+final model card. A human reader should be able to scan the conclusions and
+inspect plots in place. A coding agent should be able to fetch the same URL,
+avoid the browser-oriented HTML, and recover the underlying dashboard URLs,
+artifact URLs, raw JSON files, and Trackio CLI commands needed to continue the
+analysis.
+
+{{{{ trackio url="{dashboard_url}?project={PROJECT}&sidebar=hidden&footer=false" }}}}
+
+## Aggregate Result
+
+We normalized each final metric onto a common scale and computed a weighted
+aggregate: 30% MT-Bench, 30% GSM8K, 25% HumanEval, and 15% safety. This is not
+intended to be a universal score. It is a compact view for deciding which
+mixture deserves the next sweep.
+
+{{{{ artifact path="{overview_chart_path}" data="{overview_raw_path}" caption="Aggregate evaluation score for the four mock data mixtures." }}}}
+
+The aggregate view favors the balanced run because it avoids a severe regression
+on any single axis. The specialized mixtures are still useful: code-heavy is the
+clear follow-up if the deployment target values code generation, math-heavy is
+the follow-up for symbolic reasoning, and chat-heavy is the follow-up when
+instruction-following polish matters more than task specialization.
 
 ## Takeaways
 
@@ -283,7 +354,7 @@ For a real follow-up, an agent should compare the final checkpoint against the
 balanced run, read the loss and reward curves via the Trackio CLI, and schedule
 one narrower sweep around the most promising ratio.
 
-{{{{ trackio url="{dashboard_url}?project={PROJECT}&metrics=train/loss,eval/reward&sidebar=hidden&footer=false" caption="Filtered Trackio dashboard for training loss and reward curves." }}}}
+{{{{ trackio url="{dashboard_url}?project={PROJECT}&metrics=train/loss,eval/reward&sidebar=hidden&footer=false" }}}}
 """
         reports.publish_report(
             workdir,
@@ -308,6 +379,12 @@ def main() -> None:
         default=None,
         help="Directory for the generated report workspace. Defaults to a temp dir.",
     )
+    parser.add_argument(
+        "--report-sdk",
+        choices=["static", "docker"],
+        default="static",
+        help="Space SDK to use for the report Space.",
+    )
     args = parser.parse_args()
 
     if args.workdir is None:
@@ -327,7 +404,7 @@ def main() -> None:
     reports.build_report(workdir)
 
     if args.deploy:
-        reports.deploy_report(workdir)
+        reports.deploy_report(workdir, sdk=args.report_sdk)
 
     print(f"Report workspace: {workdir}")
     print(f"Report Space: https://huggingface.co/spaces/{REPORT_SPACE_ID}")
