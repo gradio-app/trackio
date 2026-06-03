@@ -48,6 +48,9 @@ title: Data mixtures
 
     manifest = reports.build_report(tmp_path)
     html = (tmp_path / "dist" / "index.html").read_text(encoding="utf-8")
+    child_html = (tmp_path / "dist" / "experiments" / "mixtures.html").read_text(
+        encoding="utf-8"
+    )
 
     assert len(manifest["pages"]) == 3
     assert any(page["parent"] == "index.md" for page in manifest["pages"])
@@ -58,14 +61,19 @@ title: Data mixtures
         'trackio list runs --project "mixtures"'
     )
     assert "&sidebar=hidden" not in manifest["dashboards"][0]["cli_commands"][0]
-    assert "https://huggingface.co/buckets/abidlabs/report-bucket/resolve/reports/artifacts/chart.png" in html
-    assert '<iframe class="trackio-embed"' in html
+    assert "https://huggingface.co/buckets/abidlabs/report-bucket/resolve/reports/artifacts/chart.png" in child_html
+    assert '<iframe class="trackio-embed"' in child_html
     assert '<aside>' not in html
+    assert "background: var(--bg)" in html
+    assert "#f2efe8" not in html
     assert 'class="linked-pages"' in html
-    assert 'id="page-experiments-mixtures"' in html
-    assert "Agents can query the same data with the Trackio CLI" in html
-    assert 'data-trackio-project="mixtures"' in html
-    assert "Data mixtures" in html
+    assert 'href="experiments/mixtures.html"' in html
+    assert 'id="page-experiments-mixtures"' not in html
+    assert 'class="breadcrumb"' in child_html
+    assert 'href="../index.html"' in child_html
+    assert "Agents can query the same data with the Trackio CLI" in child_html
+    assert 'data-trackio-project="mixtures"' in child_html
+    assert "Data mixtures" in child_html
 
 
 def test_publish_appends_entry_and_uploads_artifacts(tmp_path, monkeypatch):

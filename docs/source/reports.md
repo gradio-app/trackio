@@ -46,9 +46,9 @@ appended to the selected page.
 ## Report pages
 
 Reports are Markdown files in the `reports/` directory. Folder structure defines
-nesting. The deployed report is rendered as one article-style page: `index.md`
-appears first, and nested pages appear as linked inline sections with stable
-anchors.
+nesting. The deployed report renders `index.md` as the main article page, while
+nested Markdown files become separate static pages. Linked page cards navigate
+between pages, and nested pages include breadcrumbs back to the main report.
 
 ```text
 reports/

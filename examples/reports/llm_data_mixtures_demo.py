@@ -210,16 +210,17 @@ title: LLM Data Mixture Report
 
 # LLM Data Mixture Report
 
-<section class="abstract">
-  <h2>Abstract</h2>
-  <p>
-    We post-trained a mock 8B instruction model with four data mixtures and
-    compared instruction-following, math, code, and safety-oriented proxy
-    metrics. The balanced mixture produced the best aggregate tradeoff, while
-    targeted mixtures improved their matching capabilities at the cost of
-    generality.
-  </p>
-</section>
+We post-trained a mock 8B instruction model with four data mixtures and compared
+instruction-following, math, code, and safety-oriented proxy metrics. The goal
+was not to find a universally best recipe, but to make the tradeoffs legible:
+which mixtures specialize well, which mixtures transfer, and which runs deserve
+a follow-up sweep.
+
+The balanced mixture produced the best aggregate tradeoff, while targeted
+mixtures improved their matching capabilities at the cost of generality. This is
+the kind of report an agent should be able to update after every local
+experiment: the prose records what changed, the artifacts preserve generated
+evidence, and the embedded Trackio dashboards remain queryable.
 
 {{{{ trackio url="{dashboard_url}?project={PROJECT}&sidebar=hidden&footer=false" caption="Interactive Trackio dashboard for every mock post-training run in this report." }}}}
 
@@ -252,18 +253,22 @@ title: LLM Data Mixture Report
 
 ## Linked Experiment Pages
 
-The generated report below inlines each source Markdown page as an anchored
-section. Start with [Experiments](#page-experiments-index), then inspect the
-[balanced](#page-experiments-balanced), [code-heavy](#page-experiments-code-heavy),
-[math-heavy](#page-experiments-math-heavy), and [chat-heavy](#page-experiments-chat-heavy)
-pages.
+The cards below link to separate report pages, similar to nested Notion pages.
+Start with [Experiments](experiments/index.html), then inspect the
+[balanced](experiments/balanced.html), [code-heavy](experiments/code-heavy.html),
+[math-heavy](experiments/math-heavy.html), and [chat-heavy](experiments/chat-heavy.html)
+pages. Each page has breadcrumbs back to this overview.
 """,
         encoding="utf-8",
     )
 
     for mixture in MIXTURES:
         artifacts = _write_artifacts(workdir, mixture)
-        notes = f"""Mixture composition:
+        notes = f"""This page records the outcome for the `{mixture["name"]}` data mixture. It is
+intended to be read together with the embedded Trackio dashboard and the
+generated artifacts below.
+
+Mixture composition:
 
 - Chat: {mixture["chat"]}%
 - Code: {mixture["code"]}%
@@ -272,6 +277,11 @@ pages.
 
 Final mock evals: MT-Bench `{mixture["mt_bench"]}`, GSM8K `{mixture["gsm8k"]}`,
 HumanEval `{mixture["humaneval"]}`, toxicity `{mixture["toxicity"]}`.
+
+Interpretation: this mixture shifts capacity toward its dominant data source.
+For a real follow-up, an agent should compare the final checkpoint against the
+balanced run, read the loss and reward curves via the Trackio CLI, and schedule
+one narrower sweep around the most promising ratio.
 
 {{{{ trackio url="{dashboard_url}?project={PROJECT}&metrics=train/loss,eval/reward&sidebar=hidden&footer=false" caption="Filtered Trackio dashboard for training loss and reward curves." }}}}
 """
