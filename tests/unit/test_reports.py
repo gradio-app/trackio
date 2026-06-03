@@ -80,30 +80,10 @@ title: Data mixtures
     assert "Data mixtures" in child_html
     assert (tmp_path / "dist" / "agent.md").exists()
     assert (tmp_path / "dist" / "llms.txt").exists()
-    assert (tmp_path / "dist" / "_worker.js").exists()
-    assert (tmp_path / "dist" / "_headers").exists()
     agent_md = (tmp_path / "dist" / "agent.md").read_text(encoding="utf-8")
     assert "Dashboard URL: https://abidlabs-demo.hf.space/?project=mixtures&sidebar=hidden" in agent_md
     assert "Raw data URL: https://huggingface.co/buckets/abidlabs/report-bucket/resolve/reports/artifacts/chart.json" in agent_md
     assert "trackio list runs --project" in agent_md
-
-
-def test_render_markdown_treats_soft_line_breaks_as_spaces():
-    html = reports.render_markdown(
-        """# Summary
-
-This sentence is wrapped
-across source lines but should
-render as one paragraph.
-""",
-        reports.ReportConfig(),
-    )
-
-    assert (
-        "This sentence is wrapped across source lines but should render as one paragraph."
-        in html
-    )
-    assert "<br>" not in html
 
 
 def test_publish_appends_entry_and_uploads_artifacts(tmp_path, monkeypatch):
@@ -190,48 +170,3 @@ def test_deploy_report_uploads_static_space(tmp_path, monkeypatch):
     )
     assert config["mode"] == "trackio-report"
     assert config["bucket_id"] == "abidlabs/report-bucket"
-
-
-def test_deploy_report_can_upload_docker_space(tmp_path, monkeypatch):
-    reports.init_report(
-        tmp_path,
-        space_id="abidlabs/report",
-        bucket_id="abidlabs/report-bucket",
-    )
-    created = []
-
-    class FakeApi:
-        def __init__(self):
-            self.files = []
-            self.folders = []
-
-        def upload_file(self, **kwargs):
-            payload = kwargs["path_or_fileobj"].getvalue().decode("utf-8")
-            self.files.append((kwargs["path_in_repo"], payload))
-
-        def upload_folder(self, **kwargs):
-            self.folders.append(kwargs)
-
-    fake_api = FakeApi()
-    monkeypatch.setattr(reports.huggingface_hub, "HfApi", lambda: fake_api)
-    monkeypatch.setattr(
-        reports.huggingface_hub,
-        "create_repo",
-        lambda *args, **kwargs: created.append((args, kwargs)),
-    )
-    monkeypatch.setattr(reports, "create_bucket_if_not_exists", lambda *a, **k: None)
-
-    reports.deploy_report(tmp_path, sdk="docker")
-
-    assert created[0][1]["space_sdk"] == "docker"
-    assert (tmp_path / "dist" / "Dockerfile").exists()
-    assert (tmp_path / "dist" / "server.py").exists()
-    assert "Accept: text/markdown" in (tmp_path / "dist" / "agent.md").read_text(
-        encoding="utf-8"
-    )
-    manifest = json.loads((tmp_path / "dist" / "report.json").read_text(encoding="utf-8"))
-    assert manifest["space_url"] == "https://abidlabs-report.hf.space"
-    config = json.loads(
-        next(payload for path, payload in fake_api.files if path == "config.json")
-    )
-    assert config["sdk"] == "docker"

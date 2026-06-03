@@ -273,10 +273,10 @@ evidence, and the embedded Trackio dashboards remain queryable.
 
 The report is intentionally written as a working research note rather than a
 final model card. A human reader should be able to scan the conclusions and
-inspect plots in place. A coding agent should be able to fetch the same URL,
-avoid the browser-oriented HTML, and recover the underlying dashboard URLs,
-artifact URLs, raw JSON files, and Trackio CLI commands needed to continue the
-analysis.
+inspect plots in place. A coding agent can parse the same static page for hidden
+metadata, or fetch `agent.md` and `report.json`, to recover the underlying
+dashboard URLs, artifact URLs, raw JSON files, and Trackio CLI commands needed
+to continue the analysis.
 
 {{{{ trackio url="{dashboard_url}?project={PROJECT}&sidebar=hidden&footer=false" }}}}
 
@@ -379,12 +379,6 @@ def main() -> None:
         default=None,
         help="Directory for the generated report workspace. Defaults to a temp dir.",
     )
-    parser.add_argument(
-        "--report-sdk",
-        choices=["static", "docker"],
-        default="static",
-        help="Space SDK to use for the report Space.",
-    )
     args = parser.parse_args()
 
     if args.workdir is None:
@@ -404,7 +398,7 @@ def main() -> None:
     reports.build_report(workdir)
 
     if args.deploy:
-        reports.deploy_report(workdir, sdk=args.report_sdk)
+        reports.deploy_report(workdir)
 
     print(f"Report workspace: {workdir}")
     print(f"Report Space: https://huggingface.co/spaces/{REPORT_SPACE_ID}")

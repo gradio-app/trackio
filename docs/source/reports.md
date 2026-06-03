@@ -92,11 +92,9 @@ behind the figure. The generated HTML keeps the image for human readers, while
 for agents.
 
 The build also writes `dist/agent.md`, a compact report contract for coding
-agents. The static output includes a best-effort edge worker that serves this
-markdown instead of the full HTML when the request includes
-`Accept: text/markdown` or a known coding-agent User-Agent. If a static host does
-not support workers, agents can still fetch `/agent.md` directly or discover it
-through the page's `<link rel="alternate" type="text/markdown">`.
+agents. Static report Spaces serve browser HTML at `/`; agents should fetch
+`/agent.md`, `/llms.txt`, or `/report.json` directly. The HTML also advertises
+`agent.md` with `<link rel="alternate" type="text/markdown">`.
 
 ## Build and deploy
 
@@ -108,21 +106,3 @@ trackio report deploy
 
 `trackio report build` writes a static site to `dist/`. `trackio report deploy`
 creates or updates the configured static Space.
-
-Static deployment is the default:
-
-```sh
-trackio report deploy --sdk static
-```
-
-If the report must serve the same URL differently to humans and agents, deploy
-with the Docker SDK:
-
-```sh
-trackio report deploy --sdk docker
-```
-
-Docker deployment uploads a tiny FastAPI server with the generated report. Normal
-browser requests receive the HTML article, while requests with
-`Accept: text/markdown` or a known coding-agent User-Agent receive `agent.md`
-directly from the same URL.
