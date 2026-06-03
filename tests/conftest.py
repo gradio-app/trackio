@@ -13,7 +13,7 @@ from trackio.media import write_audio, write_video
 def temp_dir(monkeypatch):
     """Fixture that creates a temporary TRACKIO_DIR."""
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
-        for name in ["trackio.sqlite_storage"]:
+        for name in ["trackio", "trackio.sqlite_storage", "trackio.utils"]:
             monkeypatch.setattr(f"{name}.TRACKIO_DIR", Path(tmpdir))
         for name in [
             "trackio.media.media",
