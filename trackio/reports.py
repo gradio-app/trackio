@@ -657,6 +657,9 @@ def _render_document_html(
     escaped_title = html.escape(title)
     payload = json.dumps(manifest).replace("</", "<\\/")
     meta_html = "".join(f"<span>{html.escape(str(item))}</span>" for item in metadata)
+    report_url = str(manifest.get("space_url") or "./")
+    report_url_html = html.escape(report_url)
+    report_url_attr = html.escape(report_url, quote=True)
     current_attr = (
         f' data-current-report-page="{html.escape(current_page)}"'
         if current_page
@@ -670,12 +673,21 @@ def _render_document_html(
   <title>{escaped_title}</title>
   <link rel="alternate" type="text/markdown" href="{_relative_url("agent.md", current_page or "index.html")}">
   <style>{_article_css()}</style>
+  <script>{_copy_script()}</script>
 </head>
 <body{current_attr}>
   <main class="article-shell">
     <article class="article-paper">
       <header class="article-header">
-        <div class="eyebrow">{html.escape(eyebrow)}</div>
+        <div class="header-kicker">
+          <div class="eyebrow">{html.escape(eyebrow)}</div>
+          <div class="report-url-control" data-report-url="{report_url_attr}">
+            <a class="report-url" href="{report_url_attr}">{report_url_html}</a>
+            <button class="copy-url-button" type="button" data-copy-url="{report_url_attr}" aria-label="Copy report URL" title="Copy report URL">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+          </div>
+        </div>
         <h1 class="article-title">{escaped_title}</h1>
         <div class="article-meta">{meta_html}</div>
       </header>
@@ -697,7 +709,15 @@ def _article_css() -> str:
     .article-shell { max-width: 1080px; margin: 0 auto; padding: 34px 28px 88px; }
     .article-paper { background: var(--paper); padding: 16px min(6vw, 72px); }
     .article-header { padding-bottom: 18px; margin-bottom: 28px; }
-    .eyebrow { color: var(--accent); font: 700 12px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 16px; }
+    .header-kicker { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+    .eyebrow { color: var(--accent); font: 700 12px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
+    .report-url-control { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: min(460px, 52%); color: var(--muted); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .report-url { color: var(--muted); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .report-url:hover { color: var(--accent); text-decoration: underline; }
+    .copy-url-button { width: 28px; height: 28px; flex: 0 0 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: #fff; color: var(--muted); padding: 0; cursor: pointer; }
+    .copy-url-button:hover { color: var(--accent); border-color: #bfdbfe; background: var(--accent-soft); }
+    .copy-url-button.copied { color: #047857; border-color: #a7f3d0; background: #ecfdf5; }
+    .copy-url-button svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .article-title { position: relative; font-size: clamp(30px, 4.8vw, 44px); line-height: 1.1; margin: 0 0 16px; font-weight: 650; letter-spacing: 0; padding-left: 24px; }
     .article-title::before { content: ""; position: absolute; left: 0; top: 0.45em; width: 0; height: 0; border-left: 7px solid #9ca3af; border-top: 5px solid transparent; border-bottom: 5px solid transparent; transform: rotate(90deg); }
     .article-meta { color: var(--muted); font: 14px/1.6 ui-sans-serif, system-ui, sans-serif; display: flex; flex-wrap: wrap; gap: 10px 18px; }
@@ -731,8 +751,31 @@ def _article_css() -> str:
     table { width: 100%; border-collapse: collapse; margin: 24px 0; font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
     th, td { border-bottom: 1px solid var(--line); padding: 10px 8px; text-align: left; vertical-align: top; }
     th { background: var(--soft); }
-    @media (max-width: 760px) { .article-shell { padding: 18px 10px 56px; } .article-paper { padding: 18px 10px; } .article-title { font-size: 30px; } p, li { font-size: 16px; } .trackio-embed { min-height: 460px; } }
+    @media (max-width: 760px) { .article-shell { padding: 18px 10px 56px; } .article-paper { padding: 18px 10px; } .header-kicker { align-items: flex-start; flex-direction: column; gap: 8px; } .report-url-control { width: 100%; max-width: 100%; justify-content: flex-start; } .article-title { font-size: 30px; } p, li { font-size: 16px; } .trackio-embed { min-height: 460px; } }
     """
+
+
+def _copy_script() -> str:
+    return """document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-copy-url]");
+  if (!button) return;
+  const url = button.getAttribute("data-copy-url");
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch {
+    const input = document.createElement("input");
+    input.value = url;
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  }
+  button.classList.add("copied");
+  window.setTimeout(() => button.classList.remove("copied"), 1200);
+});"""
 
 
 def _render_shortcodes(markdown: str, config: ReportConfig) -> str:
