@@ -243,3 +243,248 @@ def test_list_artifact_blobs_present(temp_dir, monkeypatch):
     )
     assert present == {"abcdef", "123456"}
     assert SQLiteStorage.list_artifact_blobs_present("p", []) == set()
+
+
+# --- Phase 4 — Artifact class ---
+
+import errno
+import hashlib
+import os
+import shutil
+from pathlib import Path
+
+from trackio.artifact import _HASH_CHUNK_SIZE, Artifact, _hash_file
+from trackio.typehints import Sha256Digest
+
+
+def test_hash_file_is_deterministic_and_correct_size(tmp_path):
+    p = tmp_path / "x"
+    payload = b"hello world"
+    p.write_bytes(payload)
+    d1, s1 = _hash_file(p)
+    d2, s2 = _hash_file(p)
+    assert d1 == d2 == hashlib.sha256(payload).hexdigest()
+    assert s1 == s2 == len(payload)
+
+
+def test_hash_file_handles_larger_than_chunk(tmp_path):
+    p = tmp_path / "big"
+    payload = b"a" * (_HASH_CHUNK_SIZE + 17)
+    p.write_bytes(payload)
+    d, s = _hash_file(p)
+    assert s == len(payload)
+    assert d == hashlib.sha256(payload).hexdigest()
+
+
+def test_hash_file_modern_and_fallback_paths_agree(tmp_path, monkeypatch):
+    p = tmp_path / "blob"
+    payload = b"x" * (_HASH_CHUNK_SIZE + 17) + b"trailing"
+    p.write_bytes(payload)
+
+    d_modern, s_modern = _hash_file(p)
+
+    monkeypatch.delattr("hashlib.file_digest", raising=False)
+    d_fallback, s_fallback = _hash_file(p)
+
+    assert d_modern == d_fallback == hashlib.sha256(payload).hexdigest()
+    assert s_modern == s_fallback == len(payload)
+
+
+def test_artifact_rejects_invalid_name():
+    with pytest.raises(ValueError, match="must match"):
+        Artifact(name="bad name", type="model")
+    with pytest.raises(ValueError, match="must match"):
+        Artifact(name="", type="model")
+
+
+def test_artifact_constructor_exposes_attrs():
+    a = Artifact(name="my-model", type="model", description="d", metadata={"k": 1})
+    assert a.name == "my-model"
+    assert a.type == "model"
+    assert a.description == "d"
+    assert a.metadata == {"k": 1}
+    assert a.version is None
+    assert a.aliases == ()
+    assert a.size is None
+    assert a.manifest is None
+    assert a.manifest_digest is None
+
+
+def test_artifact_name_is_readonly():
+    a = Artifact(name="m", type="model")
+    with pytest.raises(AttributeError, match="read-only"):
+        a.name = "other"
+
+
+def test_artifact_metadata_defensive_copy():
+    md = {"k": 1}
+    a = Artifact(name="m", type="model", metadata=md)
+    md["k"] = 999
+    assert a.metadata == {"k": 1}
+    out = a.metadata
+    out["k"] = 999
+    assert a.metadata == {"k": 1}
+
+
+def test_add_file_records_pending(tmp_path):
+    p = tmp_path / "weights.bin"
+    p.write_bytes(b"x")
+    a = Artifact(name="m", type="model")
+    a.add_file(p)
+    assert a._pending_files == [(p.resolve(), "weights.bin")]
+    a.add_file(p, name="logical.bin")
+    assert a._pending_files[1] == (p.resolve(), "logical.bin")
+
+
+def test_add_file_rejects_nonexistent(tmp_path):
+    a = Artifact(name="m", type="model")
+    with pytest.raises(ValueError, match="Not a regular file"):
+        a.add_file(tmp_path / "missing")
+
+
+def test_add_dir_skips_symlinks(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_bytes(b"a")
+    (src / "link").symlink_to(src / "a.txt")
+    a = Artifact(name="m", type="model")
+    a.add_dir(src)
+    paths = sorted(logical for _, logical in a._pending_files)
+    assert paths == ["a.txt"]
+
+
+def test_add_dir_with_prefix(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_bytes(b"a")
+    (src / "sub").mkdir()
+    (src / "sub" / "b.txt").write_bytes(b"b")
+    a = Artifact(name="m", type="model")
+    a.add_dir(src, name="weights")
+    logicals = sorted(logical for _, logical in a._pending_files)
+    assert logicals == ["weights/a.txt", "weights/sub/b.txt"]
+
+
+def test_build_manifest_writes_blob_with_correct_digest(temp_dir, tmp_path):
+    payload = b"hello"
+    p = tmp_path / "w.bin"
+    p.write_bytes(payload)
+    a = Artifact(name="m", type="model")
+    a.add_file(p)
+    manifest = a._build_manifest("proj")
+    assert manifest[0]["path"] == "w.bin"
+    assert manifest[0]["size"] == len(payload)
+    expected_digest = hashlib.sha256(payload).hexdigest()
+    assert manifest[0]["digest"] == expected_digest
+    blob = (
+        Path(temp_dir)
+        / "artifacts"
+        / "proj"
+        / "blobs"
+        / "sha256"
+        / expected_digest[:2]
+        / expected_digest
+    )
+    assert blob.is_file()
+    assert blob.read_bytes() == payload
+
+
+def test_build_manifest_dedupes_blob_files(temp_dir, tmp_path):
+    p1 = tmp_path / "a"
+    p2 = tmp_path / "b"
+    p1.write_bytes(b"same")
+    p2.write_bytes(b"same")
+    a = Artifact(name="m", type="model")
+    a.add_file(p1)
+    a.add_file(p2)
+    a._build_manifest("p")
+    blobs_dir = Path(temp_dir) / "artifacts" / "p" / "blobs" / "sha256"
+    blob_files = [p for p in blobs_dir.rglob("*") if p.is_file()]
+    assert len(blob_files) == 1
+
+
+def test_build_manifest_rejects_duplicate_logical_path(temp_dir, tmp_path):
+    p1 = tmp_path / "a"
+    p2 = tmp_path / "b"
+    p1.write_bytes(b"a")
+    p2.write_bytes(b"b")
+    a = Artifact(name="m", type="model")
+    a.add_file(p1, name="x")
+    a.add_file(p2, name="x")
+    with pytest.raises(ValueError, match="Duplicate logical path"):
+        a._build_manifest("p")
+
+
+def test_build_manifest_rejects_double_add_of_same_file(temp_dir, tmp_path):
+    p = tmp_path / "w.bin"
+    p.write_bytes(b"x")
+    a = Artifact(name="m", type="model")
+    a.add_file(p)
+    a.add_file(p)
+    with pytest.raises(ValueError, match="Duplicate logical path"):
+        a._build_manifest("p")
+
+
+def test_build_manifest_rejects_empty(temp_dir):
+    a = Artifact(name="m", type="model")
+    with pytest.raises(ValueError, match="no files"):
+        a._build_manifest("p")
+
+
+def test_add_file_after_logged_raises(temp_dir, tmp_path):
+    a = Artifact(name="m", type="model")
+    a._logged = True
+    with pytest.raises(RuntimeError, match="already been logged"):
+        a.add_file(tmp_path / "x")
+    with pytest.raises(RuntimeError, match="already been logged"):
+        a.add_dir(tmp_path)
+
+
+def test_build_manifest_cross_device_fallback(temp_dir, tmp_path, monkeypatch):
+    p = tmp_path / "x"
+    p.write_bytes(b"abc")
+    calls = {"link": 0, "copy2": 0}
+    real_copy2 = shutil.copy2
+
+    def fake_link(src, dst):
+        calls["link"] += 1
+        raise OSError(errno.EXDEV, "cross-device link not permitted")
+
+    def fake_copy2(src, dst):
+        calls["copy2"] += 1
+        real_copy2(src, dst)
+
+    monkeypatch.setattr("trackio.artifact.os.link", fake_link)
+    monkeypatch.setattr("trackio.artifact.shutil.copy2", fake_copy2)
+    a = Artifact(name="m", type="model")
+    a.add_file(p)
+    manifest = a._build_manifest("p")
+    assert calls["link"] == 1
+    assert calls["copy2"] == 1
+    digest = manifest[0]["digest"]
+    blob = Path(temp_dir) / "artifacts" / "p" / "blobs" / "sha256" / digest[:2] / digest
+    assert blob.is_file()
+    assert blob.read_bytes() == b"abc"
+
+
+def test_hydrate_from_db_populates_readonly_attrs():
+    a = Artifact(name="m", type="model")
+    a._hydrate_from_db(
+        version=2,
+        aliases=["latest", "best"],
+        manifest=[
+            {"path": "x", "digest": Sha256Digest("abc"), "size": 3},
+        ],
+        manifest_digest=Sha256Digest("def"),
+        size_bytes=3,
+        description="hydrated",
+        metadata={"acc": 0.9},
+    )
+    assert a.version == 2
+    assert a.aliases == ("latest", "best")
+    assert a.size == 3
+    assert a.manifest_digest == "def"
+    assert a.manifest == [{"path": "x", "digest": "abc", "size": 3}]
+    assert a.description == "hydrated"
+    assert a.metadata == {"acc": 0.9}
+    assert a._logged is True
