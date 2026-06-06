@@ -657,3 +657,184 @@ def test_download_shared_digest_materializes_to_distinct_paths(temp_dir, tmp_pat
     out = a.download(tmp_path / "dl")
     assert (Path(out) / "a.bin").read_bytes() == b"same"
     assert (Path(out) / "b.bin").read_bytes() == b"same"
+
+
+# --- Phase 6 — Run.log_artifact / Run.use_artifact (local mode only) ---
+
+import trackio
+
+
+def _make_file(tmp_path, name, payload):
+    p = tmp_path / name
+    p.write_bytes(payload)
+    return p
+
+
+def test_run_log_artifact_round_trip(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "weights.bin", b"hello")
+    run = trackio.init(project="art-rt", name="producer")
+    art = Artifact(name="my-model", type="model")
+    art.add_file(weights)
+    logged = run.log_artifact(art)
+    assert logged is art
+    assert logged.version == 0
+    assert "latest" in logged.aliases
+    assert logged.project == "art-rt"
+    trackio.finish()
+
+    run2 = trackio.init(project="art-rt", name="consumer")
+    fetched = run2.use_artifact("my-model:latest")
+    assert fetched.version == 0
+    assert fetched.name == "my-model"
+    assert fetched.type == "model"
+    out = fetched.download(tmp_path / "dl")
+    assert (Path(out) / "weights.bin").read_bytes() == b"hello"
+    trackio.finish()
+
+    lineage_p = SQLiteStorage.get_run_artifacts("art-rt", "producer", None)
+    assert len(lineage_p["output"]) == 1
+    assert lineage_p["output"][0]["name"] == "my-model"
+    assert lineage_p["input"] == []
+
+    lineage_c = SQLiteStorage.get_run_artifacts("art-rt", "consumer", None)
+    assert lineage_c["output"] == []
+    assert len(lineage_c["input"]) == 1
+
+
+def test_log_artifact_with_user_aliases(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-aliases", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    logged = run.log_artifact(art, aliases=["best", "stable"])
+    assert sorted(logged.aliases) == ["best", "latest", "stable"]
+    trackio.finish()
+
+
+def test_log_artifact_rejects_version_alias(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-vN", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    with pytest.raises(ValueError, match="reserved"):
+        run.log_artifact(art, aliases=["v3"])
+    blobs_dir = Path(temp_dir) / "artifacts" / "art-vN" / "blobs"
+    has_blobs = blobs_dir.exists() and any(p.is_file() for p in blobs_dir.rglob("*"))
+    assert not has_blobs
+    trackio.finish()
+
+
+def test_relog_same_bytes_dedupes_but_rotates_aliases(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run_a = trackio.init(project="art-dedup", name="run_a")
+    art_a = Artifact(name="m", type="model")
+    art_a.add_file(weights)
+    logged_a = run_a.log_artifact(art_a, aliases=["best"])
+    assert logged_a.version == 0
+    trackio.finish()
+
+    run_b = trackio.init(project="art-dedup", name="run_b")
+    art_b = Artifact(name="m", type="model")
+    art_b.add_file(weights)
+    logged_b = run_b.log_artifact(art_b)
+    assert logged_b.version == 0
+    assert "latest" in logged_b.aliases
+    assert "best" in logged_b.aliases
+    trackio.finish()
+
+    lineage_a = SQLiteStorage.get_run_artifacts("art-dedup", "run_a", None)
+    lineage_b = SQLiteStorage.get_run_artifacts("art-dedup", "run_b", None)
+    assert len(lineage_a["output"]) == 1
+    assert len(lineage_b["output"]) == 1
+    assert lineage_a["output"][0]["version_id"] == lineage_b["output"][0]["version_id"]
+
+
+def test_aliases_rotate_on_new_version(temp_dir, tmp_path):
+    p1 = _make_file(tmp_path, "v1.bin", b"v1")
+    p2 = _make_file(tmp_path, "v2.bin", b"v2")
+
+    run_a = trackio.init(project="art-rotate", name="r")
+    art_a = Artifact(name="m", type="model")
+    art_a.add_file(p1)
+    logged_a = run_a.log_artifact(art_a, aliases=["best"])
+    assert logged_a.version == 0
+    trackio.finish()
+
+    run_b = trackio.init(project="art-rotate", name="r2")
+    art_b = Artifact(name="m", type="model")
+    art_b.add_file(p2)
+    logged_b = run_b.log_artifact(art_b, aliases=["best"])
+    assert logged_b.version == 1
+
+    fetched_best = run_b.use_artifact("m:best")
+    assert fetched_best.version == 1
+    fetched_v0 = run_b.use_artifact("m:v0")
+    assert fetched_v0.version == 0
+    trackio.finish()
+
+
+def test_use_artifact_spec_parsing(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-spec", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art, aliases=["best"])
+
+    assert run.use_artifact("m").version == 0
+    assert run.use_artifact("m:latest").version == 0
+    assert run.use_artifact("m:best").version == 0
+    assert run.use_artifact("m:v0").version == 0
+    trackio.finish()
+
+
+def test_use_artifact_missing_raises(temp_dir):
+    run = trackio.init(project="art-missing", name="p")
+    with pytest.raises(ValueError, match="not found"):
+        run.use_artifact("nonexistent")
+    with pytest.raises(ValueError, match="not found"):
+        run.use_artifact("nonexistent:v0")
+    trackio.finish()
+
+
+def test_use_artifact_preserves_spec_for_download(temp_dir, tmp_path, monkeypatch):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-spec-dl", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art, aliases=["best"])
+    trackio.finish()
+
+    run2 = trackio.init(project="art-spec-dl", name="c")
+    fetched = run2.use_artifact("m:best")
+    monkeypatch.chdir(tmp_path)
+    out = fetched.download()
+    assert Path(out).resolve() == (tmp_path / "artifacts" / "m:best").resolve()
+    trackio.finish()
+
+
+def test_relog_already_logged_artifact_raises(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-relog", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art)
+    with pytest.raises(RuntimeError, match="already been logged"):
+        run.log_artifact(art)
+    trackio.finish()
+
+
+def test_log_artifact_remote_stub_raises(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-remote-stub", name="p")
+    real_client = run._client
+    run._client = object()
+    try:
+        art = Artifact(name="m", type="model")
+        art.add_file(weights)
+        with pytest.raises(NotImplementedError, match="Phase 10"):
+            run.log_artifact(art)
+        with pytest.raises(NotImplementedError, match="Phase 10"):
+            run.use_artifact("m:latest")
+    finally:
+        run._client = real_client
+    trackio.finish()

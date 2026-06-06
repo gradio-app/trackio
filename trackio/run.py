@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import threading
 import uuid
@@ -18,6 +19,7 @@ from trackio.alerts import (
     should_send_webhook,
 )
 from trackio.apple_gpu import AppleGpuMonitor, apple_gpu_available
+from trackio.artifact import Artifact
 from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
@@ -28,6 +30,8 @@ from trackio.table import Table
 from trackio.trace import Trace
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namespace
+
+_ARTIFACT_VERSION_SPEC_RE = re.compile(r"^v\d+$")
 
 BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
@@ -890,6 +894,122 @@ class Run:
                     self._flush_queues_inline()
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log() failed to process metrics: {e}")
+
+    def log_artifact(
+        self,
+        artifact: Artifact,
+        aliases: list[str] | None = None,
+    ) -> Artifact:
+        """Log an artifact as an output of this run.
+
+        Hashes the artifact's pending files, hardlinks them into the
+        content-addressed blob store, inserts an artifact_version row (deduped on
+        canonical manifest digest), rotates `latest` plus any user-supplied
+        aliases to point at the resulting version, and records a producer
+        lineage row attributing this version to the current run.
+
+        Re-logging identical bytes returns the existing version, but aliases
+        still rotate and a new lineage row is inserted (Run B becomes a
+        co-producer of the same version).
+        """
+        if self._client is not None:
+            raise NotImplementedError("Remote-mode log_artifact lands in Phase 10.")
+        if artifact._logged:
+            raise RuntimeError(
+                "Artifact has already been logged or fetched; "
+                "construct a new Artifact() to log again."
+            )
+
+        user_aliases = list(aliases) if aliases else []
+        for alias in user_aliases:
+            if _ARTIFACT_VERSION_SPEC_RE.match(alias):
+                raise ValueError(
+                    f"Alias {alias!r} is reserved for version pointers (vN); "
+                    "choose another."
+                )
+
+        manifest = artifact._build_manifest(self.project)
+        artifact_id = SQLiteStorage.create_or_get_artifact(
+            project=self.project,
+            name=artifact.name,
+            type=artifact.type,
+            description=artifact.description,
+        )
+        version_id, version_int, _was_new = SQLiteStorage.insert_artifact_version(
+            project=self.project,
+            artifact_id=artifact_id,
+            manifest=manifest,
+            metadata=artifact.metadata,
+            producer_run_id=self.id,
+            producer_run_name=self.name,
+        )
+        SQLiteStorage.reassign_alias(self.project, artifact_id, "latest", version_id)
+        for alias in user_aliases:
+            SQLiteStorage.reassign_alias(self.project, artifact_id, alias, version_id)
+        SQLiteStorage.insert_run_artifact_link(
+            project=self.project,
+            run_name=self.name,
+            run_id=self.id,
+            version_id=version_id,
+            direction="output",
+        )
+
+        record = SQLiteStorage.get_artifact_manifest(
+            self.project, artifact.name, f"v{version_int}"
+        )
+        artifact._hydrate_from_db(
+            project=self.project,
+            version=version_int,
+            aliases=record["aliases"],
+            manifest=record["manifest"],
+            manifest_digest=record["manifest_digest"],
+            size_bytes=record["size_bytes"],
+        )
+        return artifact
+
+    def use_artifact(self, spec: str) -> Artifact:
+        """Fetch an artifact and record it as an input to this run.
+
+        `spec` is `"name"` (defaults to `:latest`), `"name:<alias>"`, or
+        `"name:v<N>"`. Returns a freshly-hydrated `Artifact` whose `download()`
+        method materializes the files locally.
+        """
+        if self._client is not None:
+            raise NotImplementedError("Remote-mode use_artifact lands in Phase 10.")
+
+        if ":" in spec:
+            name, version_or_alias = spec.split(":", 1)
+        else:
+            name, version_or_alias = spec, None
+
+        record = SQLiteStorage.get_artifact_manifest(
+            self.project, name, version_or_alias
+        )
+        if record is None:
+            raise ValueError(
+                f"Artifact {spec!r} not found in project {self.project!r}."
+            )
+
+        art = Artifact(name=record["name"], type=record["type"])
+        art._hydrate_from_db(
+            project=self.project,
+            version=record["version"],
+            aliases=record["aliases"],
+            manifest=record["manifest"],
+            manifest_digest=record["manifest_digest"],
+            size_bytes=record["size_bytes"],
+            spec=version_or_alias,
+            description=record["description"],
+            metadata=record["metadata"],
+        )
+        SQLiteStorage.insert_run_artifact_link(
+            project=self.project,
+            run_name=self.name,
+            run_id=self.id,
+            version_id=record["version_id"],
+            direction="input",
+        )
+        return art
 
     def alert(
         self,
