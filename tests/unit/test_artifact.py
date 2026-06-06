@@ -470,6 +470,7 @@ def test_build_manifest_cross_device_fallback(temp_dir, tmp_path, monkeypatch):
 def test_hydrate_from_db_populates_readonly_attrs():
     a = Artifact(name="m", type="model")
     a._hydrate_from_db(
+        project="proj",
         version=2,
         aliases=["latest", "best"],
         manifest=[
@@ -477,6 +478,7 @@ def test_hydrate_from_db_populates_readonly_attrs():
         ],
         manifest_digest=Sha256Digest("def"),
         size_bytes=3,
+        spec="latest",
         description="hydrated",
         metadata={"acc": 0.9},
     )
@@ -487,4 +489,171 @@ def test_hydrate_from_db_populates_readonly_attrs():
     assert a.manifest == [{"path": "x", "digest": "abc", "size": 3}]
     assert a.description == "hydrated"
     assert a.metadata == {"acc": 0.9}
+    assert a.project == "proj"
+    assert a._spec == "latest"
     assert a._logged is True
+
+
+# --- Phase 5 — Artifact.download() local-only ---
+
+
+def _stage_blob(temp_dir: str, project: str, payload: bytes) -> tuple[str, int]:
+    digest = hashlib.sha256(payload).hexdigest()
+    blob = (
+        Path(temp_dir)
+        / "artifacts"
+        / project
+        / "blobs"
+        / "sha256"
+        / digest[:2]
+        / digest
+    )
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(payload)
+    return digest, len(payload)
+
+
+def _hydrated_artifact(
+    project: str,
+    name: str,
+    version: int,
+    entries: list,
+    spec: str | None = None,
+) -> Artifact:
+    a = Artifact(name=name, type="model")
+    a._hydrate_from_db(
+        project=project,
+        version=version,
+        aliases=["latest"],
+        manifest=entries,
+        manifest_digest=Sha256Digest("0" * 64),
+        size_bytes=sum(e["size"] for e in entries),
+        spec=spec,
+    )
+    return a
+
+
+def test_download_materializes_files(temp_dir, tmp_path):
+    digest_a, size_a = _stage_blob(temp_dir, "proj", b"alpha")
+    digest_b, size_b = _stage_blob(temp_dir, "proj", b"beta")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [
+            {"path": "weights.bin", "digest": Sha256Digest(digest_a), "size": size_a},
+            {
+                "path": "sub/config.json",
+                "digest": Sha256Digest(digest_b),
+                "size": size_b,
+            },
+        ],
+    )
+    out = a.download(tmp_path / "dl")
+    assert (Path(out) / "weights.bin").read_bytes() == b"alpha"
+    assert (Path(out) / "sub" / "config.json").read_bytes() == b"beta"
+
+
+def test_download_default_root_convention(temp_dir, tmp_path, monkeypatch):
+    digest, size = _stage_blob(temp_dir, "proj", b"x")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+        spec="latest",
+    )
+    monkeypatch.chdir(tmp_path)
+    out = a.download()
+    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model:latest").resolve()
+    assert (Path(out) / "w.bin").read_bytes() == b"x"
+
+
+def test_download_default_spec_uses_version(temp_dir, tmp_path, monkeypatch):
+    digest, size = _stage_blob(temp_dir, "proj", b"x")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        3,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+    )
+    monkeypatch.chdir(tmp_path)
+    out = a.download()
+    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model:v3").resolve()
+
+
+def test_download_is_idempotent(temp_dir, tmp_path):
+    digest, size = _stage_blob(temp_dir, "proj", b"x")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+    )
+    out1 = a.download(tmp_path / "dl")
+    file = Path(out1) / "w.bin"
+    first_mtime_ns = file.stat().st_mtime_ns
+    out2 = a.download(tmp_path / "dl")
+    assert out2 == out1
+    assert file.stat().st_mtime_ns == first_mtime_ns
+
+
+def test_download_missing_blob_raises(temp_dir, tmp_path):
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest("a" * 64), "size": 5}],
+    )
+    with pytest.raises(FileNotFoundError, match="not available locally or remotely"):
+        a.download(tmp_path / "dl")
+
+
+def test_download_on_unlogged_artifact_raises():
+    a = Artifact(name="m", type="model")
+    with pytest.raises(RuntimeError, match="not been logged"):
+        a.download()
+
+
+def test_download_cross_device_fallback(temp_dir, tmp_path, monkeypatch):
+    digest, size = _stage_blob(temp_dir, "proj", b"abc")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+    )
+    calls = {"link": 0, "copy2": 0}
+    real_copy2 = shutil.copy2
+
+    def fake_link(src, dst):
+        calls["link"] += 1
+        raise OSError(errno.EXDEV, "cross-device")
+
+    def fake_copy2(src, dst):
+        calls["copy2"] += 1
+        real_copy2(src, dst)
+
+    monkeypatch.setattr("trackio.artifact.os.link", fake_link)
+    monkeypatch.setattr("trackio.artifact.shutil.copy2", fake_copy2)
+
+    out = a.download(tmp_path / "dl")
+    assert calls["link"] == 1
+    assert calls["copy2"] == 1
+    assert (Path(out) / "w.bin").read_bytes() == b"abc"
+
+
+def test_download_shared_digest_materializes_to_distinct_paths(temp_dir, tmp_path):
+    digest, size = _stage_blob(temp_dir, "proj", b"same")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [
+            {"path": "a.bin", "digest": Sha256Digest(digest), "size": size},
+            {"path": "b.bin", "digest": Sha256Digest(digest), "size": size},
+        ],
+    )
+    out = a.download(tmp_path / "dl")
+    assert (Path(out) / "a.bin").read_bytes() == b"same"
+    assert (Path(out) / "b.bin").read_bytes() == b"same"

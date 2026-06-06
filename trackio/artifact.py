@@ -22,6 +22,7 @@ _READ_ONLY_ATTRS = frozenset(
         "size",
         "manifest",
         "manifest_digest",
+        "project",
     }
 )
 
@@ -84,6 +85,8 @@ class Artifact:
         self._size: int | None = None
         self._manifest: Manifest | None = None
         self._manifest_digest: Sha256Digest | None = None
+        self._project: str | None = None
+        self._spec: str | None = None
         self._remote_source: dict | None = None
 
     @property
@@ -121,6 +124,10 @@ class Artifact:
     @property
     def manifest_digest(self) -> Sha256Digest | None:
         return self._manifest_digest
+
+    @property
+    def project(self) -> str | None:
+        return self._project
 
     def add_file(self, local_path: str | Path, name: str | None = None) -> None:
         if self._logged:
@@ -174,11 +181,13 @@ class Artifact:
     def _hydrate_from_db(
         self,
         *,
+        project: str,
         version: int,
         aliases: list[str],
         manifest: Manifest,
         manifest_digest: Sha256Digest,
         size_bytes: int,
+        spec: str | None = None,
         description: str | None = None,
         metadata: dict | None = None,
     ) -> None:
@@ -186,12 +195,54 @@ class Artifact:
             self._description = description
         if metadata is not None:
             self._metadata = dict(metadata)
+        self._project = project
+        self._spec = spec
         self._version = version
         self._aliases = tuple(aliases)
         self._manifest = [dict(e) for e in manifest]
         self._manifest_digest = manifest_digest
         self._size = size_bytes
         self._logged = True
+
+    def download(self, root: str | Path | None = None) -> str:
+        """Materialize artifact files at `root/<logical_path>` for each manifest entry.
+
+        Default `root` is `./artifacts/<name>:<spec>/` (CWD-relative).
+        `<spec>` is the string used at `use_artifact` time (e.g. `"latest"`,
+        `"best"`, `"v3"`); for artifacts produced via `log_artifact`, defaults
+        to `f"v{version}"`.
+
+        Returns the absolute path to `root` as a string. Idempotent: blobs are
+        hardlinked from the content-addressed cache and skipped on the second
+        call.
+        """
+        if not self._logged:
+            raise RuntimeError(
+                "Cannot download an Artifact that has not been logged or fetched."
+            )
+        if self._manifest is None or self._project is None or self._version is None:
+            raise RuntimeError("Artifact is missing manifest, project, or version.")
+
+        spec = self._spec if self._spec is not None else f"v{self._version}"
+        if root is None:
+            root_path = Path.cwd() / "artifacts" / f"{self._name}:{spec}"
+        else:
+            root_path = Path(root)
+        root_path.mkdir(parents=True, exist_ok=True)
+
+        blobs_base = _utils.ARTIFACTS_DIR / self._project / "blobs" / "sha256"
+        for entry in self._manifest:
+            digest = entry["digest"]
+            logical = entry["path"]
+            blob = blobs_base / digest[:2] / digest
+            if not blob.is_file():
+                raise FileNotFoundError(
+                    f"Artifact blob {digest} not available locally or remotely. "
+                    "The producer machine may not have shipped this blob yet."
+                )
+            _link_or_copy(blob, root_path / logical)
+
+        return str(root_path)
 
     def __repr__(self) -> str:
         parts: list[str] = [f"name={self._name!r}", f"type={self._type!r}"]
