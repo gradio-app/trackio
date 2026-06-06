@@ -838,3 +838,83 @@ def test_log_artifact_remote_stub_raises(temp_dir, tmp_path):
     finally:
         run._client = real_client
     trackio.finish()
+
+
+# --- Phase 7 — Module-level re-exports + project-context use_artifact ---
+
+
+def test_module_log_artifact_inside_run_equivalent_to_run_method(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    trackio.init(project="art-mod-log", name="p")
+    art = trackio.Artifact(name="m", type="model")
+    art.add_file(weights)
+    logged = trackio.log_artifact(art, aliases=["best"])
+    assert logged is art
+    assert logged.version == 0
+    assert "latest" in logged.aliases and "best" in logged.aliases
+    trackio.finish()
+
+    lineage = SQLiteStorage.get_run_artifacts("art-mod-log", "p", None)
+    assert len(lineage["output"]) == 1
+
+
+def test_module_use_artifact_inside_run_records_lineage(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-mod-use", name="p")
+    art = trackio.Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art)
+    trackio.finish()
+
+    trackio.init(project="art-mod-use", name="c")
+    fetched = trackio.use_artifact("m:latest")
+    assert fetched.version == 0
+    trackio.finish()
+
+    lineage_c = SQLiteStorage.get_run_artifacts("art-mod-use", "c", None)
+    assert len(lineage_c["input"]) == 1
+
+
+def test_module_log_artifact_without_run_raises(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    art = trackio.Artifact(name="m", type="model")
+    art.add_file(weights)
+    with pytest.raises(RuntimeError, match="Call trackio.init"):
+        trackio.log_artifact(art)
+
+
+def test_module_log_artifact_after_finish_raises(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    trackio.init(project="art-mod-postfinish", name="p")
+    trackio.finish()
+    art = trackio.Artifact(name="m", type="model")
+    art.add_file(weights)
+    with pytest.raises(RuntimeError, match="Call trackio.init"):
+        trackio.log_artifact(art)
+
+
+def test_module_use_artifact_after_finish_raises(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-mod-use-postfinish", name="p")
+    art = trackio.Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art)
+    trackio.finish()
+    with pytest.raises(RuntimeError, match="Call trackio.init"):
+        trackio.use_artifact("m:latest")
+
+
+def test_module_use_artifact_without_run_raises(temp_dir):
+    with pytest.raises(RuntimeError, match="Call trackio.init"):
+        trackio.use_artifact("m:latest")
+
+
+def test_artifact_class_importable_from_package_root():
+    from trackio import Artifact as TopLevelArtifact
+
+    assert TopLevelArtifact is Artifact
+
+
+def test_all_includes_new_exports():
+    for name in ("Artifact", "log_artifact", "use_artifact"):
+        assert name in trackio.__all__

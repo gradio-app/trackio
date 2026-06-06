@@ -19,6 +19,7 @@ from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
+from trackio.artifact import Artifact
 from trackio.deploy import freeze, sync
 from trackio.frontend_config import resolve_frontend_dir
 from trackio.gpu import gpu_available
@@ -59,6 +60,8 @@ __all__ = [
     "log",
     "log_system",
     "log_gpu",
+    "log_artifact",
+    "use_artifact",
     "finish",
     "alert",
     "AlertLevel",
@@ -69,6 +72,7 @@ __all__ = [
     "import_csv",
     "import_tf_events",
     "save",
+    "Artifact",
     "Image",
     "Video",
     "Audio",
@@ -716,6 +720,42 @@ def log_system(metrics: dict) -> None:
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.log_system().")
     run.log_system(metrics=metrics)
+
+
+def log_artifact(artifact: Artifact, aliases: list[str] | None = None) -> Artifact:
+    """
+    Logs an artifact as an output of the current run.
+
+    Args:
+        artifact (`Artifact`):
+            The artifact to log. Must have at least one file added via
+            `add_file` or `add_dir`.
+        aliases (`list[str]`, *optional*):
+            Aliases to assign to the resulting version (in addition to the
+            auto-assigned `latest`). Each alias rotates to point at this
+            version, even on the dedup path.
+
+    Returns:
+        The same `artifact` instance, now hydrated with `version`, `aliases`,
+        `size`, `manifest`, and `project` set.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.log_artifact().")
+    return run.log_artifact(artifact, aliases=aliases)
+
+
+def use_artifact(spec: str) -> Artifact:
+    """
+    Fetches an artifact by spec and records it as an input to the current run.
+
+    `spec` is `"name"` (defaults to `:latest`), `"name:<alias>"`, or
+    `"name:v<N>"`.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.use_artifact().")
+    return run.use_artifact(spec)
 
 
 def log_gpu(run: Run | None = None, device: int | None = None) -> dict:
