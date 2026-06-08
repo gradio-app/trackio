@@ -19,12 +19,76 @@
     return runColorMap[item._runId] ?? runColorMap[item._run] ?? "#9ca3af";
   }
 
-  let mediaItems = $state({ images: [], videos: [], audios: [], tables: [] });
+  const PAGE_SIZE = 48;
+  const EMPTY_MEDIA_ITEMS = { images: [], videos: [], audios: [], tables: [] };
+
+  let rawMediaItems = $state(EMPTY_MEDIA_ITEMS);
+  let sortOrder = $state("newest");
+  let visibleCounts = $state(createVisibleCounts());
   let loading = $state(false);
+
+  function createVisibleCounts() {
+    return {
+      images: PAGE_SIZE,
+      videos: PAGE_SIZE,
+      audios: PAGE_SIZE,
+      tables: PAGE_SIZE,
+    };
+  }
+
+  function resetVisibleCounts() {
+    visibleCounts = createVisibleCounts();
+  }
+
+  function compareMediaItems(a, b) {
+    const aStep = Number.isFinite(a.step) ? a.step : 0;
+    const bStep = Number.isFinite(b.step) ? b.step : 0;
+    const stepDelta = sortOrder === "newest" ? bStep - aStep : aStep - bStep;
+    if (stepDelta !== 0) return stepDelta;
+
+    const aIndex = Number.isFinite(a._index) ? a._index : 0;
+    const bIndex = Number.isFinite(b._index) ? b._index : 0;
+    return sortOrder === "newest" ? bIndex - aIndex : aIndex - bIndex;
+  }
+
+  function sortMediaItems(items) {
+    return [...items].sort(compareMediaItems);
+  }
+
+  let mediaItems = $derived.by(() => ({
+    images: sortMediaItems(rawMediaItems.images),
+    videos: sortMediaItems(rawMediaItems.videos),
+    audios: sortMediaItems(rawMediaItems.audios),
+    tables: sortMediaItems(rawMediaItems.tables),
+  }));
+
+  let visibleMediaItems = $derived.by(() => ({
+    images: mediaItems.images.slice(0, visibleCounts.images),
+    videos: mediaItems.videos.slice(0, visibleCounts.videos),
+    audios: mediaItems.audios.slice(0, visibleCounts.audios),
+    tables: mediaItems.tables.slice(0, visibleCounts.tables),
+  }));
+
+  let hasMedia = $derived(
+    mediaItems.images.length > 0 ||
+      mediaItems.videos.length > 0 ||
+      mediaItems.audios.length > 0 ||
+      mediaItems.tables.length > 0,
+  );
+
+  function showMore(type) {
+    visibleCounts[type] += PAGE_SIZE;
+  }
+
+  $effect(() => {
+    sortOrder;
+    rawMediaItems;
+    resetVisibleCounts();
+  });
 
   async function loadMedia() {
     if (!project || selectedRuns.length === 0) {
-      mediaItems = { images: [], videos: [], audios: [], tables: [] };
+      rawMediaItems = EMPTY_MEDIA_ITEMS;
       return;
     }
 
@@ -48,6 +112,7 @@
       const videos = [];
       const audios = [];
       const tables = [];
+      let mediaIndex = 0;
 
       if (logs) {
         logs.forEach((log, step) => {
@@ -55,7 +120,8 @@
             if (value && typeof value === "object" && value._type) {
               const item = {
                 key,
-                step: log.step || step,
+                step: log.step ?? step,
+                _index: mediaIndex++,
                 _run: log._run,
                 _runId: log._runId,
                 ...value,
@@ -114,7 +180,7 @@
         ]);
       }
 
-      mediaItems = { images, videos, audios, tables };
+      rawMediaItems = { images, videos, audios, tables };
     } catch (e) {
       console.error("Failed to load media:", e);
     } finally {
@@ -155,7 +221,7 @@
 <div class="media-page">
   {#if loading}
     <LoadingTrackio />
-  {:else if mediaItems.images.length === 0 && mediaItems.videos.length === 0 && mediaItems.audios.length === 0 && mediaItems.tables.length === 0}
+  {:else if !hasMedia}
     <div class="empty-state">
       {#if !project}
         <h2>Select a project</h2>
@@ -172,6 +238,16 @@
       {/if}
     </div>
   {:else}
+    <div class="media-toolbar">
+      <label class="media-control" for="media-sort-order">
+        <span>Sort</span>
+        <select id="media-sort-order" bind:value={sortOrder}>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+      </label>
+    </div>
+
     {#snippet meta(item)}
       <div class="meta">
         <span class="run-dot" style:background={runColor(item)}></span>
@@ -187,7 +263,7 @@
           <span class="section-title">Images ({mediaItems.images.length})</span>
         </summary>
         <div class="gallery">
-          {#each mediaItems.images as img}
+          {#each visibleMediaItems.images as img}
             <div class="gallery-item">
               <div class="media-label">{img.key}</div>
               <img src={getFilePath(img)} alt={img.caption || img.key} loading="lazy" />
@@ -198,6 +274,12 @@
             </div>
           {/each}
         </div>
+        {#if visibleCounts.images < mediaItems.images.length}
+          <div class="pagination-row">
+            <span>Showing {visibleMediaItems.images.length} of {mediaItems.images.length}</span>
+            <button type="button" class="load-more-button" onclick={() => showMore("images")}>Load more</button>
+          </div>
+        {/if}
       </details>
     {/if}
 
@@ -210,7 +292,7 @@
           <span class="section-title">Videos ({mediaItems.videos.length})</span>
         </summary>
         <div class="gallery">
-          {#each mediaItems.videos as vid}
+          {#each visibleMediaItems.videos as vid}
             <div class="gallery-item">
               <div class="media-label">{vid.key}</div>
               <video controls src={getFilePath(vid)} preload="metadata">
@@ -220,6 +302,12 @@
             </div>
           {/each}
         </div>
+        {#if visibleCounts.videos < mediaItems.videos.length}
+          <div class="pagination-row">
+            <span>Showing {visibleMediaItems.videos.length} of {mediaItems.videos.length}</span>
+            <button type="button" class="load-more-button" onclick={() => showMore("videos")}>Load more</button>
+          </div>
+        {/if}
       </details>
     {/if}
 
@@ -232,7 +320,7 @@
           <span class="section-title">Audio ({mediaItems.audios.length})</span>
         </summary>
         <div class="gallery">
-          {#each mediaItems.audios as aud}
+          {#each visibleMediaItems.audios as aud}
             <div class="gallery-item audio-gallery-item">
               <div class="media-label">{aud.key}</div>
               <WaveformAudio src={getFilePath(aud)} />
@@ -240,6 +328,12 @@
             </div>
           {/each}
         </div>
+        {#if visibleCounts.audios < mediaItems.audios.length}
+          <div class="pagination-row">
+            <span>Showing {visibleMediaItems.audios.length} of {mediaItems.audios.length}</span>
+            <button type="button" class="load-more-button" onclick={() => showMore("audios")}>Load more</button>
+          </div>
+        {/if}
       </details>
     {/if}
 
@@ -251,7 +345,7 @@
           </svg>
           <span class="section-title">Tables ({mediaItems.tables.length})</span>
         </summary>
-        {#each mediaItems.tables as tbl}
+        {#each visibleMediaItems.tables as tbl}
           {#if tbl._value && tbl._value.length > 0}
             <div class="table-section">
               <div class="table-header">
@@ -303,6 +397,12 @@
             </div>
           {/if}
         {/each}
+        {#if visibleCounts.tables < mediaItems.tables.length}
+          <div class="pagination-row">
+            <span>Showing {visibleMediaItems.tables.length} of {mediaItems.tables.length}</span>
+            <button type="button" class="load-more-button" onclick={() => showMore("tables")}>Load more</button>
+          </div>
+        {/if}
       </details>
     {/if}
   {/if}
@@ -316,6 +416,29 @@
   }
   .section {
     margin: 16px 0;
+  }
+  .media-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .media-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .media-control select {
+    height: 30px;
+    border: 1px solid var(--border-color-primary, #d1d5db);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--background-fill-primary, white);
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-sm, 12px);
+    padding: 0 28px 0 8px;
   }
   .section-summary {
     display: flex;
@@ -449,6 +572,29 @@
   .table-section {
     margin-bottom: 16px;
     overflow-x: auto;
+  }
+  .pagination-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .load-more-button {
+    height: 30px;
+    border: 1px solid var(--border-color-primary, #d1d5db);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--background-fill-primary, white);
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-sm, 12px);
+    font-weight: 500;
+    padding: 0 10px;
+    cursor: pointer;
+  }
+  .load-more-button:hover {
+    background: var(--background-fill-secondary, #f9fafb);
   }
   .empty-state {
     max-width: 640px;
