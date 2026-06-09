@@ -1,7 +1,7 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import WaveformAudio from "../components/WaveformAudio.svelte";
-  import { getLogs, getMediaUrl, isStaticMode, fetchMediaBlob } from "../lib/api.js";
+  import { getLogs, getMediaUrl } from "../lib/api.js";
   import { buildColorMap } from "../lib/stores.js";
 
   let {
@@ -55,11 +55,15 @@
     return [...items].sort(compareMediaItems);
   }
 
+  function isDisplayableTable(item) {
+    return Array.isArray(item._value) && item._value.length > 0;
+  }
+
   let mediaItems = $derived.by(() => ({
     images: sortMediaItems(rawMediaItems.images),
     videos: sortMediaItems(rawMediaItems.videos),
     audios: sortMediaItems(rawMediaItems.audios),
-    tables: sortMediaItems(rawMediaItems.tables),
+    tables: sortMediaItems(rawMediaItems.tables.filter(isDisplayableTable)),
   }));
 
   let visibleMediaItems = $derived.by(() => ({
@@ -143,41 +147,6 @@
             }
           });
         });
-      }
-
-      if (await isStaticMode()) {
-        const resolveAll = (items) =>
-          Promise.all(
-            items.map(async (item) => {
-              if (item.file_path) {
-                item._resolvedUrl = await fetchMediaBlob(item.file_path);
-              }
-              return item;
-            }),
-          );
-        const tableImageItems = [];
-        for (const tbl of tables) {
-          if (!Array.isArray(tbl._value)) continue;
-          for (const row of tbl._value) {
-            for (const value of Object.values(row)) {
-              if (value && typeof value === "object" && !Array.isArray(value) && value._type === "trackio.image") {
-                tableImageItems.push(value);
-              } else if (Array.isArray(value)) {
-                for (const v of value) {
-                  if (v && typeof v === "object" && v._type === "trackio.image") {
-                    tableImageItems.push(v);
-                  }
-                }
-              }
-            }
-          }
-        }
-        await Promise.all([
-          resolveAll(images),
-          resolveAll(videos),
-          resolveAll(audios),
-          resolveAll(tableImageItems),
-        ]);
       }
 
       rawMediaItems = { images, videos, audios, tables };
@@ -346,56 +315,54 @@
           <span class="section-title">Tables ({mediaItems.tables.length})</span>
         </summary>
         {#each visibleMediaItems.tables as tbl}
-          {#if tbl._value && tbl._value.length > 0}
-            <div class="table-section">
-              <div class="table-header">
-                <div class="media-label">{tbl.key}</div>
-                {@render meta(tbl)}
-              </div>
-              <table class="runs-table">
-                <thead>
+          <div class="table-section">
+            <div class="table-header">
+              <div class="media-label">{tbl.key}</div>
+              {@render meta(tbl)}
+            </div>
+            <table class="runs-table">
+              <thead>
+                <tr>
+                  {#each Object.keys(tbl._value[0]) as header}
+                    <th>{header}</th>
+                  {/each}
+                </tr>
+              </thead>
+              <tbody>
+                {#each tbl._value as row}
                   <tr>
-                    {#each Object.keys(tbl._value[0]) as header}
-                      <th>{header}</th>
+                    {#each Object.values(row) as cell}
+                      <td>
+                        {#if isImageCell(cell)}
+                          <img
+                            class="table-image"
+                            src={getFilePath(cell)}
+                            alt={cell.caption || ""}
+                            loading="lazy"
+                          />
+                        {:else if isImageList(cell)}
+                          <div class="table-image-list">
+                            {#each cell as img}
+                              <img
+                                class="table-image"
+                                src={getFilePath(img)}
+                                alt={img.caption || ""}
+                                loading="lazy"
+                              />
+                            {/each}
+                          </div>
+                        {:else}
+                          {typeof cell === "string" && cell.length > tableTruncateLength
+                            ? cell.slice(0, tableTruncateLength) + "…"
+                            : (cell ?? "")}
+                        {/if}
+                      </td>
                     {/each}
                   </tr>
-                </thead>
-                <tbody>
-                  {#each tbl._value as row}
-                    <tr>
-                      {#each Object.values(row) as cell}
-                        <td>
-                          {#if isImageCell(cell)}
-                            <img
-                              class="table-image"
-                              src={getFilePath(cell)}
-                              alt={cell.caption || ""}
-                              loading="lazy"
-                            />
-                          {:else if isImageList(cell)}
-                            <div class="table-image-list">
-                              {#each cell as img}
-                                <img
-                                  class="table-image"
-                                  src={getFilePath(img)}
-                                  alt={img.caption || ""}
-                                  loading="lazy"
-                                />
-                              {/each}
-                            </div>
-                          {:else}
-                            {typeof cell === "string" && cell.length > tableTruncateLength
-                              ? cell.slice(0, tableTruncateLength) + "…"
-                              : (cell ?? "")}
-                          {/if}
-                        </td>
-                      {/each}
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
+                {/each}
+              </tbody>
+            </table>
+          </div>
         {/each}
         {#if visibleCounts.tables < mediaItems.tables.length}
           <div class="pagination-row">

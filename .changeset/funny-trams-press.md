@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Sort and paginate media items
+feat: Sort and paginate media items
