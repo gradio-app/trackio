@@ -3,6 +3,8 @@ import time
 import warnings
 from unittest.mock import patch
 
+import pytest
+
 import trackio
 from trackio import gpu
 from trackio.sqlite_storage import SQLiteStorage
@@ -184,3 +186,23 @@ def test_auto_log_gpu_multi(temp_dir):
     assert log["gpu/0/utilization"] == 75
     assert log["gpu/1/utilization"] == 65
     assert log["gpu/mean_utilization"] == 70
+
+
+def test_import_from_csv_without_numeric_metrics_raises(temp_dir, tmp_path):
+    csv_path = tmp_path / "logs.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "step,timestamp,note",
+                "1,2024-01-01T00:00:00+00:00,start",
+                "2,2024-01-01T00:01:00+00:00,end",
+            ]
+        )
+    )
+
+    with pytest.raises(ValueError, match="No numeric metric data"):
+        trackio.import_csv(
+            csv_path=str(csv_path),
+            project="test_project_no_metrics",
+            name="test_run",
+        )
