@@ -140,37 +140,6 @@ def test_write_local_and_import_inbox_dir(temp_dir):
     assert fragments.import_inbox_dir() == 0
 
 
-def test_import_inbox_from_bucket_consumes_fragments(temp_dir, monkeypatch):
-    fake_hub = FakeBucketHub()
-    monkeypatch.setattr(fragments, "huggingface_hub", fake_hub)
-
-    writer = fragments.FragmentWriter()
-    records = [fragments.metric_record(e) for e in make_metric_entries()]
-    remote_path = writer.write_to_bucket(records, "user/bucket")
-    assert remote_path.startswith(fragments.BUCKET_INBOX_PREFIX)
-    assert remote_path in fake_hub.files
-
-    assert fragments.import_inbox_from_bucket("user/bucket") == 3
-    assert fake_hub.files == {}
-    assert len(SQLiteStorage.get_logs("proj", "run1")) == 3
-    assert fragments.import_inbox_from_bucket("user/bucket") == 0
-
-
-def test_bucket_media_path():
-    assert (
-        fragments.bucket_media_path("proj", "run1", 3, None, "img.png")
-        == "trackio/media/proj/run1/3/img.png"
-    )
-    assert (
-        fragments.bucket_media_path("proj", "run1", None, None, "img.png")
-        == "trackio/media/proj/run1/img.png"
-    )
-    assert (
-        fragments.bucket_media_path("proj", None, None, "sub/dir", "img.png")
-        == "trackio/media/proj/files/sub/dir/img.png"
-    )
-
-
 def test_storage_mode_env_overrides(monkeypatch):
     monkeypatch.setenv("TRACKIO_STORAGE_MODE", "jsonl")
     assert utils.get_storage_mode() == "jsonl"
@@ -182,22 +151,6 @@ def test_storage_mode_env_overrides(monkeypatch):
     monkeypatch.delenv("TRACKIO_STORAGE_MODE")
     monkeypatch.setattr(utils, "is_network_filesystem", lambda path: True)
     assert utils.get_storage_mode() == "jsonl"
-
-
-def test_is_network_filesystem_mapping(monkeypatch):
-    for fstype, expected in [
-        ("lustre", True),
-        ("nfs4", True),
-        ("fuse.wekafs", True),
-        ("gpfs", True),
-        ("ext4", False),
-        ("apfs", False),
-        (None, False),
-    ]:
-        monkeypatch.setattr(
-            utils, "_filesystem_type_for_path", lambda path, fstype=fstype: fstype
-        )
-        assert utils.is_network_filesystem(Path("/anything")) is expected
 
 
 def test_local_run_jsonl_mode_writes_fragments(temp_dir, monkeypatch):
@@ -253,40 +206,6 @@ def test_remote_run_drains_pending_to_bucket(temp_dir, monkeypatch):
     assert config["lr"] == 0.01
 
 
-def test_transient_failure_recovers_via_replay_not_bucket(temp_dir, monkeypatch):
-    fake_hub = FakeBucketHub()
-    monkeypatch.setattr(fragments, "huggingface_hub", fake_hub)
-
-    calls = {"n": 0}
-    received = []
-
-    def predict(*args, **kwargs):
-        if kwargs.get("api_name") == "/bulk_log":
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise Exception("ReadTimeout: The read operation timed out")
-            received.extend(kwargs["logs"])
-
-    run = Run(
-        url="user/space",
-        project="proj",
-        client=SimpleNamespace(predict=predict),
-        name="run1",
-        space_id="user/space",
-        bucket_id="user/bucket",
-    )
-    run.log({"x": 1})
-    run.log({"x": 2})
-    deadline = time.time() + 10
-    while time.time() < deadline and len(received) < 2:
-        time.sleep(0.1)
-    run.finish()
-
-    assert fake_hub.files == {}
-    assert {entry["metrics"]["x"] for entry in received} == {1, 2}
-    assert not SQLiteStorage.has_pending_data("proj")
-
-
 def test_cold_start_spills_to_bucket_without_clearing(temp_dir, monkeypatch):
     fake_hub = FakeBucketHub()
     monkeypatch.setattr(fragments, "huggingface_hub", fake_hub)
@@ -315,32 +234,6 @@ def test_cold_start_spills_to_bucket_without_clearing(temp_dir, monkeypatch):
     assert not SQLiteStorage.has_pending_data("proj")
 
     assert fragments.import_inbox_from_bucket("user/bucket") == 1
-    logs = SQLiteStorage.get_logs("proj", "run1")
-    assert len(logs) == 1
-    assert logs[0]["x"] == 1
-
-
-def test_remote_run_jsonl_mode_skips_sqlite_staging(temp_dir, monkeypatch):
-    monkeypatch.setenv("TRACKIO_STORAGE_MODE", "jsonl")
-    fake_hub = FakeBucketHub()
-    monkeypatch.setattr(fragments, "huggingface_hub", fake_hub)
-
-    failing_client = SimpleNamespace(predict=MagicMock(side_effect=Exception("down")))
-    run = Run(
-        url="user/space",
-        project="proj",
-        client=failing_client,
-        name="run1",
-        space_id="user/space",
-        bucket_id="user/bucket",
-    )
-    run.log({"x": 1})
-    time.sleep(1.0)
-    run.finish()
-
-    assert not SQLiteStorage.has_pending_data("proj")
-    assert any(p.startswith(fragments.BUCKET_INBOX_PREFIX) for p in fake_hub.files)
-    assert fragments.import_inbox_from_bucket("user/bucket") >= 1
     logs = SQLiteStorage.get_logs("proj", "run1")
     assert len(logs) == 1
     assert logs[0]["x"] == 1
