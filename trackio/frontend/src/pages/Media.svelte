@@ -25,6 +25,7 @@
   let rawMediaItems = $state(EMPTY_MEDIA_ITEMS);
   let sortOrder = $state("newest");
   let visibleCounts = $state(createVisibleCounts());
+  let selectedImage = $state(null);
   let loading = $state(false);
 
   function createVisibleCounts() {
@@ -185,7 +186,36 @@
       cell.every((v) => v && typeof v === "object" && v._type === "trackio.image")
     );
   }
+
+  function markImageLoaded(event) {
+    event.currentTarget.parentElement?.classList.add("image-loaded");
+  }
+
+  function markImageFailed(event) {
+    event.currentTarget.parentElement?.classList.add("image-failed");
+  }
+
+  function openImage(image, parent = null) {
+    selectedImage = {
+      ...image,
+      key: image.key ?? parent?.key,
+      step: image.step ?? parent?.step,
+      _run: image._run ?? parent?._run,
+      _runId: image._runId ?? parent?._runId,
+      caption: image.caption ?? parent?.caption,
+    };
+  }
+
+  function closeImage() {
+    selectedImage = null;
+  }
+
+  function handleKeydown(event) {
+    if (event.key === "Escape") closeImage();
+  }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="media-page">
   {#if loading}
@@ -235,7 +265,22 @@
           {#each visibleMediaItems.images as img}
             <div class="gallery-item">
               <div class="media-label">{img.key}</div>
-              <img src={getFilePath(img)} alt={img.caption || img.key} loading="lazy" />
+              <button
+                class="image-frame"
+                type="button"
+                onclick={() => openImage(img)}
+                aria-label={`Open ${img.caption || img.key}`}
+              >
+                <span class="image-placeholder">Loading image…</span>
+                <img
+                  src={getFilePath(img)}
+                  alt={img.caption || img.key}
+                  loading="lazy"
+                  decoding="async"
+                  onload={markImageLoaded}
+                  onerror={markImageFailed}
+                />
+              </button>
               {#if img.caption}
                 <div class="caption">{img.caption}</div>
               {/if}
@@ -334,21 +379,43 @@
                     {#each Object.values(row) as cell}
                       <td>
                         {#if isImageCell(cell)}
-                          <img
-                            class="table-image"
-                            src={getFilePath(cell)}
-                            alt={cell.caption || ""}
-                            loading="lazy"
-                          />
+                          <button
+                            class="table-image-frame"
+                            type="button"
+                            onclick={() => openImage(cell, tbl)}
+                            aria-label="Open table image"
+                          >
+                            <span class="table-image-placeholder">Loading…</span>
+                            <img
+                              class="table-image"
+                              src={getFilePath(cell)}
+                              alt={cell.caption || ""}
+                              loading="lazy"
+                              decoding="async"
+                              onload={markImageLoaded}
+                              onerror={markImageFailed}
+                            />
+                          </button>
                         {:else if isImageList(cell)}
                           <div class="table-image-list">
                             {#each cell as img}
-                              <img
-                                class="table-image"
-                                src={getFilePath(img)}
-                                alt={img.caption || ""}
-                                loading="lazy"
-                              />
+                              <button
+                                class="table-image-frame"
+                                type="button"
+                                onclick={() => openImage(img, tbl)}
+                                aria-label="Open table image"
+                              >
+                                <span class="table-image-placeholder">Loading…</span>
+                                <img
+                                  class="table-image"
+                                  src={getFilePath(img)}
+                                  alt={img.caption || ""}
+                                  loading="lazy"
+                                  decoding="async"
+                                  onload={markImageLoaded}
+                                  onerror={markImageFailed}
+                                />
+                              </button>
                             {/each}
                           </div>
                         {:else}
@@ -374,6 +441,44 @@
     {/if}
   {/if}
 </div>
+
+{#if selectedImage}
+  <div class="image-modal-backdrop" role="presentation" onclick={closeImage}>
+    <div
+      class="image-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Image preview"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
+    >
+      <button class="image-modal-close" type="button" onclick={closeImage} aria-label="Close image preview">×</button>
+      <div class="modal-image-frame">
+        <span class="modal-image-placeholder">Loading image…</span>
+        <img
+          src={getFilePath(selectedImage)}
+          alt={selectedImage.caption || selectedImage.key || "Image preview"}
+          decoding="async"
+          onload={markImageLoaded}
+          onerror={markImageFailed}
+        />
+      </div>
+      <div class="image-modal-info">
+        {#if selectedImage.key}
+          <div class="image-modal-title">{selectedImage.key}</div>
+        {/if}
+        {#if selectedImage.caption}
+          <div class="image-modal-caption">{selectedImage.caption}</div>
+        {/if}
+        <div class="meta image-modal-meta">
+          <span class="run-dot" style:background={runColor(selectedImage)}></span>
+          <span class="meta-text">Run: {selectedImage._run}, Step: {selectedImage.step}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .media-page {
@@ -496,7 +601,40 @@
   .runs-table tr:hover {
     background: var(--background-fill-secondary, #f3f4f6);
   }
+  .table-image-frame {
+    position: relative;
+    display: inline-flex;
+    width: 120px;
+    height: 80px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--background-fill-secondary, #f3f4f6);
+    color: var(--body-text-color-subdued, #6b7280);
+    cursor: zoom-in;
+    font: inherit;
+    padding: 0;
+    text-decoration: none;
+    vertical-align: top;
+  }
+  .table-image-placeholder {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: var(--text-xs, 11px);
+  }
+  .table-image-frame:global(.image-loaded) .table-image-placeholder {
+    display: none;
+  }
+  .table-image-frame:global(.image-failed) .table-image-placeholder {
+    color: var(--error-text-color, #b91c1c);
+  }
   .table-image {
+    position: relative;
+    z-index: 1;
     max-height: 80px;
     max-width: 120px;
     border-radius: var(--radius-sm, 4px);
@@ -523,7 +661,42 @@
     background: var(--background-fill-secondary, #f9fafb);
     overflow: hidden;
   }
-  .gallery-item img,
+  .image-frame {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--background-fill-primary, #f3f4f6);
+    color: var(--body-text-color-subdued, #6b7280);
+    cursor: zoom-in;
+    font: inherit;
+    padding: 0;
+    text-decoration: none;
+  }
+  .image-placeholder {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: var(--text-sm, 12px);
+  }
+  .image-frame:global(.image-loaded) .image-placeholder {
+    display: none;
+  }
+  .image-frame:global(.image-failed) .image-placeholder {
+    color: var(--error-text-color, #b91c1c);
+  }
+  .image-frame img {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+  }
   .gallery-item video {
     width: 100%;
     display: block;
@@ -535,6 +708,91 @@
   .caption {
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color-subdued, #9ca3af);
+  }
+  .image-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: rgb(0 0 0 / 75%);
+  }
+  .image-modal {
+    position: relative;
+    display: flex;
+    max-width: min(92vw, 1200px);
+    max-height: 92vh;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--radius-lg, 8px);
+    background: var(--background-fill-primary, white);
+    box-shadow: 0 20px 60px rgb(0 0 0 / 35%);
+  }
+  .image-modal-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 55%);
+    color: white;
+    cursor: pointer;
+    font-size: 24px;
+    line-height: 1;
+  }
+  .modal-image-frame {
+    position: relative;
+    display: grid;
+    min-width: min(70vw, 720px);
+    min-height: min(65vh, 520px);
+    place-items: center;
+    overflow: hidden;
+    background: var(--background-fill-secondary, #f3f4f6);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .modal-image-placeholder {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: var(--text-sm, 12px);
+  }
+  .modal-image-frame:global(.image-loaded) .modal-image-placeholder {
+    display: none;
+  }
+  .modal-image-frame:global(.image-failed) .modal-image-placeholder {
+    color: var(--error-text-color, #b91c1c);
+  }
+  .modal-image-frame img {
+    position: relative;
+    z-index: 1;
+    max-width: 100%;
+    max-height: calc(92vh - 96px);
+    object-fit: contain;
+  }
+  .image-modal-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 14px 12px;
+    text-align: center;
+  }
+  .image-modal-title {
+    font-size: var(--text-md, 14px);
+    font-weight: 600;
+    color: var(--body-text-color, #1f2937);
+  }
+  .image-modal-caption {
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .image-modal-meta {
+    justify-content: center;
   }
   .table-section {
     margin-bottom: 16px;
