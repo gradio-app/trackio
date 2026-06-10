@@ -509,10 +509,10 @@
     <div class="empty-state">
       <h2>No System Metrics Available</h2>
       <p>System metrics will appear here once logged. To enable automatic logging:</p>
-      <pre><code>{'import trackio\n\n# CPU/RAM auto-enabled when psutil is installed:\nrun = trackio.init(project="my-project")\n\n# GPU auto-enabled when NVIDIA or Apple Silicon is detected:\nrun = trackio.init(project="my-project", auto_log_gpu=True)\n\n# Manually log at any time:\ntrackio.log_cpu()\ntrackio.log_gpu()'}</code></pre>
+      <pre><code>{'import trackio\n\n# CPU/RAM/disk/network metrics:\nrun = trackio.init(project="my-project", auto_log_cpu=True)\n\n# GPU auto-enabled when NVIDIA or Apple Silicon is detected:\nrun = trackio.init(project="my-project", auto_log_gpu=True)\n\n# Manually log at any time:\ntrackio.log_cpu()\ntrackio.log_gpu()'}</code></pre>
       <p><strong>Setup:</strong></p>
       <ul>
-        <li><strong>System metrics:</strong> included with <code>pip install trackio</code> (<code>psutil</code> is a core dependency)</li>
+        <li><strong>CPU/system metrics:</strong> <code>pip install trackio[cpu]</code> (requires <code>psutil</code>)</li>
         <li><strong>NVIDIA GPU:</strong> <code>pip install trackio[gpu]</code> (requires <code>nvidia-ml-py</code>)</li>
         <li><strong>Apple Silicon:</strong> <code>pip install trackio[apple-gpu]</code> (requires <code>psutil</code>)</li>
       </ul>

@@ -19,7 +19,6 @@ from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
-from trackio.cpu import cpu_available
 from trackio.cpu import log_cpu as _log_cpu
 from trackio.deploy import freeze, sync
 from trackio.frontend_config import resolve_frontend_dir
@@ -300,7 +299,7 @@ def init(
     embed: bool = True,
     auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
-    auto_log_cpu: bool | None = None,
+    auto_log_cpu: bool = False,
     cpu_log_interval: float = 10.0,
     webhook_url: str | None = None,
     webhook_min_level: AlertLevel | str | None = None,
@@ -379,14 +378,12 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
-        auto_log_cpu (`bool` or `None`, *optional*, defaults to `None`):
+        auto_log_cpu (`bool`, *optional*, defaults to `False`):
             Controls automatic CPU and RAM metrics logging (utilization, memory,
-            disk I/O, network I/O, and sensors). If `None` (default), CPU logging
-            is automatically enabled when `psutil` is installed. Set to `True` to
-            force enable or `False` to disable. On Apple Silicon, CPU and RAM
-            metrics are already included in the Apple system metrics logged by
-            `auto_log_gpu`, so `auto_log_cpu` defaults to `False` on that platform
-            to avoid duplicate entries.
+            disk I/O, network I/O, and sensors). Requires `psutil`, which can be
+            installed with `pip install trackio[cpu]`. On Apple Silicon, CPU and
+            RAM metrics are already included in the Apple system metrics logged by
+            `auto_log_gpu`, so leave this disabled to avoid duplicate entries.
         cpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic CPU metric logs.
             Only used when `auto_log_cpu=True`.
@@ -640,18 +637,6 @@ def init(
                     "* Apple Silicon detected, enabling automatic system metrics logging"
                 )
             if nvidia_available or apple_available:
-                _projects_notified_auto_log_hw.add(project)
-
-    if auto_log_cpu is None:
-        apple_available_for_cpu = apple_gpu_available()
-        if apple_available_for_cpu:
-            auto_log_cpu = False
-        else:
-            auto_log_cpu = cpu_available()
-            if auto_log_cpu and project not in _projects_notified_auto_log_hw:
-                print(
-                    "* psutil detected, enabling automatic CPU and RAM metrics logging"
-                )
                 _projects_notified_auto_log_hw.add(project)
 
     run = Run(

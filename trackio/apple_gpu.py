@@ -110,68 +110,13 @@ def collect_apple_metrics() -> dict:
     Returns:
         Dictionary of system metrics including CPU, memory, and GPU info.
     """
-    if not PSUTIL_AVAILABLE:
-        try:
-            _ensure_psutil()
-        except ImportError:
-            return {}
+    from trackio.cpu import collect_cpu_metrics
 
-    metrics = {}
-
-    try:
-        cpu_percent = psutil.cpu_percent(interval=0.1, percpu=False)
-        metrics["cpu/utilization"] = cpu_percent
-    except Exception:
-        pass
-
-    try:
-        cpu_percents = psutil.cpu_percent(interval=0.1, percpu=True)
-        for i, percent in enumerate(cpu_percents):
-            metrics[f"cpu/{i}/utilization"] = percent
-    except Exception:
-        pass
-
-    try:
-        cpu_freq = psutil.cpu_freq()
-        if cpu_freq:
-            metrics["cpu/frequency"] = cpu_freq.current
-            if cpu_freq.max > 0:
-                metrics["cpu/frequency_max"] = cpu_freq.max
-    except Exception:
-        pass
-
-    try:
-        mem = psutil.virtual_memory()
-        metrics["memory/used"] = mem.used / (1024**3)
-        metrics["memory/total"] = mem.total / (1024**3)
-        metrics["memory/available"] = mem.available / (1024**3)
-        metrics["memory/percent"] = mem.percent
-    except Exception:
-        pass
-
-    try:
-        swap = psutil.swap_memory()
-        metrics["swap/used"] = swap.used / (1024**3)
-        metrics["swap/total"] = swap.total / (1024**3)
-        metrics["swap/percent"] = swap.percent
-    except Exception:
-        pass
-
-    try:
-        sensors_temps = psutil.sensors_temperatures()
-        if sensors_temps:
-            for name, entries in sensors_temps.items():
-                for i, entry in enumerate(entries):
-                    label = entry.label or f"{name}_{i}"
-                    metrics[f"temp/{label}"] = entry.current
-    except Exception:
-        pass
+    metrics = collect_cpu_metrics(include_static=False)
 
     gpu_info = get_gpu_info()
     if gpu_info.get("detected"):
         metrics["gpu/detected"] = 1
-        if "type" in gpu_info:
-            pass
 
     return metrics
 

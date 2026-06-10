@@ -50,6 +50,7 @@ def collect_cpu_metrics(
     prev_disk_counters: Any = None,
     prev_net_counters: Any = None,
     elapsed: float | None = None,
+    include_static: bool = True,
 ) -> dict:
     """
     Collect CPU, RAM, disk, network, and sensor metrics using psutil.
@@ -61,6 +62,8 @@ def collect_cpu_metrics(
             If None, only cumulative values are reported.
         elapsed: Seconds since prev_disk_counters and prev_net_counters were captured.
             If None or non-positive, cumulative values are reported instead of rates.
+        include_static: Whether to include mostly static metrics such as CPU
+            frequency and core counts.
 
     Returns:
         Dictionary of system metrics.
@@ -82,24 +85,25 @@ def collect_cpu_metrics(
     except Exception:
         pass
 
-    try:
-        cpu_freq = psutil.cpu_freq()
-        if cpu_freq:
-            metrics["cpu/frequency"] = cpu_freq.current
-            if cpu_freq.max > 0:
-                metrics["cpu/frequency_max"] = cpu_freq.max
-    except Exception:
-        pass
+    if include_static:
+        try:
+            cpu_freq = psutil.cpu_freq()
+            if cpu_freq:
+                metrics["cpu/frequency"] = cpu_freq.current
+                if cpu_freq.max > 0:
+                    metrics["cpu/frequency_max"] = cpu_freq.max
+        except Exception:
+            pass
 
-    try:
-        cpu_count_logical = psutil.cpu_count(logical=True)
-        if cpu_count_logical is not None:
-            metrics["cpu/count_logical"] = cpu_count_logical
-        cpu_count_physical = psutil.cpu_count(logical=False)
-        if cpu_count_physical is not None:
-            metrics["cpu/count_physical"] = cpu_count_physical
-    except Exception:
-        pass
+        try:
+            cpu_count_logical = psutil.cpu_count(logical=True)
+            if cpu_count_logical is not None:
+                metrics["cpu/count_logical"] = cpu_count_logical
+            cpu_count_physical = psutil.cpu_count(logical=False)
+            if cpu_count_physical is not None:
+                metrics["cpu/count_physical"] = cpu_count_physical
+        except Exception:
+            pass
 
     try:
         mem = psutil.virtual_memory()
@@ -240,6 +244,7 @@ class CpuMonitor:
                     prev_disk_counters=self._last_disk_counters,
                     prev_net_counters=self._last_net_counters,
                     elapsed=elapsed,
+                    include_static=False,
                 )
                 try:
                     self._last_disk_counters = psutil.disk_io_counters()

@@ -121,6 +121,17 @@ def test_collect_cpu_metrics_cpu_count(mock_psutil_env):
     assert metrics["cpu/count_physical"] == 4
 
 
+def test_collect_cpu_metrics_can_skip_static_values(mock_psutil_env):
+    metrics = cpu.collect_cpu_metrics(include_static=False)
+
+    assert "cpu/frequency" not in metrics
+    assert "cpu/frequency_max" not in metrics
+    assert "cpu/count_logical" not in metrics
+    assert "cpu/count_physical" not in metrics
+    assert "cpu/utilization" in metrics
+    assert "memory/percent" in metrics
+
+
 def test_collect_cpu_metrics_disk_cumulative(mock_psutil_env):
     metrics = cpu.collect_cpu_metrics()
 
