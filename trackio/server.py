@@ -657,7 +657,7 @@ def artifact_log(
         direction="output",
     )
     record = SQLiteStorage.get_artifact_manifest(project, name, f"v{version_int}")
-    return {"version": version_int, "aliases": record["aliases"]}
+    return record
 
 
 def get_artifact_manifest(

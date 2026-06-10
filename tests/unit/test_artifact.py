@@ -838,23 +838,6 @@ def test_relog_already_logged_artifact_raises(temp_dir, tmp_path):
     trackio.finish()
 
 
-def test_log_artifact_remote_stub_raises(temp_dir, tmp_path):
-    weights = _make_file(tmp_path, "w.bin", b"x")
-    run = trackio.init(project="art-remote-stub", name="p")
-    real_client = run._client
-    run._client = object()
-    try:
-        art = Artifact(name="m", type="model")
-        art.add_file(weights)
-        with pytest.raises(NotImplementedError, match="Phase 10"):
-            run.log_artifact(art)
-        with pytest.raises(NotImplementedError, match="Phase 10"):
-            run.use_artifact("m:latest")
-    finally:
-        run._client = real_client
-    trackio.finish()
-
-
 # --- Phase 7 — Module-level re-exports + project-context use_artifact ---
 
 

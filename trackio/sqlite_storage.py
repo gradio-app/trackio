@@ -515,6 +515,10 @@ class SQLiteStorage:
                     CREATE INDEX IF NOT EXISTS idx_run_artifact_links_version
                     ON run_artifact_links(artifact_version_id)
                     """)
+                cursor.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_run_artifact_links_unique
+                    ON run_artifact_links(run_id, artifact_version_id, direction)
+                    """)
                 for col in ("kind TEXT NOT NULL DEFAULT 'media'", "digest TEXT"):
                     try:
                         cursor.execute(f"ALTER TABLE pending_uploads ADD COLUMN {col}")
@@ -3752,11 +3756,21 @@ class SQLiteStorage:
             cursor = conn.cursor()
             try:
                 columns = SQLiteStorage._table_columns(conn, "pending_uploads")
-                run_id_col = "run_id, " if "run_id" in columns else ""
-                cursor.execute(
-                    f"""SELECT id, space_id, {run_id_col}run_name, step, file_path, relative_path
-                    FROM pending_uploads"""
-                )
+                select_cols = [
+                    "id",
+                    "space_id",
+                    "run_name",
+                    "step",
+                    "file_path",
+                    "relative_path",
+                ]
+                if "run_id" in columns:
+                    select_cols.insert(2, "run_id")
+                if "kind" in columns:
+                    select_cols.append("kind")
+                if "digest" in columns:
+                    select_cols.append("digest")
+                cursor.execute(f"SELECT {', '.join(select_cols)} FROM pending_uploads")
             except sqlite3.OperationalError:
                 return None
             rows = cursor.fetchall()
@@ -3765,17 +3779,20 @@ class SQLiteStorage:
             uploads = []
             ids = []
             for row in rows:
+                keys = row.keys()
                 uploads.append(
                     {
                         "project": project,
                         "run": row["run_name"],
                         "run_id": (
-                            row["run_id"] if "run_id" in row.keys() else row["run_name"]
+                            row["run_id"] if "run_id" in keys else row["run_name"]
                         )
                         or row["run_name"],
                         "step": row["step"],
                         "file_path": row["file_path"],
                         "relative_path": row["relative_path"],
+                        "kind": row["kind"] if "kind" in keys else "media",
+                        "digest": row["digest"] if "digest" in keys else None,
                     }
                 )
                 ids.append(row["id"])
@@ -4019,7 +4036,7 @@ class SQLiteStorage:
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 conn.execute(
-                    """INSERT INTO run_artifact_links
+                    """INSERT OR IGNORE INTO run_artifact_links
                     (run_id, run_name, artifact_version_id, direction, created_at)
                     VALUES (?, ?, ?, ?, ?)""",
                     (run_id, run_name, version_id, direction, now),

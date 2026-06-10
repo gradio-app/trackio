@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -629,6 +630,56 @@ class Run:
                 f"trackio could not persist failed remote file uploads locally for run '{self.name}': {e}. User code will continue, but some artifacts could be lost.",
             )
 
+    def _send_pending_uploads_to_server(self, buffered: dict) -> None:
+        """Group buffered pending_uploads by kind and POST to the right endpoints.
+
+        Raises on failure. Caller is responsible for clear_pending_uploads on
+        success. Caller must hold `self._client_lock` and have a non-None
+        `self._client`.
+        """
+        media_entries: list[dict] = []
+        artifact_blob_entries: list[dict] = []
+        for u in buffered["uploads"]:
+            fp = u["file_path"]
+            if not Path(fp).exists():
+                continue
+            if u.get("kind") == "artifact_blob":
+                artifact_blob_entries.append(
+                    {
+                        "project": u["project"],
+                        "digest": u["digest"],
+                        "uploaded_file": handle_file(fp),
+                    }
+                )
+            else:
+                media_entries.append(
+                    {
+                        "project": u["project"],
+                        "run": u["run"],
+                        "run_id": u.get("run_id"),
+                        "step": u["step"],
+                        "relative_path": u["relative_path"],
+                        "uploaded_file": handle_file(fp),
+                    }
+                )
+        if media_entries:
+            self._client.predict(
+                api_name="/bulk_upload_media",
+                uploads=media_entries,
+                hf_token=self._hf_token_for_remote(),
+            )
+        if artifact_blob_entries:
+            by_project: dict[str, list[dict]] = {}
+            for e in artifact_blob_entries:
+                by_project.setdefault(e["project"], []).append(e)
+            for project, entries in by_project.items():
+                self._client.predict(
+                    api_name="/bulk_upload_artifact_blob",
+                    project=project,
+                    uploads=entries,
+                    hf_token=self._hf_token_for_remote(),
+                )
+
     def _flush_local_buffer(self):
         try:
             buffered_logs = SQLiteStorage.get_pending_logs(self.project)
@@ -653,26 +704,7 @@ class Run:
 
             buffered_uploads = SQLiteStorage.get_pending_uploads(self.project)
             if buffered_uploads:
-                upload_entries = []
-                for u in buffered_uploads["uploads"]:
-                    fp = u["file_path"]
-                    if Path(fp).exists():
-                        upload_entries.append(
-                            {
-                                "project": u["project"],
-                                "run": u["run"],
-                                "run_id": u.get("run_id"),
-                                "step": u["step"],
-                                "relative_path": u["relative_path"],
-                                "uploaded_file": handle_file(fp),
-                            }
-                        )
-                if upload_entries:
-                    self._client.predict(
-                        api_name="/bulk_upload_media",
-                        uploads=upload_entries,
-                        hf_token=self._hf_token_for_remote(),
-                    )
+                self._send_pending_uploads_to_server(buffered_uploads)
                 SQLiteStorage.clear_pending_uploads(
                     self.project, buffered_uploads["ids"]
                 )
@@ -683,6 +715,31 @@ class Run:
                 "flush-local-buffer",
                 f"trackio could not flush buffered remote data for run '{self.name}': {e}. It will retry later if possible.",
             )
+
+    def _wait_for_client_ready(self, timeout: float = 60.0) -> None:
+        """Block until `self._client` is initialized by `_init_client_background`."""
+        deadline = time.monotonic() + timeout
+        while self._client is None:
+            if self._stop_flag.is_set():
+                raise RuntimeError(
+                    "trackio run is finishing; cannot wait for remote client"
+                )
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"trackio remote client not ready after {timeout}s")
+            time.sleep(0.1)
+
+    def _drain_pending_uploads(self) -> None:
+        """Synchronously flush pending_uploads (both kinds). Raises on failure."""
+        with self._client_lock:
+            if self._client is None:
+                raise RuntimeError(
+                    "trackio remote client not ready; cannot drain pending_uploads"
+                )
+            buffered = SQLiteStorage.get_pending_uploads(self.project)
+            if not buffered:
+                return
+            self._send_pending_uploads_to_server(buffered)
+            SQLiteStorage.clear_pending_uploads(self.project, buffered["ids"])
 
     def _init_client_background(self):
         if self._client is None:
@@ -902,18 +959,10 @@ class Run:
     ) -> Artifact:
         """Log an artifact as an output of this run.
 
-        Hashes the artifact's pending files, hardlinks them into the
-        content-addressed blob store, inserts an artifact_version row (deduped on
-        canonical manifest digest), rotates `latest` plus any user-supplied
-        aliases to point at the resulting version, and records a producer
-        lineage row attributing this version to the current run.
-
-        Re-logging identical bytes returns the existing version, but aliases
-        still rotate and a new lineage row is inserted (Run B becomes a
-        co-producer of the same version).
+        In remote mode, blobs upload via the existing `pending_uploads` queue
+        (drained synchronously), then the manifest is POSTed to `/artifact_log`
+        which is the canonical store for the Space's DB.
         """
-        if self._client is not None:
-            raise NotImplementedError("Remote-mode log_artifact lands in Phase 10.")
         if artifact._logged:
             raise RuntimeError(
                 "Artifact has already been logged or fetched; "
@@ -929,42 +978,106 @@ class Run:
                 )
 
         manifest = artifact._build_manifest(self.project)
-        artifact_id = SQLiteStorage.create_or_get_artifact(
+
+        if self._is_local:
+            artifact_id = SQLiteStorage.create_or_get_artifact(
+                project=self.project,
+                name=artifact.name,
+                type=artifact.type,
+                description=artifact.description,
+            )
+            version_id, version_int, _was_new = SQLiteStorage.insert_artifact_version(
+                project=self.project,
+                artifact_id=artifact_id,
+                manifest=manifest,
+                metadata=artifact.metadata,
+                producer_run_id=self.id,
+                producer_run_name=self.name,
+            )
+            SQLiteStorage.reassign_alias(
+                self.project, artifact_id, "latest", version_id
+            )
+            for alias in user_aliases:
+                SQLiteStorage.reassign_alias(
+                    self.project, artifact_id, alias, version_id
+                )
+            SQLiteStorage.insert_run_artifact_link(
+                project=self.project,
+                run_name=self.name,
+                run_id=self.id,
+                version_id=version_id,
+                direction="output",
+            )
+            record = SQLiteStorage.get_artifact_manifest(
+                self.project, artifact.name, f"v{version_int}"
+            )
+            artifact._hydrate_from_db(
+                project=self.project,
+                version=version_int,
+                aliases=record["aliases"],
+                manifest=record["manifest"],
+                manifest_digest=record["manifest_digest"],
+                size_bytes=record["size_bytes"],
+            )
+            return artifact
+
+        self._wait_for_client_ready()
+
+        digests = [e["digest"] for e in manifest]
+        present_response = self._client.predict(
+            api_name="/check_artifact_blobs",
+            project=self.project,
+            digests=digests,
+        )
+        present = set(present_response.get("present", []))
+
+        for entry in manifest:
+            if entry["digest"] in present:
+                continue
+            blob_path = (
+                utils.ARTIFACTS_DIR
+                / self.project
+                / "blobs"
+                / "sha256"
+                / entry["digest"][:2]
+                / entry["digest"]
+            )
+            SQLiteStorage.enqueue_artifact_blob_upload(
+                project=self.project,
+                space_id=self._remote_storage_key,
+                digest=entry["digest"],
+                local_blob_path=str(blob_path),
+                run_name=self.name,
+                run_id=self.id,
+            )
+
+        self._drain_pending_uploads()
+
+        record = self._client.predict(
+            api_name="/artifact_log",
             project=self.project,
             name=artifact.name,
             type=artifact.type,
             description=artifact.description,
-        )
-        version_id, version_int, _was_new = SQLiteStorage.insert_artifact_version(
-            project=self.project,
-            artifact_id=artifact_id,
-            manifest=manifest,
             metadata=artifact.metadata,
-            producer_run_id=self.id,
-            producer_run_name=self.name,
-        )
-        SQLiteStorage.reassign_alias(self.project, artifact_id, "latest", version_id)
-        for alias in user_aliases:
-            SQLiteStorage.reassign_alias(self.project, artifact_id, alias, version_id)
-        SQLiteStorage.insert_run_artifact_link(
-            project=self.project,
+            manifest=manifest,
+            aliases=user_aliases,
             run_name=self.name,
             run_id=self.id,
-            version_id=version_id,
-            direction="output",
-        )
-
-        record = SQLiteStorage.get_artifact_manifest(
-            self.project, artifact.name, f"v{version_int}"
+            hf_token=self._hf_token_for_remote(),
         )
         artifact._hydrate_from_db(
             project=self.project,
-            version=version_int,
+            version=record["version"],
             aliases=record["aliases"],
             manifest=record["manifest"],
             manifest_digest=record["manifest_digest"],
             size_bytes=record["size_bytes"],
         )
+        artifact._remote_source = {
+            "space_id": self._space_id,
+            "server_base_url": self._server_base_url,
+        }
         return artifact
 
     def use_artifact(self, spec: str) -> Artifact:
@@ -972,18 +1085,49 @@ class Run:
 
         `spec` is `"name"` (defaults to `:latest`), `"name:<alias>"`, or
         `"name:v<N>"`. Returns a freshly-hydrated `Artifact` whose `download()`
-        method materializes the files locally.
+        method materializes the files locally (Phase 5) or fetches from the
+        remote when needed (Phase 12).
         """
-        if self._client is not None:
-            raise NotImplementedError("Remote-mode use_artifact lands in Phase 10.")
-
         if ":" in spec:
             name, version_or_alias = spec.split(":", 1)
         else:
             name, version_or_alias = spec, None
 
-        record = SQLiteStorage.get_artifact_manifest(
-            self.project, name, version_or_alias
+        if self._is_local:
+            record = SQLiteStorage.get_artifact_manifest(
+                self.project, name, version_or_alias
+            )
+            if record is None:
+                raise ValueError(
+                    f"Artifact {spec!r} not found in project {self.project!r}."
+                )
+            art = Artifact(name=record["name"], type=record["type"])
+            art._hydrate_from_db(
+                project=self.project,
+                version=record["version"],
+                aliases=record["aliases"],
+                manifest=record["manifest"],
+                manifest_digest=record["manifest_digest"],
+                size_bytes=record["size_bytes"],
+                spec=version_or_alias,
+                description=record["description"],
+                metadata=record["metadata"],
+            )
+            SQLiteStorage.insert_run_artifact_link(
+                project=self.project,
+                run_name=self.name,
+                run_id=self.id,
+                version_id=record["version_id"],
+                direction="input",
+            )
+            return art
+
+        self._wait_for_client_ready()
+        record = self._client.predict(
+            api_name="/get_artifact_manifest",
+            project=self.project,
+            name=name,
+            spec=version_or_alias,
         )
         if record is None:
             raise ValueError(
@@ -1002,13 +1146,26 @@ class Run:
             description=record["description"],
             metadata=record["metadata"],
         )
-        SQLiteStorage.insert_run_artifact_link(
-            project=self.project,
-            run_name=self.name,
-            run_id=self.id,
-            version_id=record["version_id"],
-            direction="input",
-        )
+        art._remote_source = {
+            "space_id": self._space_id,
+            "server_base_url": self._server_base_url,
+        }
+
+        try:
+            self._client.predict(
+                api_name="/log_artifact_use",
+                project=self.project,
+                version_id=record["version_id"],
+                run_name=self.name,
+                run_id=self.id,
+                hf_token=self._hf_token_for_remote(),
+            )
+        except Exception as e:
+            self._warn_once(
+                "artifact-use-lineage-remote",
+                f"trackio could not record consumer lineage for {spec!r}: {e}",
+            )
+
         return art
 
     def alert(
