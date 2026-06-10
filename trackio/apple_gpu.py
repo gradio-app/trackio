@@ -103,16 +103,19 @@ def apple_gpu_available() -> bool:
         return False
 
 
-def collect_apple_metrics() -> dict:
+def collect_apple_metrics(include_cpu_metrics: bool = True) -> dict:
     """
     Collect system metrics for Apple Silicon.
 
     Returns:
         Dictionary of system metrics including CPU, memory, and GPU info.
     """
-    from trackio.cpu import collect_cpu_metrics
+    metrics = {}
 
-    metrics = collect_cpu_metrics(include_static=True)
+    if include_cpu_metrics:
+        from trackio.cpu import collect_cpu_metrics
+
+        metrics.update(collect_cpu_metrics(include_static=True))
 
     gpu_info = get_gpu_info()
     if gpu_info.get("detected"):
@@ -122,9 +125,12 @@ def collect_apple_metrics() -> dict:
 
 
 class AppleGpuMonitor:
-    def __init__(self, run: "Run", interval: float = 10.0):
+    def __init__(
+        self, run: "Run", interval: float = 10.0, include_cpu_metrics: bool = True
+    ):
         self._run = run
         self._interval = interval
+        self._include_cpu_metrics = include_cpu_metrics
         self._stop_flag = threading.Event()
         self._thread: "threading.Thread | None" = None
 
@@ -157,7 +163,9 @@ class AppleGpuMonitor:
     def _monitor_loop(self):
         while not self._stop_flag.is_set():
             try:
-                metrics = collect_apple_metrics()
+                metrics = collect_apple_metrics(
+                    include_cpu_metrics=self._include_cpu_metrics
+                )
                 if metrics:
                     self._run.log_system(metrics)
             except Exception:

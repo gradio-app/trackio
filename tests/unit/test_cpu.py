@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import trackio
 from trackio import context_vars, cpu
 from trackio.run import Run
 
@@ -162,3 +163,71 @@ def test_auto_log_cpu_warns_without_psutil():
 
     cpu.psutil = old_psutil
     cpu.PSUTIL_AVAILABLE = old_available
+
+
+def test_init_auto_log_cpu_defaults_to_psutil_available(temp_dir):
+    with (
+        patch("trackio.cpu_available", return_value=True),
+        patch("trackio.gpu_available", return_value=False),
+        patch("trackio.apple_gpu_available", return_value=False),
+        patch("trackio.run.CpuMonitor") as monitor_cls,
+    ):
+        run = trackio.init(project="auto-cpu-default", name="run")
+        monitor_cls.assert_called_once_with(run, interval=10.0)
+        run.finish()
+        context_vars.current_run.set(None)
+
+
+def test_init_auto_log_cpu_default_skips_when_psutil_unavailable(temp_dir):
+    with (
+        patch("trackio.cpu_available", return_value=False),
+        patch("trackio.gpu_available", return_value=False),
+        patch("trackio.apple_gpu_available", return_value=False),
+        patch("trackio.run.CpuMonitor") as monitor_cls,
+    ):
+        run = trackio.init(project="auto-cpu-unavailable", name="run")
+        monitor_cls.assert_not_called()
+        run.finish()
+        context_vars.current_run.set(None)
+
+
+def test_apple_gpu_monitor_skips_cpu_metrics_when_cpu_monitor_enabled():
+    with (
+        patch("trackio.run.gpu_available", return_value=False),
+        patch("trackio.run.apple_gpu_available", return_value=True),
+        patch("trackio.run.AppleGpuMonitor") as apple_monitor_cls,
+        patch("trackio.run.CpuMonitor") as cpu_monitor_cls,
+    ):
+        run = Run(
+            url=None,
+            project="test-project",
+            client=MagicMock(),
+            auto_log_gpu=True,
+            auto_log_cpu=True,
+        )
+        apple_monitor_cls.assert_called_once_with(
+            run, interval=10.0, include_cpu_metrics=False
+        )
+        cpu_monitor_cls.assert_called_once_with(run, interval=10.0)
+        run.finish()
+
+
+def test_apple_gpu_monitor_keeps_cpu_metrics_without_cpu_monitor():
+    with (
+        patch("trackio.run.gpu_available", return_value=False),
+        patch("trackio.run.apple_gpu_available", return_value=True),
+        patch("trackio.run.AppleGpuMonitor") as apple_monitor_cls,
+        patch("trackio.run.CpuMonitor") as cpu_monitor_cls,
+    ):
+        run = Run(
+            url=None,
+            project="test-project",
+            client=MagicMock(),
+            auto_log_gpu=True,
+            auto_log_cpu=False,
+        )
+        apple_monitor_cls.assert_called_once_with(
+            run, interval=10.0, include_cpu_metrics=True
+        )
+        cpu_monitor_cls.assert_not_called()
+        run.finish()
