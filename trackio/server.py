@@ -680,8 +680,16 @@ def get_metric_values(
     )
 
 
-def get_runs_for_project(project: str) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_run_records(project)
+MAX_SELECTED_RUNS = 10
+
+
+def get_runs_for_project(
+    project: str, max_runs: int | None = MAX_SELECTED_RUNS
+) -> list[dict[str, Any]]:
+    runs = SQLiteStorage.get_run_records(project)
+    if max_runs is not None:
+        runs = runs[:max_runs]
+    return runs
 
 
 def get_run_configs(project: str) -> dict[str, Any]:
