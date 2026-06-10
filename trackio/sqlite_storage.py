@@ -1224,6 +1224,7 @@ class SQLiteStorage:
                         "*_traces.parquet",
                         "aux/*.parquet",
                         "media/**/*",
+                        "artifacts/**/*",
                     ],
                     squash_history=True,
                     token=hf_token,

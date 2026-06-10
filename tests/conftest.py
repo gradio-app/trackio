@@ -20,9 +20,14 @@ def temp_dir(monkeypatch):
             "trackio.media.utils",
             "trackio.utils",
             "trackio.sqlite_storage",
+            "trackio.bucket_storage",
         ]:
             monkeypatch.setattr(f"{name}.MEDIA_DIR", Path(tmpdir) / "media")
-        monkeypatch.setattr("trackio.utils.ARTIFACTS_DIR", Path(tmpdir) / "artifacts")
+        for name in ["trackio.utils", "trackio.bucket_storage"]:
+            monkeypatch.setattr(
+                f"{name}.ARTIFACTS_DIR", Path(tmpdir) / "artifacts"
+            )
+        monkeypatch.setattr("trackio.bucket_storage.TRACKIO_DIR", Path(tmpdir))
         context_vars.current_run.set(None)
         context_vars.current_project.set(None)
         context_vars.current_server.set(None)

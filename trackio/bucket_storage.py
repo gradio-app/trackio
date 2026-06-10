@@ -5,7 +5,7 @@ from pathlib import Path
 import huggingface_hub
 
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.utils import MEDIA_DIR, TRACKIO_DIR
+from trackio.utils import ARTIFACTS_DIR, MEDIA_DIR, TRACKIO_DIR
 
 
 def create_bucket_if_not_exists(bucket_id: str, private: bool | None = None) -> None:
@@ -48,6 +48,16 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
             if media_file.is_file():
                 rel = media_file.relative_to(TRACKIO_DIR)
                 files_to_add.append((str(media_file), f"trackio/{rel}"))
+
+    artifacts_dir = ARTIFACTS_DIR / project
+    if artifacts_dir.exists():
+        for blob_file in artifacts_dir.rglob("*"):
+            if not blob_file.is_file():
+                continue
+            if ".partial." in blob_file.name:
+                continue
+            rel = blob_file.relative_to(TRACKIO_DIR)
+            files_to_add.append((str(blob_file), f"trackio/{rel}"))
 
     huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
 

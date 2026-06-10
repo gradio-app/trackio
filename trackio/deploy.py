@@ -675,6 +675,67 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
 SYNC_BATCH_SIZE = 500
 
 
+def _replay_pending_uploads(
+    project: str,
+    client: "RemoteClient",
+    hf_token: str | None,
+) -> None:
+    """Replay queued `pending_uploads` rows for `project` via `client`.
+
+    Routes by `kind`: 'media' → `/bulk_upload_media`, 'artifact_blob' →
+    `/bulk_upload_artifact_blob`. Mirrors the Phase 10 sender's routing logic
+    so a sync triggered outside a Run (via `trackio sync`) handles both kinds.
+    Clears the rows after sending.
+    """
+    pending_uploads = SQLiteStorage.get_pending_uploads(project)
+    if not pending_uploads:
+        return
+    media_entries = []
+    artifact_blob_entries = []
+    for u in pending_uploads["uploads"]:
+        fp = u["file_path"]
+        if not os.path.exists(fp):
+            continue
+        if u.get("kind") == "artifact_blob":
+            artifact_blob_entries.append(
+                {
+                    "project": u["project"],
+                    "digest": u["digest"],
+                    "uploaded_file": handle_file(fp),
+                }
+            )
+        else:
+            media_entries.append(
+                {
+                    "project": u["project"],
+                    "run": u["run"],
+                    "step": u["step"],
+                    "relative_path": u["relative_path"],
+                    "uploaded_file": handle_file(fp),
+                }
+            )
+    if media_entries:
+        print(f"  Syncing {len(media_entries)} media files...")
+        client.predict(
+            api_name="/bulk_upload_media",
+            uploads=media_entries,
+            hf_token=hf_token,
+        )
+    if artifact_blob_entries:
+        by_project: dict[str, list[dict]] = {}
+        for e in artifact_blob_entries:
+            by_project.setdefault(e["project"], []).append(e)
+        for proj, entries in by_project.items():
+            print(f"  Syncing {len(entries)} artifact blobs for project '{proj}'...")
+            client.predict(
+                api_name="/bulk_upload_artifact_blob",
+                project=proj,
+                uploads=entries,
+                hf_token=hf_token,
+            )
+    SQLiteStorage.clear_pending_uploads(project, pending_uploads["ids"])
+
+
 def sync_incremental(
     project: str,
     space_id: str,
@@ -732,29 +793,7 @@ def sync_incremental(
                 )
             SQLiteStorage.clear_pending_system_logs(project, pending_sys["ids"])
 
-        pending_uploads = SQLiteStorage.get_pending_uploads(project)
-        if pending_uploads:
-            upload_entries = []
-            for u in pending_uploads["uploads"]:
-                fp = u["file_path"]
-                if os.path.exists(fp):
-                    upload_entries.append(
-                        {
-                            "project": u["project"],
-                            "run": u["run"],
-                            "step": u["step"],
-                            "relative_path": u["relative_path"],
-                            "uploaded_file": handle_file(fp),
-                        }
-                    )
-            if upload_entries:
-                print(f"  Syncing {len(upload_entries)} media files...")
-                client.predict(
-                    api_name="/bulk_upload_media",
-                    uploads=upload_entries,
-                    hf_token=hf_token,
-                )
-            SQLiteStorage.clear_pending_uploads(project, pending_uploads["ids"])
+        _replay_pending_uploads(project, client, hf_token)
     else:
         all_logs = SQLiteStorage.get_all_logs_for_sync(project)
         if all_logs:
