@@ -233,16 +233,31 @@ def test_list_artifact_blobs_present(temp_dir, monkeypatch):
 
     base = Path(temp_dir) / "artifacts" / "p" / "blobs" / "sha256"
     monkeypatch.setattr(trackio_utils, "ARTIFACTS_DIR", Path(temp_dir) / "artifacts")
-    (base / "ab").mkdir(parents=True)
-    (base / "ab" / "abcdef").write_bytes(b"x")
-    (base / "12").mkdir(parents=True)
-    (base / "12" / "123456").write_bytes(b"x")
+    d1 = "a" * 64
+    d2 = "1" * 64
+    d_absent = "f" * 64
+    (base / d1[:2]).mkdir(parents=True)
+    (base / d1[:2] / d1).write_bytes(b"x")
+    (base / d2[:2]).mkdir(parents=True)
+    (base / d2[:2] / d2).write_bytes(b"x")
 
-    present = SQLiteStorage.list_artifact_blobs_present(
-        "p", ["abcdef", "123456", "deadbeef"]
-    )
-    assert present == {"abcdef", "123456"}
+    present = SQLiteStorage.list_artifact_blobs_present("p", [d1, d2, d_absent])
+    assert present == {d1, d2}
     assert SQLiteStorage.list_artifact_blobs_present("p", []) == set()
+
+
+def test_list_artifact_blobs_present_rejects_path_traversal(temp_dir, monkeypatch):
+    from pathlib import Path
+
+    from trackio import utils as trackio_utils
+
+    monkeypatch.setattr(trackio_utils, "ARTIFACTS_DIR", Path(temp_dir) / "artifacts")
+    sensitive = Path(temp_dir) / "secret.txt"
+    sensitive.write_text("SECRET")
+
+    bad_digests = ["../secret.txt", "../../etc/passwd", "ab", "", "g" * 64, "A" * 64]
+    present = SQLiteStorage.list_artifact_blobs_present("p", bad_digests)
+    assert present == set()
 
 
 # --- Phase 4 — Artifact class ---

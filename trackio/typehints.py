@@ -52,3 +52,9 @@ class UploadEntry(TypedDict):
     step: int | None
     relative_path: str | None
     uploaded_file: FileData
+
+
+class ArtifactBlobUploadEntry(TypedDict):
+    project: str
+    digest: Sha256Digest
+    uploaded_file: FileData

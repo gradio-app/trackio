@@ -1,6 +1,7 @@
 """The main API layer for the Trackio UI."""
 
 import base64
+import hashlib
 import logging
 import os
 import re
@@ -9,9 +10,11 @@ import shutil
 import sqlite3
 import threading
 import time
+import uuid
 import warnings
 from collections import deque
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
@@ -30,8 +33,64 @@ from trackio.asgi_app import (
 from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
+from trackio.typehints import (
+    AlertEntry,
+    ArtifactBlobUploadEntry,
+    LogEntry,
+    Sha256Digest,
+    SystemLogEntry,
+    UploadEntry,
+)
 from trackio.utils import on_spaces
+
+_SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+_BLOB_STREAM_CHUNK_SIZE = 1024 * 1024
+
+
+def _validate_sha256_digest(digest: Any) -> Sha256Digest:
+    if not isinstance(digest, str) or not _SHA256_DIGEST_RE.match(digest):
+        raise TrackioAPIError(f"Invalid sha256 digest: {digest!r}")
+    return Sha256Digest(digest)
+
+
+def _validate_project_name(project: Any) -> str:
+    if not isinstance(project, str) or not _PROJECT_NAME_RE.match(project):
+        raise TrackioAPIError(f"Invalid project name: {project!r}")
+    return project
+
+
+def _stage_blob(
+    src_path: Path,
+    claimed_digest: Sha256Digest,
+    target_path: Path,
+    max_bytes: int | None,
+) -> None:
+    """Stream src_path → CAS partial → atomic rename."""
+    if target_path.is_file():
+        return
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    partial = target_path.parent / f"{target_path.name}.partial.{uuid.uuid4().hex}"
+    sha = hashlib.sha256()
+    written = 0
+    try:
+        with src_path.open("rb") as src, partial.open("wb") as dst:
+            while chunk := src.read(_BLOB_STREAM_CHUNK_SIZE):
+                written += len(chunk)
+                if max_bytes is not None and written > max_bytes:
+                    raise ValueError(f"Artifact blob exceeds {max_bytes} bytes")
+                sha.update(chunk)
+                dst.write(chunk)
+        actual = sha.hexdigest()
+        if actual != claimed_digest:
+            raise ValueError(
+                f"Digest mismatch: claimed {claimed_digest}, computed {actual}"
+            )
+        os.rename(partial, target_path)
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise
+
 
 HfApi = hf.HfApi()
 
@@ -514,6 +573,121 @@ def bulk_upload_media(
             cleanup_uploaded_temp_file(uploaded_path)
 
 
+def check_artifact_blobs(
+    project: str,
+    digests: list[str],
+) -> dict[str, list[str]]:
+    project = _validate_project_name(project)
+    validated = [_validate_sha256_digest(d) for d in digests]
+    present = SQLiteStorage.list_artifact_blobs_present(project, validated)
+    return {"present": [d for d in validated if d in present]}
+
+
+def bulk_upload_artifact_blob(
+    request: Request,
+    project: str,
+    uploads: list[ArtifactBlobUploadEntry],
+    hf_token: str | None,
+) -> None:
+    assert_can_write_metrics(request, hf_token)
+    project = _validate_project_name(project)
+    base = utils.ARTIFACTS_DIR / project / "blobs" / "sha256"
+    consumed: list[Path] = []
+    try:
+        for upload in uploads:
+            consumed.append(
+                consume_uploaded_temp_file(request, upload["uploaded_file"])
+            )
+        for upload, uploaded_path in zip(uploads, consumed):
+            digest = _validate_sha256_digest(upload["digest"])
+            target = base / digest[:2] / digest
+            try:
+                _stage_blob(
+                    uploaded_path, digest, target, utils.ARTIFACT_BLOB_MAX_BYTES
+                )
+            except ValueError as e:
+                raise TrackioAPIError(str(e)) from e
+    finally:
+        for path in consumed:
+            cleanup_uploaded_temp_file(path)
+
+
+def artifact_log(
+    request: Request,
+    project: str,
+    name: str,
+    type: str,
+    description: str | None,
+    metadata: dict | None,
+    manifest: list[dict],
+    aliases: list[str] | None,
+    run_name: str | None,
+    run_id: str | None,
+    hf_token: str | None,
+) -> dict[str, Any]:
+    assert_can_write_metrics(request, hf_token)
+    project = _validate_project_name(project)
+    digests = [_validate_sha256_digest(e["digest"]) for e in manifest]
+    present = SQLiteStorage.list_artifact_blobs_present(project, digests)
+    missing = [d for d in digests if d not in present]
+    if missing:
+        preview = missing[:5]
+        suffix = "..." if len(missing) > 5 else ""
+        raise TrackioAPIError(
+            f"Manifest references blobs not on server: {preview}{suffix}"
+        )
+
+    artifact_id = SQLiteStorage.create_or_get_artifact(project, name, type, description)
+    version_id, version_int, _was_new = SQLiteStorage.insert_artifact_version(
+        project=project,
+        artifact_id=artifact_id,
+        manifest=manifest,
+        metadata=metadata,
+        producer_run_id=run_id,
+        producer_run_name=run_name,
+    )
+    SQLiteStorage.reassign_alias(project, artifact_id, "latest", version_id)
+    for alias in aliases or []:
+        SQLiteStorage.reassign_alias(project, artifact_id, alias, version_id)
+    SQLiteStorage.insert_run_artifact_link(
+        project=project,
+        run_name=run_name,
+        run_id=run_id,
+        version_id=version_id,
+        direction="output",
+    )
+    record = SQLiteStorage.get_artifact_manifest(project, name, f"v{version_int}")
+    return {"version": version_int, "aliases": record["aliases"]}
+
+
+def get_artifact_manifest(
+    project: str,
+    name: str,
+    spec: str | None,
+) -> dict | None:
+    project = _validate_project_name(project)
+    return SQLiteStorage.get_artifact_manifest(project, name, spec)
+
+
+def log_artifact_use(
+    request: Request,
+    project: str,
+    version_id: int,
+    run_name: str | None,
+    run_id: str | None,
+    hf_token: str | None,
+) -> None:
+    assert_can_write_metrics(request, hf_token)
+    project = _validate_project_name(project)
+    SQLiteStorage.insert_run_artifact_link(
+        project=project,
+        run_name=run_name,
+        run_id=run_id,
+        version_id=version_id,
+        direction="input",
+    )
+
+
 def log(
     request: Request,
     project: str,
@@ -986,6 +1160,11 @@ def _api_registry() -> dict[str, Any]:
         "get_run_mutation_status": get_run_mutation_status,
         "upload_db_to_space": upload_db_to_space,
         "bulk_upload_media": bulk_upload_media,
+        "check_artifact_blobs": check_artifact_blobs,
+        "bulk_upload_artifact_blob": bulk_upload_artifact_blob,
+        "artifact_log": artifact_log,
+        "get_artifact_manifest": get_artifact_manifest,
+        "log_artifact_use": log_artifact_use,
         "log": log,
         "bulk_log": bulk_log,
         "bulk_log_system": bulk_log_system,
@@ -1061,6 +1240,7 @@ def build_starlette_app_only(
         allowed_file_roots=[
             utils.MEDIA_DIR,
             utils.TRACKIO_LOGO_DIR,
+            utils.ARTIFACTS_DIR,
         ],
         upload_authorizer=assert_can_stage_upload,
     )

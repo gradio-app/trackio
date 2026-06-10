@@ -41,6 +41,7 @@ from trackio.utils import (
 )
 
 _ARTIFACT_VERSION_SPEC_RE = re.compile(r"^v(\d+)$")
+_SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 DB_EXT = ".db"
 
@@ -4258,7 +4259,7 @@ class SQLiteStorage:
         present: set[Sha256Digest] = set()
         base = _trackio_utils.ARTIFACTS_DIR / project / "blobs" / "sha256"
         for digest in digests:
-            if len(digest) < 2:
+            if not _SHA256_DIGEST_RE.match(digest):
                 continue
             blob_path = base / digest[:2] / digest
             if blob_path.is_file():

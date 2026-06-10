@@ -172,21 +172,24 @@ TRACKIO_DIR = _get_trackio_dir()
 MEDIA_DIR = TRACKIO_DIR / "media"
 ARTIFACTS_DIR = TRACKIO_DIR / "artifacts"
 
-_DEFAULT_ARTIFACT_BLOB_MAX_BYTES = 5 * 1024 * 1024 * 1024
 
+def _get_artifact_blob_max_bytes() -> int | None:
+    """Per-blob upload size cap, in bytes. None means no cap.
 
-def _get_artifact_blob_max_bytes() -> int:
+    Operators can opt in to a cap by setting TRACKIO_ARTIFACT_BLOB_MAX_BYTES
+    to a positive integer.
+    """
     raw = os.environ.get("TRACKIO_ARTIFACT_BLOB_MAX_BYTES")
     if not raw:
-        return _DEFAULT_ARTIFACT_BLOB_MAX_BYTES
+        return None
     try:
         value = int(raw)
     except (TypeError, ValueError):
-        return _DEFAULT_ARTIFACT_BLOB_MAX_BYTES
-    return value if value > 0 else _DEFAULT_ARTIFACT_BLOB_MAX_BYTES
+        return None
+    return value if value > 0 else None
 
 
-ARTIFACT_BLOB_MAX_BYTES = _get_artifact_blob_max_bytes()
+ARTIFACT_BLOB_MAX_BYTES: int | None = _get_artifact_blob_max_bytes()
 
 
 def get_or_create_project_hash(project: str) -> str:
