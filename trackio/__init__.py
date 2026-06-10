@@ -383,9 +383,7 @@ def init(
             Controls automatic CPU and RAM metrics logging (utilization, memory,
             disk I/O, network I/O, and sensors). If `None` (default), CPU logging
             is automatically enabled when `psutil` is installed. Set to `True` to
-            force enable or `False` to disable. When Apple Silicon system metrics
-            and CPU metrics are both enabled, Trackio avoids logging duplicate CPU
-            and RAM entries.
+            force enable or `False` to disable.
         cpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic CPU metric logs.
             Only used when CPU auto-logging is enabled.
