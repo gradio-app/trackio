@@ -2,6 +2,7 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import WaveformAudio from "../components/WaveformAudio.svelte";
   import { getLogs, getMediaUrl } from "../lib/api.js";
+  import { filterMetricsByRegex } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
 
   let {
@@ -24,8 +25,11 @@
 
   let rawMediaItems = $state(EMPTY_MEDIA_ITEMS);
   let sortOrder = $state("newest");
+  let imageFilter = $state("");
   let visibleCounts = $state(createVisibleCounts());
   let selectedImage = $state(null);
+  let selectedImageList = $state([]);
+  let selectedImageIndex = $state(null);
   let loading = $state(false);
 
   function createVisibleCounts() {
@@ -67,8 +71,23 @@
     tables: sortMediaItems(rawMediaItems.tables.filter(isDisplayableTable)),
   }));
 
+  function imageName(img) {
+    return img.caption ? `${img.key} ${img.caption}` : img.key;
+  }
+
+  let filteredImages = $derived.by(() => {
+    if (!imageFilter.trim()) return mediaItems.images;
+    const matches = new Set(
+      filterMetricsByRegex(
+        mediaItems.images.map((img) => imageName(img)),
+        imageFilter,
+      ),
+    );
+    return mediaItems.images.filter((img) => matches.has(imageName(img)));
+  });
+
   let visibleMediaItems = $derived.by(() => ({
-    images: mediaItems.images.slice(0, visibleCounts.images),
+    images: filteredImages.slice(0, visibleCounts.images),
     videos: mediaItems.videos.slice(0, visibleCounts.videos),
     audios: mediaItems.audios.slice(0, visibleCounts.audios),
     tables: mediaItems.tables.slice(0, visibleCounts.tables),
@@ -87,6 +106,7 @@
 
   $effect(() => {
     sortOrder;
+    imageFilter;
     rawMediaItems;
     resetVisibleCounts();
   });
@@ -195,8 +215,8 @@
     event.currentTarget.parentElement?.classList.add("image-failed");
   }
 
-  function openImage(image, parent = null) {
-    selectedImage = {
+  function normalizeImage(image, parent = null) {
+    return {
       ...image,
       key: image.key ?? parent?.key,
       step: image.step ?? parent?.step,
@@ -206,12 +226,41 @@
     };
   }
 
+  function openImage(image, parent = null, imageList = [], index = null) {
+    selectedImage = normalizeImage(image, parent);
+    selectedImageList = imageList;
+    selectedImageIndex = index;
+  }
+
   function closeImage() {
     selectedImage = null;
+    selectedImageList = [];
+    selectedImageIndex = null;
+  }
+
+  function showImageAt(index) {
+    if (index < 0 || index >= selectedImageList.length) return;
+    selectedImage = normalizeImage(selectedImageList[index]);
+    selectedImageIndex = index;
+  }
+
+  function showPreviousImage() {
+    if (selectedImageIndex === null || selectedImageList.length <= 1) return;
+    showImageAt(
+      (selectedImageIndex - 1 + selectedImageList.length) % selectedImageList.length,
+    );
+  }
+
+  function showNextImage() {
+    if (selectedImageIndex === null || selectedImageList.length <= 1) return;
+    showImageAt((selectedImageIndex + 1) % selectedImageList.length);
   }
 
   function handleKeydown(event) {
+    if (!selectedImage) return;
     if (event.key === "Escape") closeImage();
+    if (event.key === "ArrowLeft") showPreviousImage();
+    if (event.key === "ArrowRight") showNextImage();
   }
 </script>
 
@@ -237,16 +286,6 @@
       {/if}
     </div>
   {:else}
-    <div class="media-toolbar">
-      <label class="media-control" for="media-sort-order">
-        <span>Sort</span>
-        <select id="media-sort-order" bind:value={sortOrder}>
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-        </select>
-      </label>
-    </div>
-
     {#snippet meta(item)}
       <div class="meta">
         <span class="run-dot" style:background={runColor(item)}></span>
@@ -255,20 +294,47 @@
     {/snippet}
     {#if mediaItems.images.length > 0}
       <details class="section" open>
-        <summary class="section-summary">
-          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="section-title">Images ({mediaItems.images.length})</span>
+        <summary class="section-summary image-section-summary">
+          <div class="section-heading">
+            <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="section-title">Images ({filteredImages.length})</span>
+          </div>
+          <div class="image-section-controls">
+            <div class="image-filter">
+              <input
+                type="text"
+                bind:value={imageFilter}
+                placeholder="Filter images..."
+                aria-label="Filter images"
+                onclick={(event) => event.stopPropagation()}
+                onkeydown={(event) => event.stopPropagation()}
+              />
+            </div>
+            <div class="media-control">
+              <span>Sort</span>
+              <select
+                id="media-sort-order"
+                bind:value={sortOrder}
+                aria-label="Sort media"
+                onclick={(event) => event.stopPropagation()}
+                onkeydown={(event) => event.stopPropagation()}
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+            </div>
+          </div>
         </summary>
         <div class="gallery">
-          {#each visibleMediaItems.images as img}
+          {#each visibleMediaItems.images as img, i}
             <div class="gallery-item">
               <div class="media-label">{img.key}</div>
               <button
                 class="image-frame"
                 type="button"
-                onclick={() => openImage(img)}
+                onclick={() => openImage(img, null, filteredImages, i)}
                 aria-label={`Open ${img.caption || img.key}`}
               >
                 <span class="image-placeholder">Loading image…</span>
@@ -288,9 +354,12 @@
             </div>
           {/each}
         </div>
-        {#if visibleCounts.images < mediaItems.images.length}
+        {#if filteredImages.length === 0}
+          <div class="empty-filter-state">No images match this filter.</div>
+        {/if}
+        {#if visibleCounts.images < filteredImages.length}
           <div class="pagination-row">
-            <span>Showing {visibleMediaItems.images.length} of {mediaItems.images.length}</span>
+            <span>Showing {visibleMediaItems.images.length} of {filteredImages.length}</span>
             <button type="button" class="load-more-button" onclick={() => showMore("images")}>Load more</button>
           </div>
         {/if}
@@ -454,6 +523,16 @@
       onkeydown={(event) => event.stopPropagation()}
     >
       <button class="image-modal-close" type="button" onclick={closeImage} aria-label="Close image preview">×</button>
+      {#if selectedImageList.length > 1}
+        <button
+          class="image-modal-nav image-modal-prev"
+          type="button"
+          onclick={showPreviousImage}
+          aria-label="Previous image"
+        >
+          ‹
+        </button>
+      {/if}
       <div class="modal-image-frame">
         <span class="modal-image-placeholder">Loading image…</span>
         <img
@@ -464,6 +543,16 @@
           onerror={markImageFailed}
         />
       </div>
+      {#if selectedImageList.length > 1}
+        <button
+          class="image-modal-nav image-modal-next"
+          type="button"
+          onclick={showNextImage}
+          aria-label="Next image"
+        >
+          ›
+        </button>
+      {/if}
       <div class="image-modal-info">
         {#if selectedImage.key}
           <div class="image-modal-title">{selectedImage.key}</div>
@@ -474,6 +563,9 @@
         <div class="meta image-modal-meta">
           <span class="run-dot" style:background={runColor(selectedImage)}></span>
           <span class="meta-text">Run: {selectedImage._run}, Step: {selectedImage.step}</span>
+          {#if selectedImageIndex !== null && selectedImageList.length > 1}
+            <span class="image-modal-count">{selectedImageIndex + 1} / {selectedImageList.length}</span>
+          {/if}
         </div>
       </div>
     </div>
@@ -489,12 +581,19 @@
   .section {
     margin: 16px 0;
   }
-  .media-toolbar {
+  .section-heading,
+  .image-section-controls {
     display: flex;
-    justify-content: flex-end;
     align-items: center;
+    gap: 8px;
+  }
+  .image-section-summary {
+    justify-content: space-between;
     gap: 12px;
-    margin-bottom: 12px;
+  }
+  .image-section-controls {
+    flex: 1;
+    justify-content: flex-end;
   }
   .media-control {
     display: flex;
@@ -709,6 +808,33 @@
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color-subdued, #9ca3af);
   }
+  .image-filter {
+    width: min(320px, 100%);
+  }
+  .image-filter input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--input-radius, 8px);
+    background: var(--input-background-fill, white);
+    color: var(--body-text-color, #1f2937);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .image-filter input:focus {
+    border-color: var(--input-border-color-focus, #fdba74);
+    box-shadow: 0 0 0 2px var(--primary-50, #fff7ed);
+  }
+  .image-filter input::placeholder {
+    color: var(--input-placeholder-color, #9ca3af);
+  }
+  .empty-filter-state {
+    padding: 16px 0;
+    color: var(--body-text-color-subdued, #6b7280);
+    font-size: var(--text-sm, 12px);
+  }
   .image-modal-backdrop {
     position: fixed;
     inset: 0;
@@ -744,6 +870,30 @@
     cursor: pointer;
     font-size: 24px;
     line-height: 1;
+  }
+  .image-modal-nav {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    width: 48px;
+    height: 48px;
+    border: 0;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 35%);
+    color: white;
+    cursor: pointer;
+    font-size: 40px;
+    line-height: 1;
+    transform: translateY(-50%);
+  }
+  .image-modal-nav:hover {
+    background: rgb(0 0 0 / 55%);
+  }
+  .image-modal-prev {
+    left: 12px;
+  }
+  .image-modal-next {
+    right: 12px;
   }
   .modal-image-frame {
     position: relative;
@@ -793,6 +943,9 @@
   }
   .image-modal-meta {
     justify-content: center;
+  }
+  .image-modal-count {
+    margin-left: 8px;
   }
   .table-section {
     margin-bottom: 16px;
