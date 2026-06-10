@@ -106,6 +106,7 @@
 
   $effect(() => {
     sortOrder;
+    imageFilter;
     rawMediaItems;
     resetVisibleCounts();
   });
@@ -285,16 +286,6 @@
       {/if}
     </div>
   {:else}
-    <div class="media-toolbar">
-      <label class="media-control" for="media-sort-order">
-        <span>Sort</span>
-        <select id="media-sort-order" bind:value={sortOrder}>
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-        </select>
-      </label>
-    </div>
-
     {#snippet meta(item)}
       <div class="meta">
         <span class="run-dot" style:background={runColor(item)}></span>
@@ -303,20 +294,39 @@
     {/snippet}
     {#if mediaItems.images.length > 0}
       <details class="section" open>
-        <summary class="section-summary">
-          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="section-title">Images ({mediaItems.images.length})</span>
+        <summary class="section-summary image-section-summary">
+          <div class="section-heading">
+            <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="section-title">Images ({filteredImages.length})</span>
+          </div>
+          <div class="image-section-controls">
+            <div class="image-filter">
+              <input
+                type="text"
+                bind:value={imageFilter}
+                placeholder="Filter images..."
+                aria-label="Filter images"
+                onclick={(event) => event.stopPropagation()}
+                onkeydown={(event) => event.stopPropagation()}
+              />
+            </div>
+            <div class="media-control">
+              <span>Sort</span>
+              <select
+                id="media-sort-order"
+                bind:value={sortOrder}
+                aria-label="Sort media"
+                onclick={(event) => event.stopPropagation()}
+                onkeydown={(event) => event.stopPropagation()}
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+            </div>
+          </div>
         </summary>
-        <div class="image-filter">
-          <input
-            type="text"
-            bind:value={imageFilter}
-            placeholder="Filter images..."
-            aria-label="Filter images"
-          />
-        </div>
         <div class="gallery">
           {#each visibleMediaItems.images as img, i}
             <div class="gallery-item">
@@ -571,12 +581,19 @@
   .section {
     margin: 16px 0;
   }
-  .media-toolbar {
+  .section-heading,
+  .image-section-controls {
     display: flex;
-    justify-content: flex-end;
     align-items: center;
+    gap: 8px;
+  }
+  .image-section-summary {
+    justify-content: space-between;
     gap: 12px;
-    margin-bottom: 12px;
+  }
+  .image-section-controls {
+    flex: 1;
+    justify-content: flex-end;
   }
   .media-control {
     display: flex;
@@ -792,8 +809,7 @@
     color: var(--body-text-color-subdued, #9ca3af);
   }
   .image-filter {
-    margin-bottom: 12px;
-    max-width: 320px;
+    width: min(320px, 100%);
   }
   .image-filter input {
     width: 100%;
