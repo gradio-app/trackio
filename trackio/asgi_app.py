@@ -431,11 +431,11 @@ async def file_handler(request: Request) -> Response:
 
 
 async def artifact_blob_handler(request: Request) -> Response:
-    """Serve an artifact blob by (project, digest). Used by Phase 12's
-    consumer-side `Artifact.download()` remote fallback.
+    """Serve an artifact blob by `(project, digest)`.
 
     Path-param-only — no `?path=` query, so the client doesn't need to know
-    the server's `ARTIFACTS_DIR` filesystem layout.
+    the server's `ARTIFACTS_DIR` filesystem layout. Used by the consumer-side
+    `Artifact.download()` remote-fetch fallback.
     """
     from trackio import server as _server  # avoid circular import at module load
     from trackio.exceptions import TrackioAPIError

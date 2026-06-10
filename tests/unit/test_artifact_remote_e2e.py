@@ -1,16 +1,15 @@
-"""Phase 16 — full producer→Space→consumer round-trip with mocked RemoteClient.
+"""Full producer→Space→consumer round-trip with a mocked RemoteClient.
 
-Wires Phases 9-12 together in one in-process flow:
-- Phase 10 producer side calls a mock client that dispatches to real server
-  handlers (Phase 9) with auth + upload-state machinery bypassed.
-- Phase 12 download() fallback uses a stubbed `httpx.stream` that routes
-  GET /artifact_blob/{project}/{digest} to the real asgi handler.
+In-process integration:
+- The producer side calls a mock client that dispatches to the real server
+  handlers, with auth and upload-state machinery bypassed.
+- `download()`'s remote-fetch fallback uses a stubbed `httpx.stream` that
+  routes `GET /artifact_blob/{project}/{digest}` to the real asgi handler.
 
-Single CAS shared between "producer" and "server" — Phase 9's unit tests
-already pin the rehash/digest-verification behavior with two separate dirs.
-This file pins the high-level orchestration: that the right endpoints get
-called in the right order and the consumer can materialize byte-correct
-files at the end.
+Single CAS shared between "producer" and "server" — `test_artifact_server.py`
+pins the rehash/digest-verification behavior with two separate dirs. This file
+pins the high-level orchestration: the right endpoints get called in the right
+order and the consumer can materialize byte-correct files at the end.
 """
 
 import asyncio
@@ -118,7 +117,7 @@ def _api_calls(client) -> list[str]:
     return [name for name, _ in client.calls]
 
 
-# --- Phase 16 e2e ---
+# --- round-trip integration ---
 
 
 def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_remote):
@@ -136,8 +135,8 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
     assert "best" in art.aliases and "latest" in art.aliases
     assert art.metadata == {"acc": 0.91}
     # Shared CAS: blob is already present from _build_manifest, so the
-    # upload step short-circuits via /check_artifact_blobs. Phase 9 unit
-    # tests already verify the upload itself.
+    # upload step short-circuits via /check_artifact_blobs.
+    # test_artifact_server.py verifies the upload itself with two separate CAS dirs.
     assert _api_calls(in_process_remote) == [
         "/check_artifact_blobs",
         "/artifact_log",
@@ -185,8 +184,8 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
 def test_consumer_download_fetches_from_remote_when_local_missing(
     temp_dir, tmp_path, in_process_remote
 ):
-    """Force the Phase 12 fallback: delete the local blob, then download
-    must fetch via the /artifact_blob route. The fetch lands the blob back
+    """Force the remote-fetch fallback: delete the local blob, then download
+    must fetch via the `/artifact_blob` route. The fetch lands the blob back
     in the local CAS (also serving as the "server" CAS in this test)."""
     weights = tmp_path / "w.bin"
     payload = b"will-be-fetched-back"
@@ -257,7 +256,7 @@ def test_relog_identical_bytes_dedups_at_db_layer(
     assert versions[0]["version"] == 0
     assert "best" in versions[0]["aliases"] and "latest" in versions[0]["aliases"]
 
-    # Both runs appear as producers (Phase 10 + UNIQUE lineage index → 1 row each).
+    # Both runs appear as producers (UNIQUE lineage index → 1 row each).
     lineage_a = SQLiteStorage.get_run_artifacts("art-relog", "run-a", run_a.id)
     lineage_b = SQLiteStorage.get_run_artifacts("art-relog", "run-b", run_b.id)
     assert len(lineage_a["output"]) == 1
@@ -266,8 +265,8 @@ def test_relog_identical_bytes_dedups_at_db_layer(
 
 
 def test_consumer_download_after_finish(temp_dir, tmp_path, in_process_remote):
-    """Phase 10 + Phase 12: download() works after finish() because
-    _remote_source was snapshotted onto the Artifact."""
+    """`download()` works after `finish()` because `_remote_source` was
+    snapshotted onto the Artifact at `use_artifact` time."""
     weights = tmp_path / "w.bin"
     payload = b"post-finish-payload"
     weights.write_bytes(payload)

@@ -1,7 +1,12 @@
-"""Phase 13 — `bucket_storage.upload_project_to_bucket` ships artifact blobs.
+"""Sync-path coverage for artifacts.
 
-Tests the local→bucket sync path used by `trackio sync`. Mocks
-`huggingface_hub.batch_bucket_files` so we don't hit the network.
+- `bucket_storage.upload_project_to_bucket` ships blob bytes alongside DB+media.
+- `commit_scheduler` `allow_patterns` for dataset-mode sync include
+  `artifacts/**/*`.
+- `deploy._replay_pending_uploads` routes by `pending_uploads.kind`.
+
+Mocks `huggingface_hub` / `CommitScheduler` / RemoteClient so we don't hit the
+network.
 """
 
 import hashlib
@@ -89,7 +94,7 @@ def test_upload_project_to_bucket_ships_media_and_artifacts_together(
     assert f"trackio/artifacts/p/blobs/sha256/{digest[:2]}/{digest}" in remote_paths
 
 
-# --- Phase 15: sync_incremental replay routes by kind ---
+# --- sync_incremental replay routes by kind ---
 
 
 def test_replay_pending_uploads_routes_both_kinds(temp_dir, tmp_path):
@@ -160,7 +165,7 @@ def test_replay_pending_uploads_with_empty_queue_is_noop(temp_dir):
     client.predict.assert_not_called()
 
 
-# --- Phase 14: dataset-mode allow_patterns ---
+# --- dataset-mode allow_patterns ---
 
 
 def test_dataset_mode_allow_patterns_includes_artifacts(monkeypatch):

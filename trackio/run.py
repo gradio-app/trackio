@@ -1085,8 +1085,8 @@ class Run:
 
         `spec` is `"name"` (defaults to `:latest`), `"name:<alias>"`, or
         `"name:v<N>"`. Returns a freshly-hydrated `Artifact` whose `download()`
-        method materializes the files locally (Phase 5) or fetches from the
-        remote when needed (Phase 12).
+        method materializes the files from the local content-addressed cache,
+        falling back to the remote when a blob is missing locally.
         """
         if ":" in spec:
             name, version_or_alias = spec.split(":", 1)

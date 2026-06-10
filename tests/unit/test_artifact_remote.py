@@ -1,7 +1,7 @@
-"""Phase 10 — Run remote-mode `log_artifact` / `use_artifact` + sender routing.
+"""Run remote-mode `log_artifact` / `use_artifact` + sender routing.
 
 Unit-level tests with a mocked `self._client`. The full producer→Space→consumer
-round-trip via the real RemoteClient is covered by Phase 16.
+round-trip via a real RemoteClient is covered by `test_artifact_remote_e2e.py`.
 """
 
 import hashlib

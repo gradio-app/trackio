@@ -260,7 +260,7 @@ def test_list_artifact_blobs_present_rejects_path_traversal(temp_dir, monkeypatc
     assert present == set()
 
 
-# --- Phase 4 — Artifact class ---
+# --- Artifact class ---
 
 import errno
 import hashlib
@@ -509,7 +509,7 @@ def test_hydrate_from_db_populates_readonly_attrs():
     assert a._logged is True
 
 
-# --- Phase 5 — Artifact.download() local-only ---
+# --- Artifact.download() local materialization ---
 
 
 def _stage_blob(temp_dir: str, project: str, payload: bytes) -> tuple[str, int]:
@@ -674,7 +674,7 @@ def test_download_shared_digest_materializes_to_distinct_paths(temp_dir, tmp_pat
     assert (Path(out) / "b.bin").read_bytes() == b"same"
 
 
-# --- Phase 6 — Run.log_artifact / Run.use_artifact (local mode only) ---
+# --- Run.log_artifact / Run.use_artifact (local mode) ---
 
 import trackio
 
@@ -838,7 +838,7 @@ def test_relog_already_logged_artifact_raises(temp_dir, tmp_path):
     trackio.finish()
 
 
-# --- Phase 7 — Module-level re-exports + project-context use_artifact ---
+# --- module-level re-exports ---
 
 
 def test_module_log_artifact_inside_run_equivalent_to_run_method(temp_dir, tmp_path):

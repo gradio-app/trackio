@@ -1,4 +1,4 @@
-"""Phase 12 — remote fallback for Artifact.download().
+"""Remote fallback for `Artifact.download()`.
 
 Tests the consumer-side fetch when a blob is missing locally. Mocks `httpx`
 at the artifact module level so we don't need a real server.
@@ -17,7 +17,7 @@ from trackio.typehints import Sha256Digest
 
 
 def _stage_blob_on_disk(temp_dir, project, payload):
-    """Helper: place a blob in the local CAS as if produced by Phase 4."""
+    """Helper: place a blob in the local CAS as if produced by `_build_manifest`."""
     digest = hashlib.sha256(payload).hexdigest()
     base = Path(temp_dir) / "artifacts" / project / "blobs" / "sha256"
     blob = base / digest[:2] / digest
@@ -86,7 +86,7 @@ def fake_httpx(monkeypatch):
     return routes
 
 
-# --- Phase 12 tests ---
+# --- download() remote-fetch fallback ---
 
 
 def test_download_fetches_missing_blob_from_remote(temp_dir, tmp_path, fake_httpx):
@@ -165,8 +165,8 @@ def test_download_digest_mismatch_raises_runtime_error(temp_dir, tmp_path, fake_
     assert not target.exists()
 
 
-def test_download_without_remote_source_keeps_phase5_error(temp_dir, tmp_path):
-    """Regression for Phase 5: no _remote_source → original FileNotFoundError."""
+def test_download_without_remote_source_raises_file_not_found(temp_dir, tmp_path):
+    """No `_remote_source` → original local-only `FileNotFoundError`."""
     art = Artifact(name="m", type="model")
     art._hydrate_from_db(
         project="p",

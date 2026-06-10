@@ -683,9 +683,9 @@ def _replay_pending_uploads(
     """Replay queued `pending_uploads` rows for `project` via `client`.
 
     Routes by `kind`: 'media' → `/bulk_upload_media`, 'artifact_blob' →
-    `/bulk_upload_artifact_blob`. Mirrors the Phase 10 sender's routing logic
-    so a sync triggered outside a Run (via `trackio sync`) handles both kinds.
-    Clears the rows after sending.
+    `/bulk_upload_artifact_blob`. Same routing the in-`Run` sender uses, applied
+    to a sync triggered outside a Run context (via `trackio sync`). Clears the
+    rows after sending.
     """
     pending_uploads = SQLiteStorage.get_pending_uploads(project)
     if not pending_uploads:

@@ -1,4 +1,4 @@
-"""Phase 9 — server-side endpoints for the artifact round-trip path.
+"""Server-side endpoints for the artifact round-trip path.
 
 Read endpoints (no auth) are called directly. Write endpoints take a
 Request and call `assert_can_write_metrics`; tests use `Mock()` for the

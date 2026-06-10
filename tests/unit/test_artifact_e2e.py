@@ -1,8 +1,8 @@
 """End-to-end scenarios for the local artifact path.
 
-The Phase 4-7 unit tests in `test_artifact.py` exercise individual methods.
-This file covers cohesive multi-step user workflows at the public module-level
-API. These also serve as regression tests for the example in the docs.
+`test_artifact.py` covers individual methods. This file covers cohesive
+multi-step user workflows at the public module-level API. These also serve as
+regression tests for the example in the docs.
 """
 
 from pathlib import Path
