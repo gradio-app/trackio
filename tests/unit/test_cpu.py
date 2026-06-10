@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from trackio import context_vars, cpu
+from trackio.run import Run
 
 
 def _make_mock_psutil():
@@ -111,6 +112,20 @@ def test_log_cpu_requires_run():
         cpu.log_cpu()
 
 
+def test_log_cpu_warns_without_psutil():
+    old_psutil = cpu.psutil
+    old_available = cpu.PSUTIL_AVAILABLE
+    cpu.PSUTIL_AVAILABLE = False
+    cpu.psutil = None
+
+    with patch.dict("sys.modules", {"psutil": None}):
+        with pytest.warns(UserWarning, match=r"trackio.log_cpu\(\) requires psutil"):
+            assert cpu.log_cpu(run=MagicMock()) == {}
+
+    cpu.psutil = old_psutil
+    cpu.PSUTIL_AVAILABLE = old_available
+
+
 def test_log_cpu_with_run(mock_psutil_env):
     mock_run = MagicMock()
     result = cpu.log_cpu(run=mock_run)
@@ -127,3 +142,23 @@ def test_cpu_monitor_starts_and_stops(mock_psutil_env):
 
     assert monitor._thread is not None
     assert not monitor._thread.is_alive()
+
+
+def test_auto_log_cpu_warns_without_psutil():
+    old_psutil = cpu.psutil
+    old_available = cpu.PSUTIL_AVAILABLE
+    cpu.PSUTIL_AVAILABLE = False
+    cpu.psutil = None
+
+    with patch.dict("sys.modules", {"psutil": None}):
+        with pytest.warns(UserWarning, match="psutil is not installed"):
+            run = Run(
+                url=None,
+                project="test-project",
+                client=MagicMock(),
+                auto_log_cpu=True,
+            )
+        run.finish()
+
+    cpu.psutil = old_psutil
+    cpu.PSUTIL_AVAILABLE = old_available

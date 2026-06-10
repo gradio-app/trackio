@@ -288,6 +288,14 @@ def log_cpu(run: "Run | None" = None) -> dict:
         if run is None:
             raise RuntimeError("Call trackio.init() before trackio.log_cpu().")
 
+    try:
+        _ensure_psutil()
+    except ImportError:
+        warnings.warn(
+            "trackio.log_cpu() requires psutil. Install it with: pip install trackio[cpu]"
+        )
+        return {}
+
     metrics = collect_cpu_metrics()
     if metrics:
         run.log_system(metrics)

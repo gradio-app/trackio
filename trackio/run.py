@@ -18,7 +18,7 @@ from trackio.alerts import (
     should_send_webhook,
 )
 from trackio.apple_gpu import AppleGpuMonitor, apple_gpu_available
-from trackio.cpu import CpuMonitor, cpu_available
+from trackio.cpu import CpuMonitor
 from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
@@ -192,9 +192,8 @@ class Run:
         self._cpu_monitor: "CpuMonitor | None" = None
         if auto_log_cpu:
             try:
-                if cpu_available():
-                    self._cpu_monitor = CpuMonitor(self, interval=cpu_log_interval)
-                    self._cpu_monitor.start()
+                self._cpu_monitor = CpuMonitor(self, interval=cpu_log_interval)
+                self._cpu_monitor.start()
             except Exception as e:
                 self._warn_once(
                     "cpu-monitor",
