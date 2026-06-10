@@ -143,8 +143,8 @@ def collect_cpu_metrics(
                     disk.write_count - prev_disk_counters.write_count
                 ) / elapsed
             else:
-                metrics["disk/read_bytes"] = disk.read_bytes / (1024**3)
-                metrics["disk/write_bytes"] = disk.write_bytes / (1024**3)
+                metrics["disk/read_bytes"] = disk.read_bytes
+                metrics["disk/write_bytes"] = disk.write_bytes
     except Exception:
         pass
 
@@ -163,8 +163,8 @@ def collect_cpu_metrics(
                     / (1024**2)
                 )
             else:
-                metrics["network/sent_bytes"] = net.bytes_sent / (1024**3)
-                metrics["network/recv_bytes"] = net.bytes_recv / (1024**3)
+                metrics["network/sent_bytes"] = net.bytes_sent
+                metrics["network/recv_bytes"] = net.bytes_recv
     except Exception:
         pass
 
@@ -202,6 +202,7 @@ class CpuMonitor:
         self._last_disk_counters: Any = None
         self._last_net_counters: Any = None
         self._last_time: float | None = None
+        self._include_static_next = True
 
     def start(self):
         if not PSUTIL_AVAILABLE:
@@ -244,8 +245,9 @@ class CpuMonitor:
                     prev_disk_counters=self._last_disk_counters,
                     prev_net_counters=self._last_net_counters,
                     elapsed=elapsed,
-                    include_static=False,
+                    include_static=self._include_static_next,
                 )
+                self._include_static_next = False
                 try:
                     self._last_disk_counters = psutil.disk_io_counters()
                 except Exception:

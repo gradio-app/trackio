@@ -72,8 +72,8 @@ def test_collect_cpu_metrics_covers_supported_groups(mock_psutil_env):
     assert metrics["memory/used"] == pytest.approx(8.0)
     assert metrics["memory/percent"] == 50.0
     assert metrics["swap/percent"] == 12.5
-    assert "disk/read_bytes" in metrics
-    assert "network/recv_bytes" in metrics
+    assert metrics["disk/read_bytes"] == 1_000_000_000
+    assert metrics["network/recv_bytes"] == 800_000_000
     assert metrics["temp/Core 0"] == 55.0
     assert metrics["battery/power_plugged"] == 1
 

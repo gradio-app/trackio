@@ -112,7 +112,7 @@ def collect_apple_metrics() -> dict:
     """
     from trackio.cpu import collect_cpu_metrics
 
-    metrics = collect_cpu_metrics(include_static=False)
+    metrics = collect_cpu_metrics(include_static=True)
 
     gpu_info = get_gpu_info()
     if gpu_info.get("detected"):
