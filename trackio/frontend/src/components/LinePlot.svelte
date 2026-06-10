@@ -264,11 +264,6 @@
 
     return {
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      title: {
-        text: title,
-        fontSize: 13,
-        color: cssVar("--body-text-color", "#374151"),
-      },
       width: "container",
       height: fullscreen ? "container" : 250,
       autosize: { type: "fit", contains: "padding" },
@@ -637,6 +632,9 @@
     </div>
   {/if}
   {#if !fullscreen}
+    {#if title}
+      <div class="plot-title">{title}</div>
+    {/if}
     <div class="plot-chart-wrap">
       <div class="plot" bind:this={container}></div>
       {#if xLim && onResetZoom}
@@ -747,6 +745,9 @@
         </svg>
       </button>
     </div>
+    {#if title}
+      <div class="plot-title plot-title--fs">{title}</div>
+    {/if}
     <div class="fullscreen-chart-wrap">
       <div class="plot-chart-wrap plot-chart-wrap--fs">
         <div class="plot fullscreen-plot" bind:this={container}></div>
@@ -924,6 +925,17 @@
     display: block;
     flex-shrink: 0;
     filter: drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.95));
+  }
+  .plot-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--body-text-color, #374151);
+    text-align: center;
+    padding: 0 0 6px;
+    word-break: break-word;
+  }
+  .plot-title--fs {
+    flex-shrink: 0;
   }
   .plot {
     width: 100%;
