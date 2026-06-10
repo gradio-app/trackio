@@ -658,6 +658,7 @@ def init(
         group=group,
         config=config,
         space_id=space_id,
+        bucket_id=bucket_id,
         server_base_url=server_base_url,
         write_token=write_token_resolved,
         existing_runs=existing_runs,

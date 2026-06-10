@@ -2380,10 +2380,19 @@ class SQLiteStorage:
         bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
         if bucket_id is not None:
             if not SQLiteStorage._dataset_import_attempted:
+                from trackio import fragments
                 from trackio.bucket_storage import download_bucket_to_trackio_dir
 
                 try:
                     download_bucket_to_trackio_dir(bucket_id)
+                except Exception:
+                    pass
+                try:
+                    fragments.import_inbox_from_bucket(bucket_id)
+                except Exception:
+                    pass
+                try:
+                    fragments.import_inbox_dir()
                 except Exception:
                     pass
             SQLiteStorage._dataset_import_attempted = True

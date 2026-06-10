@@ -113,6 +113,26 @@ Controls the maximum length of string values displayed in table cells before the
 export TRACKIO_TABLE_TRUNCATE_LENGTH="500"
 ```
 
+### `TRACKIO_STORAGE_MODE`
+
+Controls how Trackio persists data locally. Allowed values: `auto` (default), `sqlite`, `jsonl`.
+
+- `sqlite`: training processes write directly to the project SQLite database (the historical behavior).
+- `jsonl`: training processes write append-only JSONL fragments to `TRACKIO_DIR/inbox/`, one file per process; the dashboard server (`trackio show`) imports them into SQLite. This avoids concurrent SQLite writers entirely, which makes Trackio safe on network filesystems (NFS, Lustre, FSx, GPFS, WekaFS, CephFS, ...) where SQLite's locking and mmap semantics are unreliable.
+- `auto`: picks `jsonl` automatically when `TRACKIO_DIR` is detected to be on a network filesystem (Linux only), otherwise `sqlite`.
+
+```bash
+export TRACKIO_STORAGE_MODE="jsonl"
+```
+
+### `TRACKIO_INBOX_POLL_INTERVAL`
+
+How often (in seconds) the dashboard server and Trackio Spaces check for new JSONL fragments to import, both from the local inbox directory and from the Hugging Face Bucket inbox. Defaults to `60`; values below `5` are clamped to `5`.
+
+```bash
+export TRACKIO_INBOX_POLL_INTERVAL="30"
+```
+
 ### `TRACKIO_WEBHOOK_URL`
 
 Sets a global webhook URL for alerts. When set, every call to `trackio.alert()` will POST the alert payload to this URL. Supports Slack and Discord webhook URLs natively (payloads are formatted automatically). Can be overridden per-alert or per-run via the `webhook_url` parameter.

@@ -1,6 +1,7 @@
 import os
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import Any
 import huggingface_hub
 from gradio_client import handle_file
 
-from trackio import utils
+from trackio import fragments, utils
 from trackio.alerts import (
     AlertLevel,
     format_alert_terminal,
@@ -32,6 +33,7 @@ from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namesp
 
 BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
+BUCKET_FLUSH_INTERVAL = 30
 
 
 class Run:
@@ -45,6 +47,7 @@ class Run:
         group: str | None = None,
         config: dict | None = None,
         space_id: str | None = None,
+        bucket_id: str | None = None,
         server_base_url: str | None = None,
         write_token: str | None = None,
         existing_runs: list[str] | None = None,
@@ -74,6 +77,10 @@ class Run:
                 Keys starting with '_' are reserved for internal use.
             space_id: The HF Space ID if logging to a Space (e.g., "user/space").
                 If provided, media files will be uploaded to the Space.
+            bucket_id: The HF Bucket ID attached to the Space, if any. When set,
+                logs that cannot be delivered to the Space are written as JSONL
+                fragments directly to the Bucket inbox so they survive ephemeral
+                environments; the Space imports them once it is running.
             existing_runs: Optional pre-fetched run names for this project. Used to
                 avoid redundant storage or remote lookups during init.
             initial_last_step: Optional pre-fetched last step for a resumed run.
@@ -103,9 +110,13 @@ class Run:
         self._client_thread = None
         self._client = client
         self._space_id = space_id
+        self._bucket_id = bucket_id if space_id is not None else None
         self._server_base_url = server_base_url
         self._write_token = write_token
         self._remote_storage_key = space_id or server_base_url
+        self._storage_mode = utils.get_storage_mode()
+        self._fragment_writer = fragments.FragmentWriter()
+        self._last_bucket_flush: float | None = None
         self.id = run_id or uuid.uuid4().hex
         self._existing_runs = existing_runs
         self._initial_last_step = initial_last_step
@@ -341,7 +352,40 @@ class Run:
                     f"trackio's local logging thread hit an internal error: {e}. User code will continue, but some Trackio data may be dropped.",
                 )
 
+    def _stamped_records(self, records: list[dict]) -> list[dict]:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        for record in records:
+            if not record.get("timestamp"):
+                record["timestamp"] = timestamp
+        return records
+
+    def _attach_run_config(self, records: list[dict]) -> list[dict]:
+        if not self.config:
+            return records
+        if any(record.get("config") for record in records):
+            return records
+        for record in records:
+            if record.get("run_id") == self.id:
+                record["config"] = utils.to_json_safe(self.config)
+                break
+        return records
+
+    def _write_records_to_local_inbox(self, records: list[dict], warning_key: str):
+        try:
+            self._fragment_writer.write_local(self._stamped_records(records))
+        except Exception as e:
+            self._warn_once(
+                warning_key,
+                f"trackio failed to write a JSONL fragment for run '{self.name}': {e}. User code will continue, but this batch could not be persisted.",
+            )
+
     def _write_logs_to_sqlite(self, logs: list[LogEntry]):
+        if self._storage_mode == "jsonl":
+            self._write_records_to_local_inbox(
+                [fragments.metric_record(entry) for entry in logs],
+                "write-logs-fragment",
+            )
+            return
         try:
             logs_by_run: dict[tuple, dict] = {}
             for entry in logs:
@@ -377,6 +421,12 @@ class Run:
             )
 
     def _write_system_logs_to_sqlite(self, logs: list[SystemLogEntry]):
+        if self._storage_mode == "jsonl":
+            self._write_records_to_local_inbox(
+                [fragments.system_metric_record(entry) for entry in logs],
+                "write-system-logs-fragment",
+            )
+            return
         try:
             logs_by_run: dict[tuple, dict] = {}
             for entry in logs:
@@ -404,6 +454,18 @@ class Run:
             )
 
     def _write_alerts_to_sqlite(self, alerts: list[AlertEntry]):
+        records = [fragments.alert_record(entry) for entry in alerts]
+        if self._remote_storage_key and self._bucket_id is not None:
+            try:
+                self._fragment_writer.write_to_bucket(
+                    self._stamped_records(records), self._bucket_id
+                )
+                return
+            except Exception:
+                pass
+        if self._storage_mode == "jsonl":
+            self._write_records_to_local_inbox(records, "write-alerts-fragment")
+            return
         try:
             alerts_by_run: dict[tuple, dict] = {}
             for entry in alerts:
@@ -540,6 +602,7 @@ class Run:
 
                     if failed:
                         consecutive_failures += 1
+                        self._drain_pending_to_bucket()
                     else:
                         consecutive_failures = 0
                         if self._has_local_buffer:
@@ -551,8 +614,26 @@ class Run:
                     f"trackio's remote logging thread hit an internal error: {e}. User code will continue while Trackio retries in the background.",
                 )
 
+    def _persist_records_as_fragments(self, records: list[dict], warning_key: str):
+        records = self._stamped_records(records)
+        if self._bucket_id is not None:
+            try:
+                self._fragment_writer.write_to_bucket(records, self._bucket_id)
+                return
+            except Exception:
+                pass
+        self._write_records_to_local_inbox(records, warning_key)
+
     def _persist_logs_locally(self, logs: list[LogEntry]):
         if not self._remote_storage_key:
+            return
+        if self._storage_mode == "jsonl":
+            self._persist_records_as_fragments(
+                self._attach_run_config(
+                    [fragments.metric_record(entry) for entry in logs]
+                ),
+                "persist-logs-fragment",
+            )
             return
         try:
             logs_by_run: dict[tuple, dict] = {}
@@ -592,6 +673,12 @@ class Run:
     def _persist_system_logs_locally(self, logs: list[SystemLogEntry]):
         if not self._remote_storage_key:
             return
+        if self._storage_mode == "jsonl":
+            self._persist_records_as_fragments(
+                [fragments.system_metric_record(entry) for entry in logs],
+                "persist-system-logs-fragment",
+            )
+            return
         try:
             logs_by_run: dict[tuple, dict] = {}
             for entry in logs:
@@ -619,19 +706,44 @@ class Run:
                 f"trackio could not persist failed remote system logs locally for run '{self.name}': {e}. User code will continue, but this batch could be lost.",
             )
 
+    @staticmethod
+    def _upload_entry_file_path(entry: UploadEntry) -> str:
+        file_data = entry.get("uploaded_file")
+        if isinstance(file_data, dict):
+            return file_data.get("path", "")
+        elif hasattr(file_data, "path"):
+            return str(file_data.path)
+        return str(file_data)
+
     def _persist_uploads_locally(self, uploads: list[UploadEntry]):
         if not self._remote_storage_key:
             return
+        if self._storage_mode == "jsonl":
+            if self._bucket_id is None:
+                return
+            try:
+                fragments.upload_media_files_to_bucket(
+                    self._bucket_id,
+                    [
+                        {
+                            "project": entry["project"],
+                            "run": entry.get("run"),
+                            "step": entry.get("step"),
+                            "relative_path": entry.get("relative_path"),
+                            "file_path": self._upload_entry_file_path(entry),
+                        }
+                        for entry in uploads
+                    ],
+                )
+            except Exception as e:
+                self._warn_once(
+                    "persist-uploads-fragment",
+                    f"trackio could not upload media files to Bucket '{self._bucket_id}' for run '{self.name}': {e}. User code will continue, but some artifacts could be missing.",
+                )
+            return
         try:
             for entry in uploads:
-                file_data = entry.get("uploaded_file")
-                file_path = ""
-                if isinstance(file_data, dict):
-                    file_path = file_data.get("path", "")
-                elif hasattr(file_data, "path"):
-                    file_path = str(file_data.path)
-                else:
-                    file_path = str(file_data)
+                file_path = self._upload_entry_file_path(entry)
                 SQLiteStorage.add_pending_upload(
                     project=entry["project"],
                     space_id=self._remote_storage_key,
@@ -703,6 +815,69 @@ class Run:
                 f"trackio could not flush buffered remote data for run '{self.name}': {e}. It will retry later if possible.",
             )
 
+    def _drain_pending_to_bucket(self, force: bool = False):
+        if self._bucket_id is None or not self._has_local_buffer:
+            return
+        if not force:
+            now = time.monotonic()
+            if (
+                self._last_bucket_flush is not None
+                and now - self._last_bucket_flush < BUCKET_FLUSH_INTERVAL
+            ):
+                return
+        self._last_bucket_flush = time.monotonic()
+        try:
+            pending = SQLiteStorage.get_pending_logs(self.project)
+            if pending:
+                records = self._attach_run_config(
+                    [fragments.metric_record(entry) for entry in pending["logs"]]
+                )
+                self._fragment_writer.write_to_bucket(records, self._bucket_id)
+                SQLiteStorage.clear_pending_logs(self.project, pending["ids"])
+
+            pending_sys = SQLiteStorage.get_pending_system_logs(self.project)
+            if pending_sys:
+                records = [
+                    fragments.system_metric_record(entry)
+                    for entry in pending_sys["logs"]
+                ]
+                self._fragment_writer.write_to_bucket(records, self._bucket_id)
+                SQLiteStorage.clear_pending_system_logs(
+                    self.project, pending_sys["ids"]
+                )
+
+            pending_uploads = SQLiteStorage.get_pending_uploads(self.project)
+            if pending_uploads:
+                fragments.upload_media_files_to_bucket(
+                    self._bucket_id, pending_uploads["uploads"]
+                )
+                SQLiteStorage.clear_pending_uploads(
+                    self.project, pending_uploads["ids"]
+                )
+
+            self._has_local_buffer = SQLiteStorage.has_pending_data(self.project)
+        except Exception as e:
+            self._warn_once(
+                "bucket-drain",
+                f"trackio could not upload buffered logs to Bucket '{self._bucket_id}': {e}. It will retry later if possible.",
+            )
+
+    def _spill_queues_while_waiting(self):
+        if self._bucket_id is None:
+            return
+        now = time.monotonic()
+        if (
+            self._last_bucket_flush is not None
+            and now - self._last_bucket_flush < BUCKET_FLUSH_INTERVAL
+        ):
+            return
+        self._last_bucket_flush = now
+        with self._client_lock:
+            if self._client is not None:
+                return
+            self._flush_queues_inline()
+        self._drain_pending_to_bucket(force=True)
+
     def _init_client_background(self):
         if self._client is None:
             fib = utils.fibo()
@@ -727,6 +902,10 @@ class Run:
                     with self._client_lock:
                         self._client = client
                     break
+                except Exception:
+                    pass
+                try:
+                    self._spill_queues_while_waiting()
                 except Exception:
                     pass
                 sleep_time = min(0.1 * sleep_coefficient, MAX_BACKOFF)
@@ -1048,6 +1227,17 @@ class Run:
                         f"trackio.finish() could not inspect pending buffered logs for project '{self.project}': {e}.",
                     )
                     has_pending = False
+
+                if has_pending and self._bucket_id is not None:
+                    self._has_local_buffer = True
+                    self._drain_pending_to_bucket(force=True)
+                    has_pending = self._has_local_buffer
+                    if not has_pending:
+                        print(
+                            f"* Some logs could not be sent to the Space directly: they were uploaded to "
+                            f"the Hugging Face Bucket '{self._bucket_id}' instead and will appear on the "
+                            f"dashboard once the Space is running."
+                        )
 
                 if has_pending:
                     if self._space_id is not None:
