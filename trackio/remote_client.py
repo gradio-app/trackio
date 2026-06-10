@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -165,9 +166,13 @@ class _TrackioGradioCompatClient:
         httpx_kwargs: dict[str, Any] | None = None,
         verbose: bool = False,
     ) -> None:
+        supported_params = inspect.signature(GradioClient.__init__).parameters
         kwargs: dict[str, Any] = {"verbose": verbose}
         if hf_token:
-            kwargs["hf_token"] = hf_token
+            if "hf_token" in supported_params:
+                kwargs["hf_token"] = hf_token
+            elif "token" in supported_params:
+                kwargs["token"] = hf_token
         merged = dict(httpx_kwargs or {})
         h = _merge_client_headers(
             hf_token if hf_token else None,
@@ -177,8 +182,11 @@ class _TrackioGradioCompatClient:
         if isinstance(extra, dict):
             h.update({str(k): str(v) for k, v in extra.items()})
         if h:
-            merged["headers"] = h
-        if merged:
+            if "httpx_kwargs" in supported_params:
+                merged["headers"] = h
+            elif "headers" in supported_params:
+                kwargs["headers"] = h
+        if merged and "httpx_kwargs" in supported_params:
             kwargs["httpx_kwargs"] = merged
         self._client = GradioClient(src, **kwargs)
 
