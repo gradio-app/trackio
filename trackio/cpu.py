@@ -1,7 +1,10 @@
+import importlib
 import threading
 import time
 import warnings
 from typing import TYPE_CHECKING, Any
+
+from trackio import context_vars
 
 if TYPE_CHECKING:
     from trackio.run import Run
@@ -19,9 +22,7 @@ def _ensure_psutil():
         if PSUTIL_AVAILABLE:
             return psutil
         try:
-            import psutil as _psutil
-
-            psutil = _psutil
+            psutil = importlib.import_module("psutil")
             PSUTIL_AVAILABLE = True
             return psutil
         except ImportError:
@@ -283,8 +284,6 @@ def log_cpu(run: "Run | None" = None) -> dict:
         trackio.log_cpu()
         ```
     """
-    from trackio import context_vars
-
     if run is None:
         run = context_vars.current_run.get()
         if run is None:
