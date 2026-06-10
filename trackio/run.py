@@ -117,6 +117,8 @@ class Run:
         self._storage_mode = utils.get_storage_mode()
         self._fragment_writer = fragments.FragmentWriter()
         self._last_bucket_flush: float | None = None
+        self._spilled_metric_ids: set[int] = set()
+        self._spilled_system_ids: set[int] = set()
         self.id = run_id or uuid.uuid4().hex
         self._existing_runs = existing_runs
         self._initial_last_step = initial_last_step
@@ -602,11 +604,16 @@ class Run:
 
                     if failed:
                         consecutive_failures += 1
-                        self._drain_pending_to_bucket()
                     else:
                         consecutive_failures = 0
                         if self._has_local_buffer:
-                            self._flush_local_buffer()
+                            flushed = self._flush_local_buffer()
+                            if (
+                                not flushed
+                                and self._stop_flag.is_set()
+                                and self._bucket_id is not None
+                            ):
+                                return
             except Exception as e:
                 consecutive_failures += 1
                 self._warn_once(
@@ -760,7 +767,7 @@ class Run:
                 f"trackio could not persist failed remote file uploads locally for run '{self.name}': {e}. User code will continue, but some artifacts could be lost.",
             )
 
-    def _flush_local_buffer(self):
+    def _flush_local_buffer(self) -> bool:
         try:
             buffered_logs = SQLiteStorage.get_pending_logs(self.project)
             if buffered_logs:
@@ -809,42 +816,89 @@ class Run:
                 )
 
             self._has_local_buffer = False
+            return True
         except Exception as e:
             self._warn_once(
                 "flush-local-buffer",
                 f"trackio could not flush buffered remote data for run '{self.name}': {e}. It will retry later if possible.",
             )
+            return False
 
-    def _drain_pending_to_bucket(self, force: bool = False):
+    def _unspilled_pending(
+        self, pending: dict | None, spilled_ids: set[int]
+    ) -> list[dict]:
+        if not pending:
+            return []
+        return [
+            entry
+            for entry_id, entry in zip(pending["ids"], pending["logs"])
+            if entry_id not in spilled_ids
+        ]
+
+    def _spill_pending_to_bucket(self):
+        """
+        Write pending rows to the Bucket inbox without clearing them, so the
+        normal /bulk_log replay still happens if the Space becomes reachable
+        (the Space deduplicates by log_id).
+        """
+        try:
+            pending = SQLiteStorage.get_pending_logs(self.project)
+            entries = self._unspilled_pending(pending, self._spilled_metric_ids)
+            if entries:
+                records = self._attach_run_config(
+                    [fragments.metric_record(entry) for entry in entries]
+                )
+                self._fragment_writer.write_to_bucket(records, self._bucket_id)
+                self._spilled_metric_ids.update(pending["ids"])
+
+            pending_sys = SQLiteStorage.get_pending_system_logs(self.project)
+            entries = self._unspilled_pending(pending_sys, self._spilled_system_ids)
+            if entries:
+                records = [fragments.system_metric_record(entry) for entry in entries]
+                self._fragment_writer.write_to_bucket(records, self._bucket_id)
+                self._spilled_system_ids.update(pending_sys["ids"])
+
+            pending_uploads = SQLiteStorage.get_pending_uploads(self.project)
+            if pending_uploads:
+                fragments.upload_media_files_to_bucket(
+                    self._bucket_id, pending_uploads["uploads"]
+                )
+                SQLiteStorage.clear_pending_uploads(
+                    self.project, pending_uploads["ids"]
+                )
+        except Exception as e:
+            self._warn_once(
+                "bucket-spill",
+                f"trackio could not upload buffered logs to Bucket '{self._bucket_id}': {e}. It will retry later if possible.",
+            )
+
+    def _drain_pending_to_bucket(self):
         if self._bucket_id is None or not self._has_local_buffer:
             return
-        if not force:
-            now = time.monotonic()
-            if (
-                self._last_bucket_flush is not None
-                and now - self._last_bucket_flush < BUCKET_FLUSH_INTERVAL
-            ):
-                return
-        self._last_bucket_flush = time.monotonic()
         try:
             pending = SQLiteStorage.get_pending_logs(self.project)
             if pending:
-                records = self._attach_run_config(
-                    [fragments.metric_record(entry) for entry in pending["logs"]]
-                )
-                self._fragment_writer.write_to_bucket(records, self._bucket_id)
+                entries = self._unspilled_pending(pending, self._spilled_metric_ids)
+                if entries:
+                    records = self._attach_run_config(
+                        [fragments.metric_record(entry) for entry in entries]
+                    )
+                    self._fragment_writer.write_to_bucket(records, self._bucket_id)
                 SQLiteStorage.clear_pending_logs(self.project, pending["ids"])
+                self._spilled_metric_ids.update(pending["ids"])
 
             pending_sys = SQLiteStorage.get_pending_system_logs(self.project)
             if pending_sys:
-                records = [
-                    fragments.system_metric_record(entry)
-                    for entry in pending_sys["logs"]
-                ]
-                self._fragment_writer.write_to_bucket(records, self._bucket_id)
+                entries = self._unspilled_pending(pending_sys, self._spilled_system_ids)
+                if entries:
+                    records = [
+                        fragments.system_metric_record(entry) for entry in entries
+                    ]
+                    self._fragment_writer.write_to_bucket(records, self._bucket_id)
                 SQLiteStorage.clear_pending_system_logs(
                     self.project, pending_sys["ids"]
                 )
+                self._spilled_system_ids.update(pending_sys["ids"])
 
             pending_uploads = SQLiteStorage.get_pending_uploads(self.project)
             if pending_uploads:
@@ -865,6 +919,14 @@ class Run:
     def _spill_queues_while_waiting(self):
         if self._bucket_id is None:
             return
+        if not (
+            self._queued_logs
+            or self._queued_system_logs
+            or self._queued_uploads
+            or self._queued_alerts
+            or self._has_local_buffer
+        ):
+            return
         now = time.monotonic()
         if (
             self._last_bucket_flush is not None
@@ -876,7 +938,7 @@ class Run:
             if self._client is not None:
                 return
             self._flush_queues_inline()
-        self._drain_pending_to_bucket(force=True)
+        self._spill_pending_to_bucket()
 
     def _init_client_background(self):
         if self._client is None:
@@ -1230,7 +1292,7 @@ class Run:
 
                 if has_pending and self._bucket_id is not None:
                     self._has_local_buffer = True
-                    self._drain_pending_to_bucket(force=True)
+                    self._drain_pending_to_bucket()
                     has_pending = self._has_local_buffer
                     if not has_pending:
                         print(

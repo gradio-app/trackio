@@ -253,6 +253,73 @@ def test_remote_run_drains_pending_to_bucket(temp_dir, monkeypatch):
     assert config["lr"] == 0.01
 
 
+def test_transient_failure_recovers_via_replay_not_bucket(temp_dir, monkeypatch):
+    fake_hub = FakeBucketHub()
+    monkeypatch.setattr(fragments, "huggingface_hub", fake_hub)
+
+    calls = {"n": 0}
+    received = []
+
+    def predict(*args, **kwargs):
+        if kwargs.get("api_name") == "/bulk_log":
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise Exception("ReadTimeout: The read operation timed out")
+            received.extend(kwargs["logs"])
+
+    run = Run(
+        url="user/space",
+        project="proj",
+        client=SimpleNamespace(predict=predict),
+        name="run1",
+        space_id="user/space",
+        bucket_id="user/bucket",
+    )
+    run.log({"x": 1})
+    run.log({"x": 2})
+    deadline = time.time() + 10
+    while time.time() < deadline and len(received) < 2:
+        time.sleep(0.1)
+    run.finish()
+
+    assert fake_hub.files == {}
+    assert {entry["metrics"]["x"] for entry in received} == {1, 2}
+    assert not SQLiteStorage.has_pending_data("proj")
+
+
+def test_cold_start_spills_to_bucket_without_clearing(temp_dir, monkeypatch):
+    fake_hub = FakeBucketHub()
+    monkeypatch.setattr(fragments, "huggingface_hub", fake_hub)
+    monkeypatch.setattr(
+        "trackio.run.RemoteClient",
+        MagicMock(side_effect=ConnectionError("Space is not running")),
+    )
+
+    run = Run(
+        url="user/space",
+        project="proj",
+        client=None,
+        name="run1",
+        space_id="user/space",
+        bucket_id="user/bucket",
+    )
+    run.log({"x": 1})
+
+    deadline = time.time() + 10
+    while time.time() < deadline and not fake_hub.files:
+        time.sleep(0.1)
+    assert any(p.startswith(fragments.BUCKET_INBOX_PREFIX) for p in fake_hub.files)
+    assert SQLiteStorage.has_pending_data("proj")
+
+    run.finish()
+    assert not SQLiteStorage.has_pending_data("proj")
+
+    assert fragments.import_inbox_from_bucket("user/bucket") == 1
+    logs = SQLiteStorage.get_logs("proj", "run1")
+    assert len(logs) == 1
+    assert logs[0]["x"] == 1
+
+
 def test_remote_run_jsonl_mode_skips_sqlite_staging(temp_dir, monkeypatch):
     monkeypatch.setenv("TRACKIO_STORAGE_MODE", "jsonl")
     fake_hub = FakeBucketHub()
