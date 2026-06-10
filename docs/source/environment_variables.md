@@ -127,7 +127,7 @@ export TRACKIO_STORAGE_MODE="jsonl"
 
 ### `TRACKIO_INBOX_POLL_INTERVAL`
 
-How often (in seconds) the dashboard server and Trackio Spaces check for new JSONL fragments to import, both from the local inbox directory and from the Hugging Face Bucket inbox. Defaults to `60`; values below `5` are clamped to `5`.
+How often (in seconds) the dashboard server and Trackio Spaces check for new JSONL fragments to import, both from the local inbox directory and from the Hugging Face Bucket inbox. Defaults to `15`; values below `5` are clamped to `5`.
 
 ```bash
 export TRACKIO_INBOX_POLL_INTERVAL="30"

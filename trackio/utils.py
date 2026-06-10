@@ -229,9 +229,9 @@ def is_network_filesystem(path: Path) -> bool:
 
 def get_inbox_poll_interval() -> float:
     try:
-        interval = float(os.environ.get("TRACKIO_INBOX_POLL_INTERVAL", "60"))
+        interval = float(os.environ.get("TRACKIO_INBOX_POLL_INTERVAL", "15"))
     except ValueError:
-        return 60.0
+        return 15.0
     return max(interval, 5.0)
 
 

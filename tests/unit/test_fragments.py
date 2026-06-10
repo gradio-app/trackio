@@ -3,7 +3,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import trackio
 from trackio import Run, fragments, utils
+from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -237,3 +239,37 @@ def test_cold_start_spills_to_bucket_without_clearing(temp_dir, monkeypatch):
     logs = SQLiteStorage.get_logs("proj", "run1")
     assert len(logs) == 1
     assert logs[0]["x"] == 1
+
+
+def test_network_filesystem_jsonl_end_to_end(temp_dir, monkeypatch):
+    monkeypatch.setattr(utils, "_filesystem_type_for_path", lambda path: "lustre")
+    project = "test-lustre-project"
+    run_name = "lustre-run"
+
+    trackio.init(project=project, name=run_name)
+    trackio.log(metrics={"loss": 0.1})
+    trackio.log(metrics={"loss": 0.05, "acc": 0.9})
+    trackio.finish()
+
+    assert SQLiteStorage.get_logs(project=project, run=run_name) == []
+    assert list(fragments.local_inbox_dir().rglob("*.jsonl"))
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    try:
+        client = Client(url, verbose=False)
+        summary = None
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            summary = client.predict(
+                project=project, run=run_name, api_name="/get_run_summary"
+            )
+            if summary and summary.get("num_logs") == 2:
+                break
+            time.sleep(1)
+        assert summary["num_logs"] == 2
+
+        logs = SQLiteStorage.get_logs(project=project, run=run_name)
+        assert [entry["loss"] for entry in logs] == [0.1, 0.05]
+        assert logs[1]["acc"] == 0.9
+    finally:
+        app.close()

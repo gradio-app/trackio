@@ -74,6 +74,12 @@ def _inbox_poll_loop() -> None:
 
 def start_inbox_poller() -> None:
     global _inbox_poller_thread
+    try:
+        from trackio import fragments  # noqa: PLC0415
+
+        fragments.import_inbox_dir()
+    except Exception as e:
+        logger.warning("inbox fragment import at startup failed: %s", e)
     with _inbox_poller_lock:
         if _inbox_poller_thread is not None and _inbox_poller_thread.is_alive():
             return
