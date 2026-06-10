@@ -13,6 +13,7 @@ import time
 import uuid
 import warnings
 from collections import deque
+from collections.abc import Iterable, Iterator
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -60,13 +61,22 @@ def _validate_project_name(project: Any) -> str:
     return project
 
 
-def _stage_blob(
-    src_path: Path,
+def _stage_blob_from_chunks(
+    chunks: Iterable[bytes],
     claimed_digest: Sha256Digest,
     target_path: Path,
     max_bytes: int | None,
 ) -> None:
-    """Stream src_path → CAS partial → atomic rename."""
+    """Stream `chunks` into a `.partial.<uuid>` file in the CAS dir, rehashing
+    and size-capping as we go. On match, atomic-rename to `target_path`. On
+    failure, clean up the partial.
+
+    Same-filesystem rename is guaranteed because the partial lives inside the
+    CAS directory; this avoids cross-device `EXDEV` issues.
+
+    If `target_path.is_file()` already, returns without consuming `chunks` —
+    callers should check beforehand if they want to avoid even fetching.
+    """
     if target_path.is_file():
         return
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,8 +84,10 @@ def _stage_blob(
     sha = hashlib.sha256()
     written = 0
     try:
-        with src_path.open("rb") as src, partial.open("wb") as dst:
-            while chunk := src.read(_BLOB_STREAM_CHUNK_SIZE):
+        with partial.open("wb") as dst:
+            for chunk in chunks:
+                if not chunk:
+                    continue
                 written += len(chunk)
                 if max_bytes is not None and written > max_bytes:
                     raise ValueError(f"Artifact blob exceeds {max_bytes} bytes")
@@ -90,6 +102,24 @@ def _stage_blob(
     except Exception:
         partial.unlink(missing_ok=True)
         raise
+
+
+def _stage_blob(
+    src_path: Path,
+    claimed_digest: Sha256Digest,
+    target_path: Path,
+    max_bytes: int | None,
+) -> None:
+    """Stream src_path → CAS partial → atomic rename (server-side upload path)."""
+    if target_path.is_file():
+        return
+
+    def _file_chunks() -> Iterator[bytes]:
+        with src_path.open("rb") as src:
+            while chunk := src.read(_BLOB_STREAM_CHUNK_SIZE):
+                yield chunk
+
+    _stage_blob_from_chunks(_file_chunks(), claimed_digest, target_path, max_bytes)
 
 
 HfApi = hf.HfApi()

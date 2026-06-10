@@ -54,6 +54,50 @@ def _link_or_copy(src: Path, dst: Path) -> None:
             raise
 
 
+def _fetch_blob_from_remote(
+    remote_source: dict,
+    project: str,
+    digest: Sha256Digest,
+    target_path: Path,
+) -> None:
+    """Stream `GET /artifact_blob/<project>/<digest>` from the remote, rehash
+    while writing, and atomic-rename into the local CAS.
+
+    Resolves `remote_source` to a base URL via `_resolve_src_url`. Raises
+    `FileNotFoundError` on 404; `RuntimeError` (via `_stage_blob_from_chunks`)
+    if the bytes don't hash to `digest`.
+    """
+    import httpx
+
+    from trackio.remote_client import _resolve_src_url
+    from trackio.server import _stage_blob_from_chunks
+
+    src = remote_source.get("space_id") or remote_source.get("server_base_url")
+    if not src:
+        raise RuntimeError(
+            "Artifact has _remote_source set but neither space_id nor "
+            "server_base_url is populated."
+        )
+    base_url = _resolve_src_url(src).rstrip("/")
+    url = f"{base_url}/artifact_blob/{project}/{digest}"
+    with httpx.stream(
+        "GET",
+        url,
+        timeout=httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
+    ) as response:
+        if response.status_code == 404:
+            raise FileNotFoundError(
+                f"Artifact blob {digest} not available on remote at {url}"
+            )
+        response.raise_for_status()
+        _stage_blob_from_chunks(
+            response.iter_bytes(),
+            claimed_digest=digest,
+            target_path=target_path,
+            max_bytes=None,
+        )
+
+
 class Artifact:
     """A versioned, named bundle of files attached to a project.
 
@@ -236,9 +280,14 @@ class Artifact:
             logical = entry["path"]
             blob = blobs_base / digest[:2] / digest
             if not blob.is_file():
-                raise FileNotFoundError(
-                    f"Artifact blob {digest} not available locally or remotely. "
-                    "The producer machine may not have shipped this blob yet."
+                if self._remote_source is None:
+                    raise FileNotFoundError(
+                        f"Artifact blob {digest} not available locally or "
+                        "remotely. The producer machine may not have shipped "
+                        "this blob yet."
+                    )
+                _fetch_blob_from_remote(
+                    self._remote_source, self._project, digest, blob
                 )
             _link_or_copy(blob, root_path / logical)
 

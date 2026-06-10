@@ -430,6 +430,30 @@ async def file_handler(request: Request) -> Response:
     return Response("Not found", status_code=404)
 
 
+async def artifact_blob_handler(request: Request) -> Response:
+    """Serve an artifact blob by (project, digest). Used by Phase 12's
+    consumer-side `Artifact.download()` remote fallback.
+
+    Path-param-only — no `?path=` query, so the client doesn't need to know
+    the server's `ARTIFACTS_DIR` filesystem layout.
+    """
+    from trackio import server as _server  # avoid circular import at module load
+    from trackio.exceptions import TrackioAPIError
+    from trackio.utils import ARTIFACTS_DIR
+
+    project = request.path_params.get("project")
+    digest = request.path_params.get("digest")
+    try:
+        _server._validate_project_name(project)
+        _server._validate_sha256_digest(digest)
+    except TrackioAPIError:
+        return Response("Not found", status_code=404)
+    blob = ARTIFACTS_DIR / project / "blobs" / "sha256" / digest[:2] / digest
+    if not blob.is_file():
+        return Response("Not found", status_code=404)
+    return FileResponse(str(blob))
+
+
 def create_trackio_starlette_app(
     oauth_routes: list[Route],
     api_registry: dict[str, Any],
@@ -446,6 +470,11 @@ def create_trackio_starlette_app(
             Route("/api/upload", endpoint=upload_handler, methods=["POST"]),
             Route("/api/{api_name:str}", endpoint=api_handler, methods=["POST"]),
             Route("/file", endpoint=file_handler, methods=["GET"]),
+            Route(
+                "/artifact_blob/{project:str}/{digest:str}",
+                endpoint=artifact_blob_handler,
+                methods=["GET"],
+            ),
         ]
     )
     if on_spaces():
