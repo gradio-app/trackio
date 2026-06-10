@@ -566,7 +566,13 @@ def create_space_if_not_exists(
         frontend_dir=frontend_dir,
     )
     print("* Waiting for Space to be ready...")
-    _wait_until_space_running(space_id)
+    try:
+        _wait_until_space_running(space_id, timeout=15)
+    except TimeoutError:
+        print(
+            "* Space is still building: logging will continue in the background and "
+            "data will appear on the dashboard once the Space is ready."
+        )
 
 
 def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:
