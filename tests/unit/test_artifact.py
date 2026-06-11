@@ -378,6 +378,53 @@ def test_add_dir_with_prefix(tmp_path):
     assert logicals == ["weights/a.txt", "weights/sub/b.txt"]
 
 
+def test_add_file_rejects_traversal_names(tmp_path):
+    p = tmp_path / "x"
+    p.write_bytes(b"abc")
+    a = Artifact(name="m", type="model")
+    for bad in ("../escape", "/abs/path", "a/../b", "a//b", ".", "C:evil", "a\\b"):
+        with pytest.raises(ValueError, match="Invalid artifact path"):
+            a.add_file(p, name=bad)
+
+
+def test_add_dir_rejects_traversal_prefix(tmp_path):
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "f").write_bytes(b"abc")
+    a = Artifact(name="m", type="model")
+    for bad in ("../up", "/abs"):
+        with pytest.raises(ValueError, match="Invalid artifact path"):
+            a.add_dir(d, name=bad)
+
+
+def test_download_rejects_traversal_paths_in_manifest(temp_dir, tmp_path):
+    digest, size = _stage_blob(temp_dir, "proj", b"evil")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": "../outside.bin", "digest": Sha256Digest(digest), "size": size}],
+    )
+    dl = tmp_path / "dl"
+    with pytest.raises(ValueError, match="Invalid artifact path"):
+        a.download(dl)
+    assert not (tmp_path / "outside.bin").exists()
+
+
+def test_download_rejects_absolute_paths_in_manifest(temp_dir, tmp_path):
+    digest, size = _stage_blob(temp_dir, "proj", b"evil")
+    target = tmp_path / "planted.bin"
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": str(target), "digest": Sha256Digest(digest), "size": size}],
+    )
+    with pytest.raises(ValueError, match="Invalid artifact path"):
+        a.download(tmp_path / "dl")
+    assert not target.exists()
+
+
 def test_build_manifest_writes_blob_with_correct_digest(temp_dir, tmp_path):
     payload = b"hello"
     p = tmp_path / "w.bin"

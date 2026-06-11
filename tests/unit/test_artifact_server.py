@@ -275,6 +275,25 @@ def test_artifact_log_rejects_invalid_digest_format(temp_dir, auth_bypassed):
         )
 
 
+def test_artifact_log_rejects_traversal_manifest_paths(temp_dir, auth_bypassed):
+    digest, size = _stage(temp_dir, "p", b"payload")
+    for bad in ("../escape", "/abs/path", "a/../b"):
+        with pytest.raises(TrackioAPIError, match="Invalid artifact path"):
+            server.artifact_log(
+                auth_bypassed,
+                project="p",
+                name="m",
+                type="model",
+                description=None,
+                metadata=None,
+                manifest=[{"path": bad, "digest": digest, "size": size}],
+                aliases=None,
+                run_name="r",
+                run_id="rid",
+                hf_token=None,
+            )
+
+
 def test_artifact_log_rejects_invalid_project(temp_dir, auth_bypassed):
     with pytest.raises(TrackioAPIError, match="Invalid project"):
         server.artifact_log(

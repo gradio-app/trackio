@@ -170,7 +170,7 @@ class Artifact:
         src = Path(local_path).resolve()
         if not src.is_file():
             raise ValueError(f"Not a regular file: {local_path}")
-        logical = name if name is not None else src.name
+        logical = cas.validate_logical_path(name if name is not None else src.name)
         self._pending_files.append((src, logical))
 
     def add_dir(self, local_dir: str | Path, name: str | None = None) -> None:
@@ -181,7 +181,7 @@ class Artifact:
         root = Path(local_dir).resolve()
         if not root.is_dir():
             raise ValueError(f"Not a directory: {local_dir}")
-        prefix = name.rstrip("/") + "/" if name else ""
+        prefix = cas.validate_logical_path(name.rstrip("/")) + "/" if name else ""
         for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
             dirnames.sort()
             for filename in sorted(filenames):
@@ -189,7 +189,8 @@ class Artifact:
                 if entry.is_symlink() or not entry.is_file():
                     continue
                 rel = entry.relative_to(root).as_posix()
-                self._pending_files.append((entry, prefix + rel))
+                logical = cas.validate_logical_path(prefix + rel)
+                self._pending_files.append((entry, logical))
 
     def _build_manifest(self, project: str) -> Manifest:
         if not self._pending_files:
@@ -259,7 +260,7 @@ class Artifact:
 
         for entry in self._manifest:
             digest = entry["digest"]
-            logical = entry["path"]
+            logical = cas.validate_logical_path(entry["path"])
             blob = cas.blob_path(self._project, digest)
             if not blob.is_file():
                 if self._remote_source is None:

@@ -592,6 +592,11 @@ def artifact_log(
     assert_can_write_metrics(request, hf_token)
     project = _validate_project_name(project)
     digests = [_validate_sha256_digest(e["digest"]) for e in manifest]
+    for e in manifest:
+        try:
+            cas.validate_logical_path(e["path"])
+        except ValueError as err:
+            raise TrackioAPIError(str(err)) from err
     present = SQLiteStorage.list_artifact_blobs_present(project, digests)
     missing = [d for d in digests if d not in present]
     if missing:
