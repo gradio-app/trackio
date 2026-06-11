@@ -491,9 +491,10 @@ def create_space_if_not_exists(
     bucket_id: str | None = None,
     private: bool | None = None,
     frontend_dir: str | Path | None = None,
-) -> None:
+) -> bool:
     """
-    Creates a new Hugging Face Space if it does not exist.
+    Creates a new Hugging Face Space if it does not exist. Returns True if a
+    new Space was created, False if an existing Space was found.
 
     Args:
         space_id (`str`):
@@ -544,7 +545,7 @@ def create_space_if_not_exists(
                 private,
                 frontend_dir=frontend_dir,
             )
-        return
+        return False
     except RepositoryNotFoundError:
         pass
     except HfHubHTTPError as e:
@@ -565,14 +566,35 @@ def create_space_if_not_exists(
         private,
         frontend_dir=frontend_dir,
     )
-    print("* Waiting for Space to be ready...")
-    try:
-        _wait_until_space_running(space_id, timeout=15)
-    except TimeoutError:
-        print(
-            "* Space is still building: logging will continue in the background and "
-            "data will appear on the dashboard once the Space is ready."
-        )
+    threading.Thread(
+        target=_warn_if_space_build_fails, args=(space_id,), daemon=True
+    ).start()
+    return True
+
+
+def _warn_if_space_build_fails(space_id: str, timeout: int = 600) -> None:
+    hf_api = huggingface_hub.HfApi()
+    failure_stages = frozenset(
+        ("NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR")
+    )
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            info = hf_api.space_info(space_id, timeout=30)
+            if info.runtime:
+                stage = str(info.runtime.stage)
+                if stage in failure_stages:
+                    print(
+                        f"\n* WARNING: Space {space_id} failed to build (stage: {stage}). "
+                        f"Logs are being saved to the Bucket and will appear once the Space "
+                        f"is fixed; see the build logs at {SPACE_URL.format(space_id=space_id)}"
+                    )
+                    return
+                if stage == "RUNNING":
+                    return
+        except Exception:
+            pass
+        time.sleep(10)
 
 
 def _wait_until_space_running(space_id: str, timeout: int = 300) -> None:

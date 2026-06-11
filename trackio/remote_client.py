@@ -182,10 +182,10 @@ class _TrackioGradioCompatClient:
         if isinstance(extra, dict):
             h.update({str(k): str(v) for k, v in extra.items()})
         if h:
-            if "httpx_kwargs" in supported_params:
-                merged["headers"] = h
-            elif "headers" in supported_params:
+            if "headers" in supported_params:
                 kwargs["headers"] = h
+            elif "httpx_kwargs" in supported_params:
+                merged["headers"] = h
         if merged and "httpx_kwargs" in supported_params:
             kwargs["httpx_kwargs"] = merged
         self._client = GradioClient(src, **kwargs)
