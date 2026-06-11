@@ -36,6 +36,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket_for_static,
 )
 from trackio.frontend_config import resolve_frontend_dir
+from trackio.pending_uploads import group_pending_uploads
 from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
@@ -683,57 +684,42 @@ def _replay_pending_uploads(
     """Replay queued `pending_uploads` rows for `project` via `client`.
 
     Routes by `kind`: 'media' → `/bulk_upload_media`, 'artifact_blob' →
-    `/bulk_upload_artifact_blob`. Same routing the in-`Run` sender uses, applied
-    to a sync triggered outside a Run context (via `trackio sync`). Clears the
-    rows after sending.
+    `/bulk_upload_artifact_blob` (shared `group_pending_uploads` grouping),
+    applied to a sync triggered outside a Run context (via `trackio sync`).
+    Each group's rows are cleared as soon as that group is sent, so a failure
+    partway through never clears rows that were not uploaded.
     """
     pending_uploads = SQLiteStorage.get_pending_uploads(project)
     if not pending_uploads:
         return
-    media_entries = []
-    artifact_blob_entries = []
-    for u in pending_uploads["uploads"]:
-        fp = u["file_path"]
-        if not os.path.exists(fp):
-            continue
-        if u.get("kind") == "artifact_blob":
-            artifact_blob_entries.append(
-                {
-                    "project": u["project"],
-                    "digest": u["digest"],
-                    "uploaded_file": handle_file(fp),
-                }
-            )
-        else:
-            media_entries.append(
-                {
-                    "project": u["project"],
-                    "run": u["run"],
-                    "step": u["step"],
-                    "relative_path": u["relative_path"],
-                    "uploaded_file": handle_file(fp),
-                }
-            )
-    if media_entries:
-        print(f"  Syncing {len(media_entries)} media files...")
+    grouped = group_pending_uploads(pending_uploads)
+    missing = grouped["missing"]
+    if missing["ids"]:
+        print(
+            f"  Warning: dropping {len(missing['ids'])} pending upload(s) whose "
+            f"local files no longer exist (e.g. {missing['paths'][0]!r})."
+        )
+        SQLiteStorage.clear_pending_uploads(project, missing["ids"])
+    media = grouped["media"]
+    if media["entries"]:
+        print(f"  Syncing {len(media['entries'])} media files...")
         client.predict(
             api_name="/bulk_upload_media",
-            uploads=media_entries,
+            uploads=media["entries"],
             hf_token=hf_token,
         )
-    if artifact_blob_entries:
-        by_project: dict[str, list[dict]] = {}
-        for e in artifact_blob_entries:
-            by_project.setdefault(e["project"], []).append(e)
-        for proj, entries in by_project.items():
-            print(f"  Syncing {len(entries)} artifact blobs for project '{proj}'...")
-            client.predict(
-                api_name="/bulk_upload_artifact_blob",
-                project=proj,
-                uploads=entries,
-                hf_token=hf_token,
-            )
-    SQLiteStorage.clear_pending_uploads(project, pending_uploads["ids"])
+        SQLiteStorage.clear_pending_uploads(project, media["ids"])
+    for proj, group in grouped["artifact_blobs"].items():
+        print(
+            f"  Syncing {len(group['entries'])} artifact blobs for project '{proj}'..."
+        )
+        client.predict(
+            api_name="/bulk_upload_artifact_blob",
+            project=proj,
+            uploads=group["entries"],
+            hf_token=hf_token,
+        )
+        SQLiteStorage.clear_pending_uploads(project, group["ids"])
 
 
 def sync_incremental(

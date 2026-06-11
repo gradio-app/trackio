@@ -270,6 +270,75 @@ def test_send_pending_uploads_routes_both_kinds(temp_dir, tmp_path, monkeypatch)
     trackio.finish()
 
 
+def test_send_pending_uploads_partial_failure_keeps_unsent_rows(
+    temp_dir, tmp_path, monkeypatch
+):
+    media = tmp_path / "img.png"
+    media.write_bytes(b"img")
+    blob = tmp_path / "blob.bin"
+    blob.write_bytes(b"weights")
+
+    SQLiteStorage.add_pending_upload(
+        project="p",
+        space_id="sp",
+        run_id="rid",
+        run_name="r",
+        step=0,
+        file_path=str(media),
+        relative_path="img.png",
+    )
+    SQLiteStorage.enqueue_artifact_blob_upload(
+        project="p",
+        space_id="sp",
+        digest="b" * 64,
+        local_blob_path=str(blob),
+        run_name="r",
+        run_id="rid",
+    )
+
+    run, client, _ = _make_remote_run(monkeypatch, project="p", name="r")
+
+    def _failing_predict(api_name, **kwargs):
+        if api_name == "/bulk_upload_artifact_blob":
+            raise RuntimeError("network down")
+        return None
+
+    client.predict.side_effect = _failing_predict
+    buffered = SQLiteStorage.get_pending_uploads("p")
+    with pytest.raises(RuntimeError, match="network down"):
+        run._send_pending_uploads_to_server(buffered)
+
+    remaining = SQLiteStorage.get_pending_uploads("p")
+    assert remaining is not None
+    kinds = [u["kind"] for u in remaining["uploads"]]
+    assert kinds == ["artifact_blob"]
+    run._client = None
+    trackio.finish()
+
+
+def test_send_pending_uploads_drops_missing_files_with_warning(
+    temp_dir, tmp_path, monkeypatch
+):
+    SQLiteStorage.enqueue_artifact_blob_upload(
+        project="p",
+        space_id="sp",
+        digest="c" * 64,
+        local_blob_path=str(tmp_path / "vanished.bin"),
+        run_name="r",
+        run_id="rid",
+    )
+
+    run, client, _ = _make_remote_run(monkeypatch, project="p", name="r")
+    buffered = SQLiteStorage.get_pending_uploads("p")
+    with pytest.warns(UserWarning, match="no longer exist"):
+        run._send_pending_uploads_to_server(buffered)
+
+    assert client.predict.call_count == 0
+    assert SQLiteStorage.get_pending_uploads("p") is None
+    run._client = None
+    trackio.finish()
+
+
 # --- lineage idempotency ---
 
 

@@ -24,6 +24,7 @@ from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
+from trackio.pending_uploads import group_pending_uploads
 from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -630,52 +631,39 @@ class Run:
     def _send_pending_uploads_to_server(self, buffered: dict) -> None:
         """Group buffered pending_uploads by kind and POST to the right endpoints.
 
-        Raises on failure. Caller is responsible for clear_pending_uploads on
-        success. Caller must hold `self._client_lock` and have a non-None
+        Raises on failure. Each group's rows are cleared as soon as that group
+        is sent, so a failure partway through never clears rows that were not
+        uploaded (and never re-sends rows that were). Rows whose source file
+        has vanished are cleared with a warning — they can never be sent.
+        Caller must hold `self._client_lock` and have a non-None
         `self._client`.
         """
-        media_entries: list[dict] = []
-        artifact_blob_entries: list[dict] = []
-        for u in buffered["uploads"]:
-            fp = u["file_path"]
-            if not Path(fp).exists():
-                continue
-            if u.get("kind") == "artifact_blob":
-                artifact_blob_entries.append(
-                    {
-                        "project": u["project"],
-                        "digest": u["digest"],
-                        "uploaded_file": handle_file(fp),
-                    }
-                )
-            else:
-                media_entries.append(
-                    {
-                        "project": u["project"],
-                        "run": u["run"],
-                        "run_id": u.get("run_id"),
-                        "step": u["step"],
-                        "relative_path": u["relative_path"],
-                        "uploaded_file": handle_file(fp),
-                    }
-                )
-        if media_entries:
+        grouped = group_pending_uploads(buffered)
+        missing = grouped["missing"]
+        if missing["ids"]:
+            self._warn_once(
+                "pending-uploads-missing-files",
+                f"trackio dropped {len(missing['ids'])} pending upload(s) whose "
+                f"local files no longer exist (e.g. {missing['paths'][0]!r}). "
+                "Data for these uploads was not sent to the remote server.",
+            )
+            SQLiteStorage.clear_pending_uploads(self.project, missing["ids"])
+        media = grouped["media"]
+        if media["entries"]:
             self._client.predict(
                 api_name="/bulk_upload_media",
-                uploads=media_entries,
+                uploads=media["entries"],
                 hf_token=self._hf_token_for_remote(),
             )
-        if artifact_blob_entries:
-            by_project: dict[str, list[dict]] = {}
-            for e in artifact_blob_entries:
-                by_project.setdefault(e["project"], []).append(e)
-            for project, entries in by_project.items():
-                self._client.predict(
-                    api_name="/bulk_upload_artifact_blob",
-                    project=project,
-                    uploads=entries,
-                    hf_token=self._hf_token_for_remote(),
-                )
+            SQLiteStorage.clear_pending_uploads(self.project, media["ids"])
+        for project, group in grouped["artifact_blobs"].items():
+            self._client.predict(
+                api_name="/bulk_upload_artifact_blob",
+                project=project,
+                uploads=group["entries"],
+                hf_token=self._hf_token_for_remote(),
+            )
+            SQLiteStorage.clear_pending_uploads(self.project, group["ids"])
 
     def _flush_local_buffer(self):
         try:
@@ -702,9 +690,6 @@ class Run:
             buffered_uploads = SQLiteStorage.get_pending_uploads(self.project)
             if buffered_uploads:
                 self._send_pending_uploads_to_server(buffered_uploads)
-                SQLiteStorage.clear_pending_uploads(
-                    self.project, buffered_uploads["ids"]
-                )
 
             self._has_local_buffer = False
         except Exception as e:
@@ -736,7 +721,6 @@ class Run:
             if not buffered:
                 return
             self._send_pending_uploads_to_server(buffered)
-            SQLiteStorage.clear_pending_uploads(self.project, buffered["ids"])
 
     def _init_client_background(self):
         if self._client is None:
