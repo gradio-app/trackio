@@ -2,7 +2,6 @@ import atexit
 import hashlib
 import json as json_mod
 import os
-import re
 import shutil
 import sqlite3
 import time
@@ -27,7 +26,7 @@ except ImportError:
 import huggingface_hub as hf
 import orjson
 
-from trackio import utils as _trackio_utils
+from trackio import cas
 from trackio.commit_scheduler import CommitScheduler
 from trackio.dummy_commit_scheduler import DummyCommitScheduler
 from trackio.typehints import Manifest, Sha256Digest
@@ -39,9 +38,6 @@ from trackio.utils import (
     on_spaces,
     serialize_values,
 )
-
-_ARTIFACT_VERSION_SPEC_RE = re.compile(r"^v(\d+)$")
-_SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 DB_EXT = ".db"
 
@@ -3963,7 +3959,7 @@ class SQLiteStorage:
         alias: str,
         version_id: int,
     ) -> None:
-        if _ARTIFACT_VERSION_SPEC_RE.match(alias):
+        if cas.ARTIFACT_VERSION_SPEC_RE.match(alias):
             raise ValueError(
                 f"Alias '{alias}' is reserved for version pointers (vN); choose another."
             )
@@ -3997,7 +3993,7 @@ class SQLiteStorage:
                 return None
             artifact_id = int(art["id"])
             spec = spec if spec else "latest"
-            m = _ARTIFACT_VERSION_SPEC_RE.match(spec)
+            m = cas.ARTIFACT_VERSION_SPEC_RE.match(spec)
             if m:
                 version_int = int(m.group(1))
                 ver = cursor.execute(
@@ -4275,12 +4271,10 @@ class SQLiteStorage:
         digests: list[Sha256Digest],
     ) -> set[Sha256Digest]:
         present: set[Sha256Digest] = set()
-        base = _trackio_utils.ARTIFACTS_DIR / project / "blobs" / "sha256"
         for digest in digests:
-            if not _SHA256_DIGEST_RE.match(digest):
+            if not cas.SHA256_DIGEST_RE.match(digest):
                 continue
-            blob_path = base / digest[:2] / digest
-            if blob_path.is_file():
+            if cas.blob_path(project, digest).is_file():
                 present.add(digest)
         return present
 

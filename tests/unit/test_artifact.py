@@ -264,11 +264,11 @@ def test_list_artifact_blobs_present_rejects_path_traversal(temp_dir, monkeypatc
 
 import errno
 import hashlib
-import os
 import shutil
 from pathlib import Path
 
-from trackio.artifact import _HASH_CHUNK_SIZE, Artifact, _hash_file
+from trackio.artifact import Artifact
+from trackio.cas import HASH_CHUNK_SIZE, hash_file
 from trackio.typehints import Sha256Digest
 
 
@@ -276,30 +276,30 @@ def test_hash_file_is_deterministic_and_correct_size(tmp_path):
     p = tmp_path / "x"
     payload = b"hello world"
     p.write_bytes(payload)
-    d1, s1 = _hash_file(p)
-    d2, s2 = _hash_file(p)
+    d1, s1 = hash_file(p)
+    d2, s2 = hash_file(p)
     assert d1 == d2 == hashlib.sha256(payload).hexdigest()
     assert s1 == s2 == len(payload)
 
 
 def test_hash_file_handles_larger_than_chunk(tmp_path):
     p = tmp_path / "big"
-    payload = b"a" * (_HASH_CHUNK_SIZE + 17)
+    payload = b"a" * (HASH_CHUNK_SIZE + 17)
     p.write_bytes(payload)
-    d, s = _hash_file(p)
+    d, s = hash_file(p)
     assert s == len(payload)
     assert d == hashlib.sha256(payload).hexdigest()
 
 
 def test_hash_file_modern_and_fallback_paths_agree(tmp_path, monkeypatch):
     p = tmp_path / "blob"
-    payload = b"x" * (_HASH_CHUNK_SIZE + 17) + b"trailing"
+    payload = b"x" * (HASH_CHUNK_SIZE + 17) + b"trailing"
     p.write_bytes(payload)
 
-    d_modern, s_modern = _hash_file(p)
+    d_modern, s_modern = hash_file(p)
 
     monkeypatch.delattr("hashlib.file_digest", raising=False)
-    d_fallback, s_fallback = _hash_file(p)
+    d_fallback, s_fallback = hash_file(p)
 
     assert d_modern == d_fallback == hashlib.sha256(payload).hexdigest()
     assert s_modern == s_fallback == len(payload)

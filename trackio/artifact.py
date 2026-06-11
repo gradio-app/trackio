@@ -1,16 +1,14 @@
 import errno
-import hashlib
 import os
 import re
 import shutil
 from pathlib import Path
 from typing import Any
 
-from trackio import utils as _utils
+from trackio import cas
 from trackio.typehints import Manifest, Sha256Digest
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-_HASH_CHUNK_SIZE = 1024 * 1024
 _READ_ONLY_ATTRS = frozenset(
     {
         "name",
@@ -25,20 +23,6 @@ _READ_ONLY_ATTRS = frozenset(
         "project",
     }
 )
-
-
-def _hash_file(path: Path) -> tuple[Sha256Digest, int]:
-    size = path.stat().st_size
-    file_digest = getattr(hashlib, "file_digest", None)
-    if file_digest is not None:
-        with path.open("rb") as f:
-            sha = file_digest(f, "sha256")
-    else:
-        sha = hashlib.sha256()
-        with path.open("rb") as f:
-            while chunk := f.read(_HASH_CHUNK_SIZE):
-                sha.update(chunk)
-    return Sha256Digest(sha.hexdigest()), size
 
 
 def _link_or_copy(src: Path, dst: Path) -> None:
@@ -64,13 +48,12 @@ def _fetch_blob_from_remote(
     while writing, and atomic-rename into the local CAS.
 
     Resolves `remote_source` to a base URL via `_resolve_src_url`. Raises
-    `FileNotFoundError` on 404; `RuntimeError` (via `_stage_blob_from_chunks`)
+    `FileNotFoundError` on 404; `ValueError` (via `cas.stage_blob_from_chunks`)
     if the bytes don't hash to `digest`.
     """
     import httpx
 
     from trackio.remote_client import _resolve_src_url
-    from trackio.server import _stage_blob_from_chunks
 
     src = remote_source.get("space_id") or remote_source.get("server_base_url")
     if not src:
@@ -90,7 +73,7 @@ def _fetch_blob_from_remote(
                 f"Artifact blob {digest} not available on remote at {url}"
             )
         response.raise_for_status()
-        _stage_blob_from_chunks(
+        cas.stage_blob_from_chunks(
             response.iter_bytes(),
             claimed_digest=digest,
             target_path=target_path,
@@ -213,12 +196,10 @@ class Artifact:
                 raise ValueError(f"Duplicate logical path in manifest: {logical!r}")
             seen.add(logical)
 
-        base = _utils.ARTIFACTS_DIR / project / "blobs" / "sha256"
         entries: Manifest = []
         for src, logical in self._pending_files:
-            digest, size = _hash_file(src)
-            blob_path = base / digest[:2] / digest
-            _link_or_copy(src, blob_path)
+            digest, size = cas.hash_file(src)
+            _link_or_copy(src, cas.blob_path(project, digest))
             entries.append({"path": logical, "digest": digest, "size": size})
         return entries
 
@@ -274,11 +255,10 @@ class Artifact:
             root_path = Path(root)
         root_path.mkdir(parents=True, exist_ok=True)
 
-        blobs_base = _utils.ARTIFACTS_DIR / self._project / "blobs" / "sha256"
         for entry in self._manifest:
             digest = entry["digest"]
             logical = entry["path"]
-            blob = blobs_base / digest[:2] / digest
+            blob = cas.blob_path(self._project, digest)
             if not blob.is_file():
                 if self._remote_source is None:
                     raise FileNotFoundError(

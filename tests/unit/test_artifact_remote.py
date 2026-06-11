@@ -6,7 +6,6 @@ round-trip via a real RemoteClient is covered by `test_artifact_remote_e2e.py`.
 
 import hashlib
 import threading
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest

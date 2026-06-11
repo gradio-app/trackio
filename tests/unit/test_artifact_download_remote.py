@@ -10,8 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import trackio
-from trackio import artifact as artifact_mod
 from trackio.artifact import Artifact
 from trackio.typehints import Sha256Digest
 

@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 import threading
 import time
@@ -11,7 +10,7 @@ from typing import Any
 import huggingface_hub
 from gradio_client import handle_file
 
-from trackio import utils
+from trackio import cas, utils
 from trackio.alerts import (
     AlertLevel,
     format_alert_terminal,
@@ -31,8 +30,6 @@ from trackio.table import Table
 from trackio.trace import Trace
 from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
 from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namespace
-
-_ARTIFACT_VERSION_SPEC_RE = re.compile(r"^v\d+$")
 
 BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
@@ -971,7 +968,7 @@ class Run:
 
         user_aliases = list(aliases) if aliases else []
         for alias in user_aliases:
-            if _ARTIFACT_VERSION_SPEC_RE.match(alias):
+            if cas.ARTIFACT_VERSION_SPEC_RE.match(alias):
                 raise ValueError(
                     f"Alias {alias!r} is reserved for version pointers (vN); "
                     "choose another."
@@ -1034,19 +1031,11 @@ class Run:
         for entry in manifest:
             if entry["digest"] in present:
                 continue
-            blob_path = (
-                utils.ARTIFACTS_DIR
-                / self.project
-                / "blobs"
-                / "sha256"
-                / entry["digest"][:2]
-                / entry["digest"]
-            )
             SQLiteStorage.enqueue_artifact_blob_upload(
                 project=self.project,
                 space_id=self._remote_storage_key,
                 digest=entry["digest"],
-                local_blob_path=str(blob_path),
+                local_blob_path=str(cas.blob_path(self.project, entry["digest"])),
                 run_name=self.name,
                 run_id=self.id,
             )

@@ -1,7 +1,6 @@
 """The main API layer for the Trackio UI."""
 
 import base64
-import hashlib
 import logging
 import os
 import re
@@ -10,10 +9,8 @@ import shutil
 import sqlite3
 import threading
 import time
-import uuid
 import warnings
 from collections import deque
-from collections.abc import Iterable, Iterator
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -25,6 +22,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
+import trackio.cas as cas
 import trackio.utils as utils
 from trackio.asgi_app import (
     cleanup_uploaded_temp_file,
@@ -44,13 +42,11 @@ from trackio.typehints import (
 )
 from trackio.utils import on_spaces
 
-_SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
-_BLOB_STREAM_CHUNK_SIZE = 1024 * 1024
 
 
 def _validate_sha256_digest(digest: Any) -> Sha256Digest:
-    if not isinstance(digest, str) or not _SHA256_DIGEST_RE.match(digest):
+    if not isinstance(digest, str) or not cas.SHA256_DIGEST_RE.match(digest):
         raise TrackioAPIError(f"Invalid sha256 digest: {digest!r}")
     return Sha256Digest(digest)
 
@@ -59,67 +55,6 @@ def _validate_project_name(project: Any) -> str:
     if not isinstance(project, str) or not _PROJECT_NAME_RE.match(project):
         raise TrackioAPIError(f"Invalid project name: {project!r}")
     return project
-
-
-def _stage_blob_from_chunks(
-    chunks: Iterable[bytes],
-    claimed_digest: Sha256Digest,
-    target_path: Path,
-    max_bytes: int | None,
-) -> None:
-    """Stream `chunks` into a `.partial.<uuid>` file in the CAS dir, rehashing
-    and size-capping as we go. On match, atomic-rename to `target_path`. On
-    failure, clean up the partial.
-
-    Same-filesystem rename is guaranteed because the partial lives inside the
-    CAS directory; this avoids cross-device `EXDEV` issues.
-
-    If `target_path.is_file()` already, returns without consuming `chunks` —
-    callers should check beforehand if they want to avoid even fetching.
-    """
-    if target_path.is_file():
-        return
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    partial = target_path.parent / f"{target_path.name}.partial.{uuid.uuid4().hex}"
-    sha = hashlib.sha256()
-    written = 0
-    try:
-        with partial.open("wb") as dst:
-            for chunk in chunks:
-                if not chunk:
-                    continue
-                written += len(chunk)
-                if max_bytes is not None and written > max_bytes:
-                    raise ValueError(f"Artifact blob exceeds {max_bytes} bytes")
-                sha.update(chunk)
-                dst.write(chunk)
-        actual = sha.hexdigest()
-        if actual != claimed_digest:
-            raise ValueError(
-                f"Digest mismatch: claimed {claimed_digest}, computed {actual}"
-            )
-        os.rename(partial, target_path)
-    except Exception:
-        partial.unlink(missing_ok=True)
-        raise
-
-
-def _stage_blob(
-    src_path: Path,
-    claimed_digest: Sha256Digest,
-    target_path: Path,
-    max_bytes: int | None,
-) -> None:
-    """Stream src_path → CAS partial → atomic rename (server-side upload path)."""
-    if target_path.is_file():
-        return
-
-    def _file_chunks() -> Iterator[bytes]:
-        with src_path.open("rb") as src:
-            while chunk := src.read(_BLOB_STREAM_CHUNK_SIZE):
-                yield chunk
-
-    _stage_blob_from_chunks(_file_chunks(), claimed_digest, target_path, max_bytes)
 
 
 HfApi = hf.HfApi()
@@ -621,7 +556,6 @@ def bulk_upload_artifact_blob(
 ) -> None:
     assert_can_write_metrics(request, hf_token)
     project = _validate_project_name(project)
-    base = utils.ARTIFACTS_DIR / project / "blobs" / "sha256"
     consumed: list[Path] = []
     try:
         for upload in uploads:
@@ -630,9 +564,9 @@ def bulk_upload_artifact_blob(
             )
         for upload, uploaded_path in zip(uploads, consumed):
             digest = _validate_sha256_digest(upload["digest"])
-            target = base / digest[:2] / digest
+            target = cas.blob_path(project, digest)
             try:
-                _stage_blob(
+                cas.stage_blob_from_file(
                     uploaded_path, digest, target, utils.ARTIFACT_BLOB_MAX_BYTES
                 )
             except ValueError as e:
