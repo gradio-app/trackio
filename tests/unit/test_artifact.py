@@ -262,9 +262,7 @@ def test_list_artifact_blobs_present_rejects_path_traversal(temp_dir, monkeypatc
 
 # --- Artifact class ---
 
-import errno
 import hashlib
-import shutil
 from pathlib import Path
 
 from trackio.artifact import Artifact
@@ -455,31 +453,22 @@ def test_add_file_after_logged_raises(temp_dir, tmp_path):
         a.add_dir(tmp_path)
 
 
-def test_build_manifest_cross_device_fallback(temp_dir, tmp_path, monkeypatch):
+def test_build_manifest_copies_so_source_mutation_does_not_corrupt_blob(
+    temp_dir, tmp_path
+):
     p = tmp_path / "x"
     p.write_bytes(b"abc")
-    calls = {"link": 0, "copy2": 0}
-    real_copy2 = shutil.copy2
-
-    def fake_link(src, dst):
-        calls["link"] += 1
-        raise OSError(errno.EXDEV, "cross-device link not permitted")
-
-    def fake_copy2(src, dst):
-        calls["copy2"] += 1
-        real_copy2(src, dst)
-
-    monkeypatch.setattr("trackio.artifact.os.link", fake_link)
-    monkeypatch.setattr("trackio.artifact.shutil.copy2", fake_copy2)
     a = Artifact(name="m", type="model")
     a.add_file(p)
     manifest = a._build_manifest("p")
-    assert calls["link"] == 1
-    assert calls["copy2"] == 1
     digest = manifest[0]["digest"]
     blob = Path(temp_dir) / "artifacts" / "p" / "blobs" / "sha256" / digest[:2] / digest
     assert blob.is_file()
     assert blob.read_bytes() == b"abc"
+
+    p.write_bytes(b"mutated!")
+    assert blob.read_bytes() == b"abc"
+    assert hashlib.sha256(blob.read_bytes()).hexdigest() == digest
 
 
 def test_hydrate_from_db_populates_readonly_attrs():
@@ -493,7 +482,6 @@ def test_hydrate_from_db_populates_readonly_attrs():
         ],
         manifest_digest=Sha256Digest("def"),
         size_bytes=3,
-        spec="latest",
         description="hydrated",
         metadata={"acc": 0.9},
     )
@@ -505,7 +493,6 @@ def test_hydrate_from_db_populates_readonly_attrs():
     assert a.description == "hydrated"
     assert a.metadata == {"acc": 0.9}
     assert a.project == "proj"
-    assert a._spec == "latest"
     assert a._logged is True
 
 
@@ -533,7 +520,6 @@ def _hydrated_artifact(
     name: str,
     version: int,
     entries: list,
-    spec: str | None = None,
 ) -> Artifact:
     a = Artifact(name=name, type="model")
     a._hydrate_from_db(
@@ -543,7 +529,6 @@ def _hydrated_artifact(
         manifest=entries,
         manifest_digest=Sha256Digest("0" * 64),
         size_bytes=sum(e["size"] for e in entries),
-        spec=spec,
     )
     return a
 
@@ -576,11 +561,10 @@ def test_download_default_root_convention(temp_dir, tmp_path, monkeypatch):
         "my-model",
         0,
         [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
-        spec="latest",
     )
     monkeypatch.chdir(tmp_path)
     out = a.download()
-    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model:latest").resolve()
+    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model:v0").resolve()
     assert (Path(out) / "w.bin").read_bytes() == b"x"
 
 
@@ -630,7 +614,7 @@ def test_download_on_unlogged_artifact_raises():
         a.download()
 
 
-def test_download_cross_device_fallback(temp_dir, tmp_path, monkeypatch):
+def test_download_copies_so_edits_do_not_corrupt_blob(temp_dir, tmp_path):
     digest, size = _stage_blob(temp_dir, "proj", b"abc")
     a = _hydrated_artifact(
         "proj",
@@ -638,23 +622,29 @@ def test_download_cross_device_fallback(temp_dir, tmp_path, monkeypatch):
         0,
         [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
     )
-    calls = {"link": 0, "copy2": 0}
-    real_copy2 = shutil.copy2
-
-    def fake_link(src, dst):
-        calls["link"] += 1
-        raise OSError(errno.EXDEV, "cross-device")
-
-    def fake_copy2(src, dst):
-        calls["copy2"] += 1
-        real_copy2(src, dst)
-
-    monkeypatch.setattr("trackio.artifact.os.link", fake_link)
-    monkeypatch.setattr("trackio.artifact.shutil.copy2", fake_copy2)
-
     out = a.download(tmp_path / "dl")
-    assert calls["link"] == 1
-    assert calls["copy2"] == 1
+    downloaded = Path(out) / "w.bin"
+    assert downloaded.read_bytes() == b"abc"
+
+    downloaded.write_bytes(b"edited!!")
+    blob = (
+        Path(temp_dir) / "artifacts" / "proj" / "blobs" / "sha256" / digest[:2] / digest
+    )
+    assert blob.read_bytes() == b"abc"
+
+
+def test_download_refreshes_stale_file_with_different_size(temp_dir, tmp_path):
+    digest, size = _stage_blob(temp_dir, "proj", b"abc")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+    )
+    dl = tmp_path / "dl"
+    dl.mkdir()
+    (dl / "w.bin").write_bytes(b"stale-old-content")
+    out = a.download(dl)
     assert (Path(out) / "w.bin").read_bytes() == b"abc"
 
 
@@ -811,7 +801,9 @@ def test_use_artifact_missing_raises(temp_dir):
     trackio.finish()
 
 
-def test_use_artifact_preserves_spec_for_download(temp_dir, tmp_path, monkeypatch):
+def test_use_artifact_download_dir_named_by_resolved_version(
+    temp_dir, tmp_path, monkeypatch
+):
     weights = _make_file(tmp_path, "w.bin", b"x")
     run = trackio.init(project="art-spec-dl", name="p")
     art = Artifact(name="m", type="model")
@@ -823,7 +815,31 @@ def test_use_artifact_preserves_spec_for_download(temp_dir, tmp_path, monkeypatc
     fetched = run2.use_artifact("m:best")
     monkeypatch.chdir(tmp_path)
     out = fetched.download()
-    assert Path(out).resolve() == (tmp_path / "artifacts" / "m:best").resolve()
+    assert Path(out).resolve() == (tmp_path / "artifacts" / "m:v0").resolve()
+    trackio.finish()
+
+
+def test_use_artifact_latest_download_does_not_serve_stale_files(
+    temp_dir, tmp_path, monkeypatch
+):
+    weights = _make_file(tmp_path, "w.bin", b"version-zero")
+    run = trackio.init(project="art-latest-dl", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art)
+
+    monkeypatch.chdir(tmp_path)
+    out0 = run.use_artifact("m:latest").download()
+    assert (Path(out0) / "w.bin").read_bytes() == b"version-zero"
+
+    weights.write_bytes(b"version-one!")
+    art2 = Artifact(name="m", type="model")
+    art2.add_file(weights)
+    run.log_artifact(art2)
+
+    out1 = run.use_artifact("m:latest").download()
+    assert out1 != out0
+    assert (Path(out1) / "w.bin").read_bytes() == b"version-one!"
     trackio.finish()
 
 

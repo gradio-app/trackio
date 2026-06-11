@@ -1098,7 +1098,6 @@ class Run:
                 manifest=record["manifest"],
                 manifest_digest=record["manifest_digest"],
                 size_bytes=record["size_bytes"],
-                spec=version_or_alias,
                 description=record["description"],
                 metadata=record["metadata"],
             )
@@ -1131,7 +1130,6 @@ class Run:
             manifest=record["manifest"],
             manifest_digest=record["manifest_digest"],
             size_bytes=record["size_bytes"],
-            spec=version_or_alias,
             description=record["description"],
             metadata=record["metadata"],
         )

@@ -1,7 +1,7 @@
-import errno
 import os
 import re
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -25,17 +25,24 @@ _READ_ONLY_ATTRS = frozenset(
 )
 
 
-def _link_or_copy(src: Path, dst: Path) -> None:
+def _materialize(blob: Path, dst: Path, size: int) -> None:
+    """Copy `blob` to `dst` unless an identically-sized file is already there.
+
+    Always copies (never hardlinks) so user edits to materialized files cannot
+    reach back into the content-addressed cache. The copy goes through a
+    `.partial.<uuid>` temp file + atomic rename so concurrent or interrupted
+    downloads never leave a torn file at `dst`.
+    """
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if dst.exists():
+    if dst.is_file() and dst.stat().st_size == size:
         return
+    partial = dst.parent / f"{dst.name}.partial.{uuid.uuid4().hex}"
     try:
-        os.link(src, dst)
-    except OSError as e:
-        if e.errno == errno.EXDEV:
-            shutil.copy2(src, dst)
-        else:
-            raise
+        shutil.copyfile(blob, partial)
+        os.replace(partial, dst)
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise
 
 
 def _fetch_blob_from_remote(
@@ -113,7 +120,6 @@ class Artifact:
         self._manifest: Manifest | None = None
         self._manifest_digest: Sha256Digest | None = None
         self._project: str | None = None
-        self._spec: str | None = None
         self._remote_source: dict | None = None
 
     @property
@@ -199,7 +205,7 @@ class Artifact:
         entries: Manifest = []
         for src, logical in self._pending_files:
             digest, size = cas.hash_file(src)
-            _link_or_copy(src, cas.blob_path(project, digest))
+            cas.stage_blob_from_file(src, digest, cas.blob_path(project, digest))
             entries.append({"path": logical, "digest": digest, "size": size})
         return entries
 
@@ -212,7 +218,6 @@ class Artifact:
         manifest: Manifest,
         manifest_digest: Sha256Digest,
         size_bytes: int,
-        spec: str | None = None,
         description: str | None = None,
         metadata: dict | None = None,
     ) -> None:
@@ -221,7 +226,6 @@ class Artifact:
         if metadata is not None:
             self._metadata = dict(metadata)
         self._project = project
-        self._spec = spec
         self._version = version
         self._aliases = tuple(aliases)
         self._manifest = [dict(e) for e in manifest]
@@ -232,13 +236,12 @@ class Artifact:
     def download(self, root: str | Path | None = None) -> str:
         """Materialize artifact files at `root/<logical_path>` for each manifest entry.
 
-        Default `root` is `./artifacts/<name>:<spec>/` (CWD-relative).
-        `<spec>` is the string used at `use_artifact` time (e.g. `"latest"`,
-        `"best"`, `"v3"`); for artifacts produced via `log_artifact`, defaults
-        to `f"v{version}"`.
+        Default `root` is `./artifacts/<name>:v<version>/` (CWD-relative),
+        always named by the resolved version so a moving alias like `latest`
+        never leaves stale files from a previous version in the directory.
 
-        Returns the absolute path to `root` as a string. Idempotent: blobs are
-        hardlinked from the content-addressed cache and skipped on the second
+        Returns the absolute path to `root` as a string. Idempotent: files are
+        copied from the content-addressed cache and skipped on the second
         call.
         """
         if not self._logged:
@@ -248,9 +251,8 @@ class Artifact:
         if self._manifest is None or self._project is None or self._version is None:
             raise RuntimeError("Artifact is missing manifest, project, or version.")
 
-        spec = self._spec if self._spec is not None else f"v{self._version}"
         if root is None:
-            root_path = Path.cwd() / "artifacts" / f"{self._name}:{spec}"
+            root_path = Path.cwd() / "artifacts" / f"{self._name}:v{self._version}"
         else:
             root_path = Path(root)
         root_path.mkdir(parents=True, exist_ok=True)
@@ -269,7 +271,7 @@ class Artifact:
                 _fetch_blob_from_remote(
                     self._remote_source, self._project, digest, blob
                 )
-            _link_or_copy(blob, root_path / logical)
+            _materialize(blob, root_path / logical, entry["size"])
 
         return str(root_path)
 
