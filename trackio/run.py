@@ -935,15 +935,40 @@ class Run:
 
     def log_artifact(
         self,
-        artifact: Artifact,
+        artifact_or_path: Artifact | str | Path,
+        name: str | None = None,
+        type: str | None = None,
         aliases: list[str] | None = None,
     ) -> Artifact:
         """Log an artifact as an output of this run.
+
+        Accepts either a constructed `Artifact` or, like wandb, a path to a
+        file or directory. For a path, `name` defaults to
+        `run-<run_id>-<basename>` and `type` defaults to `"unspecified"`;
+        for an `Artifact`, `name`/`type` must not be passed.
 
         In remote mode, blobs upload via the existing `pending_uploads` queue
         (drained synchronously), then the manifest is POSTed to `/artifact_log`
         which is the canonical store for the Space's DB.
         """
+        if isinstance(artifact_or_path, Artifact):
+            if name is not None or type is not None:
+                raise ValueError(
+                    "name/type can only be passed when logging a path; "
+                    "set them on the Artifact instead."
+                )
+            artifact = artifact_or_path
+        else:
+            path = Path(artifact_or_path)
+            artifact = Artifact(
+                name=name or f"run-{self.id}-{path.name}",
+                type=type or "unspecified",
+            )
+            if path.is_dir():
+                artifact.add_dir(path)
+            else:
+                artifact.add_file(path)
+
         if artifact._logged:
             raise RuntimeError(
                 "Artifact has already been logged or fetched; "
@@ -971,7 +996,7 @@ class Run:
                 project=self.project,
                 artifact_id=artifact_id,
                 manifest=manifest,
-                metadata=artifact.metadata,
+                metadata=artifact.metadata or None,
                 producer_run_id=self.id,
                 producer_run_name=self.name,
             )
@@ -1032,7 +1057,7 @@ class Run:
             name=artifact.name,
             type=artifact.type,
             description=artifact.description,
-            metadata=artifact.metadata,
+            metadata=artifact.metadata or None,
             manifest=manifest,
             aliases=user_aliases,
             run_name=self.name,
@@ -1053,14 +1078,57 @@ class Run:
         }
         return artifact
 
-    def use_artifact(self, spec: str) -> Artifact:
+    @staticmethod
+    def _check_artifact_type(
+        spec: str, stored_type: str, expected_type: str | None
+    ) -> None:
+        if expected_type is not None and stored_type != expected_type:
+            raise ValueError(
+                f"Artifact {spec!r} has type {stored_type!r}, not {expected_type!r}."
+            )
+
+    def use_artifact(
+        self,
+        artifact_or_name: Artifact | str,
+        type: str | None = None,
+        aliases: list[str] | None = None,
+        use_as: str | None = None,
+    ) -> Artifact:
         """Fetch an artifact and record it as an input to this run.
 
-        `spec` is `"name"` (defaults to `:latest`), `"name:<alias>"`, or
-        `"name:v<N>"`. Returns a freshly-hydrated `Artifact` whose `download()`
-        method materializes the files from the local content-addressed cache,
+        `artifact_or_name` is `"name"` (defaults to `:latest`),
+        `"name:<alias>"`, `"name:v<N>"`, or an already-logged `Artifact`.
+        If `type` is given, it is checked against the stored artifact type.
+        Returns a freshly-hydrated `Artifact` whose `download()` method
+        materializes the files from the local content-addressed cache,
         falling back to the remote when a blob is missing locally.
+
+        `aliases` and `use_as` are accepted for wandb signature compatibility
+        but are not yet supported.
         """
+        if aliases is not None:
+            self._warn_once(
+                "use-artifact-aliases",
+                "trackio.use_artifact() does not support the aliases parameter "
+                "yet; it was ignored.",
+            )
+        if use_as is not None:
+            self._warn_once(
+                "use-artifact-use-as",
+                "trackio.use_artifact() does not support the use_as parameter "
+                "(deprecated in wandb); it was ignored.",
+            )
+
+        if isinstance(artifact_or_name, Artifact):
+            if not artifact_or_name._logged or artifact_or_name._version is None:
+                raise ValueError(
+                    "use_artifact() with an Artifact instance requires an "
+                    "artifact that has already been logged or fetched."
+                )
+            spec = f"{artifact_or_name.name}:v{artifact_or_name._version}"
+        else:
+            spec = artifact_or_name
+
         if ":" in spec:
             name, version_or_alias = spec.split(":", 1)
         else:
@@ -1074,6 +1142,7 @@ class Run:
                 raise ValueError(
                     f"Artifact {spec!r} not found in project {self.project!r}."
                 )
+            self._check_artifact_type(spec, record["type"], type)
             art = Artifact(name=record["name"], type=record["type"])
             art._hydrate_from_db(
                 project=self.project,
@@ -1105,6 +1174,7 @@ class Run:
             raise ValueError(
                 f"Artifact {spec!r} not found in project {self.project!r}."
             )
+        self._check_artifact_type(spec, record["type"], type)
 
         art = Artifact(name=record["name"], type=record["type"])
         art._hydrate_from_db(

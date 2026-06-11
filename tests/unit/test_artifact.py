@@ -329,14 +329,17 @@ def test_artifact_name_is_readonly():
         a.name = "other"
 
 
-def test_artifact_metadata_defensive_copy():
+def test_artifact_metadata_copied_at_init_then_live():
     md = {"k": 1}
     a = Artifact(name="m", type="model", metadata=md)
     md["k"] = 999
     assert a.metadata == {"k": 1}
-    out = a.metadata
-    out["k"] = 999
-    assert a.metadata == {"k": 1}
+    a.metadata["k"] = 2
+    assert a.metadata == {"k": 2}
+    a.metadata = {"fresh": True}
+    assert a.metadata == {"fresh": True}
+    a.description = "now mutable"
+    assert a.description == "now mutable"
 
 
 def test_add_file_records_pending(tmp_path):
@@ -532,7 +535,7 @@ def test_hydrate_from_db_populates_readonly_attrs():
         description="hydrated",
         metadata={"acc": 0.9},
     )
-    assert a.version == 2
+    assert a.version == "v2"
     assert a.aliases == ("latest", "best")
     assert a.size == 3
     assert a.manifest_digest == "def"
@@ -729,14 +732,14 @@ def test_run_log_artifact_round_trip(temp_dir, tmp_path):
     art.add_file(weights)
     logged = run.log_artifact(art)
     assert logged is art
-    assert logged.version == 0
+    assert logged.version == "v0"
     assert "latest" in logged.aliases
     assert logged.project == "art-rt"
     trackio.finish()
 
     run2 = trackio.init(project="art-rt", name="consumer")
     fetched = run2.use_artifact("my-model:latest")
-    assert fetched.version == 0
+    assert fetched.version == "v0"
     assert fetched.name == "my-model"
     assert fetched.type == "model"
     out = fetched.download(tmp_path / "dl")
@@ -782,14 +785,14 @@ def test_relog_same_bytes_dedupes_but_rotates_aliases(temp_dir, tmp_path):
     art_a = Artifact(name="m", type="model")
     art_a.add_file(weights)
     logged_a = run_a.log_artifact(art_a, aliases=["best"])
-    assert logged_a.version == 0
+    assert logged_a.version == "v0"
     trackio.finish()
 
     run_b = trackio.init(project="art-dedup", name="run_b")
     art_b = Artifact(name="m", type="model")
     art_b.add_file(weights)
     logged_b = run_b.log_artifact(art_b)
-    assert logged_b.version == 0
+    assert logged_b.version == "v0"
     assert "latest" in logged_b.aliases
     assert "best" in logged_b.aliases
     trackio.finish()
@@ -809,19 +812,19 @@ def test_aliases_rotate_on_new_version(temp_dir, tmp_path):
     art_a = Artifact(name="m", type="model")
     art_a.add_file(p1)
     logged_a = run_a.log_artifact(art_a, aliases=["best"])
-    assert logged_a.version == 0
+    assert logged_a.version == "v0"
     trackio.finish()
 
     run_b = trackio.init(project="art-rotate", name="r2")
     art_b = Artifact(name="m", type="model")
     art_b.add_file(p2)
     logged_b = run_b.log_artifact(art_b, aliases=["best"])
-    assert logged_b.version == 1
+    assert logged_b.version == "v1"
 
     fetched_best = run_b.use_artifact("m:best")
-    assert fetched_best.version == 1
+    assert fetched_best.version == "v1"
     fetched_v0 = run_b.use_artifact("m:v0")
-    assert fetched_v0.version == 0
+    assert fetched_v0.version == "v0"
     trackio.finish()
 
 
@@ -832,10 +835,10 @@ def test_use_artifact_spec_parsing(temp_dir, tmp_path):
     art.add_file(weights)
     run.log_artifact(art, aliases=["best"])
 
-    assert run.use_artifact("m").version == 0
-    assert run.use_artifact("m:latest").version == 0
-    assert run.use_artifact("m:best").version == 0
-    assert run.use_artifact("m:v0").version == 0
+    assert run.use_artifact("m").version == "v0"
+    assert run.use_artifact("m:latest").version == "v0"
+    assert run.use_artifact("m:best").version == "v0"
+    assert run.use_artifact("m:v0").version == "v0"
     trackio.finish()
 
 
@@ -901,6 +904,96 @@ def test_relog_already_logged_artifact_raises(temp_dir, tmp_path):
     trackio.finish()
 
 
+def test_log_artifact_accepts_file_path(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-path", name="p")
+    logged = run.log_artifact(str(weights), name="weights", type="model")
+    assert logged.name == "weights"
+    assert logged.type == "model"
+    assert logged.version == "v0"
+    assert [e["path"] for e in logged.manifest] == ["w.bin"]
+    trackio.finish()
+
+
+def test_log_artifact_accepts_dir_path_with_defaults(temp_dir, tmp_path):
+    d = tmp_path / "bundle"
+    d.mkdir()
+    (d / "a.txt").write_bytes(b"a")
+    (d / "b.txt").write_bytes(b"b")
+    run = trackio.init(project="art-path-dir", name="p")
+    logged = run.log_artifact(d)
+    assert logged.name == f"run-{run.id}-bundle"
+    assert logged.type == "unspecified"
+    assert sorted(e["path"] for e in logged.manifest) == ["a.txt", "b.txt"]
+    trackio.finish()
+
+
+def test_log_artifact_rejects_name_with_artifact_instance(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-badargs", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    with pytest.raises(ValueError, match="only be passed when logging a path"):
+        run.log_artifact(art, name="other")
+    trackio.finish()
+
+
+def test_use_artifact_type_check(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-type", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art)
+    assert run.use_artifact("m", type="model").version == "v0"
+    with pytest.raises(ValueError, match="has type 'model'"):
+        run.use_artifact("m", type="dataset")
+    trackio.finish()
+
+
+def test_use_artifact_accepts_artifact_instance(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-inst", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    logged = run.log_artifact(art)
+    fetched = run.use_artifact(logged)
+    assert fetched.version == "v0"
+    assert fetched.name == "m"
+    unlogged = Artifact(name="m2", type="model")
+    with pytest.raises(ValueError, match="already been logged"):
+        run.use_artifact(unlogged)
+    trackio.finish()
+
+
+def test_wait_digest_and_qualified_name(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-compat", name="p")
+    art = Artifact(name="m", type="model")
+    with pytest.raises(RuntimeError, match="Cannot wait"):
+        art.wait()
+    with pytest.raises(RuntimeError, match="no qualified name"):
+        art.qualified_name
+    art.add_file(weights)
+    logged = run.log_artifact(art).wait()
+    assert logged is art
+    assert logged.digest == logged.manifest_digest
+    assert logged.qualified_name == "art-compat/m:v0"
+    assert run.use_artifact(f"m:{logged.version}").version == "v0"
+    trackio.finish()
+
+
+def test_metadata_mutation_before_log_is_persisted(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"x")
+    run = trackio.init(project="art-md", name="p")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    art.metadata["acc"] = 0.9
+    run.log_artifact(art)
+    fetched = run.use_artifact("m")
+    assert fetched.metadata == {"acc": 0.9}
+    trackio.finish()
+
+
 # --- module-level re-exports ---
 
 
@@ -911,7 +1004,7 @@ def test_module_log_artifact_inside_run_equivalent_to_run_method(temp_dir, tmp_p
     art.add_file(weights)
     logged = trackio.log_artifact(art, aliases=["best"])
     assert logged is art
-    assert logged.version == 0
+    assert logged.version == "v0"
     assert "latest" in logged.aliases and "best" in logged.aliases
     trackio.finish()
 
@@ -929,7 +1022,7 @@ def test_module_use_artifact_inside_run_records_lineage(temp_dir, tmp_path):
 
     trackio.init(project="art-mod-use", name="c")
     fetched = trackio.use_artifact("m:latest")
-    assert fetched.version == 0
+    assert fetched.version == "v0"
     trackio.finish()
 
     lineage_c = SQLiteStorage.get_run_artifacts("art-mod-use", "c", None)

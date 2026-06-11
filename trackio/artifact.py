@@ -13,13 +13,13 @@ _READ_ONLY_ATTRS = frozenset(
     {
         "name",
         "type",
-        "description",
-        "metadata",
         "version",
         "aliases",
         "size",
         "manifest",
         "manifest_digest",
+        "digest",
+        "qualified_name",
         "project",
     }
 )
@@ -111,7 +111,7 @@ class Artifact:
         self._name = name
         self._type = type
         self._description = description
-        self._metadata: dict | None = dict(metadata) if metadata else None
+        self._metadata: dict = dict(metadata) if metadata else {}
         self._pending_files: list[tuple[Path, str]] = []
         self._logged = False
         self._version: int | None = None
@@ -134,13 +134,25 @@ class Artifact:
     def description(self) -> str | None:
         return self._description
 
-    @property
-    def metadata(self) -> dict | None:
-        return None if self._metadata is None else dict(self._metadata)
+    @description.setter
+    def description(self, value: str | None) -> None:
+        self._description = value
 
     @property
-    def version(self) -> int | None:
-        return self._version
+    def metadata(self) -> dict:
+        """Live, mutable metadata dict (matches wandb: `art.metadata["k"] = v`
+        before logging is preserved)."""
+        return self._metadata
+
+    @metadata.setter
+    def metadata(self, value: dict | None) -> None:
+        self._metadata = dict(value) if value else {}
+
+    @property
+    def version(self) -> str | None:
+        """Version string in wandb's `"v<N>"` form (e.g. `"v3"`), or None if
+        the artifact has not been logged or fetched yet."""
+        return None if self._version is None else f"v{self._version}"
 
     @property
     def aliases(self) -> tuple[str, ...]:
@@ -159,8 +171,32 @@ class Artifact:
         return self._manifest_digest
 
     @property
+    def digest(self) -> Sha256Digest | None:
+        """Alias of `manifest_digest` (wandb name)."""
+        return self._manifest_digest
+
+    @property
+    def qualified_name(self) -> str:
+        """`"<project>/<name>:v<N>"` for a logged or fetched artifact."""
+        if self._project is None or self._version is None:
+            raise RuntimeError(
+                "Artifact has no qualified name until it is logged or fetched."
+            )
+        return f"{self._project}/{self._name}:v{self._version}"
+
+    @property
     def project(self) -> str | None:
         return self._project
+
+    def wait(self, timeout: int | None = None) -> "Artifact":
+        """No-op for wandb compatibility: trackio logs artifacts synchronously,
+        so the artifact is already committed when `log_artifact` returns."""
+        if not self._logged:
+            raise RuntimeError(
+                "Cannot wait on an Artifact that has not been logged; "
+                "call log_artifact first."
+            )
+        return self
 
     def add_file(self, local_path: str | Path, name: str | None = None) -> None:
         if self._logged:
@@ -279,7 +315,7 @@ class Artifact:
     def __repr__(self) -> str:
         parts: list[str] = [f"name={self._name!r}", f"type={self._type!r}"]
         if self._version is not None:
-            parts.append(f"version={self._version}")
+            parts.append(f"version=v{self._version}")
         if self._aliases:
             parts.append(f"aliases={list(self._aliases)!r}")
         return f"Artifact({', '.join(parts)})"

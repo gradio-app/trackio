@@ -96,12 +96,12 @@ def test_multi_version_lifecycle_with_alias_rotation(temp_dir, tmp_path):
         trackio.finish()
 
     trackio.init(project="art-multi", name="consumer")
-    assert trackio.use_artifact("m").version == 2
-    assert trackio.use_artifact("m:latest").version == 2
-    assert trackio.use_artifact("m:best").version == 1
-    assert trackio.use_artifact("m:v0").version == 0
-    assert trackio.use_artifact("m:v1").version == 1
-    assert trackio.use_artifact("m:v2").version == 2
+    assert trackio.use_artifact("m").version == "v2"
+    assert trackio.use_artifact("m:latest").version == "v2"
+    assert trackio.use_artifact("m:best").version == "v1"
+    assert trackio.use_artifact("m:v0").version == "v0"
+    assert trackio.use_artifact("m:v1").version == "v1"
+    assert trackio.use_artifact("m:v2").version == "v2"
     trackio.finish()
 
 

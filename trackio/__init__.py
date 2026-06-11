@@ -722,40 +722,60 @@ def log_system(metrics: dict) -> None:
     run.log_system(metrics=metrics)
 
 
-def log_artifact(artifact: Artifact, aliases: list[str] | None = None) -> Artifact:
+def log_artifact(
+    artifact_or_path: Artifact | str | Path,
+    name: str | None = None,
+    type: str | None = None,
+    aliases: list[str] | None = None,
+) -> Artifact:
     """
     Logs an artifact as an output of the current run.
 
     Args:
-        artifact (`Artifact`):
-            The artifact to log. Must have at least one file added via
-            `add_file` or `add_dir`.
+        artifact_or_path (`Artifact`, `str`, or `Path`):
+            The artifact to log (must have at least one file added via
+            `add_file` or `add_dir`), or a path to a file or directory to
+            log as a new artifact.
+        name (`str`, *optional*):
+            Artifact name when logging a path. Defaults to
+            `run-<run_id>-<basename>`. Must not be passed with an `Artifact`.
+        type (`str`, *optional*):
+            Artifact type when logging a path (e.g. `"model"`, `"dataset"`).
+            Defaults to `"unspecified"`. Must not be passed with an
+            `Artifact`.
         aliases (`list[str]`, *optional*):
             Aliases to assign to the resulting version (in addition to the
             auto-assigned `latest`). Each alias rotates to point at this
             version, even on the dedup path.
 
     Returns:
-        The same `artifact` instance, now hydrated with `version`, `aliases`,
+        The logged `Artifact` instance, hydrated with `version`, `aliases`,
         `size`, `manifest`, and `project` set.
     """
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.log_artifact().")
-    return run.log_artifact(artifact, aliases=aliases)
+    return run.log_artifact(artifact_or_path, name=name, type=type, aliases=aliases)
 
 
-def use_artifact(spec: str) -> Artifact:
+def use_artifact(
+    artifact_or_name: Artifact | str,
+    type: str | None = None,
+    aliases: list[str] | None = None,
+    use_as: str | None = None,
+) -> Artifact:
     """
-    Fetches an artifact by spec and records it as an input to the current run.
+    Fetches an artifact and records it as an input to the current run.
 
-    `spec` is `"name"` (defaults to `:latest`), `"name:<alias>"`, or
-    `"name:v<N>"`.
+    `artifact_or_name` is `"name"` (defaults to `:latest`), `"name:<alias>"`,
+    `"name:v<N>"`, or an already-logged `Artifact`. If `type` is given, it is
+    checked against the stored artifact type. `aliases` and `use_as` are
+    accepted for wandb signature compatibility but are not yet supported.
     """
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.use_artifact().")
-    return run.use_artifact(spec)
+    return run.use_artifact(artifact_or_name, type=type, aliases=aliases, use_as=use_as)
 
 
 def log_gpu(run: Run | None = None, device: int | None = None) -> dict:

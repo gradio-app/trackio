@@ -133,7 +133,7 @@ def test_remote_log_artifact_hydrates_returned_artifact(
     logged = run.log_artifact(art, aliases=["best"])
 
     assert logged is art
-    assert logged.version == 0
+    assert logged.version == "v0"
     assert "latest" in logged.aliases
     assert "best" in logged.aliases
     assert logged.project == "rp"
@@ -159,7 +159,7 @@ def test_remote_use_artifact_sequence(temp_dir, monkeypatch):
     assert log_use_call.kwargs["version_id"] == 7
     assert log_use_call.kwargs["run_name"] == "consumer"
 
-    assert art.version == 0
+    assert art.version == "v0"
     assert art._remote_source == {
         "space_id": "user/space",
         "server_base_url": None,
@@ -190,7 +190,7 @@ def test_remote_use_artifact_lineage_failure_is_nonfatal(temp_dir, monkeypatch):
 
     client.predict.side_effect = _side_effect
     art = run.use_artifact("m:latest")
-    assert art.version == 0
+    assert art.version == "v0"
     run._client = None
     trackio.finish()
 

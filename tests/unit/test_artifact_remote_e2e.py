@@ -131,7 +131,7 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
     art.add_file(weights)
     producer.log_artifact(art, aliases=["best"])
 
-    assert art.version == 0
+    assert art.version == "v0"
     assert "best" in art.aliases and "latest" in art.aliases
     assert art.metadata == {"acc": 0.91}
     # Shared CAS: blob is already present from _build_manifest, so the
@@ -151,7 +151,7 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
 
     consumer = _setup_remote_run("consumer", "art-e2e", in_process_remote)
     fetched = consumer.use_artifact("my-model:latest")
-    assert fetched.version == 0
+    assert fetched.version == "v0"
     assert fetched._remote_source == {
         "space_id": "user/space",
         "server_base_url": None,
