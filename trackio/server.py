@@ -607,7 +607,7 @@ def artifact_log(
         )
 
     artifact_id = SQLiteStorage.create_or_get_artifact(project, name, type, description)
-    version_id, version_int, _was_new = SQLiteStorage.insert_artifact_version(
+    version_id, version_int = SQLiteStorage.insert_artifact_version(
         project=project,
         artifact_id=artifact_id,
         manifest=manifest,

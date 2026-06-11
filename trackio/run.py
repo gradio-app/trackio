@@ -992,7 +992,7 @@ class Run:
                 type=artifact.type,
                 description=artifact.description,
             )
-            version_id, version_int, _was_new = SQLiteStorage.insert_artifact_version(
+            version_id, version_int = SQLiteStorage.insert_artifact_version(
                 project=self.project,
                 artifact_id=artifact_id,
                 manifest=manifest,
@@ -1037,17 +1037,20 @@ class Run:
         )
         present = set(present_response.get("present", []))
 
-        for entry in manifest:
-            if entry["digest"] in present:
-                continue
-            SQLiteStorage.enqueue_artifact_blob_upload(
-                project=self.project,
-                space_id=self._remote_storage_key,
-                digest=entry["digest"],
-                local_blob_path=str(cas.blob_path(self.project, entry["digest"])),
-                run_name=self.name,
-                run_id=self.id,
-            )
+        SQLiteStorage.enqueue_artifact_blob_uploads(
+            project=self.project,
+            space_id=self._remote_storage_key,
+            blobs=[
+                (
+                    entry["digest"],
+                    str(cas.blob_path(self.project, entry["digest"])),
+                )
+                for entry in manifest
+                if entry["digest"] not in present
+            ],
+            run_name=self.name,
+            run_id=self.id,
+        )
 
         self._drain_pending_uploads()
 
@@ -1154,13 +1157,19 @@ class Run:
                 description=record["description"],
                 metadata=record["metadata"],
             )
-            SQLiteStorage.insert_run_artifact_link(
-                project=self.project,
-                run_name=self.name,
-                run_id=self.id,
-                version_id=record["version_id"],
-                direction="input",
-            )
+            try:
+                SQLiteStorage.insert_run_artifact_link(
+                    project=self.project,
+                    run_name=self.name,
+                    run_id=self.id,
+                    version_id=record["version_id"],
+                    direction="input",
+                )
+            except Exception as e:
+                self._warn_once(
+                    "artifact-use-lineage-local",
+                    f"trackio could not record consumer lineage for {spec!r}: {e}",
+                )
             return art
 
         self._wait_for_client_ready()

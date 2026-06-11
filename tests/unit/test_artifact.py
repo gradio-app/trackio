@@ -38,26 +38,25 @@ def test_create_or_get_artifact_rejects_type_change(temp_dir):
 def test_insert_artifact_version_dedupes(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
     manifest = [{"path": "w.bin", "digest": "abc", "size": 5}]
-    vid_1, v_1, new_1 = SQLiteStorage.insert_artifact_version(
+    vid_1, v_1 = SQLiteStorage.insert_artifact_version(
         "p", aid, manifest, None, None, "run-a"
     )
-    vid_2, v_2, new_2 = SQLiteStorage.insert_artifact_version(
+    vid_2, v_2 = SQLiteStorage.insert_artifact_version(
         "p", aid, manifest, None, None, "run-b"
     )
-    assert new_1 is True and new_2 is False
     assert vid_1 == vid_2
     assert v_1 == v_2 == 0
 
 
 def test_insert_artifact_version_increments(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    _, v_0, _ = SQLiteStorage.insert_artifact_version(
+    _, v_0 = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 1}], None, None, "r"
     )
-    _, v_1, _ = SQLiteStorage.insert_artifact_version(
+    _, v_1 = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "2", "size": 1}], None, None, "r"
     )
-    _, v_2, _ = SQLiteStorage.insert_artifact_version(
+    _, v_2 = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "3", "size": 1}], None, None, "r"
     )
     assert (v_0, v_1, v_2) == (0, 1, 2)
@@ -65,10 +64,10 @@ def test_insert_artifact_version_increments(temp_dir):
 
 def test_reassign_alias_rotates(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    vid_0, _, _ = SQLiteStorage.insert_artifact_version(
+    vid_0, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 1}], None, None, "r"
     )
-    vid_1, _, _ = SQLiteStorage.insert_artifact_version(
+    vid_1, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "2", "size": 1}], None, None, "r"
     )
     SQLiteStorage.reassign_alias("p", aid, "latest", vid_0)
@@ -80,7 +79,7 @@ def test_reassign_alias_rotates(temp_dir):
 
 def test_reassign_alias_rejects_version_pointer(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    vid, _, _ = SQLiteStorage.insert_artifact_version(
+    vid, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 1}], None, None, "r"
     )
     with pytest.raises(ValueError, match="reserved"):
@@ -89,10 +88,10 @@ def test_reassign_alias_rejects_version_pointer(temp_dir):
 
 def test_resolve_artifact_version_spec_grammar(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    vid_0, _, _ = SQLiteStorage.insert_artifact_version(
+    vid_0, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 1}], None, None, "r"
     )
-    vid_1, _, _ = SQLiteStorage.insert_artifact_version(
+    vid_1, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "2", "size": 1}], None, None, "r"
     )
     SQLiteStorage.reassign_alias("p", aid, "best", vid_0)
@@ -115,7 +114,7 @@ def test_resolve_artifact_version_spec_grammar(temp_dir):
 
 def test_insert_run_artifact_link_and_get(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    vid, _, _ = SQLiteStorage.insert_artifact_version(
+    vid, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 7}], None, None, "producer"
     )
     SQLiteStorage.insert_run_artifact_link("p", "producer", None, vid, "output")
@@ -134,7 +133,7 @@ def test_insert_run_artifact_link_and_get(temp_dir):
 
 def test_insert_run_artifact_link_rejects_bad_direction(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    vid, _, _ = SQLiteStorage.insert_artifact_version(
+    vid, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 1}], None, None, "r"
     )
     with pytest.raises(ValueError, match="direction"):
@@ -143,10 +142,10 @@ def test_insert_run_artifact_link_rejects_bad_direction(temp_dir):
 
 def test_list_artifacts_and_versions(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", "weights")
-    vid_0, _, _ = SQLiteStorage.insert_artifact_version(
+    vid_0, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 11}], {"acc": 0.5}, None, "r0"
     )
-    vid_1, _, _ = SQLiteStorage.insert_artifact_version(
+    vid_1, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "2", "size": 22}], {"acc": 0.9}, None, "r1"
     )
     SQLiteStorage.reassign_alias("p", aid, "latest", vid_1)
@@ -180,7 +179,7 @@ def test_get_artifact_manifest(temp_dir):
         {"path": "weights.bin", "digest": "ab", "size": 5},
         {"path": "config.json", "digest": "cd", "size": 2},
     ]
-    vid, _, _ = SQLiteStorage.insert_artifact_version(
+    vid, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, manifest, {"k": 1}, None, "producer"
     )
     SQLiteStorage.reassign_alias("p", aid, "latest", vid)

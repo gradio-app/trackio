@@ -344,7 +344,7 @@ def test_send_pending_uploads_drops_missing_files_with_warning(
 
 def test_lineage_unique_index_prevents_duplicates(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    vid, _, _ = SQLiteStorage.insert_artifact_version(
+    vid, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 1}], None, None, "r"
     )
     SQLiteStorage.insert_run_artifact_link("p", "r", "rid-1", vid, "input")

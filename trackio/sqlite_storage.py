@@ -3907,7 +3907,7 @@ class SQLiteStorage:
         metadata: dict | None,
         producer_run_id: str | None,
         producer_run_name: str | None,
-    ) -> tuple[int, int, bool]:
+    ) -> tuple[int, int]:
         canonical, manifest_digest, size_bytes = SQLiteStorage._canonical_manifest(
             manifest
         )
@@ -3926,7 +3926,7 @@ class SQLiteStorage:
                     (artifact_id, manifest_digest),
                 ).fetchone()
                 if existing is not None:
-                    return int(existing["id"]), int(existing["version"]), False
+                    return int(existing["id"]), int(existing["version"])
                 row = cursor.execute(
                     "SELECT MAX(version) AS m FROM artifact_versions WHERE artifact_id = ?",
                     (artifact_id,),
@@ -3950,7 +3950,7 @@ class SQLiteStorage:
                     ),
                 )
                 conn.commit()
-                return int(cursor.lastrowid), next_version, True
+                return int(cursor.lastrowid), next_version
 
     @staticmethod
     def reassign_alias(
@@ -4060,18 +4060,27 @@ class SQLiteStorage:
                 GROUP BY a.id
                 ORDER BY a.name
                 """).fetchall()
+            alias_rows = cursor.execute(
+                """SELECT aa.artifact_id, aa.alias FROM artifact_aliases aa
+                JOIN artifact_versions av ON av.id = aa.artifact_version_id
+                WHERE av.version = (
+                    SELECT MAX(version) FROM artifact_versions
+                    WHERE artifact_id = aa.artifact_id
+                )"""
+            ).fetchall()
+            aliases_by_artifact: dict[int, list[str]] = {}
+            for r in alias_rows:
+                aliases_by_artifact.setdefault(int(r["artifact_id"]), []).append(
+                    r["alias"]
+                )
             result = []
             for row in rows:
-                latest_aliases: list[str] = []
                 latest_version = row["latest_version"]
-                if latest_version is not None:
-                    alias_rows = cursor.execute(
-                        """SELECT aa.alias FROM artifact_aliases aa
-                        JOIN artifact_versions av ON av.id = aa.artifact_version_id
-                        WHERE aa.artifact_id = ? AND av.version = ?""",
-                        (row["id"], latest_version),
-                    ).fetchall()
-                    latest_aliases = [r["alias"] for r in alias_rows]
+                latest_aliases = (
+                    aliases_by_artifact.get(int(row["id"]), [])
+                    if latest_version is not None
+                    else []
+                )
                 result.append(
                     {
                         "id": int(row["id"]),
@@ -4253,17 +4262,56 @@ class SQLiteStorage:
         run_name: str | None,
         run_id: str | None,
     ) -> None:
-        SQLiteStorage.add_pending_upload(
+        SQLiteStorage.enqueue_artifact_blob_uploads(
             project=project,
             space_id=space_id,
-            run_id=run_id,
+            blobs=[(digest, local_blob_path)],
             run_name=run_name,
-            step=None,
-            file_path=local_blob_path,
-            relative_path=None,
-            kind="artifact_blob",
-            digest=digest,
+            run_id=run_id,
         )
+
+    @staticmethod
+    def enqueue_artifact_blob_uploads(
+        project: str,
+        space_id: str,
+        blobs: list[tuple[Sha256Digest, str]],
+        run_name: str | None,
+        run_id: str | None,
+    ) -> None:
+        """Enqueue one pending_uploads row per `(digest, local_blob_path)` in
+        a single connection/transaction."""
+        if not blobs:
+            return
+        db_path = SQLiteStorage.init_db(project)
+        now = datetime.now(timezone.utc).isoformat()
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                columns = SQLiteStorage._table_columns(conn, "pending_uploads")
+                cols: list[str] = []
+                rows: list[list] = []
+                for digest, file_path in blobs:
+                    candidate_fields = [
+                        ("space_id", space_id, True),
+                        ("run_id", run_id, "run_id" in columns),
+                        ("run_name", run_name, True),
+                        ("step", None, True),
+                        ("file_path", file_path, True),
+                        ("relative_path", None, True),
+                        ("kind", "artifact_blob", "kind" in columns),
+                        ("digest", digest, "digest" in columns),
+                        ("created_at", now, True),
+                    ]
+                    fields = [
+                        (col, val) for col, val, include in candidate_fields if include
+                    ]
+                    cols = [col for col, _ in fields]
+                    rows.append([val for _, val in fields])
+                placeholders = ", ".join("?" for _ in cols)
+                conn.executemany(
+                    f"INSERT INTO pending_uploads ({', '.join(cols)}) VALUES ({placeholders})",
+                    rows,
+                )
+                conn.commit()
 
     @staticmethod
     def list_artifact_blobs_present(
