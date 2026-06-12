@@ -725,9 +725,7 @@ class Run:
     def _persist_uploads_locally(self, uploads: list[UploadEntry]):
         if not self._remote_storage_key:
             return
-        if self._storage_mode == "jsonl":
-            if self._bucket_id is None:
-                return
+        if self._storage_mode == "jsonl" and self._bucket_id is not None:
             try:
                 fragments.upload_media_files_to_bucket(
                     self._bucket_id,
@@ -742,12 +740,12 @@ class Run:
                         for entry in uploads
                     ],
                 )
+                return
             except Exception as e:
                 self._warn_once(
                     "persist-uploads-fragment",
-                    f"trackio could not upload media files to Bucket '{self._bucket_id}' for run '{self.name}': {e}. User code will continue, but some artifacts could be missing.",
+                    f"trackio could not upload media files to Bucket '{self._bucket_id}' for run '{self.name}': {e}. They will be kept in the local pending buffer instead.",
                 )
-            return
         try:
             for entry in uploads:
                 file_path = self._upload_entry_file_path(entry)
