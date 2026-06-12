@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+import huggingface_hub
 from gradio_client import Client as GradioClient
 from huggingface_hub.utils import build_hf_headers
 
@@ -165,9 +167,13 @@ class _TrackioGradioCompatClient:
         httpx_kwargs: dict[str, Any] | None = None,
         verbose: bool = False,
     ) -> None:
+        supported_params = inspect.signature(GradioClient.__init__).parameters
         kwargs: dict[str, Any] = {"verbose": verbose}
         if hf_token:
-            kwargs["hf_token"] = hf_token
+            if "hf_token" in supported_params:
+                kwargs["hf_token"] = hf_token
+            elif "token" in supported_params:
+                kwargs["token"] = hf_token
         merged = dict(httpx_kwargs or {})
         h = _merge_client_headers(
             hf_token if hf_token else None,
@@ -177,8 +183,11 @@ class _TrackioGradioCompatClient:
         if isinstance(extra, dict):
             h.update({str(k): str(v) for k, v in extra.items()})
         if h:
-            merged["headers"] = h
-        if merged:
+            if "headers" in supported_params:
+                kwargs["headers"] = h
+            elif "httpx_kwargs" in supported_params:
+                merged["headers"] = h
+        if merged and "httpx_kwargs" in supported_params:
             kwargs["httpx_kwargs"] = merged
         self._client = GradioClient(src, **kwargs)
 
@@ -192,6 +201,21 @@ class _TrackioGradioCompatClient:
                     "Redeploy with `trackio sync`."
                 ) from e
             raise
+
+
+def _raise_if_space_is_building(space_id: str) -> None:
+    """
+    GradioClient.__init__ blocks in an unbounded loop while a Space is in the
+    BUILDING stage, which would make the caller unresponsive to trackio's stop
+    flag. Fail fast instead so callers can retry on their own schedule.
+    """
+    try:
+        info = huggingface_hub.HfApi().space_info(space_id, timeout=30)
+        stage = str(info.runtime.stage) if info.runtime else None
+    except Exception:
+        return
+    if stage == "BUILDING":
+        raise ConnectionError(f"Space '{space_id}' is still building.")
 
 
 def _supports_http_api(
@@ -248,6 +272,8 @@ class RemoteClient:
                     httpx_kwargs=httpx_kwargs,
                 )
             else:
+                if not src_for_resolve.startswith(("http://", "https://")):
+                    _raise_if_space_is_building(src_for_resolve)
                 self._client = _TrackioGradioCompatClient(
                     src_for_resolve,
                     hf_token=hf_effective,

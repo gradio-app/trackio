@@ -170,3 +170,44 @@ def test_local_buffer_flushed_after_recovery(test_space_id, temp_dir, wait_for_c
     assert not SQLiteStorage.has_pending_data(project_name), (
         "Expected pending local buffer rows to be cleared after flush"
     )
+
+
+def test_job_ends_before_space_is_available(test_space_id, temp_dir, monkeypatch):
+    """
+    Simulates an ephemeral HF Job that finishes before the Space has started:
+    the client never connects, buffered logs are written as JSONL fragments to
+    the Bucket inbox at finish(), and the Space imports them once it is
+    running.
+    """
+    project_name = f"test_ephemeral_{secrets.token_urlsafe(8)}"
+    run_name = "test_run"
+
+    def space_unavailable(*args, **kwargs):
+        raise ConnectionError("Space is still starting up")
+
+    monkeypatch.setattr("trackio.RemoteClient", space_unavailable)
+    monkeypatch.setattr("trackio.run.RemoteClient", space_unavailable)
+
+    trackio.init(project=project_name, name=run_name, space_id=test_space_id)
+    trackio.log({"loss": 0.5})
+    trackio.log({"loss": 0.3})
+    trackio.finish()
+
+    assert not SQLiteStorage.has_pending_data(project_name), (
+        "Expected buffered logs to be uploaded to the Bucket inbox at finish()"
+    )
+
+    verify_client = Client(test_space_id, verbose=False)
+    summary = None
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        verify_client.predict(api_name="/force_sync")
+        summary = verify_client.predict(
+            project=project_name, run=run_name, api_name="/get_run_summary"
+        )
+        if summary.get("num_logs") == 2:
+            break
+        time.sleep(5)
+    assert summary is not None and summary["num_logs"] == 2, (
+        f"Expected 2 logs imported from the Bucket inbox, got {summary}"
+    )

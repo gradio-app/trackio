@@ -46,6 +46,46 @@ _MAX_RETRIES = 30
 _LOGS_BATCH_MAX_RUNS = 64
 _LOGS_BATCH_MAX_POINTS = 10_000
 
+_inbox_poller_thread: threading.Thread | None = None
+_inbox_poller_lock = threading.Lock()
+
+
+def import_inbox_once() -> int:
+    from trackio import fragments  # noqa: PLC0415
+
+    imported = fragments.import_inbox_dir()
+    bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
+    if bucket_id:
+        imported += fragments.import_inbox_from_bucket(bucket_id)
+    return imported
+
+
+def _inbox_poll_loop() -> None:
+    while True:
+        try:
+            imported = import_inbox_once()
+            if imported:
+                logger.info("imported %d records from inbox fragments", imported)
+        except Exception as e:
+            logger.warning("inbox fragment import failed: %s", e)
+        interval = utils.get_inbox_poll_interval()
+        time.sleep(interval)
+
+
+def start_inbox_poller() -> None:
+    global _inbox_poller_thread
+    try:
+        from trackio import fragments  # noqa: PLC0415
+
+        fragments.import_inbox_dir()
+    except Exception as e:
+        logger.warning("inbox fragment import at startup failed: %s", e)
+    with _inbox_poller_lock:
+        if _inbox_poller_thread is not None and _inbox_poller_thread.is_alive():
+            return
+        _inbox_poller_thread = threading.Thread(target=_inbox_poll_loop, daemon=True)
+        _inbox_poller_thread.start()
+
 
 def _normalize_logs_batch_runs(runs: Any) -> list[dict[str, Any]]:
     if not isinstance(runs, list):
@@ -968,6 +1008,10 @@ def rename_run(
 
 
 def force_sync() -> bool:
+    try:
+        import_inbox_once()
+    except Exception as e:
+        logger.warning("inbox fragment import during force_sync failed: %s", e)
     if os.environ.get("TRACKIO_BUCKET_ID"):
         return True
     SQLiteStorage._dataset_import_attempted = True
@@ -1069,6 +1113,7 @@ def build_starlette_app_only(
 
     resolved_frontend = resolve_frontend_dir(frontend_dir)
     mount_frontend(starlette_app, frontend_dir=resolved_frontend.path)
+    start_inbox_poller()
     return starlette_app, write_token
 
 
