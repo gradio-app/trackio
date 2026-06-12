@@ -425,9 +425,12 @@ def init(
 
     _should_embed_local = False
 
-    newly_created_space = (
-        space_id is not None and space_id in _spaces_created_this_session
-    )
+    newly_created_space = False
+    if space_id is not None and space_id in _spaces_created_this_session:
+        if deploy.space_is_running(space_id):
+            _spaces_created_this_session.discard(space_id)
+        else:
+            newly_created_space = True
 
     if (
         context_vars.current_project.get() is None

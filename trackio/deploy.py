@@ -572,6 +572,14 @@ def create_space_if_not_exists(
     return True
 
 
+def space_is_running(space_id: str) -> bool:
+    try:
+        info = huggingface_hub.HfApi().space_info(space_id, timeout=30)
+        return bool(info.runtime) and str(info.runtime.stage) == "RUNNING"
+    except Exception:
+        return False
+
+
 def _warn_if_space_build_fails(space_id: str, timeout: int = 600) -> None:
     hf_api = huggingface_hub.HfApi()
     failure_stages = frozenset(

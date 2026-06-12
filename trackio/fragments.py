@@ -130,16 +130,21 @@ class FragmentWriter:
             return None
         inbox = inbox_dir or local_inbox_dir()
         writer_dir = inbox / self.writer_id
-        writer_dir.mkdir(parents=True, exist_ok=True)
         fragment_path = writer_dir / self._next_fragment_name()
         data = self.serialize_records(records)
-        with tempfile.NamedTemporaryFile(
-            mode="wb", dir=writer_dir, suffix=".tmp", delete=False
-        ) as tmp:
-            tmp.write(data)
-            tmp_path = Path(tmp.name)
-        tmp_path.replace(fragment_path)
-        return fragment_path
+        for attempt in range(3):
+            writer_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", dir=writer_dir, suffix=".tmp", delete=False
+                ) as tmp:
+                    tmp.write(data)
+                    tmp_path = Path(tmp.name)
+                tmp_path.replace(fragment_path)
+                return fragment_path
+            except FileNotFoundError:
+                if attempt == 2 or writer_dir.exists():
+                    raise
 
     def write_to_bucket(self, records: list[dict], bucket_id: str) -> str | None:
         if not records:

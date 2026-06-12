@@ -1268,15 +1268,24 @@ class Run:
                     with self._client_lock:
                         self._flush_queues_inline()
             else:
+                with self._client_lock:
+                    client_connected = self._client is not None
                 if self._client_thread is not None:
-                    print(
-                        "* Run finished. Uploading logs to the remote Trackio server (please wait...)"
-                    )
-                    self._client_thread.join(timeout=30)
-                    if self._client_thread.is_alive():
-                        _emit_nonfatal_warning(
-                            "Could not flush all logs within 30s. Some data may be buffered locally."
+                    if client_connected:
+                        print(
+                            "* Run finished. Uploading logs to the remote Trackio server (please wait...)"
                         )
+                        self._client_thread.join(timeout=30)
+                    else:
+                        self._client_thread.join(timeout=5)
+                    if self._client_thread.is_alive():
+                        with self._client_lock:
+                            if self._client is None:
+                                self._flush_queues_inline()
+                        if client_connected or self._bucket_id is None:
+                            _emit_nonfatal_warning(
+                                "Could not flush all logs to the remote server in time. Some data may be buffered locally."
+                            )
                 else:
                     with self._client_lock:
                         self._flush_queues_inline()

@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+import huggingface_hub
 from gradio_client import Client as GradioClient
 from huggingface_hub.utils import build_hf_headers
 
@@ -202,6 +203,21 @@ class _TrackioGradioCompatClient:
             raise
 
 
+def _raise_if_space_is_building(space_id: str) -> None:
+    """
+    GradioClient.__init__ blocks in an unbounded loop while a Space is in the
+    BUILDING stage, which would make the caller unresponsive to trackio's stop
+    flag. Fail fast instead so callers can retry on their own schedule.
+    """
+    try:
+        info = huggingface_hub.HfApi().space_info(space_id, timeout=30)
+        stage = str(info.runtime.stage) if info.runtime else None
+    except Exception:
+        return
+    if stage == "BUILDING":
+        raise ConnectionError(f"Space '{space_id}' is still building.")
+
+
 def _supports_http_api(
     src: str,
     hf_token: str | None = None,
@@ -256,6 +272,8 @@ class RemoteClient:
                     httpx_kwargs=httpx_kwargs,
                 )
             else:
+                if not src_for_resolve.startswith(("http://", "https://")):
+                    _raise_if_space_is_building(src_for_resolve)
                 self._client = _TrackioGradioCompatClient(
                     src_for_resolve,
                     hf_token=hf_effective,
