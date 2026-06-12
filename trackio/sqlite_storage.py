@@ -311,6 +311,36 @@ class SQLiteStorage:
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
+    # Artifact metadata tables and their full column lists, used to round-trip
+    # artifacts through parquet (one "_<table>.parquet" file per table per
+    # project) so dataset-backed Spaces persist them across restarts. manifest
+    # and metadata are stored as JSON text, so plain row copies round-trip.
+    _ARTIFACT_PARQUET_TABLES: dict[str, list[str]] = {
+        "artifacts": ["id", "name", "type", "description", "created_at"],
+        "artifact_versions": [
+            "id",
+            "artifact_id",
+            "version",
+            "manifest_digest",
+            "manifest",
+            "metadata",
+            "size_bytes",
+            "producer_run_id",
+            "producer_run_name",
+            "synced",
+            "created_at",
+        ],
+        "artifact_aliases": ["artifact_id", "alias", "artifact_version_id"],
+        "run_artifact_links": [
+            "id",
+            "run_id",
+            "run_name",
+            "artifact_version_id",
+            "direction",
+            "created_at",
+        ],
+    }
+
     @staticmethod
     @contextmanager
     def _get_connection(
@@ -936,6 +966,13 @@ class SQLiteStorage:
                     TRACKIO_DIR / (db_path.stem + "_traces.parquet"),
                     SQLiteStorage._normalize_trace_rows_for_parquet(trace_rows),
                 )
+            for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
+                artifact_rows = SQLiteStorage._read_table_rows(db_path, table)
+                if artifact_rows:
+                    SQLiteStorage._write_parquet_rows(
+                        TRACKIO_DIR / f"{db_path.stem}_{table}.parquet",
+                        artifact_rows,
+                    )
 
     @staticmethod
     def export_for_static_space(
@@ -1063,6 +1100,10 @@ class SQLiteStorage:
             and not f.endswith("_system.parquet")
             and not f.endswith("_configs.parquet")
             and not f.endswith("_traces.parquet")
+            and not any(
+                f.endswith(f"_{table}.parquet")
+                for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES
+            )
         ]
         imported_projects = {Path(name).stem for name in parquet_names}
         for pq_name in parquet_names:
@@ -1194,6 +1235,16 @@ class SQLiteStorage:
                     "space_id",
                 ],
             )
+
+        for table, columns in SQLiteStorage._ARTIFACT_PARQUET_TABLES.items():
+            suffix = f"_{table}.parquet"
+            for pq_name in [f for f in all_paths if f.endswith(suffix)]:
+                parquet_path = TRACKIO_DIR / pq_name
+                db_path = TRACKIO_DIR / (pq_name[: -len(suffix)] + DB_EXT)
+                project_name = db_path.stem
+                rows = SQLiteStorage._read_parquet_rows(parquet_path)
+                SQLiteStorage.init_db(project_name)
+                SQLiteStorage._replace_table_rows(db_path, table, rows, columns)
 
     @staticmethod
     def get_scheduler():
@@ -2426,8 +2477,12 @@ class SQLiteStorage:
                 try:
                     files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                     for file in files:
-                        # Download parquet and media assets
-                        if not (file.endswith(".parquet") or file.startswith("media/")):
+                        # Download parquet, media, and artifact blob assets
+                        if not (
+                            file.endswith(".parquet")
+                            or file.startswith("media/")
+                            or file.startswith("artifacts/")
+                        ):
                             continue
                         if (TRACKIO_DIR / file).exists():
                             continue
