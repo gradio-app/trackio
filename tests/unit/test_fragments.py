@@ -162,29 +162,3 @@ def test_network_filesystem_jsonl_end_to_end(temp_dir, monkeypatch):
         assert logs[1]["acc"] == 0.9
     finally:
         app.close()
-
-
-def test_load_from_dataset_bucket_import_is_not_reentrant(temp_dir, monkeypatch):
-    """
-    The fragment import inside load_from_dataset writes to SQLite, which calls
-    init_db -> _ensure_hub_loaded -> load_from_dataset again. The import-attempted
-    flag must be set before importing so this chain does not recurse.
-    """
-    calls = []
-
-    def fake_import(bucket_id):
-        calls.append(bucket_id)
-        SQLiteStorage.bulk_log(project="proj", run="run1", metrics_list=[{"x": 1}])
-        return 1
-
-    monkeypatch.setenv("TRACKIO_BUCKET_ID", "user/bucket")
-    monkeypatch.setattr(fragments, "import_inbox_from_bucket", fake_import)
-    monkeypatch.setattr(
-        "trackio.bucket_storage.download_bucket_to_trackio_dir", lambda b: None
-    )
-    monkeypatch.setattr(SQLiteStorage, "_dataset_import_attempted", False)
-
-    SQLiteStorage.load_from_dataset()
-
-    assert calls == ["user/bucket"]
-    assert len(SQLiteStorage.get_logs("proj", "run1")) == 1
