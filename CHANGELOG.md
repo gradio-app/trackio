@@ -1,5 +1,11 @@
 # trackio
 
+## 0.28.0
+
+### Features
+
+- [#582](https://github.com/gradio-app/trackio/pull/582) [`d9dabb5`](https://github.com/gradio-app/trackio/commit/d9dabb5bda8147ad7c9203646358bd0880fa6521) - Add JSONL inbox fragments: durable logging when the Space is unreachable and on network filesystems.  Thanks @abidlabs!
+
 ## 0.27.0
 
 ### Features
