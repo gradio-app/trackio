@@ -140,8 +140,8 @@ class Artifact:
 
     @property
     def metadata(self) -> dict:
-        """Live, mutable metadata dict (matches wandb: `art.metadata["k"] = v`
-        before logging is preserved)."""
+        """Live, mutable metadata dict; assignments like `art.metadata["k"] = v`
+        made before logging are preserved."""
         return self._metadata
 
     @metadata.setter
@@ -150,8 +150,8 @@ class Artifact:
 
     @property
     def version(self) -> str | None:
-        """Version string in wandb's `"v<N>"` form (e.g. `"v3"`), or None if
-        the artifact has not been logged or fetched yet."""
+        """Version string in `"v<N>"` form (e.g. `"v3"`), or None if the
+        artifact has not been logged or fetched yet."""
         return None if self._version is None else f"v{self._version}"
 
     @property
@@ -172,7 +172,7 @@ class Artifact:
 
     @property
     def digest(self) -> Sha256Digest | None:
-        """Alias of `manifest_digest` (wandb name)."""
+        """Alias of `manifest_digest`."""
         return self._manifest_digest
 
     @property
@@ -189,8 +189,8 @@ class Artifact:
         return self._project
 
     def wait(self, timeout: int | None = None) -> "Artifact":
-        """No-op for wandb compatibility: trackio logs artifacts synchronously,
-        so the artifact is already committed when `log_artifact` returns."""
+        """No-op: trackio logs artifacts synchronously, so the artifact is
+        already committed by the time `log_artifact` returns."""
         if not self._logged:
             raise RuntimeError(
                 "Cannot wait on an Artifact that has not been logged; "

@@ -761,21 +761,18 @@ def log_artifact(
 def use_artifact(
     artifact_or_name: Artifact | str,
     type: str | None = None,
-    aliases: list[str] | None = None,
-    use_as: str | None = None,
 ) -> Artifact:
     """
     Fetches an artifact and records it as an input to the current run.
 
     `artifact_or_name` is `"name"` (defaults to `:latest`), `"name:<alias>"`,
     `"name:v<N>"`, or an already-logged `Artifact`. If `type` is given, it is
-    checked against the stored artifact type. `aliases` and `use_as` are
-    accepted for wandb signature compatibility but are not yet supported.
+    checked against the stored artifact type.
     """
     run = context_vars.current_run.get()
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.use_artifact().")
-    return run.use_artifact(artifact_or_name, type=type, aliases=aliases, use_as=use_as)
+    return run.use_artifact(artifact_or_name, type=type)
 
 
 def log_gpu(run: Run | None = None, device: int | None = None) -> dict:

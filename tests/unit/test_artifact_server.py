@@ -446,3 +446,36 @@ def test_full_round_trip(temp_dir, tmp_path, auth_bypassed, upload_consume_passt
     consumer_lineage = SQLiteStorage.get_run_artifacts("p", "consumer", "cons")
     assert [r["version_id"] for r in producer_lineage["output"]] == [version_id]
     assert [r["version_id"] for r in consumer_lineage["input"]] == [version_id]
+
+
+def test_artifact_blob_route_not_shadowed_by_frontend_middleware(tmp_path):
+    """Regression: the SPA FrontendMiddleware runs before routing and serves
+    index.html for any unreserved GET path. If /artifact_blob isn't reserved,
+    the blob route is shadowed and consumers get HTML (digest mismatch)."""
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    from trackio.frontend_server import FrontendMiddleware
+
+    index_html = tmp_path / "index.html"
+    index_html.write_text("<html><body>SPA</body></html>")
+
+    async def blob(request):
+        return PlainTextResponse("BLOB:" + request.path_params["digest"])
+
+    app = Starlette(
+        routes=[
+            Route("/artifact_blob/{project:str}/{digest:str}", blob, methods=["GET"]),
+        ]
+    )
+    app.add_middleware(
+        FrontendMiddleware, frontend_root=tmp_path, index_html_path=index_html
+    )
+
+    client = TestClient(app)
+    resp = client.get("/artifact_blob/proj/" + "a" * 64)
+    assert resp.status_code == 200
+    assert resp.text == "BLOB:" + "a" * 64
+    assert "SPA" not in resp.text

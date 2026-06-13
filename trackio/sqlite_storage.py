@@ -682,6 +682,8 @@ class SQLiteStorage:
 
     @staticmethod
     def get_run_records(project: str) -> list[dict[str, str | None]]:
+        """List a project's runs: those that logged metrics, plus producer
+        runs that only output an artifact and logged no metrics."""
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -690,10 +692,25 @@ class SQLiteStorage:
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
+                has_links = bool(
+                    SQLiteStorage._table_columns(conn, "run_artifact_links")
+                )
                 if SQLiteStorage._supports_run_ids(conn):
-                    cursor.execute("""
-                        SELECT run_id, run_name, MIN(timestamp) as created_at
-                        FROM metrics
+                    producer_runs = (
+                        """
+                        UNION ALL
+                        SELECT run_id, run_name, created_at FROM run_artifact_links
+                        WHERE direction = 'output' AND run_id IS NOT NULL
+                        """
+                        if has_links
+                        else ""
+                    )
+                    cursor.execute(f"""
+                        SELECT run_id, run_name, MIN(created_at) AS created_at
+                        FROM (
+                            SELECT run_id, run_name, timestamp AS created_at FROM metrics
+                            {producer_runs}
+                        )
                         GROUP BY run_id, run_name
                         ORDER BY created_at ASC
                         """)
@@ -706,9 +723,21 @@ class SQLiteStorage:
                         for row in cursor.fetchall()
                     ]
 
-                cursor.execute("""
-                    SELECT run_name, MIN(timestamp) as created_at
-                    FROM metrics
+                producer_runs = (
+                    """
+                    UNION ALL
+                    SELECT run_name, created_at FROM run_artifact_links
+                    WHERE direction = 'output' AND run_name IS NOT NULL
+                    """
+                    if has_links
+                    else ""
+                )
+                cursor.execute(f"""
+                    SELECT run_name, MIN(created_at) AS created_at
+                    FROM (
+                        SELECT run_name, timestamp AS created_at FROM metrics
+                        {producer_runs}
+                    )
                     GROUP BY run_name
                     ORDER BY created_at ASC
                     """)

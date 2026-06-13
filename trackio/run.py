@@ -942,10 +942,10 @@ class Run:
     ) -> Artifact:
         """Log an artifact as an output of this run.
 
-        Accepts either a constructed `Artifact` or, like wandb, a path to a
-        file or directory. For a path, `name` defaults to
-        `run-<run_id>-<basename>` and `type` defaults to `"unspecified"`;
-        for an `Artifact`, `name`/`type` must not be passed.
+        Accepts either a constructed `Artifact` or a path to a file or
+        directory. For a path, `name` defaults to `run-<run_id>-<basename>`
+        and `type` defaults to `"unspecified"`; for an `Artifact`,
+        `name`/`type` must not be passed.
 
         In remote mode, blobs upload via the existing `pending_uploads` queue
         (drained synchronously), then the manifest is POSTed to `/artifact_log`
@@ -1094,8 +1094,6 @@ class Run:
         self,
         artifact_or_name: Artifact | str,
         type: str | None = None,
-        aliases: list[str] | None = None,
-        use_as: str | None = None,
     ) -> Artifact:
         """Fetch an artifact and record it as an input to this run.
 
@@ -1105,23 +1103,7 @@ class Run:
         Returns a freshly-hydrated `Artifact` whose `download()` method
         materializes the files from the local content-addressed cache,
         falling back to the remote when a blob is missing locally.
-
-        `aliases` and `use_as` are accepted for wandb signature compatibility
-        but are not yet supported.
         """
-        if aliases is not None:
-            self._warn_once(
-                "use-artifact-aliases",
-                "trackio.use_artifact() does not support the aliases parameter "
-                "yet; it was ignored.",
-            )
-        if use_as is not None:
-            self._warn_once(
-                "use-artifact-use-as",
-                "trackio.use_artifact() does not support the use_as parameter "
-                "(deprecated in wandb); it was ignored.",
-            )
-
         if isinstance(artifact_or_name, Artifact):
             if not artifact_or_name._logged or artifact_or_name._version is None:
                 raise ValueError(
