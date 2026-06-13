@@ -408,8 +408,7 @@ class SQLiteStorage:
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path, row_factory=None) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -418,10 +417,8 @@ class SQLiteStorage:
                         step INTEGER NOT NULL,
                         metrics TEXT NOT NULL
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS configs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -430,10 +427,8 @@ class SQLiteStorage:
                         created_at TEXT NOT NULL,
                         UNIQUE(run_id)
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS system_metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -441,11 +436,9 @@ class SQLiteStorage:
                         run_name TEXT NOT NULL,
                         metrics TEXT NOT NULL
                     )
-                    """
-                )
+                    """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS traces (
                         id TEXT PRIMARY KEY,
                         run_id TEXT NOT NULL,
@@ -460,20 +453,16 @@ class SQLiteStorage:
                         log_id TEXT,
                         space_id TEXT
                     )
-                    """
-                )
+                    """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS project_metadata (
                         key TEXT PRIMARY KEY,
                         value TEXT NOT NULL
                     )
-                    """
-                )
+                    """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS pending_uploads (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         space_id TEXT NOT NULL,
@@ -484,11 +473,9 @@ class SQLiteStorage:
                         relative_path TEXT,
                         created_at TEXT NOT NULL
                     )
-                    """
-                )
+                    """)
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS alerts (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT NOT NULL,
@@ -500,10 +487,8 @@ class SQLiteStorage:
                         step INTEGER,
                         alert_id TEXT
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS artifacts (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT NOT NULL UNIQUE,
@@ -511,10 +496,8 @@ class SQLiteStorage:
                         description TEXT,
                         created_at TEXT NOT NULL
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS artifact_versions (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
@@ -529,20 +512,16 @@ class SQLiteStorage:
                         UNIQUE(artifact_id, version),
                         UNIQUE(artifact_id, manifest_digest)
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS artifact_aliases (
                         artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
                         alias TEXT NOT NULL,
                         artifact_version_id INTEGER NOT NULL REFERENCES artifact_versions(id),
                         PRIMARY KEY (artifact_id, alias)
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS run_artifact_links (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT,
@@ -551,103 +530,74 @@ class SQLiteStorage:
                         direction TEXT NOT NULL CHECK(direction IN ('input', 'output')),
                         created_at TEXT NOT NULL
                     )
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_run_artifact_links_run
                     ON run_artifact_links(run_id, run_name)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_run_artifact_links_version
                     ON run_artifact_links(artifact_version_id)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_run_artifact_links_unique
                     ON run_artifact_links(run_id, artifact_version_id, direction)
-                    """
-                )
+                    """)
                 for col in ("kind TEXT NOT NULL DEFAULT 'media'", "digest TEXT"):
                     try:
                         cursor.execute(f"ALTER TABLE pending_uploads ADD COLUMN {col}")
                     except sqlite3.OperationalError:
                         pass
-                cursor.execute(
-                    """
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_pending_uploads_kind
                     ON pending_uploads(kind)
-                    """
-                )
+                    """)
                 metrics_cols = SQLiteStorage._table_columns(conn, "metrics")
                 metrics_run_key = "run_id" if "run_id" in metrics_cols else "run_name"
-                cursor.execute(
-                    f"""
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_step
                     ON metrics({metrics_run_key}, step)
-                    """
-                )
-                cursor.execute(
-                    f"""
+                    """)
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_metrics_run_timestamp
                     ON metrics({metrics_run_key}, timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_configs_run_name
                     ON configs(run_name)
-                    """
-                )
+                    """)
                 system_cols = SQLiteStorage._table_columns(conn, "system_metrics")
                 system_run_key = "run_id" if "run_id" in system_cols else "run_name"
-                cursor.execute(
-                    f"""
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_system_metrics_run_timestamp
                     ON system_metrics({system_run_key}, timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_traces_run_step
                     ON traces(run_id, step)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_traces_run_timestamp
                     ON traces(run_id, timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_traces_search
                     ON traces(search_text)
-                    """
-                )
+                    """)
                 alerts_cols = SQLiteStorage._table_columns(conn, "alerts")
                 alerts_run_key = "run_id" if "run_id" in alerts_cols else "run_name"
-                cursor.execute(
-                    f"""
+                cursor.execute(f"""
                     CREATE INDEX IF NOT EXISTS idx_alerts_run
                     ON alerts({alerts_run_key})
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE INDEX IF NOT EXISTS idx_alerts_timestamp
                     ON alerts(timestamp)
-                    """
-                )
-                cursor.execute(
-                    """
+                    """)
+                cursor.execute("""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_alert_id
                     ON alerts(alert_id) WHERE alert_id IS NOT NULL
-                    """
-                )
+                    """)
 
                 for table in ("metrics", "system_metrics"):
                     for col in ("log_id TEXT", "space_id TEXT"):
@@ -659,10 +609,8 @@ class SQLiteStorage:
                         f"""CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_log_id
                         ON {table}(log_id) WHERE log_id IS NOT NULL"""
                     )
-                    cursor.execute(
-                        f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
-                        ON {table}(space_id) WHERE space_id IS NOT NULL"""
-                    )
+                    cursor.execute(f"""CREATE INDEX IF NOT EXISTS idx_{table}_pending
+                        ON {table}(space_id) WHERE space_id IS NOT NULL""")
 
                 conn.commit()
         return db_path
@@ -757,8 +705,7 @@ class SQLiteStorage:
                         if has_links
                         else ""
                     )
-                    cursor.execute(
-                        f"""
+                    cursor.execute(f"""
                         SELECT run_id, run_name, MIN(created_at) AS created_at
                         FROM (
                             SELECT run_id, run_name, timestamp AS created_at FROM metrics
@@ -766,8 +713,7 @@ class SQLiteStorage:
                         )
                         GROUP BY run_id, run_name
                         ORDER BY created_at ASC
-                        """
-                    )
+                        """)
                     return [
                         {
                             "id": row["run_id"],
@@ -786,8 +732,7 @@ class SQLiteStorage:
                     if has_links
                     else ""
                 )
-                cursor.execute(
-                    f"""
+                cursor.execute(f"""
                     SELECT run_name, MIN(created_at) AS created_at
                     FROM (
                         SELECT run_name, timestamp AS created_at FROM metrics
@@ -795,8 +740,7 @@ class SQLiteStorage:
                     )
                     GROUP BY run_name
                     ORDER BY created_at ASC
-                    """
-                )
+                    """)
                 return [
                     {
                         "id": row["run_name"],
@@ -1124,11 +1068,9 @@ class SQLiteStorage:
                         for row in rows
                     ]
                 else:
-                    cursor.execute(
-                        """SELECT run_name, MIN(timestamp) as created_at,
+                    cursor.execute("""SELECT run_name, MIN(timestamp) as created_at,
                         MAX(step) as last_step, COUNT(*) as log_count
-                        FROM metrics GROUP BY run_name ORDER BY created_at ASC"""
-                    )
+                        FROM metrics GROUP BY run_name ORDER BY created_at ASC""")
                     rows = cursor.fetchall()
                     runs_meta = [
                         {
@@ -2580,6 +2522,7 @@ class SQLiteStorage:
                 except hf.errors.RepositoryNotFoundError:
                     pass
                 if updated:
+                    SQLiteStorage._dataset_import_attempted = True
                     SQLiteStorage.import_from_parquet()
         SQLiteStorage._dataset_import_attempted = True
 
@@ -2702,25 +2645,21 @@ class SQLiteStorage:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 if SQLiteStorage._supports_run_ids(conn):
-                    cursor.execute(
-                        """
+                    cursor.execute("""
                         SELECT run_name, run_id, MAX(step) as max_step
                         FROM metrics
                         GROUP BY run_id, run_name
-                        """
-                    )
+                        """)
                     results = {}
                     for row in cursor.fetchall():
                         results[row["run_id"]] = row["max_step"]
                     return results
 
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT run_name, MAX(step) as max_step
                     FROM metrics
                     GROUP BY run_name
-                    """
-                )
+                    """)
 
                 results = {}
                 for row in cursor.fetchall():
