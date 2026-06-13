@@ -9,7 +9,6 @@ Mocks `huggingface_hub` / `CommitScheduler` / RemoteClient so we don't hit the
 network.
 """
 
-import hashlib
 from pathlib import Path
 
 from trackio import bucket_storage
@@ -30,19 +29,12 @@ def _captured(monkeypatch):
     return captured
 
 
-def _stage_blob_on_disk(temp_dir, project, payload):
-    digest = hashlib.sha256(payload).hexdigest()
-    base = Path(temp_dir) / "artifacts" / project / "blobs" / "sha256"
-    blob = base / digest[:2] / digest
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(payload)
-    return digest, blob
-
-
-def test_upload_project_to_bucket_ships_artifact_blobs(temp_dir, monkeypatch):
+def test_upload_project_to_bucket_ships_artifact_blobs(
+    temp_dir, monkeypatch, stage_blob
+):
     SQLiteStorage.init_db("p")
-    digest_a, _ = _stage_blob_on_disk(temp_dir, "p", b"alpha")
-    digest_b, _ = _stage_blob_on_disk(temp_dir, "p", b"beta")
+    digest_a, _ = stage_blob("p", b"alpha")
+    digest_b, _ = stage_blob("p", b"beta")
 
     captured = _captured(monkeypatch)
     bucket_storage.upload_project_to_bucket("p", "user/bucket")
@@ -53,9 +45,11 @@ def test_upload_project_to_bucket_ships_artifact_blobs(temp_dir, monkeypatch):
     assert any(p.endswith(".db") and "trackio/" in p for p in remote_paths)
 
 
-def test_upload_project_to_bucket_skips_partial_files(temp_dir, monkeypatch):
+def test_upload_project_to_bucket_skips_partial_files(
+    temp_dir, monkeypatch, stage_blob
+):
     SQLiteStorage.init_db("p")
-    digest, blob = _stage_blob_on_disk(temp_dir, "p", b"complete")
+    digest, blob = stage_blob("p", b"complete")
     partial = blob.parent / f"{blob.name}.partial.deadbeef"
     partial.write_bytes(b"in-flight")
 
@@ -78,10 +72,10 @@ def test_upload_project_to_bucket_without_artifacts_dir_is_no_op_for_artifacts(
 
 
 def test_upload_project_to_bucket_ships_media_and_artifacts_together(
-    temp_dir, monkeypatch
+    temp_dir, monkeypatch, stage_blob
 ):
     SQLiteStorage.init_db("p")
-    digest, _ = _stage_blob_on_disk(temp_dir, "p", b"weights")
+    digest, _ = stage_blob("p", b"weights")
     media_path = Path(temp_dir) / "media" / "p" / "run-0" / "0" / "img.png"
     media_path.parent.mkdir(parents=True, exist_ok=True)
     media_path.write_bytes(b"png-bytes")

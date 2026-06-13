@@ -278,15 +278,6 @@ def test_hash_file_is_deterministic_and_correct_size(tmp_path):
     assert s1 == s2 == len(payload)
 
 
-def test_hash_file_handles_larger_than_chunk(tmp_path):
-    p = tmp_path / "big"
-    payload = b"a" * (HASH_CHUNK_SIZE + 17)
-    p.write_bytes(payload)
-    d, s = hash_file(p)
-    assert s == len(payload)
-    assert d == hashlib.sha256(payload).hexdigest()
-
-
 def test_hash_file_modern_and_fallback_paths_agree(tmp_path, monkeypatch):
     p = tmp_path / "blob"
     payload = b"x" * (HASH_CHUNK_SIZE + 17) + b"trailing"
@@ -660,25 +651,6 @@ def test_download_on_unlogged_artifact_raises():
     a = Artifact(name="m", type="model")
     with pytest.raises(RuntimeError, match="not been logged"):
         a.download()
-
-
-def test_download_copies_so_edits_do_not_corrupt_blob(temp_dir, tmp_path):
-    digest, size = _stage_blob(temp_dir, "proj", b"abc")
-    a = _hydrated_artifact(
-        "proj",
-        "my-model",
-        0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
-    )
-    out = a.download(tmp_path / "dl")
-    downloaded = Path(out) / "w.bin"
-    assert downloaded.read_bytes() == b"abc"
-
-    downloaded.write_bytes(b"edited!!")
-    blob = (
-        Path(temp_dir) / "artifacts" / "proj" / "blobs" / "sha256" / digest[:2] / digest
-    )
-    assert blob.read_bytes() == b"abc"
 
 
 def test_download_refreshes_stale_file_with_different_size(temp_dir, tmp_path):

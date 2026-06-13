@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 from pathlib import Path
 
@@ -24,9 +25,7 @@ def temp_dir(monkeypatch):
         ]:
             monkeypatch.setattr(f"{name}.MEDIA_DIR", Path(tmpdir) / "media")
         for name in ["trackio.utils", "trackio.bucket_storage"]:
-            monkeypatch.setattr(
-                f"{name}.ARTIFACTS_DIR", Path(tmpdir) / "artifacts"
-            )
+            monkeypatch.setattr(f"{name}.ARTIFACTS_DIR", Path(tmpdir) / "artifacts")
         monkeypatch.setattr("trackio.bucket_storage.TRACKIO_DIR", Path(tmpdir))
         context_vars.current_run.set(None)
         context_vars.current_project.set(None)
@@ -37,6 +36,30 @@ def temp_dir(monkeypatch):
         context_vars.current_project.set(None)
         context_vars.current_server.set(None)
         context_vars.current_space_id.set(None)
+
+
+@pytest.fixture
+def stage_blob(temp_dir):
+    """Factory that writes `payload` into the local content-addressed store
+    for `project`, as Artifact._build_manifest would. Returns
+    (digest, blob_path)."""
+
+    def _stage(project, payload):
+        digest = hashlib.sha256(payload).hexdigest()
+        blob = (
+            Path(temp_dir)
+            / "artifacts"
+            / project
+            / "blobs"
+            / "sha256"
+            / digest[:2]
+            / digest
+        )
+        blob.parent.mkdir(parents=True, exist_ok=True)
+        blob.write_bytes(payload)
+        return digest, blob
+
+    return _stage
 
 
 @pytest.fixture(autouse=True)

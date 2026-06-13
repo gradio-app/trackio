@@ -14,16 +14,6 @@ from trackio.artifact import Artifact
 from trackio.typehints import Sha256Digest
 
 
-def _stage_blob_on_disk(temp_dir, project, payload):
-    """Helper: place a blob in the local CAS as if produced by `_build_manifest`."""
-    digest = hashlib.sha256(payload).hexdigest()
-    base = Path(temp_dir) / "artifacts" / project / "blobs" / "sha256"
-    blob = base / digest[:2] / digest
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(payload)
-    return digest, len(payload)
-
-
 def _hydrated_remote_artifact(project, name, version, entries, remote_source):
     a = Artifact(name=name, type="model")
     a._hydrate_from_db(
@@ -111,15 +101,15 @@ def test_download_fetches_missing_blob_from_remote(temp_dir, tmp_path, fake_http
 
 
 def test_download_with_all_blobs_local_does_not_hit_network(
-    temp_dir, tmp_path, fake_httpx
+    temp_dir, tmp_path, fake_httpx, stage_blob
 ):
     payload = b"already-here"
-    digest, size = _stage_blob_on_disk(temp_dir, "p", payload)
+    digest, _ = stage_blob("p", payload)
     art = _hydrated_remote_artifact(
         "p",
         "m",
         0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
         {"space_id": "user/space", "server_base_url": None},
     )
     # fake_httpx has no routes — if the code tries to fetch, it gets 404.
@@ -199,14 +189,14 @@ def test_download_with_server_base_url_resolves_correctly(
     assert (Path(out) / "w.bin").read_bytes() == payload
 
 
-def test_artifact_blob_endpoint_serves_blob(temp_dir, monkeypatch):
+def test_artifact_blob_endpoint_serves_blob(temp_dir, monkeypatch, stage_blob):
     """Smoke test the asgi handler directly (no real HTTP)."""
     import asyncio
 
     from trackio.asgi_app import artifact_blob_handler
 
     payload = b"server-side-bytes"
-    digest, _ = _stage_blob_on_disk(temp_dir, "p", payload)
+    digest, _ = stage_blob("p", payload)
 
     request = MagicMock()
     request.path_params = {"project": "p", "digest": digest}
