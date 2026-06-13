@@ -202,11 +202,10 @@ def test_sender_routes_artifact_blob_kind_to_correct_endpoint(temp_dir, tmp_path
     blob_path = tmp_path / "blob.bin"
     blob_path.write_bytes(b"x")
 
-    SQLiteStorage.enqueue_artifact_blob_upload(
+    SQLiteStorage.enqueue_artifact_blob_uploads(
         project="p",
         space_id="sp",
-        digest="a" * 64,
-        local_blob_path=str(blob_path),
+        blobs=[("a" * 64, str(blob_path))],
         run_name="r",
         run_id="rid",
     )
@@ -250,11 +249,10 @@ def test_send_pending_uploads_routes_both_kinds(temp_dir, tmp_path, monkeypatch)
         file_path=str(media),
         relative_path="img.png",
     )
-    SQLiteStorage.enqueue_artifact_blob_upload(
+    SQLiteStorage.enqueue_artifact_blob_uploads(
         project="p",
         space_id="sp",
-        digest="b" * 64,
-        local_blob_path=str(blob),
+        blobs=[("b" * 64, str(blob))],
         run_name="r",
         run_id="rid",
     )
@@ -287,11 +285,10 @@ def test_send_pending_uploads_partial_failure_keeps_unsent_rows(
         file_path=str(media),
         relative_path="img.png",
     )
-    SQLiteStorage.enqueue_artifact_blob_upload(
+    SQLiteStorage.enqueue_artifact_blob_uploads(
         project="p",
         space_id="sp",
-        digest="b" * 64,
-        local_blob_path=str(blob),
+        blobs=[("b" * 64, str(blob))],
         run_name="r",
         run_id="rid",
     )
@@ -319,11 +316,10 @@ def test_send_pending_uploads_partial_failure_keeps_unsent_rows(
 def test_send_pending_uploads_drops_missing_files_with_warning(
     temp_dir, tmp_path, monkeypatch
 ):
-    SQLiteStorage.enqueue_artifact_blob_upload(
+    SQLiteStorage.enqueue_artifact_blob_uploads(
         project="p",
         space_id="sp",
-        digest="c" * 64,
-        local_blob_path=str(tmp_path / "vanished.bin"),
+        blobs=[("c" * 64, str(tmp_path / "vanished.bin"))],
         run_name="r",
         run_id="rid",
     )

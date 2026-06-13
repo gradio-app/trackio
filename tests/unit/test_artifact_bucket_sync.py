@@ -116,11 +116,10 @@ def test_replay_pending_uploads_routes_both_kinds(temp_dir, tmp_path):
         file_path=str(media_path),
         relative_path="img.png",
     )
-    SQLiteStorage.enqueue_artifact_blob_upload(
+    SQLiteStorage.enqueue_artifact_blob_uploads(
         project="p",
         space_id="user/space",
-        digest="a" * 64,
-        local_blob_path=str(blob_path),
+        blobs=[("a" * 64, str(blob_path))],
         run_name="r",
         run_id="rid",
     )
@@ -141,11 +140,10 @@ def test_replay_pending_uploads_skips_missing_files(temp_dir):
 
     from trackio import deploy
 
-    SQLiteStorage.enqueue_artifact_blob_upload(
+    SQLiteStorage.enqueue_artifact_blob_uploads(
         project="p",
         space_id="user/space",
-        digest="a" * 64,
-        local_blob_path="/nonexistent/path",
+        blobs=[("a" * 64, "/nonexistent/path")],
         run_name="r",
         run_id="rid",
     )

@@ -201,11 +201,10 @@ def test_get_artifact_manifest(temp_dir):
 
 def test_enqueue_artifact_blob_upload_writes_kind_and_digest(temp_dir):
     SQLiteStorage.init_db("p")
-    SQLiteStorage.enqueue_artifact_blob_upload(
+    SQLiteStorage.enqueue_artifact_blob_uploads(
         project="p",
         space_id="sp",
-        digest="dead",
-        local_blob_path="/tmp/blob",
+        blobs=[("dead", "/tmp/blob")],
         run_name="r",
         run_id=None,
     )
@@ -613,7 +612,7 @@ def test_download_default_root_convention(temp_dir, tmp_path, monkeypatch):
     )
     monkeypatch.chdir(tmp_path)
     out = a.download()
-    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model:v0").resolve()
+    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model_v0").resolve()
     assert (Path(out) / "w.bin").read_bytes() == b"x"
 
 
@@ -627,7 +626,7 @@ def test_download_default_spec_uses_version(temp_dir, tmp_path, monkeypatch):
     )
     monkeypatch.chdir(tmp_path)
     out = a.download()
-    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model:v3").resolve()
+    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model_v3").resolve()
 
 
 def test_download_is_idempotent(temp_dir, tmp_path):
@@ -864,7 +863,7 @@ def test_use_artifact_download_dir_named_by_resolved_version(
     fetched = run2.use_artifact("m:best")
     monkeypatch.chdir(tmp_path)
     out = fetched.download()
-    assert Path(out).resolve() == (tmp_path / "artifacts" / "m:v0").resolve()
+    assert Path(out).resolve() == (tmp_path / "artifacts" / "m_v0").resolve()
     trackio.finish()
 
 

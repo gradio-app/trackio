@@ -327,7 +327,6 @@ class SQLiteStorage:
             "size_bytes",
             "producer_run_id",
             "producer_run_name",
-            "synced",
             "created_at",
         ],
         "artifact_aliases": ["artifact_id", "alias", "artifact_version_id"],
@@ -509,7 +508,6 @@ class SQLiteStorage:
                         size_bytes INTEGER NOT NULL,
                         producer_run_id TEXT,
                         producer_run_name TEXT,
-                        synced INTEGER NOT NULL DEFAULT 0,
                         created_at TEXT NOT NULL,
                         UNIQUE(artifact_id, version),
                         UNIQUE(artifact_id, manifest_digest)
@@ -4307,23 +4305,6 @@ class SQLiteStorage:
                     }
                 )
             return result
-
-    @staticmethod
-    def enqueue_artifact_blob_upload(
-        project: str,
-        space_id: str,
-        digest: Sha256Digest,
-        local_blob_path: str,
-        run_name: str | None,
-        run_id: str | None,
-    ) -> None:
-        SQLiteStorage.enqueue_artifact_blob_uploads(
-            project=project,
-            space_id=space_id,
-            blobs=[(digest, local_blob_path)],
-            run_name=run_name,
-            run_id=run_id,
-        )
 
     @staticmethod
     def enqueue_artifact_blob_uploads(

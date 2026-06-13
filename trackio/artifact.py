@@ -273,10 +273,9 @@ class Artifact:
     def download(self, root: str | Path | None = None) -> str:
         """Materialize artifact files at `root/<logical_path>` for each manifest entry.
 
-        Default `root` is `./artifacts/<name>:v<version>/` (CWD-relative),
+        Default `root` is `./artifacts/<name>_v<version>/` (CWD-relative),
         always named by the resolved version so a moving alias like `latest`
         never leaves stale files from a previous version in the directory.
-
         Returns the absolute path to `root` as a string. Idempotent: files are
         copied from the content-addressed cache and skipped on the second
         call.
@@ -289,7 +288,7 @@ class Artifact:
             raise RuntimeError("Artifact is missing manifest, project, or version.")
 
         if root is None:
-            root_path = Path.cwd() / "artifacts" / f"{self._name}:v{self._version}"
+            root_path = Path.cwd() / "artifacts" / f"{self._name}_v{self._version}"
         else:
             root_path = Path(root)
         root_path.mkdir(parents=True, exist_ok=True)
