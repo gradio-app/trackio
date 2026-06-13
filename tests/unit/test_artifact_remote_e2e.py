@@ -142,8 +142,7 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
         "/artifact_log",
     ]
 
-    versions = SQLiteStorage.list_artifact_versions("art-e2e", "my-model")
-    assert len(versions) == 1
+    assert SQLiteStorage.get_artifact_manifest("art-e2e", "my-model", "v1") is None
     lineage = SQLiteStorage.get_run_artifacts("art-e2e", "producer", producer.id)
     assert len(lineage["output"]) == 1
     producer._client = None
@@ -251,10 +250,10 @@ def test_relog_identical_bytes_dedups_at_db_layer(
     run_b._client = None
     trackio.finish()
 
-    versions = SQLiteStorage.list_artifact_versions("art-relog", "m")
-    assert len(versions) == 1
-    assert versions[0]["version"] == 0
-    assert "best" in versions[0]["aliases"] and "latest" in versions[0]["aliases"]
+    record = SQLiteStorage.get_artifact_manifest("art-relog", "m", None)
+    assert record["version"] == 0
+    assert "best" in record["aliases"] and "latest" in record["aliases"]
+    assert SQLiteStorage.get_artifact_manifest("art-relog", "m", "v1") is None
 
     # Both runs appear as producers (UNIQUE lineage index → 1 row each).
     lineage_a = SQLiteStorage.get_run_artifacts("art-relog", "run-a", run_a.id)

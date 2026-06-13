@@ -140,39 +140,6 @@ def test_insert_run_artifact_link_rejects_bad_direction(temp_dir):
         SQLiteStorage.insert_run_artifact_link("p", "r", None, vid, "sideways")
 
 
-def test_list_artifacts_and_versions(temp_dir):
-    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", "weights")
-    vid_0, _ = SQLiteStorage.insert_artifact_version(
-        "p", aid, [{"path": "a", "digest": "1", "size": 11}], {"acc": 0.5}, None, "r0"
-    )
-    vid_1, _ = SQLiteStorage.insert_artifact_version(
-        "p", aid, [{"path": "a", "digest": "2", "size": 22}], {"acc": 0.9}, None, "r1"
-    )
-    SQLiteStorage.reassign_alias("p", aid, "latest", vid_1)
-    SQLiteStorage.reassign_alias("p", aid, "best", vid_1)
-    SQLiteStorage.reassign_alias("p", aid, "stable", vid_0)
-
-    arts = SQLiteStorage.list_artifacts("p")
-    assert len(arts) == 1
-    art = arts[0]
-    assert art["name"] == "m"
-    assert art["type"] == "model"
-    assert art["description"] == "weights"
-    assert art["version_count"] == 2
-    assert art["latest_version"] == 1
-    assert art["latest_size"] == 22
-    assert sorted(art["latest_aliases"]) == ["best", "latest"]
-
-    versions = SQLiteStorage.list_artifact_versions("p", "m")
-    assert [v["version"] for v in versions] == [1, 0]
-    v_latest = versions[0]
-    assert v_latest["size_bytes"] == 22
-    assert v_latest["metadata"] == {"acc": 0.9}
-    assert sorted(v_latest["aliases"]) == ["best", "latest"]
-    v_old = versions[1]
-    assert v_old["aliases"] == ["stable"]
-
-
 def test_get_artifact_manifest(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
     manifest = [

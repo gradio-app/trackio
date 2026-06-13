@@ -58,18 +58,26 @@ def _build_sample_artifacts(project):
 
 
 def _snapshot(project):
-    snap = {
-        "artifacts": SQLiteStorage.list_artifacts(project),
-        "versions": {},
-        "manifests": {},
-        "lineage": {},
-    }
-    for art in snap["artifacts"]:
-        name = art["name"]
-        snap["versions"][name] = SQLiteStorage.list_artifact_versions(project, name)
-        snap["manifests"][name] = SQLiteStorage.get_artifact_manifest(
-            project, name, None
-        )
+    """Capture every artifact's per-version manifest record plus run lineage,
+    so a parquet round-trip can be checked for exact equality. Versions are
+    walked v0, v1, ... until absent; alias lists are sorted to stay
+    order-insensitive."""
+    snap = {"versions": {}, "manifests": {}, "lineage": {}}
+    for name in ("data", "model"):
+        latest = SQLiteStorage.get_artifact_manifest(project, name, None)
+        if latest is None:
+            continue
+        latest["aliases"] = sorted(latest["aliases"])
+        snap["manifests"][name] = latest
+        versions = []
+        v = 0
+        while (
+            record := SQLiteStorage.get_artifact_manifest(project, name, f"v{v}")
+        ) is not None:
+            record["aliases"] = sorted(record["aliases"])
+            versions.append(record)
+            v += 1
+        snap["versions"][name] = versions
     for run_name, run_id in (
         ("train", "rid-train"),
         ("eval", "rid-eval"),
@@ -87,7 +95,7 @@ def test_artifact_metadata_survives_parquet_roundtrip(temp_dir):
     _build_sample_artifacts("proj")
 
     before = _snapshot("proj")
-    assert {a["name"] for a in before["artifacts"]} == {"data", "model"}
+    assert set(before["manifests"]) == {"data", "model"}
     assert before["manifests"]["model"]["version"] == 1
     assert "best" in before["manifests"]["model"]["aliases"]
     assert len(before["lineage"]["train"]["output"]) == 2

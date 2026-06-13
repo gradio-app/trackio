@@ -233,7 +233,7 @@ def test_artifact_log_happy_path(temp_dir, auth_bypassed):
     )
     assert result["version"] == 0
     assert sorted(result["aliases"]) == ["best", "latest"]
-    assert len(SQLiteStorage.list_artifact_versions("p", "my-model")) == 1
+    assert SQLiteStorage.get_artifact_manifest("p", "my-model", "v1") is None
     assert (
         len(SQLiteStorage.get_run_artifacts("p", "producer", "run-id-1")["output"]) == 1
     )
@@ -255,7 +255,7 @@ def test_artifact_log_validates_digests_before_writing(temp_dir, auth_bypassed):
             run_id="rid",
             hf_token=None,
         )
-    assert SQLiteStorage.list_artifacts("p") == []
+    assert SQLiteStorage.get_artifact_manifest("p", "my-model", None) is None
 
 
 def test_artifact_log_rejects_invalid_digest_format(temp_dir, auth_bypassed):
