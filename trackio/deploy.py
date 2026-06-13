@@ -36,7 +36,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket_for_static,
 )
 from trackio.frontend_config import resolve_frontend_dir
-from trackio.pending_uploads import group_pending_uploads
+from trackio.pending_uploads import replay_pending_uploads
 from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
@@ -692,34 +692,21 @@ def _replay_pending_uploads(
     pending_uploads = SQLiteStorage.get_pending_uploads(project)
     if not pending_uploads:
         return
-    grouped = group_pending_uploads(pending_uploads)
-    missing = grouped["missing"]
-    if missing["ids"]:
+
+    def _warn_missing(count: int, sample: str) -> None:
         print(
-            f"  Warning: dropping {len(missing['ids'])} pending upload(s) whose "
-            f"local files no longer exist (e.g. {missing['paths'][0]!r})."
+            f"  Warning: dropping {count} pending upload(s) whose local files "
+            f"no longer exist (e.g. {sample!r})."
         )
-        SQLiteStorage.clear_pending_uploads(project, missing["ids"])
-    media = grouped["media"]
-    if media["entries"]:
-        print(f"  Syncing {len(media['entries'])} media files...")
-        client.predict(
-            api_name="/bulk_upload_media",
-            uploads=media["entries"],
-            hf_token=hf_token,
-        )
-        SQLiteStorage.clear_pending_uploads(project, media["ids"])
-    for proj, group in grouped["artifact_blobs"].items():
-        print(
-            f"  Syncing {len(group['entries'])} artifact blobs for project '{proj}'..."
-        )
-        client.predict(
-            api_name="/bulk_upload_artifact_blob",
-            project=proj,
-            uploads=group["entries"],
-            hf_token=hf_token,
-        )
-        SQLiteStorage.clear_pending_uploads(project, group["ids"])
+
+    replay_pending_uploads(
+        pending_uploads,
+        project,
+        predict=client.predict,
+        hf_token=hf_token,
+        warn_missing=_warn_missing,
+        verbose=True,
+    )
 
 
 def sync_incremental(

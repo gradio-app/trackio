@@ -606,27 +606,17 @@ def artifact_log(
             f"Manifest references blobs not on server: {preview}{suffix}"
         )
 
-    artifact_id = SQLiteStorage.create_or_get_artifact(project, name, type, description)
-    version_id, version_int = SQLiteStorage.insert_artifact_version(
+    return SQLiteStorage.commit_artifact_version(
         project=project,
-        artifact_id=artifact_id,
+        name=name,
+        type=type,
+        description=description,
         manifest=manifest,
         metadata=metadata,
-        producer_run_id=run_id,
-        producer_run_name=run_name,
-    )
-    SQLiteStorage.reassign_alias(project, artifact_id, "latest", version_id)
-    for alias in aliases or []:
-        SQLiteStorage.reassign_alias(project, artifact_id, alias, version_id)
-    SQLiteStorage.insert_run_artifact_link(
-        project=project,
+        aliases=aliases,
         run_name=run_name,
         run_id=run_id,
-        version_id=version_id,
-        direction="output",
     )
-    record = SQLiteStorage.get_artifact_manifest(project, name, f"v{version_int}")
-    return record
 
 
 def get_artifact_manifest(

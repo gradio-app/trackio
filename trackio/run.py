@@ -24,7 +24,7 @@ from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
-from trackio.pending_uploads import group_pending_uploads
+from trackio.pending_uploads import replay_pending_uploads
 from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -638,32 +638,22 @@ class Run:
         Caller must hold `self._client_lock` and have a non-None
         `self._client`.
         """
-        grouped = group_pending_uploads(buffered)
-        missing = grouped["missing"]
-        if missing["ids"]:
+
+        def _warn_missing(count: int, sample: str) -> None:
             self._warn_once(
                 "pending-uploads-missing-files",
-                f"trackio dropped {len(missing['ids'])} pending upload(s) whose "
-                f"local files no longer exist (e.g. {missing['paths'][0]!r}). "
-                "Data for these uploads was not sent to the remote server.",
+                f"trackio dropped {count} pending upload(s) whose local files no "
+                f"longer exist (e.g. {sample!r}). Data for these uploads was not "
+                "sent to the remote server.",
             )
-            SQLiteStorage.clear_pending_uploads(self.project, missing["ids"])
-        media = grouped["media"]
-        if media["entries"]:
-            self._client.predict(
-                api_name="/bulk_upload_media",
-                uploads=media["entries"],
-                hf_token=self._hf_token_for_remote(),
-            )
-            SQLiteStorage.clear_pending_uploads(self.project, media["ids"])
-        for project, group in grouped["artifact_blobs"].items():
-            self._client.predict(
-                api_name="/bulk_upload_artifact_blob",
-                project=project,
-                uploads=group["entries"],
-                hf_token=self._hf_token_for_remote(),
-            )
-            SQLiteStorage.clear_pending_uploads(self.project, group["ids"])
+
+        replay_pending_uploads(
+            buffered,
+            self.project,
+            predict=self._client.predict,
+            hf_token=self._hf_token_for_remote(),
+            warn_missing=_warn_missing,
+        )
 
     def _flush_local_buffer(self):
         try:
@@ -986,40 +976,20 @@ class Run:
         manifest = artifact._build_manifest(self.project)
 
         if self._is_local:
-            artifact_id = SQLiteStorage.create_or_get_artifact(
+            record = SQLiteStorage.commit_artifact_version(
                 project=self.project,
                 name=artifact.name,
                 type=artifact.type,
                 description=artifact.description,
-            )
-            version_id, version_int = SQLiteStorage.insert_artifact_version(
-                project=self.project,
-                artifact_id=artifact_id,
                 manifest=manifest,
                 metadata=artifact.metadata or None,
-                producer_run_id=self.id,
-                producer_run_name=self.name,
-            )
-            SQLiteStorage.reassign_alias(
-                self.project, artifact_id, "latest", version_id
-            )
-            for alias in user_aliases:
-                SQLiteStorage.reassign_alias(
-                    self.project, artifact_id, alias, version_id
-                )
-            SQLiteStorage.insert_run_artifact_link(
-                project=self.project,
+                aliases=user_aliases,
                 run_name=self.name,
                 run_id=self.id,
-                version_id=version_id,
-                direction="output",
-            )
-            record = SQLiteStorage.get_artifact_manifest(
-                self.project, artifact.name, f"v{version_int}"
             )
             artifact._hydrate_from_db(
                 project=self.project,
-                version=version_int,
+                version=record["version"],
                 aliases=record["aliases"],
                 manifest=record["manifest"],
                 manifest_digest=record["manifest_digest"],

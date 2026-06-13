@@ -3973,28 +3973,56 @@ class SQLiteStorage:
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 columns = SQLiteStorage._table_columns(conn, "pending_uploads")
-                candidate_fields = [
-                    ("space_id", space_id, True),
-                    ("run_id", run_id, "run_id" in columns),
-                    ("run_name", run_name, True),
-                    ("step", step, True),
-                    ("file_path", file_path, True),
-                    ("relative_path", relative_path, True),
-                    ("kind", kind, "kind" in columns),
-                    ("digest", digest, "digest" in columns),
-                    ("created_at", now, True),
-                ]
-                fields = [
-                    (col, val) for col, val, include in candidate_fields if include
-                ]
-                cols = [col for col, _ in fields]
-                vals = [val for _, val in fields]
+                cols, vals = SQLiteStorage._pending_upload_cols_vals(
+                    columns,
+                    space_id=space_id,
+                    run_id=run_id,
+                    run_name=run_name,
+                    step=step,
+                    file_path=file_path,
+                    relative_path=relative_path,
+                    kind=kind,
+                    digest=digest,
+                    created_at=now,
+                )
                 placeholders = ", ".join("?" for _ in cols)
                 conn.execute(
                     f"INSERT INTO pending_uploads ({', '.join(cols)}) VALUES ({placeholders})",
                     vals,
                 )
                 conn.commit()
+
+    @staticmethod
+    def _pending_upload_cols_vals(
+        columns: list[str],
+        *,
+        space_id: str,
+        run_id: str | None,
+        run_name: str | None,
+        step: int | None,
+        file_path: str,
+        relative_path: str | None,
+        kind: str,
+        digest: Sha256Digest | None,
+        created_at: str,
+    ) -> tuple[list[str], list]:
+        """Build the (columns, values) for one pending_uploads row, including
+        only the columns present in this DB (run_id/kind/digest are added by
+        migration and may be absent on older databases)."""
+        candidate_fields = [
+            ("space_id", space_id, True),
+            ("run_id", run_id, "run_id" in columns),
+            ("run_name", run_name, True),
+            ("step", step, True),
+            ("file_path", file_path, True),
+            ("relative_path", relative_path, True),
+            ("kind", kind, "kind" in columns),
+            ("digest", digest, "digest" in columns),
+            ("created_at", created_at, True),
+        ]
+        cols = [col for col, _, include in candidate_fields if include]
+        vals = [val for _, val, include in candidate_fields if include]
+        return cols, vals
 
     @staticmethod
     def _canonical_manifest(
@@ -4183,6 +4211,48 @@ class SQLiteStorage:
                     (run_id, run_name, version_id, direction, now),
                 )
                 conn.commit()
+
+    @staticmethod
+    def commit_artifact_version(
+        project: str,
+        name: str,
+        type: str,
+        description: str | None,
+        manifest: Manifest,
+        metadata: dict | None,
+        aliases: list[str] | None,
+        run_name: str | None,
+        run_id: str | None,
+    ) -> dict:
+        """Create/fetch the artifact, insert (or dedupe) the version, rotate
+        `latest` plus any user aliases onto it, record the producer lineage
+        link, and return the full manifest record.
+
+        Shared by the local `Run.log_artifact` path and the `/artifact_log`
+        server endpoint so the two cannot drift.
+        """
+        artifact_id = SQLiteStorage.create_or_get_artifact(
+            project, name, type, description
+        )
+        version_id, version_int = SQLiteStorage.insert_artifact_version(
+            project=project,
+            artifact_id=artifact_id,
+            manifest=manifest,
+            metadata=metadata,
+            producer_run_id=run_id,
+            producer_run_name=run_name,
+        )
+        SQLiteStorage.reassign_alias(project, artifact_id, "latest", version_id)
+        for alias in aliases or []:
+            SQLiteStorage.reassign_alias(project, artifact_id, alias, version_id)
+        SQLiteStorage.insert_run_artifact_link(
+            project=project,
+            run_name=run_name,
+            run_id=run_id,
+            version_id=version_id,
+            direction="output",
+        )
+        return SQLiteStorage.get_artifact_manifest(project, name, f"v{version_int}")
 
     @staticmethod
     def list_artifacts(project: str) -> list[dict]:
@@ -4419,22 +4489,19 @@ class SQLiteStorage:
                 cols: list[str] = []
                 rows: list[list] = []
                 for digest, file_path in blobs:
-                    candidate_fields = [
-                        ("space_id", space_id, True),
-                        ("run_id", run_id, "run_id" in columns),
-                        ("run_name", run_name, True),
-                        ("step", None, True),
-                        ("file_path", file_path, True),
-                        ("relative_path", None, True),
-                        ("kind", "artifact_blob", "kind" in columns),
-                        ("digest", digest, "digest" in columns),
-                        ("created_at", now, True),
-                    ]
-                    fields = [
-                        (col, val) for col, val, include in candidate_fields if include
-                    ]
-                    cols = [col for col, _ in fields]
-                    rows.append([val for _, val in fields])
+                    cols, vals = SQLiteStorage._pending_upload_cols_vals(
+                        columns,
+                        space_id=space_id,
+                        run_id=run_id,
+                        run_name=run_name,
+                        step=None,
+                        file_path=file_path,
+                        relative_path=None,
+                        kind="artifact_blob",
+                        digest=digest,
+                        created_at=now,
+                    )
+                    rows.append(vals)
                 placeholders = ", ".join("?" for _ in cols)
                 conn.executemany(
                     f"INSERT INTO pending_uploads ({', '.join(cols)}) VALUES ({placeholders})",
