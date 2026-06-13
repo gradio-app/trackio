@@ -323,7 +323,7 @@ def test_artifact_constructor_exposes_attrs():
 
 def test_artifact_name_is_readonly():
     a = Artifact(name="m", type="model")
-    with pytest.raises(AttributeError, match="read-only"):
+    with pytest.raises(AttributeError):
         a.name = "other"
 
 

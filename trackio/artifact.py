@@ -3,26 +3,11 @@ import re
 import shutil
 import uuid
 from pathlib import Path
-from typing import Any
 
 from trackio import cas
 from trackio.typehints import Manifest, Sha256Digest
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-_READ_ONLY_ATTRS = frozenset(
-    {
-        "name",
-        "type",
-        "version",
-        "aliases",
-        "size",
-        "manifest",
-        "manifest_digest",
-        "digest",
-        "qualified_name",
-        "project",
-    }
-)
 
 
 def _materialize(blob: Path, dst: Path, size: int) -> None:
@@ -318,10 +303,3 @@ class Artifact:
         if self._aliases:
             parts.append(f"aliases={list(self._aliases)!r}")
         return f"Artifact({', '.join(parts)})"
-
-    def __setattr__(self, key: str, value: Any) -> None:
-        if key in _READ_ONLY_ATTRS:
-            raise AttributeError(
-                f"Artifact.{key} is read-only; set via log_artifact/use_artifact."
-            )
-        super().__setattr__(key, value)
