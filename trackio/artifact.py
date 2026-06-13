@@ -279,7 +279,7 @@ class Artifact:
         root_path.mkdir(parents=True, exist_ok=True)
 
         for entry in self._manifest:
-            digest = entry["digest"]
+            digest = cas.validate_digest(entry["digest"])
             logical = cas.validate_logical_path(entry["path"])
             blob = cas.blob_path(self._project, digest)
             if not blob.is_file():

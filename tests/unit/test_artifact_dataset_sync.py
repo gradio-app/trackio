@@ -183,3 +183,21 @@ def test_load_from_dataset_downloads_artifact_blobs(temp_dir, monkeypatch):
     assert "proj_artifact_versions.parquet" in requested
     assert "proj.db" not in requested
     assert "README.md" not in requested
+
+
+def test_artifact_parquet_tables_match_schema(temp_dir):
+    """Guard against silent schema drift: _ARTIFACT_PARQUET_TABLES must list
+    every column of each artifact table, in order. A column added to the
+    CREATE TABLE without updating this dict would otherwise be silently
+    dropped on every dataset export/import round-trip."""
+    import sqlite3
+
+    SQLiteStorage.init_db("schemacheck")
+    db_path = SQLiteStorage.get_project_db_path("schemacheck")
+    conn = sqlite3.connect(str(db_path))
+    try:
+        for table, columns in SQLiteStorage._ARTIFACT_PARQUET_TABLES.items():
+            actual = [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+            assert actual == columns, f"{table}: parquet {columns} != schema {actual}"
+    finally:
+        conn.close()

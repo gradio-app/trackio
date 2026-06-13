@@ -64,6 +64,17 @@ def validate_logical_path(logical: str) -> str:
     return logical
 
 
+def validate_digest(digest: str) -> Sha256Digest:
+    """Validate that `digest` is a 64-char lowercase sha256 hex string and
+    return it unchanged. Use this before a digest from an untrusted source
+    (e.g. a manifest fetched from a remote server) is interpolated into a
+    filesystem path or URL, so a crafted value cannot escape the CAS root.
+    """
+    if not isinstance(digest, str) or not SHA256_DIGEST_RE.match(digest):
+        raise ValueError(f"Invalid artifact blob digest: {digest!r}")
+    return Sha256Digest(digest)
+
+
 def stage_blob_from_chunks(
     chunks: Iterable[bytes],
     claimed_digest: Sha256Digest,

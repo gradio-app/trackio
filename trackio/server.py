@@ -591,12 +591,18 @@ def artifact_log(
 ) -> dict[str, Any]:
     assert_can_write_metrics(request, hf_token)
     project = _validate_project_name(project)
-    digests = [_validate_sha256_digest(e["digest"]) for e in manifest]
+    digests = []
     for e in manifest:
+        if not isinstance(e, dict):
+            raise TrackioAPIError(f"Invalid artifact manifest entry: {e!r}")
+        digests.append(_validate_sha256_digest(e.get("digest")))
         try:
-            cas.validate_logical_path(e["path"])
+            cas.validate_logical_path(e.get("path"))
         except ValueError as err:
             raise TrackioAPIError(str(err)) from err
+        size = e.get("size")
+        if not isinstance(size, int) or size < 0:
+            raise TrackioAPIError(f"Artifact manifest entry has invalid size: {size!r}")
     present = SQLiteStorage.list_artifact_blobs_present(project, digests)
     missing = [d for d in digests if d not in present]
     if missing:

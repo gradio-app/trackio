@@ -384,6 +384,18 @@ def test_download_rejects_absolute_paths_in_manifest(temp_dir, tmp_path):
     assert not target.exists()
 
 
+def test_download_rejects_invalid_digest_in_manifest(temp_dir, tmp_path):
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": "w.bin", "digest": "../../etc/passwd", "size": 5}],
+    )
+    with pytest.raises(ValueError, match="Invalid artifact blob digest"):
+        a.download(tmp_path / "dl")
+    assert not (tmp_path / "etc" / "passwd").exists()
+
+
 def test_build_manifest_writes_blob_with_correct_digest(temp_dir, tmp_path):
     payload = b"hello"
     p = tmp_path / "w.bin"
