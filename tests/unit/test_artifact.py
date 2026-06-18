@@ -5,7 +5,7 @@ import pytest
 
 import trackio
 from trackio.artifact import Artifact
-from trackio.cas import HASH_CHUNK_SIZE, hash_file
+from trackio.cas import HASH_CHUNK_SIZE, hash_file, stage_blob_from_chunks
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import Sha256Digest
 
@@ -317,6 +317,23 @@ def test_hash_file_modern_and_fallback_paths_agree(tmp_path, monkeypatch):
 
     assert d_modern == d_fallback == hashlib.sha256(payload).hexdigest()
     assert s_modern == s_fallback == len(payload)
+
+
+def test_stage_blob_overwrites_target_that_appears_after_guard(tmp_path):
+    """A concurrent writer can create the target between the initial is_file()
+    guard and the final rename. The staging must overwrite it atomically
+    (os.replace), not raise as os.rename would on Windows."""
+    payload = b"shared-content"
+    digest = Sha256Digest(hashlib.sha256(payload).hexdigest())
+    target = tmp_path / "blob"
+
+    def _chunks():
+        target.write_bytes(payload)
+        yield payload
+
+    stage_blob_from_chunks(_chunks(), claimed_digest=digest, target_path=target)
+    assert target.read_bytes() == payload
+    assert not any(p.name.startswith("blob.partial.") for p in tmp_path.iterdir())
 
 
 def test_artifact_rejects_invalid_name():

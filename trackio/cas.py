@@ -107,7 +107,7 @@ def stage_blob_from_chunks(
             raise ValueError(
                 f"Digest mismatch: claimed {claimed_digest}, computed {actual}"
             )
-        os.rename(partial, target_path)
+        os.replace(partial, target_path)
     except Exception:
         partial.unlink(missing_ok=True)
         raise
