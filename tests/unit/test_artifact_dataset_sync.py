@@ -17,7 +17,7 @@ def _build_sample_artifacts(project):
     model_id = SQLiteStorage.create_or_get_artifact(
         project, "model", "model", "a model"
     )
-    v0_id, _ = SQLiteStorage.insert_artifact_version(
+    v0_id, _, _ = SQLiteStorage.insert_artifact_version(
         project,
         model_id,
         [{"path": "w.bin", "digest": "a" * 64, "size": 5}],
@@ -29,7 +29,7 @@ def _build_sample_artifacts(project):
     SQLiteStorage.insert_run_artifact_link(
         project, "train", "rid-train", v0_id, "output"
     )
-    v1_id, _ = SQLiteStorage.insert_artifact_version(
+    v1_id, _, _ = SQLiteStorage.insert_artifact_version(
         project,
         model_id,
         [{"path": "w.bin", "digest": "b" * 64, "size": 7}],
@@ -45,7 +45,7 @@ def _build_sample_artifacts(project):
     SQLiteStorage.insert_run_artifact_link(project, "eval", "rid-eval", v1_id, "input")
 
     data_id = SQLiteStorage.create_or_get_artifact(project, "data", "dataset", None)
-    d0_id, _ = SQLiteStorage.insert_artifact_version(
+    d0_id, _, _ = SQLiteStorage.insert_artifact_version(
         project,
         data_id,
         [{"path": "d.csv", "digest": "c" * 64, "size": 3}],
@@ -118,7 +118,7 @@ def test_artifact_only_project_survives_roundtrip(temp_dir):
     """A project with artifacts but no metrics has no metrics parquet, yet must
     still be rebuilt from its artifact parquet files."""
     aid = SQLiteStorage.create_or_get_artifact("artonly", "m", "model", None)
-    vid, _ = SQLiteStorage.insert_artifact_version(
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
         "artonly", aid, [{"path": "a", "digest": "d" * 64, "size": 1}], None, None, "r"
     )
     SQLiteStorage.reassign_alias("artonly", aid, "latest", vid)

@@ -4081,7 +4081,9 @@ class SQLiteStorage:
         metadata: dict | None,
         producer_run_id: str | None,
         producer_run_name: str | None,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, bool]:
+        """Returns `(version_id, version, created)`. `created` is False when an
+        identical-content version already existed and was returned as-is."""
         canonical, manifest_digest, size_bytes = SQLiteStorage._canonical_manifest(
             manifest
         )
@@ -4100,7 +4102,7 @@ class SQLiteStorage:
                     (artifact_id, manifest_digest),
                 ).fetchone()
                 if existing is not None:
-                    return int(existing["id"]), int(existing["version"])
+                    return int(existing["id"]), int(existing["version"]), False
                 row = cursor.execute(
                     "SELECT MAX(version) AS m FROM artifact_versions WHERE artifact_id = ?",
                     (artifact_id,),
@@ -4124,7 +4126,7 @@ class SQLiteStorage:
                     ),
                 )
                 conn.commit()
-                return int(cursor.lastrowid), next_version
+                return int(cursor.lastrowid), next_version, True
 
     @staticmethod
     def reassign_alias(
@@ -4226,14 +4228,16 @@ class SQLiteStorage:
         run_name: str | None,
         run_id: str | None,
     ) -> dict:
-        """Create/fetch the artifact, insert (or dedupe) the version, rotate
-        `latest` plus any user aliases onto it, record the producer lineage
-        link, and return the full manifest record.
+        """Create/fetch the artifact, insert (or dedupe) the version, point
+        `latest` at it only when a new version was created (so re-logging
+        identical or older content never regresses `latest`), rotate any user
+        aliases onto it, record the producer lineage link, and return the full
+        manifest record.
         """
         artifact_id = SQLiteStorage.create_or_get_artifact(
             project, name, type, description
         )
-        version_id, version_int = SQLiteStorage.insert_artifact_version(
+        version_id, version_int, created = SQLiteStorage.insert_artifact_version(
             project=project,
             artifact_id=artifact_id,
             manifest=manifest,
@@ -4241,7 +4245,8 @@ class SQLiteStorage:
             producer_run_id=run_id,
             producer_run_name=run_name,
         )
-        SQLiteStorage.reassign_alias(project, artifact_id, "latest", version_id)
+        if created:
+            SQLiteStorage.reassign_alias(project, artifact_id, "latest", version_id)
         for alias in aliases or []:
             SQLiteStorage.reassign_alias(project, artifact_id, alias, version_id)
         SQLiteStorage.insert_run_artifact_link(
