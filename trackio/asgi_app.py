@@ -432,6 +432,7 @@ async def file_handler(request: Request) -> Response:
 
 async def artifact_blob_handler(request: Request) -> Response:
     # Imported lazily to avoid a circular import at module load (server imports asgi_app).
+    from trackio import cas  # noqa: PLC0415
     from trackio import server as _server  # noqa: PLC0415
 
     project = request.path_params.get("project")
@@ -441,7 +442,7 @@ async def artifact_blob_handler(request: Request) -> Response:
         _server._validate_sha256_digest(digest)
     except TrackioAPIError:
         return Response("Not found", status_code=404)
-    blob = utils.ARTIFACTS_DIR / project / "blobs" / "sha256" / digest[:2] / digest
+    blob = cas.blob_path(project, digest)
     if not blob.is_file():
         return Response("Not found", status_code=404)
     return FileResponse(str(blob))

@@ -189,6 +189,62 @@ def test_download_with_server_base_url_resolves_correctly(
     assert (Path(out) / "w.bin").read_bytes() == payload
 
 
+def _capture_stream_headers(monkeypatch, payload):
+    """Patch httpx.stream to record the headers it was called with."""
+    captured: dict = {}
+
+    def _stream(method, url, **kwargs):
+        captured["headers"] = dict(kwargs.get("headers") or {})
+        return _FakeStreamResponse(200, payload)
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "stream", _stream)
+    return captured
+
+
+def test_download_sends_hf_auth_header_for_space(temp_dir, tmp_path, monkeypatch):
+    """A Space-backed artifact authenticates the blob fetch with the HF token,
+    so blobs on a private Space are reachable."""
+    payload = b"private-weights"
+    digest = hashlib.sha256(payload).hexdigest()
+    art = _hydrated_remote_artifact(
+        "p",
+        "m",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
+        {"space_id": "user/space", "server_base_url": None, "write_token": None},
+    )
+    monkeypatch.setattr("trackio.artifact.get_token", lambda: "hf_faketoken")
+    captured = _capture_stream_headers(monkeypatch, payload)
+
+    out = art.download(tmp_path / "dl")
+    assert (Path(out) / "w.bin").read_bytes() == payload
+    assert "Bearer hf_faketoken" in captured["headers"].values()
+
+
+def test_download_sends_write_token_for_self_hosted(temp_dir, tmp_path, monkeypatch):
+    """A self-hosted artifact authenticates the blob fetch with the write token."""
+    payload = b"weights"
+    digest = hashlib.sha256(payload).hexdigest()
+    art = _hydrated_remote_artifact(
+        "p",
+        "m",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
+        {
+            "space_id": None,
+            "server_base_url": "https://my-server.example/",
+            "write_token": "wt-secret",
+        },
+    )
+    captured = _capture_stream_headers(monkeypatch, payload)
+
+    out = art.download(tmp_path / "dl")
+    assert (Path(out) / "w.bin").read_bytes() == payload
+    assert captured["headers"].get("x-trackio-write-token") == "wt-secret"
+
+
 def test_artifact_blob_endpoint_serves_blob(temp_dir, monkeypatch, stage_blob):
     """Smoke test the asgi handler directly (no real HTTP)."""
     import asyncio

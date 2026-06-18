@@ -140,6 +140,7 @@ def test_remote_log_artifact_hydrates_returned_artifact(
     assert logged._remote_source == {
         "space_id": "user/space",
         "server_base_url": None,
+        "write_token": None,
     }
     run._client = None
     trackio.finish()
@@ -163,6 +164,7 @@ def test_remote_use_artifact_sequence(temp_dir, monkeypatch):
     assert art._remote_source == {
         "space_id": "user/space",
         "server_base_url": None,
+        "write_token": None,
     }
     run._client = None
     trackio.finish()

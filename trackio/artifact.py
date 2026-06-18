@@ -5,9 +5,10 @@ import uuid
 from pathlib import Path
 
 import httpx
+from huggingface_hub.utils import get_token
 
 from trackio import cas
-from trackio.remote_client import _resolve_src_url
+from trackio.remote_client import _merge_client_headers, _resolve_src_url
 from trackio.typehints import Manifest, Sha256Digest
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -40,9 +41,12 @@ def _fetch_blob_from_remote(
     target_path: Path,
 ) -> None:
     """Stream `GET /artifact_blob/<project>/<digest>` from the remote, rehash
-    while writing, and atomic-rename into the local CAS.
+    while writing, and atomic-rename into the local CAS. Authenticates the
+    request (HF token for a Space, write token for a self-hosted server) so
+    blobs on a private remote are reachable.
     """
-    src = remote_source.get("space_id") or remote_source.get("server_base_url")
+    space_id = remote_source.get("space_id")
+    src = space_id or remote_source.get("server_base_url")
     if not src:
         raise RuntimeError(
             "Artifact has _remote_source set but neither space_id nor "
@@ -50,9 +54,14 @@ def _fetch_blob_from_remote(
         )
     base_url = _resolve_src_url(src).rstrip("/")
     url = f"{base_url}/artifact_blob/{project}/{digest}"
+    headers = _merge_client_headers(
+        get_token() if space_id else None,
+        remote_source.get("write_token"),
+    )
     with httpx.stream(
         "GET",
         url,
+        headers=headers,
         timeout=httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
     ) as response:
         if response.status_code == 404:

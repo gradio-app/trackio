@@ -153,6 +153,7 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
     assert fetched._remote_source == {
         "space_id": "user/space",
         "server_base_url": None,
+        "write_token": None,
     }
 
     out = fetched.download(tmp_path / "dl")

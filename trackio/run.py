@@ -1029,6 +1029,7 @@ class Run:
             artifact._remote_source = {
                 "space_id": self._space_id,
                 "server_base_url": self._server_base_url,
+                "write_token": self._write_token,
             }
         return artifact
 
@@ -1104,6 +1105,7 @@ class Run:
             art._remote_source = {
                 "space_id": self._space_id,
                 "server_base_url": self._server_base_url,
+                "write_token": self._write_token,
             }
 
         try:
