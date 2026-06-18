@@ -43,9 +43,6 @@ def hash_file(path: Path) -> tuple[Sha256Digest, int]:
 def validate_logical_path(logical: str) -> str:
     """Validate a manifest logical path: relative, no `.`/`..` segments, no
     backslashes, no drive letters, non-empty. Returns the path unchanged.
-
-    Logical paths are joined onto a download root with `/` separators on all
-    platforms, so the same rules apply everywhere.
     """
     if not isinstance(logical, str) or not logical:
         raise ValueError(f"Invalid artifact path: {logical!r} (must be non-empty)")
@@ -66,9 +63,7 @@ def validate_logical_path(logical: str) -> str:
 
 def validate_digest(digest: str) -> Sha256Digest:
     """Validate that `digest` is a 64-char lowercase sha256 hex string and
-    return it unchanged. Use this before a digest from an untrusted source
-    (e.g. a manifest fetched from a remote server) is interpolated into a
-    filesystem path or URL, so a crafted value cannot escape the CAS root.
+    return it unchanged.
     """
     if not isinstance(digest, str) or not SHA256_DIGEST_RE.match(digest):
         raise ValueError(f"Invalid artifact blob digest: {digest!r}")
@@ -83,13 +78,8 @@ def stage_blob_from_chunks(
 ) -> None:
     """Stream `chunks` into a `.partial.<uuid>` file in the CAS dir, rehashing
     and size-capping as we go. On match, atomic-rename to `target_path`. On
-    failure, clean up the partial.
-
-    Same-filesystem rename is guaranteed because the partial lives inside the
-    CAS directory; this avoids cross-device `EXDEV` issues.
-
-    If `target_path.is_file()` already, returns without consuming `chunks` —
-    callers should check beforehand if they want to avoid even fetching.
+    failure, clean up the partial. If `target_path.is_file()` already, returns
+    without consuming `chunks`.
     """
     if target_path.is_file():
         return
@@ -126,9 +116,6 @@ def stage_blob_from_file(
 ) -> None:
     """Copy `src_path` into the CAS via a partial file + atomic rename,
     verifying the content hashes to `claimed_digest`.
-
-    Always copies (never hardlinks) so later in-place mutation of `src_path`
-    cannot silently rewrite the stored blob.
     """
     if target_path.is_file():
         return
