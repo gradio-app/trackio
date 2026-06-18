@@ -130,3 +130,33 @@ def stage_blob_from_file(
                 yield chunk
 
     stage_blob_from_chunks(_file_chunks(), claimed_digest, target_path)
+
+
+def stage_blob_into_project(src_path: Path, project: str) -> tuple[Sha256Digest, int]:
+    """Copy `src_path` into the project's CAS in a single pass, computing its
+    sha256 and size while writing. Returns `(digest, size)`. The blob is staged
+    to a `.partial.<uuid>` file and atomically renamed to the digest-derived
+    path; if that path already holds the blob, the partial is discarded.
+    """
+    blobs_root = utils.ARTIFACTS_DIR / project / "blobs" / "sha256"
+    blobs_root.mkdir(parents=True, exist_ok=True)
+    partial = blobs_root / f".partial.{uuid.uuid4().hex}"
+    sha = hashlib.sha256()
+    size = 0
+    try:
+        with src_path.open("rb") as src, partial.open("wb") as dst:
+            while chunk := src.read(HASH_CHUNK_SIZE):
+                sha.update(chunk)
+                dst.write(chunk)
+                size += len(chunk)
+        digest = Sha256Digest(sha.hexdigest())
+        target = blob_path(project, digest)
+        if target.is_file():
+            partial.unlink(missing_ok=True)
+            return digest, size
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(partial, target)
+        return digest, size
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise

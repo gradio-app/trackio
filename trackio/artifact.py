@@ -256,8 +256,7 @@ class Artifact:
 
         entries: Manifest = []
         for src, logical in self._pending_files:
-            digest, size = cas.hash_file(src)
-            cas.stage_blob_from_file(src, digest, cas.blob_path(project, digest))
+            digest, size = cas.stage_blob_into_project(src, project)
             entries.append({"path": logical, "digest": digest, "size": size})
         return entries
 

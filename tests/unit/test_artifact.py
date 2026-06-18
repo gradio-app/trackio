@@ -497,6 +497,30 @@ def test_build_manifest_writes_blob_with_correct_digest(temp_dir, tmp_path):
     assert blob.read_bytes() == payload
 
 
+def test_build_manifest_reads_each_source_once(temp_dir, tmp_path, monkeypatch):
+    p = tmp_path / "w.bin"
+    p.write_bytes(b"x" * (HASH_CHUNK_SIZE + 7))
+    a = Artifact(name="m", type="model")
+    a.add_file(p)
+    target = p.resolve()
+
+    reads = {"opens": 0}
+    real_open = Path.open
+
+    def counting_open(self, *args, **kwargs):
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if self == target and "b" in mode and "r" in mode:
+            reads["opens"] += 1
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", counting_open)
+    manifest = a._build_manifest("proj")
+
+    assert reads["opens"] == 1
+    assert manifest[0]["digest"] == hashlib.sha256(p.read_bytes()).hexdigest()
+    assert manifest[0]["size"] == HASH_CHUNK_SIZE + 7
+
+
 def test_build_manifest_dedupes_blob_files(temp_dir, tmp_path):
     p1 = tmp_path / "a"
     p2 = tmp_path / "b"
