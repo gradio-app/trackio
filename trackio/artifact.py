@@ -4,7 +4,10 @@ import shutil
 import uuid
 from pathlib import Path
 
+import httpx
+
 from trackio import cas
+from trackio.remote_client import _resolve_src_url
 from trackio.typehints import Manifest, Sha256Digest
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -39,10 +42,6 @@ def _fetch_blob_from_remote(
     """Stream `GET /artifact_blob/<project>/<digest>` from the remote, rehash
     while writing, and atomic-rename into the local CAS.
     """
-    import httpx
-
-    from trackio.remote_client import _resolve_src_url
-
     src = remote_source.get("space_id") or remote_source.get("server_base_url")
     if not src:
         raise RuntimeError(

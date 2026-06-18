@@ -19,7 +19,7 @@ from starlette.routing import Route
 
 from trackio.exceptions import TrackioAPIError
 from trackio.remote_client import HTTP_API_VERSION
-from trackio.utils import on_spaces
+from trackio.utils import ARTIFACTS_DIR, on_spaces
 
 logger = logging.getLogger("trackio.asgi_app")
 
@@ -431,15 +431,8 @@ async def file_handler(request: Request) -> Response:
 
 
 async def artifact_blob_handler(request: Request) -> Response:
-    """Serve an artifact blob by `(project, digest)`.
-
-    Path-param-only — no `?path=` query, so the client doesn't need to know
-    the server's `ARTIFACTS_DIR` filesystem layout. Used by the consumer-side
-    `Artifact.download()` remote-fetch fallback.
-    """
-    from trackio import server as _server  # avoid circular import at module load
-    from trackio.exceptions import TrackioAPIError
-    from trackio.utils import ARTIFACTS_DIR
+    # Imported lazily to avoid a circular import at module load (server imports asgi_app).
+    from trackio import server as _server  # noqa: PLC0415
 
     project = request.path_params.get("project")
     digest = request.path_params.get("digest")
