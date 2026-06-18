@@ -19,7 +19,17 @@ from trackio.typehints import Sha256Digest
 
 SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 ARTIFACT_VERSION_SPEC_RE = re.compile(r"^v(\d+)$")
+ARTIFACT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 HASH_CHUNK_SIZE = 1024 * 1024
+
+
+def validate_artifact_name(name: str) -> str:
+    if not isinstance(name, str) or not ARTIFACT_NAME_RE.match(name):
+        raise ValueError(
+            f"Artifact name {name!r} must match ^[A-Za-z0-9._-]+$ "
+            "(letters, digits, dot, underscore, hyphen)."
+        )
+    return name
 
 
 def blob_path(project: str, digest: Sha256Digest) -> Path:

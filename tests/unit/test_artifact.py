@@ -84,6 +84,30 @@ def test_relog_with_alias_tags_existing_version_without_moving_latest(temp_dir):
     assert SQLiteStorage.resolve_artifact_version("p", "m", "prod")["version"] == 0
 
 
+def test_commit_artifact_version_is_atomic_on_bad_alias(temp_dir):
+    # A reserved-vN alias raises mid-commit; the artifact/version/latest writes
+    # that ran before it must roll back, leaving nothing behind.
+    with pytest.raises(ValueError, match="reserved for version pointers"):
+        SQLiteStorage.commit_artifact_version(
+            project="p",
+            name="m",
+            type="model",
+            description=None,
+            manifest=[{"path": "w", "digest": "aaa", "size": 1}],
+            metadata=None,
+            aliases=["v9"],
+            run_name="r",
+            run_id=None,
+        )
+    assert SQLiteStorage.resolve_artifact_version("p", "m", "latest") is None
+    assert SQLiteStorage.get_run_artifacts("p", "r", None) == {
+        "input": [],
+        "output": [],
+    }
+    # The DB is still usable: a subsequent good commit starts cleanly at v0.
+    assert _commit_version([{"path": "w", "digest": "aaa", "size": 1}])["version"] == 0
+
+
 def test_insert_artifact_version_increments(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
     _, v_0, _ = SQLiteStorage.insert_artifact_version(

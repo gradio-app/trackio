@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 import uuid
 from pathlib import Path
@@ -10,8 +9,6 @@ from huggingface_hub.utils import get_token
 from trackio import cas
 from trackio.remote_client import _merge_client_headers, _resolve_src_url
 from trackio.typehints import Manifest, Sha256Digest
-
-_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _materialize(blob: Path, dst: Path, size: int) -> None:
@@ -91,11 +88,7 @@ class Artifact:
         description: str | None = None,
         metadata: dict | None = None,
     ):
-        if not isinstance(name, str) or not _NAME_RE.match(name):
-            raise ValueError(
-                f"Artifact name {name!r} must match ^[A-Za-z0-9._-]+$ "
-                "(letters, digits, dot, underscore, hyphen)."
-            )
+        cas.validate_artifact_name(name)
         self._name = name
         self._type = type
         self._description = description

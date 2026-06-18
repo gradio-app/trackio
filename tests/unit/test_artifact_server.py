@@ -300,6 +300,59 @@ def test_artifact_log_rejects_invalid_manifest_entries(temp_dir, auth_bypassed):
         _log(["not-a-dict"])
 
 
+def test_artifact_log_rejects_invalid_name(temp_dir, auth_bypassed):
+    digest, size = _stage(temp_dir, "p", b"payload")
+    with pytest.raises(TrackioAPIError, match="must match"):
+        server.artifact_log(
+            request=auth_bypassed,
+            project="p",
+            name="bad name!",
+            type="model",
+            description=None,
+            metadata=None,
+            manifest=[{"path": "w.bin", "digest": digest, "size": size}],
+            aliases=None,
+            run_name="r",
+            run_id="rid",
+            hf_token=None,
+        )
+
+
+def test_artifact_log_rejects_empty_type(temp_dir, auth_bypassed):
+    digest, size = _stage(temp_dir, "p", b"payload")
+    with pytest.raises(TrackioAPIError, match="type must be a non-empty string"):
+        server.artifact_log(
+            request=auth_bypassed,
+            project="p",
+            name="m",
+            type="",
+            description=None,
+            metadata=None,
+            manifest=[{"path": "w.bin", "digest": digest, "size": size}],
+            aliases=None,
+            run_name="r",
+            run_id="rid",
+            hf_token=None,
+        )
+
+
+def test_artifact_log_rejects_empty_manifest(temp_dir, auth_bypassed):
+    with pytest.raises(TrackioAPIError, match="non-empty list"):
+        server.artifact_log(
+            request=auth_bypassed,
+            project="p",
+            name="m",
+            type="model",
+            description=None,
+            metadata=None,
+            manifest=[],
+            aliases=None,
+            run_name="r",
+            run_id="rid",
+            hf_token=None,
+        )
+
+
 def test_artifact_log_rejects_invalid_project(temp_dir, auth_bypassed):
     with pytest.raises(TrackioAPIError, match="Invalid project"):
         server.artifact_log(

@@ -4041,6 +4041,32 @@ class SQLiteStorage:
         return canonical, manifest_digest, size_bytes
 
     @staticmethod
+    def _create_or_get_artifact_cursor(
+        conn: sqlite3.Connection,
+        name: str,
+        type: str,
+        description: str | None,
+        now: str,
+    ) -> int:
+        cursor = conn.cursor()
+        row = cursor.execute(
+            "SELECT id, type FROM artifacts WHERE name = ?", (name,)
+        ).fetchone()
+        if row is not None:
+            if row["type"] != type:
+                raise ValueError(
+                    f"Artifact '{name}' already exists with type "
+                    f"'{row['type']}'; cannot relog with type '{type}'."
+                )
+            return int(row["id"])
+        cursor.execute(
+            """INSERT INTO artifacts (name, type, description, created_at)
+            VALUES (?, ?, ?, ?)""",
+            (name, type, description, now),
+        )
+        return int(cursor.lastrowid)
+
+    @staticmethod
     def create_or_get_artifact(
         project: str,
         name: str,
@@ -4051,24 +4077,60 @@ class SQLiteStorage:
         now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                cursor = conn.cursor()
-                row = cursor.execute(
-                    "SELECT id, type FROM artifacts WHERE name = ?", (name,)
-                ).fetchone()
-                if row is not None:
-                    if row["type"] != type:
-                        raise ValueError(
-                            f"Artifact '{name}' already exists with type "
-                            f"'{row['type']}'; cannot relog with type '{type}'."
-                        )
-                    return int(row["id"])
-                cursor.execute(
-                    """INSERT INTO artifacts (name, type, description, created_at)
-                    VALUES (?, ?, ?, ?)""",
-                    (name, type, description, now),
+                artifact_id = SQLiteStorage._create_or_get_artifact_cursor(
+                    conn, name, type, description, now
                 )
                 conn.commit()
-                return int(cursor.lastrowid)
+                return artifact_id
+
+    @staticmethod
+    def _insert_artifact_version_cursor(
+        conn: sqlite3.Connection,
+        artifact_id: int,
+        manifest: Manifest,
+        metadata: dict | None,
+        producer_run_id: str | None,
+        producer_run_name: str | None,
+        now: str,
+    ) -> tuple[int, int, bool]:
+        canonical, manifest_digest, size_bytes = SQLiteStorage._canonical_manifest(
+            manifest
+        )
+        manifest_json = orjson.dumps(canonical).decode("utf-8")
+        metadata_json = (
+            orjson.dumps(metadata).decode("utf-8") if metadata is not None else None
+        )
+        cursor = conn.cursor()
+        existing = cursor.execute(
+            """SELECT id, version FROM artifact_versions
+            WHERE artifact_id = ? AND manifest_digest = ?""",
+            (artifact_id, manifest_digest),
+        ).fetchone()
+        if existing is not None:
+            return int(existing["id"]), int(existing["version"]), False
+        row = cursor.execute(
+            "SELECT MAX(version) AS m FROM artifact_versions WHERE artifact_id = ?",
+            (artifact_id,),
+        ).fetchone()
+        next_version = 0 if row["m"] is None else int(row["m"]) + 1
+        cursor.execute(
+            """INSERT INTO artifact_versions
+            (artifact_id, version, manifest_digest, manifest, metadata,
+             size_bytes, producer_run_id, producer_run_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                artifact_id,
+                next_version,
+                manifest_digest,
+                manifest_json,
+                metadata_json,
+                size_bytes,
+                producer_run_id,
+                producer_run_name,
+                now,
+            ),
+        )
+        return int(cursor.lastrowid), next_version, True
 
     @staticmethod
     def insert_artifact_version(
@@ -4081,53 +4143,25 @@ class SQLiteStorage:
     ) -> tuple[int, int, bool]:
         """Returns `(version_id, version, created)`. `created` is False when an
         identical-content version already existed and was returned as-is."""
-        canonical, manifest_digest, size_bytes = SQLiteStorage._canonical_manifest(
-            manifest
-        )
         db_path = SQLiteStorage.init_db(project)
         now = datetime.now(timezone.utc).isoformat()
-        manifest_json = orjson.dumps(canonical).decode("utf-8")
-        metadata_json = (
-            orjson.dumps(metadata).decode("utf-8") if metadata is not None else None
-        )
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                cursor = conn.cursor()
-                existing = cursor.execute(
-                    """SELECT id, version FROM artifact_versions
-                    WHERE artifact_id = ? AND manifest_digest = ?""",
-                    (artifact_id, manifest_digest),
-                ).fetchone()
-                if existing is not None:
-                    return int(existing["id"]), int(existing["version"]), False
-                row = cursor.execute(
-                    "SELECT MAX(version) AS m FROM artifact_versions WHERE artifact_id = ?",
-                    (artifact_id,),
-                ).fetchone()
-                next_version = 0 if row["m"] is None else int(row["m"]) + 1
-                cursor.execute(
-                    """INSERT INTO artifact_versions
-                    (artifact_id, version, manifest_digest, manifest, metadata,
-                     size_bytes, producer_run_id, producer_run_name, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        artifact_id,
-                        next_version,
-                        manifest_digest,
-                        manifest_json,
-                        metadata_json,
-                        size_bytes,
-                        producer_run_id,
-                        producer_run_name,
-                        now,
-                    ),
+                result = SQLiteStorage._insert_artifact_version_cursor(
+                    conn,
+                    artifact_id,
+                    manifest,
+                    metadata,
+                    producer_run_id,
+                    producer_run_name,
+                    now,
                 )
                 conn.commit()
-                return int(cursor.lastrowid), next_version, True
+                return result
 
     @staticmethod
-    def reassign_alias(
-        project: str,
+    def _reassign_alias_cursor(
+        conn: sqlite3.Connection,
         artifact_id: int,
         alias: str,
         version_id: int,
@@ -4136,15 +4170,26 @@ class SQLiteStorage:
             raise ValueError(
                 f"Alias '{alias}' is reserved for version pointers (vN); choose another."
             )
+        conn.execute(
+            """INSERT INTO artifact_aliases (artifact_id, alias, artifact_version_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(artifact_id, alias) DO UPDATE SET
+                artifact_version_id = excluded.artifact_version_id""",
+            (artifact_id, alias, version_id),
+        )
+
+    @staticmethod
+    def reassign_alias(
+        project: str,
+        artifact_id: int,
+        alias: str,
+        version_id: int,
+    ) -> None:
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                conn.execute(
-                    """INSERT INTO artifact_aliases (artifact_id, alias, artifact_version_id)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(artifact_id, alias) DO UPDATE SET
-                        artifact_version_id = excluded.artifact_version_id""",
-                    (artifact_id, alias, version_id),
+                SQLiteStorage._reassign_alias_cursor(
+                    conn, artifact_id, alias, version_id
                 )
                 conn.commit()
 
@@ -4190,6 +4235,26 @@ class SQLiteStorage:
             }
 
     @staticmethod
+    def _insert_run_artifact_link_cursor(
+        conn: sqlite3.Connection,
+        run_name: str | None,
+        run_id: str | None,
+        version_id: int,
+        direction: str,
+        now: str,
+    ) -> None:
+        if direction not in ("input", "output"):
+            raise ValueError(
+                f"direction must be 'input' or 'output', got {direction!r}"
+            )
+        conn.execute(
+            """INSERT OR IGNORE INTO run_artifact_links
+            (run_id, run_name, artifact_version_id, direction, created_at)
+            VALUES (?, ?, ?, ?, ?)""",
+            (run_id, run_name, version_id, direction, now),
+        )
+
+    @staticmethod
     def insert_run_artifact_link(
         project: str,
         run_name: str | None,
@@ -4197,19 +4262,12 @@ class SQLiteStorage:
         version_id: int,
         direction: str,
     ) -> None:
-        if direction not in ("input", "output"):
-            raise ValueError(
-                f"direction must be 'input' or 'output', got {direction!r}"
-            )
         db_path = SQLiteStorage.init_db(project)
         now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                conn.execute(
-                    """INSERT OR IGNORE INTO run_artifact_links
-                    (run_id, run_name, artifact_version_id, direction, created_at)
-                    VALUES (?, ?, ?, ?, ?)""",
-                    (run_id, run_name, version_id, direction, now),
+                SQLiteStorage._insert_run_artifact_link_cursor(
+                    conn, run_name, run_id, version_id, direction, now
                 )
                 conn.commit()
 
@@ -4228,31 +4286,33 @@ class SQLiteStorage:
         """Create/fetch the artifact, insert (or dedupe) the version, point
         `latest` at it only when a new version was created (so re-logging
         identical or older content never regresses `latest`), rotate any user
-        aliases onto it, record the producer lineage link, and return the full
-        manifest record.
+        aliases onto it, and record the producer lineage link, then return the
+        full manifest record.
         """
-        artifact_id = SQLiteStorage.create_or_get_artifact(
-            project, name, type, description
-        )
-        version_id, version_int, created = SQLiteStorage.insert_artifact_version(
-            project=project,
-            artifact_id=artifact_id,
-            manifest=manifest,
-            metadata=metadata,
-            producer_run_id=run_id,
-            producer_run_name=run_name,
-        )
-        if created:
-            SQLiteStorage.reassign_alias(project, artifact_id, "latest", version_id)
-        for alias in aliases or []:
-            SQLiteStorage.reassign_alias(project, artifact_id, alias, version_id)
-        SQLiteStorage.insert_run_artifact_link(
-            project=project,
-            run_name=run_name,
-            run_id=run_id,
-            version_id=version_id,
-            direction="output",
-        )
+        db_path = SQLiteStorage.init_db(project)
+        now = datetime.now(timezone.utc).isoformat()
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                artifact_id = SQLiteStorage._create_or_get_artifact_cursor(
+                    conn, name, type, description, now
+                )
+                version_id, version_int, created = (
+                    SQLiteStorage._insert_artifact_version_cursor(
+                        conn, artifact_id, manifest, metadata, run_id, run_name, now
+                    )
+                )
+                if created:
+                    SQLiteStorage._reassign_alias_cursor(
+                        conn, artifact_id, "latest", version_id
+                    )
+                for alias in aliases or []:
+                    SQLiteStorage._reassign_alias_cursor(
+                        conn, artifact_id, alias, version_id
+                    )
+                SQLiteStorage._insert_run_artifact_link_cursor(
+                    conn, run_name, run_id, version_id, "output", now
+                )
+                conn.commit()
         return SQLiteStorage.get_artifact_manifest(project, name, f"v{version_int}")
 
     @staticmethod

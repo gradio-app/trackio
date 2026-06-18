@@ -589,6 +589,14 @@ def artifact_log(
 ) -> dict[str, Any]:
     assert_can_write_metrics(request, hf_token)
     project = _validate_project_name(project)
+    try:
+        cas.validate_artifact_name(name)
+    except ValueError as err:
+        raise TrackioAPIError(str(err)) from err
+    if not isinstance(type, str) or not type:
+        raise TrackioAPIError(f"Artifact type must be a non-empty string, got {type!r}")
+    if not isinstance(manifest, list) or not manifest:
+        raise TrackioAPIError("Artifact manifest must be a non-empty list of entries.")
     digests = []
     for e in manifest:
         if not isinstance(e, dict):
