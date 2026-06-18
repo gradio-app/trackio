@@ -6,6 +6,7 @@ trackio.db
 *.pyc
 *.pyi
 *.claude/
+.pi/
 .venv/
 **/.DS_Store
 node_modules/

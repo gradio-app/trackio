@@ -103,83 +103,34 @@ def apple_gpu_available() -> bool:
         return False
 
 
-def collect_apple_metrics() -> dict:
+def collect_apple_metrics(include_cpu_metrics: bool = True) -> dict:
     """
     Collect system metrics for Apple Silicon.
 
     Returns:
         Dictionary of system metrics including CPU, memory, and GPU info.
     """
-    if not PSUTIL_AVAILABLE:
-        try:
-            _ensure_psutil()
-        except ImportError:
-            return {}
-
     metrics = {}
 
-    try:
-        cpu_percent = psutil.cpu_percent(interval=0.1, percpu=False)
-        metrics["cpu/utilization"] = cpu_percent
-    except Exception:
-        pass
+    if include_cpu_metrics:
+        from trackio.cpu import collect_cpu_metrics
 
-    try:
-        cpu_percents = psutil.cpu_percent(interval=0.1, percpu=True)
-        for i, percent in enumerate(cpu_percents):
-            metrics[f"cpu/{i}/utilization"] = percent
-    except Exception:
-        pass
-
-    try:
-        cpu_freq = psutil.cpu_freq()
-        if cpu_freq:
-            metrics["cpu/frequency"] = cpu_freq.current
-            if cpu_freq.max > 0:
-                metrics["cpu/frequency_max"] = cpu_freq.max
-    except Exception:
-        pass
-
-    try:
-        mem = psutil.virtual_memory()
-        metrics["memory/used"] = mem.used / (1024**3)
-        metrics["memory/total"] = mem.total / (1024**3)
-        metrics["memory/available"] = mem.available / (1024**3)
-        metrics["memory/percent"] = mem.percent
-    except Exception:
-        pass
-
-    try:
-        swap = psutil.swap_memory()
-        metrics["swap/used"] = swap.used / (1024**3)
-        metrics["swap/total"] = swap.total / (1024**3)
-        metrics["swap/percent"] = swap.percent
-    except Exception:
-        pass
-
-    try:
-        sensors_temps = psutil.sensors_temperatures()
-        if sensors_temps:
-            for name, entries in sensors_temps.items():
-                for i, entry in enumerate(entries):
-                    label = entry.label or f"{name}_{i}"
-                    metrics[f"temp/{label}"] = entry.current
-    except Exception:
-        pass
+        metrics.update(collect_cpu_metrics(include_static=True))
 
     gpu_info = get_gpu_info()
     if gpu_info.get("detected"):
         metrics["gpu/detected"] = 1
-        if "type" in gpu_info:
-            pass
 
     return metrics
 
 
 class AppleGpuMonitor:
-    def __init__(self, run: "Run", interval: float = 10.0):
+    def __init__(
+        self, run: "Run", interval: float = 10.0, include_cpu_metrics: bool = True
+    ):
         self._run = run
         self._interval = interval
+        self._include_cpu_metrics = include_cpu_metrics
         self._stop_flag = threading.Event()
         self._thread: "threading.Thread | None" = None
 
@@ -212,7 +163,9 @@ class AppleGpuMonitor:
     def _monitor_loop(self):
         while not self._stop_flag.is_set():
             try:
-                metrics = collect_apple_metrics()
+                metrics = collect_apple_metrics(
+                    include_cpu_metrics=self._include_cpu_metrics
+                )
                 if metrics:
                     self._run.log_system(metrics)
             except Exception:

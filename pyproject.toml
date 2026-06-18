@@ -52,6 +52,9 @@ gpu = [
 apple-gpu = [
     "psutil>=5.9.0",
 ]
+cpu = [
+    "psutil>=5.9.0",
+]
 spaces = [
     "pyarrow>=21.0",
 ]

@@ -172,6 +172,98 @@ TRACKIO_DIR = _get_trackio_dir()
 MEDIA_DIR = TRACKIO_DIR / "media"
 ARTIFACTS_DIR = TRACKIO_DIR / "artifacts"
 
+NETWORK_FILESYSTEM_TYPES = {
+    "nfs",
+    "nfs4",
+    "lustre",
+    "gpfs",
+    "cephfs",
+    "beegfs",
+    "fhgfs",
+    "glusterfs",
+    "ocfs2",
+    "panfs",
+    "cifs",
+    "smbfs",
+    "wekafs",
+}
+NETWORK_FILESYSTEM_SUBSTRINGS = ("nfs", "lustre", "weka", "gpfs", "beegfs", "ceph")
+
+_storage_mode_notified = False
+
+
+def _filesystem_type_for_path(path: Path) -> str | None:
+    try:
+        with open("/proc/mounts") as f:
+            mount_lines = f.readlines()
+    except OSError:
+        return None
+    try:
+        resolved = str(path.resolve())
+    except OSError:
+        resolved = str(path)
+    best_fstype = None
+    best_len = -1
+    for line in mount_lines:
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        mount_point, fstype = parts[1], parts[2]
+        if resolved == mount_point or resolved.startswith(
+            mount_point.rstrip("/") + "/"
+        ):
+            if len(mount_point) > best_len:
+                best_fstype = fstype
+                best_len = len(mount_point)
+    return best_fstype
+
+
+def is_network_filesystem(path: Path) -> bool:
+    fstype = _filesystem_type_for_path(path)
+    if fstype is None:
+        return False
+    fstype = fstype.lower().removeprefix("fuse.")
+    if fstype in NETWORK_FILESYSTEM_TYPES:
+        return True
+    return any(sub in fstype for sub in NETWORK_FILESYSTEM_SUBSTRINGS)
+
+
+def get_inbox_poll_interval() -> float:
+    try:
+        interval = float(os.environ.get("TRACKIO_INBOX_POLL_INTERVAL", "15"))
+    except ValueError:
+        return 15.0
+    return max(interval, 5.0)
+
+
+def get_storage_mode() -> str:
+    """
+    Resolve how Trackio should persist data locally: "sqlite" (write directly to
+    the project SQLite database) or "jsonl" (write append-only JSONL fragments
+    to an inbox that the dashboard/Space imports). Controlled by
+    TRACKIO_STORAGE_MODE (auto|sqlite|jsonl); "auto" picks "jsonl" when
+    TRACKIO_DIR is detected to be on a network filesystem, where concurrent
+    SQLite writers are unsafe.
+    """
+    global _storage_mode_notified
+    mode = os.environ.get("TRACKIO_STORAGE_MODE", "auto").strip().lower()
+    if mode in ("sqlite", "jsonl"):
+        return mode
+    if mode != "auto":
+        _emit_nonfatal_warning(
+            f"Invalid TRACKIO_STORAGE_MODE: {mode!r}. Expected 'auto', 'sqlite', or 'jsonl'. Using 'auto'."
+        )
+    if is_network_filesystem(TRACKIO_DIR):
+        if not _storage_mode_notified:
+            _storage_mode_notified = True
+            print(
+                f"* Trackio directory {TRACKIO_DIR} appears to be on a network filesystem: "
+                "logging via append-only JSONL fragments instead of direct SQLite writes. "
+                "Set TRACKIO_STORAGE_MODE=sqlite to override."
+            )
+        return "jsonl"
+    return "sqlite"
+
 
 def get_or_create_project_hash(project: str) -> str:
     hash_path = TRACKIO_DIR / f"{project}.hash"

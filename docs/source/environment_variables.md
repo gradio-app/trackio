@@ -113,6 +113,43 @@ Controls the maximum length of string values displayed in table cells before the
 export TRACKIO_TABLE_TRUNCATE_LENGTH="500"
 ```
 
+### `TRACKIO_STORAGE_MODE`
+
+Controls how Trackio persists data locally. Allowed values: `auto` (default), `sqlite`, `jsonl`.
+
+- `sqlite`: training processes write directly to the project SQLite database (the historical behavior).
+- `jsonl`: training processes write append-only JSONL fragments to `TRACKIO_DIR/inbox/`, one file per process; the dashboard server (`trackio show`) imports them into SQLite. This avoids concurrent SQLite writers entirely, which makes Trackio safe on network filesystems (NFS, Lustre, FSx, GPFS, WekaFS, CephFS, ...) where SQLite's locking and mmap semantics are unreliable.
+- `auto`: picks `jsonl` automatically when `TRACKIO_DIR` is detected to be on a network filesystem (Linux only), otherwise `sqlite`.
+
+```bash
+export TRACKIO_STORAGE_MODE="jsonl"
+```
+
+### `TRACKIO_INBOX_POLL_INTERVAL`
+
+How often (in seconds) the dashboard server and Trackio Spaces check for new JSONL fragments to import, both from the local inbox directory and from the Hugging Face Bucket inbox. Defaults to `15`; values below `5` are clamped to `5`.
+
+```bash
+export TRACKIO_INBOX_POLL_INTERVAL="30"
+```
+
+### `TRACKIO_SQLITE_*` (advanced)
+
+Override the PRAGMAs Trackio sets on its SQLite connections. These are mainly useful on unusual filesystems; invalid values are ignored.
+
+- `TRACKIO_SQLITE_JOURNAL_MODE`: one of `wal`, `delete`, `truncate`, `persist`, `memory`, `off`. Defaults to `wal` locally and `delete` on Spaces.
+- `TRACKIO_SQLITE_MMAP_SIZE`: memory-mapped I/O size in bytes. Defaults to `0` (disabled) everywhere, since memory-mapped reads are the direct trigger for SIGBUS crashes on network filesystems and win little for Trackio's workload.
+- `TRACKIO_SQLITE_SYNCHRONOUS`: one of `off`, `normal`, `full`, `extra`. Defaults to `normal`.
+- `TRACKIO_SQLITE_LOCKING_MODE`: one of `normal`, `exclusive`. Defaults to `exclusive` on Spaces, `normal` elsewhere.
+- `TRACKIO_SQLITE_TEMP_STORE`: one of `default`, `file`, `memory`. Defaults to `memory`.
+
+**Recommended cluster setup:** if your home or cache directory lives on a shared filesystem (`/fsx`, Lustre, NFS, GPFS, WekaFS, ...), either point `TRACKIO_DIR` at node-local disk (e.g. `/tmp` or `$SLURM_TMPDIR`), or rely on `TRACKIO_STORAGE_MODE=auto` which detects network filesystems and switches to JSONL fragment logging. If you must write SQLite directly on a shared filesystem, set:
+
+```bash
+export TRACKIO_SQLITE_JOURNAL_MODE="delete"
+export TRACKIO_SQLITE_MMAP_SIZE="0"
+```
+
 ### `TRACKIO_WEBHOOK_URL`
 
 Sets a global webhook URL for alerts. When set, every call to `trackio.alert()` will POST the alert payload to this URL. Supports Slack and Discord webhook URLs natively (payloads are formatted automatically). Can be overridden per-alert or per-run via the `webhook_url` parameter.

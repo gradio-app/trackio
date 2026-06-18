@@ -509,9 +509,10 @@
     <div class="empty-state">
       <h2>No System Metrics Available</h2>
       <p>System metrics will appear here once logged. To enable automatic logging:</p>
-      <pre><code>{'import trackio\n\n# Auto-enabled when hardware is detected (NVIDIA GPU or Apple Silicon)\nrun = trackio.init(project="my-project")\n\n# Or explicitly enable it:\nrun = trackio.init(project="my-project", auto_log_gpu=True)\n\n# You can also manually log system metrics:\ntrackio.log_gpu()'}</code></pre>
+      <pre><code>{'import trackio\n\n# CPU/system metrics auto-enable when psutil is installed:\nrun = trackio.init(project="my-project")\n\n# Or explicitly enable/disable them:\nrun = trackio.init(project="my-project", auto_log_cpu=True)\n\n# Manually log at any time:\ntrackio.log_cpu()\ntrackio.log_gpu()'}</code></pre>
       <p><strong>Setup:</strong></p>
       <ul>
+        <li><strong>CPU/system metrics:</strong> <code>pip install trackio[cpu]</code> (requires <code>psutil</code>)</li>
         <li><strong>NVIDIA GPU:</strong> <code>pip install trackio[gpu]</code> (requires <code>nvidia-ml-py</code>)</li>
         <li><strong>Apple Silicon:</strong> <code>pip install trackio[apple-gpu]</code> (requires <code>psutil</code>)</li>
       </ul>

@@ -44,11 +44,31 @@ DB_EXT = ".db"
 _JOURNAL_MODE_WHITELIST = frozenset(
     {"wal", "delete", "truncate", "persist", "memory", "off"}
 )
+_SYNCHRONOUS_WHITELIST = frozenset({"off", "normal", "full", "extra"})
+_LOCKING_MODE_WHITELIST = frozenset({"normal", "exclusive"})
+_TEMP_STORE_WHITELIST = frozenset({"default", "file", "memory"})
 _READ_ONLY_QUERY_PREFIXES = ("select", "with", "pragma")
 _QUERY_MAX_ROWS = 10_000
 _READ_ONLY_PRAGMAS = frozenset(
     {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo"}
 )
+
+
+def _env_pragma_choice(name: str, whitelist: frozenset[str]) -> str | None:
+    value = os.environ.get(name, "").strip().lower()
+    if value in whitelist:
+        return value.upper()
+    return None
+
+
+def _env_pragma_int(name: str) -> int | None:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
@@ -60,10 +80,25 @@ def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     else:
         journal = "WAL"
     conn.execute(f"PRAGMA journal_mode = {journal}")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA temp_store = MEMORY")
+    synchronous = (
+        _env_pragma_choice("TRACKIO_SQLITE_SYNCHRONOUS", _SYNCHRONOUS_WHITELIST)
+        or "NORMAL"
+    )
+    conn.execute(f"PRAGMA synchronous = {synchronous}")
+    temp_store = (
+        _env_pragma_choice("TRACKIO_SQLITE_TEMP_STORE", _TEMP_STORE_WHITELIST)
+        or "MEMORY"
+    )
+    conn.execute(f"PRAGMA temp_store = {temp_store}")
     conn.execute("PRAGMA cache_size = -20000")
-    if on_spaces():
+    mmap_size = _env_pragma_int("TRACKIO_SQLITE_MMAP_SIZE")
+    conn.execute(f"PRAGMA mmap_size = {0 if mmap_size is None else mmap_size}")
+    locking_mode = _env_pragma_choice(
+        "TRACKIO_SQLITE_LOCKING_MODE", _LOCKING_MODE_WHITELIST
+    )
+    if locking_mode is not None:
+        conn.execute(f"PRAGMA locking_mode = {locking_mode}")
+    elif on_spaces():
         conn.execute("PRAGMA locking_mode = EXCLUSIVE")
 
 
@@ -2541,13 +2576,22 @@ class SQLiteStorage:
         bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
         if bucket_id is not None:
             if not SQLiteStorage._dataset_import_attempted:
+                SQLiteStorage._dataset_import_attempted = True
+                from trackio import fragments
                 from trackio.bucket_storage import download_bucket_to_trackio_dir
 
                 try:
                     download_bucket_to_trackio_dir(bucket_id)
                 except Exception:
                     pass
-            SQLiteStorage._dataset_import_attempted = True
+                try:
+                    fragments.import_inbox_from_bucket(bucket_id)
+                except Exception:
+                    pass
+                try:
+                    fragments.import_inbox_dir()
+                except Exception:
+                    pass
             return
         dataset_id = os.environ.get("TRACKIO_DATASET_ID")
         space_repo_name = os.environ.get("SPACE_REPO_NAME")

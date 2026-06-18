@@ -1,5 +1,15 @@
 # trackio
 
+## 0.27.0
+
+### Features
+
+- [#567](https://github.com/gradio-app/trackio/pull/567) [`8c0ce21`](https://github.com/gradio-app/trackio/commit/8c0ce21ff9746d7c6a250684b1b5f0f3f04e0520) - Add CPU, RAM, disk, network and sensor metrics monitoring for non-Apple devices.  Thanks @yannsadowski!
+- [#571](https://github.com/gradio-app/trackio/pull/571) [`57bc7df`](https://github.com/gradio-app/trackio/commit/57bc7df27ecd7b3ff543dbd2bff5c94182bfb69e) - Fix IndexError when importing CSV with no numeric metric columns.  Thanks @Ckal!
+- [#577](https://github.com/gradio-app/trackio/pull/577) [`db0e730`](https://github.com/gradio-app/trackio/commit/db0e730463103142688c1c0efef9ff68a52e281d) - Sort and paginate media items.  Thanks @abidlabs!
+- [#576](https://github.com/gradio-app/trackio/pull/576) [`6f635e2`](https://github.com/gradio-app/trackio/commit/6f635e22553ce2deaece6a0d6289475ab8683040) - Render plot/metric titles as searchable DOM text.  Thanks @abidlabs!
+- [#579](https://github.com/gradio-app/trackio/pull/579) [`cf7759e`](https://github.com/gradio-app/trackio/commit/cf7759efaab73ce1e98a8a2355dc1f65d54bc775) - Merge image viewer with current media page, credit to @catwell.  Thanks @abidlabs!
+
 ## 0.26.0
 
 ### Features

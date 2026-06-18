@@ -20,6 +20,8 @@ from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
 from trackio.artifact import Artifact
+from trackio.cpu import cpu_available
+from trackio.cpu import log_cpu as _log_cpu
 from trackio.deploy import freeze, sync
 from trackio.frontend_config import resolve_frontend_dir
 from trackio.gpu import gpu_available
@@ -62,6 +64,7 @@ __all__ = [
     "log_gpu",
     "log_artifact",
     "use_artifact",
+    "log_cpu",
     "finish",
     "alert",
     "AlertLevel",
@@ -92,6 +95,7 @@ Video = TrackioVideo
 config = {}
 
 _atexit_registered = False
+_spaces_created_this_session: set[str] = set()
 _projects_notified_auto_log_hw: set[str] = set()
 
 
@@ -113,39 +117,21 @@ def _safe_get_runs_for_init(
     remote_client: RemoteClient | None = None,
     check_existing_for_never: bool = False,
 ) -> list[str]:
-    if space_id is not None:
+    if space_id is not None or server_base_url is not None:
         if resume == "never" and not check_existing_for_never:
             return []
-        try:
-            client = remote_client or RemoteClient(
-                space_id,
-                hf_token=huggingface_hub.utils.get_token(),
-                verbose=False,
-            )
-            runs = client.predict(project=project, api_name="/get_runs_for_project")
-            return runs if isinstance(runs, list) else []
-        except Exception as e:
-            _emit_nonfatal_warning(
-                f"trackio.init() could not inspect existing runs for project '{project}' on Space '{space_id}': {e}. Continuing without resume metadata."
-            )
-            return []
-    if server_base_url is not None:
-        if resume == "never" and not check_existing_for_never:
-            return []
-        try:
-            client = remote_client or RemoteClient(
-                server_base_url,
-                hf_token=None,
-                write_token=write_token,
-                verbose=False,
-            )
-            runs = client.predict(project=project, api_name="/get_runs_for_project")
-            return runs if isinstance(runs, list) else []
-        except Exception as e:
-            _emit_nonfatal_warning(
-                f"trackio.init() could not inspect existing runs for project '{project}' on self-hosted server '{server_base_url}': {e}. Continuing without resume metadata."
-            )
-            return []
+        if remote_client is not None:
+            source = space_id or server_base_url
+            try:
+                runs = remote_client.predict(
+                    project=project, api_name="/get_runs_for_project"
+                )
+                return runs if isinstance(runs, list) else []
+            except Exception as e:
+                _emit_nonfatal_warning(
+                    f"trackio.init() could not inspect existing runs for project '{project}' on '{source}': {e}. Continuing without resume metadata."
+                )
+                return []
     try:
         return SQLiteStorage.get_runs(project)
     except Exception as e:
@@ -163,14 +149,14 @@ def _safe_get_latest_run_for_init(
     write_token: str | None = None,
     remote_client: RemoteClient | None = None,
 ) -> dict | None:
-    if space_id is not None:
+    if (
+        space_id is not None or server_base_url is not None
+    ) and remote_client is not None:
+        source = space_id or server_base_url
         try:
-            client = remote_client or RemoteClient(
-                space_id,
-                hf_token=huggingface_hub.utils.get_token(),
-                verbose=False,
+            runs = remote_client.predict(
+                project=project, api_name="/get_runs_for_project"
             )
-            runs = client.predict(project=project, api_name="/get_runs_for_project")
             if not isinstance(runs, list):
                 return None
             matches = [r for r in runs if isinstance(r, dict) and r.get("name") == name]
@@ -180,28 +166,7 @@ def _safe_get_latest_run_for_init(
             return matches[0]
         except Exception as e:
             _emit_nonfatal_warning(
-                f"trackio.init() could not inspect existing runs for project '{project}' on Space '{space_id}': {e}. Continuing without resume metadata."
-            )
-            return None
-    if server_base_url is not None:
-        try:
-            client = remote_client or RemoteClient(
-                server_base_url,
-                hf_token=None,
-                write_token=write_token,
-                verbose=False,
-            )
-            runs = client.predict(project=project, api_name="/get_runs_for_project")
-            if not isinstance(runs, list):
-                return None
-            matches = [r for r in runs if isinstance(r, dict) and r.get("name") == name]
-            if not matches:
-                return None
-            matches.sort(key=lambda r: r.get("created_at") or "", reverse=True)
-            return matches[0]
-        except Exception as e:
-            _emit_nonfatal_warning(
-                f"trackio.init() could not inspect existing runs for project '{project}' on self-hosted server '{server_base_url}': {e}. Continuing without resume metadata."
+                f"trackio.init() could not inspect existing runs for project '{project}' on '{source}': {e}. Continuing without resume metadata."
             )
             return None
     try:
@@ -225,13 +190,11 @@ def _safe_get_last_step_for_init(
 ) -> int | None:
     if not resumed:
         return None
-    if space_id is not None:
+    if (
+        space_id is not None or server_base_url is not None
+    ) and remote_client is not None:
+        source = space_id or server_base_url
         try:
-            client = remote_client or RemoteClient(
-                space_id,
-                hf_token=huggingface_hub.utils.get_token(),
-                verbose=False,
-            )
             summary_kwargs: dict[str, Any] = {
                 "project": project,
                 "api_name": "/get_run_summary",
@@ -240,40 +203,14 @@ def _safe_get_last_step_for_init(
                 summary_kwargs["run_id"] = run_id
             else:
                 summary_kwargs["run"] = run_name
-            summary = client.predict(**summary_kwargs)
+            summary = remote_client.predict(**summary_kwargs)
             if isinstance(summary, dict):
                 last_step = summary.get("last_step")
                 return last_step if isinstance(last_step, int) else None
             return None
         except Exception as e:
             _emit_nonfatal_warning(
-                f"trackio.init() could not recover the previous step for run '{run_name}' on Space '{space_id}': {e}. Continuing from step 0."
-            )
-            return None
-    if server_base_url is not None:
-        try:
-            client = remote_client or RemoteClient(
-                server_base_url,
-                hf_token=None,
-                write_token=write_token,
-                verbose=False,
-            )
-            summary_kwargs = {
-                "project": project,
-                "api_name": "/get_run_summary",
-            }
-            if run_id is not None:
-                summary_kwargs["run_id"] = run_id
-            else:
-                summary_kwargs["run"] = run_name
-            summary = client.predict(**summary_kwargs)
-            if isinstance(summary, dict):
-                last_step = summary.get("last_step")
-                return last_step if isinstance(last_step, int) else None
-            return None
-        except Exception as e:
-            _emit_nonfatal_warning(
-                f"trackio.init() could not recover the previous step for run '{run_name}' on self-hosted server '{server_base_url}': {e}. Continuing from step 0."
+                f"trackio.init() could not recover the previous step for run '{run_name}' on '{source}': {e}. Continuing from step 0."
             )
             return None
     try:
@@ -301,6 +238,8 @@ def init(
     embed: bool = True,
     auto_log_gpu: bool | None = None,
     gpu_log_interval: float = 10.0,
+    auto_log_cpu: bool | None = None,
+    cpu_log_interval: float = 10.0,
     webhook_url: str | None = None,
     webhook_min_level: AlertLevel | str | None = None,
 ) -> Run:
@@ -378,6 +317,14 @@ def init(
         gpu_log_interval (`float`, *optional*, defaults to `10.0`):
             The interval in seconds between automatic GPU metric logs.
             Only used when `auto_log_gpu=True`.
+        auto_log_cpu (`bool` or `None`, *optional*, defaults to `None`):
+            Controls automatic CPU and RAM metrics logging (utilization, memory,
+            disk I/O, network I/O, and sensors). If `None` (default), CPU logging
+            is automatically enabled when `psutil` is installed. Set to `True` to
+            force enable or `False` to disable.
+        cpu_log_interval (`float`, *optional*, defaults to `10.0`):
+            The interval in seconds between automatic CPU metric logs.
+            Only used when CPU auto-logging is enabled.
         webhook_url (`str`, *optional*):
             A webhook URL to POST alert payloads to when `trackio.alert()` is
             called. Supports Slack and Discord webhook URLs natively (payloads
@@ -482,6 +429,13 @@ def init(
 
     _should_embed_local = False
 
+    newly_created_space = False
+    if space_id is not None and space_id in _spaces_created_this_session:
+        if deploy.space_is_running(space_id):
+            _spaces_created_this_session.discard(space_id)
+        else:
+            newly_created_space = True
+
     if (
         context_vars.current_project.get() is None
         or context_vars.current_project.get() != project
@@ -514,13 +468,15 @@ def init(
                 utils.embed_url_in_notebook(server_base_url)
         else:
             try:
-                deploy.create_space_if_not_exists(
+                if deploy.create_space_if_not_exists(
                     space_id,
                     space_storage,
                     dataset_id,
                     bucket_id,
                     private,
-                )
+                ):
+                    _spaces_created_this_session.add(space_id)
+                    newly_created_space = True
                 user_name, space_name = space_id.split("/")
                 space_url = deploy.SPACE_HOST_URL.format(
                     user_name=user_name, space_name=space_name
@@ -534,7 +490,7 @@ def init(
     context_vars.current_project.set(project)
 
     remote_client = None
-    if space_id is not None:
+    if space_id is not None and not newly_created_space:
         try:
             remote_client = RemoteClient(
                 space_id,
@@ -616,19 +572,31 @@ def init(
         else None
     )
 
+    auto_log_cpu_detected = False
+    if auto_log_cpu is None:
+        auto_log_cpu_detected = cpu_available()
+        auto_log_cpu = auto_log_cpu_detected
+
+    auto_log_gpu_detected = False
+    nvidia_available = False
+    apple_available = False
     if auto_log_gpu is None:
         nvidia_available = gpu_available()
         apple_available = apple_gpu_available()
-        auto_log_gpu = nvidia_available or apple_available
-        if project not in _projects_notified_auto_log_hw:
-            if nvidia_available:
-                print("* NVIDIA GPU detected, enabling automatic GPU metrics logging")
-            elif apple_available:
-                print(
-                    "* Apple Silicon detected, enabling automatic system metrics logging"
-                )
-            if nvidia_available or apple_available:
-                _projects_notified_auto_log_hw.add(project)
+        auto_log_gpu_detected = nvidia_available or apple_available
+        auto_log_gpu = auto_log_gpu_detected
+
+    if project not in _projects_notified_auto_log_hw:
+        if nvidia_available:
+            print("* NVIDIA GPU detected, enabling automatic GPU metrics logging")
+        elif apple_available:
+            print(
+                "* Apple Silicon detected, enabling automatic GPU/system metrics logging"
+            )
+        if auto_log_cpu_detected:
+            print("* psutil detected, enabling automatic CPU/system metrics logging")
+        if auto_log_gpu_detected or auto_log_cpu_detected:
+            _projects_notified_auto_log_hw.add(project)
 
     run = Run(
         url=url,
@@ -639,12 +607,15 @@ def init(
         group=group,
         config=config,
         space_id=space_id,
+        bucket_id=bucket_id,
         server_base_url=server_base_url,
         write_token=write_token_resolved,
         existing_runs=existing_runs,
         initial_last_step=initial_last_step,
         auto_log_gpu=auto_log_gpu,
         gpu_log_interval=gpu_log_interval,
+        auto_log_cpu=auto_log_cpu,
+        cpu_log_interval=cpu_log_interval,
         webhook_url=webhook_url,
         webhook_min_level=webhook_min_level,
     )
@@ -824,6 +795,34 @@ def log_gpu(run: Run | None = None, device: int | None = None) -> dict:
             "or psutil for Apple Silicon support."
         )
         return {}
+
+
+def log_cpu(run: Run | None = None) -> dict:
+    """
+    Log CPU, RAM, disk, network, and sensor metrics to the current or specified run
+    as system metrics.
+
+    Args:
+        run: Optional Run instance. If None, uses current run from context.
+
+    Returns:
+        dict: The CPU and system metrics that were logged.
+
+    Example:
+        ```python
+        import trackio
+
+        run = trackio.init(project="my-project")
+        trackio.log({"loss": 0.5})
+        trackio.log_cpu()
+        ```
+    """
+    if run is None:
+        run = context_vars.current_run.get()
+        if run is None:
+            raise RuntimeError("Call trackio.init() before trackio.log_cpu().")
+
+    return _log_cpu(run=run)
 
 
 def finish():

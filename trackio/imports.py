@@ -119,14 +119,19 @@ def import_csv(
             else:
                 timestamps.append("")
 
-    if metrics_list:
-        SQLiteStorage.bulk_log(
-            project=project,
-            run=name,
-            metrics_list=metrics_list,
-            steps=steps,
-            timestamps=timestamps,
+    if not metrics_list:
+        raise ValueError(
+            f"No numeric metric data found in CSV file: {csv_path}. Columns other "
+            "than 'step' and 'timestamp' must contain numeric values."
         )
+
+    SQLiteStorage.bulk_log(
+        project=project,
+        run=name,
+        metrics_list=metrics_list,
+        steps=steps,
+        timestamps=timestamps,
+    )
 
     print(
         f"* Imported {len(metrics_list)} rows from {csv_path} into project '{project}' as run '{name}'"
