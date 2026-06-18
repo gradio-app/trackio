@@ -1054,12 +1054,15 @@ class SQLiteStorage:
                     SQLiteStorage._normalize_trace_rows_for_parquet(trace_rows),
                 )
             for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
+                parquet_path = TRACKIO_DIR / f"{db_path.stem}_{table}.parquet"
+                if (
+                    parquet_path.exists()
+                    and db_path.stat().st_mtime <= parquet_path.stat().st_mtime
+                ):
+                    continue
                 artifact_rows = SQLiteStorage._read_table_rows(db_path, table)
                 if artifact_rows:
-                    SQLiteStorage._write_parquet_rows(
-                        TRACKIO_DIR / f"{db_path.stem}_{table}.parquet",
-                        artifact_rows,
-                    )
+                    SQLiteStorage._write_parquet_rows(parquet_path, artifact_rows)
 
     @staticmethod
     def export_for_static_space(

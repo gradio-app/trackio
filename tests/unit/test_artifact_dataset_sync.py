@@ -170,6 +170,33 @@ def test_project_named_like_artifact_table_does_not_collide(temp_dir):
     assert record["version"] == 0
 
 
+def test_artifact_parquet_export_skips_unchanged_db(temp_dir):
+    """A second export with no intervening DB write must not rewrite the
+    artifact parquet files, mirroring the mtime short-circuit the metrics /
+    system / configs exports already have."""
+    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "p", aid, [{"path": "a", "digest": "a" * 64, "size": 1}], None, None, "r"
+    )
+    SQLiteStorage.reassign_alias("p", aid, "latest", vid)
+
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+
+    pq = Path(temp_dir) / "p_artifact_versions.parquet"
+    assert pq.exists()
+    first_mtime = pq.stat().st_mtime_ns
+
+    SQLiteStorage.export_to_parquet()
+    assert pq.stat().st_mtime_ns == first_mtime
+
+    SQLiteStorage.insert_artifact_version(
+        "p", aid, [{"path": "a", "digest": "b" * 64, "size": 2}], None, None, "r"
+    )
+    SQLiteStorage.export_to_parquet()
+    assert pq.stat().st_mtime_ns != first_mtime
+
+
 def test_load_from_dataset_downloads_artifact_blobs(temp_dir, monkeypatch):
     from trackio import sqlite_storage as _ss
 
