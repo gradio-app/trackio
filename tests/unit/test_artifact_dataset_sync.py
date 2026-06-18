@@ -136,6 +136,40 @@ def test_artifact_only_project_survives_roundtrip(temp_dir):
     assert record["version"] == 0
 
 
+def test_project_named_like_artifact_table_does_not_collide(temp_dir):
+    """A project whose name ends in `_artifacts` exports its metrics as
+    `<project>_artifacts.parquet`, which collides with the artifact-table
+    suffix. Its metrics must still round-trip and must not be misrouted into a
+    phantom `<project minus _artifacts>` project's artifacts table."""
+    SQLiteStorage.init_db("model_artifacts")
+    SQLiteStorage.log(project="model_artifacts", run="train", metrics={"loss": 0.1})
+    aid = SQLiteStorage.create_or_get_artifact("model_artifacts", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "model_artifacts",
+        aid,
+        [{"path": "w.bin", "digest": "a" * 64, "size": 5}],
+        None,
+        None,
+        "train",
+    )
+    SQLiteStorage.reassign_alias("model_artifacts", aid, "latest", vid)
+
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+
+    os.unlink(SQLiteStorage.get_project_db_path("model_artifacts"))
+    SQLiteStorage.import_from_parquet()
+
+    projects = SQLiteStorage.get_projects()
+    assert "model_artifacts" in projects
+    assert "model" not in projects
+    runs = SQLiteStorage.get_run_records("model_artifacts")
+    assert [r["name"] for r in runs] == ["train"]
+    record = SQLiteStorage.get_artifact_manifest("model_artifacts", "m", None)
+    assert record is not None
+    assert record["version"] == 0
+
+
 def test_load_from_dataset_downloads_artifact_blobs(temp_dir, monkeypatch):
     from trackio import sqlite_storage as _ss
 

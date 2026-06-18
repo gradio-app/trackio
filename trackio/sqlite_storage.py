@@ -1182,6 +1182,28 @@ class SQLiteStorage:
             return
 
         all_paths = os.listdir(TRACKIO_DIR)
+        all_paths_set = set(all_paths)
+
+        def _artifact_sidecar(pq_name: str) -> tuple[str, str] | None:
+            """Classify `pq_name` as `(project, table)` if it is an artifact
+            table parquet, else None. A name like `model_artifacts.parquet` is
+            ambiguous between metrics for project `model_artifacts` and the
+            `artifacts` table of project `model`; it is only treated as the
+            latter when project `model` is real, anchored on the presence of
+            its metrics parquet, `.db`, or `_artifact_versions.parquet`."""
+            for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
+                suffix = f"_{table}.parquet"
+                if not pq_name.endswith(suffix) or len(pq_name) <= len(suffix):
+                    continue
+                base = pq_name[: -len(suffix)]
+                if (
+                    f"{base}.parquet" in all_paths_set
+                    or (TRACKIO_DIR / f"{base}{DB_EXT}").exists()
+                    or f"{base}_artifact_versions.parquet" in all_paths_set
+                ):
+                    return base, table
+            return None
+
         parquet_names = [
             f
             for f in all_paths
@@ -1189,10 +1211,7 @@ class SQLiteStorage:
             and not f.endswith("_system.parquet")
             and not f.endswith("_configs.parquet")
             and not f.endswith("_traces.parquet")
-            and not any(
-                f.endswith(f"_{table}.parquet")
-                for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES
-            )
+            and _artifact_sidecar(f) is None
         ]
         imported_projects = {Path(name).stem for name in parquet_names}
         for pq_name in parquet_names:
@@ -1325,15 +1344,17 @@ class SQLiteStorage:
                 ],
             )
 
-        for table, columns in SQLiteStorage._ARTIFACT_PARQUET_TABLES.items():
-            suffix = f"_{table}.parquet"
-            for pq_name in [f for f in all_paths if f.endswith(suffix)]:
-                parquet_path = TRACKIO_DIR / pq_name
-                db_path = TRACKIO_DIR / (pq_name[: -len(suffix)] + DB_EXT)
-                project_name = db_path.stem
-                rows = SQLiteStorage._read_parquet_rows(parquet_path)
-                SQLiteStorage.init_db(project_name)
-                SQLiteStorage._replace_table_rows(db_path, table, rows, columns)
+        for pq_name in all_paths:
+            sidecar = _artifact_sidecar(pq_name)
+            if sidecar is None:
+                continue
+            project_name, table = sidecar
+            columns = SQLiteStorage._ARTIFACT_PARQUET_TABLES[table]
+            parquet_path = TRACKIO_DIR / pq_name
+            db_path = TRACKIO_DIR / f"{project_name}{DB_EXT}"
+            rows = SQLiteStorage._read_parquet_rows(parquet_path)
+            SQLiteStorage.init_db(project_name)
+            SQLiteStorage._replace_table_rows(db_path, table, rows, columns)
 
     @staticmethod
     def get_scheduler():
