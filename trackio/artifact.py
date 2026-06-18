@@ -11,19 +11,19 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _materialize(blob: Path, dst: Path, size: int) -> None:
-    """Copy `blob` to `dst` unless an identically-sized file is already there.
-
-    Always copies (never hardlinks) so user edits to materialized files cannot
-    reach back into the content-addressed cache. The copy goes through a
-    `.partial.<uuid>` temp file + atomic rename so concurrent or interrupted
-    downloads never leave a torn file at `dst`.
+    """Copy `blob` to `dst` unless `dst` already matches the blob's size and
+    mtime.
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if dst.is_file() and dst.stat().st_size == size:
-        return
+    blob_stat = blob.stat()
+    if dst.is_file():
+        dst_stat = dst.stat()
+        if dst_stat.st_size == size and dst_stat.st_mtime_ns == blob_stat.st_mtime_ns:
+            return
     partial = dst.parent / f"{dst.name}.partial.{uuid.uuid4().hex}"
     try:
         shutil.copyfile(blob, partial)
+        os.utime(partial, ns=(blob_stat.st_atime_ns, blob_stat.st_mtime_ns))
         os.replace(partial, dst)
     except Exception:
         partial.unlink(missing_ok=True)
@@ -38,10 +38,6 @@ def _fetch_blob_from_remote(
 ) -> None:
     """Stream `GET /artifact_blob/<project>/<digest>` from the remote, rehash
     while writing, and atomic-rename into the local CAS.
-
-    Resolves `remote_source` to a base URL via `_resolve_src_url`. Raises
-    `FileNotFoundError` on 404; `ValueError` (via `cas.stage_blob_from_chunks`)
-    if the bytes don't hash to `digest`.
     """
     import httpx
 
@@ -69,7 +65,6 @@ def _fetch_blob_from_remote(
             response.iter_bytes(),
             claimed_digest=digest,
             target_path=target_path,
-            max_bytes=None,
         )
 
 

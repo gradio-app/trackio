@@ -124,33 +124,9 @@ def test_bulk_upload_artifact_blob_digest_mismatch(
     assert partials == []
 
 
-def test_bulk_upload_artifact_blob_size_cap_when_opted_in(
-    temp_dir, tmp_path, monkeypatch, auth_bypassed, upload_consume_passthrough
+def test_bulk_upload_artifact_blob_large_payload(
+    temp_dir, tmp_path, auth_bypassed, upload_consume_passthrough
 ):
-    monkeypatch.setattr(server.utils, "ARTIFACT_BLOB_MAX_BYTES", 4)
-    payload = b"too-big-for-cap"
-    digest = hashlib.sha256(payload).hexdigest()
-    src = _write_src(tmp_path, "blob", payload)
-
-    with pytest.raises(TrackioAPIError, match="exceeds"):
-        server.bulk_upload_artifact_blob(
-            request=auth_bypassed,
-            project="p",
-            uploads=[
-                {"project": "p", "digest": digest, "uploaded_file": {"path": str(src)}}
-            ],
-            hf_token=None,
-        )
-    target = (
-        Path(temp_dir) / "artifacts" / "p" / "blobs" / "sha256" / digest[:2] / digest
-    )
-    assert not target.exists()
-
-
-def test_bulk_upload_artifact_blob_no_cap_by_default(
-    temp_dir, tmp_path, monkeypatch, auth_bypassed, upload_consume_passthrough
-):
-    monkeypatch.setattr(server.utils, "ARTIFACT_BLOB_MAX_BYTES", None)
     payload = b"x" * (4 * 1024 * 1024)
     digest = hashlib.sha256(payload).hexdigest()
     src = _write_src(tmp_path, "blob", payload)

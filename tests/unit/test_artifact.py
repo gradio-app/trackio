@@ -647,6 +647,26 @@ def test_download_refreshes_stale_file_with_different_size(temp_dir, tmp_path):
     assert (Path(out) / "w.bin").read_bytes() == b"abc"
 
 
+def test_download_refreshes_same_size_in_place_edit(temp_dir, tmp_path):
+    import os
+
+    digest, size = _stage_blob(temp_dir, "proj", b"abc")
+    a = _hydrated_artifact(
+        "proj",
+        "my-model",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+    )
+    dl = tmp_path / "dl"
+    out = a.download(dl)
+    file = Path(out) / "w.bin"
+    file.write_bytes(b"XYZ")
+    st = file.stat()
+    os.utime(file, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+    a.download(dl)
+    assert file.read_bytes() == b"abc"
+
+
 def test_download_shared_digest_materializes_to_distinct_paths(temp_dir, tmp_path):
     digest, size = _stage_blob(temp_dir, "proj", b"same")
     a = _hydrated_artifact(

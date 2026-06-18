@@ -566,9 +566,7 @@ def bulk_upload_artifact_blob(
             digest = _validate_sha256_digest(upload["digest"])
             target = cas.blob_path(project, digest)
             try:
-                cas.stage_blob_from_file(
-                    uploaded_path, digest, target, utils.ARTIFACT_BLOB_MAX_BYTES
-                )
+                cas.stage_blob_from_file(uploaded_path, digest, target)
             except ValueError as e:
                 raise TrackioAPIError(str(e)) from e
     finally:

@@ -74,27 +74,22 @@ def stage_blob_from_chunks(
     chunks: Iterable[bytes],
     claimed_digest: Sha256Digest,
     target_path: Path,
-    max_bytes: int | None,
 ) -> None:
     """Stream `chunks` into a `.partial.<uuid>` file in the CAS dir, rehashing
-    and size-capping as we go. On match, atomic-rename to `target_path`. On
-    failure, clean up the partial. If `target_path.is_file()` already, returns
-    without consuming `chunks`.
+    as we go. On match, atomic-rename to `target_path`. On failure, clean up the
+    partial. If `target_path.is_file()` already, returns without consuming
+    `chunks`.
     """
     if target_path.is_file():
         return
     target_path.parent.mkdir(parents=True, exist_ok=True)
     partial = target_path.parent / f"{target_path.name}.partial.{uuid.uuid4().hex}"
     sha = hashlib.sha256()
-    written = 0
     try:
         with partial.open("wb") as dst:
             for chunk in chunks:
                 if not chunk:
                     continue
-                written += len(chunk)
-                if max_bytes is not None and written > max_bytes:
-                    raise ValueError(f"Artifact blob exceeds {max_bytes} bytes")
                 sha.update(chunk)
                 dst.write(chunk)
         actual = sha.hexdigest()
@@ -112,7 +107,6 @@ def stage_blob_from_file(
     src_path: Path,
     claimed_digest: Sha256Digest,
     target_path: Path,
-    max_bytes: int | None = None,
 ) -> None:
     """Copy `src_path` into the CAS via a partial file + atomic rename,
     verifying the content hashes to `claimed_digest`.
@@ -125,4 +119,4 @@ def stage_blob_from_file(
             while chunk := src.read(HASH_CHUNK_SIZE):
                 yield chunk
 
-    stage_blob_from_chunks(_file_chunks(), claimed_digest, target_path, max_bytes)
+    stage_blob_from_chunks(_file_chunks(), claimed_digest, target_path)

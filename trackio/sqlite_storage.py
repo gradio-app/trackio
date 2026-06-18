@@ -3973,9 +3973,10 @@ class SQLiteStorage:
         now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                columns = SQLiteStorage._table_columns(conn, "pending_uploads")
                 cols, vals = SQLiteStorage._pending_upload_cols_vals(
-                    columns,
+                    include_run_id=SQLiteStorage._supports_run_ids(
+                        conn, "pending_uploads"
+                    ),
                     space_id=space_id,
                     run_id=run_id,
                     run_name=run_name,
@@ -3995,8 +3996,8 @@ class SQLiteStorage:
 
     @staticmethod
     def _pending_upload_cols_vals(
-        columns: list[str],
         *,
+        include_run_id: bool,
         space_id: str,
         run_id: str | None,
         run_name: str | None,
@@ -4007,22 +4008,22 @@ class SQLiteStorage:
         digest: Sha256Digest | None,
         created_at: str,
     ) -> tuple[list[str], list]:
-        """Build the (columns, values) for one pending_uploads row, including
-        only the columns present in this DB (run_id/kind/digest are added by
-        migration and may be absent on older databases)."""
-        candidate_fields = [
+        """Build the (columns, values) for one pending_uploads row. `run_id` is
+        detected at runtime rather than backfilled, so it is dropped on legacy
+        DBs whose pending_uploads table predates the column."""
+        fields = [
             ("space_id", space_id, True),
-            ("run_id", run_id, "run_id" in columns),
+            ("run_id", run_id, include_run_id),
             ("run_name", run_name, True),
             ("step", step, True),
             ("file_path", file_path, True),
             ("relative_path", relative_path, True),
-            ("kind", kind, "kind" in columns),
-            ("digest", digest, "digest" in columns),
+            ("kind", kind, True),
+            ("digest", digest, True),
             ("created_at", created_at, True),
         ]
-        cols = [col for col, _, include in candidate_fields if include]
-        vals = [val for _, val, include in candidate_fields if include]
+        cols = [col for col, _, include in fields if include]
+        vals = [val for _, val, include in fields if include]
         return cols, vals
 
     @staticmethod
@@ -4228,9 +4229,6 @@ class SQLiteStorage:
         """Create/fetch the artifact, insert (or dedupe) the version, rotate
         `latest` plus any user aliases onto it, record the producer lineage
         link, and return the full manifest record.
-
-        Shared by the local `Run.log_artifact` path and the `/artifact_log`
-        server endpoint so the two cannot drift.
         """
         artifact_id = SQLiteStorage.create_or_get_artifact(
             project, name, type, description
@@ -4369,12 +4367,14 @@ class SQLiteStorage:
         now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                columns = SQLiteStorage._table_columns(conn, "pending_uploads")
+                include_run_id = SQLiteStorage._supports_run_ids(
+                    conn, "pending_uploads"
+                )
                 cols: list[str] = []
                 rows: list[list] = []
                 for digest, file_path in blobs:
                     cols, vals = SQLiteStorage._pending_upload_cols_vals(
-                        columns,
+                        include_run_id=include_run_id,
                         space_id=space_id,
                         run_id=run_id,
                         run_name=run_name,
