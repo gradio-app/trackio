@@ -346,8 +346,6 @@ class SQLiteStorage:
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
-    # Artifact tables and columns for parquet round-trip; manifest and metadata
-    # are JSON text, so plain row copies round-trip.
     _ARTIFACT_PARQUET_TABLES: dict[str, list[str]] = {
         "artifacts": ["id", "name", "type", "description", "created_at"],
         "artifact_versions": [

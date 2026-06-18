@@ -431,7 +431,6 @@ async def file_handler(request: Request) -> Response:
 
 
 async def artifact_blob_handler(request: Request) -> Response:
-    # Imported lazily to avoid a circular import at module load (server imports asgi_app).
     from trackio import cas  # noqa: PLC0415
     from trackio import server as _server  # noqa: PLC0415
 
