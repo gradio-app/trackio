@@ -311,10 +311,8 @@ class SQLiteStorage:
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
-    # Artifact metadata tables and their full column lists, used to round-trip
-    # artifacts through parquet (one "_<table>.parquet" file per table per
-    # project) so dataset-backed Spaces persist them across restarts. manifest
-    # and metadata are stored as JSON text, so plain row copies round-trip.
+    # Artifact tables and columns for parquet round-trip; manifest and metadata
+    # are JSON text, so plain row copies round-trip.
     _ARTIFACT_PARQUET_TABLES: dict[str, list[str]] = {
         "artifacts": ["id", "name", "type", "description", "created_at"],
         "artifact_versions": [
@@ -2562,7 +2560,6 @@ class SQLiteStorage:
                 try:
                     files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                     for file in files:
-                        # Download parquet, media, and artifact blob assets
                         if not (
                             file.endswith(".parquet")
                             or file.startswith("media/")

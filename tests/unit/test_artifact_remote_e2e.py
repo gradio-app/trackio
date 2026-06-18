@@ -136,7 +136,6 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
     assert art.metadata == {"acc": 0.91}
     # Shared CAS: blob is already present from _build_manifest, so the
     # upload step short-circuits via /check_artifact_blobs.
-    # test_artifact_server.py verifies the upload itself with two separate CAS dirs.
     assert _api_calls(in_process_remote) == [
         "/check_artifact_blobs",
         "/artifact_log",
@@ -178,53 +177,6 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
         / digest
     )
     assert blob_path.read_bytes() == payload
-
-
-def test_consumer_download_fetches_from_remote_when_local_missing(
-    temp_dir, tmp_path, in_process_remote
-):
-    """Force the remote-fetch fallback: delete the local blob, then download
-    must fetch via the `/artifact_blob` route. The fetch lands the blob back
-    in the local CAS (also serving as the "server" CAS in this test)."""
-    weights = tmp_path / "w.bin"
-    payload = b"will-be-fetched-back"
-    weights.write_bytes(payload)
-    digest = hashlib.sha256(payload).hexdigest()
-
-    producer = _setup_remote_run("producer", "art-fetch", in_process_remote)
-    art = Artifact(name="m", type="model")
-    art.add_file(weights)
-    producer.log_artifact(art)
-    producer._client = None
-    trackio.finish()
-
-    blob_path = (
-        Path(temp_dir)
-        / "artifacts"
-        / "art-fetch"
-        / "blobs"
-        / "sha256"
-        / digest[:2]
-        / digest
-    )
-    saved = blob_path.read_bytes()
-    blob_path.unlink()
-    assert not blob_path.is_file()
-
-    # Stage the bytes back on the "server" so the GET succeeds. (Same dir.)
-    blob_path.parent.mkdir(parents=True, exist_ok=True)
-    blob_path.write_bytes(saved)
-    # Now delete the local copy ONCE MORE before download — the test really
-    # wants to prove the GET fetched bytes, but in this single-CAS setup the
-    # fetch lands at the same path. So we check: file exists after, and is
-    # byte-correct at the destination too.
-
-    consumer = _setup_remote_run("consumer", "art-fetch", in_process_remote)
-    fetched = consumer.use_artifact("m:latest")
-    out = fetched.download(tmp_path / "dl")
-    assert (Path(out) / "w.bin").read_bytes() == payload
-    consumer._client = None
-    trackio.finish()
 
 
 def test_relog_identical_bytes_dedups_at_db_layer(

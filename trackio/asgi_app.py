@@ -17,9 +17,9 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from trackio import utils
 from trackio.exceptions import TrackioAPIError
 from trackio.remote_client import HTTP_API_VERSION
-from trackio.utils import ARTIFACTS_DIR, on_spaces
 
 logger = logging.getLogger("trackio.asgi_app")
 
@@ -249,7 +249,7 @@ def _authorization_bearer_token(request: Request) -> str | None:
 def _maybe_apply_hf_token_from_authorization(
     request: Request, fn: Any, args: list[Any], kwargs: dict[str, Any]
 ) -> None:
-    if not on_spaces():
+    if not utils.on_spaces():
         return
     token = _authorization_bearer_token(request)
     if not token:
@@ -441,7 +441,7 @@ async def artifact_blob_handler(request: Request) -> Response:
         _server._validate_sha256_digest(digest)
     except TrackioAPIError:
         return Response("Not found", status_code=404)
-    blob = ARTIFACTS_DIR / project / "blobs" / "sha256" / digest[:2] / digest
+    blob = utils.ARTIFACTS_DIR / project / "blobs" / "sha256" / digest[:2] / digest
     if not blob.is_file():
         return Response("Not found", status_code=404)
     return FileResponse(str(blob))
@@ -470,7 +470,7 @@ def create_trackio_starlette_app(
             ),
         ]
     )
-    if on_spaces():
+    if utils.on_spaces():
         routes.extend(
             [
                 Route(
@@ -523,7 +523,7 @@ def create_trackio_starlette_app(
     app.state.upload_authorizer = upload_authorizer
     app.state.uploaded_temp_files = set()
     app.state.uploaded_temp_files_lock = threading.Lock()
-    if on_spaces():
+    if utils.on_spaces():
         app.state.gradio_call_events = {}
         app.state.gradio_call_events_lock = threading.Lock()
     return app
