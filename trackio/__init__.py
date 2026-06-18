@@ -744,9 +744,10 @@ def log_artifact(
             Defaults to `"unspecified"`. Must not be passed with an
             `Artifact`.
         aliases (`list[str]`, *optional*):
-            Aliases to assign to the resulting version (in addition to the
-            auto-assigned `latest`). Each alias rotates to point at this
-            version, even on the dedup path.
+            Aliases to rotate onto the resulting version, alongside `latest`
+            (assigned automatically whenever a new version is created). Your
+            aliases rotate onto the version even when identical content is
+            de-duplicated.
 
     Returns:
         The logged `Artifact` instance, hydrated with `version`, `aliases`,
@@ -765,9 +766,17 @@ def use_artifact(
     """
     Fetches an artifact and records it as an input to the current run.
 
-    `artifact_or_name` is `"name"` (defaults to `:latest`), `"name:<alias>"`,
-    `"name:v<N>"`, or an already-logged `Artifact`. If `type` is given, it is
-    checked against the stored artifact type.
+    Args:
+        artifact_or_name (`Artifact` or `str`):
+            An already-logged `Artifact`, or an artifact name. A bare name
+            (`"my-model"`) resolves to `:latest`; you can also pin a version
+            (`"my-model:v3"`) or resolve an alias (`"my-model:prod"`).
+        type (`str`, *optional*):
+            If given, checked against the stored artifact type, raising if it
+            does not match.
+
+    Returns:
+        The fetched `Artifact`, hydrated and ready to `download()`.
     """
     run = context_vars.current_run.get()
     if run is None:

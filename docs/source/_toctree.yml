@@ -13,6 +13,8 @@
     title: Track
   - local: launch
     title: Launch the Dashboard
+  - local: artifacts
+    title: Artifacts
   - local: self_hosted_server
     title: Self-host the Server
   - local: deploy_embed

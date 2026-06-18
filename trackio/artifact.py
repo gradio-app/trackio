@@ -76,9 +76,21 @@ def _fetch_blob_from_remote(
 class Artifact:
     """A versioned, named bundle of files attached to a project.
 
-    Constructed mutable; `add_file` / `add_dir` accumulate pending entries.
-    `Run.log_artifact` (or `trackio.log_artifact`) freezes the artifact and
-    populates read-only attrs `version`, `aliases`, `size`, `manifest`.
+    Construct an `Artifact`, add files to it with `add_file` / `add_dir`, then
+    persist it with `trackio.log_artifact`. Logging freezes the artifact and
+    populates its read-only `version`, `aliases`, `size`, and `manifest`.
+
+    Args:
+        name (`str`):
+            Artifact name, unique within the project. Must match
+            `^[A-Za-z0-9._-]+$` (letters, digits, dot, underscore, hyphen).
+        type (`str`):
+            Free-form category such as `"model"` or `"dataset"`, used to group
+            and filter artifacts.
+        description (`str`, *optional*):
+            Human-readable description of the artifact.
+        metadata (`dict`, *optional*):
+            Arbitrary JSON-serializable metadata stored alongside the version.
     """
 
     def __init__(
@@ -137,10 +149,12 @@ class Artifact:
 
     @property
     def aliases(self) -> tuple[str, ...]:
+        """Aliases pointing at this version, e.g. `("latest", "prod")`."""
         return self._aliases
 
     @property
     def size(self) -> int | None:
+        """Total size of the artifact's files in bytes, or None if not yet logged."""
         return self._size
 
     @property
@@ -180,6 +194,15 @@ class Artifact:
         return self
 
     def add_file(self, local_path: str | Path, name: str | None = None) -> None:
+        """Stage a single file for inclusion in the artifact.
+
+        Args:
+            local_path (`str` or `Path`):
+                Path to an existing regular file to add.
+            name (`str`, *optional*):
+                Logical path the file is stored under inside the artifact.
+                Defaults to the file's basename.
+        """
         if self._logged:
             raise RuntimeError(
                 "Cannot add files to an Artifact that has already been logged or fetched."
@@ -191,6 +214,17 @@ class Artifact:
         self._pending_files.append((src, logical))
 
     def add_dir(self, local_dir: str | Path, name: str | None = None) -> None:
+        """Stage every regular file under a directory, recursively.
+
+        Symlinks are skipped.
+
+        Args:
+            local_dir (`str` or `Path`):
+                Path to an existing directory whose files are added.
+            name (`str`, *optional*):
+                Logical path prefix for the added files. Defaults to no prefix,
+                so files keep their paths relative to `local_dir`.
+        """
         if self._logged:
             raise RuntimeError(
                 "Cannot add files to an Artifact that has already been logged or fetched."
@@ -252,14 +286,21 @@ class Artifact:
         self._logged = True
 
     def download(self, root: str | Path | None = None) -> str:
-        """Materialize artifact files at `root/<logical_path>` for each manifest entry.
+        """Materialize the artifact's files into a local directory.
 
-        Default `root` is `./artifacts/<name>_v<version>/` (CWD-relative),
-        always named by the resolved version so a moving alias like `latest`
-        never leaves stale files from a previous version in the directory.
-        Returns the absolute path to `root` as a string. Idempotent: files are
-        copied from the content-addressed cache and skipped on the second
-        call.
+        Files are copied from Trackio's content-addressed cache (and fetched
+        from the remote when missing locally), so repeated calls are cheap and
+        idempotent.
+
+        Args:
+            root (`str` or `Path`, *optional*):
+                Directory to write the files into. Defaults to
+                `./artifacts/<name>_v<version>/`, named by the resolved version
+                so a moving alias like `latest` never leaves behind stale files
+                from a previous version.
+
+        Returns:
+            The absolute path to the download directory, as a string.
         """
         if not self._logged:
             raise RuntimeError(

@@ -52,6 +52,18 @@
 
 [[autodoc]] save
 
+## log_artifact
+
+[[autodoc]] log_artifact
+
+## use_artifact
+
+[[autodoc]] use_artifact
+
+## Artifact
+
+[[autodoc]] Artifact
+
 ## Image
 
 [[autodoc]] Image
