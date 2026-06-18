@@ -42,7 +42,7 @@ from trackio.typehints import (
 )
 from trackio.utils import on_spaces
 
-_PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+_PROJECT_NAME_RE = re.compile(r"[A-Za-z0-9._\-]+")
 
 
 def _validate_sha256_digest(digest: Any) -> Sha256Digest:
@@ -52,7 +52,11 @@ def _validate_sha256_digest(digest: Any) -> Sha256Digest:
 
 
 def _validate_project_name(project: Any) -> str:
-    if not isinstance(project, str) or not _PROJECT_NAME_RE.match(project):
+    if (
+        not isinstance(project, str)
+        or not _PROJECT_NAME_RE.fullmatch(project)
+        or project in (".", "..")
+    ):
         raise TrackioAPIError(f"Invalid project name: {project!r}")
     return project
 

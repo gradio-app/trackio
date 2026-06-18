@@ -446,7 +446,12 @@ def test_log_artifact_use_inserts_input_lineage(temp_dir, auth_bypassed):
 
 
 def test_validate_project_name_rejects_traversal():
-    for bad in ["../etc", "a/b", ""]:
+    for bad in ["../etc", "a/b", "", ".", "..", "a\\b", "proj\n", "a\x00b"]:
         with pytest.raises(TrackioAPIError, match="Invalid project"):
             server._validate_project_name(bad)
     assert server._validate_project_name("my-proj_1") == "my-proj_1"
+
+
+def test_validate_project_name_accepts_dots():
+    for ok in ["my.model", "bert.base", "exp.v2", "a.b.c"]:
+        assert server._validate_project_name(ok) == ok
