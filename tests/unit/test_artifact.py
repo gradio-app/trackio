@@ -1,6 +1,13 @@
+import hashlib
+from pathlib import Path
+
 import pytest
 
+import trackio
+from trackio.artifact import Artifact
+from trackio.cas import HASH_CHUNK_SIZE, hash_file
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.typehints import Sha256Digest
 
 
 def test_canonical_manifest_is_order_invariant():
@@ -286,13 +293,6 @@ def test_list_artifact_blobs_present_rejects_path_traversal(temp_dir, monkeypatc
 
 
 # --- Artifact class ---
-
-import hashlib
-from pathlib import Path
-
-from trackio.artifact import Artifact
-from trackio.cas import HASH_CHUNK_SIZE, hash_file
-from trackio.typehints import Sha256Digest
 
 
 def test_hash_file_is_deterministic_and_correct_size(tmp_path):
@@ -744,8 +744,6 @@ def test_download_shared_digest_materializes_to_distinct_paths(temp_dir, tmp_pat
 
 
 # --- Run.log_artifact / Run.use_artifact (local mode) ---
-
-import trackio
 
 
 def _make_file(tmp_path, name, payload):
