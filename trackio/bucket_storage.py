@@ -47,7 +47,7 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
         for media_file in media_dir.rglob("*"):
             if media_file.is_file():
                 rel = media_file.relative_to(TRACKIO_DIR)
-                files_to_add.append((str(media_file), f"trackio/{rel}"))
+                files_to_add.append((str(media_file), f"trackio/{rel.as_posix()}"))
 
     artifacts_dir = ARTIFACTS_DIR / project
     if artifacts_dir.exists():
@@ -57,7 +57,7 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
             if ".partial." in blob_file.name:
                 continue
             rel = blob_file.relative_to(TRACKIO_DIR)
-            files_to_add.append((str(blob_file), f"trackio/{rel}"))
+            files_to_add.append((str(blob_file), f"trackio/{rel.as_posix()}"))
 
     huggingface_hub.batch_bucket_files(bucket_id, add=files_to_add)
 
@@ -113,7 +113,7 @@ def _export_and_upload_static(
         for f in output_dir.rglob("*"):
             if f.is_file():
                 rel = f.relative_to(output_dir)
-                files_to_add.append((str(f), str(rel)))
+                files_to_add.append((str(f), rel.as_posix()))
 
         huggingface_hub.batch_bucket_files(dest_bucket_id, add=files_to_add)
 
