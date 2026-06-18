@@ -1183,13 +1183,6 @@ class Run:
         type: str | None = None,
         aliases: list[str] | None = None,
     ) -> Artifact:
-        """Log an artifact as an output of this run.
-
-        Accepts either a constructed `Artifact` or a path to a file or
-        directory. For a path, `name` defaults to `run-<run_id>-<basename>`
-        and `type` defaults to `"unspecified"`; for an `Artifact`,
-        `name`/`type` must not be passed.
-        """
         if isinstance(artifact_or_path, Artifact):
             if name is not None or type is not None:
                 raise ValueError(
@@ -1308,15 +1301,6 @@ class Run:
         artifact_or_name: Artifact | str,
         type: str | None = None,
     ) -> Artifact:
-        """Fetch an artifact and record it as an input to this run.
-
-        `artifact_or_name` is `"name"` (defaults to `:latest`),
-        `"name:<alias>"`, `"name:v<N>"`, or an already-logged `Artifact`.
-        If `type` is given, it is checked against the stored artifact type.
-        Returns a freshly-hydrated `Artifact` whose `download()` method
-        materializes the files from the local content-addressed cache,
-        falling back to the remote when a blob is missing locally.
-        """
         if isinstance(artifact_or_name, Artifact):
             if not artifact_or_name._logged or artifact_or_name._version is None:
                 raise ValueError(
