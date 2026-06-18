@@ -1186,12 +1186,6 @@ class SQLiteStorage:
         all_paths_set = set(all_paths)
 
         def _artifact_sidecar(pq_name: str) -> tuple[str, str] | None:
-            """Classify `pq_name` as `(project, table)` if it is an artifact
-            table parquet, else None. A name like `model_artifacts.parquet` is
-            ambiguous between metrics for project `model_artifacts` and the
-            `artifacts` table of project `model`; it is only treated as the
-            latter when project `model` is real, anchored on the presence of
-            its metrics parquet, `.db`, or `_artifact_versions.parquet`."""
             for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
                 suffix = f"_{table}.parquet"
                 if not pq_name.endswith(suffix) or len(pq_name) <= len(suffix):
