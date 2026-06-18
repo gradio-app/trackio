@@ -28,9 +28,8 @@ def group_pending_uploads(buffered: dict) -> dict:
             "missing": {"paths": [str], "ids": [int]},
         }
 
-    Rows whose `file_path` no longer exists land in `"missing"` — they can
-    never be sent, so callers should clear them and surface a warning rather
-    than dropping them silently.
+    Rows whose `file_path` no longer exists land in `"missing"` — callers
+    should clear them and surface a warning.
     """
     media: dict = {"entries": [], "ids": []}
     artifact_blobs: dict[str, dict] = {}
@@ -79,12 +78,6 @@ def replay_pending_uploads(
 ) -> None:
     """Route grouped `pending_uploads` rows to their endpoints, clearing each
     group's rows as soon as it is sent.
-
-    Single-sources the kind→endpoint routing for both the in-`Run` sender and
-    the out-of-run `trackio sync` path so the two cannot drift. A failure
-    partway through propagates without clearing rows that were not uploaded.
-    Callers supply `predict`/`hf_token`, a `warn_missing(count, sample_path)`
-    callback for vanished source files, and `verbose=True` for progress prints.
     """
     grouped = group_pending_uploads(buffered)
     missing = grouped["missing"]

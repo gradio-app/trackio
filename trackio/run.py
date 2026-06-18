@@ -629,15 +629,7 @@ class Run:
             )
 
     def _send_pending_uploads_to_server(self, buffered: dict) -> None:
-        """Group buffered pending_uploads by kind and POST to the right endpoints.
-
-        Raises on failure. Each group's rows are cleared as soon as that group
-        is sent, so a failure partway through never clears rows that were not
-        uploaded (and never re-sends rows that were). Rows whose source file
-        has vanished are cleared with a warning — they can never be sent.
-        Caller must hold `self._client_lock` and have a non-None
-        `self._client`.
-        """
+        """Group buffered pending_uploads by kind and POST to the right endpoints."""
 
         def _warn_missing(count: int, sample: str) -> None:
             self._warn_once(
@@ -936,10 +928,6 @@ class Run:
         directory. For a path, `name` defaults to `run-<run_id>-<basename>`
         and `type` defaults to `"unspecified"`; for an `Artifact`,
         `name`/`type` must not be passed.
-
-        In remote mode, blobs upload via the existing `pending_uploads` queue
-        (drained synchronously), then the manifest is POSTed to `/artifact_log`
-        which is the canonical store for the Space's DB.
         """
         if isinstance(artifact_or_path, Artifact):
             if name is not None or type is not None:
@@ -987,56 +975,48 @@ class Run:
                 run_name=self.name,
                 run_id=self.id,
             )
-            artifact._hydrate_from_db(
+        else:
+            self._wait_for_client_ready()
+
+            digests = [e["digest"] for e in manifest]
+            present_response = self._client.predict(
+                api_name="/check_artifact_blobs",
                 project=self.project,
-                version=record["version"],
-                aliases=record["aliases"],
-                manifest=record["manifest"],
-                manifest_digest=record["manifest_digest"],
-                size_bytes=record["size_bytes"],
+                digests=digests,
             )
-            return artifact
+            present = set(present_response.get("present", []))
 
-        self._wait_for_client_ready()
+            SQLiteStorage.enqueue_artifact_blob_uploads(
+                project=self.project,
+                space_id=self._remote_storage_key,
+                blobs=[
+                    (
+                        entry["digest"],
+                        str(cas.blob_path(self.project, entry["digest"])),
+                    )
+                    for entry in manifest
+                    if entry["digest"] not in present
+                ],
+                run_name=self.name,
+                run_id=self.id,
+            )
 
-        digests = [e["digest"] for e in manifest]
-        present_response = self._client.predict(
-            api_name="/check_artifact_blobs",
-            project=self.project,
-            digests=digests,
-        )
-        present = set(present_response.get("present", []))
+            self._drain_pending_uploads()
 
-        SQLiteStorage.enqueue_artifact_blob_uploads(
-            project=self.project,
-            space_id=self._remote_storage_key,
-            blobs=[
-                (
-                    entry["digest"],
-                    str(cas.blob_path(self.project, entry["digest"])),
-                )
-                for entry in manifest
-                if entry["digest"] not in present
-            ],
-            run_name=self.name,
-            run_id=self.id,
-        )
+            record = self._client.predict(
+                api_name="/artifact_log",
+                project=self.project,
+                name=artifact.name,
+                type=artifact.type,
+                description=artifact.description,
+                metadata=artifact.metadata or None,
+                manifest=manifest,
+                aliases=user_aliases,
+                run_name=self.name,
+                run_id=self.id,
+                hf_token=self._hf_token_for_remote(),
+            )
 
-        self._drain_pending_uploads()
-
-        record = self._client.predict(
-            api_name="/artifact_log",
-            project=self.project,
-            name=artifact.name,
-            type=artifact.type,
-            description=artifact.description,
-            metadata=artifact.metadata or None,
-            manifest=manifest,
-            aliases=user_aliases,
-            run_name=self.name,
-            run_id=self.id,
-            hf_token=self._hf_token_for_remote(),
-        )
         artifact._hydrate_from_db(
             project=self.project,
             version=record["version"],
@@ -1045,10 +1025,11 @@ class Run:
             manifest_digest=record["manifest_digest"],
             size_bytes=record["size_bytes"],
         )
-        artifact._remote_source = {
-            "space_id": self._space_id,
-            "server_base_url": self._server_base_url,
-        }
+        if not self._is_local:
+            artifact._remote_source = {
+                "space_id": self._space_id,
+                "server_base_url": self._server_base_url,
+            }
         return artifact
 
     @staticmethod
@@ -1093,44 +1074,15 @@ class Run:
             record = SQLiteStorage.get_artifact_manifest(
                 self.project, name, version_or_alias
             )
-            if record is None:
-                raise ValueError(
-                    f"Artifact {spec!r} not found in project {self.project!r}."
-                )
-            self._check_artifact_type(spec, record["type"], type)
-            art = Artifact(name=record["name"], type=record["type"])
-            art._hydrate_from_db(
+        else:
+            self._wait_for_client_ready()
+            record = self._client.predict(
+                api_name="/get_artifact_manifest",
                 project=self.project,
-                version=record["version"],
-                aliases=record["aliases"],
-                manifest=record["manifest"],
-                manifest_digest=record["manifest_digest"],
-                size_bytes=record["size_bytes"],
-                description=record["description"],
-                metadata=record["metadata"],
+                name=name,
+                spec=version_or_alias,
             )
-            try:
-                SQLiteStorage.insert_run_artifact_link(
-                    project=self.project,
-                    run_name=self.name,
-                    run_id=self.id,
-                    version_id=record["version_id"],
-                    direction="input",
-                )
-            except Exception as e:
-                self._warn_once(
-                    "artifact-use-lineage-local",
-                    f"trackio could not record consumer lineage for {spec!r}: {e}",
-                )
-            return art
 
-        self._wait_for_client_ready()
-        record = self._client.predict(
-            api_name="/get_artifact_manifest",
-            project=self.project,
-            name=name,
-            spec=version_or_alias,
-        )
         if record is None:
             raise ValueError(
                 f"Artifact {spec!r} not found in project {self.project!r}."
@@ -1148,23 +1100,33 @@ class Run:
             description=record["description"],
             metadata=record["metadata"],
         )
-        art._remote_source = {
-            "space_id": self._space_id,
-            "server_base_url": self._server_base_url,
-        }
+        if not self._is_local:
+            art._remote_source = {
+                "space_id": self._space_id,
+                "server_base_url": self._server_base_url,
+            }
 
         try:
-            self._client.predict(
-                api_name="/log_artifact_use",
-                project=self.project,
-                version_id=record["version_id"],
-                run_name=self.name,
-                run_id=self.id,
-                hf_token=self._hf_token_for_remote(),
-            )
+            if self._is_local:
+                SQLiteStorage.insert_run_artifact_link(
+                    project=self.project,
+                    run_name=self.name,
+                    run_id=self.id,
+                    version_id=record["version_id"],
+                    direction="input",
+                )
+            else:
+                self._client.predict(
+                    api_name="/log_artifact_use",
+                    project=self.project,
+                    version_id=record["version_id"],
+                    run_name=self.name,
+                    run_id=self.id,
+                    hf_token=self._hf_token_for_remote(),
+                )
         except Exception as e:
             self._warn_once(
-                "artifact-use-lineage-remote",
+                "artifact-use-lineage",
                 f"trackio could not record consumer lineage for {spec!r}: {e}",
             )
 
