@@ -86,6 +86,12 @@ def _request_timeout_for_api(
     )
 
 
+def is_transient_remote_error(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(exc, (httpx.RequestError, ConnectionError))
+
+
 class _TrackioHTTPClient:
     def __init__(
         self,

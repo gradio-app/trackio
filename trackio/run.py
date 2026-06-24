@@ -26,7 +26,7 @@ from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
 from trackio.pending_uploads import replay_pending_uploads
-from trackio.remote_client import RemoteClient
+from trackio.remote_client import RemoteClient, is_transient_remote_error
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.trace import Trace
@@ -36,6 +36,7 @@ from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namesp
 BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
 BUCKET_FLUSH_INTERVAL = 30
+ARTIFACT_LOG_RETRY_BACKOFFS = (0.5, 1.0, 2.0)
 
 
 class Run:
@@ -1184,6 +1185,17 @@ class Run:
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log() failed to process metrics: {e}")
 
+    def _artifact_log_with_retry(self, **kwargs) -> dict:
+        backoffs = (0.0, *ARTIFACT_LOG_RETRY_BACKOFFS)
+        for attempt, backoff in enumerate(backoffs):
+            if backoff:
+                time.sleep(backoff)
+            try:
+                return self._client.predict(api_name="/artifact_log", **kwargs)
+            except Exception as e:
+                if attempt == len(backoffs) - 1 or not is_transient_remote_error(e):
+                    raise
+
     def log_artifact(
         self,
         artifact_or_path: Artifact | str | Path,
@@ -1265,8 +1277,7 @@ class Run:
 
             self._drain_pending_uploads()
 
-            record = self._client.predict(
-                api_name="/artifact_log",
+            record = self._artifact_log_with_retry(
                 project=self.project,
                 name=artifact.name,
                 type=artifact.type,

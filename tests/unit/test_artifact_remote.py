@@ -8,6 +8,7 @@ import hashlib
 import threading
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 import trackio
@@ -142,6 +143,101 @@ def test_remote_log_artifact_hydrates_returned_artifact(
         "server_base_url": None,
         "write_token": None,
     }
+    run._client = None
+    trackio.finish()
+
+
+def _inject_artifact_log_failures(client, errors):
+    """Make the next len(errors) /artifact_log calls raise errors[i], in order."""
+    base = client.predict.side_effect
+    state = {"i": 0}
+
+    def _wrapped(api_name, **kwargs):
+        if api_name == "/artifact_log" and state["i"] < len(errors):
+            err = errors[state["i"]]
+            state["i"] += 1
+            raise err
+        return base(api_name, **kwargs)
+
+    client.predict.side_effect = _wrapped
+
+
+def _artifact_log_call_count(client):
+    return sum(
+        c.kwargs.get("api_name") == "/artifact_log"
+        for c in client.predict.call_args_list
+    )
+
+
+def test_is_transient_remote_error_classifies_errors():
+    from trackio.remote_client import is_transient_remote_error
+
+    req = httpx.Request("POST", "http://x/api/artifact_log")
+    err_503 = httpx.HTTPStatusError(
+        "503", request=req, response=httpx.Response(503, request=req)
+    )
+    err_400 = httpx.HTTPStatusError(
+        "400", request=req, response=httpx.Response(400, request=req)
+    )
+    assert is_transient_remote_error(err_503) is True
+    assert is_transient_remote_error(err_400) is False
+    assert is_transient_remote_error(httpx.ConnectError("x")) is True
+    assert is_transient_remote_error(ConnectionError("x")) is True
+    assert is_transient_remote_error(RuntimeError("x")) is False
+
+
+def test_remote_log_artifact_retries_transient_artifact_log(
+    temp_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("trackio.run.time.sleep", lambda *_a, **_k: None)
+    weights = _write(tmp_path, "w.bin", b"data")
+    run, client, _ = _make_remote_run(monkeypatch)
+    _inject_artifact_log_failures(
+        client, [httpx.ConnectError("boom"), httpx.ConnectError("boom")]
+    )
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    logged = run.log_artifact(art)
+
+    assert logged.version == "v0"
+    assert _artifact_log_call_count(client) == 3
+    upload_calls = sum(
+        c.kwargs.get("api_name") == "/bulk_upload_artifact_blob"
+        for c in client.predict.call_args_list
+    )
+    assert upload_calls == 1
+    run._client = None
+    trackio.finish()
+
+
+def test_remote_log_artifact_does_not_retry_permanent_error(
+    temp_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("trackio.run.time.sleep", lambda *_a, **_k: None)
+    weights = _write(tmp_path, "w.bin", b"data")
+    run, client, _ = _make_remote_run(monkeypatch)
+    _inject_artifact_log_failures(client, [RuntimeError("Invalid project name")] * 5)
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    with pytest.raises(RuntimeError, match="Invalid project name"):
+        run.log_artifact(art)
+    assert _artifact_log_call_count(client) == 1
+    run._client = None
+    trackio.finish()
+
+
+def test_remote_log_artifact_reraises_after_exhausting_retries(
+    temp_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr("trackio.run.time.sleep", lambda *_a, **_k: None)
+    weights = _write(tmp_path, "w.bin", b"data")
+    run, client, _ = _make_remote_run(monkeypatch)
+    _inject_artifact_log_failures(client, [httpx.ConnectError("down")] * 10)
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    with pytest.raises(httpx.ConnectError):
+        run.log_artifact(art)
+    assert _artifact_log_call_count(client) == 4
     run._client = None
     trackio.finish()
 
