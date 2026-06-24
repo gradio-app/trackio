@@ -157,7 +157,137 @@ def test_replay_pending_uploads_with_empty_queue_is_noop(temp_dir):
     client.predict.assert_not_called()
 
 
-# --- dataset-mode allow_patterns ---
+def test_upload_artifact_blobs_to_bucket_uses_cas_path(
+    temp_dir, monkeypatch, stage_blob
+):
+    from trackio import fragments
+
+    digest, blob = stage_blob("p", b"weights")
+
+    captured: dict = {}
+
+    def _fake_batch(bucket_id, add=None, **kwargs):
+        captured["add"] = list(add or [])
+
+    monkeypatch.setattr(fragments.huggingface_hub, "batch_bucket_files", _fake_batch)
+
+    fragments.upload_artifact_blobs_to_bucket(
+        "user/bucket",
+        [
+            {
+                "file_path": str(blob),
+                "project": "p",
+                "digest": digest,
+                "kind": "artifact_blob",
+            }
+        ],
+    )
+
+    remote_paths = {remote for _, remote in captured["add"]}
+    assert remote_paths == {f"trackio/artifacts/p/blobs/sha256/{digest[:2]}/{digest}"}
+
+
+def test_flush_pending_uploads_routes_by_kind(
+    temp_dir, tmp_path, monkeypatch, stage_blob
+):
+    from types import SimpleNamespace
+
+    from trackio import run as run_module
+    from trackio.run import Run
+
+    digest, blob = stage_blob("p", b"weights")
+    media_path = tmp_path / "img.png"
+    media_path.write_bytes(b"png-bytes")
+
+    SQLiteStorage.add_pending_upload(
+        project="p",
+        space_id="user/space",
+        run_id="rid",
+        run_name="r",
+        step=0,
+        file_path=str(media_path),
+        relative_path="img.png",
+    )
+    SQLiteStorage.enqueue_artifact_blob_uploads(
+        project="p",
+        space_id="user/space",
+        blobs=[(digest, str(blob))],
+        run_name="r",
+        run_id="rid",
+    )
+
+    calls: dict = {"media": [], "blob": []}
+    monkeypatch.setattr(
+        run_module.fragments,
+        "upload_media_files_to_bucket",
+        lambda bucket_id, uploads: calls["media"].append(uploads),
+    )
+    monkeypatch.setattr(
+        run_module.fragments,
+        "upload_artifact_blobs_to_bucket",
+        lambda bucket_id, uploads: calls["blob"].append(uploads),
+    )
+
+    fake = SimpleNamespace(project="p", _bucket_id="user/bucket")
+    Run._flush_pending_uploads_to_bucket(fake)
+
+    assert len(calls["media"]) == 1
+    assert calls["media"][0][0]["relative_path"] == "img.png"
+    assert len(calls["blob"]) == 1
+    assert calls["blob"][0][0]["digest"] == digest
+    assert SQLiteStorage.get_pending_uploads("p") is None
+
+
+def test_flush_pending_uploads_keeps_blobs_when_upload_fails(
+    temp_dir, tmp_path, monkeypatch, stage_blob
+):
+    from types import SimpleNamespace
+
+    import pytest
+
+    from trackio import run as run_module
+    from trackio.run import Run
+
+    digest, blob = stage_blob("p", b"weights")
+    media_path = tmp_path / "img.png"
+    media_path.write_bytes(b"png-bytes")
+
+    SQLiteStorage.add_pending_upload(
+        project="p",
+        space_id="user/space",
+        run_id="rid",
+        run_name="r",
+        step=0,
+        file_path=str(media_path),
+        relative_path="img.png",
+    )
+    SQLiteStorage.enqueue_artifact_blob_uploads(
+        project="p",
+        space_id="user/space",
+        blobs=[(digest, str(blob))],
+        run_name="r",
+        run_id="rid",
+    )
+
+    monkeypatch.setattr(
+        run_module.fragments,
+        "upload_media_files_to_bucket",
+        lambda bucket_id, uploads: None,
+    )
+
+    def _boom(bucket_id, uploads):
+        raise RuntimeError("bucket unreachable")
+
+    monkeypatch.setattr(run_module.fragments, "upload_artifact_blobs_to_bucket", _boom)
+
+    fake = SimpleNamespace(project="p", _bucket_id="user/bucket")
+    with pytest.raises(RuntimeError):
+        Run._flush_pending_uploads_to_bucket(fake)
+
+    remaining = SQLiteStorage.get_pending_uploads("p")
+    assert remaining is not None
+    assert {u["kind"] for u in remaining["uploads"]} == {"artifact_blob"}
+
 
 
 def test_dataset_mode_allow_patterns_includes_artifacts(monkeypatch):

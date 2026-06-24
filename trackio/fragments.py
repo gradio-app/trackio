@@ -319,29 +319,43 @@ def import_inbox_from_bucket(bucket_id: str) -> int:
     return imported
 
 
-def upload_media_files_to_bucket(
-    bucket_id: str, uploads: list[dict[str, Any]]
-) -> list[Any]:
-    additions = []
-    uploaded = []
-    for upload in uploads:
-        file_path = Path(upload["file_path"])
-        if not file_path.exists():
-            uploaded.append(upload)
-            continue
-        remote_path = bucket_media_path(
-            project=upload["project"],
-            run=upload.get("run"),
-            step=upload.get("step"),
-            relative_path=upload.get("relative_path"),
-            filename=file_path.name,
-        )
-        additions.append((str(file_path), remote_path))
-        uploaded.append(upload)
+def _add_files_to_bucket(bucket_id: str, additions: list[tuple[str, str]]) -> None:
     if additions:
         huggingface_hub.batch_bucket_files(
             bucket_id,
             add=additions,
             token=huggingface_hub.utils.get_token(),
         )
-    return uploaded
+
+
+def upload_media_files_to_bucket(bucket_id: str, uploads: list[dict[str, Any]]) -> None:
+    _add_files_to_bucket(
+        bucket_id,
+        [
+            (
+                str(p),
+                bucket_media_path(
+                    project=upload["project"],
+                    run=upload.get("run"),
+                    step=upload.get("step"),
+                    relative_path=upload.get("relative_path"),
+                    filename=p.name,
+                ),
+            )
+            for upload in uploads
+            if (p := Path(upload["file_path"])).exists()
+        ],
+    )
+
+
+def upload_artifact_blobs_to_bucket(
+    bucket_id: str, uploads: list[dict[str, Any]]
+) -> None:
+    _add_files_to_bucket(
+        bucket_id,
+        [
+            (str(p), f"trackio/{p.relative_to(utils.TRACKIO_DIR).as_posix()}")
+            for upload in uploads
+            if (p := Path(upload["file_path"])).exists()
+        ],
+    )

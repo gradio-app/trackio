@@ -832,11 +832,33 @@ class Run:
             if entry_id not in spilled_ids
         ]
 
+    def _flush_pending_uploads_to_bucket(self) -> None:
+        pending = SQLiteStorage.get_pending_uploads(self.project)
+        if not pending:
+            return
+        media, media_ids, blobs, blob_ids = [], [], [], []
+        for upload, upload_id in zip(pending["uploads"], pending["ids"]):
+            if upload.get("kind") == "artifact_blob":
+                blobs.append(upload)
+                blob_ids.append(upload_id)
+            else:
+                media.append(upload)
+                media_ids.append(upload_id)
+        if media:
+            fragments.upload_media_files_to_bucket(self._bucket_id, media)
+            SQLiteStorage.clear_pending_uploads(self.project, media_ids)
+        if blobs:
+            fragments.upload_artifact_blobs_to_bucket(self._bucket_id, blobs)
+            SQLiteStorage.clear_pending_uploads(self.project, blob_ids)
+
     def _spill_pending_to_bucket(self):
         """
-        Write pending rows to the Bucket inbox without clearing them, so the
-        normal /bulk_log replay still happens if the Space becomes reachable
-        (the Space deduplicates by log_id).
+        Spill buffered rows to the Bucket while the Space is unreachable. Metric
+        and system rows are written without clearing them, so the normal
+        /bulk_log replay still happens once the Space is reachable (it
+        deduplicates by log_id). Media and artifact-blob uploads are sent to
+        their bucket paths and cleared, since they are delivered through the
+        bucket rather than replayed to the Space.
         """
         try:
             pending = SQLiteStorage.get_pending_logs(self.project)
@@ -855,14 +877,7 @@ class Run:
                 self._fragment_writer.write_to_bucket(records, self._bucket_id)
                 self._spilled_system_ids.update(pending_sys["ids"])
 
-            pending_uploads = SQLiteStorage.get_pending_uploads(self.project)
-            if pending_uploads:
-                fragments.upload_media_files_to_bucket(
-                    self._bucket_id, pending_uploads["uploads"]
-                )
-                SQLiteStorage.clear_pending_uploads(
-                    self.project, pending_uploads["ids"]
-                )
+            self._flush_pending_uploads_to_bucket()
         except Exception as e:
             self._warn_once(
                 "bucket-spill",
@@ -897,14 +912,7 @@ class Run:
                 )
                 self._spilled_system_ids.update(pending_sys["ids"])
 
-            pending_uploads = SQLiteStorage.get_pending_uploads(self.project)
-            if pending_uploads:
-                fragments.upload_media_files_to_bucket(
-                    self._bucket_id, pending_uploads["uploads"]
-                )
-                SQLiteStorage.clear_pending_uploads(
-                    self.project, pending_uploads["ids"]
-                )
+            self._flush_pending_uploads_to_bucket()
 
             self._has_local_buffer = SQLiteStorage.has_pending_data(self.project)
         except Exception as e:
