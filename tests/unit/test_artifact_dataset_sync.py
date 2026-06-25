@@ -197,6 +197,45 @@ def test_artifact_parquet_export_skips_unchanged_db(temp_dir):
     assert pq.stat().st_mtime_ns != first_mtime
 
 
+def test_artifact_parquet_export_detects_wal_only_change(temp_dir):
+    """A version write reflected only in the -wal sidecar (checkpoint-on-close
+    suppressed by a concurrent reader, so the main .db mtime stays stale) must
+    still trigger a re-export. Regression for the staleness check that compared
+    only the .db mtime and ignored the WAL sidecar."""
+    import sqlite3
+
+    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "p", aid, [{"path": "a", "digest": "a" * 64, "size": 1}], None, None, "r"
+    )
+    SQLiteStorage.reassign_alias("p", aid, "latest", vid)
+
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+
+    pq = Path(temp_dir) / "p_artifact_versions.parquet"
+    first_mtime = pq.stat().st_mtime_ns
+    db_path = SQLiteStorage.get_project_db_path("p")
+
+    reader = sqlite3.connect(str(db_path))
+    try:
+        reader.execute("BEGIN")
+        reader.execute("SELECT * FROM artifact_versions").fetchall()
+
+        SQLiteStorage.insert_artifact_version(
+            "p", aid, [{"path": "a", "digest": "b" * 64, "size": 2}], None, None, "r"
+        )
+        assert db_path.with_name(db_path.name + "-wal").is_file()
+        assert db_path.stat().st_mtime_ns <= first_mtime
+
+        SQLiteStorage.export_to_parquet()
+    finally:
+        reader.close()
+
+    assert pq.stat().st_mtime_ns != first_mtime
+    assert len(SQLiteStorage._read_parquet_rows(pq)) == 2
+
+
 def test_load_from_dataset_downloads_artifact_blobs(temp_dir, monkeypatch):
     from trackio import sqlite_storage as _ss
 

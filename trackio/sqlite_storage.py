@@ -1047,11 +1047,13 @@ class SQLiteStorage:
                     TRACKIO_DIR / (db_path.stem + "_traces.parquet"),
                     SQLiteStorage._normalize_trace_rows_for_parquet(trace_rows),
                 )
+            db_mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
             for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
                 parquet_path = TRACKIO_DIR / f"{db_path.stem}_{table}.parquet"
                 if (
                     parquet_path.exists()
-                    and db_path.stat().st_mtime <= parquet_path.stat().st_mtime
+                    and db_mtime_ns is not None
+                    and db_mtime_ns <= parquet_path.stat().st_mtime_ns
                 ):
                     continue
                 artifact_rows = SQLiteStorage._read_table_rows(db_path, table)
