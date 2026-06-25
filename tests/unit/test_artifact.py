@@ -90,6 +90,25 @@ def test_relog_with_alias_tags_existing_version_without_moving_latest(temp_dir):
     assert SQLiteStorage.resolve_artifact_version("p", "m", "prod")["version"] == 0
 
 
+def test_relog_older_content_does_not_regress_moving_alias(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    b = [{"path": "w", "digest": "bbb", "size": 1}]
+    _commit_version(a)
+    _commit_version(b, aliases=["prod"])
+    _commit_version(a, aliases=["prod"])
+    assert SQLiteStorage.resolve_artifact_version("p", "m", "prod")["version"] == 1
+    assert SQLiteStorage.resolve_artifact_version("p", "m", "latest")["version"] == 1
+
+
+def test_relog_newer_content_moves_alias_forward(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    b = [{"path": "w", "digest": "bbb", "size": 1}]
+    _commit_version(a, aliases=["prod"])
+    _commit_version(b)
+    _commit_version(b, aliases=["prod"])
+    assert SQLiteStorage.resolve_artifact_version("p", "m", "prod")["version"] == 1
+
+
 def test_commit_artifact_version_is_atomic_on_bad_alias(temp_dir):
     # A reserved-vN alias raises mid-commit; the artifact/version/latest writes
     # that ran before it must roll back, leaving nothing behind.

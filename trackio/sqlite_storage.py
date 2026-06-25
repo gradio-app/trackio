@@ -4235,6 +4235,25 @@ class SQLiteStorage:
         )
 
     @staticmethod
+    def _reassign_alias_forward_cursor(
+        conn: sqlite3.Connection,
+        artifact_id: int,
+        alias: str,
+        version_id: int,
+        version_int: int,
+    ) -> None:
+        """Reassign `alias` only when it does not move backward."""
+        current = conn.execute(
+            """SELECT av.version FROM artifact_aliases aa
+            JOIN artifact_versions av ON av.id = aa.artifact_version_id
+            WHERE aa.artifact_id = ? AND aa.alias = ?""",
+            (artifact_id, alias),
+        ).fetchone()
+        if current is not None and int(current["version"]) > version_int:
+            return
+        SQLiteStorage._reassign_alias_cursor(conn, artifact_id, alias, version_id)
+
+    @staticmethod
     def reassign_alias(
         project: str,
         artifact_id: int,
@@ -4341,7 +4360,9 @@ class SQLiteStorage:
     ) -> dict:
         """Commit a new artifact version and return its full manifest record.
         `latest` advances only when a new version is created, so re-logging
-        identical or older content never regresses `latest`.
+        identical or older content never regresses `latest`. Moving aliases are
+        reassigned the same way: a content-dedup hit to an older version never
+        drags an existing alias backward, but a first-time or forward tag lands.
         """
         db_path = SQLiteStorage.init_db(project)
         now = datetime.now(timezone.utc).isoformat()
@@ -4360,8 +4381,8 @@ class SQLiteStorage:
                         conn, artifact_id, "latest", version_id
                     )
                 for alias in aliases or []:
-                    SQLiteStorage._reassign_alias_cursor(
-                        conn, artifact_id, alias, version_id
+                    SQLiteStorage._reassign_alias_forward_cursor(
+                        conn, artifact_id, alias, version_id, version_int
                     )
                 SQLiteStorage._insert_run_artifact_link_cursor(
                     conn, run_name, run_id, version_id, "output", now
