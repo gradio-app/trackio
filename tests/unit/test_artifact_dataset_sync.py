@@ -287,6 +287,7 @@ def dataset_loader(monkeypatch):
         monkeypatch.delenv("TRACKIO_BUCKET_ID", raising=False)
         monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_attempted", False)
         monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_pending", False)
+        monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_remote_synced", False)
         monkeypatch.setattr(
             _ss.SQLiteStorage,
             "get_scheduler",

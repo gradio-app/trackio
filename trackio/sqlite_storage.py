@@ -346,6 +346,7 @@ def _system_logs_read_cache_put(
 class SQLiteStorage:
     _dataset_import_attempted = False
     _dataset_import_pending = False
+    _dataset_remote_synced = False
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
@@ -2606,35 +2607,40 @@ class SQLiteStorage:
             if not TRACKIO_DIR.exists():
                 TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
             with SQLiteStorage.get_scheduler().lock:
-                try:
-                    files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
-                    for file in files:
-                        if not (
-                            file.endswith(".parquet")
-                            or file.startswith("media/")
-                            or file.startswith("artifacts/")
-                        ):
-                            continue
-                        if (TRACKIO_DIR / file).exists():
-                            continue
-                        hf.hf_hub_download(
-                            dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR
-                        )
-                        SQLiteStorage._dataset_import_pending = True
-                except hf.errors.EntryNotFoundError:
-                    pass
-                except hf.errors.RepositoryNotFoundError:
-                    pass
+                if not SQLiteStorage._dataset_remote_synced:
+                    try:
+                        files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
+                        for file in files:
+                            if not (
+                                file.endswith(".parquet")
+                                or file.startswith("media/")
+                                or file.startswith("artifacts/")
+                            ):
+                                continue
+                            if (TRACKIO_DIR / file).exists():
+                                continue
+                            hf.hf_hub_download(
+                                dataset_id,
+                                file,
+                                repo_type="dataset",
+                                local_dir=TRACKIO_DIR,
+                            )
+                            SQLiteStorage._dataset_import_pending = True
+                    except hf.errors.EntryNotFoundError:
+                        pass
+                    except hf.errors.RepositoryNotFoundError:
+                        pass
+                    SQLiteStorage._dataset_remote_synced = True
                 if SQLiteStorage._dataset_import_pending:
                     try:
                         SQLiteStorage.import_from_parquet()
+                        SQLiteStorage._dataset_import_pending = False
                     except Exception as e:
                         _emit_nonfatal_warning(
                             f"trackio could not import downloaded dataset files; "
                             f"will retry on the next access: {e}"
                         )
                         return
-                    SQLiteStorage._dataset_import_pending = False
         SQLiteStorage._dataset_import_attempted = True
 
     @staticmethod
