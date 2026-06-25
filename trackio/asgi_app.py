@@ -437,8 +437,8 @@ async def artifact_blob_handler(request: Request) -> Response:
     project = request.path_params.get("project")
     digest = request.path_params.get("digest")
     try:
-        _server._validate_project_name(project)
-        _server._validate_sha256_digest(digest)
+        project = _server._validate_project_name(project)
+        digest = _server._validate_sha256_digest(digest)
     except TrackioAPIError:
         return Response("Not found", status_code=404)
     blob = cas.blob_path(project, digest)

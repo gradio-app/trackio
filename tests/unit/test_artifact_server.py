@@ -7,6 +7,7 @@ pattern in `test_token_auth.py`).
 """
 
 import hashlib
+import re
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -15,6 +16,7 @@ import pytest
 from trackio import server
 from trackio.exceptions import TrackioAPIError
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.utils import canonical_project_name
 
 
 def _stage(temp_dir, project, payload):
@@ -339,11 +341,11 @@ def test_artifact_log_rejects_empty_manifest(temp_dir, auth_bypassed):
         )
 
 
-def test_artifact_log_rejects_invalid_project(temp_dir, auth_bypassed):
+def test_artifact_log_rejects_non_string_project(temp_dir, auth_bypassed):
     with pytest.raises(TrackioAPIError, match="Invalid project"):
         server.artifact_log(
             request=auth_bypassed,
-            project="../etc",
+            project=123,
             name="m",
             type="model",
             description=None,
@@ -354,6 +356,35 @@ def test_artifact_log_rejects_invalid_project(temp_dir, auth_bypassed):
             run_id="rid",
             hf_token=None,
         )
+
+
+def test_artifact_endpoints_accept_names_init_and_log_accept(temp_dir, auth_bypassed):
+    project = "my experiment"
+    canonical = canonical_project_name(project)
+    assert canonical == "myexperiment"
+    assert SQLiteStorage.get_project_db_filename(project) == f"{canonical}.db"
+
+    payload = b"weights"
+    digest, size = _stage(temp_dir, canonical, payload)
+
+    assert server.check_artifact_blobs(project, [digest])["present"] == [digest]
+
+    server.artifact_log(
+        request=auth_bypassed,
+        project=project,
+        name="m",
+        type="model",
+        description=None,
+        metadata=None,
+        manifest=[{"path": "w.bin", "digest": digest, "size": size}],
+        aliases=None,
+        run_name="train",
+        run_id="rid",
+        hf_token=None,
+    )
+
+    assert server.get_artifact_manifest(project, "m", "latest") is not None
+    assert server.get_artifact_manifest(canonical, "m", "latest") is not None
 
 
 def test_get_artifact_manifest_shape(temp_dir, auth_bypassed):
@@ -417,13 +448,33 @@ def test_log_artifact_use_inserts_input_lineage(temp_dir, auth_bypassed):
     assert lineage["input"][0]["version_id"] == version_id
 
 
-def test_validate_project_name_rejects_traversal():
-    for bad in ["../etc", "a/b", "", ".", "..", "a\\b", "proj\n", "a\x00b"]:
-        with pytest.raises(TrackioAPIError, match="Invalid project"):
-            server._validate_project_name(bad)
+def test_validate_project_name_neutralizes_unsafe_input():
+    for raw in [
+        "../etc",
+        "a/b",
+        ".",
+        "..",
+        "a\\b",
+        "proj\n",
+        "a\x00b",
+        "my experiment",
+    ]:
+        result = server._validate_project_name(raw)
+        assert result == canonical_project_name(raw)
+        assert re.fullmatch(r"[A-Za-z0-9_-]+", result)
     assert server._validate_project_name("my-proj_1") == "my-proj_1"
 
 
-def test_validate_project_name_accepts_dots():
-    for ok in ["my.model", "bert.base", "exp.v2", "a.b.c"]:
-        assert server._validate_project_name(ok) == ok
+def test_validate_project_name_strips_dots_to_db_stem():
+    """Dotted names collapse to the same stem get_project_db_filename uses, so a
+    project's artifacts and metrics resolve to one on-disk identity."""
+    for raw in ["my.model", "bert.base", "exp.v2", "a.b.c"]:
+        expected = canonical_project_name(raw)
+        assert server._validate_project_name(raw) == expected
+        assert SQLiteStorage.get_project_db_filename(raw) == f"{expected}.db"
+
+
+def test_validate_project_name_rejects_non_string():
+    for bad in [None, 123, ["p"], b"p"]:
+        with pytest.raises(TrackioAPIError, match="Invalid project"):
+            server._validate_project_name(bad)
