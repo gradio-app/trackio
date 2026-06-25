@@ -91,10 +91,8 @@ def stage_blob_from_chunks(
     claimed_digest: Sha256Digest,
     target_path: Path,
 ) -> None:
-    """Stream `chunks` into a `.partial.<uuid>` file in the CAS dir, rehashing
-    as we go. On match, atomic-rename to `target_path`. On failure, clean up the
-    partial. If `target_path.is_file()` already, returns without consuming
-    `chunks`.
+    """Stream `chunks` to `target_path`, verifying they hash to `claimed_digest`.
+    No-op if `target_path` already exists (the chunks are not consumed).
     """
     if target_path.is_file():
         return
@@ -124,9 +122,7 @@ def stage_blob_from_file(
     claimed_digest: Sha256Digest,
     target_path: Path,
 ) -> None:
-    """Copy `src_path` into the CAS via a partial file + atomic rename,
-    verifying the content hashes to `claimed_digest`.
-    """
+    """Copy `src_path` to `target_path`, verifying it hashes to `claimed_digest`."""
     if target_path.is_file():
         return
 
@@ -140,9 +136,8 @@ def stage_blob_from_file(
 
 def stage_blob_into_project(src_path: Path, project: str) -> tuple[Sha256Digest, int]:
     """Copy `src_path` into the project's CAS in a single pass, computing its
-    sha256 and size while writing. Returns `(digest, size)`. The blob is staged
-    to a `.partial.<uuid>` file and atomically renamed to the digest-derived
-    path; if that path already holds the blob, the partial is discarded.
+    sha256 and size while writing. Returns `(digest, size)`. If the blob is
+    already present, the copy is discarded.
     """
     blobs_root = _project_blobs_root(project)
     blobs_root.mkdir(parents=True, exist_ok=True)

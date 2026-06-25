@@ -4310,11 +4310,9 @@ class SQLiteStorage:
         run_name: str | None,
         run_id: str | None,
     ) -> dict:
-        """Create/fetch the artifact, insert (or dedupe) the version, point
-        `latest` at it only when a new version was created (so re-logging
-        identical or older content never regresses `latest`), rotate any user
-        aliases onto it, and record the producer lineage link, then return the
-        full manifest record.
+        """Commit a new artifact version and return its full manifest record.
+        `latest` advances only when a new version is created, so re-logging
+        identical or older content never regresses `latest`.
         """
         db_path = SQLiteStorage.init_db(project)
         now = datetime.now(timezone.utc).isoformat()

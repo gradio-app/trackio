@@ -717,13 +717,9 @@ def _replay_pending_uploads(
     client: "RemoteClient",
     hf_token: str | None,
 ) -> None:
-    """Replay queued `pending_uploads` rows for `project` via `client`.
-
-    Routes by `kind`: 'media' → `/bulk_upload_media`, 'artifact_blob' →
-    `/bulk_upload_artifact_blob` (shared `group_pending_uploads` grouping),
-    applied to a sync triggered outside a Run context (via `trackio sync`).
-    Each group's rows are cleared as soon as that group is sent, so a failure
-    partway through never clears rows that were not uploaded.
+    """Replay queued `pending_uploads` rows for `project` via `client` — the
+    out-of-Run sync path (`trackio sync`); see `replay_pending_uploads` for the
+    per-kind routing and clearing semantics.
     """
     pending_uploads = SQLiteStorage.get_pending_uploads(project)
     if not pending_uploads:

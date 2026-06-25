@@ -37,10 +37,10 @@ def _fetch_blob_from_remote(
     digest: Sha256Digest,
     target_path: Path,
 ) -> None:
-    """Stream `GET /artifact_blob/<project>/<digest>` from the remote, rehash
-    while writing, and atomic-rename into the local CAS. Authenticates the
-    request (HF token for a Space, write token for a self-hosted server) so
-    blobs on a private remote are reachable.
+    """Fetch `GET /artifact_blob/<project>/<digest>` into the local CAS,
+    verifying the streamed bytes hash to `digest`. Authenticates the request
+    (HF token for a Space, write token for a self-hosted server) so blobs on a
+    private remote are reachable.
     """
     space_id = remote_source.get("space_id")
     src = space_id or remote_source.get("server_base_url")
