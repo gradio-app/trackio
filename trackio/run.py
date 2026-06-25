@@ -25,7 +25,7 @@ from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
-from trackio.pending_uploads import replay_pending_uploads
+from trackio.pending_uploads import classify_pending_uploads, replay_pending_uploads
 from trackio.remote_client import RemoteClient, is_transient_remote_error
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -768,23 +768,22 @@ class Run:
                 f"trackio could not persist failed remote file uploads locally for run '{self.name}': {e}. User code will continue, but some artifacts could be lost.",
             )
 
+    def _warn_missing_uploads(self, count: int, sample: str) -> None:
+        self._warn_once(
+            "pending-uploads-missing-files",
+            f"trackio dropped {count} pending upload(s) whose local files no "
+            f"longer exist (e.g. {sample!r}). Data for these uploads was not "
+            "uploaded.",
+        )
+
     def _send_pending_uploads_to_server(self, buffered: dict) -> None:
         """Group buffered pending_uploads by kind and POST to the right endpoints."""
-
-        def _warn_missing(count: int, sample: str) -> None:
-            self._warn_once(
-                "pending-uploads-missing-files",
-                f"trackio dropped {count} pending upload(s) whose local files no "
-                f"longer exist (e.g. {sample!r}). Data for these uploads was not "
-                "sent to the remote server.",
-            )
-
         replay_pending_uploads(
             buffered,
             self.project,
             predict=self._client.predict,
             hf_token=self._hf_token_for_remote(),
-            warn_missing=_warn_missing,
+            warn_missing=self._warn_missing_uploads,
         )
 
     def _flush_local_buffer(self) -> bool:
@@ -837,20 +836,27 @@ class Run:
         pending = SQLiteStorage.get_pending_uploads(self.project)
         if not pending:
             return
-        media, media_ids, blobs, blob_ids = [], [], [], []
-        for upload, upload_id in zip(pending["uploads"], pending["ids"]):
-            if upload.get("kind") == "artifact_blob":
-                blobs.append(upload)
-                blob_ids.append(upload_id)
-            else:
-                media.append(upload)
-                media_ids.append(upload_id)
+        classified = classify_pending_uploads(pending)
+        missing = classified["missing"]
+        if missing["ids"]:
+            self._warn_missing_uploads(len(missing["ids"]), missing["paths"][0])
+            SQLiteStorage.clear_pending_uploads(self.project, missing["ids"])
+        media = classified["media"]
         if media:
-            fragments.upload_media_files_to_bucket(self._bucket_id, media)
-            SQLiteStorage.clear_pending_uploads(self.project, media_ids)
+            fragments.upload_media_files_to_bucket(
+                self._bucket_id, [upload for upload, _ in media]
+            )
+            SQLiteStorage.clear_pending_uploads(
+                self.project, [upload_id for _, upload_id in media]
+            )
+        blobs = classified["artifact_blobs"]
         if blobs:
-            fragments.upload_artifact_blobs_to_bucket(self._bucket_id, blobs)
-            SQLiteStorage.clear_pending_uploads(self.project, blob_ids)
+            fragments.upload_artifact_blobs_to_bucket(
+                self._bucket_id, [upload for upload, _ in blobs]
+            )
+            SQLiteStorage.clear_pending_uploads(
+                self.project, [upload_id for _, upload_id in blobs]
+            )
 
     def _spill_pending_to_bucket(self):
         """

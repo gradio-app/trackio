@@ -221,6 +221,62 @@ def test_flush_pending_uploads_routes_by_kind(
     assert SQLiteStorage.get_pending_uploads("p") is None
 
 
+def test_flush_pending_uploads_warns_and_clears_missing(
+    temp_dir, tmp_path, monkeypatch, stage_blob
+):
+    from types import SimpleNamespace
+
+    from trackio import run as run_module
+    from trackio.run import Run
+
+    digest, blob = stage_blob("p", b"weights")
+    gone = tmp_path / "vanished.png"
+
+    SQLiteStorage.add_pending_upload(
+        project="p",
+        space_id="user/space",
+        run_id="rid",
+        run_name="r",
+        step=0,
+        file_path=str(gone),
+        relative_path="vanished.png",
+    )
+    SQLiteStorage.enqueue_artifact_blob_uploads(
+        project="p",
+        space_id="user/space",
+        blobs=[(digest, str(blob))],
+        run_name="r",
+        run_id="rid",
+    )
+
+    calls: dict = {"media": [], "blob": [], "warn": []}
+    monkeypatch.setattr(
+        run_module.fragments,
+        "upload_media_files_to_bucket",
+        lambda bucket_id, uploads: calls["media"].append(uploads),
+    )
+    monkeypatch.setattr(
+        run_module.fragments,
+        "upload_artifact_blobs_to_bucket",
+        lambda bucket_id, uploads: calls["blob"].append(uploads),
+    )
+
+    fake = SimpleNamespace(
+        project="p",
+        _bucket_id="user/bucket",
+        _warn_missing_uploads=lambda count, sample: calls["warn"].append(
+            (count, sample)
+        ),
+    )
+    Run._flush_pending_uploads_to_bucket(fake)
+
+    assert calls["warn"] == [(1, str(gone))]
+    assert calls["media"] == []
+    assert len(calls["blob"]) == 1
+    assert calls["blob"][0][0]["digest"] == digest
+    assert SQLiteStorage.get_pending_uploads("p") is None
+
+
 def test_flush_pending_uploads_keeps_blobs_when_upload_fails(
     temp_dir, tmp_path, monkeypatch, stage_blob
 ):
