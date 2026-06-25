@@ -777,9 +777,37 @@ def test_download_default_root_includes_name_and_version(
         out = a.download()
         assert (
             Path(out).resolve()
-            == (tmp_path / "artifacts" / f"my-model_v{version}").resolve()
+            == (tmp_path / "artifacts" / "proj" / f"my-model_v{version}").resolve()
         )
         assert (Path(out) / "w.bin").read_bytes() == b"x"
+
+
+def test_download_default_root_disambiguates_by_project(
+    temp_dir, tmp_path, monkeypatch
+):
+    digest_a, size_a = _stage_blob(temp_dir, "proj-a", b"a-bytes")
+    digest_b, size_b = _stage_blob(temp_dir, "proj-b", b"b-different-bytes")
+    monkeypatch.chdir(tmp_path)
+
+    art_a = _hydrated_artifact(
+        "proj-a",
+        "m",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest_a), "size": size_a}],
+    )
+    art_b = _hydrated_artifact(
+        "proj-b",
+        "m",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest_b), "size": size_b}],
+    )
+
+    out_a = art_a.download()
+    out_b = art_b.download()
+
+    assert Path(out_a).resolve() != Path(out_b).resolve()
+    assert (Path(out_a) / "w.bin").read_bytes() == b"a-bytes"
+    assert (Path(out_b) / "w.bin").read_bytes() == b"b-different-bytes"
 
 
 def test_download_is_idempotent(temp_dir, tmp_path):
@@ -1041,7 +1069,10 @@ def test_use_artifact_download_dir_named_by_resolved_version(
     fetched = run2.use_artifact("m:best")
     monkeypatch.chdir(tmp_path)
     out = fetched.download()
-    assert Path(out).resolve() == (tmp_path / "artifacts" / "m_v0").resolve()
+    assert (
+        Path(out).resolve()
+        == (tmp_path / "artifacts" / "art-spec-dl" / "m_v0").resolve()
+    )
     trackio.finish()
 
 
