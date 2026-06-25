@@ -908,6 +908,10 @@ def delete_project(project: str, force: bool = False) -> bool:
             if sidecar.exists():
                 sidecar.unlink()
 
+        for parquet_path in SQLiteStorage._project_parquet_paths(db_path):
+            if parquet_path.exists():
+                parquet_path.unlink()
+
         print(f"* Project '{project}' has been deleted.")
         return True
     except Exception as e:

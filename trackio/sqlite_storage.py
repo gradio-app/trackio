@@ -1173,6 +1173,25 @@ class SQLiteStorage:
                 pass
 
     @staticmethod
+    def _project_parquet_paths(db_path: Path) -> list[Path]:
+        """Every parquet file that export_to_parquet writes for a project: the
+        metrics file plus the system/configs/traces and per-artifact-table
+        sidecars. Deleting these alongside the .db removes the project's durable
+        form, so import_from_parquet cannot resurrect it from a lingering sidecar.
+        """
+        stem = db_path.stem
+        suffixes = [
+            ".parquet",
+            "_system.parquet",
+            "_configs.parquet",
+            "_traces.parquet",
+        ]
+        suffixes += [
+            f"_{table}.parquet" for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES
+        ]
+        return [db_path.with_name(f"{stem}{suffix}") for suffix in suffixes]
+
+    @staticmethod
     def import_from_parquet():
         """
         Imports to all DB files that have matching files under the same path but with extension ".parquet".

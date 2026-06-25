@@ -136,6 +136,33 @@ def test_artifact_only_project_survives_roundtrip(temp_dir):
     assert record["version"] == 0
 
 
+def test_delete_project_prevents_artifact_resurrection(temp_dir):
+    """delete_project must remove a project's parquet sidecars so a later
+    import_from_parquet cannot resurrect it from lingering artifact tables.
+    Contrast test_artifact_only_project_survives_roundtrip, which removes only
+    the .db (a Space restart) and correctly rebuilds from surviving sidecars."""
+    import trackio
+
+    aid = SQLiteStorage.create_or_get_artifact("doomed", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "doomed", aid, [{"path": "a", "digest": "a" * 64, "size": 1}], None, None, "r"
+    )
+    SQLiteStorage.reassign_alias("doomed", aid, "latest", vid)
+
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+
+    db_path = SQLiteStorage.get_project_db_path("doomed")
+    assert any(p.exists() for p in SQLiteStorage._project_parquet_paths(db_path))
+
+    assert trackio.delete_project("doomed", force=True) is True
+    assert not any(p.exists() for p in SQLiteStorage._project_parquet_paths(db_path))
+
+    SQLiteStorage.import_from_parquet()
+    assert "doomed" not in SQLiteStorage.get_projects()
+    assert not db_path.exists()
+
+
 def test_project_named_like_artifact_table_does_not_collide(temp_dir):
     """A project whose name ends in `_artifacts` exports its metrics as
     `<project>_artifacts.parquet`, which collides with the artifact-table
