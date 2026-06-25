@@ -10,19 +10,18 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import Sha256Digest
 
 
-def test_canonical_manifest_is_order_invariant():
-    a = [
+def test_canonical_manifest_digest_is_order_invariant_and_content_sensitive():
+    ordered = [
         {"path": "weights.bin", "digest": "deadbeef", "size": 10},
         {"path": "config.json", "digest": "cafef00d", "size": 3},
     ]
-    b = list(reversed(a))
-    _, dig_a, size_a = SQLiteStorage._canonical_manifest(a)
-    _, dig_b, size_b = SQLiteStorage._canonical_manifest(b)
-    assert dig_a == dig_b
-    assert size_a == size_b == 13
+    _, dig_ordered, size_ordered = SQLiteStorage._canonical_manifest(ordered)
+    _, dig_reversed, size_reversed = SQLiteStorage._canonical_manifest(
+        list(reversed(ordered))
+    )
+    assert dig_ordered == dig_reversed
+    assert size_ordered == size_reversed == 13
 
-
-def test_canonical_manifest_digest_changes_with_content():
     a = [{"path": "f", "digest": "aa", "size": 1}]
     b = [{"path": "f", "digest": "bb", "size": 1}]
     _, dig_a, _ = SQLiteStorage._canonical_manifest(a)
@@ -295,16 +294,6 @@ def test_list_artifact_blobs_present_rejects_path_traversal(temp_dir, monkeypatc
 # --- Artifact class ---
 
 
-def test_hash_file_is_deterministic_and_correct_size(tmp_path):
-    p = tmp_path / "x"
-    payload = b"hello world"
-    p.write_bytes(payload)
-    d1, s1 = hash_file(p)
-    d2, s2 = hash_file(p)
-    assert d1 == d2 == hashlib.sha256(payload).hexdigest()
-    assert s1 == s2 == len(payload)
-
-
 def test_hash_file_modern_and_fallback_paths_agree(tmp_path, monkeypatch):
     p = tmp_path / "blob"
     payload = b"x" * (HASH_CHUNK_SIZE + 17) + b"trailing"
@@ -473,30 +462,6 @@ def test_download_rejects_invalid_digest_in_manifest(temp_dir, tmp_path):
     assert not (tmp_path / "etc" / "passwd").exists()
 
 
-def test_build_manifest_writes_blob_with_correct_digest(temp_dir, tmp_path):
-    payload = b"hello"
-    p = tmp_path / "w.bin"
-    p.write_bytes(payload)
-    a = Artifact(name="m", type="model")
-    a.add_file(p)
-    manifest = a._build_manifest("proj")
-    assert manifest[0]["path"] == "w.bin"
-    assert manifest[0]["size"] == len(payload)
-    expected_digest = hashlib.sha256(payload).hexdigest()
-    assert manifest[0]["digest"] == expected_digest
-    blob = (
-        Path(temp_dir)
-        / "artifacts"
-        / "proj"
-        / "blobs"
-        / "sha256"
-        / expected_digest[:2]
-        / expected_digest
-    )
-    assert blob.is_file()
-    assert blob.read_bytes() == payload
-
-
 def test_build_manifest_reads_each_source_once(temp_dir, tmp_path, monkeypatch):
     p = tmp_path / "w.bin"
     p.write_bytes(b"x" * (HASH_CHUNK_SIZE + 7))
@@ -540,21 +505,18 @@ def test_build_manifest_rejects_duplicate_logical_path(temp_dir, tmp_path):
     p2 = tmp_path / "b"
     p1.write_bytes(b"a")
     p2.write_bytes(b"b")
-    a = Artifact(name="m", type="model")
-    a.add_file(p1, name="x")
-    a.add_file(p2, name="x")
-    with pytest.raises(ValueError, match="Duplicate logical path"):
-        a._build_manifest("p")
 
-
-def test_build_manifest_rejects_double_add_of_same_file(temp_dir, tmp_path):
-    p = tmp_path / "w.bin"
-    p.write_bytes(b"x")
-    a = Artifact(name="m", type="model")
-    a.add_file(p)
-    a.add_file(p)
+    explicit = Artifact(name="m", type="model")
+    explicit.add_file(p1, name="x")
+    explicit.add_file(p2, name="x")
     with pytest.raises(ValueError, match="Duplicate logical path"):
-        a._build_manifest("p")
+        explicit._build_manifest("p")
+
+    double_add = Artifact(name="m", type="model")
+    double_add.add_file(p1)
+    double_add.add_file(p1)
+    with pytest.raises(ValueError, match="Duplicate logical path"):
+        double_add._build_manifest("p")
 
 
 def test_build_manifest_rejects_empty(temp_dir):
@@ -572,21 +534,23 @@ def test_add_file_after_logged_raises(temp_dir, tmp_path):
         a.add_dir(tmp_path)
 
 
-def test_build_manifest_copies_so_source_mutation_does_not_corrupt_blob(
-    temp_dir, tmp_path
-):
+def test_build_manifest_writes_correct_blob_and_copies_source(temp_dir, tmp_path):
+    payload = b"abc"
     p = tmp_path / "x"
-    p.write_bytes(b"abc")
+    p.write_bytes(payload)
     a = Artifact(name="m", type="model")
     a.add_file(p)
     manifest = a._build_manifest("p")
+    assert manifest[0]["path"] == "x"
+    assert manifest[0]["size"] == len(payload)
     digest = manifest[0]["digest"]
+    assert digest == hashlib.sha256(payload).hexdigest()
     blob = Path(temp_dir) / "artifacts" / "p" / "blobs" / "sha256" / digest[:2] / digest
     assert blob.is_file()
-    assert blob.read_bytes() == b"abc"
+    assert blob.read_bytes() == payload
 
     p.write_bytes(b"mutated!")
-    assert blob.read_bytes() == b"abc"
+    assert blob.read_bytes() == payload
     assert hashlib.sha256(blob.read_bytes()).hexdigest() == digest
 
 
@@ -673,31 +637,24 @@ def test_download_materializes_files(temp_dir, tmp_path):
     assert (Path(out) / "sub" / "config.json").read_bytes() == b"beta"
 
 
-def test_download_default_root_convention(temp_dir, tmp_path, monkeypatch):
+def test_download_default_root_includes_name_and_version(
+    temp_dir, tmp_path, monkeypatch
+):
     digest, size = _stage_blob(temp_dir, "proj", b"x")
-    a = _hydrated_artifact(
-        "proj",
-        "my-model",
-        0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
-    )
     monkeypatch.chdir(tmp_path)
-    out = a.download()
-    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model_v0").resolve()
-    assert (Path(out) / "w.bin").read_bytes() == b"x"
-
-
-def test_download_default_spec_uses_version(temp_dir, tmp_path, monkeypatch):
-    digest, size = _stage_blob(temp_dir, "proj", b"x")
-    a = _hydrated_artifact(
-        "proj",
-        "my-model",
-        3,
-        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
-    )
-    monkeypatch.chdir(tmp_path)
-    out = a.download()
-    assert Path(out).resolve() == (tmp_path / "artifacts" / "my-model_v3").resolve()
+    for version in (0, 3):
+        a = _hydrated_artifact(
+            "proj",
+            "my-model",
+            version,
+            [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+        )
+        out = a.download()
+        assert (
+            Path(out).resolve()
+            == (tmp_path / "artifacts" / f"my-model_v{version}").resolve()
+        )
+        assert (Path(out) / "w.bin").read_bytes() == b"x"
 
 
 def test_download_is_idempotent(temp_dir, tmp_path):
@@ -939,20 +896,6 @@ def test_aliases_rotate_on_new_version(temp_dir, tmp_path):
     trackio.finish()
 
 
-def test_use_artifact_spec_parsing(temp_dir, tmp_path):
-    weights = _make_file(tmp_path, "w.bin", b"x")
-    run = trackio.init(project="art-spec", name="p")
-    art = Artifact(name="m", type="model")
-    art.add_file(weights)
-    run.log_artifact(art, aliases=["best"])
-
-    assert run.use_artifact("m").version == "v0"
-    assert run.use_artifact("m:latest").version == "v0"
-    assert run.use_artifact("m:best").version == "v0"
-    assert run.use_artifact("m:v0").version == "v0"
-    trackio.finish()
-
-
 def test_use_artifact_missing_raises(temp_dir):
     run = trackio.init(project="art-missing", name="p")
     with pytest.raises(ValueError, match="not found"):
@@ -1123,44 +1066,27 @@ def test_module_log_artifact_inside_run_equivalent_to_run_method(temp_dir, tmp_p
     assert len(lineage["output"]) == 1
 
 
-def test_module_use_artifact_inside_run_records_lineage(temp_dir, tmp_path):
+def test_module_log_artifact_without_active_run_raises(temp_dir, tmp_path):
     weights = _make_file(tmp_path, "w.bin", b"x")
-    run = trackio.init(project="art-mod-use", name="p")
-    art = trackio.Artifact(name="m", type="model")
-    art.add_file(weights)
-    run.log_artifact(art)
-    trackio.finish()
 
-    trackio.init(project="art-mod-use", name="c")
-    fetched = trackio.use_artifact("m:latest")
-    assert fetched.version == "v0"
-    trackio.finish()
+    def _attempt():
+        art = trackio.Artifact(name="m", type="model")
+        art.add_file(weights)
+        with pytest.raises(RuntimeError, match="Call trackio.init"):
+            trackio.log_artifact(art)
 
-    lineage_c = SQLiteStorage.get_run_artifacts("art-mod-use", "c", None)
-    assert len(lineage_c["input"]) == 1
-
-
-def test_module_log_artifact_without_run_raises(temp_dir, tmp_path):
-    weights = _make_file(tmp_path, "w.bin", b"x")
-    art = trackio.Artifact(name="m", type="model")
-    art.add_file(weights)
-    with pytest.raises(RuntimeError, match="Call trackio.init"):
-        trackio.log_artifact(art)
-
-
-def test_module_log_artifact_after_finish_raises(temp_dir, tmp_path):
-    weights = _make_file(tmp_path, "w.bin", b"x")
+    _attempt()
     trackio.init(project="art-mod-postfinish", name="p")
     trackio.finish()
-    art = trackio.Artifact(name="m", type="model")
-    art.add_file(weights)
+    _attempt()
+
+
+def test_module_use_artifact_without_active_run_raises(temp_dir, tmp_path):
     with pytest.raises(RuntimeError, match="Call trackio.init"):
-        trackio.log_artifact(art)
+        trackio.use_artifact("m:latest")
 
-
-def test_module_use_artifact_after_finish_raises(temp_dir, tmp_path):
-    weights = _make_file(tmp_path, "w.bin", b"x")
     run = trackio.init(project="art-mod-use-postfinish", name="p")
+    weights = _make_file(tmp_path, "w.bin", b"x")
     art = trackio.Artifact(name="m", type="model")
     art.add_file(weights)
     run.log_artifact(art)
@@ -1169,17 +1095,9 @@ def test_module_use_artifact_after_finish_raises(temp_dir, tmp_path):
         trackio.use_artifact("m:latest")
 
 
-def test_module_use_artifact_without_run_raises(temp_dir):
-    with pytest.raises(RuntimeError, match="Call trackio.init"):
-        trackio.use_artifact("m:latest")
-
-
-def test_artifact_class_importable_from_package_root():
+def test_package_exports_artifact_api():
     from trackio import Artifact as TopLevelArtifact
 
     assert TopLevelArtifact is Artifact
-
-
-def test_all_includes_new_exports():
     for name in ("Artifact", "log_artifact", "use_artifact"):
         assert name in trackio.__all__

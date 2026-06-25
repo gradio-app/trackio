@@ -296,42 +296,6 @@ def test_remote_use_artifact_lineage_failure_is_nonfatal(temp_dir, monkeypatch):
 # --- sender kind routing ---
 
 
-def test_sender_routes_artifact_blob_kind_to_correct_endpoint(temp_dir, tmp_path):
-    blob_path = tmp_path / "blob.bin"
-    blob_path.write_bytes(b"x")
-
-    SQLiteStorage.enqueue_artifact_blob_uploads(
-        project="p",
-        space_id="sp",
-        blobs=[("a" * 64, str(blob_path))],
-        run_name="r",
-        run_id="rid",
-    )
-
-    buffered = SQLiteStorage.get_pending_uploads("p")
-    assert buffered is not None
-    assert buffered["uploads"][0]["kind"] == "artifact_blob"
-    assert buffered["uploads"][0]["digest"] == "a" * 64
-
-
-def test_sender_routes_media_kind_to_correct_endpoint(temp_dir, tmp_path):
-    media_path = tmp_path / "img.png"
-    media_path.write_bytes(b"png-bytes")
-
-    SQLiteStorage.add_pending_upload(
-        project="p",
-        space_id="sp",
-        run_id="rid",
-        run_name="r",
-        step=0,
-        file_path=str(media_path),
-        relative_path="img.png",
-    )
-    buffered = SQLiteStorage.get_pending_uploads("p")
-    assert buffered is not None
-    assert buffered["uploads"][0]["kind"] == "media"
-
-
 def test_send_pending_uploads_routes_both_kinds(temp_dir, tmp_path, monkeypatch):
     media = tmp_path / "img.png"
     media.write_bytes(b"img")

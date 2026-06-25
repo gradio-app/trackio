@@ -169,31 +169,12 @@ def test_download_without_remote_source_raises_file_not_found(temp_dir, tmp_path
         art.download(tmp_path / "dl")
 
 
-def test_download_with_server_base_url_resolves_correctly(
-    temp_dir, tmp_path, fake_httpx
-):
-    payload = b"x"
-    digest = hashlib.sha256(payload).hexdigest()
-    art = _hydrated_remote_artifact(
-        "p",
-        "m",
-        0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": 1}],
-        {"space_id": None, "server_base_url": "https://my-server.example/"},
-    )
-    fake_httpx[f"https://my-server.example/artifact_blob/p/{digest}"] = (
-        _FakeStreamResponse(200, payload)
-    )
-
-    out = art.download(tmp_path / "dl")
-    assert (Path(out) / "w.bin").read_bytes() == payload
-
-
 def _capture_stream_headers(monkeypatch, payload):
-    """Patch httpx.stream to record the headers it was called with."""
+    """Patch httpx.stream to record the url and headers it was called with."""
     captured: dict = {}
 
     def _stream(method, url, **kwargs):
+        captured["url"] = url
         captured["headers"] = dict(kwargs.get("headers") or {})
         return _FakeStreamResponse(200, payload)
 
@@ -224,7 +205,8 @@ def test_download_sends_hf_auth_header_for_space(temp_dir, tmp_path, monkeypatch
 
 
 def test_download_sends_write_token_for_self_hosted(temp_dir, tmp_path, monkeypatch):
-    """A self-hosted artifact authenticates the blob fetch with the write token."""
+    """A self-hosted artifact authenticates the blob fetch with the write token
+    and resolves the blob URL against the configured server base URL."""
     payload = b"weights"
     digest = hashlib.sha256(payload).hexdigest()
     art = _hydrated_remote_artifact(
@@ -242,6 +224,7 @@ def test_download_sends_write_token_for_self_hosted(temp_dir, tmp_path, monkeypa
 
     out = art.download(tmp_path / "dl")
     assert (Path(out) / "w.bin").read_bytes() == payload
+    assert captured["url"] == f"https://my-server.example/artifact_blob/p/{digest}"
     assert captured["headers"].get("x-trackio-write-token") == "wt-secret"
 
 
@@ -263,24 +246,20 @@ def test_artifact_blob_endpoint_serves_blob(temp_dir, monkeypatch, stage_blob):
     assert Path(response.path).read_bytes() == payload
 
 
-def test_artifact_blob_endpoint_rejects_path_traversal_digest(temp_dir):
+@pytest.mark.parametrize(
+    "path_params",
+    [
+        {"project": "p", "digest": "../../etc/passwd"},
+        {"project": "../etc", "digest": "a" * 64},
+    ],
+)
+def test_artifact_blob_endpoint_rejects_invalid_input(temp_dir, path_params):
     import asyncio
 
     from trackio.asgi_app import artifact_blob_handler
 
     request = MagicMock()
-    request.path_params = {"project": "p", "digest": "../../etc/passwd"}
-    response = asyncio.run(artifact_blob_handler(request))
-    assert response.status_code == 404
-
-
-def test_artifact_blob_endpoint_rejects_invalid_project(temp_dir):
-    import asyncio
-
-    from trackio.asgi_app import artifact_blob_handler
-
-    request = MagicMock()
-    request.path_params = {"project": "../etc", "digest": "a" * 64}
+    request.path_params = path_params
     response = asyncio.run(artifact_blob_handler(request))
     assert response.status_code == 404
 

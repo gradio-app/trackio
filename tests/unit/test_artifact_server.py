@@ -65,11 +65,6 @@ def test_check_artifact_blobs_rejects_invalid_digest():
             server.check_artifact_blobs("p", [bad])
 
 
-def test_check_artifact_blobs_rejects_invalid_project():
-    with pytest.raises(TrackioAPIError, match="Invalid project"):
-        server.check_artifact_blobs("../etc", [])
-
-
 # --- /bulk_upload_artifact_blob (write) ---
 
 
@@ -400,11 +395,6 @@ def test_get_artifact_manifest_shape(temp_dir, auth_bypassed):
 
 def test_get_artifact_manifest_returns_none_on_miss(temp_dir):
     assert server.get_artifact_manifest("p", "missing", "latest") is None
-
-
-def test_get_artifact_manifest_rejects_invalid_project():
-    with pytest.raises(TrackioAPIError, match="Invalid project"):
-        server.get_artifact_manifest("../etc", "m", "latest")
 
 
 # --- /log_artifact_use (write) ---

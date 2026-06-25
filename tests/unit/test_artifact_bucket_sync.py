@@ -29,22 +29,6 @@ def _captured(monkeypatch):
     return captured
 
 
-def test_upload_project_to_bucket_ships_artifact_blobs(
-    temp_dir, monkeypatch, stage_blob
-):
-    SQLiteStorage.init_db("p")
-    digest_a, _ = stage_blob("p", b"alpha")
-    digest_b, _ = stage_blob("p", b"beta")
-
-    captured = _captured(monkeypatch)
-    bucket_storage.upload_project_to_bucket("p", "user/bucket")
-
-    remote_paths = {remote for _, remote in captured["add"]}
-    assert f"trackio/artifacts/p/blobs/sha256/{digest_a[:2]}/{digest_a}" in remote_paths
-    assert f"trackio/artifacts/p/blobs/sha256/{digest_b[:2]}/{digest_b}" in remote_paths
-    assert any(p.endswith(".db") and "trackio/" in p for p in remote_paths)
-
-
 def test_upload_project_to_bucket_skips_partial_files(
     temp_dir, monkeypatch, stage_blob
 ):
@@ -75,7 +59,8 @@ def test_upload_project_to_bucket_ships_media_and_artifacts_together(
     temp_dir, monkeypatch, stage_blob
 ):
     SQLiteStorage.init_db("p")
-    digest, _ = stage_blob("p", b"weights")
+    digest_a, _ = stage_blob("p", b"alpha")
+    digest_b, _ = stage_blob("p", b"beta")
     media_path = Path(temp_dir) / "media" / "p" / "run-0" / "0" / "img.png"
     media_path.parent.mkdir(parents=True, exist_ok=True)
     media_path.write_bytes(b"png-bytes")
@@ -85,7 +70,9 @@ def test_upload_project_to_bucket_ships_media_and_artifacts_together(
 
     remote_paths = {remote for _, remote in captured["add"]}
     assert "trackio/media/p/run-0/0/img.png" in remote_paths
-    assert f"trackio/artifacts/p/blobs/sha256/{digest[:2]}/{digest}" in remote_paths
+    assert f"trackio/artifacts/p/blobs/sha256/{digest_a[:2]}/{digest_a}" in remote_paths
+    assert f"trackio/artifacts/p/blobs/sha256/{digest_b[:2]}/{digest_b}" in remote_paths
+    assert any(p.endswith(".db") and "trackio/" in p for p in remote_paths)
 
 
 # --- sync_incremental replay routes by kind ---
@@ -287,7 +274,6 @@ def test_flush_pending_uploads_keeps_blobs_when_upload_fails(
     remaining = SQLiteStorage.get_pending_uploads("p")
     assert remaining is not None
     assert {u["kind"] for u in remaining["uploads"]} == {"artifact_blob"}
-
 
 
 def test_dataset_mode_allow_patterns_includes_artifacts(monkeypatch):
