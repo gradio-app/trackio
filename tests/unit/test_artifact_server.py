@@ -48,9 +48,6 @@ def upload_consume_passthrough(monkeypatch):
     monkeypatch.setattr(server, "cleanup_uploaded_temp_file", lambda p: None)
 
 
-# --- /check_artifact_blobs (no-auth read) ---
-
-
 def test_check_artifact_blobs_returns_subset_on_disk(temp_dir):
     d_a, _ = _stage(temp_dir, "p", b"alpha")
     d_b, _ = _stage(temp_dir, "p", b"beta")
@@ -63,9 +60,6 @@ def test_check_artifact_blobs_rejects_invalid_digest():
     for bad in ["../secret.txt", "abc", "G" * 64]:
         with pytest.raises(TrackioAPIError, match="Invalid sha256"):
             server.check_artifact_blobs("p", [bad])
-
-
-# --- /bulk_upload_artifact_blob (write) ---
 
 
 def test_bulk_upload_artifact_blob_happy_path(
@@ -180,9 +174,6 @@ def test_bulk_upload_artifact_blob_rejects_path_traversal_digest(
             ],
             hf_token=None,
         )
-
-
-# --- /artifact_log (write) ---
 
 
 def test_artifact_log_happy_path(temp_dir, auth_bypassed):
@@ -365,9 +356,6 @@ def test_artifact_log_rejects_invalid_project(temp_dir, auth_bypassed):
         )
 
 
-# --- /get_artifact_manifest (no-auth read) ---
-
-
 def test_get_artifact_manifest_shape(temp_dir, auth_bypassed):
     payload = b"x"
     digest, size = _stage(temp_dir, "p", payload)
@@ -395,9 +383,6 @@ def test_get_artifact_manifest_shape(temp_dir, auth_bypassed):
 
 def test_get_artifact_manifest_returns_none_on_miss(temp_dir):
     assert server.get_artifact_manifest("p", "missing", "latest") is None
-
-
-# --- /log_artifact_use (write) ---
 
 
 def test_log_artifact_use_inserts_input_lineage(temp_dir, auth_bypassed):
@@ -430,9 +415,6 @@ def test_log_artifact_use_inserts_input_lineage(temp_dir, auth_bypassed):
     lineage = SQLiteStorage.get_run_artifacts("p", "consumer", "cons-id")
     assert len(lineage["input"]) == 1
     assert lineage["input"][0]["version_id"] == version_id
-
-
-# --- helpers ---
 
 
 def test_validate_project_name_rejects_traversal():

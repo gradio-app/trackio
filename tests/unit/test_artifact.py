@@ -291,9 +291,6 @@ def test_list_artifact_blobs_present_rejects_path_traversal(temp_dir, monkeypatc
     assert present == set()
 
 
-# --- Artifact class ---
-
-
 def test_hash_file_modern_and_fallback_paths_agree(tmp_path, monkeypatch):
     p = tmp_path / "blob"
     payload = b"x" * (HASH_CHUNK_SIZE + 17) + b"trailing"
@@ -579,9 +576,6 @@ def test_hydrate_from_db_populates_readonly_attrs():
     assert a._logged is True
 
 
-# --- Artifact.download() local materialization ---
-
-
 def _stage_blob(temp_dir: str, project: str, payload: bytes) -> tuple[str, int]:
     digest = hashlib.sha256(payload).hexdigest()
     blob = (
@@ -739,9 +733,6 @@ def test_download_shared_digest_materializes_to_distinct_paths(temp_dir, tmp_pat
     out = a.download(tmp_path / "dl")
     assert (Path(out) / "a.bin").read_bytes() == b"same"
     assert (Path(out) / "b.bin").read_bytes() == b"same"
-
-
-# --- Run.log_artifact / Run.use_artifact (local mode) ---
 
 
 def _make_file(tmp_path, name, payload):
@@ -1046,9 +1037,6 @@ def test_metadata_mutation_before_log_is_persisted(temp_dir, tmp_path):
     fetched = run.use_artifact("m")
     assert fetched.metadata == {"acc": 0.9}
     trackio.finish()
-
-
-# --- module-level re-exports ---
 
 
 def test_module_log_artifact_inside_run_equivalent_to_run_method(temp_dir, tmp_path):

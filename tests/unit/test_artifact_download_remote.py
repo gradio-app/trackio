@@ -74,9 +74,6 @@ def fake_httpx(monkeypatch):
     return routes
 
 
-# --- download() remote-fetch fallback ---
-
-
 def test_download_fetches_missing_blob_from_remote(temp_dir, tmp_path, fake_httpx):
     payload = b"weights"
     digest = hashlib.sha256(payload).hexdigest()

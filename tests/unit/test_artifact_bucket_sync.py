@@ -75,9 +75,6 @@ def test_upload_project_to_bucket_ships_media_and_artifacts_together(
     assert any(p.endswith(".db") and "trackio/" in p for p in remote_paths)
 
 
-# --- sync_incremental replay routes by kind ---
-
-
 def test_replay_pending_uploads_routes_both_kinds(temp_dir, tmp_path):
     from unittest.mock import MagicMock
 
@@ -112,7 +109,6 @@ def test_replay_pending_uploads_routes_both_kinds(temp_dir, tmp_path):
     assert "/bulk_upload_media" in api_calls
     assert "/bulk_upload_artifact_blob" in api_calls
 
-    # Queue cleared after replay.
     assert SQLiteStorage.get_pending_uploads("p") is None
 
 
@@ -294,7 +290,6 @@ def test_dataset_mode_allow_patterns_includes_artifacts(monkeypatch):
 
     _ss.SQLiteStorage.get_scheduler()
     assert "artifacts/**/*" in captured["allow_patterns"]
-    # And the existing entries are still there.
     for pattern in (
         "*.parquet",
         "media/**/*",

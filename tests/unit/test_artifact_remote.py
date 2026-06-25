@@ -87,9 +87,6 @@ def _write(tmp_path, name, payload):
     return p
 
 
-# --- log_artifact remote flow ---
-
-
 def test_remote_log_artifact_calls_endpoints_in_order(temp_dir, tmp_path, monkeypatch):
     weights = _write(tmp_path, "w.bin", b"data")
     run, client, _ = _make_remote_run(monkeypatch)
@@ -242,9 +239,6 @@ def test_remote_log_artifact_reraises_after_exhausting_retries(
     trackio.finish()
 
 
-# --- use_artifact remote flow ---
-
-
 def test_remote_use_artifact_sequence(temp_dir, monkeypatch):
     run, client, _ = _make_remote_run(monkeypatch, name="consumer")
     art = run.use_artifact("m:latest")
@@ -291,9 +285,6 @@ def test_remote_use_artifact_lineage_failure_is_nonfatal(temp_dir, monkeypatch):
     assert art.version == "v0"
     run._client = None
     trackio.finish()
-
-
-# --- sender kind routing ---
 
 
 def test_send_pending_uploads_routes_both_kinds(temp_dir, tmp_path, monkeypatch):
@@ -397,9 +388,6 @@ def test_send_pending_uploads_drops_missing_files_with_warning(
     trackio.finish()
 
 
-# --- lineage idempotency ---
-
-
 def test_lineage_unique_index_prevents_duplicates(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
     vid, _, _ = SQLiteStorage.insert_artifact_version(
@@ -409,9 +397,6 @@ def test_lineage_unique_index_prevents_duplicates(temp_dir):
     SQLiteStorage.insert_run_artifact_link("p", "r", "rid-1", vid, "input")
     lineage = SQLiteStorage.get_run_artifacts("p", "r", "rid-1")
     assert len(lineage["input"]) == 1
-
-
-# --- _wait_for_client_ready ---
 
 
 def test_wait_for_client_ready_returns_when_set(temp_dir, monkeypatch):

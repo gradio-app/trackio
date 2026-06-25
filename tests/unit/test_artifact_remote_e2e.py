@@ -117,9 +117,6 @@ def _api_calls(client) -> list[str]:
     return [name for name, _ in client.calls]
 
 
-# --- round-trip integration ---
-
-
 def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_remote):
     weights = tmp_path / "weights.bin"
     payload = b"hello-world-checkpoint"
@@ -167,7 +164,6 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
     consumer._client = None
     trackio.finish()
 
-    # And the local CAS blob the producer wrote is byte-correct on disk.
     blob_path = (
         Path(temp_dir)
         / "artifacts"
@@ -235,7 +231,6 @@ def test_consumer_download_after_finish(temp_dir, tmp_path, in_process_remote):
     consumer._client = None
     trackio.finish()
 
-    # Both runs done. fetched still has _remote_source.
     assert fetched._remote_source is not None
     out = fetched.download(tmp_path / "dl")
     assert (Path(out) / "w.bin").read_bytes() == payload
