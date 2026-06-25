@@ -4281,6 +4281,43 @@ class SQLiteStorage:
                 conn.commit()
 
     @staticmethod
+    def _resolve_artifact_version_cursor(
+        conn: sqlite3.Connection,
+        name: str,
+        spec: str | None,
+    ) -> dict | None:
+        cursor = conn.cursor()
+        art = cursor.execute(
+            "SELECT id FROM artifacts WHERE name = ?", (name,)
+        ).fetchone()
+        if art is None:
+            return None
+        artifact_id = int(art["id"])
+        spec = spec if spec else "latest"
+        m = cas.ARTIFACT_VERSION_SPEC_RE.match(spec)
+        if m:
+            version_int = int(m.group(1))
+            ver = cursor.execute(
+                """SELECT id, version FROM artifact_versions
+                WHERE artifact_id = ? AND version = ?""",
+                (artifact_id, version_int),
+            ).fetchone()
+        else:
+            ver = cursor.execute(
+                """SELECT av.id, av.version FROM artifact_versions av
+                JOIN artifact_aliases aa ON aa.artifact_version_id = av.id
+                WHERE aa.artifact_id = ? AND aa.alias = ?""",
+                (artifact_id, spec),
+            ).fetchone()
+        if ver is None:
+            return None
+        return {
+            "artifact_id": artifact_id,
+            "version_id": int(ver["id"]),
+            "version": int(ver["version"]),
+        }
+
+    @staticmethod
     def resolve_artifact_version(
         project: str,
         name: str,
@@ -4290,36 +4327,7 @@ class SQLiteStorage:
         if not db_path.exists():
             return None
         with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            art = cursor.execute(
-                "SELECT id FROM artifacts WHERE name = ?", (name,)
-            ).fetchone()
-            if art is None:
-                return None
-            artifact_id = int(art["id"])
-            spec = spec if spec else "latest"
-            m = cas.ARTIFACT_VERSION_SPEC_RE.match(spec)
-            if m:
-                version_int = int(m.group(1))
-                ver = cursor.execute(
-                    """SELECT id, version FROM artifact_versions
-                    WHERE artifact_id = ? AND version = ?""",
-                    (artifact_id, version_int),
-                ).fetchone()
-            else:
-                ver = cursor.execute(
-                    """SELECT av.id, av.version FROM artifact_versions av
-                    JOIN artifact_aliases aa ON aa.artifact_version_id = av.id
-                    WHERE aa.artifact_id = ? AND aa.alias = ?""",
-                    (artifact_id, spec),
-                ).fetchone()
-            if ver is None:
-                return None
-            return {
-                "artifact_id": artifact_id,
-                "version_id": int(ver["id"]),
-                "version": int(ver["version"]),
-            }
+            return SQLiteStorage._resolve_artifact_version_cursor(conn, name, spec)
 
     @staticmethod
     def _insert_run_artifact_link_cursor(
@@ -4400,7 +4408,55 @@ class SQLiteStorage:
                     conn, run_name, run_id, version_id, "output", now
                 )
                 conn.commit()
-        return SQLiteStorage.get_artifact_manifest(project, name, f"v{version_int}")
+                return SQLiteStorage._get_artifact_manifest_cursor(
+                    conn, name, f"v{version_int}"
+                )
+
+    @staticmethod
+    def _get_artifact_manifest_cursor(
+        conn: sqlite3.Connection,
+        name: str,
+        spec: str | None,
+    ) -> dict | None:
+        resolved = SQLiteStorage._resolve_artifact_version_cursor(conn, name, spec)
+        if resolved is None:
+            return None
+        cursor = conn.cursor()
+        row = cursor.execute(
+            """SELECT av.id, av.version, av.manifest, av.manifest_digest,
+                   av.metadata, av.size_bytes, av.producer_run_id,
+                   av.producer_run_name, av.created_at,
+                   a.name, a.type, a.description
+            FROM artifact_versions av
+            JOIN artifacts a ON a.id = av.artifact_id
+            WHERE av.id = ?""",
+            (resolved["version_id"],),
+        ).fetchone()
+        if row is None:
+            return None
+        alias_rows = cursor.execute(
+            """SELECT alias FROM artifact_aliases
+            WHERE artifact_version_id = ?""",
+            (resolved["version_id"],),
+        ).fetchall()
+        return {
+            "artifact_id": resolved["artifact_id"],
+            "version_id": int(row["id"]),
+            "version": int(row["version"]),
+            "name": row["name"],
+            "type": row["type"],
+            "description": row["description"],
+            "manifest": orjson.loads(row["manifest"]),
+            "manifest_digest": row["manifest_digest"],
+            "metadata": (
+                orjson.loads(row["metadata"]) if row["metadata"] is not None else None
+            ),
+            "size_bytes": int(row["size_bytes"]),
+            "producer_run_id": row["producer_run_id"],
+            "producer_run_name": row["producer_run_name"],
+            "created_at": row["created_at"],
+            "aliases": [r["alias"] for r in alias_rows],
+        }
 
     @staticmethod
     def get_artifact_manifest(
@@ -4408,49 +4464,11 @@ class SQLiteStorage:
         name: str,
         spec: str | None,
     ) -> dict | None:
-        resolved = SQLiteStorage.resolve_artifact_version(project, name, spec)
-        if resolved is None:
-            return None
         db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
         with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            row = cursor.execute(
-                """SELECT av.id, av.version, av.manifest, av.manifest_digest,
-                       av.metadata, av.size_bytes, av.producer_run_id,
-                       av.producer_run_name, av.created_at,
-                       a.name, a.type, a.description
-                FROM artifact_versions av
-                JOIN artifacts a ON a.id = av.artifact_id
-                WHERE av.id = ?""",
-                (resolved["version_id"],),
-            ).fetchone()
-            if row is None:
-                return None
-            alias_rows = cursor.execute(
-                """SELECT alias FROM artifact_aliases
-                WHERE artifact_version_id = ?""",
-                (resolved["version_id"],),
-            ).fetchall()
-            return {
-                "artifact_id": resolved["artifact_id"],
-                "version_id": int(row["id"]),
-                "version": int(row["version"]),
-                "name": row["name"],
-                "type": row["type"],
-                "description": row["description"],
-                "manifest": orjson.loads(row["manifest"]),
-                "manifest_digest": row["manifest_digest"],
-                "metadata": (
-                    orjson.loads(row["metadata"])
-                    if row["metadata"] is not None
-                    else None
-                ),
-                "size_bytes": int(row["size_bytes"]),
-                "producer_run_id": row["producer_run_id"],
-                "producer_run_name": row["producer_run_name"],
-                "created_at": row["created_at"],
-                "aliases": [r["alias"] for r in alias_rows],
-            }
+            return SQLiteStorage._get_artifact_manifest_cursor(conn, name, spec)
 
     @staticmethod
     def get_run_artifacts(
@@ -4519,10 +4537,8 @@ class SQLiteStorage:
                 include_run_id = SQLiteStorage._supports_run_ids(
                     conn, "pending_uploads"
                 )
-                cols: list[str] = []
-                rows: list[list] = []
-                for digest, file_path in blobs:
-                    cols, vals = SQLiteStorage._pending_upload_cols_vals(
+                rows = [
+                    SQLiteStorage._pending_upload_cols_vals(
                         include_run_id=include_run_id,
                         space_id=space_id,
                         run_id=run_id,
@@ -4534,11 +4550,13 @@ class SQLiteStorage:
                         digest=digest,
                         created_at=now,
                     )
-                    rows.append(vals)
+                    for digest, file_path in blobs
+                ]
+                cols = rows[0][0]
                 placeholders = ", ".join("?" for _ in cols)
                 conn.executemany(
                     f"INSERT INTO pending_uploads ({', '.join(cols)}) VALUES ({placeholders})",
-                    rows,
+                    [vals for _, vals in rows],
                 )
                 conn.commit()
 

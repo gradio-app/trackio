@@ -1186,15 +1186,15 @@ class Run:
             _emit_nonfatal_warning(f"trackio.log() failed to process metrics: {e}")
 
     def _artifact_log_with_retry(self, **kwargs) -> dict:
-        backoffs = (0.0, *ARTIFACT_LOG_RETRY_BACKOFFS)
-        for attempt, backoff in enumerate(backoffs):
-            if backoff:
-                time.sleep(backoff)
+        attempts = len(ARTIFACT_LOG_RETRY_BACKOFFS) + 1
+        for attempt in range(attempts):
+            if attempt > 0:
+                time.sleep(ARTIFACT_LOG_RETRY_BACKOFFS[attempt - 1])
             try:
                 with self._client_lock:
                     return self._client.predict(api_name="/artifact_log", **kwargs)
             except Exception as e:
-                if attempt == len(backoffs) - 1 or not is_transient_remote_error(e):
+                if attempt == attempts - 1 or not is_transient_remote_error(e):
                     raise
 
     def log_artifact(
