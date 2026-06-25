@@ -1172,6 +1172,48 @@ def test_use_artifact_accepts_artifact_instance(temp_dir, tmp_path):
     trackio.finish()
 
 
+def test_use_artifact_instance_resolves_against_its_own_project(temp_dir, tmp_path):
+    weights_a = _make_file(tmp_path, "a.bin", b"from-project-a")
+    run_a = trackio.init(project="proj-a", name="pa")
+    art_a = Artifact(name="m", type="model")
+    art_a.add_file(weights_a)
+    logged_a = run_a.log_artifact(art_a)
+    trackio.finish()
+
+    weights_b = _make_file(tmp_path, "b.bin", b"from-project-b")
+    run_b = trackio.init(project="proj-b", name="pb")
+    art_b = Artifact(name="m", type="model")
+    art_b.add_file(weights_b)
+    run_b.log_artifact(art_b)
+
+    consumed = run_b.use_artifact(logged_a)
+    assert consumed.project == "proj-a"
+    out = consumed.download(tmp_path / "dl")
+    assert (Path(out) / "a.bin").read_bytes() == b"from-project-a"
+    assert not (Path(out) / "b.bin").exists()
+
+    lineage = SQLiteStorage.get_run_artifacts("proj-a", "pb", run_b.id)
+    assert len(lineage["input"]) == 1
+    trackio.finish()
+
+
+def test_use_artifact_instance_from_other_project_not_found_locally(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "w.bin", b"alpha")
+    run_a = trackio.init(project="src-proj", name="pa")
+    art = Artifact(name="solo", type="model")
+    art.add_file(weights)
+    logged = run_a.log_artifact(art)
+    trackio.finish()
+
+    run_b = trackio.init(project="dst-proj", name="pb")
+    consumed = run_b.use_artifact(logged)
+    assert consumed.project == "src-proj"
+    assert consumed.version == "v0"
+    out = consumed.download(tmp_path / "dl2")
+    assert (Path(out) / "w.bin").read_bytes() == b"alpha"
+    trackio.finish()
+
+
 def test_wait_digest_and_qualified_name(temp_dir, tmp_path):
     weights = _make_file(tmp_path, "w.bin", b"x")
     run = trackio.init(project="art-compat", name="p")

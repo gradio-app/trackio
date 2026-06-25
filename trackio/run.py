@@ -1329,8 +1329,10 @@ class Run:
                     "artifact that has already been logged or fetched."
                 )
             spec = f"{artifact_or_name.name}:v{artifact_or_name._version}"
+            project = artifact_or_name._project or self.project
         else:
             spec = artifact_or_name
+            project = self.project
 
         if ":" in spec:
             name, version_or_alias = spec.split(":", 1)
@@ -1339,27 +1341,25 @@ class Run:
 
         if self._is_local:
             record = SQLiteStorage.get_artifact_manifest(
-                self.project, name, version_or_alias
+                project, name, version_or_alias
             )
         else:
             self._wait_for_client_ready()
             with self._client_lock:
                 record = self._client.predict(
                     api_name="/get_artifact_manifest",
-                    project=self.project,
+                    project=project,
                     name=name,
                     spec=version_or_alias,
                 )
 
         if record is None:
-            raise ValueError(
-                f"Artifact {spec!r} not found in project {self.project!r}."
-            )
+            raise ValueError(f"Artifact {spec!r} not found in project {project!r}.")
         self._check_artifact_type(spec, record["type"], type)
 
         art = Artifact(name=record["name"], type=record["type"])
         art._hydrate_from_db(
-            project=self.project,
+            project=project,
             version=record["version"],
             aliases=record["aliases"],
             manifest=record["manifest"],
@@ -1378,7 +1378,7 @@ class Run:
         try:
             if self._is_local:
                 SQLiteStorage.insert_run_artifact_link(
-                    project=self.project,
+                    project=project,
                     run_name=self.name,
                     run_id=self.id,
                     version_id=record["version_id"],
@@ -1388,7 +1388,7 @@ class Run:
                 with self._client_lock:
                     self._client.predict(
                         api_name="/log_artifact_use",
-                        project=self.project,
+                        project=project,
                         version_id=record["version_id"],
                         run_name=self.name,
                         run_id=self.id,

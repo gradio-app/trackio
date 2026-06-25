@@ -260,6 +260,28 @@ def test_remote_use_artifact_sequence(temp_dir, monkeypatch):
     trackio.finish()
 
 
+def test_remote_use_artifact_instance_uses_artifacts_own_project(temp_dir, monkeypatch):
+    run, client, _ = _make_remote_run(
+        monkeypatch, project="consumer-proj", name="consumer"
+    )
+    art = Artifact(name="m", type="model")
+    art._hydrate_from_db(
+        project="origin-proj",
+        version=0,
+        aliases=["latest"],
+        manifest=[{"path": "w.bin", "digest": "a" * 64, "size": 1}],
+        manifest_digest="y" * 64,
+        size_bytes=1,
+    )
+    run.use_artifact(art)
+
+    by_api = {c.kwargs.get("api_name"): c.kwargs for c in client.predict.call_args_list}
+    assert by_api["/get_artifact_manifest"]["project"] == "origin-proj"
+    assert by_api["/log_artifact_use"]["project"] == "origin-proj"
+    run._client = None
+    trackio.finish()
+
+
 def test_remote_use_artifact_not_found_raises(temp_dir, monkeypatch):
     run, client, _ = _make_remote_run(monkeypatch)
     client.predict.side_effect = lambda api_name, **kw: (
