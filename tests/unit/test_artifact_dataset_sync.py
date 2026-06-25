@@ -285,6 +285,101 @@ def test_load_from_dataset_downloads_artifact_blobs(temp_dir, monkeypatch):
     assert "README.md" not in requested
 
 
+def test_load_from_dataset_retries_import_after_transient_failure(
+    temp_dir, monkeypatch
+):
+    """A transient import failure must not permanently block the import. The
+    first call downloads and fails in import_from_parquet, leaving the gate open
+    with the import still pending; the next call re-runs the import even though
+    no new files download, and only then marks the dataset import attempted."""
+    from trackio import sqlite_storage as _ss
+
+    monkeypatch.setenv("TRACKIO_DATASET_ID", "user/ds")
+    monkeypatch.setenv("SPACE_REPO_NAME", "user/space")
+    monkeypatch.delenv("TRACKIO_BUCKET_ID", raising=False)
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_attempted", False)
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_pending", False)
+    monkeypatch.setattr(
+        _ss.SQLiteStorage, "get_scheduler", staticmethod(lambda: DummyCommitScheduler())
+    )
+
+    import_calls = []
+
+    def _flaky_import():
+        import_calls.append(1)
+        if len(import_calls) == 1:
+            raise RuntimeError("locked parquet")
+
+    monkeypatch.setattr(
+        _ss.SQLiteStorage, "import_from_parquet", staticmethod(_flaky_import)
+    )
+
+    class _FakeApi:
+        def list_repo_files(self, repo_id, repo_type=None):
+            return ["proj.parquet"]
+
+    downloads = []
+
+    def _fake_download(dataset_id, file, repo_type=None, local_dir=None):
+        downloads.append(file)
+        dest = Path(local_dir) / file
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"x")
+        return str(dest)
+
+    monkeypatch.setattr(_ss.hf, "HfApi", lambda: _FakeApi())
+    monkeypatch.setattr(_ss.hf, "hf_hub_download", _fake_download)
+
+    _ss.SQLiteStorage.load_from_dataset()
+    assert _ss.SQLiteStorage._dataset_import_attempted is False
+    assert _ss.SQLiteStorage._dataset_import_pending is True
+
+    _ss.SQLiteStorage.load_from_dataset()
+    assert _ss.SQLiteStorage._dataset_import_attempted is True
+    assert _ss.SQLiteStorage._dataset_import_pending is False
+    assert len(import_calls) == 2
+    assert downloads == ["proj.parquet"]
+
+
+def test_load_from_dataset_skips_import_when_nothing_downloaded(temp_dir, monkeypatch):
+    """Guards the persistent-storage path: when no new files download, the
+    destructive import_from_parquet must NOT run, so live DB tables are never
+    replaced by a staler parquet snapshot."""
+    from trackio import sqlite_storage as _ss
+
+    monkeypatch.setenv("TRACKIO_DATASET_ID", "user/ds")
+    monkeypatch.setenv("SPACE_REPO_NAME", "user/space")
+    monkeypatch.delenv("TRACKIO_BUCKET_ID", raising=False)
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_attempted", False)
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_pending", False)
+    monkeypatch.setattr(
+        _ss.SQLiteStorage, "get_scheduler", staticmethod(lambda: DummyCommitScheduler())
+    )
+
+    (Path(temp_dir) / "proj.parquet").write_bytes(b"x")
+
+    import_calls = []
+    monkeypatch.setattr(
+        _ss.SQLiteStorage,
+        "import_from_parquet",
+        staticmethod(lambda: import_calls.append(1)),
+    )
+
+    class _FakeApi:
+        def list_repo_files(self, repo_id, repo_type=None):
+            return ["proj.parquet"]
+
+    def _fail_download(*args, **kwargs):
+        raise AssertionError("must not download an already-present file")
+
+    monkeypatch.setattr(_ss.hf, "HfApi", lambda: _FakeApi())
+    monkeypatch.setattr(_ss.hf, "hf_hub_download", _fail_download)
+
+    _ss.SQLiteStorage.load_from_dataset()
+    assert _ss.SQLiteStorage._dataset_import_attempted is True
+    assert import_calls == []
+
+
 def test_artifact_parquet_tables_match_schema(temp_dir):
     """Guard against silent schema drift: _ARTIFACT_PARQUET_TABLES must list
     every column of each artifact table, in order. A column added to the

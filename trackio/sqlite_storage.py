@@ -32,6 +32,7 @@ from trackio.dummy_commit_scheduler import DummyCommitScheduler
 from trackio.typehints import Manifest, Sha256Digest
 from trackio.utils import (
     TRACKIO_DIR,
+    _emit_nonfatal_warning,
     canonical_project_name,
     deserialize_values,
     get_color_palette,
@@ -344,6 +345,7 @@ def _system_logs_read_cache_put(
 
 class SQLiteStorage:
     _dataset_import_attempted = False
+    _dataset_import_pending = False
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
@@ -2582,7 +2584,6 @@ class SQLiteStorage:
         space_repo_name = os.environ.get("SPACE_REPO_NAME")
         if dataset_id is not None and space_repo_name is not None:
             hfapi = hf.HfApi()
-            updated = False
             if not TRACKIO_DIR.exists():
                 TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
             with SQLiteStorage.get_scheduler().lock:
@@ -2600,14 +2601,21 @@ class SQLiteStorage:
                         hf.hf_hub_download(
                             dataset_id, file, repo_type="dataset", local_dir=TRACKIO_DIR
                         )
-                        updated = True
+                        SQLiteStorage._dataset_import_pending = True
                 except hf.errors.EntryNotFoundError:
                     pass
                 except hf.errors.RepositoryNotFoundError:
                     pass
-                if updated:
-                    SQLiteStorage._dataset_import_attempted = True
-                    SQLiteStorage.import_from_parquet()
+                if SQLiteStorage._dataset_import_pending:
+                    try:
+                        SQLiteStorage.import_from_parquet()
+                    except Exception as e:
+                        _emit_nonfatal_warning(
+                            f"trackio could not import downloaded dataset files; "
+                            f"will retry on the next access: {e}"
+                        )
+                        return
+                    SQLiteStorage._dataset_import_pending = False
         SQLiteStorage._dataset_import_attempted = True
 
     @staticmethod
