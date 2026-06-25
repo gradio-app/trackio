@@ -50,7 +50,7 @@ def _fetch_blob_from_remote(
             "server_base_url is populated."
         )
     base_url = _resolve_src_url(src).rstrip("/")
-    url = f"{base_url}/artifact_blob/{project}/{digest}"
+    url = f"{base_url}/artifact_blob/{utils.canonical_project_name(project)}/{digest}"
     headers = _merge_client_headers(
         get_token() if space_id else None,
         remote_source.get("write_token"),

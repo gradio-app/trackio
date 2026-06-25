@@ -95,6 +95,29 @@ def test_download_fetches_missing_blob_from_remote(temp_dir, tmp_path, fake_http
     assert cas.read_bytes() == payload
 
 
+def test_download_builds_remote_url_with_canonical_project(
+    temp_dir, tmp_path, fake_httpx
+):
+    payload = b"weights"
+    digest = hashlib.sha256(payload).hexdigest()
+    art = _hydrated_remote_artifact(
+        "a/b",
+        "m",
+        0,
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
+        {"space_id": "user/space", "server_base_url": None},
+    )
+    fake_httpx[f"https://user-space.hf.space/artifact_blob/ab/{digest}"] = (
+        _FakeStreamResponse(200, payload)
+    )
+
+    out = art.download(tmp_path / "dl")
+    assert (Path(out) / "w.bin").read_bytes() == payload
+
+    cas = Path(temp_dir) / "artifacts" / "ab" / "blobs" / "sha256" / digest[:2] / digest
+    assert cas.is_file()
+
+
 def test_download_with_all_blobs_local_does_not_hit_network(
     temp_dir, tmp_path, fake_httpx, stage_blob
 ):
