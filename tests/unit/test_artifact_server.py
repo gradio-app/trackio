@@ -299,9 +299,9 @@ def test_artifact_log_rejects_invalid_manifest_entries(temp_dir, auth_bypassed):
         )
 
     for bad in (
-        [{"path": "w.bin", "digest": digest}],  # size missing
-        [{"path": "w.bin", "digest": digest, "size": -1}],  # negative
-        [{"path": "w.bin", "digest": digest, "size": "5"}],  # not an int
+        [{"path": "w.bin", "digest": digest}],
+        [{"path": "w.bin", "digest": digest, "size": -1}],
+        [{"path": "w.bin", "digest": digest, "size": "5"}],
     ):
         with pytest.raises(TrackioAPIError, match="invalid size"):
             _log(bad)

@@ -46,7 +46,6 @@ class _FakeStreamResponse:
             raise RuntimeError(f"HTTP {self.status_code}")
 
     def iter_bytes(self, chunk_size: int = 64 * 1024):
-        # Yield in two chunks so we exercise the multi-chunk loop.
         mid = len(self._body) // 2
         if mid:
             yield self._body[:mid]
@@ -77,7 +76,6 @@ def fake_httpx(monkeypatch):
 def test_download_fetches_missing_blob_from_remote(temp_dir, tmp_path, fake_httpx):
     payload = b"weights"
     digest = hashlib.sha256(payload).hexdigest()
-    # NOTE: blob NOT placed in local CAS — must come from remote.
     art = _hydrated_remote_artifact(
         "p",
         "m",
@@ -109,7 +107,6 @@ def test_download_with_all_blobs_local_does_not_hit_network(
         [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
         {"space_id": "user/space", "server_base_url": None},
     )
-    # fake_httpx has no routes — if the code tries to fetch, it gets 404.
     out = art.download(tmp_path / "dl")
     assert (Path(out) / "w.bin").read_bytes() == payload
 
@@ -123,7 +120,6 @@ def test_download_404_raises_file_not_found(temp_dir, tmp_path, fake_httpx):
         [{"path": "w.bin", "digest": Sha256Digest(digest), "size": 5}],
         {"space_id": "user/space", "server_base_url": None},
     )
-    # No route registered → fake server returns 404.
     with pytest.raises(FileNotFoundError, match="not available on remote"):
         art.download(tmp_path / "dl")
 
@@ -161,7 +157,6 @@ def test_download_without_remote_source_raises_file_not_found(temp_dir, tmp_path
         manifest_digest=Sha256Digest("0" * 64),
         size_bytes=1,
     )
-    # _remote_source intentionally left None.
     with pytest.raises(FileNotFoundError, match="not available locally or remotely"):
         art.download(tmp_path / "dl")
 
@@ -239,7 +234,6 @@ def test_artifact_blob_endpoint_serves_blob(temp_dir, monkeypatch, stage_blob):
 
     response = asyncio.run(artifact_blob_handler(request))
     assert response.status_code == 200
-    # FileResponse holds the path internally
     assert Path(response.path).read_bytes() == payload
 
 

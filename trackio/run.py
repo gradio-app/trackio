@@ -1336,6 +1336,11 @@ class Run:
 
         if ":" in spec:
             name, version_or_alias = spec.split(":", 1)
+            if not version_or_alias:
+                raise ValueError(
+                    f"Artifact spec {spec!r} has an empty version/alias after ':'. "
+                    "Use 'name:vN' or 'name:alias', or drop the colon to get latest."
+                )
         else:
             name, version_or_alias = spec, None
 

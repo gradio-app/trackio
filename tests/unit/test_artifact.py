@@ -171,8 +171,8 @@ def test_relog_without_description_keeps_existing(temp_dir):
 
 
 def test_commit_artifact_version_is_atomic_on_bad_alias(temp_dir):
-    # A reserved-vN alias raises mid-commit; the artifact/version/latest writes
-    # that ran before it must roll back, leaving nothing behind.
+    """A reserved-vN alias raises mid-commit; the artifact/version/latest writes
+    that ran before it must roll back, leaving nothing behind."""
     with pytest.raises(ValueError, match="reserved for version pointers"):
         SQLiteStorage.commit_artifact_version(
             project="p",
@@ -190,7 +190,6 @@ def test_commit_artifact_version_is_atomic_on_bad_alias(temp_dir):
         "input": [],
         "output": [],
     }
-    # The DB is still usable: a subsequent good commit starts cleanly at v0.
     assert _commit_version([{"path": "w", "digest": "aaa", "size": 1}])["version"] == 0
 
 
@@ -1052,6 +1051,13 @@ def test_use_artifact_missing_raises(temp_dir):
         run.use_artifact("nonexistent")
     with pytest.raises(ValueError, match="not found"):
         run.use_artifact("nonexistent:v0")
+    trackio.finish()
+
+
+def test_use_artifact_empty_spec_after_colon_raises(temp_dir):
+    run = trackio.init(project="art-empty-spec", name="p")
+    with pytest.raises(ValueError, match="empty version/alias"):
+        run.use_artifact("m:")
     trackio.finish()
 
 

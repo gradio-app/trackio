@@ -131,8 +131,6 @@ def test_full_round_trip_producer_to_consumer(temp_dir, tmp_path, in_process_rem
     assert art.version == "v0"
     assert "best" in art.aliases and "latest" in art.aliases
     assert art.metadata == {"acc": 0.91}
-    # Shared CAS: blob is already present from _build_manifest, so the
-    # upload step short-circuits via /check_artifact_blobs.
     assert _api_calls(in_process_remote) == [
         "/check_artifact_blobs",
         "/artifact_log",
@@ -204,7 +202,6 @@ def test_relog_identical_bytes_dedups_at_db_layer(
     assert "best" in record["aliases"] and "latest" in record["aliases"]
     assert SQLiteStorage.get_artifact_manifest("art-relog", "m", "v1") is None
 
-    # Both runs appear as producers (UNIQUE lineage index → 1 row each).
     lineage_a = SQLiteStorage.get_run_artifacts("art-relog", "run-a", run_a.id)
     lineage_b = SQLiteStorage.get_run_artifacts("art-relog", "run-b", run_b.id)
     assert len(lineage_a["output"]) == 1
