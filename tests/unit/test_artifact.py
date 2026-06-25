@@ -56,14 +56,14 @@ def test_insert_artifact_version_dedupes(temp_dir):
     assert created_2 is False
 
 
-def _commit_version(manifest, aliases=None):
+def _commit_version(manifest, aliases=None, metadata=None, description=None):
     return SQLiteStorage.commit_artifact_version(
         project="p",
         name="m",
         type="model",
-        description=None,
+        description=description,
         manifest=manifest,
-        metadata=None,
+        metadata=metadata,
         aliases=aliases,
         run_name="r",
         run_id=None,
@@ -107,6 +107,67 @@ def test_relog_newer_content_moves_alias_forward(temp_dir):
     _commit_version(b)
     _commit_version(b, aliases=["prod"])
     assert SQLiteStorage.resolve_artifact_version("p", "m", "prod")["version"] == 1
+
+
+def test_relog_identical_content_refreshes_metadata(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    assert _commit_version(a, metadata={"acc": 0.8})["metadata"] == {"acc": 0.8}
+    second = _commit_version(a, metadata={"acc": 0.95})
+    assert second["version"] == 0
+    assert second["metadata"] == {"acc": 0.95}
+    refetched = SQLiteStorage.get_artifact_manifest("p", "m", "v0")
+    assert refetched["metadata"] == {"acc": 0.95}
+
+
+def test_relog_without_metadata_keeps_existing(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    _commit_version(a, metadata={"acc": 0.8})
+    _commit_version(a)
+    assert SQLiteStorage.get_artifact_manifest("p", "m", "v0")["metadata"] == {
+        "acc": 0.8
+    }
+
+
+def test_empty_metadata_normalized_to_absent(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    assert _commit_version(a, metadata={})["metadata"] is None
+
+
+def test_relog_empty_metadata_does_not_wipe(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    _commit_version(a, metadata={"acc": 0.8})
+    _commit_version(a, metadata={})
+    assert SQLiteStorage.get_artifact_manifest("p", "m", "v0")["metadata"] == {
+        "acc": 0.8
+    }
+
+
+def test_relog_refreshes_description(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    b = [{"path": "w", "digest": "bbb", "size": 1}]
+    _commit_version(a, description="first")
+    assert SQLiteStorage.get_artifact_manifest("p", "m", "v0")["description"] == "first"
+    _commit_version(a, description="via dedup")
+    assert (
+        SQLiteStorage.get_artifact_manifest("p", "m", "v0")["description"]
+        == "via dedup"
+    )
+    _commit_version(b, description="via new version")
+    assert (
+        SQLiteStorage.get_artifact_manifest("p", "m", "v1")["description"]
+        == "via new version"
+    )
+    assert (
+        SQLiteStorage.get_artifact_manifest("p", "m", "v0")["description"]
+        == "via new version"
+    )
+
+
+def test_relog_without_description_keeps_existing(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    _commit_version(a, description="kept")
+    _commit_version(a)
+    assert SQLiteStorage.get_artifact_manifest("p", "m", "v0")["description"] == "kept"
 
 
 def test_commit_artifact_version_is_atomic_on_bad_alias(temp_dir):

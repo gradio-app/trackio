@@ -4104,6 +4104,9 @@ class SQLiteStorage:
         description: str | None,
         now: str,
     ) -> int:
+        """Return the id of the artifact named `name`, creating it if absent.
+        For an existing artifact a non-None `description` is applied in place
+        (the type is immutable and a mismatch raises)."""
         cursor = conn.cursor()
         row = cursor.execute(
             "SELECT id, type FROM artifacts WHERE name = ?", (name,)
@@ -4113,6 +4116,11 @@ class SQLiteStorage:
                 raise ValueError(
                     f"Artifact '{name}' already exists with type "
                     f"'{row['type']}'; cannot relog with type '{type}'."
+                )
+            if description is not None:
+                cursor.execute(
+                    "UPDATE artifacts SET description = ? WHERE id = ?",
+                    (description, int(row["id"])),
                 )
             return int(row["id"])
         cursor.execute(
@@ -4153,9 +4161,7 @@ class SQLiteStorage:
             manifest
         )
         manifest_json = orjson.dumps(canonical).decode("utf-8")
-        metadata_json = (
-            orjson.dumps(metadata).decode("utf-8") if metadata is not None else None
-        )
+        metadata_json = orjson.dumps(metadata).decode("utf-8") if metadata else None
         cursor = conn.cursor()
         existing = cursor.execute(
             """SELECT id, version FROM artifact_versions
@@ -4163,6 +4169,11 @@ class SQLiteStorage:
             (artifact_id, manifest_digest),
         ).fetchone()
         if existing is not None:
+            if metadata:
+                cursor.execute(
+                    "UPDATE artifact_versions SET metadata = ? WHERE id = ?",
+                    (metadata_json, int(existing["id"])),
+                )
             return int(existing["id"]), int(existing["version"]), False
         row = cursor.execute(
             "SELECT MAX(version) AS m FROM artifact_versions WHERE artifact_id = ?",
@@ -4198,7 +4209,8 @@ class SQLiteStorage:
         producer_run_name: str | None,
     ) -> tuple[int, int, bool]:
         """Returns `(version_id, version, created)`. `created` is False when an
-        identical-content version already existed and was returned as-is."""
+        identical-content version already existed; its `metadata` is refreshed
+        in place from the new call (when non-empty) before it is returned."""
         db_path = SQLiteStorage.init_db(project)
         now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
