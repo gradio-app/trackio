@@ -19,15 +19,6 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import canonical_project_name
 
 
-def _stage(temp_dir, project, payload):
-    digest = hashlib.sha256(payload).hexdigest()
-    base = Path(temp_dir) / "artifacts" / project / "blobs" / "sha256"
-    blob = base / digest[:2] / digest
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(payload)
-    return digest, len(payload)
-
-
 def _write_src(tmp_path, name, payload):
     p = tmp_path / name
     p.write_bytes(payload)
@@ -50,9 +41,27 @@ def upload_consume_passthrough(monkeypatch):
     monkeypatch.setattr(server, "cleanup_uploaded_temp_file", lambda p: None)
 
 
-def test_check_artifact_blobs_returns_subset_on_disk(temp_dir):
-    d_a, _ = _stage(temp_dir, "p", b"alpha")
-    d_b, _ = _stage(temp_dir, "p", b"beta")
+def _log_artifact(request, manifest, **overrides):
+    kwargs = {
+        "request": request,
+        "project": "p",
+        "name": "m",
+        "type": "model",
+        "description": None,
+        "metadata": None,
+        "manifest": manifest,
+        "aliases": None,
+        "run_name": "r",
+        "run_id": "rid",
+        "hf_token": None,
+    }
+    kwargs.update(overrides)
+    return server.artifact_log(**kwargs)
+
+
+def test_check_artifact_blobs_returns_subset_on_disk(stage_blob):
+    d_a, _ = stage_blob("p", b"alpha")
+    d_b, _ = stage_blob("p", b"beta")
     d_absent = "c" * 64
     result = server.check_artifact_blobs("p", [d_a, d_b, d_absent])
     assert set(result["present"]) == {d_a, d_b}
@@ -138,13 +147,10 @@ def test_bulk_upload_artifact_blob_large_payload(
 
 
 def test_bulk_upload_artifact_blob_skips_existing(
-    temp_dir, tmp_path, auth_bypassed, upload_consume_passthrough
+    tmp_path, auth_bypassed, upload_consume_passthrough, stage_blob
 ):
     payload = b"hello"
-    digest, _ = _stage(temp_dir, "p", payload)
-    target = (
-        Path(temp_dir) / "artifacts" / "p" / "blobs" / "sha256" / digest[:2] / digest
-    )
+    digest, target = stage_blob("p", payload)
     original_mtime = target.stat().st_mtime_ns
 
     src = _write_src(tmp_path, "blob", payload)
@@ -178,22 +184,19 @@ def test_bulk_upload_artifact_blob_rejects_path_traversal_digest(
         )
 
 
-def test_artifact_log_happy_path(temp_dir, auth_bypassed):
+def test_artifact_log_happy_path(temp_dir, auth_bypassed, stage_blob):
     payload = b"weights"
-    digest, size = _stage(temp_dir, "p", payload)
+    digest, _ = stage_blob("p", payload)
 
-    result = server.artifact_log(
-        request=auth_bypassed,
-        project="p",
+    result = _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": len(payload)}],
         name="my-model",
-        type="model",
         description="d",
         metadata={"acc": 0.9},
-        manifest=[{"path": "w.bin", "digest": digest, "size": size}],
         aliases=["best"],
         run_name="producer",
         run_id="run-id-1",
-        hf_token=None,
     )
     assert result["version"] == 0
     assert sorted(result["aliases"]) == ["best", "latest"]
@@ -206,97 +209,54 @@ def test_artifact_log_happy_path(temp_dir, auth_bypassed):
 def test_artifact_log_validates_digests_before_writing(temp_dir, auth_bypassed):
     bogus_digest = "0" * 64
     with pytest.raises(TrackioAPIError, match="not on server"):
-        server.artifact_log(
-            request=auth_bypassed,
-            project="p",
-            name="my-model",
-            type="model",
-            description=None,
-            metadata=None,
+        _log_artifact(
+            auth_bypassed,
             manifest=[{"path": "x", "digest": bogus_digest, "size": 1}],
-            aliases=None,
-            run_name="r",
-            run_id="rid",
-            hf_token=None,
+            name="my-model",
         )
     assert SQLiteStorage.get_artifact_manifest("p", "my-model", None) is None
 
 
 def test_artifact_log_rejects_invalid_digest_format(temp_dir, auth_bypassed):
     with pytest.raises(TrackioAPIError, match="Invalid sha256"):
-        server.artifact_log(
-            request=auth_bypassed,
-            project="p",
-            name="my-model",
-            type="model",
-            description=None,
-            metadata=None,
+        _log_artifact(
+            auth_bypassed,
             manifest=[{"path": "x", "digest": "../secret", "size": 1}],
-            aliases=None,
-            run_name="r",
-            run_id="rid",
-            hf_token=None,
+            name="my-model",
         )
 
 
-def test_artifact_log_rejects_traversal_manifest_paths(temp_dir, auth_bypassed):
-    digest, size = _stage(temp_dir, "p", b"payload")
+def test_artifact_log_rejects_traversal_manifest_paths(auth_bypassed, stage_blob):
+    payload = b"payload"
+    digest, _ = stage_blob("p", payload)
     for bad in ("../escape", "/abs/path", "a/../b"):
         with pytest.raises(TrackioAPIError, match="Invalid artifact path"):
-            server.artifact_log(
+            _log_artifact(
                 auth_bypassed,
-                project="p",
-                name="m",
-                type="model",
-                description=None,
-                metadata=None,
-                manifest=[{"path": bad, "digest": digest, "size": size}],
-                aliases=None,
-                run_name="r",
-                run_id="rid",
-                hf_token=None,
+                [{"path": bad, "digest": digest, "size": len(payload)}],
             )
 
 
-def test_artifact_log_rejects_prefix_collision_manifest(temp_dir, auth_bypassed):
-    d1, s1 = _stage(temp_dir, "p", b"file-payload")
-    d2, s2 = _stage(temp_dir, "p", b"child-payload")
+def test_artifact_log_rejects_prefix_collision_manifest(auth_bypassed, stage_blob):
+    file_payload = b"file-payload"
+    child_payload = b"child-payload"
+    d1, _ = stage_blob("p", file_payload)
+    d2, _ = stage_blob("p", child_payload)
     with pytest.raises(TrackioAPIError, match="collides with"):
-        server.artifact_log(
+        _log_artifact(
             auth_bypassed,
-            project="p",
-            name="m",
-            type="model",
-            description=None,
-            metadata=None,
             manifest=[
-                {"path": "sub", "digest": d1, "size": s1},
-                {"path": "sub/x", "digest": d2, "size": s2},
+                {"path": "sub", "digest": d1, "size": len(file_payload)},
+                {"path": "sub/x", "digest": d2, "size": len(child_payload)},
             ],
-            aliases=None,
-            run_name="r",
-            run_id="rid",
-            hf_token=None,
         )
 
 
-def test_artifact_log_rejects_invalid_manifest_entries(temp_dir, auth_bypassed):
-    digest, _ = _stage(temp_dir, "p", b"payload")
+def test_artifact_log_rejects_invalid_manifest_entries(auth_bypassed, stage_blob):
+    digest, _ = stage_blob("p", b"payload")
 
     def _log(manifest):
-        server.artifact_log(
-            request=auth_bypassed,
-            project="p",
-            name="m",
-            type="model",
-            description=None,
-            metadata=None,
-            manifest=manifest,
-            aliases=None,
-            run_name="r",
-            run_id="rid",
-            hf_token=None,
-        )
+        _log_artifact(auth_bypassed, manifest)
 
     for bad in (
         [{"path": "w.bin", "digest": digest}],
@@ -310,120 +270,67 @@ def test_artifact_log_rejects_invalid_manifest_entries(temp_dir, auth_bypassed):
         _log(["not-a-dict"])
 
 
-def test_artifact_log_rejects_invalid_name(temp_dir, auth_bypassed):
-    digest, size = _stage(temp_dir, "p", b"payload")
+def test_artifact_log_rejects_invalid_name(auth_bypassed, stage_blob):
+    payload = b"payload"
+    digest, _ = stage_blob("p", payload)
     with pytest.raises(TrackioAPIError, match="must match"):
-        server.artifact_log(
-            request=auth_bypassed,
-            project="p",
+        _log_artifact(
+            auth_bypassed,
+            manifest=[{"path": "w.bin", "digest": digest, "size": len(payload)}],
             name="bad name!",
-            type="model",
-            description=None,
-            metadata=None,
-            manifest=[{"path": "w.bin", "digest": digest, "size": size}],
-            aliases=None,
-            run_name="r",
-            run_id="rid",
-            hf_token=None,
         )
 
 
-def test_artifact_log_rejects_empty_type(temp_dir, auth_bypassed):
-    digest, size = _stage(temp_dir, "p", b"payload")
+def test_artifact_log_rejects_empty_type(auth_bypassed, stage_blob):
+    payload = b"payload"
+    digest, _ = stage_blob("p", payload)
     with pytest.raises(TrackioAPIError, match="type must be a non-empty string"):
-        server.artifact_log(
-            request=auth_bypassed,
-            project="p",
-            name="m",
+        _log_artifact(
+            auth_bypassed,
+            manifest=[{"path": "w.bin", "digest": digest, "size": len(payload)}],
             type="",
-            description=None,
-            metadata=None,
-            manifest=[{"path": "w.bin", "digest": digest, "size": size}],
-            aliases=None,
-            run_name="r",
-            run_id="rid",
-            hf_token=None,
         )
 
 
 def test_artifact_log_rejects_empty_manifest(temp_dir, auth_bypassed):
     with pytest.raises(TrackioAPIError, match="non-empty list"):
-        server.artifact_log(
-            request=auth_bypassed,
-            project="p",
-            name="m",
-            type="model",
-            description=None,
-            metadata=None,
-            manifest=[],
-            aliases=None,
-            run_name="r",
-            run_id="rid",
-            hf_token=None,
-        )
+        _log_artifact(auth_bypassed, [])
 
 
 def test_artifact_log_rejects_non_string_project(temp_dir, auth_bypassed):
     with pytest.raises(TrackioAPIError, match="Invalid project"):
-        server.artifact_log(
-            request=auth_bypassed,
-            project=123,
-            name="m",
-            type="model",
-            description=None,
-            metadata=None,
-            manifest=[],
-            aliases=None,
-            run_name="r",
-            run_id="rid",
-            hf_token=None,
-        )
+        _log_artifact(auth_bypassed, [], project=123)
 
 
-def test_artifact_endpoints_accept_names_init_and_log_accept(temp_dir, auth_bypassed):
+def test_artifact_endpoints_accept_names_init_and_log_accept(auth_bypassed, stage_blob):
     project = "my experiment"
     canonical = canonical_project_name(project)
     assert canonical == "myexperiment"
     assert SQLiteStorage.get_project_db_filename(project) == f"{canonical}.db"
 
     payload = b"weights"
-    digest, size = _stage(temp_dir, canonical, payload)
+    digest, _ = stage_blob(canonical, payload)
 
     assert server.check_artifact_blobs(project, [digest])["present"] == [digest]
 
-    server.artifact_log(
-        request=auth_bypassed,
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": len(payload)}],
         project=project,
-        name="m",
-        type="model",
-        description=None,
-        metadata=None,
-        manifest=[{"path": "w.bin", "digest": digest, "size": size}],
-        aliases=None,
         run_name="train",
-        run_id="rid",
-        hf_token=None,
     )
 
     assert server.get_artifact_manifest(project, "m", "latest") is not None
     assert server.get_artifact_manifest(canonical, "m", "latest") is not None
 
 
-def test_get_artifact_manifest_shape(temp_dir, auth_bypassed):
+def test_get_artifact_manifest_shape(auth_bypassed, stage_blob):
     payload = b"x"
-    digest, size = _stage(temp_dir, "p", payload)
-    server.artifact_log(
-        request=auth_bypassed,
-        project="p",
-        name="m",
-        type="model",
-        description=None,
-        metadata=None,
-        manifest=[{"path": "x", "digest": digest, "size": size}],
+    digest, _ = stage_blob("p", payload)
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "x", "digest": digest, "size": len(payload)}],
         aliases=["best"],
-        run_name="r",
-        run_id="rid",
-        hf_token=None,
     )
 
     record = server.get_artifact_manifest("p", "m", "latest")
@@ -438,21 +345,14 @@ def test_get_artifact_manifest_returns_none_on_miss(temp_dir):
     assert server.get_artifact_manifest("p", "missing", "latest") is None
 
 
-def test_log_artifact_use_inserts_input_lineage(temp_dir, auth_bypassed):
+def test_log_artifact_use_inserts_input_lineage(temp_dir, auth_bypassed, stage_blob):
     payload = b"x"
-    digest, size = _stage(temp_dir, "p", payload)
-    result = server.artifact_log(
-        request=auth_bypassed,
-        project="p",
-        name="m",
-        type="model",
-        description=None,
-        metadata=None,
-        manifest=[{"path": "x", "digest": digest, "size": size}],
-        aliases=None,
+    digest, _ = stage_blob("p", payload)
+    result = _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "x", "digest": digest, "size": len(payload)}],
         run_name="producer",
         run_id="prod-id",
-        hf_token=None,
     )
     record = server.get_artifact_manifest("p", "m", f"v{result['version']}")
     version_id = record["version_id"]

@@ -498,13 +498,20 @@ def test_add_dir_rejects_traversal_prefix(tmp_path):
             a.add_dir(d, name=bad)
 
 
-def test_download_rejects_traversal_paths_in_manifest(temp_dir, tmp_path):
-    digest, size = _stage_blob(temp_dir, "proj", b"evil")
+def test_download_rejects_traversal_paths_in_manifest(stage_blob, tmp_path):
+    payload = b"evil"
+    digest, _ = stage_blob("proj", payload)
     a = _hydrated_artifact(
         "proj",
         "my-model",
         0,
-        [{"path": "../outside.bin", "digest": Sha256Digest(digest), "size": size}],
+        [
+            {
+                "path": "../outside.bin",
+                "digest": Sha256Digest(digest),
+                "size": len(payload),
+            }
+        ],
     )
     dl = tmp_path / "dl"
     with pytest.raises(ValueError, match="Invalid artifact path"):
@@ -512,14 +519,15 @@ def test_download_rejects_traversal_paths_in_manifest(temp_dir, tmp_path):
     assert not (tmp_path / "outside.bin").exists()
 
 
-def test_download_rejects_absolute_paths_in_manifest(temp_dir, tmp_path):
-    digest, size = _stage_blob(temp_dir, "proj", b"evil")
+def test_download_rejects_absolute_paths_in_manifest(stage_blob, tmp_path):
+    payload = b"evil"
+    digest, _ = stage_blob("proj", payload)
     target = tmp_path / "planted.bin"
     a = _hydrated_artifact(
         "proj",
         "my-model",
         0,
-        [{"path": str(target), "digest": Sha256Digest(digest), "size": size}],
+        [{"path": str(target), "digest": Sha256Digest(digest), "size": len(payload)}],
     )
     with pytest.raises(ValueError, match="Invalid artifact path"):
         a.download(tmp_path / "dl")
@@ -706,22 +714,6 @@ def test_hydrate_from_db_populates_readonly_attrs():
     assert a._logged is True
 
 
-def _stage_blob(temp_dir: str, project: str, payload: bytes) -> tuple[str, int]:
-    digest = hashlib.sha256(payload).hexdigest()
-    blob = (
-        Path(temp_dir)
-        / "artifacts"
-        / project
-        / "blobs"
-        / "sha256"
-        / digest[:2]
-        / digest
-    )
-    blob.parent.mkdir(parents=True, exist_ok=True)
-    blob.write_bytes(payload)
-    return digest, len(payload)
-
-
 def _hydrated_artifact(
     project: str,
     name: str,
@@ -740,19 +732,19 @@ def _hydrated_artifact(
     return a
 
 
-def test_download_materializes_files(temp_dir, tmp_path):
-    digest_a, size_a = _stage_blob(temp_dir, "proj", b"alpha")
-    digest_b, size_b = _stage_blob(temp_dir, "proj", b"beta")
+def test_download_materializes_files(stage_blob, tmp_path):
+    digest_a, _ = stage_blob("proj", b"alpha")
+    digest_b, _ = stage_blob("proj", b"beta")
     a = _hydrated_artifact(
         "proj",
         "my-model",
         0,
         [
-            {"path": "weights.bin", "digest": Sha256Digest(digest_a), "size": size_a},
+            {"path": "weights.bin", "digest": Sha256Digest(digest_a), "size": 5},
             {
                 "path": "sub/config.json",
                 "digest": Sha256Digest(digest_b),
-                "size": size_b,
+                "size": 4,
             },
         ],
     )
@@ -762,16 +754,17 @@ def test_download_materializes_files(temp_dir, tmp_path):
 
 
 def test_download_default_root_includes_name_and_version(
-    temp_dir, tmp_path, monkeypatch
+    stage_blob, tmp_path, monkeypatch
 ):
-    digest, size = _stage_blob(temp_dir, "proj", b"x")
+    payload = b"x"
+    digest, _ = stage_blob("proj", payload)
     monkeypatch.chdir(tmp_path)
     for version in (0, 3):
         a = _hydrated_artifact(
             "proj",
             "my-model",
             version,
-            [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+            [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
         )
         out = a.download()
         assert (
@@ -782,23 +775,25 @@ def test_download_default_root_includes_name_and_version(
 
 
 def test_download_default_root_disambiguates_by_project(
-    temp_dir, tmp_path, monkeypatch
+    stage_blob, tmp_path, monkeypatch
 ):
-    digest_a, size_a = _stage_blob(temp_dir, "proj-a", b"a-bytes")
-    digest_b, size_b = _stage_blob(temp_dir, "proj-b", b"b-different-bytes")
+    payload_a = b"a-bytes"
+    payload_b = b"b-different-bytes"
+    digest_a, _ = stage_blob("proj-a", payload_a)
+    digest_b, _ = stage_blob("proj-b", payload_b)
     monkeypatch.chdir(tmp_path)
 
     art_a = _hydrated_artifact(
         "proj-a",
         "m",
         0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest_a), "size": size_a}],
+        [{"path": "w.bin", "digest": Sha256Digest(digest_a), "size": len(payload_a)}],
     )
     art_b = _hydrated_artifact(
         "proj-b",
         "m",
         0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest_b), "size": size_b}],
+        [{"path": "w.bin", "digest": Sha256Digest(digest_b), "size": len(payload_b)}],
     )
 
     out_a = art_a.download()
@@ -809,13 +804,14 @@ def test_download_default_root_disambiguates_by_project(
     assert (Path(out_b) / "w.bin").read_bytes() == b"b-different-bytes"
 
 
-def test_download_is_idempotent(temp_dir, tmp_path):
-    digest, size = _stage_blob(temp_dir, "proj", b"x")
+def test_download_is_idempotent(stage_blob, tmp_path):
+    payload = b"x"
+    digest, _ = stage_blob("proj", payload)
     a = _hydrated_artifact(
         "proj",
         "my-model",
         0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
     )
     out1 = a.download(tmp_path / "dl")
     file = Path(out1) / "w.bin"
@@ -842,13 +838,14 @@ def test_download_on_unlogged_artifact_raises():
         a.download()
 
 
-def test_download_refreshes_stale_file_with_different_size(temp_dir, tmp_path):
-    digest, size = _stage_blob(temp_dir, "proj", b"abc")
+def test_download_refreshes_stale_file_with_different_size(stage_blob, tmp_path):
+    payload = b"abc"
+    digest, _ = stage_blob("proj", payload)
     a = _hydrated_artifact(
         "proj",
         "my-model",
         0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
     )
     dl = tmp_path / "dl"
     dl.mkdir()
@@ -857,15 +854,16 @@ def test_download_refreshes_stale_file_with_different_size(temp_dir, tmp_path):
     assert (Path(out) / "w.bin").read_bytes() == b"abc"
 
 
-def test_download_refreshes_same_size_in_place_edit(temp_dir, tmp_path):
+def test_download_refreshes_same_size_in_place_edit(stage_blob, tmp_path):
     import os
 
-    digest, size = _stage_blob(temp_dir, "proj", b"abc")
+    payload = b"abc"
+    digest, _ = stage_blob("proj", payload)
     a = _hydrated_artifact(
         "proj",
         "my-model",
         0,
-        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": size}],
+        [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
     )
     dl = tmp_path / "dl"
     out = a.download(dl)
@@ -877,15 +875,16 @@ def test_download_refreshes_same_size_in_place_edit(temp_dir, tmp_path):
     assert file.read_bytes() == b"abc"
 
 
-def test_download_shared_digest_materializes_to_distinct_paths(temp_dir, tmp_path):
-    digest, size = _stage_blob(temp_dir, "proj", b"same")
+def test_download_shared_digest_materializes_to_distinct_paths(stage_blob, tmp_path):
+    payload = b"same"
+    digest, _ = stage_blob("proj", payload)
     a = _hydrated_artifact(
         "proj",
         "my-model",
         0,
         [
-            {"path": "a.bin", "digest": Sha256Digest(digest), "size": size},
-            {"path": "b.bin", "digest": Sha256Digest(digest), "size": size},
+            {"path": "a.bin", "digest": Sha256Digest(digest), "size": len(payload)},
+            {"path": "b.bin", "digest": Sha256Digest(digest), "size": len(payload)},
         ],
     )
     out = a.download(tmp_path / "dl")

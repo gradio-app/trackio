@@ -21,11 +21,6 @@ def _payload_digest(payload: bytes) -> str:
 
 
 def _make_remote_run(monkeypatch, project="rp", name="producer", existing_blobs=()):
-    """Construct a Run in local mode then flip to remote with a mocked _client.
-
-    Sidesteps trackio.init's HF auth dance — we don't want a real Space
-    connection in unit tests.
-    """
     monkeypatch.delenv("TRACKIO_SPACE_ID", raising=False)
     monkeypatch.delenv("TRACKIO_SERVER_URL", raising=False)
     run = trackio.init(project=project, name=name)
@@ -81,15 +76,33 @@ def _make_remote_run(monkeypatch, project="rp", name="producer", existing_blobs=
     return run, mock_client, present
 
 
+@pytest.fixture
+def make_remote_run(monkeypatch):
+    runs = []
+
+    def _make(**kwargs):
+        run, client, present = _make_remote_run(monkeypatch, **kwargs)
+        runs.append(run)
+        return run, client, present
+
+    yield _make
+
+    for run in runs:
+        run._client = None
+    trackio.finish()
+
+
 def _write(tmp_path, name, payload):
     p = tmp_path / name
     p.write_bytes(payload)
     return p
 
 
-def test_remote_log_artifact_calls_endpoints_in_order(temp_dir, tmp_path, monkeypatch):
+def test_remote_log_artifact_calls_endpoints_in_order(
+    temp_dir, tmp_path, make_remote_run
+):
     weights = _write(tmp_path, "w.bin", b"data")
-    run, client, _ = _make_remote_run(monkeypatch)
+    run, client, _ = make_remote_run()
     art = Artifact(name="m", type="model")
     art.add_file(weights)
     run.log_artifact(art, aliases=["best"])
@@ -100,16 +113,14 @@ def test_remote_log_artifact_calls_endpoints_in_order(temp_dir, tmp_path, monkey
         "/bulk_upload_artifact_blob",
         "/artifact_log",
     ]
-    run._client = None
-    trackio.finish()
 
 
 def test_remote_log_artifact_skips_upload_for_present_blobs(
-    temp_dir, tmp_path, monkeypatch
+    temp_dir, tmp_path, make_remote_run
 ):
     weights = _write(tmp_path, "w.bin", b"present")
     digest = _payload_digest(b"present")
-    run, client, _ = _make_remote_run(monkeypatch, existing_blobs=[digest])
+    run, client, _ = make_remote_run(existing_blobs=[digest])
     art = Artifact(name="m", type="model")
     art.add_file(weights)
     run.log_artifact(art)
@@ -117,15 +128,13 @@ def test_remote_log_artifact_skips_upload_for_present_blobs(
     call_names = [c.kwargs.get("api_name") for c in client.predict.call_args_list]
     assert "/bulk_upload_artifact_blob" not in call_names
     assert call_names == ["/check_artifact_blobs", "/artifact_log"]
-    run._client = None
-    trackio.finish()
 
 
 def test_remote_log_artifact_hydrates_returned_artifact(
-    temp_dir, tmp_path, monkeypatch
+    temp_dir, tmp_path, make_remote_run
 ):
     weights = _write(tmp_path, "w.bin", b"data")
-    run, _client, _ = _make_remote_run(monkeypatch)
+    run, _client, _ = make_remote_run()
     art = Artifact(name="m", type="model")
     art.add_file(weights)
     logged = run.log_artifact(art, aliases=["best"])
@@ -140,8 +149,6 @@ def test_remote_log_artifact_hydrates_returned_artifact(
         "server_base_url": None,
         "write_token": None,
     }
-    run._client = None
-    trackio.finish()
 
 
 def _inject_artifact_log_failures(client, errors):
@@ -184,11 +191,11 @@ def test_is_transient_remote_error_classifies_errors():
 
 
 def test_remote_log_artifact_retries_transient_artifact_log(
-    temp_dir, tmp_path, monkeypatch
+    temp_dir, tmp_path, monkeypatch, make_remote_run
 ):
     monkeypatch.setattr("trackio.run.time.sleep", lambda *_a, **_k: None)
     weights = _write(tmp_path, "w.bin", b"data")
-    run, client, _ = _make_remote_run(monkeypatch)
+    run, client, _ = make_remote_run()
     _inject_artifact_log_failures(
         client, [httpx.ConnectError("boom"), httpx.ConnectError("boom")]
     )
@@ -203,44 +210,38 @@ def test_remote_log_artifact_retries_transient_artifact_log(
         for c in client.predict.call_args_list
     )
     assert upload_calls == 1
-    run._client = None
-    trackio.finish()
 
 
 def test_remote_log_artifact_does_not_retry_permanent_error(
-    temp_dir, tmp_path, monkeypatch
+    temp_dir, tmp_path, monkeypatch, make_remote_run
 ):
     monkeypatch.setattr("trackio.run.time.sleep", lambda *_a, **_k: None)
     weights = _write(tmp_path, "w.bin", b"data")
-    run, client, _ = _make_remote_run(monkeypatch)
+    run, client, _ = make_remote_run()
     _inject_artifact_log_failures(client, [RuntimeError("Invalid project name")] * 5)
     art = Artifact(name="m", type="model")
     art.add_file(weights)
     with pytest.raises(RuntimeError, match="Invalid project name"):
         run.log_artifact(art)
     assert _artifact_log_call_count(client) == 1
-    run._client = None
-    trackio.finish()
 
 
 def test_remote_log_artifact_reraises_after_exhausting_retries(
-    temp_dir, tmp_path, monkeypatch
+    temp_dir, tmp_path, monkeypatch, make_remote_run
 ):
     monkeypatch.setattr("trackio.run.time.sleep", lambda *_a, **_k: None)
     weights = _write(tmp_path, "w.bin", b"data")
-    run, client, _ = _make_remote_run(monkeypatch)
+    run, client, _ = make_remote_run()
     _inject_artifact_log_failures(client, [httpx.ConnectError("down")] * 10)
     art = Artifact(name="m", type="model")
     art.add_file(weights)
     with pytest.raises(httpx.ConnectError):
         run.log_artifact(art)
     assert _artifact_log_call_count(client) == 4
-    run._client = None
-    trackio.finish()
 
 
-def test_remote_use_artifact_sequence(temp_dir, monkeypatch):
-    run, client, _ = _make_remote_run(monkeypatch, name="consumer")
+def test_remote_use_artifact_sequence(temp_dir, make_remote_run):
+    run, client, _ = make_remote_run(name="consumer")
     art = run.use_artifact("m:latest")
 
     call_names = [c.kwargs.get("api_name") for c in client.predict.call_args_list]
@@ -256,14 +257,12 @@ def test_remote_use_artifact_sequence(temp_dir, monkeypatch):
         "server_base_url": None,
         "write_token": None,
     }
-    run._client = None
-    trackio.finish()
 
 
-def test_remote_use_artifact_instance_uses_artifacts_own_project(temp_dir, monkeypatch):
-    run, client, _ = _make_remote_run(
-        monkeypatch, project="consumer-proj", name="consumer"
-    )
+def test_remote_use_artifact_instance_uses_artifacts_own_project(
+    temp_dir, make_remote_run
+):
+    run, client, _ = make_remote_run(project="consumer-proj", name="consumer")
     art = Artifact(name="m", type="model")
     art._hydrate_from_db(
         project="origin-proj",
@@ -278,23 +277,19 @@ def test_remote_use_artifact_instance_uses_artifacts_own_project(temp_dir, monke
     by_api = {c.kwargs.get("api_name"): c.kwargs for c in client.predict.call_args_list}
     assert by_api["/get_artifact_manifest"]["project"] == "origin-proj"
     assert by_api["/log_artifact_use"]["project"] == "origin-proj"
-    run._client = None
-    trackio.finish()
 
 
-def test_remote_use_artifact_not_found_raises(temp_dir, monkeypatch):
-    run, client, _ = _make_remote_run(monkeypatch)
+def test_remote_use_artifact_not_found_raises(temp_dir, make_remote_run):
+    run, client, _ = make_remote_run()
     client.predict.side_effect = lambda api_name, **kw: (
         None if api_name == "/get_artifact_manifest" else None
     )
     with pytest.raises(ValueError, match="not found"):
         run.use_artifact("missing:latest")
-    run._client = None
-    trackio.finish()
 
 
-def test_remote_use_artifact_lineage_failure_is_nonfatal(temp_dir, monkeypatch):
-    run, client, _ = _make_remote_run(monkeypatch)
+def test_remote_use_artifact_lineage_failure_is_nonfatal(temp_dir, make_remote_run):
+    run, client, _ = make_remote_run()
     original = client.predict.side_effect
 
     def _side_effect(api_name, **kw):
@@ -305,13 +300,11 @@ def test_remote_use_artifact_lineage_failure_is_nonfatal(temp_dir, monkeypatch):
     client.predict.side_effect = _side_effect
     art = run.use_artifact("m:latest")
     assert art.version == "v0"
-    run._client = None
-    trackio.finish()
 
 
-def test_artifact_rpcs_hold_client_lock(temp_dir, tmp_path, monkeypatch):
+def test_artifact_rpcs_hold_client_lock(temp_dir, tmp_path, make_remote_run):
     weights = _write(tmp_path, "w.bin", b"data")
-    run, client, _ = _make_remote_run(monkeypatch)
+    run, client, _ = make_remote_run()
 
     base = client.predict.side_effect
     locked_during = {}
@@ -338,11 +331,8 @@ def test_artifact_rpcs_hold_client_lock(temp_dir, tmp_path, monkeypatch):
     ):
         assert locked_during.get(api) is True, f"{api} called without _client_lock held"
 
-    run._client = None
-    trackio.finish()
 
-
-def test_send_pending_uploads_routes_both_kinds(temp_dir, tmp_path, monkeypatch):
+def test_send_pending_uploads_routes_both_kinds(temp_dir, tmp_path, make_remote_run):
     media = tmp_path / "img.png"
     media.write_bytes(b"img")
     blob = tmp_path / "blob.bin"
@@ -365,19 +355,17 @@ def test_send_pending_uploads_routes_both_kinds(temp_dir, tmp_path, monkeypatch)
         run_id="rid",
     )
 
-    run, client, _ = _make_remote_run(monkeypatch, project="p", name="r")
+    run, client, _ = make_remote_run(project="p", name="r")
     buffered = SQLiteStorage.get_pending_uploads("p")
     run._send_pending_uploads_to_server(buffered)
 
     api_calls = [c.kwargs.get("api_name") for c in client.predict.call_args_list]
     assert "/bulk_upload_media" in api_calls
     assert "/bulk_upload_artifact_blob" in api_calls
-    run._client = None
-    trackio.finish()
 
 
 def test_send_pending_uploads_partial_failure_keeps_unsent_rows(
-    temp_dir, tmp_path, monkeypatch
+    temp_dir, tmp_path, make_remote_run
 ):
     media = tmp_path / "img.png"
     media.write_bytes(b"img")
@@ -401,7 +389,7 @@ def test_send_pending_uploads_partial_failure_keeps_unsent_rows(
         run_id="rid",
     )
 
-    run, client, _ = _make_remote_run(monkeypatch, project="p", name="r")
+    run, client, _ = make_remote_run(project="p", name="r")
 
     def _failing_predict(api_name, **kwargs):
         if api_name == "/bulk_upload_artifact_blob":
@@ -417,12 +405,10 @@ def test_send_pending_uploads_partial_failure_keeps_unsent_rows(
     assert remaining is not None
     kinds = [u["kind"] for u in remaining["uploads"]]
     assert kinds == ["artifact_blob"]
-    run._client = None
-    trackio.finish()
 
 
 def test_send_pending_uploads_drops_missing_files_with_warning(
-    temp_dir, tmp_path, monkeypatch
+    temp_dir, tmp_path, make_remote_run
 ):
     SQLiteStorage.enqueue_artifact_blob_uploads(
         project="p",
@@ -432,15 +418,13 @@ def test_send_pending_uploads_drops_missing_files_with_warning(
         run_id="rid",
     )
 
-    run, client, _ = _make_remote_run(monkeypatch, project="p", name="r")
+    run, client, _ = make_remote_run(project="p", name="r")
     buffered = SQLiteStorage.get_pending_uploads("p")
     with pytest.warns(UserWarning, match="no longer exist"):
         run._send_pending_uploads_to_server(buffered)
 
     assert client.predict.call_count == 0
     assert SQLiteStorage.get_pending_uploads("p") is None
-    run._client = None
-    trackio.finish()
 
 
 def test_lineage_unique_index_prevents_duplicates(temp_dir):
