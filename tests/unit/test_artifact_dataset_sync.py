@@ -60,10 +60,6 @@ def _build_sample_artifacts(project):
 
 
 def _snapshot(project):
-    """Capture every artifact's per-version manifest record plus run lineage,
-    so a parquet round-trip can be checked for exact equality. Versions are
-    walked v0, v1, ... until absent; alias lists are sorted to stay
-    order-insensitive."""
     snap = {"versions": {}, "manifests": {}, "lineage": {}}
     for name in ("data", "model"):
         latest = SQLiteStorage.get_artifact_manifest(project, name, None)
@@ -117,8 +113,6 @@ def test_artifact_metadata_survives_parquet_roundtrip(temp_dir):
 
 
 def test_artifact_only_project_survives_roundtrip(temp_dir):
-    """A project with artifacts but no metrics has no metrics parquet, yet must
-    still be rebuilt from its artifact parquet files."""
     aid = SQLiteStorage.create_or_get_artifact("artonly", "m", "model", None)
     vid, _, _ = SQLiteStorage.insert_artifact_version(
         "artonly", aid, [{"path": "a", "digest": "d" * 64, "size": 1}], None, None, "r"
@@ -139,10 +133,6 @@ def test_artifact_only_project_survives_roundtrip(temp_dir):
 
 
 def test_delete_project_prevents_artifact_resurrection(temp_dir):
-    """delete_project must remove a project's parquet sidecars so a later
-    import_from_parquet cannot resurrect it from lingering artifact tables.
-    Contrast test_artifact_only_project_survives_roundtrip, which removes only
-    the .db (a Space restart) and correctly rebuilds from surviving sidecars."""
     import trackio
 
     aid = SQLiteStorage.create_or_get_artifact("doomed", "m", "model", None)
@@ -163,6 +153,28 @@ def test_delete_project_prevents_artifact_resurrection(temp_dir):
     SQLiteStorage.import_from_parquet()
     assert "doomed" not in SQLiteStorage.get_projects()
     assert not db_path.exists()
+
+
+def test_delete_project_removes_artifact_blobs_and_media(temp_dir):
+    import trackio
+    from trackio import cas, utils
+
+    SQLiteStorage.create_or_get_artifact("doomed", "m", "model", None)
+
+    src = Path(temp_dir) / "w.bin"
+    src.write_bytes(b"weights")
+    cas.stage_blob_into_project(src, "doomed")
+
+    blobs_dir = utils.project_artifacts_dir("doomed")
+    assert any(p.is_file() for p in blobs_dir.rglob("*"))
+
+    media_dir = utils.project_media_dir("doomed")
+    media_dir.mkdir(parents=True, exist_ok=True)
+    (media_dir / "img.png").write_bytes(b"img")
+
+    assert trackio.delete_project("doomed", force=True) is True
+    assert not blobs_dir.exists()
+    assert not media_dir.exists()
 
 
 def test_project_named_like_artifact_table_does_not_collide(temp_dir):

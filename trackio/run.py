@@ -1266,7 +1266,7 @@ class Run:
                     project=self.project,
                     digests=digests,
                 )
-            present = set(present_response.get("present", []))
+            present = set((present_response or {}).get("present", []))
 
             SQLiteStorage.enqueue_artifact_blob_uploads(
                 project=self.project,

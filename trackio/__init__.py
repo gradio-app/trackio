@@ -912,6 +912,13 @@ def delete_project(project: str, force: bool = False) -> bool:
             if parquet_path.exists():
                 parquet_path.unlink()
 
+        for asset_dir in (
+            utils.project_artifacts_dir(project),
+            utils.project_media_dir(project),
+        ):
+            if asset_dir.exists():
+                shutil.rmtree(asset_dir, ignore_errors=True)
+
         print(f"* Project '{project}' has been deleted.")
         return True
     except Exception as e:
