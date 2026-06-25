@@ -287,6 +287,39 @@ def test_remote_use_artifact_lineage_failure_is_nonfatal(temp_dir, monkeypatch):
     trackio.finish()
 
 
+def test_artifact_rpcs_hold_client_lock(temp_dir, tmp_path, monkeypatch):
+    weights = _write(tmp_path, "w.bin", b"data")
+    run, client, _ = _make_remote_run(monkeypatch)
+
+    base = client.predict.side_effect
+    locked_during = {}
+
+    def _checking_predict(api_name, **kwargs):
+        acquired = run._client_lock.acquire(blocking=False)
+        if acquired:
+            run._client_lock.release()
+        locked_during[api_name] = not acquired
+        return base(api_name, **kwargs)
+
+    client.predict.side_effect = _checking_predict
+
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art)
+    run.use_artifact("m:latest")
+
+    for api in (
+        "/check_artifact_blobs",
+        "/artifact_log",
+        "/get_artifact_manifest",
+        "/log_artifact_use",
+    ):
+        assert locked_during.get(api) is True, f"{api} called without _client_lock held"
+
+    run._client = None
+    trackio.finish()
+
+
 def test_send_pending_uploads_routes_both_kinds(temp_dir, tmp_path, monkeypatch):
     media = tmp_path / "img.png"
     media.write_bytes(b"img")

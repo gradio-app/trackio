@@ -1191,7 +1191,8 @@ class Run:
             if backoff:
                 time.sleep(backoff)
             try:
-                return self._client.predict(api_name="/artifact_log", **kwargs)
+                with self._client_lock:
+                    return self._client.predict(api_name="/artifact_log", **kwargs)
             except Exception as e:
                 if attempt == len(backoffs) - 1 or not is_transient_remote_error(e):
                     raise
@@ -1253,11 +1254,12 @@ class Run:
             self._wait_for_client_ready()
 
             digests = [e["digest"] for e in manifest]
-            present_response = self._client.predict(
-                api_name="/check_artifact_blobs",
-                project=self.project,
-                digests=digests,
-            )
+            with self._client_lock:
+                present_response = self._client.predict(
+                    api_name="/check_artifact_blobs",
+                    project=self.project,
+                    digests=digests,
+                )
             present = set(present_response.get("present", []))
 
             SQLiteStorage.enqueue_artifact_blob_uploads(
@@ -1341,12 +1343,13 @@ class Run:
             )
         else:
             self._wait_for_client_ready()
-            record = self._client.predict(
-                api_name="/get_artifact_manifest",
-                project=self.project,
-                name=name,
-                spec=version_or_alias,
-            )
+            with self._client_lock:
+                record = self._client.predict(
+                    api_name="/get_artifact_manifest",
+                    project=self.project,
+                    name=name,
+                    spec=version_or_alias,
+                )
 
         if record is None:
             raise ValueError(
@@ -1382,14 +1385,15 @@ class Run:
                     direction="input",
                 )
             else:
-                self._client.predict(
-                    api_name="/log_artifact_use",
-                    project=self.project,
-                    version_id=record["version_id"],
-                    run_name=self.name,
-                    run_id=self.id,
-                    hf_token=self._hf_token_for_remote(),
-                )
+                with self._client_lock:
+                    self._client.predict(
+                        api_name="/log_artifact_use",
+                        project=self.project,
+                        version_id=record["version_id"],
+                        run_name=self.name,
+                        run_id=self.id,
+                        hf_token=self._hf_token_for_remote(),
+                    )
         except Exception as e:
             self._warn_once(
                 "artifact-use-lineage",
