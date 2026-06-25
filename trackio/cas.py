@@ -77,6 +77,28 @@ def validate_logical_path(logical: str) -> str:
     return logical
 
 
+def assert_manifest_paths_compatible(paths: Iterable[str]) -> None:
+    """Validate a manifest's logical paths as a set: reject exact duplicates and
+    file/directory prefix collisions. A path cannot be both a file and a
+    directory, so `sub` and `sub/x` (or `a/b` and `a/b/c`) cannot coexist;
+    siblings like `a/b` and `a/c` are fine.
+    """
+    seen: set[str] = set()
+    for p in paths:
+        if p in seen:
+            raise ValueError(f"Duplicate logical path in manifest: {p!r}")
+        seen.add(p)
+    for p in seen:
+        parts = p.split("/")
+        for i in range(1, len(parts)):
+            ancestor = "/".join(parts[:i])
+            if ancestor in seen:
+                raise ValueError(
+                    f"Artifact path {p!r} collides with {ancestor!r}: a path "
+                    "cannot be both a file and a directory in the same artifact."
+                )
+
+
 def validate_digest(digest: str) -> Sha256Digest:
     """Validate that `digest` is a 64-char lowercase sha256 hex string and
     return it unchanged.

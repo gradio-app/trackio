@@ -596,6 +596,57 @@ def test_build_manifest_rejects_duplicate_logical_path(temp_dir, tmp_path):
         double_add._build_manifest("p")
 
 
+def test_build_manifest_rejects_prefix_collision(temp_dir, tmp_path):
+    p1 = tmp_path / "a"
+    p2 = tmp_path / "b"
+    p1.write_bytes(b"file")
+    p2.write_bytes(b"child")
+
+    file_then_dir = Artifact(name="m", type="model")
+    file_then_dir.add_file(p1, name="sub")
+    file_then_dir.add_file(p2, name="sub/x")
+    with pytest.raises(ValueError, match="collides with"):
+        file_then_dir._build_manifest("p")
+    assert not blob_path("p", hashlib.sha256(b"file").hexdigest()).is_file()
+
+    dir_then_file = Artifact(name="m", type="model")
+    dir_then_file.add_file(p1, name="sub/x")
+    dir_then_file.add_file(p2, name="sub")
+    with pytest.raises(ValueError, match="collides with"):
+        dir_then_file._build_manifest("p")
+
+    deep = Artifact(name="m", type="model")
+    deep.add_file(p1, name="a/b")
+    deep.add_file(p2, name="a/b/c")
+    with pytest.raises(ValueError, match="collides with"):
+        deep._build_manifest("p")
+
+
+def test_build_manifest_allows_sibling_paths(temp_dir, tmp_path):
+    p1 = tmp_path / "a"
+    p2 = tmp_path / "b"
+    p1.write_bytes(b"a")
+    p2.write_bytes(b"b")
+
+    art = Artifact(name="m", type="model")
+    art.add_file(p1, name="a/b")
+    art.add_file(p2, name="a/c")
+    manifest = art._build_manifest("p")
+    assert {e["path"] for e in manifest} == {"a/b", "a/c"}
+
+
+def test_assert_manifest_paths_compatible():
+    from trackio import cas
+
+    cas.assert_manifest_paths_compatible(["a/b", "a/c", "d"])
+    with pytest.raises(ValueError, match="Duplicate logical path"):
+        cas.assert_manifest_paths_compatible(["x", "x"])
+    with pytest.raises(ValueError, match="collides with"):
+        cas.assert_manifest_paths_compatible(["sub", "sub/x"])
+    with pytest.raises(ValueError, match="collides with"):
+        cas.assert_manifest_paths_compatible(["a/b/c", "a/b"])
+
+
 def test_build_manifest_rejects_empty(temp_dir):
     a = Artifact(name="m", type="model")
     with pytest.raises(ValueError, match="no files"):

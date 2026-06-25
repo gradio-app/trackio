@@ -248,11 +248,9 @@ class Artifact:
             raise ValueError(
                 f"Artifact {self._name!r} has no files; call add_file/add_dir first."
             )
-        seen: set[str] = set()
-        for _, logical in self._pending_files:
-            if logical in seen:
-                raise ValueError(f"Duplicate logical path in manifest: {logical!r}")
-            seen.add(logical)
+        cas.assert_manifest_paths_compatible(
+            logical for _, logical in self._pending_files
+        )
 
         entries: Manifest = []
         for src, logical in self._pending_files:

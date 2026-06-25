@@ -258,6 +258,28 @@ def test_artifact_log_rejects_traversal_manifest_paths(temp_dir, auth_bypassed):
             )
 
 
+def test_artifact_log_rejects_prefix_collision_manifest(temp_dir, auth_bypassed):
+    d1, s1 = _stage(temp_dir, "p", b"file-payload")
+    d2, s2 = _stage(temp_dir, "p", b"child-payload")
+    with pytest.raises(TrackioAPIError, match="collides with"):
+        server.artifact_log(
+            auth_bypassed,
+            project="p",
+            name="m",
+            type="model",
+            description=None,
+            metadata=None,
+            manifest=[
+                {"path": "sub", "digest": d1, "size": s1},
+                {"path": "sub/x", "digest": d2, "size": s2},
+            ],
+            aliases=None,
+            run_name="r",
+            run_id="rid",
+            hf_token=None,
+        )
+
+
 def test_artifact_log_rejects_invalid_manifest_entries(temp_dir, auth_bypassed):
     digest, _ = _stage(temp_dir, "p", b"payload")
 

@@ -636,17 +636,22 @@ def artifact_log(
     if not isinstance(manifest, list) or not manifest:
         raise TrackioAPIError("Artifact manifest must be a non-empty list of entries.")
     digests = []
+    paths = []
     for e in manifest:
         if not isinstance(e, dict):
             raise TrackioAPIError(f"Invalid artifact manifest entry: {e!r}")
         digests.append(_validate_sha256_digest(e.get("digest")))
         try:
-            cas.validate_logical_path(e.get("path"))
+            paths.append(cas.validate_logical_path(e.get("path")))
         except ValueError as err:
             raise TrackioAPIError(str(err)) from err
         size = e.get("size")
         if not isinstance(size, int) or size < 0:
             raise TrackioAPIError(f"Artifact manifest entry has invalid size: {size!r}")
+    try:
+        cas.assert_manifest_paths_compatible(paths)
+    except ValueError as err:
+        raise TrackioAPIError(str(err)) from err
     present = SQLiteStorage.list_artifact_blobs_present(project, digests)
     missing = [d for d in digests if d not in present]
     if missing:
