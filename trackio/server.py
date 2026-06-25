@@ -1095,7 +1095,7 @@ def get_settings() -> dict[str, Any]:
 
 
 def get_project_files(project: str) -> list[dict[str, Any]]:
-    files_dir = utils.MEDIA_DIR / project / "files"
+    files_dir = utils.project_media_dir(project) / "files"
     if not files_dir.exists():
         return []
     results = []
@@ -1113,7 +1113,7 @@ def get_project_files(project: str) -> list[dict[str, Any]]:
 
 
 def _project_has_files(project: str) -> bool:
-    files_dir = utils.MEDIA_DIR / project / "files"
+    files_dir = utils.project_media_dir(project) / "files"
     if not files_dir.exists():
         return False
     for entry in files_dir.rglob("*"):

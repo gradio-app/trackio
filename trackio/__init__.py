@@ -1063,7 +1063,7 @@ def save(
                     "Files may not be available in the dashboard."
                 )
 
-    return str(utils.MEDIA_DIR / project / "files")
+    return str(utils.project_media_dir(project) / "files")
 
 
 def show(

@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from trackio.utils import MEDIA_DIR
+from trackio.utils import project_media_dir
 
 
 def check_path(file_path: str | Path) -> None:
@@ -47,7 +47,7 @@ def get_project_media_path(
     if step is not None and run is None:
         raise ValueError("Uploading files at a specific step requires a run")
 
-    path = MEDIA_DIR / project
+    path = project_media_dir(project)
     if run:
         path /= run
         if step is not None:

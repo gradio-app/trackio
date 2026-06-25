@@ -16,16 +16,9 @@ def temp_dir(monkeypatch):
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         for name in ["trackio", "trackio.sqlite_storage", "trackio.utils"]:
             monkeypatch.setattr(f"{name}.TRACKIO_DIR", Path(tmpdir))
-        for name in [
-            "trackio.media.media",
-            "trackio.media.utils",
-            "trackio.utils",
-            "trackio.sqlite_storage",
-            "trackio.bucket_storage",
-        ]:
+        for name in ["trackio.media.media", "trackio.utils"]:
             monkeypatch.setattr(f"{name}.MEDIA_DIR", Path(tmpdir) / "media")
-        for name in ["trackio.utils", "trackio.bucket_storage"]:
-            monkeypatch.setattr(f"{name}.ARTIFACTS_DIR", Path(tmpdir) / "artifacts")
+        monkeypatch.setattr("trackio.utils.ARTIFACTS_DIR", Path(tmpdir) / "artifacts")
         monkeypatch.setattr("trackio.bucket_storage.TRACKIO_DIR", Path(tmpdir))
         context_vars.current_run.set(None)
         context_vars.current_project.set(None)
@@ -45,11 +38,13 @@ def stage_blob(temp_dir):
     (digest, blob_path)."""
 
     def _stage(project, payload):
+        from trackio.utils import canonical_project_name
+
         digest = hashlib.sha256(payload).hexdigest()
         blob = (
             Path(temp_dir)
             / "artifacts"
-            / project
+            / canonical_project_name(project)
             / "blobs"
             / "sha256"
             / digest[:2]

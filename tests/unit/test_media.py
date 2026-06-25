@@ -102,3 +102,33 @@ def test_invalid_type_raises(media_cls):
     invalid_input = [[[0, 1, 2]]]
     with pytest.raises(ValueError):
         media_cls(invalid_input)
+
+
+def test_project_media_dir_canonicalizes(temp_dir):
+    from trackio.utils import canonical_project_name, project_media_dir
+
+    assert canonical_project_name("my.model") == "mymodel"
+    assert project_media_dir("my.model") == project_media_dir("mymodel")
+    assert project_media_dir("my.model").name == "mymodel"
+
+
+def test_media_relative_path_uses_canonical_project(image_ndarray, temp_dir):
+    image = TrackioImage(image_ndarray)
+    image._save("my.model", "run", 0)
+
+    rel = str(image._get_relative_file_path())
+    assert rel.startswith(str(Path("mymodel") / "run" / "0"))
+    assert "my.model" not in rel
+    assert image._get_absolute_file_path().is_file()
+
+
+def test_get_project_files_resolves_dotted_project(temp_dir):
+    from trackio import server
+    from trackio.utils import project_media_dir
+
+    files_dir = project_media_dir("my.model") / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "weights.bin").write_bytes(b"hello")
+
+    found = server.get_project_files("mymodel")
+    assert any(f["name"] == "weights.bin" for f in found)

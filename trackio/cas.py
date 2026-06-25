@@ -1,7 +1,9 @@
 """Content-addressed storage (CAS) helpers shared by the artifact client,
 server, and storage layers.
 
-Blobs live at `ARTIFACTS_DIR/<project>/blobs/sha256/<digest[:2]>/<digest>`.
+Blobs live at `ARTIFACTS_DIR/<canonical project>/blobs/sha256/<digest[:2]>/<digest>`,
+where the project segment is `utils.canonical_project_name(project)` so the CAS
+dir matches the project's DB filename (a project has one on-disk identity).
 All writes go through a `.partial.<uuid>` temp file in the destination
 directory followed by an atomic rename, so concurrent writers and crashed
 processes never leave a torn blob at the final path.
@@ -32,8 +34,12 @@ def validate_artifact_name(name: str) -> str:
     return name
 
 
+def _project_blobs_root(project: str) -> Path:
+    return utils.project_artifacts_dir(project) / "blobs" / "sha256"
+
+
 def blob_path(project: str, digest: Sha256Digest) -> Path:
-    return utils.ARTIFACTS_DIR / project / "blobs" / "sha256" / digest[:2] / digest
+    return _project_blobs_root(project) / digest[:2] / digest
 
 
 def hash_file(path: Path) -> tuple[Sha256Digest, int]:
@@ -138,7 +144,7 @@ def stage_blob_into_project(src_path: Path, project: str) -> tuple[Sha256Digest,
     to a `.partial.<uuid>` file and atomically renamed to the digest-derived
     path; if that path already holds the blob, the partial is discarded.
     """
-    blobs_root = utils.ARTIFACTS_DIR / project / "blobs" / "sha256"
+    blobs_root = _project_blobs_root(project)
     blobs_root.mkdir(parents=True, exist_ok=True)
     partial = blobs_root / f".partial.{uuid.uuid4().hex}"
     sha = hashlib.sha256()

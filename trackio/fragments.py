@@ -92,7 +92,7 @@ def bucket_media_path(
     relative_path: str | None,
     filename: str,
 ) -> str:
-    parts = [BUCKET_MEDIA_PREFIX, project]
+    parts = [BUCKET_MEDIA_PREFIX, utils.canonical_project_name(project)]
     if run:
         parts.append(run)
         if step is not None:

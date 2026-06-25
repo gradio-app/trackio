@@ -5,7 +5,7 @@ import pytest
 
 import trackio
 from trackio.artifact import Artifact
-from trackio.cas import HASH_CHUNK_SIZE, hash_file, stage_blob_from_chunks
+from trackio.cas import HASH_CHUNK_SIZE, blob_path, hash_file, stage_blob_from_chunks
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import Sha256Digest
 
@@ -822,6 +822,49 @@ def test_run_log_artifact_round_trip(temp_dir, tmp_path):
     lineage_c = SQLiteStorage.get_run_artifacts("art-rt", "consumer", None)
     assert lineage_c["output"] == []
     assert len(lineage_c["input"]) == 1
+
+
+def test_canonical_project_name_collapses_to_db_stem():
+    from trackio.utils import canonical_project_name
+
+    assert canonical_project_name("my.model") == "mymodel"
+    assert canonical_project_name("mymodel") == "mymodel"
+    assert canonical_project_name("bert.base") == "bertbase"
+    assert canonical_project_name("...") == "default"
+    stem = SQLiteStorage.get_project_db_filename("my.model").removesuffix(".db")
+    assert stem == canonical_project_name("my.model")
+
+
+def test_blob_path_matches_db_canonicalization(temp_dir):
+    digest = "a" * 64
+    assert blob_path("my.model", digest) == blob_path("mymodel", digest)
+    assert "mymodel" in blob_path("my.model", digest).parts
+    assert "my.model" not in blob_path("my.model", digest).parts
+
+
+def test_project_artifacts_dir_canonicalizes(temp_dir):
+    from trackio.utils import project_artifacts_dir
+
+    assert project_artifacts_dir("my.model") == project_artifacts_dir("mymodel")
+    assert project_artifacts_dir("my.model").name == "mymodel"
+    assert blob_path("my.model", "a" * 64).is_relative_to(
+        project_artifacts_dir("my.model")
+    )
+
+
+def test_dotted_project_blob_resolves_under_canonical_db(temp_dir, tmp_path):
+    weights = _make_file(tmp_path, "weights.bin", b"hello")
+    run = trackio.init(project="my.model", name="producer")
+    art = Artifact(name="m", type="model")
+    art.add_file(weights)
+    run.log_artifact(art)
+    trackio.finish()
+
+    run2 = trackio.init(project="mymodel", name="consumer")
+    fetched = run2.use_artifact("m:latest")
+    out = fetched.download(tmp_path / "dl")
+    assert (Path(out) / "weights.bin").read_bytes() == b"hello"
+    trackio.finish()
 
 
 def test_log_artifact_with_user_aliases(temp_dir, tmp_path):

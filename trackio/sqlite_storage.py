@@ -31,11 +31,12 @@ from trackio.commit_scheduler import CommitScheduler
 from trackio.dummy_commit_scheduler import DummyCommitScheduler
 from trackio.typehints import Manifest, Sha256Digest
 from trackio.utils import (
-    MEDIA_DIR,
     TRACKIO_DIR,
+    canonical_project_name,
     deserialize_values,
     get_color_palette,
     on_spaces,
+    project_media_dir,
     serialize_values,
 )
 
@@ -408,18 +409,13 @@ class SQLiteStorage:
 
     @staticmethod
     def _get_process_lock(project: str) -> ProcessLock:
-        lockfile_path = TRACKIO_DIR / f"{project}.lock"
+        lockfile_path = TRACKIO_DIR / f"{canonical_project_name(project)}.lock"
         return ProcessLock(lockfile_path)
 
     @staticmethod
     def get_project_db_filename(project: str) -> str:
         """Get the database filename for a specific project."""
-        safe_project_name = "".join(
-            c for c in project if c.isalnum() or c in ("-", "_")
-        ).rstrip()
-        if not safe_project_name:
-            safe_project_name = "default"
-        return f"{safe_project_name}{DB_EXT}"
+        return f"{canonical_project_name(project)}{DB_EXT}"
 
     @staticmethod
     def get_project_db_path(project: str) -> Path:
@@ -3139,8 +3135,8 @@ class SQLiteStorage:
                     conn.commit()
 
                     SQLiteStorage._move_media_dir(
-                        MEDIA_DIR / project / old_name,
-                        MEDIA_DIR / project / new_name,
+                        project_media_dir(project) / old_name,
+                        project_media_dir(project) / new_name,
                     )
                 except sqlite3.Error as e:
                     raise RuntimeError(
@@ -3519,8 +3515,8 @@ class SQLiteStorage:
                         target_conn.commit()
 
                         SQLiteStorage._move_media_dir(
-                            MEDIA_DIR / project / run,
-                            MEDIA_DIR / new_project / run,
+                            project_media_dir(project) / run,
+                            project_media_dir(new_project) / run,
                         )
 
                         source_cursor.execute(

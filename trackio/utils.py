@@ -172,6 +172,28 @@ TRACKIO_DIR = _get_trackio_dir()
 MEDIA_DIR = TRACKIO_DIR / "media"
 ARTIFACTS_DIR = TRACKIO_DIR / "artifacts"
 
+
+def canonical_project_name(project: str) -> str:
+    """Canonical on-disk identity for a project: keep only `[A-Za-z0-9_-]`,
+    falling back to `default` when nothing remains. The DB filename, the CAS
+    blob directory, the media directory, and the process lock all derive their
+    on-disk name from this one helper, so a project resolves to a single
+    location everywhere (e.g. `my.model` and `mymodel` both map to `mymodel`).
+    """
+    safe = "".join(c for c in project if c.isalnum() or c in ("-", "_")).rstrip()
+    return safe or "default"
+
+
+def project_media_dir(project: str) -> Path:
+    """Root media directory for a project, under its canonical on-disk name."""
+    return MEDIA_DIR / canonical_project_name(project)
+
+
+def project_artifacts_dir(project: str) -> Path:
+    """Root artifacts directory for a project, under its canonical on-disk name."""
+    return ARTIFACTS_DIR / canonical_project_name(project)
+
+
 NETWORK_FILESYSTEM_TYPES = {
     "nfs",
     "nfs4",

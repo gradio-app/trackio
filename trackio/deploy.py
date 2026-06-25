@@ -40,10 +40,10 @@ from trackio.pending_uploads import replay_pending_uploads
 from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
-    MEDIA_DIR,
     get_or_create_project_hash,
     on_spaces,
     preprocess_space_and_dataset_ids,
+    project_media_dir,
 )
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
@@ -922,7 +922,7 @@ def upload_dataset_for_static(
         output_dir = Path(tmp_dir)
         SQLiteStorage.export_for_static_space(project, output_dir)
 
-        media_dir = MEDIA_DIR / project
+        media_dir = project_media_dir(project)
         if media_dir.exists():
             dest = output_dir / "media"
             shutil.copytree(media_dir, dest)
