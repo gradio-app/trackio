@@ -74,7 +74,8 @@ def _fetch_blob_from_remote(
 
 
 class Artifact:
-    """A versioned, named bundle of files attached to a project.
+    """
+    A versioned, named bundle of files attached to a project.
 
     Construct an `Artifact`, add files to it with `add_file` / `add_dir`, then
     persist it with `trackio.log_artifact`. Logging freezes the artifact and
