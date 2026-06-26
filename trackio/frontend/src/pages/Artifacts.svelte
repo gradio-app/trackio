@@ -204,6 +204,7 @@
 
 <style>
   .artifacts-page {
+    --artifacts-max-width: 860px;
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
@@ -213,14 +214,17 @@
     font-size: 16px;
     font-weight: 700;
     margin: 0 0 4px;
+    max-width: var(--artifacts-max-width);
   }
   .page-subtitle {
     color: var(--body-text-color-subdued, #6b7280);
     font-size: var(--text-sm, 12px);
     margin: 0 0 16px;
+    max-width: var(--artifacts-max-width);
   }
   .type-group {
     margin-bottom: 20px;
+    max-width: var(--artifacts-max-width);
   }
   .type-heading {
     display: flex;

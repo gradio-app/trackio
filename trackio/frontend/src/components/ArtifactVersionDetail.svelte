@@ -97,16 +97,16 @@
 
     <div class="file-table">
       {#each record.manifest || [] as file}
-        <div class="file-entry">
+        <a
+          class="file-entry"
+          href={getArtifactBlobUrl(project, file.digest)}
+          download={file.path}
+          title="Download {file.path}"
+        >
           <span class="file-path">{file.path}</span>
           <span class="spacer"></span>
           <span class="file-size">{formatSize(file.size)}</span>
-          <a
-            class="download-btn"
-            href={getArtifactBlobUrl(project, file.digest)}
-            download={file.path}
-            title="Download"
-          >
+          <span class="download-icon">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path
                 d="M8 1v9m0 0L5 7m3 3l3-3M2 12v1a2 2 0 002 2h8a2 2 0 002-2v-1"
@@ -116,8 +116,8 @@
                 stroke-linejoin="round"
               />
             </svg>
-          </a>
-        </div>
+          </span>
+        </a>
       {/each}
     </div>
   {/if}
@@ -167,11 +167,20 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 6px 0;
+    padding: 6px 8px;
+    margin: 0 -8px;
+    border-radius: var(--radius-sm, 4px);
     border-top: 1px solid var(--border-color-primary, #e5e7eb);
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
   }
   .file-entry:first-child {
     border-top: none;
+  }
+  .file-entry:hover {
+    background: var(--background-fill-primary, #fff);
+    border-top-color: transparent;
   }
   .spacer {
     flex: 1 1 auto;
@@ -186,21 +195,17 @@
     color: var(--body-text-color-subdued, #6b7280);
     white-space: nowrap;
   }
-  .download-btn {
+  .download-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 20px;
+    height: 20px;
     flex-shrink: 0;
-    border-radius: var(--radius-md, 6px);
-    color: var(--body-text-color-subdued, #6b7280);
-    transition:
-      background-color 0.15s,
-      color 0.15s;
+    color: var(--body-text-color-subdued, #9ca3af);
+    transition: color 0.15s;
   }
-  .download-btn:hover {
-    background: var(--background-fill-primary, #fff);
+  .file-entry:hover .download-icon {
     color: var(--color-accent, #f97316);
   }
   .status {
