@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:feat: artifact tracking API
+feat: artifact tracking API
