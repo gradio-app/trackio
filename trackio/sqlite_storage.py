@@ -2608,6 +2608,13 @@ class SQLiteStorage:
 
     @staticmethod
     def load_from_dataset():
+        """Hydrate the local trackio dir from the configured remote.
+
+        Wrapped in a per-thread reentrancy guard (`_dataset_loading.active`)
+        because the import path re-enters via `import_from_parquet` ->
+        `init_db` -> `_ensure_hub_loaded`, and the scheduler lock held during
+        import is not reentrant.
+        """
         if getattr(SQLiteStorage._dataset_loading, "active", False):
             return
         SQLiteStorage._dataset_loading.active = True
@@ -2618,6 +2625,17 @@ class SQLiteStorage:
 
     @staticmethod
     def _load_from_dataset_impl():
+        """Download the remote files, then import them, at most once each.
+
+        Three class flags coordinate this across calls:
+        - `_dataset_remote_synced`: the remote listing + download has run; kept
+          across calls so a retry never re-hits the Hub.
+        - `_dataset_import_pending`: files were downloaded but not yet imported
+          into SQLite; stays True until `import_from_parquet` succeeds, so a
+          transient import failure is retried on the next access.
+        - `_dataset_import_attempted`: the load has run to completion (or been
+          short-circuited); gates `_ensure_hub_loaded` and `export_to_parquet`.
+        """
         bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
         if bucket_id is not None:
             if not SQLiteStorage._dataset_import_attempted:
