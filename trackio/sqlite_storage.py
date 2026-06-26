@@ -1030,9 +1030,11 @@ class SQLiteStorage:
     def _flatten_and_write_parquet(
         db_path: Path, table: str, json_col: str, parquet_path: Path
     ) -> None:
+        db_mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
         if (
             parquet_path.exists()
-            and db_path.stat().st_mtime <= parquet_path.stat().st_mtime
+            and db_mtime_ns is not None
+            and db_mtime_ns < parquet_path.stat().st_mtime_ns
         ):
             return
         rows = SQLiteStorage._read_table_rows(db_path, table)
@@ -1084,7 +1086,7 @@ class SQLiteStorage:
                 if (
                     parquet_path.exists()
                     and db_mtime_ns is not None
-                    and db_mtime_ns <= parquet_path.stat().st_mtime_ns
+                    and db_mtime_ns < parquet_path.stat().st_mtime_ns
                 ):
                     continue
                 artifact_rows = SQLiteStorage._read_table_rows(db_path, table)
