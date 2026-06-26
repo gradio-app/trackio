@@ -48,7 +48,12 @@
   }
 
   function toggleArtifact(name) {
-    expanded[name] = !expanded[name];
+    const opening = !expanded[name];
+    expanded[name] = opening;
+    if (opening) {
+      const latest = artifacts.find((a) => a.name === name)?.versions?.[0];
+      if (latest) expandedVer[verKey(name, latest.version)] = true;
+    }
   }
 
   function toggleVersion(name, version) {
