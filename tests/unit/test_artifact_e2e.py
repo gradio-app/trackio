@@ -1,10 +1,3 @@
-"""End-to-end scenarios for the local artifact path.
-
-`test_artifact.py` covers individual methods. This file covers cohesive
-multi-step user workflows at the public module-level API. These also serve as
-regression tests for the example in the docs.
-"""
-
 from pathlib import Path
 
 import trackio

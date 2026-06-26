@@ -1,14 +1,3 @@
-"""Sync-path coverage for artifacts.
-
-- `bucket_storage.upload_project_to_bucket` ships blob bytes alongside DB+media.
-- `commit_scheduler` `allow_patterns` for dataset-mode sync include
-  `artifacts/**/*`.
-- `deploy._replay_pending_uploads` routes by `pending_uploads.kind`.
-
-Mocks `huggingface_hub` / `CommitScheduler` / RemoteClient so we don't hit the
-network.
-"""
-
 from pathlib import Path
 
 from trackio import bucket_storage

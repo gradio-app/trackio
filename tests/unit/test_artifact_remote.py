@@ -1,9 +1,3 @@
-"""Run remote-mode `log_artifact` / `use_artifact` + sender routing.
-
-Unit-level tests with a mocked `self._client`. The full producer→Space→consumer
-round-trip via a real RemoteClient is covered by `test_artifact_remote_e2e.py`.
-"""
-
 import hashlib
 import threading
 from unittest.mock import MagicMock

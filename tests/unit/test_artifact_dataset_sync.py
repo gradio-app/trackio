@@ -1,11 +1,3 @@
-"""Dataset-mode sync coverage for artifacts.
-
-Dataset-backed Spaces persist data by exporting the SQLite DB to parquet and
-rebuilding it from parquet on restart; the `.db` file itself is never
-committed. These tests pin that artifact metadata survives that round-trip and
-that `load_from_dataset` pulls artifact blobs back.
-"""
-
 import os
 from pathlib import Path
 

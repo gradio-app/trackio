@@ -1,9 +1,3 @@
-"""Remote fallback for `Artifact.download()`.
-
-Tests the consumer-side fetch when a blob is missing locally. Mocks `httpx`
-at the artifact module level so we don't need a real server.
-"""
-
 import hashlib
 from pathlib import Path
 from unittest.mock import MagicMock

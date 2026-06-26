@@ -1,17 +1,3 @@
-"""Full producer→Space→consumer round-trip with a mocked RemoteClient.
-
-In-process integration:
-- The producer side calls a mock client that dispatches to the real server
-  handlers, with auth and upload-state machinery bypassed.
-- `download()`'s remote-fetch fallback uses a stubbed `httpx.stream` that
-  routes `GET /artifact_blob/{project}/{digest}` to the real asgi handler.
-
-Single CAS shared between "producer" and "server" — `test_artifact_server.py`
-pins the rehash/digest-verification behavior with two separate dirs. This file
-pins the high-level orchestration: the right endpoints get called in the right
-order and the consumer can materialize byte-correct files at the end.
-"""
-
 import asyncio
 import hashlib
 from pathlib import Path

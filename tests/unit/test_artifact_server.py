@@ -1,11 +1,3 @@
-"""Server-side endpoints for the artifact round-trip path.
-
-Read endpoints (no auth) are called directly. Write endpoints take a
-Request and call `assert_can_write_metrics`; tests use `Mock()` for the
-Request and monkeypatch the auth check (matches the existing trackio
-pattern in `test_token_auth.py`).
-"""
-
 import hashlib
 import re
 from pathlib import Path
