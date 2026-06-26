@@ -280,7 +280,9 @@ def test_artifact_blob_endpoint_requires_auth(temp_dir, stage_blob):
         {"project": "../etc", "digest": "a" * 64},
     ],
 )
-def test_artifact_blob_endpoint_rejects_invalid_input(temp_dir, monkeypatch, path_params):
+def test_artifact_blob_endpoint_rejects_invalid_input(
+    temp_dir, monkeypatch, path_params
+):
     import asyncio
 
     from trackio import server
