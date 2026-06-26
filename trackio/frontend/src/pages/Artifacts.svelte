@@ -5,6 +5,7 @@
     getArtifactManifest,
     getArtifactBlobUrl,
   } from "../lib/api.js";
+  import { navigateTo, setQueryParam } from "../lib/router.js";
 
   let { project = null } = $props();
 
@@ -47,6 +48,12 @@
 
   function verKey(name, version) {
     return `${name}@v${version}`;
+  }
+
+  function openRun(runName, runId) {
+    setQueryParam("selected_run_id", runId);
+    setQueryParam("selected_run", runName);
+    navigateTo("run-detail");
   }
 
   function toggleArtifact(name) {
@@ -196,9 +203,16 @@
                           <div class="detail-grid">
                             {#if version.producer_run_name}
                               <span class="detail-key">Produced by</span>
-                              <span class="detail-val"
-                                >{version.producer_run_name}</span
-                              >
+                              <span class="detail-val">
+                                <button
+                                  class="run-link"
+                                  onclick={() =>
+                                    openRun(
+                                      version.producer_run_name,
+                                      version.producer_run_id,
+                                    )}>{version.producer_run_name}</button
+                                >
+                              </span>
                             {/if}
                             <span class="detail-key">Digest</span>
                             <span class="detail-val mono"
@@ -443,6 +457,18 @@
   }
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .run-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: var(--text-sm, 12px);
+    color: var(--color-accent, #f97316);
+    cursor: pointer;
+    text-align: left;
+  }
+  .run-link:hover {
+    text-decoration: underline;
   }
   .file-table {
     display: flex;
