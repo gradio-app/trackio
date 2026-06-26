@@ -1,12 +1,5 @@
 """Content-addressed storage (CAS) helpers shared by the artifact client,
 server, and storage layers.
-
-Blobs live at `ARTIFACTS_DIR/<canonical project>/blobs/sha256/<digest[:2]>/<digest>`,
-where the project segment is `utils.canonical_project_name(project)` so the CAS
-dir matches the project's DB filename (a project has one on-disk identity).
-All writes go through a `.partial.<uuid>` temp file in the destination
-directory followed by an atomic rename, so concurrent writers and crashed
-processes never leave a torn blob at the final path.
 """
 
 import hashlib

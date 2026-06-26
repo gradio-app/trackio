@@ -37,11 +37,6 @@ def _fetch_blob_from_remote(
     digest: Sha256Digest,
     target_path: Path,
 ) -> None:
-    """Fetch `GET /artifact_blob/<project>/<digest>` into the local CAS,
-    verifying the streamed bytes hash to `digest`. Authenticates the request
-    (HF token for a Space, write token for a self-hosted server) so blobs on a
-    private remote are reachable.
-    """
     space_id = remote_source.get("space_id")
     src = space_id or remote_source.get("server_base_url")
     if not src:
@@ -87,7 +82,7 @@ class Artifact:
             `^[A-Za-z0-9._-]+$` (letters, digits, dot, underscore, hyphen).
         type (`str`):
             Free-form category such as `"model"` or `"dataset"`, used to group
-            and filter artifacts.
+            artifacts.
         description (`str`, *optional*):
             Human-readable description of the artifact.
         metadata (`dict`, *optional*):

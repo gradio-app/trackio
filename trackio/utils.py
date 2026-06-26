@@ -185,12 +185,10 @@ def canonical_project_name(project: str) -> str:
 
 
 def project_media_dir(project: str) -> Path:
-    """Root media directory for a project, under its canonical on-disk name."""
     return MEDIA_DIR / canonical_project_name(project)
 
 
 def project_artifacts_dir(project: str) -> Path:
-    """Root artifacts directory for a project, under its canonical on-disk name."""
     return ARTIFACTS_DIR / canonical_project_name(project)
 
 

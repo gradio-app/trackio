@@ -1,21 +1,3 @@
-"""Shared routing for buffered `pending_uploads` rows.
-
-`classify_pending_uploads` splits the queue by kind (media vs artifact blob)
-and sets aside rows whose local file has vanished. Every sender consumes it so
-the kind taxonomy and missing-file handling cannot drift:
-
-- the gradio `predict` senders (`Run._send_pending_uploads_to_server` and the
-  out-of-run `deploy._replay_pending_uploads`) shape rows via
-  `group_pending_uploads` and POST to `/bulk_upload_media` /
-  `/bulk_upload_artifact_blob` (grouped by project, since that endpoint takes
-  one project per call);
-- the bucket spill (`Run._flush_pending_uploads_to_bucket`) hands raw rows to
-  the bucket helpers.
-
-Each group carries its own row ids so callers clear rows per successfully-sent
-group instead of all-or-nothing.
-"""
-
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -27,18 +9,7 @@ from trackio.sqlite_storage import SQLiteStorage
 
 def classify_pending_uploads(buffered: dict) -> dict:
     """Partition `buffered` (`{"uploads": [...], "ids": [...]}` from
-    `SQLiteStorage.get_pending_uploads`) by kind, without shaping rows for any
-    particular destination.
-
-    Returns:
-        {
-            "media": [(upload, id), ...],
-            "artifact_blobs": [(upload, id), ...],
-            "missing": {"paths": [str], "ids": [int]},
-        }
-
-    Rows whose `file_path` no longer exists land in `"missing"` — callers
-    should clear them and surface a warning.
+    `SQLiteStorage.get_pending_uploads`) by kind.
     """
     media: list[tuple[dict, int]] = []
     artifact_blobs: list[tuple[dict, int]] = []
@@ -56,15 +27,7 @@ def classify_pending_uploads(buffered: dict) -> dict:
 
 
 def group_pending_uploads(buffered: dict) -> dict:
-    """Shape classified rows for the gradio `predict` endpoints.
-
-    Returns:
-        {
-            "media": {"entries": [UploadEntry], "ids": [int]},
-            "artifact_blobs": {project: {"entries": [...], "ids": [int]}},
-            "missing": {"paths": [str], "ids": [int]},
-        }
-    """
+    """Shape classified rows for the gradio `predict` endpoints."""
     classified = classify_pending_uploads(buffered)
     media: dict = {"entries": [], "ids": []}
     for upload, upload_id in classified["media"]:
