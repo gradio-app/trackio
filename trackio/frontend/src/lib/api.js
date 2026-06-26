@@ -213,6 +213,12 @@ export async function getArtifactManifest(project, name, spec) {
   return await callApi("/get_artifact_manifest", { project, name, spec });
 }
 
+export async function getRunArtifacts(project, run) {
+  const params = { project, ...normalizeRun(run) };
+  if (await isStaticMode()) return staticApi.getRunArtifacts(project, run);
+  return await callApi("/get_run_artifacts", params);
+}
+
 export function getArtifactBlobUrl(project, digest) {
   return `${BASE}/artifact_blob/${encodeURIComponent(project)}/${encodeURIComponent(digest)}`;
 }

@@ -529,6 +529,10 @@ export async function getArtifactManifest() {
   return null;
 }
 
+export async function getRunArtifacts() {
+  return { input: [], output: [] };
+}
+
 export async function getProjectFiles() {
   if (fileListData) return fileListData;
 

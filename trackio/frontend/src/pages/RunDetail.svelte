@@ -1,7 +1,7 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getRunSummary } from "../lib/api.js";
-  import { getQueryParam } from "../lib/router.js";
+  import { getRunSummary, getRunArtifacts } from "../lib/api.js";
+  import { getQueryParam, navigateTo, setQueryParam } from "../lib/router.js";
 
   let { project = null } = $props();
 
@@ -9,6 +9,21 @@
   let runId = $state(null);
   let summary = $state(null);
   let loading = $state(false);
+  let runArtifacts = $state({ input: [], output: [] });
+
+  function formatSize(bytes) {
+    if (bytes == null) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024)
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+
+  function openArtifact(name) {
+    setQueryParam("selected_artifact", name);
+    navigateTo("artifacts");
+  }
 
   $effect(() => {
     runId = getQueryParam("selected_run_id");
@@ -18,6 +33,7 @@
   async function loadDetail() {
     if (!project || (!runName && !runId)) {
       summary = null;
+      runArtifacts = { input: [], output: [] };
       return;
     }
 
@@ -35,6 +51,14 @@
       console.error("Failed to load run detail:", e);
     } finally {
       loading = false;
+    }
+    try {
+      runArtifacts = await getRunArtifacts(
+        project,
+        runId ? { id: runId, name: runName } : runName,
+      );
+    } catch {
+      runArtifacts = { input: [], output: [] };
     }
   }
 
@@ -86,6 +110,38 @@
       {#if summary.config}
         <h3>Configuration</h3>
         <pre class="config-block">{JSON.stringify(summary.config, null, 2)}</pre>
+      {/if}
+
+      {#if runArtifacts.output.length > 0}
+        <h3>Output artifacts</h3>
+        <div class="artifact-links">
+          {#each runArtifacts.output as art}
+            <button class="artifact-link" onclick={() => openArtifact(art.name)}>
+              <span class="art-name"
+                >{art.name}<span class="art-ver">:v{art.version}</span></span
+              >
+              <span class="art-type">{art.type}</span>
+              <span class="art-size">{formatSize(art.size_bytes)}</span>
+              <span class="art-arrow">→</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+
+      {#if runArtifacts.input.length > 0}
+        <h3>Input artifacts</h3>
+        <div class="artifact-links">
+          {#each runArtifacts.input as art}
+            <button class="artifact-link" onclick={() => openArtifact(art.name)}>
+              <span class="art-name"
+                >{art.name}<span class="art-ver">:v{art.version}</span></span
+              >
+              <span class="art-type">{art.type}</span>
+              <span class="art-size">{formatSize(art.size_bytes)}</span>
+              <span class="art-arrow">→</span>
+            </button>
+          {/each}
+        </div>
       {/if}
     </div>
   {/if}
@@ -142,6 +198,54 @@
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color, #1f2937);
     overflow-x: auto;
+  }
+  .artifact-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .artifact-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  .artifact-link:hover {
+    border-color: var(--color-accent, #f97316);
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .art-name {
+    font-weight: 600;
+    color: var(--color-accent, #f97316);
+    font-size: var(--text-md, 14px);
+  }
+  .art-ver {
+    font-weight: 400;
+    color: var(--body-text-color-subdued, #6b7280);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .art-type {
+    font-size: var(--text-xs, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--body-text-color-subdued, #6b7280);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: 9px;
+    padding: 1px 8px;
+  }
+  .art-size {
+    margin-left: auto;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .art-arrow {
+    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state {
     max-width: 640px;

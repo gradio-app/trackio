@@ -1,11 +1,12 @@
 <script>
+  import { tick } from "svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import {
     listArtifacts,
     getArtifactManifest,
     getArtifactBlobUrl,
   } from "../lib/api.js";
-  import { navigateTo, setQueryParam } from "../lib/router.js";
+  import { navigateTo, setQueryParam, getQueryParam } from "../lib/router.js";
 
   let { project = null } = $props();
 
@@ -94,6 +95,14 @@
     } finally {
       loading = false;
     }
+    const target = getQueryParam("selected_artifact");
+    if (target && artifacts.some((a) => a.name === target)) {
+      expanded[target] = true;
+      await tick();
+      document
+        .getElementById(`artifact-${target}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   $effect(() => {
@@ -137,7 +146,11 @@
         <div class="artifact-list">
           {#each group.items as artifact}
             {@const latest = artifact.versions[0]}
-            <div class="artifact-item" class:expanded={expanded[artifact.name]}>
+            <div
+              class="artifact-item"
+              id={"artifact-" + artifact.name}
+              class:expanded={expanded[artifact.name]}
+            >
               <button
                 class="artifact-row"
                 onclick={() => toggleArtifact(artifact.name)}

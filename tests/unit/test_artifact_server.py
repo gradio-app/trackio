@@ -461,3 +461,40 @@ def test_get_tab_availability_reflects_artifacts(temp_dir, auth_bypassed, stage_
         manifest=[{"path": "x", "digest": digest, "size": 1}],
     )
     assert server.get_tab_availability("p")["artifacts"] is True
+
+
+def test_get_run_artifacts_endpoint_returns_inputs_and_outputs(
+    temp_dir, auth_bypassed, stage_blob
+):
+    digest, _ = stage_blob("p", b"w")
+    result = _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        type="model",
+        run_name="producer",
+        run_id="prod-id",
+    )
+
+    prod = server.get_run_artifacts("p", run="producer", run_id="prod-id")
+    assert [a["name"] for a in prod["output"]] == ["m"]
+    assert prod["input"] == []
+
+    server.log_artifact_use(
+        request=auth_bypassed,
+        project="p",
+        version_id=result["version_id"],
+        run_name="consumer",
+        run_id="cons-id",
+        hf_token=None,
+    )
+    cons = server.get_run_artifacts("p", run="consumer", run_id="cons-id")
+    assert [a["name"] for a in cons["input"]] == ["m"]
+    assert cons["output"] == []
+
+
+def test_get_run_artifacts_endpoint_empty_on_miss(temp_dir):
+    assert server.get_run_artifacts("p", run="nope", run_id=None) == {
+        "input": [],
+        "output": [],
+    }
