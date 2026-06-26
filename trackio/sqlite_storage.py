@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Lock
+from threading import Lock, local
 from typing import Any
 
 try:
@@ -347,6 +347,7 @@ class SQLiteStorage:
     _dataset_import_attempted = False
     _dataset_import_pending = False
     _dataset_remote_synced = False
+    _dataset_loading = local()
     _current_scheduler: CommitScheduler | DummyCommitScheduler | None = None
     _scheduler_lock = Lock()
 
@@ -2580,6 +2581,16 @@ class SQLiteStorage:
 
     @staticmethod
     def load_from_dataset():
+        if getattr(SQLiteStorage._dataset_loading, "active", False):
+            return
+        SQLiteStorage._dataset_loading.active = True
+        try:
+            SQLiteStorage._load_from_dataset_impl()
+        finally:
+            SQLiteStorage._dataset_loading.active = False
+
+    @staticmethod
+    def _load_from_dataset_impl():
         bucket_id = os.environ.get("TRACKIO_BUCKET_ID")
         if bucket_id is not None:
             if not SQLiteStorage._dataset_import_attempted:

@@ -394,6 +394,72 @@ def test_load_from_dataset_skips_import_when_nothing_downloaded(
     assert import_calls == []
 
 
+def test_load_from_dataset_does_not_deadlock_on_reentrant_init_db(
+    temp_dir, monkeypatch
+):
+    import threading
+
+    from trackio import sqlite_storage as _ss
+
+    monkeypatch.setenv("TRACKIO_DATASET_ID", "user/ds")
+    monkeypatch.setenv("SPACE_REPO_NAME", "user/space")
+    monkeypatch.delenv("TRACKIO_BUCKET_ID", raising=False)
+
+    class _RealLockScheduler:
+        def __init__(self):
+            self.lock = threading.Lock()
+
+    sched = _RealLockScheduler()
+    monkeypatch.setattr(_ss.SQLiteStorage, "_current_scheduler", sched)
+    monkeypatch.setattr(_ss.SQLiteStorage, "get_scheduler", staticmethod(lambda: sched))
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_attempted", True)
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_pending", False)
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_remote_synced", False)
+
+    SQLiteStorage.init_db("proj")
+    SQLiteStorage.log(project="proj", run="train", metrics={"loss": 0.1})
+    SQLiteStorage.export_to_parquet()
+
+    remote = Path(temp_dir) / "_remote"
+    remote.mkdir()
+    moved = []
+    for pq in Path(temp_dir).glob("*.parquet"):
+        pq.rename(remote / pq.name)
+        moved.append(pq.name)
+    db_path = SQLiteStorage.get_project_db_path("proj")
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        sidecar = db_path.with_name(db_path.name + suffix)
+        if sidecar.exists():
+            sidecar.unlink()
+
+    class _FakeApi:
+        def list_repo_files(self, repo_id, repo_type=None):
+            return moved
+
+    def _fake_download(dataset_id, file, repo_type=None, local_dir=None):
+        dest = Path(local_dir) / file
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes((remote / file).read_bytes())
+        return str(dest)
+
+    monkeypatch.setattr(_ss.hf, "HfApi", lambda: _FakeApi())
+    monkeypatch.setattr(_ss.hf, "hf_hub_download", _fake_download)
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_attempted", False)
+    monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_pending", False)
+
+    done = threading.Event()
+
+    def _run():
+        try:
+            SQLiteStorage.load_from_dataset()
+        finally:
+            done.set()
+
+    threading.Thread(target=_run, daemon=True).start()
+    assert done.wait(timeout=10), "load_from_dataset deadlocked on re-entrant init_db"
+    assert "proj" in SQLiteStorage.get_projects()
+
+
 def test_artifact_parquet_tables_match_schema(temp_dir):
     """Guard against silent schema drift: _ARTIFACT_PARQUET_TABLES must list
     every column of each artifact table, in order. A column added to the
