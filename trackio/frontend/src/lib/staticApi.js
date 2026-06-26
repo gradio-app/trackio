@@ -516,8 +516,17 @@ export async function getTabAvailability() {
     system: (systemRaw || []).length > 0,
     traces: (tracesRaw || []).length > 0,
     files: (files || []).length > 0,
+    artifacts: false,
   };
   return tabAvailabilityCache;
+}
+
+export async function listArtifacts() {
+  return [];
+}
+
+export async function getArtifactManifest() {
+  return null;
 }
 
 export async function getProjectFiles() {

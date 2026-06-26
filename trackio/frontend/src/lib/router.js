@@ -20,6 +20,8 @@ export function getPageFromPath() {
       return "run-detail";
     case "files":
       return "files";
+    case "artifacts":
+      return "artifacts";
     case "settings":
       return "settings";
     default:
@@ -38,6 +40,7 @@ export function navigateTo(page) {
     runs: "/runs",
     "run-detail": "/run",
     files: "/files",
+    artifacts: "/artifacts",
     settings: "/settings",
   };
   const path = pathMap[page] || "/";

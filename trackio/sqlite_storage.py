@@ -2116,6 +2116,7 @@ class SQLiteStorage:
             "media": False,
             "reports": False,
             "alerts": False,
+            "artifacts": False,
         }
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -2160,6 +2161,9 @@ class SQLiteStorage:
             flags["system"] = _exists(conn, "SELECT 1 FROM system_metrics LIMIT 1")
             flags["traces"] = _exists(conn, "SELECT 1 FROM traces LIMIT 1")
             flags["alerts"] = _exists(conn, "SELECT 1 FROM alerts LIMIT 1")
+            flags["artifacts"] = _exists(
+                conn, "SELECT 1 FROM artifact_versions LIMIT 1"
+            )
         return flags
 
     @staticmethod
@@ -4672,6 +4676,78 @@ class SQLiteStorage:
                         "version": int(row["version"]),
                         "size_bytes": int(row["size_bytes"]),
                         "created_at": row["created_at"],
+                    }
+                )
+            return result
+
+    @staticmethod
+    def list_artifacts(project: str) -> list[dict]:
+        """List every artifact in a project with per-version metadata, but not
+        the file manifests themselves. Artifacts are ordered by type then name;
+        each artifact's versions are newest-first. Returns [] when the project
+        DB or the artifact tables don't exist yet."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                artifact_rows = cursor.execute(
+                    """SELECT id, name, type, description, created_at
+                    FROM artifacts ORDER BY type, name"""
+                ).fetchall()
+                version_rows = cursor.execute(
+                    """SELECT id, artifact_id, version, manifest, manifest_digest,
+                           metadata, size_bytes, producer_run_id,
+                           producer_run_name, created_at
+                    FROM artifact_versions
+                    ORDER BY artifact_id, version DESC"""
+                ).fetchall()
+                alias_rows = cursor.execute(
+                    "SELECT alias, artifact_version_id FROM artifact_aliases"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return []
+
+            aliases_by_version: dict[int, list[str]] = {}
+            for row in alias_rows:
+                aliases_by_version.setdefault(
+                    int(row["artifact_version_id"]), []
+                ).append(row["alias"])
+
+            versions_by_artifact: dict[int, list[dict]] = {}
+            for row in version_rows:
+                versions_by_artifact.setdefault(int(row["artifact_id"]), []).append(
+                    {
+                        "version_id": int(row["id"]),
+                        "version": int(row["version"]),
+                        "aliases": aliases_by_version.get(int(row["id"]), []),
+                        "size_bytes": int(row["size_bytes"]),
+                        "num_files": len(orjson.loads(row["manifest"])),
+                        "manifest_digest": row["manifest_digest"],
+                        "metadata": (
+                            orjson.loads(row["metadata"])
+                            if row["metadata"] is not None
+                            else None
+                        ),
+                        "producer_run_id": row["producer_run_id"],
+                        "producer_run_name": row["producer_run_name"],
+                        "created_at": row["created_at"],
+                    }
+                )
+
+            result = []
+            for art in artifact_rows:
+                versions = versions_by_artifact.get(int(art["id"]), [])
+                result.append(
+                    {
+                        "name": art["name"],
+                        "type": art["type"],
+                        "description": art["description"],
+                        "created_at": art["created_at"],
+                        "num_versions": len(versions),
+                        "latest_version": versions[0]["version"] if versions else None,
+                        "versions": versions,
                     }
                 )
             return result

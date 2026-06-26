@@ -359,6 +359,7 @@ def test_get_tab_availability_reflects_data(temp_dir):
         "media": False,
         "reports": False,
         "files": False,
+        "artifacts": False,
     }
 
     SQLiteStorage.log(project=project, run="r1", metrics={"loss": 0.25})

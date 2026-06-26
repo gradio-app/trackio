@@ -203,6 +203,20 @@ export async function getProjectFiles(project) {
   return await callApi("/get_project_files", { project });
 }
 
+export async function listArtifacts(project) {
+  if (await isStaticMode()) return staticApi.listArtifacts(project);
+  return await callApi("/list_artifacts", { project });
+}
+
+export async function getArtifactManifest(project, name, spec) {
+  if (await isStaticMode()) return staticApi.getArtifactManifest(project, name, spec);
+  return await callApi("/get_artifact_manifest", { project, name, spec });
+}
+
+export function getArtifactBlobUrl(project, digest) {
+  return `${BASE}/artifact_blob/${encodeURIComponent(project)}/${encodeURIComponent(digest)}`;
+}
+
 export async function getTabAvailability(project) {
   if (await isStaticMode()) return staticApi.getTabAvailability(project);
   return await callApi("/get_tab_availability", { project });

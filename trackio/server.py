@@ -726,6 +726,11 @@ def get_artifacts(project: str) -> list[dict]:
     return SQLiteStorage.get_artifacts(project)
 
 
+def list_artifacts(project: str) -> list[dict]:
+    project = _validate_project_name(project)
+    return SQLiteStorage.list_artifacts(project)
+
+
 def log_artifact_use(
     request: Request,
     project: str,
@@ -1188,6 +1193,7 @@ def get_tab_availability(project: str) -> dict[str, bool]:
         "media": flags["media"],
         "reports": flags["reports"] or flags["alerts"],
         "files": _project_has_files(project),
+        "artifacts": flags["artifacts"],
     }
 
 
@@ -1241,6 +1247,7 @@ def _api_registry() -> dict[str, Any]:
         "artifact_log": artifact_log,
         "get_artifact_manifest": get_artifact_manifest,
         "get_artifacts": get_artifacts,
+        "list_artifacts": list_artifacts,
         "log_artifact_use": log_artifact_use,
         "log": log,
         "bulk_log": bulk_log,

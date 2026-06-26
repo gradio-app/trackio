@@ -11,6 +11,7 @@
   import Runs from "./pages/Runs.svelte";
   import RunDetail from "./pages/RunDetail.svelte";
   import Files from "./pages/Files.svelte";
+  import Artifacts from "./pages/Artifacts.svelte";
   import {
     getAllProjects,
     getRunsForProject,
@@ -109,6 +110,7 @@
     "media",
     "reports",
     "files",
+    "artifacts",
   ]);
   const AUTO_OPEN_TAB_ORDER = [
     "metrics",
@@ -118,6 +120,7 @@
     "reports",
     "runs",
     "files",
+    "artifacts",
   ];
   let runConfigs = $state({});
   let runConfigsProject = $state(null);
@@ -237,6 +240,7 @@
       reports: false,
       runs: false,
       files: false,
+      artifacts: false,
     };
   }
 
@@ -516,11 +520,16 @@
       currentPage === "reports" ||
       currentPage === "runs" ||
       currentPage === "run-detail" ||
-      currentPage === "files"
+      currentPage === "files" ||
+      currentPage === "artifacts"
   );
 
   let sidebarVariant = $derived(
-    currentPage === "runs" || currentPage === "files" ? "compact" : "full"
+    currentPage === "runs" ||
+      currentPage === "files" ||
+      currentPage === "artifacts"
+      ? "compact"
+      : "full"
   );
 </script>
 
@@ -621,6 +630,8 @@
         <RunDetail project={selectedProject} />
       {:else if currentPage === "files"}
         <Files project={selectedProject} />
+      {:else if currentPage === "artifacts"}
+        <Artifacts project={selectedProject} />
       {:else if currentPage === "settings"}
         <Settings {spaceId} selectedProject={selectedProject} {projects} />
       {/if}
