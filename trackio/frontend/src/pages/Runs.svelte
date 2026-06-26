@@ -1,7 +1,13 @@
 <script>
   import { tick } from "svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
+  import {
+    getProjectSummary,
+    getRunSummary,
+    getRunArtifacts,
+    deleteRun,
+    renameRun,
+  } from "../lib/api.js";
   import { navigateTo, setQueryParam } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
@@ -30,6 +36,10 @@
     return runsData.filter((r) => matches.has(r.name));
   });
 
+  let hasArtifacts = $derived(
+    runsData.some((r) => r.outputs > 0 || r.inputs > 0),
+  );
+
   async function loadRuns() {
     if (!project) {
       runsData = [];
@@ -40,14 +50,24 @@
     try {
       const summary = await getProjectSummary(project);
       const runRecords = summary.runs || [];
-      const summaries = await Promise.all(
-        runRecords.map((run) => getRunSummary(project, run)),
-      );
+      const [summaries, runArtifacts] = await Promise.all([
+        Promise.all(runRecords.map((run) => getRunSummary(project, run))),
+        Promise.all(
+          runRecords.map((run) =>
+            getRunArtifacts(project, run).catch(() => ({
+              input: [],
+              output: [],
+            })),
+          ),
+        ),
+      ]);
       const data = summaries.map((s, i) => ({
         id: runRecords[i].id ?? runRecords[i].name,
         name: runRecords[i].name,
         numSteps: s.num_logs || 0,
         lastStep: s.last_step || 0,
+        outputs: (runArtifacts[i].output || []).length,
+        inputs: (runArtifacts[i].input || []).length,
       }));
 
       runsData = data;
@@ -130,6 +150,9 @@
           <th>Run Name</th>
           <th>Steps</th>
           <th>Last Step</th>
+          {#if hasArtifacts}
+            <th>Artifacts</th>
+          {/if}
         </tr>
       </thead>
       <tbody>
@@ -187,6 +210,32 @@
             </td>
             <td>{run.numSteps}</td>
             <td>{run.lastStep}</td>
+            {#if hasArtifacts}
+              <td>
+                {#if run.outputs > 0 || run.inputs > 0}
+                  <div class="artifact-counts">
+                    {#if run.outputs > 0}
+                      <span
+                        class="art-count"
+                        title="{run.outputs} output artifact{run.outputs === 1
+                          ? ''
+                          : 's'} (produced)">↑ {run.outputs}</span
+                      >
+                    {/if}
+                    {#if run.inputs > 0}
+                      <span
+                        class="art-count"
+                        title="{run.inputs} input artifact{run.inputs === 1
+                          ? ''
+                          : 's'} (consumed)">↓ {run.inputs}</span
+                      >
+                    {/if}
+                  </div>
+                {:else}
+                  <span class="art-none">—</span>
+                {/if}
+              </td>
+            {/if}
           </tr>
         {/each}
       </tbody>
@@ -333,5 +382,24 @@
     opacity: 0.45;
     cursor: not-allowed;
     pointer-events: none;
+  }
+  .artifact-counts {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .art-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+    background: transparent;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: 9px;
+    padding: 1px 8px;
+    white-space: nowrap;
+  }
+  .art-none {
+    color: var(--body-text-color-subdued, #9ca3af);
   }
 </style>

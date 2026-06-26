@@ -498,3 +498,94 @@ def test_get_run_artifacts_endpoint_empty_on_miss(temp_dir):
         "input": [],
         "output": [],
     }
+
+
+def test_get_artifact_consumers_endpoint(temp_dir, auth_bypassed, stage_blob):
+    digest, _ = stage_blob("p", b"w")
+    result = _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="producer",
+        run_id="prod-id",
+    )
+    version_id = result["version_id"]
+
+    assert server.get_artifact_consumers("p", version_id) == []
+
+    for run_name, run_id in [("consumer-a", "a-id"), ("consumer-b", "b-id")]:
+        server.log_artifact_use(
+            request=auth_bypassed,
+            project="p",
+            version_id=version_id,
+            run_name=run_name,
+            run_id=run_id,
+            hf_token=None,
+        )
+
+    consumers = server.get_artifact_consumers("p", version_id)
+    assert sorted(c["run_name"] for c in consumers) == ["consumer-a", "consumer-b"]
+
+
+def test_get_artifact_consumers_empty_on_miss(temp_dir):
+    assert server.get_artifact_consumers("p", 999) == []
+
+
+def test_run_records_include_artifact_only_runs(temp_dir, auth_bypassed, stage_blob):
+    digest, _ = stage_blob("p", b"w")
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="artifact-only",
+        run_id="ao-id",
+    )
+    records = SQLiteStorage.get_run_records("p")
+    assert any(r["name"] == "artifact-only" and r["id"] == "ao-id" for r in records)
+
+
+def test_delete_run_clears_artifact_links_no_resurrection(
+    temp_dir, auth_bypassed, stage_blob
+):
+    digest, _ = stage_blob("p", b"w")
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="producer",
+        run_id="prod-id",
+    )
+    assert any(r["name"] == "producer" for r in SQLiteStorage.get_run_records("p"))
+
+    assert SQLiteStorage.delete_run("p", "producer", run_id="prod-id") is True
+
+    assert all(r["name"] != "producer" for r in SQLiteStorage.get_run_records("p"))
+    assert SQLiteStorage.get_run_artifacts("p", "producer", "prod-id") == {
+        "input": [],
+        "output": [],
+    }
+
+
+def test_rename_run_updates_artifact_links_and_producer(
+    temp_dir, auth_bypassed, stage_blob
+):
+    digest, _ = stage_blob("p", b"w")
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="old-name",
+        run_id="r-id",
+    )
+
+    SQLiteStorage.rename_run("p", "old-name", "new-name", run_id="r-id")
+
+    names = {r["name"] for r in SQLiteStorage.get_run_records("p")}
+    assert "new-name" in names and "old-name" not in names
+
+    out = SQLiteStorage.get_run_artifacts("p", "new-name", "r-id")["output"]
+    assert [a["name"] for a in out] == ["m"]
+    assert (
+        SQLiteStorage.get_artifact_manifest("p", "m", "latest")["producer_run_name"]
+        == "new-name"
+    )

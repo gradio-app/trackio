@@ -219,6 +219,14 @@ export async function getRunArtifacts(project, run) {
   return await callApi("/get_run_artifacts", params);
 }
 
+export async function getArtifactConsumers(project, versionId) {
+  if (await isStaticMode()) return staticApi.getArtifactConsumers(project, versionId);
+  return await callApi("/get_artifact_consumers", {
+    project,
+    version_id: versionId,
+  });
+}
+
 export function getArtifactBlobUrl(project, digest) {
   return `${BASE}/artifact_blob/${encodeURIComponent(project)}/${encodeURIComponent(digest)}`;
 }

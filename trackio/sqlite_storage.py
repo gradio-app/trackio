@@ -811,11 +811,22 @@ class SQLiteStorage:
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
+                has_links = bool(
+                    SQLiteStorage._table_columns(conn, "run_artifact_links")
+                )
                 if SQLiteStorage._supports_run_ids(conn):
+                    sources = [
+                        "SELECT run_id, run_name, timestamp AS created_at FROM metrics"
+                    ]
+                    if has_links:
+                        sources.append(
+                            "SELECT run_id, run_name, created_at FROM "
+                            "run_artifact_links WHERE run_name IS NOT NULL"
+                        )
                     cursor.execute(
-                        """
-                        SELECT run_id, run_name, MIN(timestamp) as created_at
-                        FROM metrics
+                        f"""
+                        SELECT run_id, run_name, MIN(created_at) AS created_at
+                        FROM ({" UNION ALL ".join(sources)})
                         GROUP BY run_id, run_name
                         ORDER BY created_at ASC
                         """
@@ -829,10 +840,16 @@ class SQLiteStorage:
                         for row in cursor.fetchall()
                     ]
 
+                sources = ["SELECT run_name, timestamp AS created_at FROM metrics"]
+                if has_links:
+                    sources.append(
+                        "SELECT run_name, created_at FROM run_artifact_links "
+                        "WHERE run_name IS NOT NULL"
+                    )
                 cursor.execute(
-                    """
-                    SELECT run_name, MIN(timestamp) as created_at
-                    FROM metrics
+                    f"""
+                    SELECT run_name, MIN(created_at) AS created_at
+                    FROM ({" UNION ALL ".join(sources)})
                     GROUP BY run_name
                     ORDER BY created_at ASC
                     """
@@ -3001,6 +3018,13 @@ class SQLiteStorage:
                             )
                     except sqlite3.OperationalError:
                         pass
+                    try:
+                        cursor.execute(
+                            f"DELETE FROM run_artifact_links WHERE {run_identity[0]} = ?",
+                            (run_identity[1],),
+                        )
+                    except sqlite3.OperationalError:
+                        pass
                     conn.commit()
                     return True
                 except sqlite3.Error:
@@ -3252,6 +3276,29 @@ class SQLiteStorage:
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             updated_trace_rows,
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+
+                    try:
+                        cursor.execute(
+                            f"UPDATE run_artifact_links SET run_name = ? "
+                            f"WHERE {run_col} = ?",
+                            (new_name, run_value),
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+
+                    producer_col = (
+                        "producer_run_id"
+                        if run_col == "run_id"
+                        else "producer_run_name"
+                    )
+                    try:
+                        cursor.execute(
+                            f"UPDATE artifact_versions SET producer_run_name = ? "
+                            f"WHERE {producer_col} = ?",
+                            (new_name, run_value),
                         )
                     except sqlite3.OperationalError:
                         pass
@@ -4679,6 +4726,34 @@ class SQLiteStorage:
                     }
                 )
             return result
+
+    @staticmethod
+    def get_artifact_consumers(project: str, version_id: int) -> list[dict]:
+        """Runs that consumed a given artifact version as input (the reverse of
+        the version's producer run). Returns [] when the DB or tables are
+        absent."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        with SQLiteStorage._get_connection(db_path) as conn:
+            try:
+                rows = conn.execute(
+                    """SELECT run_name, run_id, created_at
+                    FROM run_artifact_links
+                    WHERE artifact_version_id = ? AND direction = 'input'
+                    ORDER BY created_at""",
+                    (version_id,),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return []
+            return [
+                {
+                    "run_name": r["run_name"],
+                    "run_id": r["run_id"],
+                    "created_at": r["created_at"],
+                }
+                for r in rows
+            ]
 
     @staticmethod
     def list_artifacts(project: str) -> list[dict]:

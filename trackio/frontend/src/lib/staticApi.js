@@ -533,6 +533,10 @@ export async function getRunArtifacts() {
   return { input: [], output: [] };
 }
 
+export async function getArtifactConsumers() {
+  return [];
+}
+
 export async function getProjectFiles() {
   if (fileListData) return fileListData;
 

@@ -4,6 +4,7 @@
   import {
     listArtifacts,
     getArtifactManifest,
+    getArtifactConsumers,
     getArtifactBlobUrl,
   } from "../lib/api.js";
   import { navigateTo, setQueryParam, getQueryParam } from "../lib/router.js";
@@ -15,6 +16,7 @@
   let expanded = $state({});
   let expandedVer = $state({});
   let manifests = $state({});
+  let consumers = $state({});
 
   let groups = $derived.by(() => {
     const byType = new Map();
@@ -62,20 +64,23 @@
   }
 
   async function toggleVersion(name, version) {
-    const key = verKey(name, version);
+    const key = verKey(name, version.version);
     expandedVer[key] = !expandedVer[key];
     if (expandedVer[key] && !manifests[key]) {
       manifests[key] = { loading: true, files: null, error: false };
-      try {
-        const m = await getArtifactManifest(project, name, `v${version}`);
-        manifests[key] = {
-          loading: false,
-          files: m?.manifest || [],
-          error: false,
-        };
-      } catch {
-        manifests[key] = { loading: false, files: null, error: true };
-      }
+      consumers[key] = { loading: true, runs: [] };
+      const [m, c] = await Promise.allSettled([
+        getArtifactManifest(project, name, `v${version.version}`),
+        getArtifactConsumers(project, version.version_id),
+      ]);
+      manifests[key] =
+        m.status === "fulfilled"
+          ? { loading: false, files: m.value?.manifest || [], error: false }
+          : { loading: false, files: null, error: true };
+      consumers[key] = {
+        loading: false,
+        runs: c.status === "fulfilled" ? c.value || [] : [],
+      };
     }
   }
 
@@ -83,6 +88,7 @@
     expanded = {};
     expandedVer = {};
     manifests = {};
+    consumers = {};
     if (!project) {
       artifacts = [];
       return;
@@ -183,8 +189,7 @@
                     <div class="version-item" class:expanded={expandedVer[vkey]}>
                       <button
                         class="version-row"
-                        onclick={() =>
-                          toggleVersion(artifact.name, version.version)}
+                        onclick={() => toggleVersion(artifact.name, version)}
                       >
                         <span class="chevron" class:open={expandedVer[vkey]}
                           >▸</span
@@ -225,6 +230,21 @@
                                       version.producer_run_id,
                                     )}>{version.producer_run_name}</button
                                 >
+                              </span>
+                            {/if}
+                            {#if consumers[vkey]?.runs?.length}
+                              <span class="detail-key">Used by</span>
+                              <span class="detail-val">
+                                {#each consumers[vkey].runs as c, ci}<button
+                                    class="run-link"
+                                    onclick={() =>
+                                      openRun(
+                                        c.run_name,
+                                        c.run_id,
+                                      )}>{c.run_name ?? c.run_id}</button
+                                  >{ci < consumers[vkey].runs.length - 1
+                                    ? ", "
+                                    : ""}{/each}
                               </span>
                             {/if}
                             <span class="detail-key">Digest</span>
