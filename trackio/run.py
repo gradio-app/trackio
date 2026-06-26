@@ -1328,6 +1328,7 @@ class Run:
         artifact_or_name: Artifact | str,
         type: str | None = None,
     ) -> Artifact:
+        """Resolve an artifact and record this run as a consumer of it."""
         if isinstance(artifact_or_name, Artifact):
             if not artifact_or_name._logged or artifact_or_name._version is None:
                 raise ValueError(
