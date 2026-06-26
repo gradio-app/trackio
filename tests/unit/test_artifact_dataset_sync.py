@@ -410,7 +410,6 @@ def test_load_from_dataset_does_not_deadlock_on_reentrant_init_db(
             self.lock = threading.Lock()
 
     sched = _RealLockScheduler()
-    monkeypatch.setattr(_ss.SQLiteStorage, "_current_scheduler", sched)
     monkeypatch.setattr(_ss.SQLiteStorage, "get_scheduler", staticmethod(lambda: sched))
     monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_attempted", True)
     monkeypatch.setattr(_ss.SQLiteStorage, "_dataset_import_pending", False)
