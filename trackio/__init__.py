@@ -339,6 +339,8 @@ def init(
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
+    SQLiteStorage.validate_project_name(project)
+
     if settings is not None:
         _emit_nonfatal_warning(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."

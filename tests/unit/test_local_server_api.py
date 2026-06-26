@@ -101,7 +101,7 @@ def test_local_dashboard_supports_remote_client(temp_dir):
 
 
 def test_get_run_configs_returns_config_per_run(temp_dir):
-    project = "test_run_configs"
+    project = "run_config_per_run"
 
     run_a = trackio.init(
         project=project,

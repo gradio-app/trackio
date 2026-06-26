@@ -428,6 +428,33 @@ class SQLiteStorage:
         return TRACKIO_DIR / filename
 
     @staticmethod
+    def validate_project_name(project: str) -> None:
+        """Reject project names whose canonical on-disk identity would collide
+        with the parquet sidecar files trackio writes for another project's
+        metrics/artifact tables (e.g. a project ``model_artifacts`` shares the
+        file ``model_artifacts.parquet`` with project ``model``'s artifacts
+        sidecar)."""
+        reserved = tuple(
+            f"_{table}"
+            for table in (
+                "system",
+                "configs",
+                "traces",
+                *SQLiteStorage._ARTIFACT_PARQUET_TABLES,
+            )
+        )
+        canonical = canonical_project_name(project)
+        for suffix in reserved:
+            if len(canonical) > len(suffix) and canonical.endswith(suffix):
+                sibling = canonical[: -len(suffix)]
+                raise ValueError(
+                    f"Project name {project!r} is not allowed: its on-disk name "
+                    f"{canonical!r} ends with the reserved suffix {suffix!r}, which "
+                    f"collides with the parquet sidecar files trackio writes for a "
+                    f"project named {sibling!r}. Choose a different project name."
+                )
+
+    @staticmethod
     def init_db(project: str) -> Path:
         """
         Initialize the SQLite database with required tables.

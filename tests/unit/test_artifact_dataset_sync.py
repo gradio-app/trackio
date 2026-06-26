@@ -211,10 +211,43 @@ def test_project_named_like_artifact_table_does_not_collide(temp_dir):
     assert record["version"] == 0
 
 
+def test_validate_project_name_rejects_reserved_sidecar_suffixes():
+    for suffix in (
+        "_system",
+        "_configs",
+        "_traces",
+        "_artifacts",
+        "_artifact_versions",
+        "_artifact_aliases",
+        "_run_artifact_links",
+    ):
+        with pytest.raises(ValueError, match="reserved suffix"):
+            SQLiteStorage.validate_project_name(f"model{suffix}")
+        with pytest.raises(ValueError, match="reserved suffix"):
+            SQLiteStorage.validate_project_name(f"my.model{suffix}")
+
+
+def test_validate_project_name_allows_ordinary_names():
+    for name in (
+        "model",
+        "model-v2",
+        "artifacts",
+        "system",
+        "my.model",
+        "run_artifact_links",
+        "experiments",
+    ):
+        SQLiteStorage.validate_project_name(name)
+
+
+def test_init_rejects_reserved_project_name():
+    import trackio
+
+    with pytest.raises(ValueError, match="reserved suffix"):
+        trackio.init(project="model_artifacts")
+
+
 def test_artifact_parquet_export_skips_unchanged_db(temp_dir):
-    """A second export with no intervening DB write must not rewrite the
-    artifact parquet files, mirroring the mtime short-circuit the metrics /
-    system / configs exports already have."""
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
     vid, _, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "a" * 64, "size": 1}], None, None, "r"
