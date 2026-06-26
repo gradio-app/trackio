@@ -4367,6 +4367,7 @@ class SQLiteStorage:
         name: str,
         spec: str | None,
     ) -> dict | None:
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
@@ -4508,6 +4509,7 @@ class SQLiteStorage:
         name: str,
         spec: str | None,
     ) -> dict | None:
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
@@ -4520,6 +4522,7 @@ class SQLiteStorage:
         run_name: str | None,
         run_id: str | None,
     ) -> dict[str, list[dict]]:
+        SQLiteStorage._ensure_hub_loaded()
         empty = {"input": [], "output": []}
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -4609,6 +4612,7 @@ class SQLiteStorage:
         project: str,
         digests: list[Sha256Digest],
     ) -> set[Sha256Digest]:
+        SQLiteStorage._ensure_hub_loaded()
         present: set[Sha256Digest] = set()
         for digest in digests:
             if not cas.SHA256_DIGEST_RE.match(digest):

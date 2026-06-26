@@ -311,6 +311,37 @@ def test_get_artifact_manifest(temp_dir):
     assert SQLiteStorage.get_artifact_manifest("p", "missing", "latest") is None
 
 
+def test_get_artifact_manifest_loads_dataset_before_db_exists(temp_dir, monkeypatch):
+    SQLiteStorage.commit_artifact_version(
+        project="lazy",
+        name="m",
+        type="model",
+        description=None,
+        manifest=[{"path": "weights.bin", "digest": "a" * 64, "size": 1}],
+        metadata=None,
+        aliases=None,
+        run_name="producer",
+        run_id="rid",
+    )
+    db_path = SQLiteStorage.get_project_db_path("lazy")
+    backup = db_path.with_name("lazy.imported.db")
+    db_path.rename(backup)
+
+    def _restore_imported_db():
+        if backup.exists() and not db_path.exists():
+            backup.rename(db_path)
+
+    monkeypatch.setattr(
+        SQLiteStorage, "_ensure_hub_loaded", staticmethod(_restore_imported_db)
+    )
+
+    record = SQLiteStorage.get_artifact_manifest("lazy", "m", "latest")
+
+    assert record is not None
+    assert record["name"] == "m"
+    assert record["version"] == 0
+
+
 def test_enqueue_artifact_blob_upload_writes_kind_and_digest(temp_dir):
     SQLiteStorage.init_db("p")
     SQLiteStorage.enqueue_artifact_blob_uploads(
