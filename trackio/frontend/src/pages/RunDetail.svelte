@@ -1,7 +1,8 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
+  import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
   import { getRunSummary, getRunArtifacts } from "../lib/api.js";
-  import { getQueryParam, navigateTo, setQueryParam } from "../lib/router.js";
+  import { getQueryParam } from "../lib/router.js";
 
   let { project = null } = $props();
 
@@ -10,6 +11,7 @@
   let summary = $state(null);
   let loading = $state(false);
   let runArtifacts = $state({ input: [], output: [] });
+  let expandedArtifact = $state({});
 
   function formatSize(bytes) {
     if (bytes == null) return "";
@@ -20,9 +22,8 @@
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   }
 
-  function openArtifact(name) {
-    setQueryParam("selected_artifact", name);
-    navigateTo("artifacts");
+  function toggleArtifact(key) {
+    expandedArtifact[key] = !expandedArtifact[key];
   }
 
   $effect(() => {
@@ -31,6 +32,7 @@
   });
 
   async function loadDetail() {
+    expandedArtifact = {};
     if (!project || (!runName && !runId)) {
       summary = null;
       runArtifacts = { input: [], output: [] };
@@ -70,6 +72,23 @@
   });
 </script>
 
+{#snippet artifactEntry(art, dir)}
+  {@const key = `${dir}:${art.name}@v${art.version}`}
+  <div class="artifact-entry">
+    <button class="artifact-row" onclick={() => toggleArtifact(key)}>
+      <span class="chevron" class:open={expandedArtifact[key]}>▾</span>
+      <span class="art-name"
+        >{art.name}<span class="art-ver">:v{art.version}</span></span
+      >
+      <span class="art-type">{art.type}</span>
+      <span class="art-size">{formatSize(art.size_bytes)}</span>
+    </button>
+    {#if expandedArtifact[key]}
+      <ArtifactVersionDetail {project} name={art.name} version={art.version} />
+    {/if}
+  </div>
+{/snippet}
+
 <div class="run-detail-page">
   {#if loading}
     <LoadingTrackio />
@@ -102,7 +121,9 @@
         <div class="detail-item">
           <span class="detail-label">Metrics</span>
           <span class="detail-value"
-            >{summary.metrics ? summary.metrics.join(", ") : "None"}</span
+            >{summary.metrics && summary.metrics.length
+              ? summary.metrics.join(", ")
+              : "N/A"}</span
           >
         </div>
       </div>
@@ -116,14 +137,7 @@
         <h3>Output artifacts</h3>
         <div class="artifact-links">
           {#each runArtifacts.output as art}
-            <button class="artifact-link" onclick={() => openArtifact(art.name)}>
-              <span class="art-name"
-                >{art.name}<span class="art-ver">:v{art.version}</span></span
-              >
-              <span class="art-type">{art.type}</span>
-              <span class="art-size">{formatSize(art.size_bytes)}</span>
-              <span class="art-arrow">→</span>
-            </button>
+            {@render artifactEntry(art, "out")}
           {/each}
         </div>
       {/if}
@@ -132,14 +146,7 @@
         <h3>Input artifacts</h3>
         <div class="artifact-links">
           {#each runArtifacts.input as art}
-            <button class="artifact-link" onclick={() => openArtifact(art.name)}>
-              <span class="art-name"
-                >{art.name}<span class="art-ver">:v{art.version}</span></span
-              >
-              <span class="art-type">{art.type}</span>
-              <span class="art-size">{formatSize(art.size_bytes)}</span>
-              <span class="art-arrow">→</span>
-            </button>
+            {@render artifactEntry(art, "in")}
           {/each}
         </div>
       {/if}
@@ -204,25 +211,39 @@
     flex-direction: column;
     gap: 4px;
   }
-  .artifact-link {
+  .artifact-entry {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    overflow: hidden;
+  }
+  .artifact-row {
     display: flex;
     align-items: center;
     gap: 12px;
     width: 100%;
     text-align: left;
     background: none;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-md, 6px);
+    border: none;
     padding: 8px 12px;
     cursor: pointer;
   }
-  .artifact-link:hover {
-    border-color: var(--color-accent, #f97316);
+  .artifact-row:hover {
     background: var(--background-fill-secondary, #f9fafb);
+  }
+  .chevron {
+    flex-shrink: 0;
+    display: inline-block;
+    color: var(--body-text-color, #1f2937);
+    font-size: 14px;
+    transition: transform 0.15s;
+    transform: rotate(-90deg);
+  }
+  .chevron.open {
+    transform: none;
   }
   .art-name {
     font-weight: 600;
-    color: var(--color-accent, #f97316);
+    color: var(--body-text-color, #1f2937);
     font-size: var(--text-md, 14px);
   }
   .art-ver {
@@ -243,9 +264,6 @@
     margin-left: auto;
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color-subdued, #6b7280);
-  }
-  .art-arrow {
-    color: var(--body-text-color-subdued, #9ca3af);
   }
   .empty-state {
     max-width: 640px;

@@ -1,13 +1,9 @@
 <script>
   import { tick } from "svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import {
-    listArtifacts,
-    getArtifactManifest,
-    getArtifactConsumers,
-    getArtifactBlobUrl,
-  } from "../lib/api.js";
-  import { navigateTo, setQueryParam, getQueryParam } from "../lib/router.js";
+  import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
+  import { listArtifacts } from "../lib/api.js";
+  import { getQueryParam } from "../lib/router.js";
 
   let { project = null } = $props();
 
@@ -15,8 +11,6 @@
   let loading = $state(false);
   let expanded = $state({});
   let expandedVer = $state({});
-  let manifests = $state({});
-  let consumers = $state({});
 
   let groups = $derived.by(() => {
     const byType = new Map();
@@ -53,42 +47,18 @@
     return `${name}@v${version}`;
   }
 
-  function openRun(runName, runId) {
-    setQueryParam("selected_run_id", runId);
-    setQueryParam("selected_run", runName);
-    navigateTo("run-detail");
-  }
-
   function toggleArtifact(name) {
     expanded[name] = !expanded[name];
   }
 
-  async function toggleVersion(name, version) {
-    const key = verKey(name, version.version);
+  function toggleVersion(name, version) {
+    const key = verKey(name, version);
     expandedVer[key] = !expandedVer[key];
-    if (expandedVer[key] && !manifests[key]) {
-      manifests[key] = { loading: true, files: null, error: false };
-      consumers[key] = { loading: true, runs: [] };
-      const [m, c] = await Promise.allSettled([
-        getArtifactManifest(project, name, `v${version.version}`),
-        getArtifactConsumers(project, version.version_id),
-      ]);
-      manifests[key] =
-        m.status === "fulfilled"
-          ? { loading: false, files: m.value?.manifest || [], error: false }
-          : { loading: false, files: null, error: true };
-      consumers[key] = {
-        loading: false,
-        runs: c.status === "fulfilled" ? c.value || [] : [],
-      };
-    }
   }
 
   async function loadArtifacts() {
     expanded = {};
     expandedVer = {};
-    manifests = {};
-    consumers = {};
     if (!project) {
       artifacts = [];
       return;
@@ -152,17 +122,13 @@
         <div class="artifact-list">
           {#each group.items as artifact}
             {@const latest = artifact.versions[0]}
-            <div
-              class="artifact-item"
-              id={"artifact-" + artifact.name}
-              class:expanded={expanded[artifact.name]}
-            >
+            <div class="artifact-item" id={"artifact-" + artifact.name}>
               <button
                 class="artifact-row"
                 onclick={() => toggleArtifact(artifact.name)}
               >
                 <span class="chevron" class:open={expanded[artifact.name]}
-                  >▸</span
+                  >▾</span
                 >
                 <span class="artifact-name">{artifact.name}</span>
                 {#if latest}
@@ -186,13 +152,14 @@
                   {/if}
                   {#each artifact.versions as version}
                     {@const vkey = verKey(artifact.name, version.version)}
-                    <div class="version-item" class:expanded={expandedVer[vkey]}>
+                    <div class="version-item">
                       <button
                         class="version-row"
-                        onclick={() => toggleVersion(artifact.name, version)}
+                        onclick={() =>
+                          toggleVersion(artifact.name, version.version)}
                       >
                         <span class="chevron" class:open={expandedVer[vkey]}
-                          >▸</span
+                          >▾</span
                         >
                         <span class="version-label">v{version.version}</span>
                         <span class="alias-pills">
@@ -217,96 +184,11 @@
                       </button>
 
                       {#if expandedVer[vkey]}
-                        <div class="version-detail">
-                          <div class="detail-grid">
-                            {#if version.producer_run_name}
-                              <span class="detail-key">Produced by</span>
-                              <span class="detail-val">
-                                <button
-                                  class="run-link"
-                                  onclick={() =>
-                                    openRun(
-                                      version.producer_run_name,
-                                      version.producer_run_id,
-                                    )}>{version.producer_run_name}</button
-                                >
-                              </span>
-                            {/if}
-                            {#if consumers[vkey]?.runs?.length}
-                              <span class="detail-key">Used by</span>
-                              <span class="detail-val">
-                                {#each consumers[vkey].runs as c, ci}<button
-                                    class="run-link"
-                                    onclick={() =>
-                                      openRun(
-                                        c.run_name,
-                                        c.run_id,
-                                      )}>{c.run_name ?? c.run_id}</button
-                                  >{ci < consumers[vkey].runs.length - 1
-                                    ? ", "
-                                    : ""}{/each}
-                              </span>
-                            {/if}
-                            <span class="detail-key">Digest</span>
-                            <span class="detail-val mono"
-                              >{version.manifest_digest?.slice(0, 16)}…</span
-                            >
-                            {#if version.metadata && Object.keys(version.metadata).length}
-                              {#each Object.entries(version.metadata) as [k, v]}
-                                <span class="detail-key">{k}</span>
-                                <span class="detail-val"
-                                  >{typeof v === "object"
-                                    ? JSON.stringify(v)
-                                    : String(v)}</span
-                                >
-                              {/each}
-                            {/if}
-                          </div>
-
-                          <div class="file-table">
-                            {#if manifests[vkey]?.loading}
-                              <div class="file-status">Loading files…</div>
-                            {:else if manifests[vkey]?.error}
-                              <div class="file-status">
-                                Failed to load files.
-                              </div>
-                            {:else if manifests[vkey]?.files}
-                              {#each manifests[vkey].files as file}
-                                <div class="file-entry">
-                                  <span class="file-path">{file.path}</span>
-                                  <span class="spacer"></span>
-                                  <span class="file-size"
-                                    >{formatSize(file.size)}</span
-                                  >
-                                  <a
-                                    class="download-btn"
-                                    href={getArtifactBlobUrl(
-                                      project,
-                                      file.digest,
-                                    )}
-                                    download={file.path}
-                                    title="Download"
-                                  >
-                                    <svg
-                                      width="16"
-                                      height="16"
-                                      viewBox="0 0 16 16"
-                                      fill="none"
-                                    >
-                                      <path
-                                        d="M8 1v9m0 0L5 7m3 3l3-3M2 12v1a2 2 0 002 2h8a2 2 0 002-2v-1"
-                                        stroke="currentColor"
-                                        stroke-width="1.5"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                      />
-                                    </svg>
-                                  </a>
-                                </div>
-                              {/each}
-                            {/if}
-                          </div>
-                        </div>
+                        <ArtifactVersionDetail
+                          {project}
+                          name={artifact.name}
+                          version={version.version}
+                        />
                       {/if}
                     </div>
                   {/each}
@@ -375,9 +257,6 @@
     background: var(--background-fill-primary, white);
     overflow: hidden;
   }
-  .artifact-item.expanded {
-    border-color: var(--color-accent, #f97316);
-  }
   .artifact-row,
   .version-row {
     display: flex;
@@ -398,12 +277,14 @@
   }
   .chevron {
     flex-shrink: 0;
-    color: var(--body-text-color-subdued, #9ca3af);
-    font-size: 11px;
-    transition: transform 0.12s ease;
+    display: inline-block;
+    color: var(--body-text-color, #1f2937);
+    font-size: 14px;
+    transition: transform 0.15s;
+    transform: rotate(-90deg);
   }
   .chevron.open {
-    transform: rotate(90deg);
+    transform: none;
   }
   .artifact-name {
     font-weight: 600;
@@ -467,87 +348,6 @@
     color: var(--color-accent, #f97316);
     border-color: var(--color-accent, #f97316);
     background: transparent;
-  }
-  .version-detail {
-    border-top: 1px solid var(--border-color-primary, #e5e7eb);
-    padding: 10px 14px 12px;
-    background: var(--background-fill-secondary, #f9fafb);
-  }
-  .detail-grid {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 2px 16px;
-    margin-bottom: 10px;
-  }
-  .detail-key {
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color-subdued, #6b7280);
-  }
-  .detail-val {
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color, #1f2937);
-    word-break: break-word;
-  }
-  .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  .run-link {
-    background: none;
-    border: none;
-    padding: 0;
-    font-size: var(--text-sm, 12px);
-    color: var(--color-accent, #f97316);
-    cursor: pointer;
-    text-align: left;
-  }
-  .run-link:hover {
-    text-decoration: underline;
-  }
-  .file-table {
-    display: flex;
-    flex-direction: column;
-  }
-  .file-entry {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 6px 0;
-    border-top: 1px solid var(--border-color-primary, #e5e7eb);
-  }
-  .file-entry:first-child {
-    border-top: none;
-  }
-  .file-path {
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color, #1f2937);
-    word-break: break-all;
-  }
-  .file-size {
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color-subdued, #6b7280);
-    white-space: nowrap;
-  }
-  .download-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    flex-shrink: 0;
-    border-radius: var(--radius-md, 6px);
-    color: var(--body-text-color-subdued, #6b7280);
-    transition:
-      background-color 0.15s,
-      color 0.15s;
-  }
-  .download-btn:hover {
-    background: var(--background-fill-primary, #fff);
-    color: var(--color-accent, #f97316);
-  }
-  .file-status {
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color-subdued, #6b7280);
-    padding: 6px 0;
   }
   .empty-state {
     max-width: 640px;
