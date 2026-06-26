@@ -117,14 +117,17 @@ class Artifact:
 
     @property
     def name(self) -> str:
+        """Artifact name, unique within its project."""
         return self._name
 
     @property
     def type(self) -> str:
+        """Free-form category such as `"model"` or `"dataset"`."""
         return self._type
 
     @property
     def description(self) -> str | None:
+        """Human-readable description, or None if unset."""
         return self._description
 
     @description.setter
@@ -159,10 +162,15 @@ class Artifact:
 
     @property
     def manifest(self) -> Manifest | None:
+        """List of file entries (each with `path`, `digest`, and `size`)
+        describing the artifact's contents, or None if not yet logged or
+        fetched. Returns a fresh copy on each access."""
         return None if self._manifest is None else [dict(e) for e in self._manifest]
 
     @property
     def manifest_digest(self) -> Sha256Digest | None:
+        """Digest over the manifest (file paths plus their content), used to
+        de-duplicate re-logged content; None until logged or fetched."""
         return self._manifest_digest
 
     @property
@@ -181,6 +189,7 @@ class Artifact:
 
     @property
     def project(self) -> str | None:
+        """Project the artifact belongs to, or None until logged or fetched."""
         return self._project
 
     def wait(self, timeout: int | None = None) -> "Artifact":
