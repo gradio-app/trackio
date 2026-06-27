@@ -30,7 +30,10 @@ export function processRunData(
       r.time = (new Date(r.timestamp).getTime() - firstTs) / 1000;
     });
     xColumn = "time";
-  } else if (xAxis !== "step") {
+  } else if (
+    xAxis !== "step" &&
+    rows.some((r) => typeof r[xAxis] === "number" && isFinite(r[xAxis]))
+  ) {
     xColumn = xAxis;
   }
 

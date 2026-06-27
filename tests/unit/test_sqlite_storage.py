@@ -12,6 +12,7 @@ import pytest
 
 import trackio.sqlite_storage
 import trackio.utils
+from trackio import server
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -31,6 +32,47 @@ def test_log_and_get_metrics(temp_dir):
     assert results[0]["acc"] == 0.9
     assert results[0]["step"] == 0
     assert "timestamp" in results[0]
+
+
+def test_get_logs_scalar_only_excludes_heavy_values(temp_dir):
+    metrics = {
+        "acc": 0.9,
+        "count": 3,
+        "note": "not plotted",
+        "table": {
+            "_type": "trackio.table",
+            "_value": [{"prompt": "x" * 10_000}],
+        },
+    }
+    SQLiteStorage.log(project="proj1", run="run1", metrics=metrics)
+
+    results = SQLiteStorage.get_logs(project="proj1", run="run1", scalar_only=True)
+
+    assert results == [
+        {
+            "acc": 0.9,
+            "count": 3,
+            "timestamp": results[0]["timestamp"],
+            "step": 0,
+        }
+    ]
+
+
+def test_get_logs_scalar_only_string_false_is_not_truthy(temp_dir):
+    metrics = {
+        "acc": 0.9,
+        "table": {
+            "_type": "trackio.table",
+            "_value": [{"prompt": "x" * 10_000}],
+        },
+    }
+    SQLiteStorage.log(project="proj1", run="run1", metrics=metrics)
+
+    full_results = server.get_logs("proj1", "run1", scalar_only="false")
+    scalar_results = server.get_logs("proj1", "run1", scalar_only="true")
+
+    assert "table" in full_results[0]
+    assert "table" not in scalar_results[0]
 
 
 def test_get_projects_and_runs(temp_dir):

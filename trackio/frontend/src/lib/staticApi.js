@@ -141,16 +141,25 @@ export async function getMetricsForRun(_project, run) {
   return [...present];
 }
 
-export async function getLogs(_project, run) {
+function isScalarMetricValue(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+export async function getLogs(_project, run, options = {}) {
   const raw = await getMetricsData();
   const { rows } = parseRows(raw);
   const runRows = rows.filter((r) => matchesRun(r, run));
+  const scalarOnly = options.scalar_only === true;
 
   return runRows.map((row) => {
     const entry = {};
     for (const [key, value] of Object.entries(row)) {
       if (STRUCTURAL_KEYS.has(key)) continue;
       if (value === null || value === undefined) continue;
+      if (scalarOnly) {
+        if (isScalarMetricValue(value)) entry[key] = value;
+        continue;
+      }
       if (
         typeof value === "string" &&
         value.startsWith("{") &&
@@ -457,7 +466,7 @@ function rowHasScalarMetric(row) {
   for (const [key, value] of Object.entries(row)) {
     if (STRUCTURAL_KEYS.has(key)) continue;
     if (value === null || value === undefined) continue;
-    if (typeof value === "number" && Number.isFinite(value)) return true;
+    if (isScalarMetricValue(value)) return true;
   }
   return false;
 }

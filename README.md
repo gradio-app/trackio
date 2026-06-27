@@ -257,6 +257,7 @@ Supported query parameters:
 - `sidebar`: (string) One of `hidden`, `collapsed`, or omitted (default). **`hidden`** removes the sidebar entirely (full-width content; no rail). **`collapsed`** starts with the sidebar collapsed to the narrow rail; the user can expand it. By default the sidebar is open.
 - `footer`: (string: "false"). When set to "false", hides the Gradio footer (Gradio-hosted Spaces). By default, the footer is visible.
 - `xmin` / `xmax`: (numbers, use both together) Set the initial horizontal zoom range on the Metrics plots (shared x-axis window). Both must be valid numbers with `xmin < xmax`.
+- `x_axis`: (string) Set the initial Metrics page x-axis, e.g. `step`, `time`, or a numeric logged metric/column such as `epoch`. The alias `x-axis` is also accepted. If the requested x-axis is unavailable, Trackio falls back to the default `step` axis.
 - `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
 - `accordion`: (string: "hidden"). When set to "hidden", hides the section header accordions around metric groups. By default, section headers are visible.
 - `theme`: (string) Dashboard theme, e.g. `light` or `dark` (see theme behavior in the app).
