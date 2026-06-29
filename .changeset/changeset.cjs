@@ -13,6 +13,56 @@ const dependents = dependents_graph.getDependentsGraph({
 	root: pkg_data.rootPackage
 });
 
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function commitLink(repo, commit) {
+	return commit
+		? `[\`${commit.slice(0, 7)}\`](https://github.com/${repo}/commit/${commit})`
+		: null;
+}
+
+function pullLink(repo, pull) {
+	return pull ? `[#${pull}](https://github.com/${repo}/pull/${pull})` : null;
+}
+
+async function getGithubLinksWithFallback(fetchInfo, fallbackLinks, label) {
+	let lastError;
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		try {
+			const { links } = await fetchInfo();
+			return links;
+		} catch (err) {
+			lastError = err;
+			if (attempt < 3) {
+				await sleep(500 * attempt);
+			}
+		}
+	}
+	const message = lastError && lastError.message ? lastError.message : lastError;
+	console.warn(
+		`Warning: could not fetch GitHub changelog metadata for ${label}: ${message}. Falling back to plain links.`
+	);
+	return fallbackLinks;
+}
+
+function fallbackCommitLinks(repo, commit) {
+	return {
+		commit: commitLink(repo, commit),
+		pull: null,
+		user: null
+	};
+}
+
+function fallbackPullLinks(repo, pull) {
+	return {
+		commit: null,
+		pull: pullLink(repo, pull),
+		user: null
+	};
+}
+
 /**
  * @typedef {{packageJson: {name: string, python?: boolean}, dir: string}} Package
  */
@@ -69,10 +119,15 @@ const changelogFunctions = {
 			await Promise.all(
 				changesets.map(async (cs) => {
 					if (cs.commit) {
-						let { links } = await getInfo({
-							repo: options.repo,
-							commit: cs.commit
-						});
+						let links = await getGithubLinksWithFallback(
+							() =>
+								getInfo({
+									repo: options.repo,
+									commit: cs.commit
+								}),
+							fallbackCommitLinks(options.repo, cs.commit),
+							`commit ${cs.commit}`
+						);
 						return links.commit;
 					}
 				})
@@ -181,25 +236,34 @@ const changelogFunctions = {
 
 		const links = await (async () => {
 			if (prFromSummary !== undefined) {
-				let { links } = await getInfoFromPullRequest({
-					repo: options.repo,
-					pull: prFromSummary
-				});
+				let links = await getGithubLinksWithFallback(
+					() =>
+						getInfoFromPullRequest({
+							repo: options.repo,
+							pull: prFromSummary
+						}),
+					fallbackPullLinks(options.repo, prFromSummary),
+					`pull request #${prFromSummary}`
+				);
 				if (commitFromSummary) {
 					links = {
 						...links,
-						commit: `[\`${commitFromSummary}\`](https://github.com/${options.repo}/commit/${commitFromSummary})`
+						commit: commitLink(options.repo, commitFromSummary)
 					};
 				}
 				return links;
 			}
 			const commitToFetchFrom = commitFromSummary || changeset.commit;
 			if (commitToFetchFrom) {
-				let { links } = await getInfo({
-					repo: options.repo,
-					commit: commitToFetchFrom
-				});
-				return links;
+				return await getGithubLinksWithFallback(
+					() =>
+						getInfo({
+							repo: options.repo,
+							commit: commitToFetchFrom
+						}),
+					fallbackCommitLinks(options.repo, commitToFetchFrom),
+					`commit ${commitToFetchFrom}`
+				);
 			}
 			return {
 				commit: null,
