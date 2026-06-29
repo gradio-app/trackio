@@ -29,7 +29,12 @@ import orjson
 from trackio import cas
 from trackio.commit_scheduler import CommitScheduler
 from trackio.dummy_commit_scheduler import DummyCommitScheduler
-from trackio.typehints import Manifest, Sha256Digest
+from trackio.typehints import (
+    ARTIFACT_BLOB_UPLOAD_KIND,
+    MEDIA_UPLOAD_KIND,
+    Manifest,
+    Sha256Digest,
+)
 from trackio.utils import (
     TRACKIO_DIR,
     _emit_nonfatal_warning,
@@ -629,7 +634,10 @@ class SQLiteStorage:
                     ON run_artifact_links(run_id, artifact_version_id, direction)
                     """
                 )
-                for col in ("kind TEXT NOT NULL DEFAULT 'media'", "digest TEXT"):
+                for col in (
+                    f"kind TEXT NOT NULL DEFAULT '{MEDIA_UPLOAD_KIND}'",
+                    "digest TEXT",
+                ):
                     try:
                         cursor.execute(f"ALTER TABLE pending_uploads ADD COLUMN {col}")
                     except sqlite3.OperationalError:
@@ -4050,7 +4058,7 @@ class SQLiteStorage:
                         "step": row["step"],
                         "file_path": row["file_path"],
                         "relative_path": row["relative_path"],
-                        "kind": row["kind"] if "kind" in keys else "media",
+                        "kind": row["kind"] if "kind" in keys else MEDIA_UPLOAD_KIND,
                         "digest": row["digest"] if "digest" in keys else None,
                     }
                 )
@@ -4083,7 +4091,7 @@ class SQLiteStorage:
         file_path: str,
         relative_path: str | None,
         *,
-        kind: str = "media",
+        kind: str = MEDIA_UPLOAD_KIND,
         digest: Sha256Digest | None = None,
     ) -> None:
         db_path = SQLiteStorage.init_db(project)
@@ -4628,7 +4636,7 @@ class SQLiteStorage:
                         step=None,
                         file_path=file_path,
                         relative_path=None,
-                        kind="artifact_blob",
+                        kind=ARTIFACT_BLOB_UPLOAD_KIND,
                         digest=digest,
                         created_at=now,
                     )

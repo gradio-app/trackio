@@ -5,9 +5,7 @@ from typing import Any
 from gradio_client import handle_file
 
 from trackio.sqlite_storage import SQLiteStorage
-
-MEDIA_UPLOAD_KIND = "media"
-ARTIFACT_BLOB_UPLOAD_KIND = "artifact_blob"
+from trackio.typehints import ARTIFACT_BLOB_UPLOAD_KIND
 
 
 def classify_pending_uploads(buffered: dict) -> dict:
@@ -48,41 +46,20 @@ def _artifact_blob_upload_entry(upload: dict) -> dict:
     }
 
 
-def _append_grouped_entry(
-    grouped: dict,
-    group_key: str,
-    upload: dict,
-    upload_id: int,
-    entry_builder: Callable[[dict], dict],
-) -> None:
-    group = grouped.setdefault(group_key, {"entries": [], "ids": []})
-    group["entries"].append(entry_builder(upload))
-    group["ids"].append(upload_id)
-
-
 def group_pending_uploads(buffered: dict) -> dict:
     """Shape classified rows for the gradio `predict` endpoints."""
     classified = classify_pending_uploads(buffered)
-    media_groups: dict[str, dict] = {}
+    media: dict = {"entries": [], "ids": []}
     for upload, upload_id in classified["media"]:
-        _append_grouped_entry(
-            media_groups,
-            MEDIA_UPLOAD_KIND,
-            upload,
-            upload_id,
-            _media_upload_entry,
-        )
+        media["entries"].append(_media_upload_entry(upload))
+        media["ids"].append(upload_id)
     artifact_blobs: dict[str, dict] = {}
     for upload, upload_id in classified["artifact_blobs"]:
-        _append_grouped_entry(
-            artifact_blobs,
-            upload["project"],
-            upload,
-            upload_id,
-            _artifact_blob_upload_entry,
-        )
+        group = artifact_blobs.setdefault(upload["project"], {"entries": [], "ids": []})
+        group["entries"].append(_artifact_blob_upload_entry(upload))
+        group["ids"].append(upload_id)
     return {
-        "media": media_groups.get(MEDIA_UPLOAD_KIND, {"entries": [], "ids": []}),
+        "media": media,
         "artifact_blobs": artifact_blobs,
         "missing": classified["missing"],
     }

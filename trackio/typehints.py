@@ -4,6 +4,9 @@ from gradio_client import FileData
 
 Sha256Digest = NewType("Sha256Digest", str)
 
+MEDIA_UPLOAD_KIND = "media"
+ARTIFACT_BLOB_UPLOAD_KIND = "artifact_blob"
+
 
 class ManifestEntry(TypedDict):
     path: str
