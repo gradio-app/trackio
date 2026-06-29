@@ -29,7 +29,7 @@ export TRACKIO_WRITE_TOKEN="YOUR_TOKEN"
 
 ### `TRACKIO_WRITE_TOKEN`
 
-The dashboard **write token** for a self-hosted Trackio server (same value as the `write_token` query parameter in the write-access URL). When set on the server process, this value is used as the server's write token instead of generating a random token at startup. When set on the training process, use this when `TRACKIO_SERVER_URL` or `server_url` is a base URL without query parameters. The client sends this token on each request (for example as the `X-Trackio-Write-Token` header) so metric ingestion and uploads are authenticated when not running on Hugging Face Spaces.
+The dashboard **write token** for a self-hosted Trackio server (same value as the `write_token` query parameter in the write-access URL). When set on the Trackio server, this value is used as the server's write token instead of generating a random token at startup. When set on the Trackio client, use this when `TRACKIO_SERVER_URL` or `server_url` is a base URL without query parameters. The client sends this token on each request (for example as the `X-Trackio-Write-Token` header) so metric ingestion and uploads are authenticated when not running on Hugging Face Spaces.
 
 ### `TRACKIO_FRONTEND_DIR`
 
