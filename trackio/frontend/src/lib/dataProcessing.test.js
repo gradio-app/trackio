@@ -55,4 +55,22 @@ describe("processRunData smoothing", () => {
     expect(smoothed.length).toBe(5);
     expect(smoothed.every((r) => typeof r.loss === "number")).toBe(true);
   });
+
+  test("falls back to step when a requested custom x-axis is unavailable", () => {
+    const logs = [
+      { step: 0, loss: 1.0 },
+      { step: 1, loss: 0.9 },
+    ];
+
+    const result = processRunData(
+      logs,
+      "run-1",
+      0,
+      "missing_axis",
+      false,
+      false,
+    );
+
+    expect(result.xColumn).toBe("step");
+  });
 });

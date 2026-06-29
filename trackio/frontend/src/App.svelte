@@ -51,6 +51,10 @@
     return trimmed;
   }
 
+  function xAxisParamFromUrl() {
+    return getQueryParam("x_axis") || getQueryParam("x-axis");
+  }
+
   initTheme();
 
   let darkMode = $state(isDark());
@@ -70,6 +74,8 @@
   let showHeaders = $state(true);
   let filterText = $state("");
   let metricColumns = $state([]);
+  let requestedUrlXAxis = $state(null);
+  let urlXAxisApplied = $state(false);
   let sidebarOpen = $state(true);
   let sidebarHidden = $state(false);
   let navbarHidden = $state(false);
@@ -118,6 +124,10 @@
 
   function runKey(run) {
     return run?.id ?? run?.name;
+  }
+
+  function isXAxisAvailable(axis) {
+    return axis === "step" || axis === "time" || metricColumns.includes(axis);
   }
 
   let selectedRunRecords = $derived(
@@ -356,6 +366,14 @@
       if (!Number.isNaN(s)) smoothing = s;
     }
 
+    const xAxisParam = xAxisParamFromUrl();
+    if (xAxisParam && xAxisParam.trim()) {
+      requestedUrlXAxis = xAxisParam.trim();
+      xAxis = requestedUrlXAxis;
+    } else {
+      urlXAxisApplied = true;
+    }
+
     const metricFilterParam = getQueryParam("metric_filter");
     const metricsLegacyParam = getQueryParam("metrics");
     if (metricFilterParam) {
@@ -445,6 +463,17 @@
     selectedProject;
     runs;
     if (appBootstrapReady) refreshTabAvailability({ force: true });
+  });
+
+  $effect(() => {
+    if (urlXAxisApplied || !requestedUrlXAxis) return;
+    if (isXAxisAvailable(requestedUrlXAxis)) {
+      xAxis = requestedUrlXAxis;
+      urlXAxisApplied = true;
+    } else if (metricColumns.length > 0) {
+      xAxis = "step";
+      urlXAxisApplied = true;
+    }
   });
 
   let urlRunsFromQueryApplied = $state(false);

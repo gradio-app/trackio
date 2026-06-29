@@ -118,6 +118,20 @@ def _normalize_logs_batch_max_points(max_points: Any) -> int:
     return min(max_points, _LOGS_BATCH_MAX_POINTS)
 
 
+def _normalize_bool_param(value: Any, name: str) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off", ""}:
+            return False
+    raise TrackioAPIError(f"{name} must be a boolean")
+
+
 def _enqueue_write(kind: str, payload: Any) -> None:
     _write_queue.append((kind, payload))
     _ensure_flush_thread()
@@ -850,19 +864,34 @@ def get_snapshot(
 
 
 def get_logs(
-    project: str, run: str | None = None, run_id: str | None = None
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+    scalar_only: bool = False,
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_logs(project, run, max_points=3000, run_id=run_id)
+    return SQLiteStorage.get_logs(
+        project,
+        run,
+        max_points=3000,
+        run_id=run_id,
+        scalar_only=_normalize_bool_param(scalar_only, "scalar_only"),
+    )
 
 
 def get_logs_batch(
     project: str,
     runs: list[dict[str, Any]],
     max_points: int | None = 3000,
+    scalar_only: bool = False,
 ) -> list[dict[str, Any]]:
     runs_clean = _normalize_logs_batch_runs(runs)
     mp = _normalize_logs_batch_max_points(max_points)
-    return SQLiteStorage.get_logs_batch(project, runs_clean, max_points=mp)
+    return SQLiteStorage.get_logs_batch(
+        project,
+        runs_clean,
+        max_points=mp,
+        scalar_only=_normalize_bool_param(scalar_only, "scalar_only"),
+    )
 
 
 _ALLOWED_TRACE_SORTS = {
@@ -1108,11 +1137,13 @@ def build_starlette_app_only(
         ],
         upload_authorizer=assert_can_stage_upload,
     )
+    from trackio.compression import CompressionMiddleware  # noqa: PLC0415
     from trackio.frontend_config import resolve_frontend_dir  # noqa: PLC0415
     from trackio.frontend_server import mount_frontend  # noqa: PLC0415
 
     resolved_frontend = resolve_frontend_dir(frontend_dir)
     mount_frontend(starlette_app, frontend_dir=resolved_frontend.path)
+    starlette_app.add_middleware(CompressionMiddleware)
     start_inbox_poller()
     return starlette_app, write_token
 
