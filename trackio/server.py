@@ -633,6 +633,10 @@ def artifact_log(
         raise TrackioAPIError(str(err)) from err
     if not isinstance(type, str) or not type:
         raise TrackioAPIError(f"Artifact type must be a non-empty string, got {type!r}")
+    try:
+        aliases = cas.validate_aliases(aliases)
+    except ValueError as err:
+        raise TrackioAPIError(str(err)) from err
     if not isinstance(manifest, list) or not manifest:
         raise TrackioAPIError("Artifact manifest must be a non-empty list of entries.")
     digests = []

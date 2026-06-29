@@ -284,6 +284,18 @@ def test_artifact_log_rejects_empty_type(auth_bypassed, stage_blob):
         )
 
 
+def test_artifact_log_rejects_bad_aliases(auth_bypassed, stage_blob):
+    payload = b"payload"
+    digest, _ = stage_blob("p", payload)
+    manifest = [{"path": "w.bin", "digest": digest, "size": len(payload)}]
+    with pytest.raises(TrackioAPIError, match="must be a list"):
+        _log_artifact(auth_bypassed, manifest, aliases="prod")
+    with pytest.raises(TrackioAPIError, match="non-empty string"):
+        _log_artifact(auth_bypassed, manifest, aliases=[""])
+    with pytest.raises(TrackioAPIError, match="reserved for version pointers"):
+        _log_artifact(auth_bypassed, manifest, aliases=["v3"])
+
+
 def test_artifact_log_rejects_empty_manifest(temp_dir, auth_bypassed):
     with pytest.raises(TrackioAPIError, match="non-empty list"):
         _log_artifact(auth_bypassed, [])

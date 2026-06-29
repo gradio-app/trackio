@@ -5,7 +5,13 @@ import pytest
 
 import trackio
 from trackio.artifact import Artifact
-from trackio.cas import HASH_CHUNK_SIZE, blob_path, hash_file, stage_blob_from_chunks
+from trackio.cas import (
+    HASH_CHUNK_SIZE,
+    blob_path,
+    hash_file,
+    stage_blob_from_chunks,
+    validate_aliases,
+)
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import Sha256Digest
 
@@ -193,6 +199,37 @@ def test_commit_artifact_version_is_atomic_on_bad_alias(temp_dir):
     assert _commit_version([{"path": "w", "digest": "aaa", "size": 1}])["version"] == 0
 
 
+def test_validate_aliases_accepts_list_of_names():
+    assert validate_aliases(None) == []
+    assert validate_aliases([]) == []
+    assert validate_aliases(["prod", "best-1", "v_2.0"]) == ["prod", "best-1", "v_2.0"]
+
+
+def test_validate_aliases_rejects_bare_string():
+    with pytest.raises(ValueError, match="must be a list"):
+        validate_aliases("prod")
+
+
+def test_validate_aliases_rejects_empty_alias():
+    with pytest.raises(ValueError, match="non-empty string"):
+        validate_aliases([""])
+
+
+def test_validate_aliases_rejects_invalid_characters():
+    with pytest.raises(ValueError, match="must match"):
+        validate_aliases(["has space"])
+
+
+def test_validate_aliases_rejects_version_pointer():
+    with pytest.raises(ValueError, match="reserved for version pointers"):
+        validate_aliases(["v3"])
+
+
+def test_validate_aliases_rejects_trailing_newline():
+    with pytest.raises(ValueError, match="must match"):
+        validate_aliases(["prod\n"])
+
+
 def test_insert_artifact_version_increments(temp_dir):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
     _, v_0, _ = SQLiteStorage.insert_artifact_version(
@@ -274,6 +311,62 @@ def test_insert_run_artifact_link_and_get(temp_dir):
     consumer_arts = SQLiteStorage.get_run_artifacts("p", "consumer", None)
     assert consumer_arts["output"] == []
     assert len(consumer_arts["input"]) == 1
+
+
+def test_insert_run_artifact_link_dedupes_with_null_run_id(temp_dir):
+    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "p", aid, [{"path": "a", "digest": "1", "size": 7}], None, None, "producer"
+    )
+    for _ in range(3):
+        SQLiteStorage.insert_run_artifact_link("p", "consumer", None, vid, "input")
+
+    consumer_arts = SQLiteStorage.get_run_artifacts("p", "consumer", None)
+    assert len(consumer_arts["input"]) == 1
+
+
+def test_insert_run_artifact_link_dedupes_with_run_id(temp_dir):
+    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "p", aid, [{"path": "a", "digest": "1", "size": 7}], None, None, "producer"
+    )
+    for _ in range(3):
+        SQLiteStorage.insert_run_artifact_link("p", "consumer", "rid", vid, "input")
+
+    consumer_arts = SQLiteStorage.get_run_artifacts("p", "consumer", "rid")
+    assert len(consumer_arts["input"]) == 1
+
+
+def test_insert_run_artifact_link_keeps_distinct_null_run_names(temp_dir):
+    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "p", aid, [{"path": "a", "digest": "1", "size": 7}], None, None, "producer"
+    )
+    SQLiteStorage.insert_run_artifact_link("p", "consumerA", None, vid, "input")
+    SQLiteStorage.insert_run_artifact_link("p", "consumerB", None, vid, "input")
+
+    assert len(SQLiteStorage.get_run_artifacts("p", "consumerA", None)["input"]) == 1
+    assert len(SQLiteStorage.get_run_artifacts("p", "consumerB", None)["input"]) == 1
+
+
+def test_insert_run_artifact_link_keeps_both_directions_for_one_null_run(temp_dir):
+    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "p", aid, [{"path": "a", "digest": "1", "size": 7}], None, None, "r"
+    )
+    SQLiteStorage.insert_run_artifact_link("p", "r", None, vid, "input")
+    SQLiteStorage.insert_run_artifact_link("p", "r", None, vid, "output")
+
+    arts = SQLiteStorage.get_run_artifacts("p", "r", None)
+    assert len(arts["input"]) == 1
+    assert len(arts["output"]) == 1
+
+
+def test_relog_identical_content_does_not_duplicate_output_link(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    _commit_version(a)
+    _commit_version(a)
+    assert len(SQLiteStorage.get_run_artifacts("p", "r", None)["output"]) == 1
 
 
 def test_insert_run_artifact_link_rejects_bad_direction(temp_dir):

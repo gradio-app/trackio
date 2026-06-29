@@ -4410,8 +4410,23 @@ class SQLiteStorage:
         conn.execute(
             """INSERT OR IGNORE INTO run_artifact_links
             (run_id, run_name, artifact_version_id, direction, created_at)
-            VALUES (?, ?, ?, ?, ?)""",
-            (run_id, run_name, version_id, direction, now),
+            SELECT ?, ?, ?, ?, ?
+            WHERE NOT EXISTS (
+                SELECT 1 FROM run_artifact_links
+                WHERE run_id IS ? AND run_name IS ?
+                  AND artifact_version_id = ? AND direction = ?
+            )""",
+            (
+                run_id,
+                run_name,
+                version_id,
+                direction,
+                now,
+                run_id,
+                run_name,
+                version_id,
+                direction,
+            ),
         )
 
     @staticmethod

@@ -14,7 +14,7 @@ from trackio.typehints import Sha256Digest
 
 SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 ARTIFACT_VERSION_SPEC_RE = re.compile(r"^v(\d+)$")
-ARTIFACT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+ARTIFACT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\Z")
 HASH_CHUNK_SIZE = 1024 * 1024
 
 
@@ -25,6 +25,31 @@ def validate_artifact_name(name: str) -> str:
             "(letters, digits, dot, underscore, hyphen)."
         )
     return name
+
+
+def validate_aliases(aliases: list[str] | None) -> list[str]:
+    if aliases is None:
+        return []
+    if isinstance(aliases, str) or not isinstance(aliases, (list, tuple)):
+        raise ValueError(
+            f"aliases must be a list of strings, got {type(aliases).__name__}."
+        )
+    validated: list[str] = []
+    for alias in aliases:
+        if not isinstance(alias, str) or not alias:
+            raise ValueError(f"Alias {alias!r} must be a non-empty string.")
+        if not ARTIFACT_NAME_RE.match(alias):
+            raise ValueError(
+                f"Alias {alias!r} must match ^[A-Za-z0-9._-]+$ "
+                "(letters, digits, dot, underscore, hyphen)."
+            )
+        if ARTIFACT_VERSION_SPEC_RE.match(alias):
+            raise ValueError(
+                f"Alias {alias!r} is reserved for version pointers (vN); "
+                "choose another."
+            )
+        validated.append(alias)
+    return validated
 
 
 def _project_blobs_root(project: str) -> Path:

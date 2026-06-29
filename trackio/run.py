@@ -1234,13 +1234,7 @@ class Run:
                 "construct a new Artifact() to log again."
             )
 
-        user_aliases = list(aliases) if aliases else []
-        for alias in user_aliases:
-            if cas.ARTIFACT_VERSION_SPEC_RE.match(alias):
-                raise ValueError(
-                    f"Alias {alias!r} is reserved for version pointers (vN); "
-                    "choose another."
-                )
+        user_aliases = cas.validate_aliases(aliases)
 
         manifest = artifact._build_manifest(self.project)
 
