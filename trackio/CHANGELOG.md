@@ -1,5 +1,12 @@
 # trackio
 
+## 0.28.1
+
+### Features
+
+- [#589](https://github.com/gradio-app/trackio/pull/589) [`5e9905d`](https://github.com/gradio-app/trackio/commit/5e9905d7815bb063f2d9bb38aa76177405c5e2b4) - Reduce Metrics page log payloads by requesting scalar-only metrics and add URL x-axis initialization/fallback handling.  Thanks @evalstate!
+- [#590](https://github.com/gradio-app/trackio/pull/590) [`56493a6`](https://github.com/gradio-app/trackio/commit/56493a6e9a0114b8655ab44b8c3dec7bae2a5df5) - Use TRACKIO_WRITE_TOKEN for server write token.  Thanks @abidlabs!
+
 ## 0.28.0
 
 ### Features
