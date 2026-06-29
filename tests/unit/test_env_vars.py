@@ -1,6 +1,19 @@
+import importlib
+
 from trackio import server, utils
 from trackio.run import Run
 from trackio.table import Table
+
+
+def test_write_token_from_env(monkeypatch):
+    monkeypatch.setenv("TRACKIO_WRITE_TOKEN", "server-token")
+    importlib.reload(server)
+
+    try:
+        assert server.write_token == "server-token"
+    finally:
+        monkeypatch.delenv("TRACKIO_WRITE_TOKEN", raising=False)
+        importlib.reload(server)
 
 
 def test_get_settings_default_values(monkeypatch):
