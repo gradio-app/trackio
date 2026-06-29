@@ -1137,11 +1137,13 @@ def build_starlette_app_only(
         ],
         upload_authorizer=assert_can_stage_upload,
     )
+    from trackio.compression import CompressionMiddleware  # noqa: PLC0415
     from trackio.frontend_config import resolve_frontend_dir  # noqa: PLC0415
     from trackio.frontend_server import mount_frontend  # noqa: PLC0415
 
     resolved_frontend = resolve_frontend_dir(frontend_dir)
     mount_frontend(starlette_app, frontend_dir=resolved_frontend.path)
+    starlette_app.add_middleware(CompressionMiddleware)
     start_inbox_poller()
     return starlette_app, write_token
 
