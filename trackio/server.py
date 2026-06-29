@@ -193,7 +193,7 @@ def _flush_loop() -> None:
         _write_queue.clear()
 
 
-write_token = secrets.token_urlsafe(32)
+write_token = os.environ.get("TRACKIO_WRITE_TOKEN") or secrets.token_urlsafe(32)
 
 OAUTH_CALLBACK_PATH = "/login/callback"
 OAUTH_START_PATH = "/oauth/hf/start"
