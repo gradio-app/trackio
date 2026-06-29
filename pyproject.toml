@@ -39,7 +39,7 @@ repository = "https://github.com/gradio-app/trackio"
 dev = [
     "ruff==0.9.3",
     "pytest>=8.0.0,<9.0.0",
-    "playwright>=1.40.0,<2.0.0",
+    "playwright==1.60.0",
     "pytest-playwright>=0.7.0,<1.0.0",
 ]
 tensorboard = [
