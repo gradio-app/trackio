@@ -88,17 +88,17 @@ export async function getMetricsForRun(project, run) {
   return await callApi("/get_metrics_for_run", params);
 }
 
-export async function getLogs(project, run) {
-  const params = { project, ...normalizeRun(run) };
-  if (await isStaticMode()) return staticApi.getLogs(project, run);
+export async function getLogs(project, run, options = {}) {
+  const params = { project, ...normalizeRun(run), ...options };
+  if (await isStaticMode()) return staticApi.getLogs(project, run, options);
   return await callApi("/get_logs", params);
 }
 
-export async function getLogsBatch(project, runs) {
+export async function getLogsBatch(project, runs, options = {}) {
   if (await isStaticMode()) {
     const out = [];
     for (const run of runs) {
-      const logs = await staticApi.getLogs(project, run);
+      const logs = await staticApi.getLogs(project, run, options);
       out.push({ ...normalizeRun(run), logs });
     }
     return out;
@@ -106,6 +106,7 @@ export async function getLogsBatch(project, runs) {
   const payload = {
     project,
     runs: runs.map((run) => normalizeRun(run)),
+    ...options,
   };
   return await callApi("/get_logs_batch", payload);
 }

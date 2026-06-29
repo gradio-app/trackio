@@ -33,6 +33,30 @@ def test_log_and_get_metrics(temp_dir):
     assert "timestamp" in results[0]
 
 
+def test_get_logs_scalar_only_excludes_heavy_values(temp_dir):
+    metrics = {
+        "acc": 0.9,
+        "count": 3,
+        "note": "not plotted",
+        "table": {
+            "_type": "trackio.table",
+            "_value": [{"prompt": "x" * 10_000}],
+        },
+    }
+    SQLiteStorage.log(project="proj1", run="run1", metrics=metrics)
+
+    results = SQLiteStorage.get_logs(project="proj1", run="run1", scalar_only=True)
+
+    assert results == [
+        {
+            "acc": 0.9,
+            "count": 3,
+            "timestamp": results[0]["timestamp"],
+            "step": 0,
+        }
+    ]
+
+
 def test_get_projects_and_runs(temp_dir):
     SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
     SQLiteStorage.log(project="proj2", run="run2", metrics={"b": 2})

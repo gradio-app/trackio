@@ -249,12 +249,15 @@ def _logs_read_cache_key(
     run: str | None,
     run_id: str | None,
     max_points: int | None,
+    *,
+    scalar_only: bool = False,
 ) -> tuple[Any, ...]:
     return (
         project,
         run or "",
         run_id or "",
         max_points if max_points is not None else -1,
+        bool(scalar_only),
     )
 
 
@@ -2172,11 +2175,22 @@ class SQLiteStorage:
         return [rows[i] for i in sorted(indices)]
 
     @staticmethod
-    def _metric_rows_to_log_dicts(rows: list[Any]) -> list[dict[str, Any]]:
+    def _metric_rows_to_log_dicts(
+        rows: list[Any],
+        *,
+        scalar_only: bool = False,
+    ) -> list[dict[str, Any]]:
         results = []
         for row in rows:
             metrics = orjson.loads(row["metrics"])
-            metrics = deserialize_values(metrics)
+            if scalar_only:
+                metrics = {
+                    key: value
+                    for key, value in metrics.items()
+                    if isinstance(value, int | float) and not isinstance(value, bool)
+                }
+            else:
+                metrics = deserialize_values(metrics)
             metrics["timestamp"] = row["timestamp"]
             metrics["step"] = row["step"]
             results.append(metrics)
@@ -2187,6 +2201,8 @@ class SQLiteStorage:
         cursor: sqlite3.Cursor,
         run_identity: tuple[str, Any],
         max_points: int | None,
+        *,
+        scalar_only: bool = False,
     ) -> list[dict[str, Any]]:
         cursor.execute(
             f"""
@@ -2199,7 +2215,7 @@ class SQLiteStorage:
         )
         rows = cursor.fetchall()
         rows = SQLiteStorage._subsample_metric_rows(rows, max_points)
-        return SQLiteStorage._metric_rows_to_log_dicts(rows)
+        return SQLiteStorage._metric_rows_to_log_dicts(rows, scalar_only=scalar_only)
 
     @staticmethod
     def get_logs(
@@ -2207,13 +2223,16 @@ class SQLiteStorage:
         run: str | None = None,
         max_points: int | None = None,
         run_id: str | None = None,
+        scalar_only: bool = False,
     ) -> list[dict]:
         """Retrieve logs for a specific run. Logs include the step count (int) and the timestamp (datetime object)."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
 
-        cache_key = _logs_read_cache_key(project, run, run_id, max_points)
+        cache_key = _logs_read_cache_key(
+            project, run, run_id, max_points, scalar_only=scalar_only
+        )
         cached = _logs_read_cache_get(db_path, cache_key)
         if cached is not None:
             return cached
@@ -2228,7 +2247,7 @@ class SQLiteStorage:
                     logs: list[dict[str, Any]] = []
                 else:
                     logs = SQLiteStorage._fetch_metric_logs_with_cursor(
-                        cursor, run_identity, max_points
+                        cursor, run_identity, max_points, scalar_only=scalar_only
                     )
         except sqlite3.OperationalError as e:
             if "no such table: metrics" in str(e):
@@ -2243,6 +2262,7 @@ class SQLiteStorage:
         project: str,
         runs: list[dict[str, Any]] | None = None,
         max_points: int | None = None,
+        scalar_only: bool = False,
     ) -> list[dict[str, Any]]:
         if not runs:
             return []
@@ -2264,7 +2284,9 @@ class SQLiteStorage:
                 for r in runs:
                     run = r.get("run")
                     run_id = r.get("run_id")
-                    cache_key = _logs_read_cache_key(project, run, run_id, max_points)
+                    cache_key = _logs_read_cache_key(
+                        project, run, run_id, max_points, scalar_only=scalar_only
+                    )
                     cached = _logs_read_cache_get(db_path, cache_key)
                     if cached is not None:
                         out.append(
@@ -2282,7 +2304,7 @@ class SQLiteStorage:
                         logs = []
                     else:
                         logs = SQLiteStorage._fetch_metric_logs_with_cursor(
-                            cursor, run_identity, max_points
+                            cursor, run_identity, max_points, scalar_only=scalar_only
                         )
                     _logs_read_cache_put(db_path, cache_key, logs)
                     out.append(

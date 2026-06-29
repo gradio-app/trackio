@@ -62,23 +62,9 @@
 
   let groupNames = $derived(Object.keys(metricGroups));
 
-  let plotDataByMetric = $derived.by(() => {
-    const map = new Map();
-    const md = masterData;
-    const xc = xColumn;
-    const lim = xLim;
-    for (const g of Object.values(metricGroups)) {
-      for (const m of g.direct) {
-        if (!map.has(m)) map.set(m, computeMetricPlotData(md, xc, m, lim));
-      }
-      for (const sub of Object.values(g.subgroups)) {
-        for (const m of sub) {
-          if (!map.has(m)) map.set(m, computeMetricPlotData(md, xc, m, lim));
-        }
-      }
-    }
-    return map;
-  });
+  function getPlotResult(metric) {
+    return computeMetricPlotData(masterData, xColumn, metric, xLim);
+  }
 
   function getOrderedMetrics(key, items) {
     const order = metricOrder[key];
@@ -169,7 +155,7 @@
     const results = [];
     for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
       const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
-      const batch = await getLogsBatch(project, chunk);
+      const batch = await getLogsBatch(project, chunk, { scalar_only: true });
       results.push(...batch);
     }
     return results;
@@ -328,7 +314,7 @@
         {#if orderedDirect.length > 0}
           <div class="plot-grid">
             {#each orderedDirect as metric, i}
-              {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
+              {@const plotResult = getPlotResult(metric)}
               {@const plotData = plotResult.data}
               {@const yExtent = plotResult.yExtent}
               {@const useBar = singlePointMetrics.has(metric)}
@@ -382,7 +368,7 @@
             >
               <div class="plot-grid">
                 {#each orderedSub as metric, i}
-                  {@const plotResult = plotDataByMetric.get(metric) ?? { data: [], yExtent: undefined }}
+                  {@const plotResult = getPlotResult(metric)}
                   {@const plotData = plotResult.data}
                   {@const yExtent = plotResult.yExtent}
                   {@const useBar = singlePointMetrics.has(metric)}
