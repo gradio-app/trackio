@@ -11,6 +11,7 @@ import threading
 import time
 import warnings
 from collections import deque
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -44,9 +45,10 @@ from trackio.utils import canonical_project_name, on_spaces
 
 
 def _validate_sha256_digest(digest: Any) -> Sha256Digest:
-    if not isinstance(digest, str) or not cas.SHA256_DIGEST_RE.match(digest):
-        raise TrackioAPIError(f"Invalid sha256 digest: {digest!r}")
-    return Sha256Digest(digest)
+    try:
+        return cas.validate_digest(digest)
+    except ValueError as err:
+        raise TrackioAPIError(f"Invalid sha256 digest: {digest!r}") from err
 
 
 def _validate_project_name(project: Any) -> str:
@@ -556,24 +558,45 @@ def upload_db_to_space(
         cleanup_uploaded_temp_file(uploaded_path)
 
 
+def _bulk_upload(
+    request: Request,
+    uploads: list[Any],
+    write: Callable[[Any, Path], None],
+) -> None:
+    """Consume every uploaded temp file, write each via `write`, then clean them
+    all up. Consuming up front keeps cleanup in one place regardless of which
+    write fails.
+    """
+    consumed: list[Path] = []
+    try:
+        for upload in uploads:
+            consumed.append(
+                consume_uploaded_temp_file(request, upload["uploaded_file"])
+            )
+        for upload, uploaded_path in zip(uploads, consumed):
+            write(upload, uploaded_path)
+    finally:
+        for path in consumed:
+            cleanup_uploaded_temp_file(path)
+
+
 def bulk_upload_media(
     request: Request,
     uploads: list[UploadEntry],
     hf_token: str | None,
 ) -> None:
     assert_can_write_metrics(request, hf_token)
-    for upload in uploads:
-        uploaded_path = consume_uploaded_temp_file(request, upload["uploaded_file"])
-        try:
-            media_path = get_project_media_path(
-                project=upload["project"],
-                run=upload["run"],
-                step=upload["step"],
-                relative_path=upload["relative_path"],
-            )
-            shutil.copy(uploaded_path, media_path)
-        finally:
-            cleanup_uploaded_temp_file(uploaded_path)
+
+    def _write(upload: UploadEntry, src: Path) -> None:
+        media_path = get_project_media_path(
+            project=upload["project"],
+            run=upload["run"],
+            step=upload["step"],
+            relative_path=upload["relative_path"],
+        )
+        shutil.copy(src, media_path)
+
+    _bulk_upload(request, uploads, _write)
 
 
 def check_artifact_blobs(
@@ -594,22 +617,16 @@ def bulk_upload_artifact_blob(
 ) -> None:
     assert_can_write_metrics(request, hf_token)
     project = _validate_project_name(project)
-    consumed: list[Path] = []
-    try:
-        for upload in uploads:
-            consumed.append(
-                consume_uploaded_temp_file(request, upload["uploaded_file"])
-            )
-        for upload, uploaded_path in zip(uploads, consumed):
-            digest = _validate_sha256_digest(upload["digest"])
-            target = cas.blob_path(project, digest)
-            try:
-                cas.stage_blob_from_file(uploaded_path, digest, target)
-            except ValueError as e:
-                raise TrackioAPIError(str(e)) from e
-    finally:
-        for path in consumed:
-            cleanup_uploaded_temp_file(path)
+
+    def _write(upload: ArtifactBlobUploadEntry, src: Path) -> None:
+        digest = _validate_sha256_digest(upload["digest"])
+        target = cas.blob_path(project, digest)
+        try:
+            cas.stage_blob_from_file(src, digest, target)
+        except ValueError as e:
+            raise TrackioAPIError(str(e)) from e
+
+    _bulk_upload(request, uploads, _write)
 
 
 def artifact_log(

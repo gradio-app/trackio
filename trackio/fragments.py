@@ -15,6 +15,7 @@ harmless.
 import tempfile
 import threading
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -328,34 +329,40 @@ def _add_files_to_bucket(bucket_id: str, additions: list[tuple[str, str]]) -> No
         )
 
 
-def upload_media_files_to_bucket(bucket_id: str, uploads: list[dict[str, Any]]) -> None:
+def _upload_files_to_bucket(
+    bucket_id: str,
+    uploads: list[dict[str, Any]],
+    remote_path: Callable[[dict[str, Any], Path], str],
+) -> None:
     _add_files_to_bucket(
         bucket_id,
         [
-            (
-                str(p),
-                bucket_media_path(
-                    project=upload["project"],
-                    run=upload.get("run"),
-                    step=upload.get("step"),
-                    relative_path=upload.get("relative_path"),
-                    filename=p.name,
-                ),
-            )
+            (str(p), remote_path(upload, p))
             for upload in uploads
             if (p := Path(upload["file_path"])).exists()
         ],
     )
 
 
+def upload_media_files_to_bucket(bucket_id: str, uploads: list[dict[str, Any]]) -> None:
+    _upload_files_to_bucket(
+        bucket_id,
+        uploads,
+        lambda upload, p: bucket_media_path(
+            project=upload["project"],
+            run=upload.get("run"),
+            step=upload.get("step"),
+            relative_path=upload.get("relative_path"),
+            filename=p.name,
+        ),
+    )
+
+
 def upload_artifact_blobs_to_bucket(
     bucket_id: str, uploads: list[dict[str, Any]]
 ) -> None:
-    _add_files_to_bucket(
+    _upload_files_to_bucket(
         bucket_id,
-        [
-            (str(p), f"trackio/{p.relative_to(utils.TRACKIO_DIR).as_posix()}")
-            for upload in uploads
-            if (p := Path(upload["file_path"])).exists()
-        ],
+        uploads,
+        lambda upload, p: f"trackio/{p.relative_to(utils.TRACKIO_DIR).as_posix()}",
     )

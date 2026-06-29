@@ -223,6 +223,13 @@ class Run:
     def _hf_token_for_remote(self) -> str | None:
         return huggingface_hub.utils.get_token() if self._space_id else None
 
+    def _remote_source_dict(self) -> dict:
+        return {
+            "space_id": self._space_id,
+            "server_base_url": self._server_base_url,
+            "write_token": self._write_token,
+        }
+
     def _get_username(self) -> str | None:
         try:
             return _get_default_namespace()
@@ -1301,11 +1308,7 @@ class Run:
             size_bytes=record["size_bytes"],
         )
         if not self._is_local:
-            artifact._remote_source = {
-                "space_id": self._space_id,
-                "server_base_url": self._server_base_url,
-                "write_token": self._write_token,
-            }
+            artifact._remote_source = self._remote_source_dict()
         return artifact
 
     @staticmethod
@@ -1375,11 +1378,7 @@ class Run:
             metadata=record["metadata"],
         )
         if not self._is_local:
-            art._remote_source = {
-                "space_id": self._space_id,
-                "server_base_url": self._server_base_url,
-                "write_token": self._write_token,
-            }
+            art._remote_source = self._remote_source_dict()
 
         try:
             if self._is_local:
