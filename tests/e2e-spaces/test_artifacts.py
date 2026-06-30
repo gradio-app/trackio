@@ -82,7 +82,7 @@ def test_artifact_versioning_dedup_and_alias_resolution(
         run = trackio.init(project=project, name=run_name, space_id=test_space_id)
         wait_for_client(run)
         art = trackio.Artifact(name="model", type="model")
-        art.add_file(f)
+        art.add_file(f, name="w.bin")
         logged = trackio.log_artifact(art, aliases=aliases)
         trackio.finish()
         return logged
@@ -103,8 +103,8 @@ def test_artifact_versioning_dedup_and_alias_resolution(
     out_v1 = Path(trackio.use_artifact("model:v1").download(tmp_path / "v1"))
     trackio.finish()
 
-    assert (out_v0 / "r0.bin").read_bytes() == b"content-A"
-    assert (out_v1 / "r1.bin").read_bytes() == b"content-B"
+    assert (out_v0 / "w.bin").read_bytes() == b"content-A"
+    assert (out_v1 / "w.bin").read_bytes() == b"content-B"
 
 
 def test_identical_bytes_dedup_across_runs(
