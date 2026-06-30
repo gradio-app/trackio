@@ -3,67 +3,106 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
   import { listArtifacts } from "../lib/api.js";
-  import { getQueryParam } from "../lib/router.js";
+  import { getQueryParam, setQueryParam } from "../lib/router.js";
 
   let { project = null } = $props();
 
   let artifacts = $state([]);
   let loading = $state(false);
-  let expanded = $state({});
-  let expandedVer = $state({});
-
-  let groups = $derived.by(() => {
-    const byType = new Map();
-    for (const a of artifacts) {
-      if (!byType.has(a.type)) byType.set(a.type, []);
-      byType.get(a.type).push(a);
-    }
-    return [...byType.entries()].map(([type, items]) => ({ type, items }));
-  });
-
-  function formatSize(bytes) {
-    if (bytes == null) return "";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024)
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-
-  function formatDate(iso) {
-    if (!iso) return "";
-    try {
-      return new Date(iso).toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-    } catch {
-      return iso;
-    }
-  }
+  let error = $state(false);
+  let search = $state("");
+  let expandedTypes = $state({});
+  let expandedArtifacts = $state({});
+  let selected = $state(null);
 
   function verKey(name, version) {
     return `${name}@v${version}`;
   }
 
-  function toggleArtifact(name) {
-    const opening = !expanded[name];
-    expanded[name] = opening;
-    if (opening) {
-      const latest = artifacts.find((a) => a.name === name)?.versions?.[0];
-      if (latest) expandedVer[verKey(name, latest.version)] = true;
+  let filteredGroups = $derived.by(() => {
+    const q = search.trim().toLowerCase();
+    const byType = new Map();
+    for (const a of artifacts) {
+      if (
+        q &&
+        !a.name.toLowerCase().includes(q) &&
+        !a.type.toLowerCase().includes(q)
+      )
+        continue;
+      if (!byType.has(a.type)) byType.set(a.type, []);
+      byType.get(a.type).push(a);
     }
+    return [...byType.entries()].map(([type, items]) => ({
+      type,
+      artifacts: items,
+    }));
+  });
+
+  let searching = $derived(search.trim().length > 0);
+
+  function typeOpen(type) {
+    return searching || !!expandedTypes[type];
   }
 
-  function toggleVersion(name, version) {
-    const key = verKey(name, version);
-    expandedVer[key] = !expandedVer[key];
+  function artifactOpen(name) {
+    return searching || !!expandedArtifacts[name];
+  }
+
+  function toggleType(type) {
+    if (searching) return;
+    expandedTypes[type] = !expandedTypes[type];
+  }
+
+  function toggleArtifact(name) {
+    if (searching) return;
+    expandedArtifacts[name] = !expandedArtifacts[name];
+  }
+
+  function selectVersion(artifact, version) {
+    selected = {
+      name: artifact.name,
+      version: version.version,
+      type: artifact.type,
+    };
+    setQueryParam("selected_artifact", artifact.name);
+    setQueryParam("selected_version", `v${version.version}`);
+  }
+
+  function isSelected(name, version) {
+    return (
+      selected && selected.name === name && selected.version === version
+    );
+  }
+
+  async function applyInitialSelection() {
+    const target = getQueryParam("selected_artifact");
+    const verParam = getQueryParam("selected_version");
+    let artifact = target ? artifacts.find((a) => a.name === target) : null;
+    if (!artifact) artifact = artifacts[0];
+    if (!artifact || !artifact.versions.length) return;
+
+    let version = null;
+    if (verParam) {
+      const vnum = parseInt(String(verParam).replace(/^v/i, ""), 10);
+      version = artifact.versions.find((v) => v.version === vnum);
+    }
+    if (!version) version = artifact.versions[0];
+
+    expandedTypes[artifact.type] = true;
+    expandedArtifacts[artifact.name] = true;
+    selectVersion(artifact, version);
+
+    await tick();
+    document
+      .getElementById("tree-" + verKey(artifact.name, version.version))
+      ?.scrollIntoView({ block: "nearest" });
   }
 
   async function loadArtifacts() {
-    expanded = {};
-    expandedVer = {};
+    expandedTypes = {};
+    expandedArtifacts = {};
+    selected = null;
+    error = false;
     if (!project) {
       artifacts = [];
       return;
@@ -73,16 +112,12 @@
       artifacts = await listArtifacts(project);
     } catch {
       artifacts = [];
+      error = true;
     } finally {
       loading = false;
     }
-    const target = getQueryParam("selected_artifact");
-    if (target && artifacts.some((a) => a.name === target)) {
-      expanded[target] = true;
-      await tick();
-      document
-        .getElementById(`artifact-${target}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!error && artifacts.length) {
+      await applyInitialSelection();
     }
   }
 
@@ -95,6 +130,14 @@
 <div class="artifacts-page">
   {#if loading}
     <LoadingTrackio />
+  {:else if error}
+    <div class="empty-state">
+      <h2>Couldn't load artifacts</h2>
+      <p>
+        Something went wrong fetching artifacts for this project. Try reloading
+        the page.
+      </p>
+    </div>
   {:else if artifacts.length === 0}
     <div class="empty-state">
       <h2>No artifacts in this project</h2>
@@ -113,136 +156,268 @@
       </p>
     </div>
   {:else}
-    <h2 class="page-title">Artifacts</h2>
-    <p class="page-subtitle">
-      Showing artifacts logged across all runs in this project.
-    </p>
-
-    {#each groups as group}
-      <div class="type-group">
-        <div class="type-heading">
-          {group.type}
-          <span class="type-count">{group.items.length}</span>
+    <div class="artifacts-layout">
+      <aside class="tree-pane">
+        <div class="tree-search">
+          <svg
+            class="search-icon"
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+          >
+            <circle
+              cx="7"
+              cy="7"
+              r="5"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <path
+              d="M11 11l3 3"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search artifacts…"
+            bind:value={search}
+          />
+          {#if search}
+            <button
+              class="clear-search"
+              onclick={() => (search = "")}
+              title="Clear search">×</button
+            >
+          {/if}
         </div>
-        <div class="artifact-list">
-          {#each group.items as artifact}
-            {@const latest = artifact.versions[0]}
-            <div class="artifact-item" id={"artifact-" + artifact.name}>
+
+        <div class="tree">
+          {#if filteredGroups.length === 0}
+            <div class="tree-empty">No artifacts match “{search}”.</div>
+          {/if}
+          {#each filteredGroups as group}
+            <div class="tree-type">
               <button
-                class="artifact-row"
-                onclick={() => toggleArtifact(artifact.name)}
+                class="tree-row type-row"
+                onclick={() => toggleType(group.type)}
               >
-                <span class="chevron" class:open={expanded[artifact.name]}
-                  >▾</span
-                >
-                <span class="artifact-name">{artifact.name}</span>
-                {#if latest}
-                  <span class="version-badge">v{latest.version}</span>
-                {/if}
+                <span class="chevron" class:open={typeOpen(group.type)}>▾</span>
+                <span class="type-label">{group.type}</span>
                 <span class="spacer"></span>
-                <span class="artifact-meta">
-                  {artifact.num_versions}
-                  {artifact.num_versions === 1 ? "version" : "versions"}
-                </span>
-                {#if latest}
-                  <span class="artifact-meta">{formatSize(latest.size_bytes)}</span
-                  >
-                {/if}
+                <span class="node-count">{group.artifacts.length}</span>
               </button>
 
-              {#if expanded[artifact.name]}
-                <div class="version-list">
-                  {#if artifact.description}
-                    <p class="artifact-description">{artifact.description}</p>
-                  {/if}
-                  {#each artifact.versions as version}
-                    {@const vkey = verKey(artifact.name, version.version)}
-                    <div class="version-item">
-                      <button
-                        class="version-row"
-                        onclick={() =>
-                          toggleVersion(artifact.name, version.version)}
+              {#if typeOpen(group.type)}
+                {#each group.artifacts as artifact}
+                  <div class="tree-artifact">
+                    <button
+                      class="tree-row artifact-row"
+                      onclick={() => toggleArtifact(artifact.name)}
+                    >
+                      <span
+                        class="chevron"
+                        class:open={artifactOpen(artifact.name)}>▾</span
                       >
-                        <span class="chevron" class:open={expandedVer[vkey]}
-                          >▾</span
+                      <span class="artifact-label" title={artifact.name}
+                        >{artifact.name}</span
+                      >
+                      <span class="spacer"></span>
+                      <span class="node-count">{artifact.num_versions}</span>
+                    </button>
+
+                    {#if artifactOpen(artifact.name)}
+                      {#each artifact.versions as version}
+                        <button
+                          id={"tree-" + verKey(artifact.name, version.version)}
+                          class="tree-row version-row"
+                          class:selected={isSelected(
+                            artifact.name,
+                            version.version,
+                          )}
+                          onclick={() => selectVersion(artifact, version)}
                         >
-                        <span class="version-label">v{version.version}</span>
-                        <span class="alias-pills">
+                          <span class="version-label">v{version.version}</span>
                           {#each version.aliases as alias}
                             <span
                               class="alias-pill"
                               class:latest={alias === "latest"}>{alias}</span
                             >
                           {/each}
-                        </span>
-                        <span class="spacer"></span>
-                        <span class="version-meta">
-                          {version.num_files}
-                          {version.num_files === 1 ? "file" : "files"}
-                        </span>
-                        <span class="version-meta"
-                          >{formatSize(version.size_bytes)}</span
-                        >
-                        <span class="version-meta"
-                          >{formatDate(version.created_at)}</span
-                        >
-                      </button>
-
-                      {#if expandedVer[vkey]}
-                        <ArtifactVersionDetail
-                          {project}
-                          name={artifact.name}
-                          version={version.version}
-                        />
-                      {/if}
-                    </div>
-                  {/each}
-                </div>
+                        </button>
+                      {/each}
+                    {/if}
+                  </div>
+                {/each}
               {/if}
             </div>
           {/each}
         </div>
-      </div>
-    {/each}
+      </aside>
+
+      <section class="detail-pane">
+        {#if selected}
+          {#key verKey(selected.name, selected.version)}
+            <ArtifactVersionDetail
+              variant="panel"
+              {project}
+              name={selected.name}
+              version={selected.version}
+            />
+          {/key}
+        {:else}
+          <div class="detail-empty">
+            Select an artifact version to view its details.
+          </div>
+        {/if}
+      </section>
+    </div>
   {/if}
 </div>
 
 <style>
   .artifacts-page {
-    --artifacts-max-width: 860px;
-    padding: 20px 24px;
-    overflow-y: auto;
     flex: 1;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
   }
-  .page-title {
-    color: var(--body-text-color, #1f2937);
-    font-size: 16px;
-    font-weight: 700;
-    margin: 0 0 4px;
-    max-width: var(--artifacts-max-width);
+
+  .artifacts-layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
   }
-  .page-subtitle {
-    color: var(--body-text-color-subdued, #6b7280);
-    font-size: var(--text-sm, 12px);
-    margin: 0 0 16px;
-    max-width: var(--artifacts-max-width);
+
+  .tree-pane {
+    width: 300px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border-color-primary, #e5e7eb);
+    background: var(--background-fill-primary, #fff);
+    overflow: hidden;
   }
-  .type-group {
-    margin-bottom: 20px;
-    max-width: var(--artifacts-max-width);
-  }
-  .type-heading {
+
+  .tree-search {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
+    flex-shrink: 0;
+  }
+  .search-icon {
+    position: absolute;
+    left: 22px;
+    color: var(--body-text-color-subdued, #9ca3af);
+    pointer-events: none;
+  }
+  .tree-search input {
+    width: 100%;
+    padding: 6px 26px 6px 30px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    background: var(--background-fill-secondary, #f9fafb);
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-sm, 13px);
+    outline: none;
+  }
+  .tree-search input:focus {
+    border-color: var(--color-accent, #f97316);
+  }
+  .clear-search {
+    position: absolute;
+    right: 20px;
+    border: none;
+    background: none;
+    color: var(--body-text-color-subdued, #9ca3af);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+  }
+  .clear-search:hover {
+    color: var(--body-text-color, #1f2937);
+  }
+
+  .tree {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0 12px;
+  }
+  .tree-empty {
+    padding: 16px 14px;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+
+  .tree-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-sm, 13px);
+    padding: 5px 12px;
+    border-radius: 0;
+  }
+  .tree-row:hover {
+    background: var(--background-fill-secondary, #f3f4f6);
+  }
+  .type-row {
+    padding-left: 12px;
+  }
+  .artifact-row {
+    padding-left: 28px;
+  }
+  .version-row {
+    padding-left: 50px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    display: inline-block;
+    color: var(--body-text-color-subdued, #6b7280);
+    font-size: 11px;
+    width: 12px;
+    transition: transform 0.15s;
+    transform: rotate(-90deg);
+  }
+  .chevron.open {
+    transform: none;
+  }
+
+  .type-label {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     font-size: var(--text-xs, 11px);
-    font-weight: 600;
+    font-weight: 700;
     color: var(--body-text-color-subdued, #6b7280);
-    margin: 0 0 8px;
   }
-  .type-count {
+  .artifact-label {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .version-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .spacer {
+    flex: 1 1 auto;
+  }
+  .node-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -253,114 +428,49 @@
     background: var(--background-fill-secondary, #f3f4f6);
     color: var(--body-text-color-subdued, #6b7280);
     font-size: var(--text-xs, 10px);
-    letter-spacing: 0;
-  }
-  .artifact-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .artifact-item {
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-lg, 8px);
-    background: var(--background-fill-primary, white);
-    overflow: hidden;
-  }
-  .artifact-row,
-  .version-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    background: none;
-    border: none;
-    cursor: pointer;
-    text-align: left;
-    color: var(--body-text-color, #1f2937);
-    font-size: var(--text-md, 14px);
-    padding: 10px 14px;
-  }
-  .artifact-row:hover,
-  .version-row:hover {
-    background: var(--background-fill-secondary, #f9fafb);
-  }
-  .chevron {
     flex-shrink: 0;
-    display: inline-block;
-    color: var(--body-text-color, #1f2937);
-    font-size: 14px;
-    transition: transform 0.15s;
-    transform: rotate(-90deg);
   }
-  .chevron.open {
-    transform: none;
-  }
-  .artifact-name {
-    font-weight: 600;
-  }
-  .spacer {
-    flex: 1 1 auto;
-  }
-  .version-badge {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: var(--text-xs, 11px);
-    color: var(--body-text-color-subdued, #6b7280);
+
+  .version-row.selected {
     background: var(--background-fill-secondary, #f3f4f6);
-    border-radius: var(--radius-sm, 4px);
-    padding: 1px 6px;
+    box-shadow: inset 3px 0 0 var(--color-accent, #f97316);
   }
-  .artifact-meta,
-  .version-meta {
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color-subdued, #6b7280);
-    white-space: nowrap;
+  .version-row.selected .version-label {
+    color: var(--color-accent, #f97316);
   }
-  .version-list {
-    border-top: 1px solid var(--border-color-primary, #e5e7eb);
-    background: var(--background-fill-secondary, #f9fafb);
-    padding: 6px 8px 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .artifact-description {
-    margin: 4px 6px 8px;
-    font-size: var(--text-sm, 12px);
-    color: var(--body-text-color-subdued, #6b7280);
-  }
-  .version-item {
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-md, 6px);
-    background: var(--background-fill-primary, white);
-    overflow: hidden;
-  }
-  .version-label {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-  .alias-pills {
-    display: flex;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
+
   .alias-pill {
-    font-size: var(--text-xs, 11px);
-    padding: 1px 7px;
+    font-size: var(--text-xs, 10px);
+    padding: 0 6px;
     border-radius: 9px;
     border: 1px solid var(--border-color-primary, #e5e7eb);
     color: var(--body-text-color-subdued, #6b7280);
     background: var(--background-fill-secondary, #f3f4f6);
     white-space: nowrap;
+    line-height: 16px;
   }
   .alias-pill.latest {
     color: var(--color-accent, #f97316);
     border-color: var(--color-accent, #f97316);
     background: transparent;
   }
+
+  .detail-pane {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 20px 28px;
+  }
+  .detail-empty {
+    color: var(--body-text-color-subdued, #6b7280);
+    font-size: var(--text-sm, 13px);
+    padding: 12px 0;
+  }
+
   .empty-state {
     max-width: 640px;
     padding: 40px 24px;
+    overflow-y: auto;
     color: var(--body-text-color, #1f2937);
   }
   .empty-state h2 {
