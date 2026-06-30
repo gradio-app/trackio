@@ -127,6 +127,19 @@
   });
 </script>
 
+{#snippet treeGuides(depth)}
+  <span class="indent"
+    >{#each Array.from({ length: depth }) as _}<span class="indent-guide"
+      ></span>{/each}</span
+  >
+{/snippet}
+
+{#snippet chevronIcon()}
+  <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"
+    ><path d="M4 3L8 6 4 9Z" fill="currentColor" /></svg
+  >
+{/snippet}
+
 <div class="artifacts-page">
   {#if loading}
     <LoadingTrackio />
@@ -204,7 +217,9 @@
                 class="tree-row type-row"
                 onclick={() => toggleType(group.type)}
               >
-                <span class="chevron" class:open={typeOpen(group.type)}>▾</span>
+                <span class="chevron" class:open={typeOpen(group.type)}
+                  >{@render chevronIcon()}</span
+                >
                 <span class="type-label">{group.type}</span>
                 <span class="spacer"></span>
                 <span class="node-count">{group.artifacts.length}</span>
@@ -217,9 +232,11 @@
                       class="tree-row artifact-row"
                       onclick={() => toggleArtifact(artifact.name)}
                     >
+                      {@render treeGuides(1)}
                       <span
                         class="chevron"
-                        class:open={artifactOpen(artifact.name)}>▾</span
+                        class:open={artifactOpen(artifact.name)}
+                        >{@render chevronIcon()}</span
                       >
                       <span class="artifact-label" title={artifact.name}
                         >{artifact.name}</span
@@ -239,6 +256,8 @@
                           )}
                           onclick={() => selectVersion(artifact, version)}
                         >
+                          {@render treeGuides(2)}
+                          <span class="tree-chevron-spacer"></span>
                           <span class="version-label">v{version.version}</span>
                           {#each version.aliases as alias}
                             <span
@@ -358,41 +377,51 @@
   .tree-row {
     display: flex;
     align-items: center;
-    gap: 6px;
     width: 100%;
+    min-height: 30px;
     background: none;
     border: none;
     cursor: pointer;
     text-align: left;
     color: var(--body-text-color, #1f2937);
     font-size: var(--text-sm, 13px);
-    padding: 5px 12px;
+    padding: 0 12px;
     border-radius: 0;
   }
   .tree-row:hover {
     background: var(--background-fill-secondary, #f3f4f6);
   }
-  .type-row {
-    padding-left: 12px;
+
+  .indent {
+    display: flex;
+    align-self: stretch;
+    flex-shrink: 0;
   }
-  .artifact-row {
-    padding-left: 28px;
+  .indent-guide {
+    width: 16px;
+    align-self: stretch;
+    border-left: 1px solid var(--border-color-primary, #e5e7eb);
   }
-  .version-row {
-    padding-left: 50px;
+  .tree-chevron-spacer {
+    display: inline-block;
+    width: 12px;
+    margin-right: 6px;
+    flex-shrink: 0;
   }
 
   .chevron {
     flex-shrink: 0;
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 6px;
     color: var(--body-text-color-subdued, #6b7280);
-    font-size: 11px;
     width: 12px;
+    height: 12px;
     transition: transform 0.15s;
-    transform: rotate(-90deg);
   }
   .chevron.open {
-    transform: none;
+    transform: rotate(90deg);
   }
 
   .type-label {
@@ -412,6 +441,9 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-weight: 600;
     flex-shrink: 0;
+  }
+  .version-row .alias-pill {
+    margin-left: 6px;
   }
 
   .spacer {

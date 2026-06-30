@@ -16,6 +16,7 @@
   let error = $state(false);
   let copied = $state("");
   let copyTimer = null;
+  let metaOverrides = $state({});
 
   function formatSize(bytes) {
     if (bytes == null) return "";
@@ -60,6 +61,38 @@
     return v === null ? "null" : String(v);
   }
 
+  function metaKey(path) {
+    return JSON.stringify(path);
+  }
+
+  function defaultCollapsed(value, depth) {
+    return depth >= 2 || Object.keys(value).length > 12;
+  }
+
+  function walkMetaDefaults(entries, depth, parentPath, out) {
+    for (const [k, v] of entries) {
+      if (isBranch(v)) {
+        const path = [...parentPath, k];
+        out[metaKey(path)] = defaultCollapsed(v, depth);
+        walkMetaDefaults(Object.entries(v), depth + 1, path, out);
+      }
+    }
+  }
+
+  function branchPreview(v) {
+    const s = JSON.stringify(v);
+    return s.length > 80 ? s.slice(0, 80) + "…" : s;
+  }
+
+  function isMetaCollapsed(path) {
+    const o = metaOverrides[metaKey(path)];
+    return o === undefined ? (metaDefaults[metaKey(path)] ?? false) : o;
+  }
+
+  function toggleMeta(path) {
+    metaOverrides[metaKey(path)] = !isMetaCollapsed(path);
+  }
+
   function openRun(runName, runId) {
     setQueryParam("selected_run_id", runId);
     setQueryParam("selected_run", runName);
@@ -80,10 +113,19 @@
     record ? `trackio.use_artifact("${record.name}:v${record.version}")` : "",
   );
 
+  let metaDefaults = $derived.by(() => {
+    const out = {};
+    if (record?.metadata && isPlainObject(record.metadata)) {
+      walkMetaDefaults(Object.entries(record.metadata), 0, [], out);
+    }
+    return out;
+  });
+
   async function load() {
     record = null;
     consumers = [];
     error = false;
+    metaOverrides = {};
     if (!project || !name || version == null) return;
     loading = true;
     try {
@@ -138,16 +180,48 @@
   </div>
 {/snippet}
 
-{#snippet metaRows(entries, depth)}
+{#snippet indentGuides(depth)}
+  {#if depth > 0}
+    <span class="indent"
+      >{#each Array.from({ length: depth }) as _}<span class="indent-guide"
+        ></span>{/each}</span
+    >
+  {/if}
+{/snippet}
+
+{#snippet metaRows(entries, depth, parentPath)}
   {#each entries as [k, v]}
     {#if isBranch(v)}
-      <span class="detail-key meta-group" style="padding-left: {depth * 14}px"
-        >{k}</span
+      {@const path = [...parentPath, k]}
+      {@const collapsed = isMetaCollapsed(path)}
+      <div class="meta-key-cell">
+        {@render indentGuides(depth)}
+        <button
+          type="button"
+          class="meta-key-row"
+          onclick={() => toggleMeta(path)}
+        >
+          <span class="meta-chevron" class:open={!collapsed}>
+            <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"
+              ><path d="M4 3L8 6 4 9Z" fill="currentColor" /></svg
+            >
+          </span>
+          <span class="meta-key-label">{k}</span>
+          <span class="meta-node-count">{Object.keys(v).length}</span>
+        </button>
+      </div>
+      <span class="detail-val meta-preview"
+        >{collapsed ? branchPreview(v) : ""}</span
       >
-      <span class="detail-val"></span>
-      {@render metaRows(Object.entries(v), depth + 1)}
+      {#if !collapsed}
+        {@render metaRows(Object.entries(v), depth + 1, path)}
+      {/if}
     {:else}
-      <span class="detail-key" style="padding-left: {depth * 14}px">{k}</span>
+      <div class="meta-key-cell">
+        {@render indentGuides(depth)}
+        <span class="meta-chevron-spacer"></span>
+        <span class="detail-key meta-leaf-key">{k}</span>
+      </div>
       <span class="detail-val">{formatLeaf(v)}</span>
     {/if}
   {/each}
@@ -244,7 +318,7 @@
       {#if record.metadata && Object.keys(record.metadata).length}
         <Accordion label="Metadata ({Object.keys(record.metadata).length})">
           <div class="meta-grid">
-            {@render metaRows(Object.entries(record.metadata), 0)}
+            {@render metaRows(Object.entries(record.metadata), 0, [])}
           </div>
         </Accordion>
       {/if}
@@ -451,12 +525,87 @@
   .meta-grid {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 6px 16px;
-    align-items: start;
+    column-gap: 16px;
+    row-gap: 0;
+    align-items: stretch;
   }
-  .meta-group {
-    font-weight: 600;
+  .meta-key-cell {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+  }
+  .meta-grid .detail-val {
+    align-self: center;
+    padding: 3px 0;
+  }
+  .indent {
+    display: flex;
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+  .indent-guide {
+    width: 16px;
+    align-self: stretch;
+    border-left: 1px solid var(--border-color-primary, #e5e7eb);
+  }
+  .meta-chevron-spacer {
+    display: inline-block;
+    width: 16px;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  .meta-leaf-key {
+    align-self: center;
+    padding: 3px 0;
+  }
+  .meta-key-row {
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    background: none;
+    border: none;
+    padding: 3px 0;
+    margin: 0;
+    cursor: pointer;
+    font: inherit;
     color: var(--body-text-color, #1f2937);
+    text-align: left;
+  }
+  .meta-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    margin-right: 4px;
+    flex-shrink: 0;
+    color: var(--body-text-color-subdued, #9ca3af);
+    transition: transform 0.15s;
+  }
+  .meta-chevron.open {
+    transform: rotate(90deg);
+  }
+  .meta-key-label {
+    font-weight: 400;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .meta-key-row:hover .meta-key-label {
+    color: var(--color-accent, #f97316);
+  }
+  .meta-node-count {
+    margin-left: 8px;
+    font-size: var(--text-xs, 10px);
+    font-weight: 500;
+    color: var(--body-text-color-subdued, #9ca3af);
+  }
+  .meta-preview {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--text-xs, 11px);
+    color: var(--body-text-color-subdued, #9ca3af);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .file-table {
