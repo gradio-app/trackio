@@ -1,6 +1,8 @@
 import argparse
 import os
 
+import huggingface_hub
+
 from trackio import freeze, show, sync
 from trackio.cli_helpers import (
     error_exit,
@@ -253,8 +255,6 @@ def _trackio_space_namespaces(api, token: str | None, author: str | None) -> lis
 
 
 def _handle_list_spaces(args):
-    import huggingface_hub
-
     if _get_space(args):
         error_exit("The 'list spaces' command does not support --space.")
     if args.limit is not None and args.limit < 0:
