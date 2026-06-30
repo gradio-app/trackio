@@ -1,5 +1,11 @@
 # trackio
 
+## 0.29.0
+
+### Features
+
+- [#593](https://github.com/gradio-app/trackio/pull/593) [`ca4722c`](https://github.com/gradio-app/trackio/commit/ca4722c19d2219a3a78b5977149873b9dff73f34) - Add CLI command to list Trackio Spaces.  Thanks @abidlabs!
+
 ## 0.28.1
 
 ### Features
