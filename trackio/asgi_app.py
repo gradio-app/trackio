@@ -424,6 +424,8 @@ async def file_handler(request: Request) -> Response:
     fp = Path(unquote(fs_path)).resolve(strict=False)
     if fp.suffix.lower() in _DISALLOWED_FILE_SUFFIXES:
         return Response("Not found", status_code=404)
+    if _is_allowed_file_path(fp, (utils.ARTIFACTS_DIR.resolve(),)):
+        return Response("Not found", status_code=404)
     allowed_roots = getattr(request.app.state, "allowed_file_roots", ())
     if fp.is_file() and _is_allowed_file_path(fp, allowed_roots):
         return FileResponse(str(fp))

@@ -328,6 +328,26 @@ def test_artifact_endpoints_accept_names_init_and_log_accept(auth_bypassed, stag
     assert server.get_artifact_manifest(canonical, "m", "latest") is not None
 
 
+def test_file_route_never_serves_artifact_blobs(stage_blob):
+    """Artifact blobs must only be reachable through the authenticated
+    /artifact_blob route, never the generic unauthenticated /file route -- even
+    if the artifacts directory is mistakenly listed as an allowed file root."""
+    from starlette.testclient import TestClient
+
+    from trackio import utils
+    from trackio.asgi_app import create_trackio_starlette_app
+
+    _, blob = stage_blob("p", b"secret-model-weights")
+    app = create_trackio_starlette_app(
+        [], {}, allowed_file_roots=[utils.MEDIA_DIR, utils.ARTIFACTS_DIR]
+    )
+    client = TestClient(app)
+
+    resp = client.get("/file", params={"path": str(blob)})
+    assert resp.status_code == 404
+    assert b"secret-model-weights" not in resp.content
+
+
 def test_get_artifact_manifest_shape(auth_bypassed, stage_blob):
     payload = b"x"
     digest, _ = stage_blob("p", payload)

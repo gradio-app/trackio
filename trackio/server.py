@@ -1308,7 +1308,6 @@ def build_starlette_app_only(
         allowed_file_roots=[
             utils.MEDIA_DIR,
             utils.TRACKIO_LOGO_DIR,
-            utils.ARTIFACTS_DIR,
         ],
         upload_authorizer=assert_can_stage_upload,
     )
