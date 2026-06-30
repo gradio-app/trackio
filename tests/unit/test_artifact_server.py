@@ -209,13 +209,29 @@ def test_artifact_log_validates_digests_before_writing(temp_dir, auth_bypassed):
     assert SQLiteStorage.get_artifact_manifest("p", "my-model", None) is None
 
 
-def test_artifact_log_rejects_invalid_digest_format(temp_dir, auth_bypassed):
-    with pytest.raises(TrackioAPIError, match="Invalid sha256"):
-        _log_artifact(
-            auth_bypassed,
-            manifest=[{"path": "x", "digest": "../secret", "size": 1}],
-            name="my-model",
-        )
+@pytest.mark.parametrize(
+    "manifest, kwargs, match",
+    [
+        (
+            [{"path": "x", "digest": "../secret", "size": 1}],
+            {"name": "my-model"},
+            "Invalid sha256",
+        ),
+        ("VALID", {"name": "bad name!"}, "must match"),
+        ("VALID", {"type": ""}, "type must be a non-empty string"),
+        ([], {}, "non-empty list"),
+        ([], {"project": 123}, "Invalid project"),
+    ],
+)
+def test_artifact_log_rejects_invalid_input(
+    auth_bypassed, stage_blob, manifest, kwargs, match
+):
+    if manifest == "VALID":
+        payload = b"payload"
+        digest, _ = stage_blob("p", payload)
+        manifest = [{"path": "w.bin", "digest": digest, "size": len(payload)}]
+    with pytest.raises(TrackioAPIError, match=match):
+        _log_artifact(auth_bypassed, manifest, **kwargs)
 
 
 def test_artifact_log_rejects_traversal_manifest_paths(auth_bypassed, stage_blob):
@@ -262,28 +278,6 @@ def test_artifact_log_rejects_invalid_manifest_entries(auth_bypassed, stage_blob
         _log(["not-a-dict"])
 
 
-def test_artifact_log_rejects_invalid_name(auth_bypassed, stage_blob):
-    payload = b"payload"
-    digest, _ = stage_blob("p", payload)
-    with pytest.raises(TrackioAPIError, match="must match"):
-        _log_artifact(
-            auth_bypassed,
-            manifest=[{"path": "w.bin", "digest": digest, "size": len(payload)}],
-            name="bad name!",
-        )
-
-
-def test_artifact_log_rejects_empty_type(auth_bypassed, stage_blob):
-    payload = b"payload"
-    digest, _ = stage_blob("p", payload)
-    with pytest.raises(TrackioAPIError, match="type must be a non-empty string"):
-        _log_artifact(
-            auth_bypassed,
-            manifest=[{"path": "w.bin", "digest": digest, "size": len(payload)}],
-            type="",
-        )
-
-
 def test_artifact_log_rejects_bad_aliases(auth_bypassed, stage_blob):
     payload = b"payload"
     digest, _ = stage_blob("p", payload)
@@ -294,16 +288,6 @@ def test_artifact_log_rejects_bad_aliases(auth_bypassed, stage_blob):
         _log_artifact(auth_bypassed, manifest, aliases=[""])
     with pytest.raises(TrackioAPIError, match="reserved for version pointers"):
         _log_artifact(auth_bypassed, manifest, aliases=["v3"])
-
-
-def test_artifact_log_rejects_empty_manifest(temp_dir, auth_bypassed):
-    with pytest.raises(TrackioAPIError, match="non-empty list"):
-        _log_artifact(auth_bypassed, [])
-
-
-def test_artifact_log_rejects_non_string_project(temp_dir, auth_bypassed):
-    with pytest.raises(TrackioAPIError, match="Invalid project"):
-        _log_artifact(auth_bypassed, [], project=123)
 
 
 def test_artifact_endpoints_accept_names_init_and_log_accept(auth_bypassed, stage_blob):
