@@ -495,11 +495,16 @@
     color: var(--body-text-color-subdued, #9ca3af);
     white-space: nowrap;
     flex-shrink: 0;
+    text-align: right;
+    min-width: 88px;
   }
   .file-size {
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color-subdued, #6b7280);
     white-space: nowrap;
+    flex-shrink: 0;
+    text-align: right;
+    min-width: 56px;
   }
   .download-icon {
     display: flex;
