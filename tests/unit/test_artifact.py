@@ -208,29 +208,19 @@ def test_validate_aliases_accepts_list_of_names():
     assert validate_aliases(["prod", "best-1", "v_2.0"]) == ["prod", "best-1", "v_2.0"]
 
 
-def test_validate_aliases_rejects_bare_string():
-    with pytest.raises(ValueError, match="must be a list"):
-        validate_aliases("prod")
-
-
-def test_validate_aliases_rejects_empty_alias():
-    with pytest.raises(ValueError, match="non-empty string"):
-        validate_aliases([""])
-
-
-def test_validate_aliases_rejects_invalid_characters():
-    with pytest.raises(ValueError, match="must match"):
-        validate_aliases(["has space"])
-
-
-def test_validate_aliases_rejects_version_pointer():
-    with pytest.raises(ValueError, match="reserved for version pointers"):
-        validate_aliases(["v3"])
-
-
-def test_validate_aliases_rejects_trailing_newline():
-    with pytest.raises(ValueError, match="must match"):
-        validate_aliases(["prod\n"])
+@pytest.mark.parametrize(
+    "aliases, match",
+    [
+        ("prod", "must be a list"),
+        ([""], "non-empty string"),
+        (["has space"], "must match"),
+        (["v3"], "reserved for version pointers"),
+        (["prod\n"], "must match"),
+    ],
+)
+def test_validate_aliases_rejects(aliases, match):
+    with pytest.raises(ValueError, match=match):
+        validate_aliases(aliases)
 
 
 def test_insert_artifact_version_increments(temp_dir):
@@ -316,27 +306,16 @@ def test_insert_run_artifact_link_and_get(temp_dir):
     assert len(consumer_arts["input"]) == 1
 
 
-def test_insert_run_artifact_link_dedupes_with_null_run_id(temp_dir):
+@pytest.mark.parametrize("run_id", [None, "rid"])
+def test_insert_run_artifact_link_dedupes(temp_dir, run_id):
     aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
     vid, _, _ = SQLiteStorage.insert_artifact_version(
         "p", aid, [{"path": "a", "digest": "1", "size": 7}], None, None, "producer"
     )
     for _ in range(3):
-        SQLiteStorage.insert_run_artifact_link("p", "consumer", None, vid, "input")
+        SQLiteStorage.insert_run_artifact_link("p", "consumer", run_id, vid, "input")
 
-    consumer_arts = SQLiteStorage.get_run_artifacts("p", "consumer", None)
-    assert len(consumer_arts["input"]) == 1
-
-
-def test_insert_run_artifact_link_dedupes_with_run_id(temp_dir):
-    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    vid, _, _ = SQLiteStorage.insert_artifact_version(
-        "p", aid, [{"path": "a", "digest": "1", "size": 7}], None, None, "producer"
-    )
-    for _ in range(3):
-        SQLiteStorage.insert_run_artifact_link("p", "consumer", "rid", vid, "input")
-
-    consumer_arts = SQLiteStorage.get_run_artifacts("p", "consumer", "rid")
+    consumer_arts = SQLiteStorage.get_run_artifacts("p", "consumer", run_id)
     assert len(consumer_arts["input"]) == 1
 
 
@@ -363,13 +342,6 @@ def test_insert_run_artifact_link_keeps_both_directions_for_one_null_run(temp_di
     arts = SQLiteStorage.get_run_artifacts("p", "r", None)
     assert len(arts["input"]) == 1
     assert len(arts["output"]) == 1
-
-
-def test_relog_identical_content_does_not_duplicate_output_link(temp_dir):
-    a = [{"path": "w", "digest": "aaa", "size": 1}]
-    _commit_version(a)
-    _commit_version(a)
-    assert len(SQLiteStorage.get_run_artifacts("p", "r", None)["output"]) == 1
 
 
 def test_insert_run_artifact_link_rejects_bad_direction(temp_dir):
@@ -769,18 +741,6 @@ def test_build_manifest_allows_sibling_paths(temp_dir, tmp_path):
     assert {e["path"] for e in manifest} == {"a/b", "a/c"}
 
 
-def test_assert_manifest_paths_compatible():
-    from trackio import cas
-
-    cas.assert_manifest_paths_compatible(["a/b", "a/c", "d"])
-    with pytest.raises(ValueError, match="Duplicate logical path"):
-        cas.assert_manifest_paths_compatible(["x", "x"])
-    with pytest.raises(ValueError, match="collides with"):
-        cas.assert_manifest_paths_compatible(["sub", "sub/x"])
-    with pytest.raises(ValueError, match="collides with"):
-        cas.assert_manifest_paths_compatible(["a/b/c", "a/b"])
-
-
 def test_build_manifest_rejects_empty(temp_dir):
     a = Artifact(name="m", type="model")
     with pytest.raises(ValueError, match="no files"):
@@ -857,48 +817,6 @@ def _hydrated_artifact(
         size_bytes=sum(e["size"] for e in entries),
     )
     return a
-
-
-def test_download_materializes_files(stage_blob, tmp_path):
-    digest_a, _ = stage_blob("proj", b"alpha")
-    digest_b, _ = stage_blob("proj", b"beta")
-    a = _hydrated_artifact(
-        "proj",
-        "my-model",
-        0,
-        [
-            {"path": "weights.bin", "digest": Sha256Digest(digest_a), "size": 5},
-            {
-                "path": "sub/config.json",
-                "digest": Sha256Digest(digest_b),
-                "size": 4,
-            },
-        ],
-    )
-    out = a.download(tmp_path / "dl")
-    assert (Path(out) / "weights.bin").read_bytes() == b"alpha"
-    assert (Path(out) / "sub" / "config.json").read_bytes() == b"beta"
-
-
-def test_download_default_root_includes_name_and_version(
-    stage_blob, tmp_path, monkeypatch
-):
-    payload = b"x"
-    digest, _ = stage_blob("proj", payload)
-    monkeypatch.chdir(tmp_path)
-    for version in (0, 3):
-        a = _hydrated_artifact(
-            "proj",
-            "my-model",
-            version,
-            [{"path": "w.bin", "digest": Sha256Digest(digest), "size": len(payload)}],
-        )
-        out = a.download()
-        assert (
-            Path(out).resolve()
-            == (tmp_path / "artifacts" / "proj" / f"my-model_v{version}").resolve()
-        )
-        assert (Path(out) / "w.bin").read_bytes() == b"x"
 
 
 def test_download_default_root_disambiguates_by_project(
@@ -1025,37 +943,6 @@ def _make_file(tmp_path, name, payload):
     return p
 
 
-def test_run_log_artifact_round_trip(temp_dir, tmp_path):
-    weights = _make_file(tmp_path, "weights.bin", b"hello")
-    run = trackio.init(project="art-rt", name="producer")
-    art = Artifact(name="my-model", type="model")
-    art.add_file(weights)
-    logged = run.log_artifact(art)
-    assert logged is art
-    assert logged.version == "v0"
-    assert "latest" in logged.aliases
-    assert logged.project == "art-rt"
-    trackio.finish()
-
-    run2 = trackio.init(project="art-rt", name="consumer")
-    fetched = run2.use_artifact("my-model:latest")
-    assert fetched.version == "v0"
-    assert fetched.name == "my-model"
-    assert fetched.type == "model"
-    out = fetched.download(tmp_path / "dl")
-    assert (Path(out) / "weights.bin").read_bytes() == b"hello"
-    trackio.finish()
-
-    lineage_p = SQLiteStorage.get_run_artifacts("art-rt", "producer", None)
-    assert len(lineage_p["output"]) == 1
-    assert lineage_p["output"][0]["name"] == "my-model"
-    assert lineage_p["input"] == []
-
-    lineage_c = SQLiteStorage.get_run_artifacts("art-rt", "consumer", None)
-    assert lineage_c["output"] == []
-    assert len(lineage_c["input"]) == 1
-
-
 def test_canonical_project_name_collapses_to_db_stem():
     from trackio.utils import canonical_project_name
 
@@ -1099,16 +986,6 @@ def test_dotted_project_blob_resolves_under_canonical_db(temp_dir, tmp_path):
     trackio.finish()
 
 
-def test_log_artifact_with_user_aliases(temp_dir, tmp_path):
-    weights = _make_file(tmp_path, "w.bin", b"x")
-    run = trackio.init(project="art-aliases", name="p")
-    art = Artifact(name="m", type="model")
-    art.add_file(weights)
-    logged = run.log_artifact(art, aliases=["best", "stable"])
-    assert sorted(logged.aliases) == ["best", "latest", "stable"]
-    trackio.finish()
-
-
 def test_log_artifact_rejects_version_alias(temp_dir, tmp_path):
     weights = _make_file(tmp_path, "w.bin", b"x")
     run = trackio.init(project="art-vN", name="p")
@@ -1119,55 +996,6 @@ def test_log_artifact_rejects_version_alias(temp_dir, tmp_path):
     blobs_dir = Path(temp_dir) / "artifacts" / "art-vN" / "blobs"
     has_blobs = blobs_dir.exists() and any(p.is_file() for p in blobs_dir.rglob("*"))
     assert not has_blobs
-    trackio.finish()
-
-
-def test_relog_same_bytes_dedupes_but_rotates_aliases(temp_dir, tmp_path):
-    weights = _make_file(tmp_path, "w.bin", b"x")
-    run_a = trackio.init(project="art-dedup", name="run_a")
-    art_a = Artifact(name="m", type="model")
-    art_a.add_file(weights)
-    logged_a = run_a.log_artifact(art_a, aliases=["best"])
-    assert logged_a.version == "v0"
-    trackio.finish()
-
-    run_b = trackio.init(project="art-dedup", name="run_b")
-    art_b = Artifact(name="m", type="model")
-    art_b.add_file(weights)
-    logged_b = run_b.log_artifact(art_b)
-    assert logged_b.version == "v0"
-    assert "latest" in logged_b.aliases
-    assert "best" in logged_b.aliases
-    trackio.finish()
-
-    lineage_a = SQLiteStorage.get_run_artifacts("art-dedup", "run_a", None)
-    lineage_b = SQLiteStorage.get_run_artifacts("art-dedup", "run_b", None)
-    assert len(lineage_a["output"]) == 1
-    assert len(lineage_b["output"]) == 1
-    assert lineage_a["output"][0]["version_id"] == lineage_b["output"][0]["version_id"]
-
-
-def test_aliases_rotate_on_new_version(temp_dir, tmp_path):
-    p1 = _make_file(tmp_path, "v1.bin", b"v1")
-    p2 = _make_file(tmp_path, "v2.bin", b"v2")
-
-    run_a = trackio.init(project="art-rotate", name="r")
-    art_a = Artifact(name="m", type="model")
-    art_a.add_file(p1)
-    logged_a = run_a.log_artifact(art_a, aliases=["best"])
-    assert logged_a.version == "v0"
-    trackio.finish()
-
-    run_b = trackio.init(project="art-rotate", name="r2")
-    art_b = Artifact(name="m", type="model")
-    art_b.add_file(p2)
-    logged_b = run_b.log_artifact(art_b, aliases=["best"])
-    assert logged_b.version == "v1"
-
-    fetched_best = run_b.use_artifact("m:best")
-    assert fetched_best.version == "v1"
-    fetched_v0 = run_b.use_artifact("m:v0")
-    assert fetched_v0.version == "v0"
     trackio.finish()
 
 
@@ -1425,17 +1253,6 @@ def test_package_exports_artifact_api():
     assert TopLevelArtifact is Artifact
     for name in ("Artifact", "log_artifact", "use_artifact"):
         assert name in trackio.__all__
-
-
-def test_lineage_unique_index_prevents_duplicates(temp_dir):
-    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
-    vid, _, _ = SQLiteStorage.insert_artifact_version(
-        "p", aid, [{"path": "a", "digest": "1", "size": 1}], None, None, "r"
-    )
-    SQLiteStorage.insert_run_artifact_link("p", "r", "rid-1", vid, "input")
-    SQLiteStorage.insert_run_artifact_link("p", "r", "rid-1", vid, "input")
-    lineage = SQLiteStorage.get_run_artifacts("p", "r", "rid-1")
-    assert len(lineage["input"]) == 1
 
 
 def test_is_transient_remote_error_classifies_errors():

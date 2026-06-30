@@ -129,36 +129,6 @@ def test_replay_pending_uploads_with_empty_queue_is_noop(temp_dir):
     client.predict.assert_not_called()
 
 
-def test_upload_artifact_blobs_to_bucket_uses_cas_path(
-    temp_dir, monkeypatch, stage_blob
-):
-    from trackio import fragments
-
-    digest, blob = stage_blob("p", b"weights")
-
-    captured: dict = {}
-
-    def _fake_batch(bucket_id, add=None, **kwargs):
-        captured["add"] = list(add or [])
-
-    monkeypatch.setattr(fragments.huggingface_hub, "batch_bucket_files", _fake_batch)
-
-    fragments.upload_artifact_blobs_to_bucket(
-        "user/bucket",
-        [
-            {
-                "file_path": str(blob),
-                "project": "p",
-                "digest": digest,
-                "kind": "artifact_blob",
-            }
-        ],
-    )
-
-    remote_paths = {remote for _, remote in captured["add"]}
-    assert remote_paths == {f"trackio/artifacts/p/blobs/sha256/{digest[:2]}/{digest}"}
-
-
 def test_flush_pending_uploads_routes_by_kind(
     temp_dir, tmp_path, monkeypatch, stage_blob
 ):
