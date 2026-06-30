@@ -1,6 +1,9 @@
 import hashlib
+import threading
 from pathlib import Path
+from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 import trackio
@@ -1422,3 +1425,58 @@ def test_package_exports_artifact_api():
     assert TopLevelArtifact is Artifact
     for name in ("Artifact", "log_artifact", "use_artifact"):
         assert name in trackio.__all__
+
+
+def test_lineage_unique_index_prevents_duplicates(temp_dir):
+    aid = SQLiteStorage.create_or_get_artifact("p", "m", "model", None)
+    vid, _, _ = SQLiteStorage.insert_artifact_version(
+        "p", aid, [{"path": "a", "digest": "1", "size": 1}], None, None, "r"
+    )
+    SQLiteStorage.insert_run_artifact_link("p", "r", "rid-1", vid, "input")
+    SQLiteStorage.insert_run_artifact_link("p", "r", "rid-1", vid, "input")
+    lineage = SQLiteStorage.get_run_artifacts("p", "r", "rid-1")
+    assert len(lineage["input"]) == 1
+
+
+def test_is_transient_remote_error_classifies_errors():
+    from trackio.remote_client import is_transient_remote_error
+
+    req = httpx.Request("POST", "http://x/api/artifact_log")
+    err_503 = httpx.HTTPStatusError(
+        "503", request=req, response=httpx.Response(503, request=req)
+    )
+    err_400 = httpx.HTTPStatusError(
+        "400", request=req, response=httpx.Response(400, request=req)
+    )
+    assert is_transient_remote_error(err_503) is True
+    assert is_transient_remote_error(err_400) is False
+    assert is_transient_remote_error(httpx.ConnectError("x")) is True
+    assert is_transient_remote_error(ConnectionError("x")) is True
+    assert is_transient_remote_error(RuntimeError("x")) is False
+
+
+def test_wait_for_client_ready_returns_when_set(temp_dir, monkeypatch):
+    run = trackio.init(project="rp-wait", name="p")
+    run._is_local = False
+    run._client = None
+
+    def _set_later():
+        import time as _time
+
+        _time.sleep(0.2)
+        run._client = MagicMock()
+
+    threading.Thread(target=_set_later, daemon=True).start()
+    run._wait_for_client_ready(timeout=2.0)
+    assert run._client is not None
+    run._client = None
+    trackio.finish()
+
+
+def test_wait_for_client_ready_times_out(temp_dir, monkeypatch):
+    run = trackio.init(project="rp-timeout", name="p")
+    run._is_local = False
+    run._client = None
+    with pytest.raises(RuntimeError, match="not ready"):
+        run._wait_for_client_ready(timeout=0.3)
+    trackio.finish()

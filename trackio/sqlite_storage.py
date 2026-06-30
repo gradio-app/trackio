@@ -1437,7 +1437,6 @@ class SQLiteStorage:
                         "*_traces.parquet",
                         "aux/*.parquet",
                         "media/**/*",
-                        "artifacts/**/*",
                     ],
                     squash_history=True,
                     token=hf_token,
@@ -2702,7 +2701,6 @@ class SQLiteStorage:
                             if not (
                                 file.endswith(".parquet")
                                 or file.startswith("media/")
-                                or file.startswith("artifacts/")
                             ):
                                 continue
                             if (TRACKIO_DIR / file).exists():

@@ -315,29 +315,3 @@ def test_flush_pending_uploads_keeps_blobs_when_upload_fails(
     remaining = SQLiteStorage.get_pending_uploads("p")
     assert remaining is not None
     assert {u["kind"] for u in remaining["uploads"]} == {"artifact_blob"}
-
-
-def test_dataset_mode_allow_patterns_includes_artifacts(monkeypatch):
-    """commit_scheduler picks up artifact blobs when configured for dataset sync."""
-    from trackio import sqlite_storage as _ss
-
-    captured: dict = {}
-
-    class _CapturingScheduler:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    monkeypatch.setattr(_ss, "_current_scheduler", None, raising=False)
-    monkeypatch.setattr(_ss.SQLiteStorage, "_current_scheduler", None)
-    monkeypatch.setattr(_ss, "CommitScheduler", _CapturingScheduler)
-    monkeypatch.setenv("TRACKIO_DATASET_ID", "user/ds")
-    monkeypatch.setenv("SPACE_REPO_NAME", "user/space")
-
-    _ss.SQLiteStorage.get_scheduler()
-    assert "artifacts/**/*" in captured["allow_patterns"]
-    for pattern in (
-        "*.parquet",
-        "media/**/*",
-        "*_traces.parquet",
-    ):
-        assert pattern in captured["allow_patterns"]

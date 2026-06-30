@@ -1,7 +1,7 @@
 import hashlib
 import re
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -424,3 +424,73 @@ def test_validate_project_name_rejects_non_string():
     for bad in [None, 123, ["p"], b"p"]:
         with pytest.raises(TrackioAPIError, match="Invalid project"):
             server._validate_project_name(bad)
+
+
+def test_artifact_blob_endpoint_serves_blob(temp_dir, monkeypatch, stage_blob):
+    """Smoke test the asgi handler directly (no real HTTP)."""
+    import asyncio
+
+    from trackio.asgi_app import artifact_blob_handler
+
+    payload = b"server-side-bytes"
+    digest, _ = stage_blob("p", payload)
+    monkeypatch.setattr(server, "assert_can_stage_upload", lambda request: None)
+
+    request = MagicMock()
+    request.path_params = {"project": "p", "digest": digest}
+
+    response = asyncio.run(artifact_blob_handler(request))
+    assert response.status_code == 200
+    assert Path(response.path).read_bytes() == payload
+
+
+def test_artifact_blob_endpoint_requires_auth(temp_dir, stage_blob):
+    import asyncio
+
+    from trackio.asgi_app import artifact_blob_handler
+
+    payload = b"server-side-bytes"
+    digest, _ = stage_blob("p", payload)
+
+    request = MagicMock()
+    request.path_params = {"project": "p", "digest": digest}
+    request.headers = {}
+    request.query_params = {}
+
+    response = asyncio.run(artifact_blob_handler(request))
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "path_params",
+    [
+        {"project": "p", "digest": "../../etc/passwd"},
+        {"project": "../etc", "digest": "a" * 64},
+    ],
+)
+def test_artifact_blob_endpoint_rejects_invalid_input(
+    temp_dir, monkeypatch, path_params
+):
+    import asyncio
+
+    from trackio.asgi_app import artifact_blob_handler
+
+    monkeypatch.setattr(server, "assert_can_stage_upload", lambda request: None)
+
+    request = MagicMock()
+    request.path_params = path_params
+    response = asyncio.run(artifact_blob_handler(request))
+    assert response.status_code == 404
+
+
+def test_artifact_blob_endpoint_404_when_missing(temp_dir, monkeypatch):
+    import asyncio
+
+    from trackio.asgi_app import artifact_blob_handler
+
+    monkeypatch.setattr(server, "assert_can_stage_upload", lambda request: None)
+
+    request = MagicMock()
+    request.path_params = {"project": "p", "digest": "f" * 64}
+    response = asyncio.run(artifact_blob_handler(request))
+    assert response.status_code == 404
