@@ -12,6 +12,7 @@ from trackio.cli_helpers import (
     format_query_result,
     format_run_summary,
     format_snapshot,
+    format_spaces,
     format_system_metric_names,
     format_system_metrics,
 )
@@ -187,6 +188,110 @@ def _handle_query(args):
         print(format_json(result))
     else:
         print(format_query_result(result))
+
+
+def _datetime_to_iso(value):
+    return value.isoformat() if value is not None else None
+
+
+def _space_url(space) -> str | None:
+    host = getattr(space, "host", None)
+    if host:
+        return host if host.startswith("http") else f"https://{host}"
+
+    subdomain = getattr(space, "subdomain", None)
+    if subdomain:
+        return f"https://{subdomain}.hf.space"
+
+    space_id = getattr(space, "id", None)
+    if not space_id:
+        return None
+    return f"https://huggingface.co/spaces/{space_id}"
+
+
+def _serialize_space(space) -> dict:
+    space_id = getattr(space, "id", "")
+    namespace, _, name = space_id.partition("/")
+    return {
+        "id": space_id,
+        "namespace": namespace,
+        "name": name or space_id,
+        "author": getattr(space, "author", None) or namespace,
+        "private": bool(getattr(space, "private", False)),
+        "sdk": getattr(space, "sdk", None),
+        "url": _space_url(space),
+        "last_modified": _datetime_to_iso(
+            getattr(space, "last_modified", None)
+            or getattr(space, "lastModified", None)
+        ),
+        "created_at": _datetime_to_iso(getattr(space, "created_at", None)),
+        "tags": getattr(space, "tags", None) or [],
+    }
+
+
+def _trackio_space_namespaces(api, token: str | None, author: str | None) -> list[str]:
+    if author:
+        return [author]
+
+    if not token:
+        error_exit(
+            "Log in with `huggingface-cli login`, pass `--hf-token`, or provide `--author`."
+        )
+
+    try:
+        whoami = api.whoami(token=token, cache=True)
+    except Exception as e:
+        error_exit(f"Failed to read Hugging Face account information: {e}")
+
+    namespaces = [whoami["name"]]
+    for org in whoami.get("orgs", []):
+        org_name = org.get("name") if isinstance(org, dict) else org
+        if org_name:
+            namespaces.append(org_name)
+
+    return list(dict.fromkeys(namespaces))
+
+
+def _handle_list_spaces(args):
+    import huggingface_hub
+
+    if _get_space(args):
+        error_exit("The 'list spaces' command does not support --space.")
+    if args.limit is not None and args.limit < 0:
+        error_exit("--limit must be zero or greater.")
+
+    token = args.hf_token or huggingface_hub.utils.get_token()
+    api = huggingface_hub.HfApi(token=token)
+    namespaces = _trackio_space_namespaces(api, token, args.author)
+
+    spaces_by_id = {}
+    try:
+        for namespace in namespaces:
+            spaces = api.list_spaces(
+                author=namespace,
+                filter="trackio",
+                full=True,
+                token=token,
+            )
+            for space in spaces:
+                space_id = getattr(space, "id", None)
+                if space_id:
+                    spaces_by_id[space_id] = _serialize_space(space)
+    except Exception as e:
+        error_exit(f"Failed to list Trackio Spaces: {e}")
+
+    spaces = sorted(
+        spaces_by_id.values(),
+        key=lambda space: space.get("last_modified") or "",
+        reverse=True,
+    )
+    if args.limit is not None:
+        spaces = spaces[: args.limit]
+
+    if args.json:
+        print(format_json({"spaces": spaces}))
+    else:
+        print(format_spaces(spaces))
 
 
 def main():
@@ -368,6 +473,27 @@ def main():
         help="List all projects",
     )
     list_projects_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
+    list_spaces_parser = list_subparsers.add_parser(
+        "spaces",
+        help="List Trackio Spaces for your Hugging Face account and organizations",
+    )
+    list_spaces_parser.add_argument(
+        "--author",
+        required=False,
+        help="Only list Trackio Spaces under this user or organization namespace.",
+    )
+    list_spaces_parser.add_argument(
+        "--limit",
+        type=int,
+        required=False,
+        help="Maximum number of Spaces to return.",
+    )
+    list_spaces_parser.add_argument(
         "--json",
         action="store_true",
         help="Output in JSON format",
@@ -816,6 +942,10 @@ def main():
     elif args.command == "config":
         _handle_config(args)
     elif args.command == "list":
+        if args.list_type == "spaces":
+            _handle_list_spaces(args)
+            return
+
         remote = _get_remote(args)
         if args.list_type == "projects":
             if remote:

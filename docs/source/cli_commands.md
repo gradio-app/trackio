@@ -1,10 +1,10 @@
 # CLI Commands
 
-Trackio provides a comprehensive set of CLI commands that enable you to query project, run, and metric information without needing to start the MCP server. Commands work against local data by default, or against a remote HF Space when `--space` is provided. This is particularly useful for LLM agents and automation scripts. With structured JSON output and programmatic access to all experiment data, Trackio is designed to support autonomous ML experiments run by LLMs.
+Trackio provides a comprehensive set of CLI commands that enable you to query project, run, metric, and Space information without needing to start the MCP server. Commands work against local data by default, or against a remote HF Space when `--space` is provided. This is particularly useful for LLM agents and automation scripts. With structured JSON output and programmatic access to all experiment data, Trackio is designed to support autonomous ML experiments run by LLMs.
 
 ## Querying Remote Spaces
 
-All `list`, `get`, and `query` commands support querying a remote Hugging Face Space instead of local data. Pass the `--space` flag with either a Space ID or full URL:
+All `list`, `get`, and `query` commands that read dashboard data support querying a remote Hugging Face Space instead of local data. Pass the `--space` flag with either a Space ID or full URL:
 
 ```sh
 # Using a Space ID
@@ -23,7 +23,7 @@ For private Spaces, pass `--hf-token` or ensure you are logged in via `huggingfa
 trackio list projects --space username/private-space --hf-token hf_xxxxx
 ```
 
-> **Note:** The `show`, `status`, `sync`, `freeze`, and `skills` commands are local-only and do not support `--space`.
+> **Note:** The `show`, `status`, `sync`, `freeze`, `skills`, and `list spaces` commands do not support `--space`. Use `trackio list spaces` to discover Trackio dashboards on the Hugging Face Hub, then pass one of those Space IDs to commands such as `trackio list projects --space username/my-space`.
 
 ## Sync Command
 
@@ -96,6 +96,34 @@ Output in JSON format:
 ```sh
 trackio list projects --json
 ```
+
+### List Trackio Spaces
+
+List Trackio dashboard Spaces owned by your Hugging Face account and organizations:
+
+```sh
+trackio list spaces
+```
+
+Output in JSON format:
+
+```sh
+trackio list spaces --json
+```
+
+List Trackio Spaces under a specific user or organization namespace:
+
+```sh
+trackio list spaces --author "username-or-org"
+```
+
+Limit the number of returned Spaces:
+
+```sh
+trackio list spaces --limit 10
+```
+
+For private Spaces, pass `--hf-token` or ensure you are logged in via `huggingface-cli login`.
 
 ### List Runs for a Project
 
