@@ -2,7 +2,7 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
   import { getRunSummary, getRunArtifacts } from "../lib/api.js";
-  import { getQueryParam } from "../lib/router.js";
+  import { getQueryParam, navigateTo, setQueryParam } from "../lib/router.js";
 
   let { project = null } = $props();
 
@@ -24,6 +24,12 @@
 
   function toggleArtifact(key) {
     expandedArtifact[key] = !expandedArtifact[key];
+  }
+
+  function openInArtifacts(name, version) {
+    setQueryParam("selected_artifact", name);
+    setQueryParam("selected_version", `v${version}`);
+    navigateTo("artifacts");
   }
 
   $effect(() => {
@@ -75,14 +81,37 @@
 {#snippet artifactEntry(art, dir)}
   {@const key = `${dir}:${art.name}@v${art.version}`}
   <div class="artifact-entry">
-    <button class="artifact-row" onclick={() => toggleArtifact(key)}>
-      <span class="chevron" class:open={expandedArtifact[key]}>▾</span>
-      <span class="art-name"
-        >{art.name}<span class="art-ver">:v{art.version}</span></span
+    <div class="artifact-row">
+      <button class="row-toggle" onclick={() => toggleArtifact(key)}>
+        <span class="chevron" class:open={expandedArtifact[key]}>▾</span>
+        <span class="art-name"
+          >{art.name}<span class="art-ver">:v{art.version}</span></span
+        >
+        <span class="art-type">{art.type}</span>
+        <span class="art-size">{formatSize(art.size_bytes)}</span>
+      </button>
+      <button
+        class="open-btn"
+        onclick={() => openInArtifacts(art.name, art.version)}
+        title="Open in Artifacts"
+        aria-label="Open {art.name} v{art.version} in the Artifacts tab"
       >
-      <span class="art-type">{art.type}</span>
-      <span class="art-size">{formatSize(art.size_bytes)}</span>
-    </button>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          <polyline points="15 3 21 3 21 9" />
+          <line x1="10" y1="14" x2="21" y2="3" />
+        </svg>
+      </button>
+    </div>
     {#if expandedArtifact[key]}
       <ArtifactVersionDetail {project} name={art.name} version={art.version} />
     {/if}
@@ -219,15 +248,41 @@
   .artifact-row {
     display: flex;
     align-items: center;
+  }
+  .row-toggle {
+    display: flex;
+    align-items: center;
     gap: 12px;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     text-align: left;
     background: none;
     border: none;
     padding: 8px 12px;
     cursor: pointer;
   }
-  .artifact-row:hover {
+  .row-toggle:hover {
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .open-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    margin-right: 6px;
+    border: none;
+    background: none;
+    color: var(--body-text-color-subdued, #9ca3af);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    transition:
+      color 0.15s,
+      background-color 0.15s;
+  }
+  .open-btn:hover {
+    color: var(--color-accent, #f97316);
     background: var(--background-fill-secondary, #f9fafb);
   }
   .chevron {

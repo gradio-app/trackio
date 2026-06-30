@@ -1,4 +1,5 @@
 <script>
+  import Accordion from "./Accordion.svelte";
   import {
     getArtifactManifest,
     getArtifactConsumers,
@@ -195,70 +196,62 @@
         </div>
       </header>
 
-      <div class="detail-grid">
-        {#if record.description}
-          <span class="detail-key">Description</span>
-          <span class="detail-val">{record.description}</span>
-        {/if}
-        {#if record.producer_run_name}
-          <span class="detail-key">Produced by</span>
-          <span class="detail-val">
-            <button
-              class="run-link"
-              onclick={() =>
-                openRun(record.producer_run_name, record.producer_run_id)}
-              >{record.producer_run_name}</button
-            >
-          </span>
-        {/if}
-        {#if consumers.length}
-          <span class="detail-key">Used by</span>
-          <span class="detail-val">
-            {#each consumers as c, ci}<button
+      <Accordion label="Overview">
+        <div class="detail-grid">
+          {#if record.description}
+            <span class="detail-key">Description</span>
+            <span class="detail-val">{record.description}</span>
+          {/if}
+          {#if record.producer_run_name}
+            <span class="detail-key">Produced by</span>
+            <span class="detail-val">
+              <button
                 class="run-link"
-                onclick={() => openRun(c.run_name, c.run_id)}
-                >{c.run_name ?? c.run_id}</button
-              >{ci < consumers.length - 1 ? ", " : ""}{/each}
+                onclick={() =>
+                  openRun(record.producer_run_name, record.producer_run_id)}
+                >{record.producer_run_name}</button
+              >
+            </span>
+          {/if}
+          {#if consumers.length}
+            <span class="detail-key">Used by</span>
+            <span class="detail-val">
+              {#each consumers as c, ci}<button
+                  class="run-link"
+                  onclick={() => openRun(c.run_name, c.run_id)}
+                  >{c.run_name ?? c.run_id}</button
+                >{ci < consumers.length - 1 ? ", " : ""}{/each}
+            </span>
+          {/if}
+          <span class="detail-key">Created</span>
+          <span class="detail-val">{formatDate(record.created_at)}</span>
+          <span class="detail-key">Digest</span>
+          <span class="detail-val digest-val">
+            <span class="mono digest-text" title={record.manifest_digest}
+              >{record.manifest_digest?.slice(0, 16)}…</span
+            >
+            <button
+              class="copy-btn small"
+              onclick={() => copy(record.manifest_digest, "digest")}
+              title="Copy digest"
+            >
+              {copied === "digest" ? "Copied" : "Copy"}
+            </button>
           </span>
-        {/if}
-        <span class="detail-key">Created</span>
-        <span class="detail-val">{formatDate(record.created_at)}</span>
-        <span class="detail-key">Digest</span>
-        <span class="detail-val digest-val">
-          <span class="mono digest-text" title={record.manifest_digest}
-            >{record.manifest_digest?.slice(0, 16)}…</span
-          >
-          <button
-            class="copy-btn small"
-            onclick={() => copy(record.manifest_digest, "digest")}
-            title="Copy digest"
-          >
-            {copied === "digest" ? "Copied" : "Copy"}
-          </button>
-        </span>
-      </div>
+        </div>
+      </Accordion>
 
       {#if record.metadata && Object.keys(record.metadata).length}
-        <div class="meta-section">
-          <div class="section-head">
-            Metadata
-            <span class="section-count"
-              >{Object.keys(record.metadata).length}</span
-            >
-          </div>
+        <Accordion label="Metadata ({Object.keys(record.metadata).length})">
           <div class="meta-grid">
             {@render metaRows(Object.entries(record.metadata), 0)}
           </div>
-        </div>
+        </Accordion>
       {/if}
 
-      <div class="files-section">
-        <div class="section-head">
-          Files
-          <span class="section-count">{(record.manifest || []).length}</span>
-        </div>
+      <Accordion label="Files ({(record.manifest || []).length})">
         {@render fileTable()}
-      </div>
+      </Accordion>
     {/if}
   </div>
 {:else}
@@ -455,32 +448,6 @@
     text-decoration: underline;
   }
 
-  .meta-section,
-  .files-section {
-    margin-top: 18px;
-  }
-  .section-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: var(--text-sm, 13px);
-    font-weight: 600;
-    color: var(--body-text-color, #1f2937);
-    margin-bottom: 8px;
-  }
-  .section-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 9px;
-    background: var(--background-fill-secondary, #f3f4f6);
-    color: var(--body-text-color-subdued, #6b7280);
-    font-size: var(--text-xs, 10px);
-    font-weight: 500;
-  }
   .meta-grid {
     display: grid;
     grid-template-columns: max-content 1fr;
