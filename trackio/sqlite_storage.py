@@ -2699,8 +2699,7 @@ class SQLiteStorage:
                         files = hfapi.list_repo_files(dataset_id, repo_type="dataset")
                         for file in files:
                             if not (
-                                file.endswith(".parquet")
-                                or file.startswith("media/")
+                                file.endswith(".parquet") or file.startswith("media/")
                             ):
                                 continue
                             if (TRACKIO_DIR / file).exists():
