@@ -23,6 +23,21 @@ def format_list(items: list[str], title: str | None = None) -> str:
     return "\n".join(output)
 
 
+def format_spaces(spaces: list[dict]) -> str:
+    """Format HF Spaces in human-readable format."""
+    if not spaces:
+        return "No Trackio Spaces found."
+
+    output = ["Trackio Spaces:"]
+    for space in spaces:
+        visibility = "private" if space.get("private") else "public"
+        output.append(f"  - {space['id']} ({visibility})")
+        if space.get("url"):
+            output.append(f"    {space['url']}")
+
+    return "\n".join(output)
+
+
 def format_project_summary(summary: dict) -> str:
     """Format project summary in human-readable format."""
     output = [f"Project: {summary['project']}"]
