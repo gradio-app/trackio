@@ -721,6 +721,11 @@ def get_artifact_manifest(
     return SQLiteStorage.get_artifact_manifest(project, name, spec)
 
 
+def get_artifacts(project: str) -> list[dict]:
+    project = _validate_project_name(project)
+    return SQLiteStorage.get_artifacts(project)
+
+
 def log_artifact_use(
     request: Request,
     project: str,
@@ -1235,6 +1240,7 @@ def _api_registry() -> dict[str, Any]:
         "bulk_upload_artifact_blob": bulk_upload_artifact_blob,
         "artifact_log": artifact_log,
         "get_artifact_manifest": get_artifact_manifest,
+        "get_artifacts": get_artifacts,
         "log_artifact_use": log_artifact_use,
         "log": log,
         "bulk_log": bulk_log,

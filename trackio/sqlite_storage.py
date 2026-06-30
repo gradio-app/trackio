@@ -4579,6 +4579,55 @@ class SQLiteStorage:
             return SQLiteStorage._get_artifact_manifest_cursor(conn, name, spec)
 
     @staticmethod
+    def get_artifacts(project: str) -> list[dict]:
+        """List every artifact in `project` with its latest version, total
+        version count, current aliases, and the size of the latest version."""
+        SQLiteStorage._ensure_hub_loaded()
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            artifacts = cursor.execute(
+                "SELECT id, name, type, description, created_at FROM artifacts "
+                "ORDER BY name"
+            ).fetchall()
+            result: list[dict] = []
+            for a in artifacts:
+                artifact_id = int(a["id"])
+                latest = cursor.execute(
+                    """SELECT version, size_bytes FROM artifact_versions
+                    WHERE artifact_id = ? ORDER BY version DESC LIMIT 1""",
+                    (artifact_id,),
+                ).fetchone()
+                num_versions = cursor.execute(
+                    "SELECT COUNT(*) AS c FROM artifact_versions WHERE artifact_id = ?",
+                    (artifact_id,),
+                ).fetchone()["c"]
+                alias_rows = cursor.execute(
+                    "SELECT alias FROM artifact_aliases WHERE artifact_id = ? "
+                    "ORDER BY alias",
+                    (artifact_id,),
+                ).fetchall()
+                result.append(
+                    {
+                        "name": a["name"],
+                        "type": a["type"],
+                        "description": a["description"],
+                        "num_versions": int(num_versions),
+                        "latest_version": (
+                            int(latest["version"]) if latest is not None else None
+                        ),
+                        "size_bytes": (
+                            int(latest["size_bytes"]) if latest is not None else None
+                        ),
+                        "aliases": [r["alias"] for r in alias_rows],
+                        "created_at": a["created_at"],
+                    }
+                )
+            return result
+
+    @staticmethod
     def get_run_artifacts(
         project: str,
         run_name: str | None,

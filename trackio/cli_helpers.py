@@ -23,6 +23,50 @@ def format_list(items: list[str], title: str | None = None) -> str:
     return "\n".join(output)
 
 
+def format_artifacts(artifacts: list[dict], project: str | None = None) -> str:
+    """Format a project's artifacts in human-readable format."""
+    if not artifacts:
+        return "No artifacts found."
+
+    title = f"Artifacts in '{project}'" if project else "Artifacts"
+    output = [f"{title}:"]
+    for art in artifacts:
+        latest = art.get("latest_version")
+        version = f"v{latest}" if latest is not None else "(no versions)"
+        aliases = art.get("aliases") or []
+        alias_str = f" [{', '.join(aliases)}]" if aliases else ""
+        output.append(
+            f"  - {art['name']} ({art.get('type', '?')}) "
+            f"latest={version}{alias_str} "
+            f"versions={art.get('num_versions', 0)}"
+        )
+        if art.get("description"):
+            output.append(f"      {art['description']}")
+    return "\n".join(output)
+
+
+def format_artifact(record: dict) -> str:
+    """Format a single resolved artifact version in human-readable format."""
+    lines = [
+        f"Artifact: {record['name']} (v{record['version']})",
+        f"  type:        {record.get('type')}",
+    ]
+    if record.get("description"):
+        lines.append(f"  description: {record['description']}")
+    aliases = record.get("aliases") or []
+    if aliases:
+        lines.append(f"  aliases:     {', '.join(aliases)}")
+    if record.get("metadata"):
+        lines.append(f"  metadata:    {record['metadata']}")
+    lines.append(f"  size:        {record.get('size_bytes')} bytes")
+    lines.append(f"  digest:      {record.get('manifest_digest')}")
+    manifest = record.get("manifest") or []
+    lines.append(f"  files ({len(manifest)}):")
+    for entry in manifest:
+        lines.append(f"    - {entry['path']} ({entry['size']} bytes)")
+    return "\n".join(lines)
+
+
 def format_spaces(spaces: list[dict]) -> str:
     """Format HF Spaces in human-readable format."""
     if not spaces:
