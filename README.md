@@ -172,7 +172,7 @@ Reset it with:
 trackio config unset frontend
 ```
 
-## Deploying to Hugging Face Spaces
+## Running in the Cloud (Hugging Face Spaces)
 
 When calling `trackio.init()`, by default the service will run locally and store project data on the local machine.
 
@@ -188,7 +188,9 @@ or
 trackio.init(project="my-project", space_id="username/space_id")
 ```
 
-it will use an existing or automatically deploy a new Hugging Face Space as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
+it will use an existing or automatically deploy a new [Hugging Face Space](https://huggingface.co/spaces/) as needed. You should be logged in with the `huggingface-cli` locally and your token should have write permissions to create the Space.
+
+You can view each Trackio Space individually, or all of your Trackio dashboards in one place: **https://trackio-laboratory.hf.space/**
 
 ## Self-hosted Trackio server
 
