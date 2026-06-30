@@ -55,7 +55,7 @@ def in_process_remote(monkeypatch):
             self.calls.append((api_name, kwargs))
             kwargs.pop("hf_token", None)
             if api_name == "/check_artifact_blobs":
-                return server.check_artifact_blobs(**kwargs)
+                return server.check_artifact_blobs(request=mock_request, **kwargs)
             if api_name == "/bulk_upload_artifact_blob":
                 return server.bulk_upload_artifact_blob(
                     request=mock_request, hf_token=None, **kwargs

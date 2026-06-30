@@ -1227,7 +1227,7 @@ class Run:
         else:
             path = Path(artifact_or_path)
             artifact = Artifact(
-                name=name or f"run-{self.id}-{path.name}",
+                name=name or path.name,
                 type=type or "unspecified",
             )
             if path.is_dir():
@@ -1266,6 +1266,7 @@ class Run:
                     api_name="/check_artifact_blobs",
                     project=self.project,
                     digests=digests,
+                    hf_token=self._hf_token_for_remote(),
                 )
             present = set((present_response or {}).get("present", []))
 

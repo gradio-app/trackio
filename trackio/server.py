@@ -614,9 +614,12 @@ def bulk_upload_media(
 
 
 def check_artifact_blobs(
+    request: Request,
     project: str,
     digests: list[str],
+    hf_token: str | None = None,
 ) -> dict[str, list[str]]:
+    assert_can_write_metrics(request, hf_token)
     project = _validate_project_name(project)
     validated = [_validate_sha256_digest(d) for d in digests]
     present = SQLiteStorage.list_artifact_blobs_present(project, validated)
