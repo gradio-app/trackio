@@ -400,6 +400,14 @@
   .indent-guide {
     width: 16px;
     align-self: stretch;
+    position: relative;
+  }
+  .indent-guide::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: 0;
     border-left: 1px solid var(--border-color-primary, #e5e7eb);
   }
   .tree-chevron-spacer {
