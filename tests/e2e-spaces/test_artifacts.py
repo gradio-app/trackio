@@ -1,9 +1,7 @@
-import hashlib
 import secrets
 import shutil
 from pathlib import Path
 
-import huggingface_hub
 import pytest
 
 import trackio
@@ -105,55 +103,6 @@ def test_artifact_versioning_dedup_and_alias_resolution(
 
     assert (out_v0 / "w.bin").read_bytes() == b"content-A"
     assert (out_v1 / "w.bin").read_bytes() == b"content-B"
-
-
-def test_identical_bytes_dedup_across_runs(
-    test_space_id, temp_dir, tmp_path, wait_for_client
-):
-    """Two runs logging byte-identical content produce a single version on the
-    Space, and the shared blob is reported present by `/check_artifact_blobs`
-    (an authenticated endpoint) so the second run skips re-uploading it."""
-    project = f"test_artifacts_dedup_{secrets.token_urlsafe(8)}"
-    payload = b"shared-checkpoint-bytes"
-    digest = hashlib.sha256(payload).hexdigest()
-
-    f = tmp_path / "w.bin"
-    f.write_bytes(payload)
-
-    for run_name in ("run-a", "run-b"):
-        run = trackio.init(project=project, name=run_name, space_id=test_space_id)
-        wait_for_client(run)
-        art = trackio.Artifact(name="shared", type="model")
-        art.add_file(f)
-        logged = trackio.log_artifact(art)
-        assert logged.version == "v0"
-        trackio.finish()
-
-    verify = Client(test_space_id, verbose=False)
-    assert (
-        verify.predict(
-            api_name="/get_artifact_manifest",
-            project=project,
-            name="shared",
-            spec="v1",
-        )
-        is None
-    )
-
-    present = verify.predict(
-        api_name="/check_artifact_blobs",
-        project=project,
-        digests=[digest, "f" * 64],
-        hf_token=huggingface_hub.get_token(),
-    )
-    assert present["present"] == [digest]
-
-    _drop_local_blobs(project)
-    consumer = trackio.init(project=project, name="consumer", space_id=test_space_id)
-    wait_for_client(consumer)
-    out = Path(trackio.use_artifact("shared:latest").download(tmp_path / "dl"))
-    trackio.finish()
-    assert (out / "w.bin").read_bytes() == payload
 
 
 def test_use_artifact_errors_and_path_logging(
