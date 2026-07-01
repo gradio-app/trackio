@@ -36,13 +36,14 @@ from trackio.bucket_storage import (
     upload_project_to_bucket_for_static,
 )
 from trackio.frontend_config import resolve_frontend_dir
+from trackio.pending_uploads import replay_pending_uploads
 from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
-    MEDIA_DIR,
     get_or_create_project_hash,
     on_spaces,
     preprocess_space_and_dataset_ids,
+    project_media_dir,
 )
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
@@ -711,6 +712,35 @@ def upload_db_to_space(project: str, space_id: str, force: bool = False) -> None
 SYNC_BATCH_SIZE = 500
 
 
+def _replay_pending_uploads(
+    project: str,
+    client: "RemoteClient",
+    hf_token: str | None,
+) -> None:
+    """Replay queued `pending_uploads` rows for `project` via `client` — the
+    out-of-Run sync path (`trackio sync`); see `replay_pending_uploads` for the
+    per-kind routing and clearing semantics.
+    """
+    pending_uploads = SQLiteStorage.get_pending_uploads(project)
+    if not pending_uploads:
+        return
+
+    def _warn_missing(count: int, sample: str) -> None:
+        print(
+            f"  Warning: dropping {count} pending upload(s) whose local files "
+            f"no longer exist (e.g. {sample!r})."
+        )
+
+    replay_pending_uploads(
+        pending_uploads,
+        project,
+        predict=client.predict,
+        hf_token=hf_token,
+        warn_missing=_warn_missing,
+        verbose=True,
+    )
+
+
 def sync_incremental(
     project: str,
     space_id: str,
@@ -768,29 +798,7 @@ def sync_incremental(
                 )
             SQLiteStorage.clear_pending_system_logs(project, pending_sys["ids"])
 
-        pending_uploads = SQLiteStorage.get_pending_uploads(project)
-        if pending_uploads:
-            upload_entries = []
-            for u in pending_uploads["uploads"]:
-                fp = u["file_path"]
-                if os.path.exists(fp):
-                    upload_entries.append(
-                        {
-                            "project": u["project"],
-                            "run": u["run"],
-                            "step": u["step"],
-                            "relative_path": u["relative_path"],
-                            "uploaded_file": handle_file(fp),
-                        }
-                    )
-            if upload_entries:
-                print(f"  Syncing {len(upload_entries)} media files...")
-                client.predict(
-                    api_name="/bulk_upload_media",
-                    uploads=upload_entries,
-                    hf_token=hf_token,
-                )
-            SQLiteStorage.clear_pending_uploads(project, pending_uploads["ids"])
+        _replay_pending_uploads(project, client, hf_token)
     else:
         all_logs = SQLiteStorage.get_all_logs_for_sync(project)
         if all_logs:
@@ -910,7 +918,7 @@ def upload_dataset_for_static(
         output_dir = Path(tmp_dir)
         SQLiteStorage.export_for_static_space(project, output_dir)
 
-        media_dir = MEDIA_DIR / project
+        media_dir = project_media_dir(project)
         if media_dir.exists():
             dest = output_dir / "media"
             shutil.copytree(media_dir, dest)

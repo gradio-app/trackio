@@ -7,6 +7,8 @@ from trackio import freeze, show, sync
 from trackio.cli_helpers import (
     error_exit,
     format_alerts,
+    format_artifact,
+    format_artifacts,
     format_json,
     format_list,
     format_metric_values,
@@ -604,6 +606,21 @@ def main():
         help="Output in JSON format",
     )
 
+    list_artifacts_parser = list_subparsers.add_parser(
+        "artifacts",
+        help="List artifacts for a project",
+    )
+    list_artifacts_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    list_artifacts_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
     get_parser = subparsers.add_parser(
         "get",
         help="Get project, run, or metric information",
@@ -640,6 +657,31 @@ def main():
         help="Run name",
     )
     get_run_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
+    get_artifact_parser = get_subparsers.add_parser(
+        "artifact",
+        help="Get an artifact version (manifest, aliases, metadata)",
+    )
+    get_artifact_parser.add_argument(
+        "--project",
+        required=True,
+        help="Project name",
+    )
+    get_artifact_parser.add_argument(
+        "--name",
+        required=True,
+        help="Artifact name",
+    )
+    get_artifact_parser.add_argument(
+        "--version",
+        required=False,
+        help="Version or alias to resolve (e.g. 'v2' or 'best'). Defaults to latest.",
+    )
+    get_artifact_parser.add_argument(
         "--json",
         action="store_true",
         help="Output in JSON format",
@@ -1107,9 +1149,46 @@ def main():
                     )
                 else:
                     print(format_list(report_lines, f"Reports in '{args.project}'"))
+        elif args.list_type == "artifacts":
+            if remote:
+                artifacts = remote.predict(args.project, api_name="/get_artifacts")
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                artifacts = SQLiteStorage.get_artifacts(args.project)
+            if args.json:
+                print(format_json({"project": args.project, "artifacts": artifacts}))
+            else:
+                print(format_artifacts(artifacts, args.project))
     elif args.command == "get":
         remote = _get_remote(args)
-        if args.get_type == "project":
+        if args.get_type == "artifact":
+            if remote:
+                record = remote.predict(
+                    args.project,
+                    args.name,
+                    args.version,
+                    api_name="/get_artifact_manifest",
+                )
+            else:
+                db_path = SQLiteStorage.get_project_db_path(args.project)
+                if not db_path.exists():
+                    error_exit(f"Project '{args.project}' not found.")
+                record = SQLiteStorage.get_artifact_manifest(
+                    args.project, args.name, args.version
+                )
+            if record is None:
+                spec = f":{args.version}" if args.version else ""
+                error_exit(
+                    f"Artifact '{args.name}{spec}' not found in project "
+                    f"'{args.project}'."
+                )
+            if args.json:
+                print(format_json(record))
+            else:
+                print(format_artifact(record))
+        elif args.get_type == "project":
             if remote:
                 summary = remote.predict(args.project, api_name="/get_project_summary")
             else:

@@ -10,7 +10,7 @@ from typing import Any
 import huggingface_hub
 from gradio_client import handle_file
 
-from trackio import fragments, utils
+from trackio import cas, fragments, utils
 from trackio.alerts import (
     AlertLevel,
     format_alert_terminal,
@@ -19,12 +19,14 @@ from trackio.alerts import (
     should_send_webhook,
 )
 from trackio.apple_gpu import AppleGpuMonitor, apple_gpu_available
+from trackio.artifact import Artifact
 from trackio.cpu import CpuMonitor
 from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioMedia, get_project_media_path
-from trackio.remote_client import RemoteClient
+from trackio.pending_uploads import classify_pending_uploads, replay_pending_uploads
+from trackio.remote_client import RemoteClient, is_transient_remote_error
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
 from trackio.trace import Trace
@@ -34,6 +36,7 @@ from trackio.utils import MEDIA_DIR, _emit_nonfatal_warning, _get_default_namesp
 BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
 BUCKET_FLUSH_INTERVAL = 30
+ARTIFACT_LOG_RETRY_BACKOFFS = (0.5, 1.0, 2.0)
 
 
 class Run:
@@ -219,6 +222,13 @@ class Run:
 
     def _hf_token_for_remote(self) -> str | None:
         return huggingface_hub.utils.get_token() if self._space_id else None
+
+    def _remote_source_dict(self) -> dict:
+        return {
+            "space_id": self._space_id,
+            "server_base_url": self._server_base_url,
+            "write_token": self._write_token,
+        }
 
     def _get_username(self) -> str | None:
         try:
@@ -765,6 +775,24 @@ class Run:
                 f"trackio could not persist failed remote file uploads locally for run '{self.name}': {e}. User code will continue, but some artifacts could be lost.",
             )
 
+    def _warn_missing_uploads(self, count: int, sample: str) -> None:
+        self._warn_once(
+            "pending-uploads-missing-files",
+            f"trackio dropped {count} pending upload(s) whose local files no "
+            f"longer exist (e.g. {sample!r}). Data for these uploads was not "
+            "uploaded.",
+        )
+
+    def _send_pending_uploads_to_server(self, buffered: dict) -> None:
+        """Group buffered pending_uploads by kind and POST to the right endpoints."""
+        replay_pending_uploads(
+            buffered,
+            self.project,
+            predict=self._client.predict,
+            hf_token=self._hf_token_for_remote(),
+            warn_missing=self._warn_missing_uploads,
+        )
+
     def _flush_local_buffer(self) -> bool:
         try:
             buffered_logs = SQLiteStorage.get_pending_logs(self.project)
@@ -789,29 +817,7 @@ class Run:
 
             buffered_uploads = SQLiteStorage.get_pending_uploads(self.project)
             if buffered_uploads:
-                upload_entries = []
-                for u in buffered_uploads["uploads"]:
-                    fp = u["file_path"]
-                    if Path(fp).exists():
-                        upload_entries.append(
-                            {
-                                "project": u["project"],
-                                "run": u["run"],
-                                "run_id": u.get("run_id"),
-                                "step": u["step"],
-                                "relative_path": u["relative_path"],
-                                "uploaded_file": handle_file(fp),
-                            }
-                        )
-                if upload_entries:
-                    self._client.predict(
-                        api_name="/bulk_upload_media",
-                        uploads=upload_entries,
-                        hf_token=self._hf_token_for_remote(),
-                    )
-                SQLiteStorage.clear_pending_uploads(
-                    self.project, buffered_uploads["ids"]
-                )
+                self._send_pending_uploads_to_server(buffered_uploads)
 
             self._has_local_buffer = False
             return True
@@ -833,11 +839,40 @@ class Run:
             if entry_id not in spilled_ids
         ]
 
+    def _flush_pending_uploads_to_bucket(self) -> None:
+        pending = SQLiteStorage.get_pending_uploads(self.project)
+        if not pending:
+            return
+        classified = classify_pending_uploads(pending)
+        missing = classified["missing"]
+        if missing["ids"]:
+            self._warn_missing_uploads(len(missing["ids"]), missing["paths"][0])
+            SQLiteStorage.clear_pending_uploads(self.project, missing["ids"])
+        media = classified["media"]
+        if media:
+            fragments.upload_media_files_to_bucket(
+                self._bucket_id, [upload for upload, _ in media]
+            )
+            SQLiteStorage.clear_pending_uploads(
+                self.project, [upload_id for _, upload_id in media]
+            )
+        blobs = classified["artifact_blobs"]
+        if blobs:
+            fragments.upload_artifact_blobs_to_bucket(
+                self._bucket_id, [upload for upload, _ in blobs]
+            )
+            SQLiteStorage.clear_pending_uploads(
+                self.project, [upload_id for _, upload_id in blobs]
+            )
+
     def _spill_pending_to_bucket(self):
         """
-        Write pending rows to the Bucket inbox without clearing them, so the
-        normal /bulk_log replay still happens if the Space becomes reachable
-        (the Space deduplicates by log_id).
+        Spill buffered rows to the Bucket while the Space is unreachable. Metric
+        and system rows are written without clearing them, so the normal
+        /bulk_log replay still happens once the Space is reachable (it
+        deduplicates by log_id). Media and artifact-blob uploads are sent to
+        their bucket paths and cleared, since they are delivered through the
+        bucket rather than replayed to the Space.
         """
         try:
             pending = SQLiteStorage.get_pending_logs(self.project)
@@ -856,14 +891,7 @@ class Run:
                 self._fragment_writer.write_to_bucket(records, self._bucket_id)
                 self._spilled_system_ids.update(pending_sys["ids"])
 
-            pending_uploads = SQLiteStorage.get_pending_uploads(self.project)
-            if pending_uploads:
-                fragments.upload_media_files_to_bucket(
-                    self._bucket_id, pending_uploads["uploads"]
-                )
-                SQLiteStorage.clear_pending_uploads(
-                    self.project, pending_uploads["ids"]
-                )
+            self._flush_pending_uploads_to_bucket()
         except Exception as e:
             self._warn_once(
                 "bucket-spill",
@@ -898,14 +926,7 @@ class Run:
                 )
                 self._spilled_system_ids.update(pending_sys["ids"])
 
-            pending_uploads = SQLiteStorage.get_pending_uploads(self.project)
-            if pending_uploads:
-                fragments.upload_media_files_to_bucket(
-                    self._bucket_id, pending_uploads["uploads"]
-                )
-                SQLiteStorage.clear_pending_uploads(
-                    self.project, pending_uploads["ids"]
-                )
+            self._flush_pending_uploads_to_bucket()
 
             self._has_local_buffer = SQLiteStorage.has_pending_data(self.project)
         except Exception as e:
@@ -937,6 +958,30 @@ class Run:
                 return
             self._flush_queues_inline()
         self._spill_pending_to_bucket()
+
+    def _wait_for_client_ready(self, timeout: float = 60.0) -> None:
+        """Block until `self._client` is initialized by `_init_client_background`."""
+        deadline = time.monotonic() + timeout
+        while self._client is None:
+            if self._stop_flag.is_set():
+                raise RuntimeError(
+                    "trackio run is finishing; cannot wait for remote client"
+                )
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"trackio remote client not ready after {timeout}s")
+            time.sleep(0.1)
+
+    def _drain_pending_uploads(self) -> None:
+        """Synchronously flush pending_uploads (both kinds). Raises on failure."""
+        with self._client_lock:
+            if self._client is None:
+                raise RuntimeError(
+                    "trackio remote client not ready; cannot drain pending_uploads"
+                )
+            buffered = SQLiteStorage.get_pending_uploads(self.project)
+            if not buffered:
+                return
+            self._send_pending_uploads_to_server(buffered)
 
     def _init_client_background(self):
         if self._client is None:
@@ -1152,6 +1197,216 @@ class Run:
                     self._flush_queues_inline()
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log() failed to process metrics: {e}")
+
+    def _artifact_log_with_retry(self, **kwargs) -> dict:
+        attempts = len(ARTIFACT_LOG_RETRY_BACKOFFS) + 1
+        for attempt in range(attempts):
+            if attempt > 0:
+                time.sleep(ARTIFACT_LOG_RETRY_BACKOFFS[attempt - 1])
+            try:
+                with self._client_lock:
+                    return self._client.predict(api_name="/artifact_log", **kwargs)
+            except Exception as e:
+                if attempt == attempts - 1 or not is_transient_remote_error(e):
+                    raise
+
+    def log_artifact(
+        self,
+        artifact_or_path: Artifact | str | Path,
+        name: str | None = None,
+        type: str | None = None,
+        aliases: list[str] | None = None,
+    ) -> Artifact:
+        if isinstance(artifact_or_path, Artifact):
+            if name is not None or type is not None:
+                raise ValueError(
+                    "name/type can only be passed when logging a path; "
+                    "set them on the Artifact instead."
+                )
+            artifact = artifact_or_path
+        else:
+            path = Path(artifact_or_path)
+            artifact = Artifact(
+                name=name or path.name,
+                type=type or "unspecified",
+            )
+            if path.is_dir():
+                artifact.add_dir(path)
+            else:
+                artifact.add_file(path)
+
+        if artifact._logged:
+            raise RuntimeError(
+                "Artifact has already been logged or fetched; "
+                "construct a new Artifact() to log again."
+            )
+
+        user_aliases = cas.validate_aliases(aliases)
+
+        manifest = artifact._build_manifest(self.project)
+
+        if self._is_local:
+            record = SQLiteStorage.commit_artifact_version(
+                project=self.project,
+                name=artifact.name,
+                type=artifact.type,
+                description=artifact.description,
+                manifest=manifest,
+                metadata=artifact.metadata,
+                aliases=user_aliases,
+                run_name=self.name,
+                run_id=self.id,
+            )
+        else:
+            self._wait_for_client_ready()
+
+            digests = [e["digest"] for e in manifest]
+            with self._client_lock:
+                present_response = self._client.predict(
+                    api_name="/check_artifact_blobs",
+                    project=self.project,
+                    digests=digests,
+                    hf_token=self._hf_token_for_remote(),
+                )
+            present = set((present_response or {}).get("present", []))
+
+            SQLiteStorage.enqueue_artifact_blob_uploads(
+                project=self.project,
+                space_id=self._remote_storage_key,
+                blobs=[
+                    (
+                        entry["digest"],
+                        str(cas.blob_path(self.project, entry["digest"])),
+                    )
+                    for entry in manifest
+                    if entry["digest"] not in present
+                ],
+                run_name=self.name,
+                run_id=self.id,
+            )
+
+            self._drain_pending_uploads()
+
+            record = self._artifact_log_with_retry(
+                project=self.project,
+                name=artifact.name,
+                type=artifact.type,
+                description=artifact.description,
+                metadata=artifact.metadata,
+                manifest=manifest,
+                aliases=user_aliases,
+                run_name=self.name,
+                run_id=self.id,
+                hf_token=self._hf_token_for_remote(),
+            )
+
+        artifact._hydrate_from_db(
+            project=self.project,
+            version=record["version"],
+            aliases=record["aliases"],
+            manifest=record["manifest"],
+            manifest_digest=record["manifest_digest"],
+            size_bytes=record["size_bytes"],
+        )
+        if not self._is_local:
+            artifact._remote_source = self._remote_source_dict()
+        return artifact
+
+    @staticmethod
+    def _check_artifact_type(
+        spec: str, stored_type: str, expected_type: str | None
+    ) -> None:
+        if expected_type is not None and stored_type != expected_type:
+            raise ValueError(
+                f"Artifact {spec!r} has type {stored_type!r}, not {expected_type!r}."
+            )
+
+    def use_artifact(
+        self,
+        artifact_or_name: Artifact | str,
+        type: str | None = None,
+    ) -> Artifact:
+        """Resolve an artifact and record this run as a consumer of it."""
+        if isinstance(artifact_or_name, Artifact):
+            if not artifact_or_name._logged or artifact_or_name._version is None:
+                raise ValueError(
+                    "use_artifact() with an Artifact instance requires an "
+                    "artifact that has already been logged or fetched."
+                )
+            spec = f"{artifact_or_name.name}:v{artifact_or_name._version}"
+            project = artifact_or_name._project or self.project
+        else:
+            spec = artifact_or_name
+            project = self.project
+
+        if ":" in spec:
+            name, version_or_alias = spec.split(":", 1)
+            if not version_or_alias:
+                raise ValueError(
+                    f"Artifact spec {spec!r} has an empty version/alias after ':'. "
+                    "Use 'name:vN' or 'name:alias', or drop the colon to get latest."
+                )
+        else:
+            name, version_or_alias = spec, None
+
+        if self._is_local:
+            record = SQLiteStorage.get_artifact_manifest(
+                project, name, version_or_alias
+            )
+        else:
+            self._wait_for_client_ready()
+            with self._client_lock:
+                record = self._client.predict(
+                    api_name="/get_artifact_manifest",
+                    project=project,
+                    name=name,
+                    spec=version_or_alias,
+                )
+
+        if record is None:
+            raise ValueError(f"Artifact {spec!r} not found in project {project!r}.")
+        self._check_artifact_type(spec, record["type"], type)
+
+        art = Artifact(name=record["name"], type=record["type"])
+        art._hydrate_from_db(
+            project=project,
+            version=record["version"],
+            aliases=record["aliases"],
+            manifest=record["manifest"],
+            manifest_digest=record["manifest_digest"],
+            size_bytes=record["size_bytes"],
+            description=record["description"],
+            metadata=record["metadata"],
+        )
+        if not self._is_local:
+            art._remote_source = self._remote_source_dict()
+
+        try:
+            if self._is_local:
+                SQLiteStorage.insert_run_artifact_link(
+                    project=project,
+                    run_name=self.name,
+                    run_id=self.id,
+                    version_id=record["version_id"],
+                    direction="input",
+                )
+            else:
+                with self._client_lock:
+                    self._client.predict(
+                        api_name="/log_artifact_use",
+                        project=project,
+                        version_id=record["version_id"],
+                        run_name=self.name,
+                        run_id=self.id,
+                        hf_token=self._hf_token_for_remote(),
+                    )
+        except Exception as e:
+            self._warn_once(
+                "artifact-use-lineage",
+                f"trackio could not record consumer lineage for {spec!r}: {e}",
+            )
+
+        return art
 
     def alert(
         self,

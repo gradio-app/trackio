@@ -77,6 +77,7 @@ class FrontendMiddleware(BaseHTTPMiddleware):
             "/api/",
             "/file",
             "/version",
+            "/artifact_blob/",
             "/static/trackio",
             "/__trackio/frontend_version",
             "/oauth/",

@@ -11,6 +11,8 @@
 - sections:
   - local: track
     title: Track
+  - local: artifacts
+    title: Artifacts
   - local: launch
     title: Launch the Dashboard
   - local: self_hosted_server

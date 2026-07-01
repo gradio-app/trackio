@@ -17,9 +17,9 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
+from trackio import utils
 from trackio.exceptions import TrackioAPIError
 from trackio.remote_client import HTTP_API_VERSION
-from trackio.utils import on_spaces
 
 logger = logging.getLogger("trackio.asgi_app")
 
@@ -249,7 +249,7 @@ def _authorization_bearer_token(request: Request) -> str | None:
 def _maybe_apply_hf_token_from_authorization(
     request: Request, fn: Any, args: list[Any], kwargs: dict[str, Any]
 ) -> None:
-    if not on_spaces():
+    if not utils.on_spaces():
         return
     token = _authorization_bearer_token(request)
     if not token:
@@ -424,10 +424,33 @@ async def file_handler(request: Request) -> Response:
     fp = Path(unquote(fs_path)).resolve(strict=False)
     if fp.suffix.lower() in _DISALLOWED_FILE_SUFFIXES:
         return Response("Not found", status_code=404)
+    if _is_allowed_file_path(fp, (utils.ARTIFACTS_DIR.resolve(),)):
+        return Response("Not found", status_code=404)
     allowed_roots = getattr(request.app.state, "allowed_file_roots", ())
     if fp.is_file() and _is_allowed_file_path(fp, allowed_roots):
         return FileResponse(str(fp))
     return Response("Not found", status_code=404)
+
+
+async def artifact_blob_handler(request: Request) -> Response:
+    from trackio import cas  # noqa: PLC0415
+    from trackio import server as _server  # noqa: PLC0415
+
+    project = request.path_params.get("project")
+    digest = request.path_params.get("digest")
+    try:
+        project = _server._validate_project_name(project)
+        digest = _server._validate_sha256_digest(digest)
+    except TrackioAPIError:
+        return Response("Not found", status_code=404)
+    try:
+        _server.assert_can_stage_upload(request)
+    except TrackioAPIError:
+        return Response("Forbidden", status_code=403)
+    blob = cas.blob_path(project, digest)
+    if not blob.is_file():
+        return Response("Not found", status_code=404)
+    return FileResponse(str(blob))
 
 
 def create_trackio_starlette_app(
@@ -446,9 +469,14 @@ def create_trackio_starlette_app(
             Route("/api/upload", endpoint=upload_handler, methods=["POST"]),
             Route("/api/{api_name:str}", endpoint=api_handler, methods=["POST"]),
             Route("/file", endpoint=file_handler, methods=["GET"]),
+            Route(
+                "/artifact_blob/{project:str}/{digest:str}",
+                endpoint=artifact_blob_handler,
+                methods=["GET"],
+            ),
         ]
     )
-    if on_spaces():
+    if utils.on_spaces():
         routes.extend(
             [
                 Route(
@@ -501,7 +529,7 @@ def create_trackio_starlette_app(
     app.state.upload_authorizer = upload_authorizer
     app.state.uploaded_temp_files = set()
     app.state.uploaded_temp_files_lock = threading.Lock()
-    if on_spaces():
+    if utils.on_spaces():
         app.state.gradio_call_events = {}
         app.state.gradio_call_events_lock = threading.Lock()
     return app

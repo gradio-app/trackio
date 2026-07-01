@@ -11,7 +11,9 @@ import threading
 import time
 import warnings
 from collections import deque
+from collections.abc import Callable
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
@@ -21,6 +23,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
+import trackio.cas as cas
 import trackio.utils as utils
 from trackio.asgi_app import (
     cleanup_uploaded_temp_file,
@@ -30,8 +33,29 @@ from trackio.asgi_app import (
 from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.typehints import AlertEntry, LogEntry, SystemLogEntry, UploadEntry
-from trackio.utils import on_spaces
+from trackio.typehints import (
+    AlertEntry,
+    ArtifactBlobUploadEntry,
+    LogEntry,
+    Sha256Digest,
+    SystemLogEntry,
+    UploadEntry,
+)
+from trackio.utils import canonical_project_name, on_spaces
+
+
+def _validate_sha256_digest(digest: Any) -> Sha256Digest:
+    try:
+        return cas.validate_digest(digest)
+    except ValueError as err:
+        raise TrackioAPIError(f"Invalid sha256 digest: {digest!r}") from err
+
+
+def _validate_project_name(project: Any) -> str:
+    if not isinstance(project, str):
+        raise TrackioAPIError(f"Invalid project name: {project!r}")
+    return canonical_project_name(project)
+
 
 HfApi = hf.HfApi()
 
@@ -548,24 +572,177 @@ def upload_db_to_space(
         cleanup_uploaded_temp_file(uploaded_path)
 
 
+def _bulk_upload(
+    request: Request,
+    uploads: list[Any],
+    write: Callable[[Any, Path], None],
+) -> None:
+    """Consume every uploaded temp file, write each via `write`, then clean them
+    all up. Consuming up front keeps cleanup in one place regardless of which
+    write fails.
+    """
+    consumed: list[Path] = []
+    try:
+        for upload in uploads:
+            consumed.append(
+                consume_uploaded_temp_file(request, upload["uploaded_file"])
+            )
+        for upload, uploaded_path in zip(uploads, consumed):
+            write(upload, uploaded_path)
+    finally:
+        for path in consumed:
+            cleanup_uploaded_temp_file(path)
+
+
 def bulk_upload_media(
     request: Request,
     uploads: list[UploadEntry],
     hf_token: str | None,
 ) -> None:
     assert_can_write_metrics(request, hf_token)
-    for upload in uploads:
-        uploaded_path = consume_uploaded_temp_file(request, upload["uploaded_file"])
+
+    def _write(upload: UploadEntry, src: Path) -> None:
+        media_path = get_project_media_path(
+            project=upload["project"],
+            run=upload["run"],
+            step=upload["step"],
+            relative_path=upload["relative_path"],
+        )
+        shutil.copy(src, media_path)
+
+    _bulk_upload(request, uploads, _write)
+
+
+def check_artifact_blobs(
+    request: Request,
+    project: str,
+    digests: list[str],
+    hf_token: str | None = None,
+) -> dict[str, list[str]]:
+    assert_can_write_metrics(request, hf_token)
+    project = _validate_project_name(project)
+    validated = [_validate_sha256_digest(d) for d in digests]
+    present = SQLiteStorage.list_artifact_blobs_present(project, validated)
+    return {"present": [d for d in validated if d in present]}
+
+
+def bulk_upload_artifact_blob(
+    request: Request,
+    project: str,
+    uploads: list[ArtifactBlobUploadEntry],
+    hf_token: str | None,
+) -> None:
+    assert_can_write_metrics(request, hf_token)
+    project = _validate_project_name(project)
+
+    def _write(upload: ArtifactBlobUploadEntry, src: Path) -> None:
+        digest = _validate_sha256_digest(upload["digest"])
+        target = cas.blob_path(project, digest)
         try:
-            media_path = get_project_media_path(
-                project=upload["project"],
-                run=upload["run"],
-                step=upload["step"],
-                relative_path=upload["relative_path"],
-            )
-            shutil.copy(uploaded_path, media_path)
-        finally:
-            cleanup_uploaded_temp_file(uploaded_path)
+            cas.stage_blob_from_file(src, digest, target)
+        except ValueError as e:
+            raise TrackioAPIError(str(e)) from e
+
+    _bulk_upload(request, uploads, _write)
+
+
+def artifact_log(
+    request: Request,
+    project: str,
+    name: str,
+    type: str,
+    description: str | None,
+    metadata: dict | None,
+    manifest: list[dict],
+    aliases: list[str] | None,
+    run_name: str | None,
+    run_id: str | None,
+    hf_token: str | None,
+) -> dict[str, Any]:
+    assert_can_write_metrics(request, hf_token)
+    project = _validate_project_name(project)
+    try:
+        cas.validate_artifact_name(name)
+    except ValueError as err:
+        raise TrackioAPIError(str(err)) from err
+    if not isinstance(type, str) or not type:
+        raise TrackioAPIError(f"Artifact type must be a non-empty string, got {type!r}")
+    try:
+        aliases = cas.validate_aliases(aliases)
+    except ValueError as err:
+        raise TrackioAPIError(str(err)) from err
+    if not isinstance(manifest, list) or not manifest:
+        raise TrackioAPIError("Artifact manifest must be a non-empty list of entries.")
+    digests = []
+    paths = []
+    for e in manifest:
+        if not isinstance(e, dict):
+            raise TrackioAPIError(f"Invalid artifact manifest entry: {e!r}")
+        digests.append(_validate_sha256_digest(e.get("digest")))
+        try:
+            paths.append(cas.validate_logical_path(e.get("path")))
+        except ValueError as err:
+            raise TrackioAPIError(str(err)) from err
+        size = e.get("size")
+        if not isinstance(size, int) or size < 0:
+            raise TrackioAPIError(f"Artifact manifest entry has invalid size: {size!r}")
+    try:
+        cas.assert_manifest_paths_compatible(paths)
+    except ValueError as err:
+        raise TrackioAPIError(str(err)) from err
+    present = SQLiteStorage.list_artifact_blobs_present(project, digests)
+    missing = [d for d in digests if d not in present]
+    if missing:
+        preview = missing[:5]
+        suffix = "..." if len(missing) > 5 else ""
+        raise TrackioAPIError(
+            f"Manifest references blobs not on server: {preview}{suffix}"
+        )
+
+    return SQLiteStorage.commit_artifact_version(
+        project=project,
+        name=name,
+        type=type,
+        description=description,
+        manifest=manifest,
+        metadata=metadata,
+        aliases=aliases,
+        run_name=run_name,
+        run_id=run_id,
+    )
+
+
+def get_artifact_manifest(
+    project: str,
+    name: str,
+    spec: str | None,
+) -> dict | None:
+    project = _validate_project_name(project)
+    return SQLiteStorage.get_artifact_manifest(project, name, spec)
+
+
+def get_artifacts(project: str) -> list[dict]:
+    project = _validate_project_name(project)
+    return SQLiteStorage.get_artifacts(project)
+
+
+def log_artifact_use(
+    request: Request,
+    project: str,
+    version_id: int,
+    run_name: str | None,
+    run_id: str | None,
+    hf_token: str | None,
+) -> None:
+    assert_can_write_metrics(request, hf_token)
+    project = _validate_project_name(project)
+    SQLiteStorage.insert_run_artifact_link(
+        project=project,
+        run_name=run_name,
+        run_id=run_id,
+        version_id=version_id,
+        direction="input",
+    )
 
 
 def log(
@@ -975,7 +1152,7 @@ def get_settings() -> dict[str, Any]:
 
 
 def get_project_files(project: str) -> list[dict[str, Any]]:
-    files_dir = utils.MEDIA_DIR / project / "files"
+    files_dir = utils.project_media_dir(project) / "files"
     if not files_dir.exists():
         return []
     results = []
@@ -993,7 +1170,7 @@ def get_project_files(project: str) -> list[dict[str, Any]]:
 
 
 def _project_has_files(project: str) -> bool:
-    files_dir = utils.MEDIA_DIR / project / "files"
+    files_dir = utils.project_media_dir(project) / "files"
     if not files_dir.exists():
         return False
     for entry in files_dir.rglob("*"):
@@ -1059,6 +1236,12 @@ def _api_registry() -> dict[str, Any]:
         "get_run_mutation_status": get_run_mutation_status,
         "upload_db_to_space": upload_db_to_space,
         "bulk_upload_media": bulk_upload_media,
+        "check_artifact_blobs": check_artifact_blobs,
+        "bulk_upload_artifact_blob": bulk_upload_artifact_blob,
+        "artifact_log": artifact_log,
+        "get_artifact_manifest": get_artifact_manifest,
+        "get_artifacts": get_artifacts,
+        "log_artifact_use": log_artifact_use,
         "log": log,
         "bulk_log": bulk_log,
         "bulk_log_system": bulk_log_system,

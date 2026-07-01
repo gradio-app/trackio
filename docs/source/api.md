@@ -20,6 +20,14 @@
 
 [[autodoc]] log_system
 
+## log_artifact
+
+[[autodoc]] log_artifact
+
+## use_artifact
+
+[[autodoc]] use_artifact
+
 ## finish
 
 [[autodoc]] finish
@@ -51,6 +59,10 @@
 ## save
 
 [[autodoc]] save
+
+## Artifact
+
+[[autodoc]] Artifact
 
 ## Image
 

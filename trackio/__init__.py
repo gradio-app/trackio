@@ -19,6 +19,7 @@ from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
+from trackio.artifact import Artifact
 from trackio.cpu import cpu_available
 from trackio.cpu import log_cpu as _log_cpu
 from trackio.deploy import freeze, sync
@@ -61,6 +62,8 @@ __all__ = [
     "log",
     "log_system",
     "log_gpu",
+    "log_artifact",
+    "use_artifact",
     "log_cpu",
     "finish",
     "alert",
@@ -72,6 +75,7 @@ __all__ = [
     "import_csv",
     "import_tf_events",
     "save",
+    "Artifact",
     "Image",
     "Video",
     "Audio",
@@ -335,6 +339,8 @@ def init(
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
+    SQLiteStorage.validate_project_name(project)
+
     if settings is not None:
         _emit_nonfatal_warning(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
@@ -689,6 +695,68 @@ def log_system(metrics: dict) -> None:
     run.log_system(metrics=metrics)
 
 
+def log_artifact(
+    artifact_or_path: Artifact | str | Path,
+    name: str | None = None,
+    type: str | None = None,
+    aliases: list[str] | None = None,
+) -> Artifact:
+    """
+    Logs an artifact as an output of the current run.
+
+    Args:
+        artifact_or_path (`Artifact`, `str`, or `Path`):
+            The artifact to log (must have at least one file added via
+            `add_file` or `add_dir`), or a path to a file or directory to
+            log as a new artifact.
+        name (`str`, *optional*):
+            Artifact name when logging a path. Defaults to
+            `run-<run_id>-<basename>`. Must not be passed with an `Artifact`.
+        type (`str`, *optional*):
+            Artifact type when logging a path (e.g. `"model"`, `"dataset"`).
+            Defaults to `"unspecified"`. Must not be passed with an
+            `Artifact`.
+        aliases (`list[str]`, *optional*):
+            Aliases to rotate onto the resulting version, alongside `latest`
+            (assigned automatically whenever a new version is created). Your
+            aliases rotate onto the version even when identical content is
+            de-duplicated.
+
+    Returns:
+        The logged `Artifact` instance, hydrated with `version`, `aliases`,
+        `size`, `manifest`, and `project` set.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.log_artifact().")
+    return run.log_artifact(artifact_or_path, name=name, type=type, aliases=aliases)
+
+
+def use_artifact(
+    artifact_or_name: Artifact | str,
+    type: str | None = None,
+) -> Artifact:
+    """
+    Fetches an artifact and records it as an input to the current run.
+
+    Args:
+        artifact_or_name (`Artifact` or `str`):
+            An already-logged `Artifact`, or an artifact name. A bare name
+            (`"my-model"`) resolves to `:latest`; you can also pin a version
+            (`"my-model:v3"`) or resolve an alias (`"my-model:prod"`).
+        type (`str`, *optional*):
+            If given, checked against the stored artifact type, raising if it
+            does not match.
+
+    Returns:
+        The fetched `Artifact`, hydrated and ready to `download()`.
+    """
+    run = context_vars.current_run.get()
+    if run is None:
+        raise RuntimeError("Call trackio.init() before trackio.use_artifact().")
+    return run.use_artifact(artifact_or_name, type=type)
+
+
 def log_gpu(run: Run | None = None, device: int | None = None) -> dict:
     """
     Log GPU metrics to the current or specified run as system metrics.
@@ -841,6 +909,17 @@ def delete_project(project: str, force: bool = False) -> bool:
             sidecar = Path(str(db_path) + suffix)
             if sidecar.exists():
                 sidecar.unlink()
+
+        for parquet_path in SQLiteStorage._project_parquet_paths(db_path):
+            if parquet_path.exists():
+                parquet_path.unlink()
+
+        for asset_dir in (
+            utils.project_artifacts_dir(project),
+            utils.project_media_dir(project),
+        ):
+            if asset_dir.exists():
+                shutil.rmtree(asset_dir, ignore_errors=True)
 
         print(f"* Project '{project}' has been deleted.")
         return True
@@ -997,7 +1076,7 @@ def save(
                     "Files may not be available in the dashboard."
                 )
 
-    return str(utils.MEDIA_DIR / project / "files")
+    return str(utils.project_media_dir(project) / "files")
 
 
 def show(

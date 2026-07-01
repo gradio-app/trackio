@@ -1,6 +1,20 @@
-from typing import Any, TypedDict
+from typing import Any, NewType, TypedDict
 
 from gradio_client import FileData
+
+Sha256Digest = NewType("Sha256Digest", str)
+
+MEDIA_UPLOAD_KIND = "media"
+ARTIFACT_BLOB_UPLOAD_KIND = "artifact_blob"
+
+
+class ManifestEntry(TypedDict):
+    path: str
+    digest: Sha256Digest
+    size: int
+
+
+Manifest = list[ManifestEntry]
 
 
 class LogEntry(TypedDict, total=False):
@@ -40,4 +54,10 @@ class UploadEntry(TypedDict):
     run_id: str | None
     step: int | None
     relative_path: str | None
+    uploaded_file: FileData
+
+
+class ArtifactBlobUploadEntry(TypedDict):
+    project: str
+    digest: Sha256Digest
     uploaded_file: FileData
