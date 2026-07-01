@@ -134,8 +134,6 @@ body {
 #page {
   width: 100%;
   max-width: 760px;
-  padding-left: 26px;
-  border-left: 1px solid var(--accent-line);
 }
 
 #page h1 {
