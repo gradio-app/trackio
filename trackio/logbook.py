@@ -6,14 +6,12 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from trackio.utils import TRACKIO_DIR
-
-LOGBOOKS_DIR = TRACKIO_DIR / "logbooks"
-ACTIVE_POINTER = LOGBOOKS_DIR / ".active"
+PROJECT_DIR_NAME = ".trackio"
+LOGBOOK_SUBDIR = "logbook"
+METADATA_FILE = "metadata.json"
 SCHEMA_VERSION = 1
 ROOT_SLUG = "index"
 VIEWER_DIR = Path(__file__).parent / "frontend_templates" / "logbook"
-
 
 BOARD_HEADER = "| Who | In progress | Completed | Task | Notes |"
 BOARD_SEP = "| --- | --- | --- | --- | --- |"
@@ -41,77 +39,59 @@ def _slugify(text: str) -> str:
     return slug or "page"
 
 
-def logbook_dir(slug: str) -> Path:
-    return LOGBOOKS_DIR / slug
+def find_project_dir(start: str | Path | None = None) -> Path | None:
+    start = Path(start or Path.cwd()).resolve()
+    for d in (start, *start.parents):
+        candidate = d / PROJECT_DIR_NAME
+        if (candidate / LOGBOOK_SUBDIR / "logbook.json").is_file():
+            return candidate
+    return None
 
 
-def _manifest_path(slug: str) -> Path:
-    return logbook_dir(slug) / "logbook.json"
+def require_project_dir() -> Path:
+    proj = find_project_dir()
+    if proj is None:
+        raise LogbookError(
+            "No logbook in this directory (or any parent). "
+            "Start one with: trackio logbook open [SPACE_ID]"
+        )
+    return proj
 
 
-def read_manifest(slug: str) -> dict:
-    path = _manifest_path(slug)
-    if not path.exists():
-        raise LogbookError(f"No logbook named '{slug}' found at {logbook_dir(slug)}.")
-    return json.loads(path.read_text(encoding="utf-8"))
+def logbook_root(proj: Path) -> Path:
+    return proj / LOGBOOK_SUBDIR
 
 
-def write_manifest(slug: str, manifest: dict) -> None:
+def _manifest_path(proj: Path) -> Path:
+    return logbook_root(proj) / "logbook.json"
+
+
+def _metadata_path(proj: Path) -> Path:
+    return proj / METADATA_FILE
+
+
+def read_manifest(proj: Path) -> dict:
+    return json.loads(_manifest_path(proj).read_text(encoding="utf-8"))
+
+
+def write_manifest(proj: Path, manifest: dict) -> None:
     manifest["updated_at"] = _now_iso()
-    _manifest_path(slug).write_text(
+    _manifest_path(proj).write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
 
-def set_active(slug: str) -> None:
-    LOGBOOKS_DIR.mkdir(parents=True, exist_ok=True)
-    ACTIVE_POINTER.write_text(slug, encoding="utf-8")
+def read_metadata(proj: Path) -> dict:
+    path = _metadata_path(proj)
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def get_active() -> str | None:
-    if not ACTIVE_POINTER.exists():
-        return None
-    slug = ACTIVE_POINTER.read_text(encoding="utf-8").strip()
-    return slug or None
-
-
-def clear_active() -> None:
-    if ACTIVE_POINTER.exists():
-        ACTIVE_POINTER.unlink()
-
-
-def require_active() -> str:
-    slug = get_active()
-    if slug is None:
-        raise LogbookError(
-            "No active logbook. Start one with: trackio logbook open [SPACE_ID]"
-        )
-    if not _manifest_path(slug).exists():
-        raise LogbookError(
-            f"Active logbook '{slug}' no longer exists. Start a new one with: "
-            "trackio logbook open"
-        )
-    return slug
-
-
-def list_logbooks() -> list[dict]:
-    if not LOGBOOKS_DIR.exists():
-        return []
-    books = []
-    for child in sorted(LOGBOOKS_DIR.iterdir()):
-        manifest = child / "logbook.json"
-        if manifest.is_file():
-            books.append(json.loads(manifest.read_text(encoding="utf-8")))
-    return books
-
-
-def _unique_dir_slug(base: str) -> str:
-    slug = base
-    n = 2
-    while logbook_dir(slug).exists():
-        slug = f"{base}-{n}"
-        n += 1
-    return slug
+def write_metadata(proj: Path, metadata: dict) -> None:
+    _metadata_path(proj).write_text(
+        json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def _iter_nodes(node: dict):
@@ -133,22 +113,22 @@ def _all_slugs(manifest: dict) -> set[str]:
 
 def create_logbook(
     title: str,
-    slug: str | None = None,
     space_id: str | None = None,
     emoji: str = "🧪",
-) -> str:
-    LOGBOOKS_DIR.mkdir(parents=True, exist_ok=True)
-    base = _slugify(slug or title)
-    slug = _unique_dir_slug(base)
-    book = logbook_dir(slug)
-    (book / "pages").mkdir(parents=True)
+) -> Path:
+    proj = find_project_dir() or (Path.cwd() / PROJECT_DIR_NAME)
+    if _manifest_path(proj).exists():
+        raise LogbookError(
+            f"A logbook already exists at {logbook_root(proj)}. "
+            "Attach to it with `trackio logbook open` (no --title)."
+        )
+    root = logbook_root(proj)
+    (root / "pages").mkdir(parents=True, exist_ok=True)
     now = _now_iso()
     manifest = {
         "schema_version": SCHEMA_VERSION,
-        "slug": slug,
         "title": title,
         "emoji": emoji,
-        "space_id": space_id,
         "created_at": now,
         "updated_at": now,
         "root": {
@@ -159,7 +139,7 @@ def create_logbook(
             "children": [],
         },
     }
-    (book / "pages" / "index.md").write_text(
+    (root / "pages" / "index.md").write_text(
         f"# {title}\n\n"
         "> Plan and track this experiment campaign. Edit this page freely — "
         "the board below is just a Markdown table. Detailed findings live on "
@@ -172,8 +152,97 @@ def create_logbook(
         " |  |\n",
         encoding="utf-8",
     )
-    write_manifest(slug, manifest)
-    return slug
+    write_manifest(proj, manifest)
+    write_metadata(proj, {"space_id": space_id, "created_at": now})
+    return proj
+
+
+def add_page(
+    proj: Path,
+    title: str,
+    parent_slug: str = ROOT_SLUG,
+    slug: str | None = None,
+) -> str:
+    manifest = read_manifest(proj)
+    parent = find_node(manifest, parent_slug)
+    if parent is None:
+        raise LogbookError(f"No page with slug '{parent_slug}' in this logbook.")
+    existing = _all_slugs(manifest)
+    base = _slugify(slug or title)
+    page_slug = base
+    n = 2
+    while page_slug in existing:
+        page_slug = f"{base}-{n}"
+        n += 1
+    parent_dir = Path(parent["file"]).parent
+    if parent["slug"] == ROOT_SLUG:
+        rel = Path("pages") / page_slug / "page.md"
+    else:
+        rel = parent_dir / page_slug / "page.md"
+    abs_path = logbook_root(proj) / rel
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    abs_path.write_text(f"# {title}\n", encoding="utf-8")
+    now = _now_iso()
+    parent.setdefault("children", []).append(
+        {
+            "slug": page_slug,
+            "title": title,
+            "file": str(rel).replace("\\", "/"),
+            "created_at": now,
+            "children": [],
+        }
+    )
+    write_manifest(proj, manifest)
+    return page_slug
+
+
+def _resolve_artifact(name: str) -> str:
+    try:
+        from trackio.sqlite_storage import SQLiteStorage
+
+        project_and_name = name.split(":")[0] if ":" in name else name
+        if "/" not in project_and_name:
+            return f"**📦 Artifact** `{name}`"
+        project, art_name = project_and_name.split("/", 1)
+        manifest = SQLiteStorage.get_artifact_manifest(project, art_name)
+        size = sum(entry.get("size", 0) for entry in manifest)
+        gb = size / 1e9
+        size_str = f"{gb:.2f} GB" if gb >= 0.01 else f"{size / 1e6:.1f} MB"
+        return f"**📦 Artifact** `{name}` · {len(manifest)} files · {size_str}"
+    except Exception:
+        return f"**📦 Artifact** `{name}`"
+
+
+def add_note(
+    proj: Path,
+    body: str,
+    title: str | None = None,
+    page_slug: str = ROOT_SLUG,
+    links: list[str] | None = None,
+    artifacts: list[str] | None = None,
+) -> None:
+    manifest = read_manifest(proj)
+    node = find_node(manifest, page_slug)
+    if node is None:
+        raise LogbookError(f"No page with slug '{page_slug}' in this logbook.")
+    page_path = logbook_root(proj) / node["file"]
+    now = _now_iso()
+    lines = ["", "---", ""]
+    lines.append(f"### {title.strip() if title else 'Note'}")
+    lines.append(f"<!-- entry ts={now} -->")
+    lines.append(f"`{_human_time(now)}`")
+    lines.append("")
+    lines.append(body.strip())
+    lines.append("")
+    for art in artifacts or []:
+        lines.append(f"- {_resolve_artifact(art)}")
+    for url in links or []:
+        lines.append(f"- {url.strip()}")
+    if artifacts or links:
+        lines.append("")
+    with page_path.open("a", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    write_manifest(proj, manifest)
 
 
 def _esc_cell(text: str) -> str:
@@ -201,7 +270,7 @@ def _insert_task_row(text: str, section: str, row: str) -> str:
 
 
 def add_task(
-    logbook_slug: str,
+    proj: Path,
     task: str,
     who: str = "to assign",
     section: str = DEFAULT_SECTION,
@@ -210,11 +279,11 @@ def add_task(
     notes: str = "",
     page_slug: str = ROOT_SLUG,
 ) -> None:
-    manifest = read_manifest(logbook_slug)
+    manifest = read_manifest(proj)
     node = find_node(manifest, page_slug)
     if node is None:
         raise LogbookError(f"No page with slug '{page_slug}' in this logbook.")
-    path = logbook_dir(logbook_slug) / node["file"]
+    path = logbook_root(proj) / node["file"]
     row = (
         f"| {_esc_cell(who)} | {'x' if in_progress else ''} | "
         f"{'x' if completed else ''} | {_esc_cell(task)} | {_esc_cell(notes)} |"
@@ -223,100 +292,7 @@ def add_task(
         _insert_task_row(path.read_text(encoding="utf-8"), section, row),
         encoding="utf-8",
     )
-    write_manifest(logbook_slug, manifest)
-
-
-def add_page(
-    logbook_slug: str,
-    title: str,
-    parent_slug: str = ROOT_SLUG,
-    slug: str | None = None,
-) -> str:
-    manifest = read_manifest(logbook_slug)
-    parent = find_node(manifest, parent_slug)
-    if parent is None:
-        raise LogbookError(f"No page with slug '{parent_slug}' in this logbook.")
-    existing = _all_slugs(manifest)
-    base = _slugify(slug or title)
-    page_slug = base
-    n = 2
-    while page_slug in existing:
-        page_slug = f"{base}-{n}"
-        n += 1
-    parent_dir = Path(parent["file"]).parent
-    if parent["slug"] == ROOT_SLUG:
-        rel = Path("pages") / page_slug / "page.md"
-    else:
-        rel = parent_dir / page_slug / "page.md"
-    abs_path = logbook_dir(logbook_slug) / rel
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_text(f"# {title}\n", encoding="utf-8")
-    now = _now_iso()
-    parent.setdefault("children", []).append(
-        {
-            "slug": page_slug,
-            "title": title,
-            "file": str(rel).replace("\\", "/"),
-            "created_at": now,
-            "children": [],
-        }
-    )
-    write_manifest(logbook_slug, manifest)
-    return page_slug
-
-
-def _resolve_artifact(name: str) -> str:
-    try:
-        from trackio.sqlite_storage import SQLiteStorage
-
-        if ":" in name:
-            project_and_name = name.split(":")[0]
-        else:
-            project_and_name = name
-        if "/" in project_and_name:
-            project, art_name = project_and_name.split("/", 1)
-        else:
-            return f"**📦 Artifact** `{name}`"
-        manifest = SQLiteStorage.get_artifact_manifest(project, art_name)
-        size = sum(entry.get("size", 0) for entry in manifest)
-        gb = size / 1e9
-        size_str = f"{gb:.2f} GB" if gb >= 0.01 else f"{size / 1e6:.1f} MB"
-        return f"**📦 Artifact** `{name}` · {len(manifest)} files · {size_str}"
-    except Exception:
-        return f"**📦 Artifact** `{name}`"
-
-
-def add_note(
-    logbook_slug: str,
-    body: str,
-    title: str | None = None,
-    page_slug: str = ROOT_SLUG,
-    links: list[str] | None = None,
-    artifacts: list[str] | None = None,
-) -> None:
-    manifest = read_manifest(logbook_slug)
-    node = find_node(manifest, page_slug)
-    if node is None:
-        raise LogbookError(f"No page with slug '{page_slug}' in this logbook.")
-    page_path = logbook_dir(logbook_slug) / node["file"]
-    now = _now_iso()
-    lines = ["", "---", ""]
-    heading = title.strip() if title else "Note"
-    lines.append(f"### {heading}")
-    lines.append(f"<!-- entry ts={now} -->")
-    lines.append(f"`{_human_time(now)}`")
-    lines.append("")
-    lines.append(body.strip())
-    lines.append("")
-    for art in artifacts or []:
-        lines.append(f"- {_resolve_artifact(art)}")
-    for url in links or []:
-        lines.append(f"- {url.strip()}")
-    if artifacts or links:
-        lines.append("")
-    with page_path.open("a", encoding="utf-8") as f:
-        f.write("\n".join(lines))
-    write_manifest(logbook_slug, manifest)
+    write_manifest(proj, manifest)
 
 
 def _tree_lines(node: dict, depth: int = 0) -> list[str]:
@@ -327,14 +303,16 @@ def _tree_lines(node: dict, depth: int = 0) -> list[str]:
     return out
 
 
-def status_text(logbook_slug: str) -> str:
-    manifest = read_manifest(logbook_slug)
+def status_text(proj: Path) -> str:
+    manifest = read_manifest(proj)
+    metadata = read_metadata(proj)
     lines = [
-        f"{manifest['emoji']}  {manifest['title']}  ({manifest['slug']})",
+        f"{manifest['emoji']}  {manifest['title']}",
+        f"    dir     {logbook_root(proj)}",
         f"    updated {manifest['updated_at']}",
     ]
-    if manifest.get("space_id"):
-        lines.append(f"    space   {manifest['space_id']}")
+    if metadata.get("space_id"):
+        lines.append(f"    space   {metadata['space_id']}")
     lines.append("")
     lines.append("  Pages:")
     for line in _tree_lines(manifest["root"]):
@@ -342,20 +320,19 @@ def status_text(logbook_slug: str) -> str:
     return "\n".join(lines)
 
 
-def flatten_markdown(logbook_slug: str) -> str:
-    manifest = read_manifest(logbook_slug)
-    book = logbook_dir(logbook_slug)
+def flatten_markdown(proj: Path) -> str:
+    manifest = read_manifest(proj)
+    root = logbook_root(proj)
     out = [f"# {manifest['title']}", ""]
 
-    def walk(node, depth):
-        text = (book / node["file"]).read_text(encoding="utf-8")
-        text = re.sub(r"<!--.*?-->", "", text)
-        out.append(text.strip())
+    def walk(node):
+        text = (root / node["file"]).read_text(encoding="utf-8")
+        out.append(re.sub(r"<!--.*?-->", "", text).strip())
         out.append("")
         for child in node.get("children", []):
-            walk(child, depth + 1)
+            walk(child)
 
-    walk(manifest["root"], 0)
+    walk(manifest["root"])
     return "\n".join(out)
 
 
@@ -363,7 +340,7 @@ def _readme(manifest: dict) -> str:
     emoji = manifest.get("emoji", "🧪")
     title = manifest["title"].replace('"', "'")
     return (
-        f"---\ntitle: {title}\nemoji: {emoji}\ncolorFrom: indigo\ncolorTo: purple\n"
+        f"---\ntitle: {title}\nemoji: {emoji}\ncolorFrom: yellow\ncolorTo: red\n"
         "sdk: static\npinned: false\ntags:\n - trackio\n - trackio-logbook\n"
         " - open-experiment\n---\n\n"
         f"# {manifest['title']}\n\nAn open experiment logbook, published with "
@@ -371,46 +348,44 @@ def _readme(manifest: dict) -> str:
     )
 
 
-def assemble_site(logbook_slug: str, out_dir: Path) -> Path:
+def assemble_site(proj: Path, out_dir: Path) -> Path:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    book = logbook_dir(logbook_slug)
+    root = logbook_root(proj)
     for item in VIEWER_DIR.iterdir():
         if item.is_file():
             shutil.copy2(item, out_dir / item.name)
-    shutil.copy2(book / "logbook.json", out_dir / "logbook.json")
+    shutil.copy2(root / "logbook.json", out_dir / "logbook.json")
     if (out_dir / "pages").exists():
         shutil.rmtree(out_dir / "pages")
-    shutil.copytree(book / "pages", out_dir / "pages")
-    if (book / "media").exists():
+    shutil.copytree(root / "pages", out_dir / "pages")
+    if (root / "media").exists():
         if (out_dir / "media").exists():
             shutil.rmtree(out_dir / "media")
-        shutil.copytree(book / "media", out_dir / "media")
-    (out_dir / "logbook.md").write_text(
-        flatten_markdown(logbook_slug), encoding="utf-8"
-    )
-    manifest = read_manifest(logbook_slug)
-    (out_dir / "README.md").write_text(_readme(manifest), encoding="utf-8")
+        shutil.copytree(root / "media", out_dir / "media")
+    (out_dir / "logbook.md").write_text(flatten_markdown(proj), encoding="utf-8")
+    (out_dir / "README.md").write_text(_readme(read_manifest(proj)), encoding="utf-8")
     return out_dir
 
 
-def serve(logbook_slug: str, port: int = 7861, open_browser: bool = True) -> None:
+def serve(port: int = 7861, open_browser: bool = True) -> None:
     import functools
     import http.server
     import socketserver
     import webbrowser
 
-    site = logbook_dir(logbook_slug) / ".site"
+    proj = require_project_dir()
+    site = proj / ".site"
     if site.exists():
         shutil.rmtree(site)
-    assemble_site(logbook_slug, site)
+    assemble_site(proj, site)
     handler = functools.partial(
         http.server.SimpleHTTPRequestHandler, directory=str(site)
     )
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", port), handler) as httpd:
         url = f"http://localhost:{port}/"
-        print(f"Serving logbook '{logbook_slug}' at {url}\nPress Ctrl+C to stop.")
+        print(f"Serving logbook at {url}\nPress Ctrl+C to stop.")
         if open_browser:
             try:
                 webbrowser.open(url)
@@ -422,23 +397,20 @@ def serve(logbook_slug: str, port: int = 7861, open_browser: bool = True) -> Non
             print("\nStopped.")
 
 
-def publish(
-    logbook_slug: str,
-    space_id: str | None = None,
-    hf_token: str | None = None,
-) -> str:
+def publish(space_id: str | None = None, hf_token: str | None = None) -> str:
     import tempfile
 
     import huggingface_hub
 
-    manifest = read_manifest(logbook_slug)
-    space_id = space_id or manifest.get("space_id")
+    proj = require_project_dir()
+    metadata = read_metadata(proj)
+    space_id = space_id or metadata.get("space_id")
     if not space_id:
         raise LogbookError(
             "No Space id. Provide one: trackio logbook publish <username/space>"
         )
-    manifest["space_id"] = space_id
-    write_manifest(logbook_slug, manifest)
+    metadata["space_id"] = space_id
+    write_metadata(proj, metadata)
 
     api = huggingface_hub.HfApi(token=hf_token)
     huggingface_hub.create_repo(
@@ -448,8 +420,9 @@ def publish(
         exist_ok=True,
         token=hf_token,
     )
+    manifest = read_manifest(proj)
     with tempfile.TemporaryDirectory() as tmp:
-        assemble_site(logbook_slug, Path(tmp))
+        assemble_site(proj, Path(tmp))
         api.upload_folder(
             repo_id=space_id,
             repo_type="space",

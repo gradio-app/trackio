@@ -946,12 +946,13 @@ def main():
     )
     logbook_sub = logbook_parser.add_subparsers(dest="logbook_action", required=True)
 
-    lb_open = logbook_sub.add_parser("open", help="Start or attach to a logbook")
+    lb_open = logbook_sub.add_parser(
+        "open", help="Start or attach to the logbook in this directory"
+    )
     lb_open.add_argument(
         "space_id", nargs="?", help="Optional HF Space id to publish to"
     )
-    lb_open.add_argument("--title", help="Logbook title")
-    lb_open.add_argument("--slug", help="Explicit slug (defaults to slugified title)")
+    lb_open.add_argument("--title", help="Logbook title (only when creating)")
 
     lb_note = logbook_sub.add_parser("note", help="Append a finding to the logbook")
     lb_note.add_argument("body", help="The finding text")
@@ -976,20 +977,17 @@ def main():
     lb_task.add_argument("--done", action="store_true", help="Mark completed")
     lb_task.add_argument("--notes", default="", help="Notes cell")
 
-    logbook_sub.add_parser("status", help="Show the active logbook")
-    logbook_sub.add_parser("list", help="List all local logbooks")
+    logbook_sub.add_parser("status", help="Show this directory's logbook")
 
     lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
     lb_serve.add_argument("--port", type=int, default=7861)
-    lb_serve.add_argument("--slug", help="Logbook to serve (defaults to active)")
     lb_serve.add_argument("--no-browser", action="store_true")
 
     lb_pub = logbook_sub.add_parser("publish", help="Publish to a static HF Space")
     lb_pub.add_argument("space_id", nargs="?", help="HF Space id (username/space)")
-    lb_pub.add_argument("--slug", help="Logbook to publish (defaults to active)")
 
     lb_close = logbook_sub.add_parser(
-        "close", help="Publish and clear the active logbook"
+        "close", help="Publish the logbook (alias for publish)"
     )
     lb_close.add_argument("space_id", nargs="?", help="HF Space id to publish to")
     lb_close.add_argument("--no-publish", action="store_true")
@@ -1580,43 +1578,43 @@ def _handle_logbook(args):
     action = args.logbook_action
     try:
         if action == "open":
-            existing = lb.get_active()
-            if existing and lb._manifest_path(existing).exists() and not args.title:
-                manifest = lb.read_manifest(existing)
+            proj = lb.find_project_dir()
+            if proj is not None:
                 if args.space_id:
-                    manifest["space_id"] = args.space_id
-                    lb.write_manifest(existing, manifest)
-                print(f"Resumed active logbook '{existing}'.")
-                print(lb.status_text(existing))
+                    metadata = lb.read_metadata(proj)
+                    metadata["space_id"] = args.space_id
+                    lb.write_metadata(proj, metadata)
+                print(f"Attached to existing logbook at {lb.logbook_root(proj)}")
+                print(lb.status_text(proj))
                 return
-            title = args.title or "Untitled Experiment"
-            slug = lb.create_logbook(title, slug=args.slug, space_id=args.space_id)
-            lb.set_active(slug)
-            print(f"Opened logbook '{slug}'.")
+            proj = lb.create_logbook(
+                args.title or "Untitled Experiment", space_id=args.space_id
+            )
+            print(f"Opened logbook at {lb.logbook_root(proj)}")
             if args.space_id:
                 print(f"Will publish to: {args.space_id}")
             print('Log findings with: trackio logbook note "..."')
         elif action == "note":
-            slug = lb.require_active()
+            proj = lb.require_project_dir()
             lb.add_note(
-                slug,
+                proj,
                 args.body,
                 title=args.title,
                 page_slug=args.page,
                 links=args.link,
                 artifacts=args.artifact,
             )
-            print(f"Logged to '{slug}' (page: {args.page}).")
+            print(f"Logged (page: {args.page}).")
         elif action == "page":
-            slug = lb.require_active()
+            proj = lb.require_project_dir()
             page_slug = lb.add_page(
-                slug, args.title, parent_slug=args.parent, slug=args.slug
+                proj, args.title, parent_slug=args.parent, slug=args.slug
             )
             print(f"Created page '{page_slug}' under '{args.parent}'.")
         elif action == "task":
-            slug = lb.require_active()
+            proj = lb.require_project_dir()
             lb.add_task(
-                slug,
+                proj,
                 args.task,
                 who=args.who,
                 section=args.section,
@@ -1627,36 +1625,16 @@ def _handle_logbook(args):
             )
             print(f"Added task to '{args.section}'.")
         elif action == "status":
-            slug = lb.require_active()
-            print(lb.status_text(slug))
-        elif action == "list":
-            books = lb.list_logbooks()
-            active = lb.get_active()
-            if not books:
-                print("No logbooks yet. Start one with: trackio logbook open")
-                return
-            for b in books:
-                mark = "*" if b["slug"] == active else " "
-                space = f"  → {b['space_id']}" if b.get("space_id") else ""
-                print(f" {mark} {b['emoji']} {b['title']}  ({b['slug']}){space}")
+            print(lb.status_text(lb.require_project_dir()))
         elif action == "serve":
-            slug = args.slug or lb.require_active()
-            lb.serve(slug, port=args.port, open_browser=not args.no_browser)
+            lb.serve(port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
-            slug = args.slug or lb.require_active()
-            url = lb.publish(slug, space_id=args.space_id)
-            print(f"Published: {url}")
+            print(f"Published: {lb.publish(space_id=args.space_id)}")
         elif action == "close":
-            slug = lb.require_active()
-            if not args.no_publish:
-                manifest = lb.read_manifest(slug)
-                if args.space_id or manifest.get("space_id"):
-                    url = lb.publish(slug, space_id=args.space_id)
-                    print(f"Published: {url}")
-                else:
-                    print("No Space linked; closed without publishing.")
-            lb.clear_active()
-            print(f"Closed logbook '{slug}'.")
+            if args.no_publish:
+                print("Closed without publishing.")
+            else:
+                print(f"Published: {lb.publish(space_id=args.space_id)}")
     except lb.LogbookError as e:
         error_exit(str(e))
 

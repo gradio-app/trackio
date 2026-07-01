@@ -42,12 +42,12 @@ body {
   min-height: 100vh;
 }
 
-/* ---- sidebar ---- */
+/* ---- sidebar (composition-book cover) ---- */
 #sidebar {
   width: 280px;
   flex: 0 0 280px;
-  border-right: 1px solid var(--line);
-  background: var(--panel);
+  background: #17181c;
+  color: #e7e7ea;
   position: sticky;
   top: 0;
   height: 100vh;
@@ -62,6 +62,8 @@ body {
   align-items: center;
   gap: 10px;
   padding: 4px 8px 18px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 #book-emoji {
@@ -73,29 +75,32 @@ body {
   font-weight: 700;
   font-size: 15px;
   letter-spacing: -0.01em;
+  color: #ffffff;
 }
 
 #tree {
   flex: 1;
+  padding-top: 8px;
 }
 
 #tree a {
   display: block;
   padding: 6px 10px;
   border-radius: 8px;
-  color: var(--ink);
+  color: #c3c4cb;
   text-decoration: none;
   font-size: 14px;
-  transition: background 0.12s;
+  transition: background 0.12s, color 0.12s;
 }
 
 #tree a:hover {
-  background: var(--code-bg);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
 }
 
 #tree a.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: rgba(249, 115, 22, 0.16);
+  color: #fdba74;
   font-weight: 600;
 }
 
@@ -110,24 +115,24 @@ body {
 }
 
 #sidebar-foot {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding-top: 14px;
   margin-top: 14px;
   font-size: 12.5px;
 }
 
 #raw-link {
-  color: var(--accent);
+  color: #fdba74;
   text-decoration: none;
   font-family: var(--mono);
 }
 
 .powered {
-  color: var(--muted);
+  color: #8a8b93;
   margin-top: 10px;
 }
 .powered a {
-  color: var(--muted);
+  color: #8a8b93;
 }
 
 /* ---- content ---- */
