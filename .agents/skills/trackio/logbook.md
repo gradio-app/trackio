@@ -7,33 +7,36 @@ The logbook is **just files you edit directly**. There are only a few CLI comman
 ## The few CLI commands
 
 ```bash
-trackio logbook open [username/space] --title "..."   # scaffold ./.trackio/logbook/ (run once)
-trackio logbook page "<Title>" [--parent SLUG]        # safe-create a page → prints its slug
-trackio logbook note "<finding>" [--page SLUG] ...    # safe-append a finding to a page
-trackio logbook serve                                 # preview locally
-trackio logbook publish [username/space]              # first publish (public gate) → enables auto-sync
-trackio logbook sync                                  # push later edits to the Space now
+trackio logbook open [username/space]                   # scaffold ./.trackio/logbook/ (run once)
+trackio logbook note "<finding>" --experiment "<Name>"  # log a finding onto an experiment (creates it if new)
+trackio logbook serve                                   # preview locally
+trackio logbook publish [username/space]                # first publish (public gate) → enables auto-sync
+trackio logbook sync                                    # push later edits to the Space now
 ```
 
-`page` and `note` **only append / create** — use them so you never clobber notes someone else wrote. Everything else is a direct edit.
+`note` **appends** — you never clobber notes someone else wrote. Everything else is a direct file edit.
 
-## Edit these directly (your normal file tools)
+## The structure
 
-- **The main page** `./.trackio/logbook/pages/index.md` — an `## Experiments` Markdown table (`| Status | Experiment |`). Add / reorder / restyle rows freely. Status renders as a badge: `planned`, `in-progress`, `done`, `blocked`.
-- **Any page's content** — write prose, embed results, link things.
-- **Styling / layout** — `./.trackio/logbook/logbook.css` (and `index.html`, `logbook.js`) live in the logbook and are yours to tweak per-logbook.
+- **The main page** (`pages/index.md`) is the **table of contents only** — an `## Experiments` table of `| Status | Experiment |`, one row per experiment, each linking to that experiment's page. **Never write findings here.**
+- **Each experiment has its own page** where findings accumulate.
 
-## Adding an experiment
+## Logging findings — always onto an experiment
 
-1. `trackio logbook page "LR sweep"` → prints a slug, e.g. `lr-sweep`.
-2. Add a row to `index.md`'s Experiments table: `| in-progress | [LR sweep](#/lr-sweep) |`. Clicking the row opens that page.
-3. Log findings onto it: `trackio logbook note "3e-4 wins; 1e-3 diverges" --page lr-sweep --link ...`.
+```bash
+trackio logbook note "Zero-shot baseline: 41% valid; need SFT." --experiment "Baseline" --status done
+trackio logbook note "3e-4 wins; 1e-3 diverges ~300 steps." --experiment "LR sweep" --status in-progress --link ...
+```
 
-For a **sub-experiment**, create it with `--parent lr-sweep` and link `[its title](#/slug)` inline in the parent page's prose where it's relevant — don't bunch links at the bottom.
+`--experiment "Name"` **creates the experiment page + adds its row to the index** the first time, and appends to it thereafter. `--status` (`planned`/`in-progress`/`done`/`blocked`) sets the badge on its index row. This keeps the main page a clean TOC automatically — you never edit the index by hand for this.
 
 ## When to `note` (high bar — signal, not noise)
 
-An experiment **concluded** with a result; a **decision** + rationale; a **surprise / dead end**; a **baseline** worth anchoring to. Not routine commands or scratch.
+An experiment **concluded** with a result; a **decision** + rationale; a **surprise / dead end**; a **baseline** worth anchoring to. Not routine commands or scratch. A baseline measurement is its own experiment — log it with `--experiment "Baseline"` before moving on.
+
+## Also editable directly (your normal file tools)
+
+Any page's content, the index table, and the styling (`logbook.css` / `index.html` / `logbook.js`, which live inside the logbook) are plain files — edit them when the CLI verbs aren't enough. `serve` to preview and fix.
 
 - `--title`: a short, result-bearing headline ("96.4% valid — target met").
 - Body: 1–3 sentences with the number and what it means. **Tabular results** (baselines, sweeps, ablations) → write a **Markdown table** in the body, not prose — it renders as a real table.

@@ -954,10 +954,19 @@ def main():
     )
     lb_open.add_argument("--title", help="Logbook title (only when creating)")
 
-    lb_note = logbook_sub.add_parser("note", help="Append a finding to the logbook")
+    lb_note = logbook_sub.add_parser(
+        "note", help="Append a finding to an experiment page"
+    )
     lb_note.add_argument("body", help="The finding text")
+    lb_note.add_argument(
+        "--experiment",
+        help="Experiment name (created + listed on the index if new)",
+    )
+    lb_note.add_argument(
+        "--status", help="Set the experiment's status (with --experiment)"
+    )
     lb_note.add_argument("--title", help="Short heading for this entry")
-    lb_note.add_argument("--page", default="index", help="Target page slug")
+    lb_note.add_argument("--page", help="Target an existing page by slug instead")
     lb_note.add_argument("--link", action="append", default=[], help="URL to unfurl")
     lb_note.add_argument(
         "--artifact", action="append", default=[], help="Trackio artifact name:vN"
@@ -1586,23 +1595,32 @@ def _handle_logbook(args):
                 print(f"Attached to existing logbook at {lb.logbook_root(proj)}")
                 return
             proj = lb.create_logbook(
-                args.title or "Untitled Experiment", space_id=args.space_id
+                args.title or os.path.basename(os.getcwd()), space_id=args.space_id
             )
             print(f"Opened logbook at {lb.logbook_root(proj)}")
             if args.space_id:
                 print(f"Will publish to: {args.space_id}")
-            print('Log findings with: trackio logbook note "..."')
+            print('Log findings with: trackio logbook note "..." --experiment "..."')
         elif action == "note":
             proj = lb.require_project_dir()
+            if args.experiment:
+                slug = lb.ensure_experiment(proj, args.experiment, status=args.status)
+            elif args.page and args.page != lb.ROOT_SLUG:
+                slug = args.page
+            else:
+                error_exit(
+                    "The main page is the table of contents — notes go on an "
+                    'experiment. Use: trackio logbook note "..." --experiment "Name"'
+                )
             lb.add_note(
                 proj,
                 args.body,
                 title=args.title,
-                page_slug=args.page,
+                page_slug=slug,
                 links=args.link,
                 artifacts=args.artifact,
             )
-            print(f"Logged (page: {args.page}).{_sync_suffix(lb, proj)}")
+            print(f"Logged to experiment '{slug}'.{_sync_suffix(lb, proj)}")
             lb.trigger_autosync(proj)
         elif action == "page":
             proj = lb.require_project_dir()

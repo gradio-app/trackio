@@ -173,8 +173,11 @@ def write_site_files(proj: Path) -> dict:
 # ---- creation ----
 
 
-def create_logbook(title: str, space_id: str | None = None, emoji: str = "🎯") -> Path:
+def create_logbook(
+    title: str | None = None, space_id: str | None = None, emoji: str = "🎯"
+) -> Path:
     proj = find_project_dir() or (Path.cwd() / PROJECT_DIR_NAME)
+    title = title or proj.parent.name or "Experiment"
     root = logbook_root(proj)
     if (root / "pages" / "index.md").exists():
         raise LogbookError(
@@ -188,7 +191,7 @@ def create_logbook(title: str, space_id: str | None = None, emoji: str = "🎯")
         "## Experiments\n\n"
         f"{EXP_HEADER}\n{EXP_SEP}\n"
         "| planned | "
-        'Add one with `trackio logbook page "..."`, then link it here |\n',
+        'Log a finding with `trackio logbook note "..." --experiment "..."` |\n',
         encoding="utf-8",
     )
     write_metadata(
@@ -243,6 +246,59 @@ def add_page(proj: Path, title: str, parent_slug: str = ROOT_SLUG) -> str:
     page_dir = parent_dir / slug
     page_dir.mkdir(parents=True, exist_ok=True)
     (page_dir / "page.md").write_text(f"# {title}\n", encoding="utf-8")
+    return slug
+
+
+def _insert_toc_row(text: str, row: str) -> str:
+    lines = [ln for ln in text.split("\n") if "logbook note" not in ln]
+    idx = next(
+        (i for i, ln in enumerate(lines) if ln.strip().lower() == "## experiments"),
+        None,
+    )
+    if idx is not None:
+        j = idx + 1
+        while j < len(lines) and not lines[j].strip().startswith("|"):
+            j += 1
+        if j >= len(lines):
+            lines[idx + 1 : idx + 1] = ["", EXP_HEADER, EXP_SEP, row, ""]
+            return "\n".join(lines)
+        k = j
+        while k < len(lines) and lines[k].strip().startswith("|"):
+            k += 1
+        lines.insert(k, row)
+        return "\n".join(lines)
+    block = ["", "## Experiments", "", EXP_HEADER, EXP_SEP, row, ""]
+    h1 = next((i for i, ln in enumerate(lines) if ln.strip().startswith("# ")), None)
+    at = (h1 + 1) if h1 is not None else len(lines)
+    lines[at:at] = block
+    return "\n".join(lines)
+
+
+def set_experiment_status(proj: Path, slug: str, status: str) -> None:
+    index = _pages_dir(proj) / "index.md"
+    lines = index.read_text(encoding="utf-8").split("\n")
+    for i, ln in enumerate(lines):
+        if f"(#/{slug})" in ln and ln.strip().startswith("|"):
+            cells = ln.split("|")
+            if len(cells) >= 3:
+                cells[1] = f" {status} "
+                lines[i] = "|".join(cells)
+            break
+    index.write_text("\n".join(lines), encoding="utf-8")
+
+
+def ensure_experiment(proj: Path, name: str, status: str | None = None) -> str:
+    slug = _slugify(name)
+    if slug in _all_slugs(proj):
+        if status:
+            set_experiment_status(proj, slug, status)
+        return slug
+    slug = add_page(proj, name, parent_slug=ROOT_SLUG)
+    index = _pages_dir(proj) / "index.md"
+    row = f"| {status or 'in-progress'} | [{name}](#/{slug}) |"
+    index.write_text(
+        _insert_toc_row(index.read_text(encoding="utf-8"), row), encoding="utf-8"
+    )
     return slug
 
 
