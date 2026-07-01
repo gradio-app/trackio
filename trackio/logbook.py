@@ -150,7 +150,17 @@ def flatten_markdown(proj: Path, manifest: dict) -> str:
     return "\n".join(out)
 
 
+def _ensure_viewer_files(proj: Path) -> None:
+    root = logbook_root(proj)
+    for fname in VIEWER_FILES:
+        dest = root / fname
+        src = VIEWER_DIR / fname
+        if not dest.exists() and src.is_file():
+            shutil.copy2(src, dest)
+
+
 def write_site_files(proj: Path) -> dict:
+    _ensure_viewer_files(proj)
     manifest = build_manifest(proj)
     root = logbook_root(proj)
     (root / "logbook.json").write_text(
@@ -171,10 +181,6 @@ def create_logbook(title: str, space_id: str | None = None, emoji: str = "🎯")
             f"A logbook already exists at {root}. Attach with `trackio logbook open`."
         )
     (root / "pages").mkdir(parents=True, exist_ok=True)
-    for fname in VIEWER_FILES:
-        src = VIEWER_DIR / fname
-        if src.is_file():
-            shutil.copy2(src, root / fname)
     (root / "pages" / "index.md").write_text(
         f"# {title}\n\n"
         "> Index of experiments. Click one to open its page. Edit this page "
