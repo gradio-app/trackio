@@ -1684,10 +1684,16 @@ def _handle_skills_add(args):
     COMMAND_PREFIX = ".agents/commands"
     COMMAND_FILE = "logbook.md"
 
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+    USE_LOCAL = (REPO_ROOT / SKILL_PREFIX / "SKILL.md").is_file()
+
     if not (args.cursor or args.claude or args.codex or args.opencode or args.dest):
         error_exit(
             "Pick a destination via --cursor, --claude, --codex, --opencode, or --dest."
         )
+
+    if USE_LOCAL:
+        print(f"Using local Trackio source at {REPO_ROOT}")
 
     def download(url: str) -> str:
         from huggingface_hub.utils import get_session
@@ -1702,6 +1708,13 @@ def _handle_skills_add(args):
                 "the Trackio GitHub repository."
             )
         return response.text
+
+    def get_content(prefix: str, fname: str) -> str:
+        if USE_LOCAL:
+            local = REPO_ROOT / prefix / fname
+            if local.is_file():
+                return local.read_text(encoding="utf-8")
+        return download(f"{GITHUB_RAW}/{prefix}/{fname}")
 
     def remove_existing(path: Path, force: bool):
         if not (path.exists() or path.is_symlink()):
@@ -1722,8 +1735,9 @@ def _handle_skills_add(args):
         remove_existing(dest, force)
         dest.mkdir()
         for fname in SKILL_FILES:
-            content = download(f"{GITHUB_RAW}/{SKILL_PREFIX}/{fname}")
-            (dest / fname).write_text(content, encoding="utf-8")
+            (dest / fname).write_text(
+                get_content(SKILL_PREFIX, fname), encoding="utf-8"
+            )
         return dest
 
     def create_symlink(
@@ -1744,8 +1758,7 @@ def _handle_skills_add(args):
             error_exit(
                 f"Command already exists at {dest}.\nRe-run with --force to overwrite."
             )
-        content = download(f"{GITHUB_RAW}/{COMMAND_PREFIX}/{COMMAND_FILE}")
-        dest.write_text(content, encoding="utf-8")
+        dest.write_text(get_content(COMMAND_PREFIX, COMMAND_FILE), encoding="utf-8")
         return dest
 
     global_targets = {
