@@ -4732,6 +4732,7 @@ class SQLiteStorage:
         """Runs that consumed a given artifact version as input (the reverse of
         the version's producer run). Returns [] when the DB or tables are
         absent."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []
@@ -4761,6 +4762,7 @@ class SQLiteStorage:
         the file manifests themselves. Artifacts are ordered by type then name;
         each artifact's versions are newest-first. Returns [] when the project
         DB or the artifact tables don't exist yet."""
+        SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return []

@@ -59,18 +59,18 @@ def _log_artifact(request, manifest, **overrides):
     return server.artifact_log(**kwargs)
 
 
-def test_check_artifact_blobs_returns_subset_on_disk(stage_blob):
+def test_check_artifact_blobs_returns_subset_on_disk(auth_bypassed, stage_blob):
     d_a, _ = stage_blob("p", b"alpha")
     d_b, _ = stage_blob("p", b"beta")
     d_absent = "c" * 64
-    result = server.check_artifact_blobs("p", [d_a, d_b, d_absent])
+    result = server.check_artifact_blobs(auth_bypassed, "p", [d_a, d_b, d_absent])
     assert set(result["present"]) == {d_a, d_b}
 
 
-def test_check_artifact_blobs_rejects_invalid_digest():
+def test_check_artifact_blobs_rejects_invalid_digest(auth_bypassed):
     for bad in ["../secret.txt", "abc", "G" * 64]:
         with pytest.raises(TrackioAPIError, match="Invalid sha256"):
-            server.check_artifact_blobs("p", [bad])
+            server.check_artifact_blobs(auth_bypassed, "p", [bad])
 
 
 def test_bulk_upload_artifact_blob_happy_path(
@@ -311,7 +311,9 @@ def test_artifact_endpoints_accept_names_init_and_log_accept(auth_bypassed, stag
     payload = b"weights"
     digest, _ = stage_blob(canonical, payload)
 
-    assert server.check_artifact_blobs(project, [digest])["present"] == [digest]
+    assert server.check_artifact_blobs(auth_bypassed, project, [digest])["present"] == [
+        digest
+    ]
 
     _log_artifact(
         auth_bypassed,
