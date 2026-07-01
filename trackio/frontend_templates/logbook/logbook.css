@@ -1,12 +1,16 @@
 :root {
-  --bg: #fbfbfd;
+  --bg: #ffffff;
+  --paper: #fdfcf9;
   --panel: #ffffff;
-  --ink: #1a1a2e;
-  --muted: #6b6b80;
-  --line: #e7e7ef;
-  --accent: #5b4bd6;
-  --accent-soft: #efecff;
-  --code-bg: #f4f4f8;
+  --ink: #1f2937;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --accent: #f97316;
+  --accent-strong: #ea580c;
+  --accent-soft: #fff7ed;
+  --accent-line: rgba(249, 115, 22, 0.16);
+  --grid-line: rgba(31, 41, 55, 0.045);
+  --code-bg: #f3f4f6;
   --radius: 12px;
   --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
@@ -132,11 +136,19 @@ body {
   display: flex;
   justify-content: center;
   padding: 48px 40px 120px;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 26px 26px;
+  background-position: center top;
 }
 
 #page {
   width: 100%;
   max-width: 760px;
+  padding-left: 26px;
+  border-left: 1px solid var(--accent-line);
 }
 
 #page h1 {
@@ -160,6 +172,18 @@ body {
   letter-spacing: -0.01em;
 }
 
+#page h3::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--accent);
+  margin-right: 10px;
+  vertical-align: middle;
+  transform: translateY(-1px);
+}
+
 #page p {
   margin: 10px 0;
 }
@@ -167,7 +191,7 @@ body {
 #page blockquote {
   margin: 14px 0;
   padding: 2px 16px;
-  border-left: 3px solid var(--accent-soft);
+  border-left: 3px solid #fdba74;
   color: var(--muted);
 }
 
@@ -329,6 +353,7 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   margin: 12px 0 20px;
+  background: var(--panel);
 }
 table.board {
   border-collapse: collapse;
@@ -343,11 +368,11 @@ table.board td {
   vertical-align: top;
 }
 table.board thead th {
-  background: #f3f3f8;
+  background: var(--accent-soft);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--muted);
+  color: #9a4a12;
   font-weight: 600;
   border-bottom: 1px solid var(--line);
 }
@@ -360,12 +385,13 @@ table.board .col-check {
   white-space: nowrap;
 }
 table.board tr.section-row td {
-  background: #eef1fb;
+  background: var(--accent-soft);
   text-align: center;
   font-weight: 700;
   font-size: 13px;
-  color: #33406b;
+  color: var(--accent-strong);
   padding: 7px 14px;
+  letter-spacing: 0.02em;
 }
 .box {
   display: inline-flex;
