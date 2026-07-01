@@ -933,6 +933,66 @@ def main():
         action="store_true",
         help="Overwrite existing skill if it already exists",
     )
+    skills_add_parser.add_argument(
+        "--no-command",
+        dest="no_command",
+        action="store_true",
+        help="Do not install the /logbook slash command alongside the skill",
+    )
+
+    logbook_parser = subparsers.add_parser(
+        "logbook",
+        help="Create and publish a shareable experiment logbook",
+    )
+    logbook_sub = logbook_parser.add_subparsers(dest="logbook_action", required=True)
+
+    lb_open = logbook_sub.add_parser("open", help="Start or attach to a logbook")
+    lb_open.add_argument(
+        "space_id", nargs="?", help="Optional HF Space id to publish to"
+    )
+    lb_open.add_argument("--title", help="Logbook title")
+    lb_open.add_argument("--slug", help="Explicit slug (defaults to slugified title)")
+
+    lb_note = logbook_sub.add_parser("note", help="Append a finding to the logbook")
+    lb_note.add_argument("body", help="The finding text")
+    lb_note.add_argument("--title", help="Short heading for this entry")
+    lb_note.add_argument("--page", default="index", help="Target page slug")
+    lb_note.add_argument("--link", action="append", default=[], help="URL to unfurl")
+    lb_note.add_argument(
+        "--artifact", action="append", default=[], help="Trackio artifact name:vN"
+    )
+
+    lb_page = logbook_sub.add_parser("page", help="Create a (sub)page")
+    lb_page.add_argument("title", help="Page title")
+    lb_page.add_argument("--parent", default="index", help="Parent page slug")
+    lb_page.add_argument("--slug", help="Explicit slug")
+
+    lb_task = logbook_sub.add_parser("task", help="Add a task row to the tracker")
+    lb_task.add_argument("task", help="Task description")
+    lb_task.add_argument("--who", default="to assign", help="Assignee")
+    lb_task.add_argument("--section", default="Backlog", help="Section (e.g. 'Week 1')")
+    lb_task.add_argument("--page", default="index", help="Page holding the tracker")
+    lb_task.add_argument("--wip", action="store_true", help="Mark in progress")
+    lb_task.add_argument("--done", action="store_true", help="Mark completed")
+    lb_task.add_argument("--notes", default="", help="Notes cell")
+
+    logbook_sub.add_parser("status", help="Show the active logbook")
+    logbook_sub.add_parser("list", help="List all local logbooks")
+
+    lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
+    lb_serve.add_argument("--port", type=int, default=7861)
+    lb_serve.add_argument("--slug", help="Logbook to serve (defaults to active)")
+    lb_serve.add_argument("--no-browser", action="store_true")
+
+    lb_pub = logbook_sub.add_parser("publish", help="Publish to a static HF Space")
+    lb_pub.add_argument("space_id", nargs="?", help="HF Space id (username/space)")
+    lb_pub.add_argument("--slug", help="Logbook to publish (defaults to active)")
+
+    lb_close = logbook_sub.add_parser(
+        "close", help="Publish and clear the active logbook"
+    )
+    lb_close.add_argument("space_id", nargs="?", help="HF Space id to publish to")
+    lb_close.add_argument("--no-publish", action="store_true")
 
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
@@ -1508,8 +1568,97 @@ def main():
     elif args.command == "skills":
         if args.skills_action == "add":
             _handle_skills_add(args)
+    elif args.command == "logbook":
+        _handle_logbook(args)
     else:
         parser.print_help()
+
+
+def _handle_logbook(args):
+    from trackio import logbook as lb
+
+    action = args.logbook_action
+    try:
+        if action == "open":
+            existing = lb.get_active()
+            if existing and lb._manifest_path(existing).exists() and not args.title:
+                manifest = lb.read_manifest(existing)
+                if args.space_id:
+                    manifest["space_id"] = args.space_id
+                    lb.write_manifest(existing, manifest)
+                print(f"Resumed active logbook '{existing}'.")
+                print(lb.status_text(existing))
+                return
+            title = args.title or "Untitled Experiment"
+            slug = lb.create_logbook(title, slug=args.slug, space_id=args.space_id)
+            lb.set_active(slug)
+            print(f"Opened logbook '{slug}'.")
+            if args.space_id:
+                print(f"Will publish to: {args.space_id}")
+            print('Log findings with: trackio logbook note "..."')
+        elif action == "note":
+            slug = lb.require_active()
+            lb.add_note(
+                slug,
+                args.body,
+                title=args.title,
+                page_slug=args.page,
+                links=args.link,
+                artifacts=args.artifact,
+            )
+            print(f"Logged to '{slug}' (page: {args.page}).")
+        elif action == "page":
+            slug = lb.require_active()
+            page_slug = lb.add_page(
+                slug, args.title, parent_slug=args.parent, slug=args.slug
+            )
+            print(f"Created page '{page_slug}' under '{args.parent}'.")
+        elif action == "task":
+            slug = lb.require_active()
+            lb.add_task(
+                slug,
+                args.task,
+                who=args.who,
+                section=args.section,
+                in_progress=args.wip,
+                completed=args.done,
+                notes=args.notes,
+                page_slug=args.page,
+            )
+            print(f"Added task to '{args.section}'.")
+        elif action == "status":
+            slug = lb.require_active()
+            print(lb.status_text(slug))
+        elif action == "list":
+            books = lb.list_logbooks()
+            active = lb.get_active()
+            if not books:
+                print("No logbooks yet. Start one with: trackio logbook open")
+                return
+            for b in books:
+                mark = "*" if b["slug"] == active else " "
+                space = f"  → {b['space_id']}" if b.get("space_id") else ""
+                print(f" {mark} {b['emoji']} {b['title']}  ({b['slug']}){space}")
+        elif action == "serve":
+            slug = args.slug or lb.require_active()
+            lb.serve(slug, port=args.port, open_browser=not args.no_browser)
+        elif action == "publish":
+            slug = args.slug or lb.require_active()
+            url = lb.publish(slug, space_id=args.space_id)
+            print(f"Published: {url}")
+        elif action == "close":
+            slug = lb.require_active()
+            if not args.no_publish:
+                manifest = lb.read_manifest(slug)
+                if args.space_id or manifest.get("space_id"):
+                    url = lb.publish(slug, space_id=args.space_id)
+                    print(f"Published: {url}")
+                else:
+                    print("No Space linked; closed without publishing.")
+            lb.clear_active()
+            print(f"Closed logbook '{slug}'.")
+    except lb.LogbookError as e:
+        error_exit(str(e))
 
 
 def _handle_skills_add(args):
@@ -1530,7 +1679,10 @@ def _handle_skills_add(args):
         "logging_metrics.md",
         "retrieving_metrics.md",
         "storage_schema.md",
+        "logbook.md",
     ]
+    COMMAND_PREFIX = ".agents/commands"
+    COMMAND_FILE = "logbook.md"
 
     if not (args.cursor or args.claude or args.codex or args.opencode or args.dest):
         error_exit(
@@ -1584,6 +1736,18 @@ def _handle_skills_add(args):
         link_path.symlink_to(os.path.relpath(central_skill_path, agent_skills_dir))
         return link_path
 
+    def install_command(command_dir: Path, force: bool) -> Path:
+        command_dir = command_dir.expanduser().resolve()
+        command_dir.mkdir(parents=True, exist_ok=True)
+        dest = command_dir / COMMAND_FILE
+        if dest.exists() and not force:
+            error_exit(
+                f"Command already exists at {dest}.\nRe-run with --force to overwrite."
+            )
+        content = download(f"{GITHUB_RAW}/{COMMAND_PREFIX}/{COMMAND_FILE}")
+        dest.write_text(content, encoding="utf-8")
+        return dest
+
     global_targets = {
         "cursor": Path("~/.cursor/skills"),
         "claude": CLAUDE_GLOBAL,
@@ -1598,6 +1762,16 @@ def _handle_skills_add(args):
     }
     targets_dict = global_targets if args.global_ else local_targets
 
+    command_targets_global = {
+        "cursor": Path("~/.cursor/commands"),
+        "claude": Path("~/.claude/commands"),
+    }
+    command_targets_local = {
+        "cursor": Path(".cursor/commands"),
+        "claude": Path(".claude/commands"),
+    }
+    command_dict = command_targets_global if args.global_ else command_targets_local
+
     if args.dest:
         if args.cursor or args.claude or args.codex or args.opencode or args.global_:
             error_exit("--dest cannot be combined with agent flags or --global.")
@@ -1605,23 +1779,35 @@ def _handle_skills_add(args):
         print(f"Installed '{SKILL_ID}' to {skill_dest}")
         return
 
-    agent_targets = []
-    if args.cursor:
-        agent_targets.append(targets_dict["cursor"])
-    if args.claude:
-        agent_targets.append(targets_dict["claude"])
-    if args.codex:
-        agent_targets.append(targets_dict["codex"])
-    if args.opencode:
-        agent_targets.append(targets_dict["opencode"])
+    selected = [
+        name
+        for name, flag in (
+            ("cursor", args.cursor),
+            ("claude", args.claude),
+            ("codex", args.codex),
+            ("opencode", args.opencode),
+        )
+        if flag
+    ]
 
     central_path = CENTRAL_GLOBAL if args.global_ else CENTRAL_LOCAL
     central_skill_path = install_to(central_path, args.force)
     print(f"Installed '{SKILL_ID}' to central location: {central_skill_path}")
 
-    for agent_target in agent_targets:
-        link_path = create_symlink(agent_target, central_skill_path, args.force)
+    for name in selected:
+        link_path = create_symlink(targets_dict[name], central_skill_path, args.force)
         print(f"Created symlink: {link_path}")
+
+    if not args.no_command:
+        for name in selected:
+            if name in command_dict:
+                cmd_path = install_command(command_dict[name], args.force)
+                print(f"Installed '/logbook' command: {cmd_path}")
+            else:
+                print(
+                    f"Skipped '/logbook' command for {name} "
+                    "(no slash-command directory convention)."
+                )
 
 
 if __name__ == "__main__":
