@@ -35,7 +35,8 @@
     t = t.replace(/\*\*([^*]+)\*\*/g, (_, c) => `<strong>${c}</strong>`);
     t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => {
       const safe = esc(url);
-      return `<a href="${safe}" target="_blank" rel="noopener">${txt}</a>`;
+      const attrs = /^https?:/.test(url) ? ' target="_blank" rel="noopener"' : "";
+      return `<a href="${safe}"${attrs}>${txt}</a>`;
     });
     t = t.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (m, pre, url) => {
       return `${pre}<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
@@ -170,12 +171,37 @@
     return CHIP_COLORS[h % CHIP_COLORS.length];
   }
 
+  const STATUS_MAP = {
+    "": ["Planned", "gray"],
+    planned: ["Planned", "gray"],
+    todo: ["Planned", "gray"],
+    "to do": ["Planned", "gray"],
+    backlog: ["Planned", "gray"],
+    "in progress": ["In progress", "amber"],
+    "in-progress": ["In progress", "amber"],
+    wip: ["In progress", "amber"],
+    running: ["In progress", "amber"],
+    active: ["In progress", "amber"],
+    done: ["Done", "green"],
+    complete: ["Done", "green"],
+    completed: ["Done", "green"],
+    blocked: ["Blocked", "red"],
+    failed: ["Failed", "red"],
+    abandoned: ["Abandoned", "gray"],
+  };
+
+  function statusBadge(val) {
+    const [label, tone] = STATUS_MAP[val.toLowerCase()] || [val || "—", "gray"];
+    return `<span class="badge ${tone}">${esc(label)}</span>`;
+  }
+
   function renderTable(rows, container) {
     if (rows.length < 2) return;
     const header = rows[0];
     const body = rows.slice(2);
     const roles = header.map((h) => {
       const t = h.toLowerCase();
+      if (t.includes("status") || t.includes("state")) return "status";
       if (t.includes("progress") || t.includes("complete") || t.includes("done"))
         return "check";
       if (t === "who" || t.includes("assign") || t.includes("owner")) return "who";
@@ -210,7 +236,10 @@
       header.forEach((_, c) => {
         const td = document.createElement("td");
         const val = (cells[c] || "").trim();
-        if (roles[c] === "check") {
+        if (roles[c] === "status") {
+          td.className = "col-status";
+          td.innerHTML = statusBadge(val);
+        } else if (roles[c] === "check") {
           td.className = "col-check";
           const on = TRUTHY.indexOf(val.toLowerCase()) !== -1;
           td.innerHTML = `<span class="box ${on ? "on" : ""}">${on ? "✓" : ""}</span>`;
@@ -226,6 +255,13 @@
         }
         tr.appendChild(td);
       });
+      const link = tr.querySelector('a[href^="#/"]');
+      if (link) {
+        tr.classList.add("linked-row");
+        tr.addEventListener("click", (e) => {
+          if (e.target.tagName !== "A") location.hash = link.getAttribute("href");
+        });
+      }
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -458,22 +494,6 @@
       }
     }
     renderMarkdown(PAGE_CACHE[node.file], page);
-
-    if ((node.children || []).length) {
-      const wrap = document.createElement("div");
-      wrap.className = "subpages";
-      const h = document.createElement("h2");
-      h.textContent = "Subpages";
-      wrap.appendChild(h);
-      node.children.forEach((c) => {
-        const a = document.createElement("a");
-        a.className = "subpage-card";
-        a.href = "#/" + c.slug;
-        a.innerHTML = `<span class="arrow">→</span>${esc(c.title)}`;
-        wrap.appendChild(a);
-      });
-      page.appendChild(wrap);
-    }
     highlight(node.slug);
     document.getElementById("content").scrollTo(0, 0);
     window.scrollTo(0, 0);
@@ -487,7 +507,6 @@
   async function init() {
     MANIFEST = await (await fetch("./logbook.json")).json();
     document.title = MANIFEST.title + " · Trackio Logbook";
-    document.getElementById("book-emoji").textContent = MANIFEST.emoji || "🧪";
     document.getElementById("book-title").textContent = MANIFEST.title;
     buildTree();
     window.addEventListener("hashchange", route);

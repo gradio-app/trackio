@@ -66,9 +66,11 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-#book-emoji {
-  font-size: 26px;
-  line-height: 1;
+#book-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 #book-title {
@@ -114,26 +116,6 @@ body {
   padding-left: 46px;
 }
 
-#sidebar-foot {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding-top: 14px;
-  margin-top: 14px;
-  font-size: 12.5px;
-}
-
-#raw-link {
-  color: #fdba74;
-  text-decoration: none;
-  font-family: var(--mono);
-}
-
-.powered {
-  color: #8a8b93;
-  margin-top: 10px;
-}
-.powered a {
-  color: #8a8b93;
-}
 
 /* ---- content ---- */
 #content {
@@ -428,35 +410,48 @@ table.board tr.section-row td {
   font-weight: 500;
 }
 
-.subpages {
-  margin-top: 42px;
-  border-top: 1px solid var(--line);
-  padding-top: 20px;
+/* ---- status badges + clickable rows ---- */
+table.board .col-status {
+  width: 130px;
+  white-space: nowrap;
 }
-.subpages h2 {
-  font-family: var(--sans) !important;
-  font-size: 13px !important;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.badge {
+  display: inline-block;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.badge.gray {
+  background: var(--code-bg);
   color: var(--muted);
-  margin: 0 0 12px !important;
 }
-.subpage-card {
-  display: block;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  margin: 8px 0;
-  text-decoration: none;
+.badge.amber {
+  background: var(--accent-soft);
+  color: #b45309;
+}
+.badge.green {
+  background: #e6f7ee;
+  color: #1a8a55;
+}
+.badge.red {
+  background: #fde8ec;
+  color: #c62a4b;
+}
+table.board tr.linked-row {
+  cursor: pointer;
+}
+table.board tr.linked-row:hover td {
+  background: var(--accent-soft);
+}
+table.board tr.linked-row a {
   color: var(--ink);
-  transition: border-color 0.14s;
+  font-weight: 600;
+  text-decoration: none;
 }
-.subpage-card:hover {
-  border-color: var(--accent);
-}
-.subpage-card .arrow {
-  color: var(--accent);
-  float: right;
+table.board tr.linked-row:hover a {
+  color: var(--accent-strong);
 }
 
 @media (max-width: 720px) {

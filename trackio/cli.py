@@ -963,34 +963,24 @@ def main():
         "--artifact", action="append", default=[], help="Trackio artifact name:vN"
     )
 
-    lb_page = logbook_sub.add_parser("page", help="Create a (sub)page")
+    lb_page = logbook_sub.add_parser(
+        "page", help="Create a page (returns a slug to link from the index)"
+    )
     lb_page.add_argument("title", help="Page title")
     lb_page.add_argument("--parent", default="index", help="Parent page slug")
-    lb_page.add_argument("--slug", help="Explicit slug")
-
-    lb_task = logbook_sub.add_parser("task", help="Add a task row to the tracker")
-    lb_task.add_argument("task", help="Task description")
-    lb_task.add_argument("--who", default="to assign", help="Assignee")
-    lb_task.add_argument("--section", default="Backlog", help="Section (e.g. 'Week 1')")
-    lb_task.add_argument("--page", default="index", help="Page holding the tracker")
-    lb_task.add_argument("--wip", action="store_true", help="Mark in progress")
-    lb_task.add_argument("--done", action="store_true", help="Mark completed")
-    lb_task.add_argument("--notes", default="", help="Notes cell")
-
-    logbook_sub.add_parser("status", help="Show this directory's logbook")
 
     lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
     lb_serve.add_argument("--port", type=int, default=7861)
     lb_serve.add_argument("--no-browser", action="store_true")
 
-    lb_pub = logbook_sub.add_parser("publish", help="Publish to a static HF Space")
+    lb_pub = logbook_sub.add_parser(
+        "publish", help="Publish to a static HF Space (first publish enables auto-sync)"
+    )
     lb_pub.add_argument("space_id", nargs="?", help="HF Space id (username/space)")
 
-    lb_close = logbook_sub.add_parser(
-        "close", help="Publish the logbook (alias for publish)"
+    logbook_sub.add_parser(
+        "sync", help="Push local edits to the Space now (after the first publish)"
     )
-    lb_close.add_argument("space_id", nargs="?", help="HF Space id to publish to")
-    lb_close.add_argument("--no-publish", action="store_true")
 
     logbook_sub.add_parser("_sync", help=argparse.SUPPRESS)
 
@@ -1594,7 +1584,6 @@ def _handle_logbook(args):
                     metadata["space_id"] = args.space_id
                     lb.write_metadata(proj, metadata)
                 print(f"Attached to existing logbook at {lb.logbook_root(proj)}")
-                print(lb.status_text(proj))
                 return
             proj = lb.create_logbook(
                 args.title or "Untitled Experiment", space_id=args.space_id
@@ -1617,38 +1606,24 @@ def _handle_logbook(args):
             lb.trigger_autosync(proj)
         elif action == "page":
             proj = lb.require_project_dir()
-            page_slug = lb.add_page(
-                proj, args.title, parent_slug=args.parent, slug=args.slug
+            page_slug = lb.add_page(proj, args.title, parent_slug=args.parent)
+            print(
+                f"Created page '{page_slug}'. Link it from a page with "
+                f"[{args.title}](#/{page_slug})"
             )
-            print(f"Created page '{page_slug}' under '{args.parent}'.")
-            lb.trigger_autosync(proj)
-        elif action == "task":
-            proj = lb.require_project_dir()
-            lb.add_task(
-                proj,
-                args.task,
-                who=args.who,
-                section=args.section,
-                in_progress=args.wip,
-                completed=args.done,
-                notes=args.notes,
-                page_slug=args.page,
-            )
-            print(f"Added task to '{args.section}'.{_sync_suffix(lb, proj)}")
             lb.trigger_autosync(proj)
         elif action == "_sync":
             lb.sync_worker()
-        elif action == "status":
-            print(lb.status_text(lb.require_project_dir()))
         elif action == "serve":
             lb.serve(port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
             print(f"Published: {lb.publish(space_id=args.space_id)}")
-        elif action == "close":
-            if args.no_publish:
-                print("Closed without publishing.")
-            else:
-                print(f"Published: {lb.publish(space_id=args.space_id)}")
+        elif action == "sync":
+            proj = lb.require_project_dir()
+            if not lb.is_autosync(proj):
+                error_exit("Publish first: trackio logbook publish <username/space>")
+            lb.trigger_autosync(proj)
+            print(f"Syncing to {lb.read_metadata(proj).get('space_id')}…")
     except lb.LogbookError as e:
         error_exit(str(e))
 
