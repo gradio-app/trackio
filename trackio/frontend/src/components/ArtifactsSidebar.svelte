@@ -1,11 +1,20 @@
 <script>
   import { tick } from "svelte";
-  import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
+  import ProjectSelector from "./ProjectSelector.svelte";
+  import Logo from "./Logo.svelte";
   import { listArtifacts } from "../lib/api.js";
   import { getQueryParam, setQueryParam } from "../lib/router.js";
 
-  let { project = null } = $props();
+  let {
+    project = $bindable(null),
+    projects = [],
+    projectLocked = false,
+    logoUrls = undefined,
+    darkMode = false,
+    selection = $bindable(null),
+    // eslint-disable-next-line no-useless-assignment -- write-only bindable output
+    empty = $bindable(false),
+  } = $props();
 
   let artifacts = $state([]);
   let loading = $state(false);
@@ -13,7 +22,6 @@
   let search = $state("");
   let expandedTypes = $state({});
   let expandedArtifacts = $state({});
-  let selected = $state(null);
 
   function verKey(name, version) {
     return `${name}@v${version}`;
@@ -40,8 +48,9 @@
 
   let searching = $derived(search.trim().length > 0);
 
+  // Type groups are expanded by default; only an explicit collapse hides them.
   function typeOpen(type) {
-    return searching || !!expandedTypes[type];
+    return searching || expandedTypes[type] !== false;
   }
 
   function artifactOpen(name) {
@@ -50,7 +59,7 @@
 
   function toggleType(type) {
     if (searching) return;
-    expandedTypes[type] = !expandedTypes[type];
+    expandedTypes[type] = !typeOpen(type);
   }
 
   function toggleArtifact(name) {
@@ -59,7 +68,7 @@
   }
 
   function selectVersion(artifact, version) {
-    selected = {
+    selection = {
       name: artifact.name,
       version: version.version,
       type: artifact.type,
@@ -69,9 +78,7 @@
   }
 
   function isSelected(name, version) {
-    return (
-      selected && selected.name === name && selected.version === version
-    );
+    return selection && selection.name === name && selection.version === version;
   }
 
   async function applyInitialSelection() {
@@ -88,7 +95,6 @@
     }
     if (!version) version = artifact.versions[0];
 
-    expandedTypes[artifact.type] = true;
     expandedArtifacts[artifact.name] = true;
     selectVersion(artifact, version);
 
@@ -101,7 +107,8 @@
   async function loadArtifacts() {
     expandedTypes = {};
     expandedArtifacts = {};
-    selected = null;
+    selection = null;
+    empty = false;
     error = false;
     if (!project) {
       artifacts = [];
@@ -116,6 +123,7 @@
     } finally {
       loading = false;
     }
+    empty = !error && artifacts.length === 0;
     if (!error && artifacts.length) {
       await applyInitialSelection();
     }
@@ -140,178 +148,115 @@
   >
 {/snippet}
 
-<div class="artifacts-page">
-  {#if loading}
-    <LoadingTrackio />
-  {:else if error}
-    <div class="empty-state">
-      <h2>Couldn't load artifacts</h2>
-      <p>
-        Something went wrong fetching artifacts for this project. Try reloading
-        the page.
-      </p>
-    </div>
-  {:else if artifacts.length === 0}
-    <div class="empty-state">
-      <h2>No artifacts in this project</h2>
-      <p>
-        Artifacts are versioned, content-addressed files (models, datasets, …)
-        logged from a run. After <code>trackio.init()</code>, log one with
-        <code>trackio.log_artifact()</code>:
-      </p>
-      <pre><code
-          >{'import trackio\n\ntrackio.init(project="my-project")\ntrackio.log_artifact("model.pt", name="my-model", type="model")'}</code
-        ></pre>
-      <p>
-        You can also build a multi-file artifact with
-        <code>add_file()</code>/<code>add_dir()</code>. Logged artifacts list
-        here, grouped by type, with their versions and files.
-      </p>
-    </div>
-  {:else}
-    <div class="artifacts-layout">
-      <aside class="tree-pane">
-        <div class="tree-search">
-          <svg
-            class="search-icon"
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-          >
-            <circle
-              cx="7"
-              cy="7"
-              r="5"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M11 11l3 3"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search artifacts…"
-            bind:value={search}
+<aside class="artifacts-sidebar">
+  <div class="tree-header">
+    <Logo {logoUrls} {darkMode} />
+    <ProjectSelector {projects} bind:selectedProject={project} {projectLocked} />
+    <div class="tree-search">
+      <span class="search-label">Artifacts</span>
+      <div class="search-box">
+        <svg
+          class="search-icon"
+          width="14"
+          height="14"
+          viewBox="0 0 16 16"
+          fill="none"
+        >
+          <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5" />
+          <path
+            d="M11 11l3 3"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
           />
-          {#if search}
-            <button
-              class="clear-search"
-              onclick={() => (search = "")}
-              title="Clear search">×</button
-            >
-          {/if}
-        </div>
-
-        <div class="tree">
-          {#if filteredGroups.length === 0}
-            <div class="tree-empty">No artifacts match “{search}”.</div>
-          {/if}
-          {#each filteredGroups as group}
-            <div class="tree-type">
-              <button
-                class="tree-row type-row"
-                onclick={() => toggleType(group.type)}
-              >
-                <span class="chevron" class:open={typeOpen(group.type)}
-                  >{@render chevronIcon()}</span
-                >
-                <span class="type-label">{group.type}</span>
-                <span class="spacer"></span>
-                <span class="node-count">{group.artifacts.length}</span>
-              </button>
-
-              {#if typeOpen(group.type)}
-                {#each group.artifacts as artifact}
-                  <div class="tree-artifact">
-                    <button
-                      class="tree-row artifact-row"
-                      onclick={() => toggleArtifact(artifact.name)}
-                    >
-                      {@render treeGuides(1)}
-                      <span
-                        class="chevron"
-                        class:open={artifactOpen(artifact.name)}
-                        >{@render chevronIcon()}</span
-                      >
-                      <span class="artifact-label" title={artifact.name}
-                        >{artifact.name}</span
-                      >
-                      <span class="spacer"></span>
-                      <span class="node-count">{artifact.num_versions}</span>
-                    </button>
-
-                    {#if artifactOpen(artifact.name)}
-                      {#each artifact.versions as version}
-                        <button
-                          id={"tree-" + verKey(artifact.name, version.version)}
-                          class="tree-row version-row"
-                          class:selected={isSelected(
-                            artifact.name,
-                            version.version,
-                          )}
-                          onclick={() => selectVersion(artifact, version)}
-                        >
-                          {@render treeGuides(2)}
-                          <span class="tree-chevron-spacer"></span>
-                          <span class="version-label">v{version.version}</span>
-                          {#each version.aliases as alias}
-                            <span
-                              class="alias-pill"
-                              class:latest={alias === "latest"}>{alias}</span
-                            >
-                          {/each}
-                        </button>
-                      {/each}
-                    {/if}
-                  </div>
-                {/each}
-              {/if}
-            </div>
-          {/each}
-        </div>
-      </aside>
-
-      <section class="detail-pane">
-        {#if selected}
-          {#key verKey(selected.name, selected.version)}
-            <ArtifactVersionDetail
-              variant="panel"
-              {project}
-              name={selected.name}
-              version={selected.version}
-            />
-          {/key}
-        {:else}
-          <div class="detail-empty">
-            Select an artifact version to view its details.
-          </div>
+        </svg>
+        <input type="text" placeholder="Search artifacts…" bind:value={search} />
+        {#if search}
+          <button
+            class="clear-search"
+            onclick={() => (search = "")}
+            title="Clear search">×</button
+          >
         {/if}
-      </section>
+      </div>
     </div>
-  {/if}
-</div>
+  </div>
+
+  <div class="tree">
+    {#if loading}
+      <div class="tree-empty">Loading…</div>
+    {:else if error}
+      <div class="tree-empty">Couldn't load artifacts.</div>
+    {:else if artifacts.length === 0}
+      <div class="tree-empty">No artifacts in this project.</div>
+    {:else if filteredGroups.length === 0}
+      <div class="tree-empty">No artifacts match “{search}”.</div>
+    {:else}
+      {#each filteredGroups as group}
+        <div class="tree-type">
+          <button
+            class="tree-row type-row"
+            onclick={() => toggleType(group.type)}
+          >
+            <span class="chevron" class:open={typeOpen(group.type)}
+              >{@render chevronIcon()}</span
+            >
+            <span class="type-label">{group.type}</span>
+            <span class="spacer"></span>
+            <span class="node-count">{group.artifacts.length}</span>
+          </button>
+
+          {#if typeOpen(group.type)}
+            {#each group.artifacts as artifact}
+              <div class="tree-artifact">
+                <button
+                  class="tree-row artifact-row"
+                  onclick={() => toggleArtifact(artifact.name)}
+                >
+                  {@render treeGuides(1)}
+                  <span class="chevron" class:open={artifactOpen(artifact.name)}
+                    >{@render chevronIcon()}</span
+                  >
+                  <span class="artifact-label" title={artifact.name}
+                    >{artifact.name}</span
+                  >
+                  <span class="spacer"></span>
+                  <span class="node-count">{artifact.num_versions}</span>
+                </button>
+
+                {#if artifactOpen(artifact.name)}
+                  {#each artifact.versions as version}
+                    <button
+                      id={"tree-" + verKey(artifact.name, version.version)}
+                      class="tree-row version-row"
+                      class:selected={isSelected(
+                        artifact.name,
+                        version.version,
+                      )}
+                      onclick={() => selectVersion(artifact, version)}
+                    >
+                      {@render treeGuides(2)}
+                      <span class="tree-chevron-spacer"></span>
+                      <span class="version-label">v{version.version}</span>
+                      {#each version.aliases as alias}
+                        <span class="alias-pill" class:latest={alias === "latest"}
+                          >{alias}</span
+                        >
+                      {/each}
+                    </button>
+                  {/each}
+                {/if}
+              </div>
+            {/each}
+          {/if}
+        </div>
+      {/each}
+    {/if}
+  </div>
+</aside>
 
 <style>
-  .artifacts-page {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    overflow: hidden;
-  }
-
-  .artifacts-layout {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    overflow: hidden;
-  }
-
-  .tree-pane {
+  .artifacts-sidebar {
     width: 300px;
     flex-shrink: 0;
     display: flex;
@@ -321,21 +266,33 @@
     overflow: hidden;
   }
 
+  .tree-header {
+    padding: 16px 16px 10px;
+    flex-shrink: 0;
+  }
+
   .tree-search {
+    margin-top: 14px;
+  }
+  .search-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--body-text-color-subdued, #6b7280);
+    margin-bottom: 6px;
+  }
+  .search-box {
     position: relative;
     display: flex;
     align-items: center;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
-    flex-shrink: 0;
   }
   .search-icon {
     position: absolute;
-    left: 22px;
+    left: 10px;
     color: var(--body-text-color-subdued, #9ca3af);
     pointer-events: none;
   }
-  .tree-search input {
+  .search-box input {
     width: 100%;
     padding: 6px 26px 6px 30px;
     border: 1px solid var(--border-color-primary, #e5e7eb);
@@ -345,12 +302,12 @@
     font-size: var(--text-sm, 13px);
     outline: none;
   }
-  .tree-search input:focus {
+  .search-box input:focus {
     border-color: var(--color-accent, #f97316);
   }
   .clear-search {
     position: absolute;
-    right: 20px;
+    right: 8px;
     border: none;
     background: none;
     color: var(--body-text-color-subdued, #9ca3af);
@@ -493,51 +450,5 @@
     color: var(--color-accent, #f97316);
     border-color: var(--color-accent, #f97316);
     background: transparent;
-  }
-
-  .detail-pane {
-    flex: 1;
-    min-width: 0;
-    overflow-y: auto;
-    padding: 20px 28px;
-  }
-  .detail-empty {
-    color: var(--body-text-color-subdued, #6b7280);
-    font-size: var(--text-sm, 13px);
-    padding: 12px 0;
-  }
-
-  .empty-state {
-    max-width: 640px;
-    padding: 40px 24px;
-    overflow-y: auto;
-    color: var(--body-text-color, #1f2937);
-  }
-  .empty-state h2 {
-    margin: 0 0 8px;
-    font-size: 20px;
-    font-weight: 700;
-  }
-  .empty-state p {
-    margin: 12px 0 8px;
-    color: var(--body-text-color-subdued, #6b7280);
-  }
-  .empty-state pre {
-    background: var(--background-fill-secondary, #f9fafb);
-    padding: 16px;
-    border-radius: var(--radius-lg, 8px);
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    font-size: 13px;
-    overflow-x: auto;
-  }
-  .empty-state code {
-    background: var(--background-fill-secondary, #f0f0f0);
-    padding: 1px 5px;
-    border-radius: var(--radius-sm, 4px);
-    font-size: 13px;
-  }
-  .empty-state pre code {
-    background: none;
-    padding: 0;
   }
 </style>

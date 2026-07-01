@@ -11,7 +11,8 @@
   import Runs from "./pages/Runs.svelte";
   import RunDetail from "./pages/RunDetail.svelte";
   import Files from "./pages/Files.svelte";
-  import Artifacts from "./pages/Artifacts.svelte";
+  import ArtifactsSidebar from "./components/ArtifactsSidebar.svelte";
+  import ArtifactsDetail from "./pages/ArtifactsDetail.svelte";
   import {
     getAllProjects,
     getRunsForProject,
@@ -124,6 +125,8 @@
   ];
   let runConfigs = $state({});
   let runConfigsProject = $state(null);
+  let artifactSelection = $state(null);
+  let artifactsEmpty = $state(false);
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -520,16 +523,11 @@
       currentPage === "reports" ||
       currentPage === "runs" ||
       currentPage === "run-detail" ||
-      currentPage === "files" ||
-      currentPage === "artifacts"
+      currentPage === "files"
   );
 
   let sidebarVariant = $derived(
-    currentPage === "runs" ||
-      currentPage === "files" ||
-      currentPage === "artifacts"
-      ? "compact"
-      : "full"
+    currentPage === "runs" || currentPage === "files" ? "compact" : "full"
   );
 </script>
 
@@ -563,6 +561,18 @@
       {spaceId}
       {logoUrls}
       {darkMode}
+    />
+  {/if}
+
+  {#if currentPage === "artifacts"}
+    <ArtifactsSidebar
+      {projects}
+      bind:project={selectedProject}
+      projectLocked={projectLocked}
+      {logoUrls}
+      {darkMode}
+      bind:selection={artifactSelection}
+      bind:empty={artifactsEmpty}
     />
   {/if}
 
@@ -631,7 +641,11 @@
       {:else if currentPage === "files"}
         <Files project={selectedProject} />
       {:else if currentPage === "artifacts"}
-        <Artifacts project={selectedProject} />
+        <ArtifactsDetail
+          project={selectedProject}
+          selection={artifactSelection}
+          empty={artifactsEmpty}
+        />
       {:else if currentPage === "settings"}
         <Settings {spaceId} selectedProject={selectedProject} {projects} />
       {/if}
