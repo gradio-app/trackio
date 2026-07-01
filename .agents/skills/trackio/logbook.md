@@ -36,9 +36,10 @@ For a **sub-experiment**, create it with `--parent lr-sweep` and link `[its titl
 An experiment **concluded** with a result; a **decision** + rationale; a **surprise / dead end**; a **baseline** worth anchoring to. Not routine commands or scratch.
 
 - `--title`: a short, result-bearing headline ("96.4% valid — target met").
-- Body: 1–3 sentences with the number and what it means.
-- `--link URL`: models/datasets/Spaces/dashboards/arXiv/GitHub/images — each unfurls into a card. One per `--link`.
+- Body: 1–3 sentences with the number and what it means. **Tabular results** (baselines, sweeps, ablations) → write a **Markdown table** in the body, not prose — it renders as a real table.
+- `--link URL`: models/datasets/Spaces/dashboards/arXiv/GitHub/images — each unfurls into a card. Pass each as a **separate `--link` flag**, never inside the body text. A URL only unfurls when it's on its own line.
 - `--artifact project/name:vN`: reference a tracked Trackio artifact.
+- It's just Markdown you can also edit by hand — if something renders wrong, `serve` to preview and fix the file directly.
 
 ## Publishing & privacy
 

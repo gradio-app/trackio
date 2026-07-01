@@ -274,17 +274,22 @@ def add_note(
     page_path = _page_file_for_slug(proj, page_slug)
     if page_path is None:
         raise LogbookError(f"No page with slug '{page_slug}' in this logbook.")
+    links = list(links or [])
+    artifacts = list(artifacts or [])
+    links += re.findall(r"--link[=\s]+(\S+)", body)
+    artifacts += re.findall(r"--artifact[=\s]+(\S+)", body)
+    body = re.sub(r"--(?:link|artifact)[=\s]+\S+", "", body).strip()
     now = _now_iso()
     lines = ["", "---", ""]
     lines.append(f"### {title.strip() if title else 'Note'}")
     lines.append(f"<!-- entry ts={now} -->")
     lines.append(f"`{_human_time(now)}`")
     lines.append("")
-    lines.append(body.strip())
+    lines.append(body)
     lines.append("")
-    for art in artifacts or []:
+    for art in artifacts:
         lines.append(f"- {_resolve_artifact(art)}")
-    for url in links or []:
+    for url in links:
         lines.append(f"- {url.strip()}")
     if artifacts or links:
         lines.append("")

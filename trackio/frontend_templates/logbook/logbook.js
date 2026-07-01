@@ -56,6 +56,10 @@
       const joined = para.join(" ").trim();
       para = [];
       if (!joined) return;
+      if (URL_ONLY.test(joined) || IMG_PATH.test(joined)) {
+        container.appendChild(unfurl(joined));
+        return;
+      }
       const p = document.createElement("p");
       p.innerHTML = inline(joined);
       container.appendChild(p);
