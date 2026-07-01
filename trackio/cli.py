@@ -992,6 +992,8 @@ def main():
     lb_close.add_argument("space_id", nargs="?", help="HF Space id to publish to")
     lb_close.add_argument("--no-publish", action="store_true")
 
+    logbook_sub.add_parser("_sync", help=argparse.SUPPRESS)
+
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
         trailing_global_parser = argparse.ArgumentParser(add_help=False)
@@ -1572,6 +1574,13 @@ def main():
         parser.print_help()
 
 
+def _sync_suffix(lb, proj):
+    if lb.is_autosync(proj):
+        space = lb.read_metadata(proj).get("space_id")
+        return f" · syncing to {space}…"
+    return ""
+
+
 def _handle_logbook(args):
     from trackio import logbook as lb
 
@@ -1604,13 +1613,15 @@ def _handle_logbook(args):
                 links=args.link,
                 artifacts=args.artifact,
             )
-            print(f"Logged (page: {args.page}).")
+            print(f"Logged (page: {args.page}).{_sync_suffix(lb, proj)}")
+            lb.trigger_autosync(proj)
         elif action == "page":
             proj = lb.require_project_dir()
             page_slug = lb.add_page(
                 proj, args.title, parent_slug=args.parent, slug=args.slug
             )
             print(f"Created page '{page_slug}' under '{args.parent}'.")
+            lb.trigger_autosync(proj)
         elif action == "task":
             proj = lb.require_project_dir()
             lb.add_task(
@@ -1623,7 +1634,10 @@ def _handle_logbook(args):
                 notes=args.notes,
                 page_slug=args.page,
             )
-            print(f"Added task to '{args.section}'.")
+            print(f"Added task to '{args.section}'.{_sync_suffix(lb, proj)}")
+            lb.trigger_autosync(proj)
+        elif action == "_sync":
+            lb.sync_worker()
         elif action == "status":
             print(lb.status_text(lb.require_project_dir()))
         elif action == "serve":

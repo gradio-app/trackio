@@ -47,6 +47,6 @@ trackio logbook note "lr=3e-4 wins; 1e-3 diverges." --title "LR sweep" --page lr
 ## Notes
 
 - The logbook is **directory-local**: stored in `./.trackio/logbook/` (found by walking up from the cwd, like `.git`). A new coding session in the same directory picks it up automatically — no IDs to remember. The remote Space it publishes to is recorded in `./.trackio/metadata.json`, so `trackio logbook publish` needs no argument after the first time.
-- Everything is **local until `publish`** — nothing leaves the machine, so drafts are safe. Scan a note for secrets/paths before it goes into a published logbook.
+- Everything is **local until the first `publish`** — nothing leaves the machine, so drafts are safe. Scan a note for secrets/paths before that first publish. **After** the first publish, `note`/`task`/`page` **auto-sync** to the Space in the background (debounced) — no more manual publishing. Static Spaces are public, so only publish when the content is shareable.
 - Static Spaces are public; do not publish private data.
 - The raw markdown (`logbook.md`) is the agent-facing view — terse text + URLs. Fetch that, not the HTML, when reading someone else's logbook.

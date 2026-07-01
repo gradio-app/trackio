@@ -1,17 +1,17 @@
 ---
-description: Start (or attach to) a Trackio experiment logbook for this session
-argument-hint: "[username/space] [--title \"...\"]"
+description: Start a Trackio experiment logbook for this session
+argument-hint: "[username/space]"
 ---
 
-Start a Trackio logbook so this experiment session is captured as a shareable, Hub-native lab notebook.
+Start a Trackio logbook — a shareable, Hub-native lab notebook for this session. The one optional argument is the HF Space to publish to.
 
-Run:
+Run (infer a short, descriptive `--title` from the project/session):
 
-`trackio logbook open $ARGUMENTS`
+`trackio logbook open $ARGUMENTS --title "<title>"`
 
 Then:
 
-- Confirm the active logbook back to the user (title + slug, and the target Space if one was given).
-- For the rest of the session, follow the **trackio logbook** skill: append a `trackio logbook note "..."` whenever an experiment concludes, a decision is made, or a result/surprise lands — linking models, datasets, dashboards, and artifacts with `--link` / `--artifact`. Keep a high signal bar; do not log routine steps.
-- Organize longer campaigns into subpages with `trackio logbook page "..."`.
-- Preview anytime with `trackio logbook serve`. When the user is done, `trackio logbook publish <username/space>` deploys it to a static Space (nothing is published until then).
+- If the user passed a Space id, run `trackio logbook publish` once so it goes live. After that first publish, every `note` / `task` / `page` auto-syncs to the Space in the background — no more manual publishing.
+- Confirm back to the user: the title, the local `./.trackio/logbook/` path, and the Space URL if publishing.
+- For the rest of the session, follow the **trackio logbook** skill: append `trackio logbook note "..."` whenever an experiment concludes, a decision is made, or a result/surprise lands — linking models, datasets, dashboards, and artifacts with `--link` / `--artifact`. Keep a high signal bar; don't log routine steps.
+- Organize longer campaigns into subpages with `trackio logbook page "..."`. Preview anytime with `trackio logbook serve`.

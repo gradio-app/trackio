@@ -154,6 +154,9 @@ def create_logbook(
     )
     write_manifest(proj, manifest)
     write_metadata(proj, {"space_id": space_id, "created_at": now})
+    (proj / ".gitignore").write_text(
+        ".site/\n.sync_lock\n.sync_pending\n.sync.log\n", encoding="utf-8"
+    )
     return proj
 
 
@@ -397,21 +400,13 @@ def serve(port: int = 7861, open_browser: bool = True) -> None:
             print("\nStopped.")
 
 
-def publish(space_id: str | None = None, hf_token: str | None = None) -> str:
+def _push(proj: Path, hf_token: str | None = None) -> str:
     import tempfile
 
     import huggingface_hub
 
-    proj = require_project_dir()
     metadata = read_metadata(proj)
-    space_id = space_id or metadata.get("space_id")
-    if not space_id:
-        raise LogbookError(
-            "No Space id. Provide one: trackio logbook publish <username/space>"
-        )
-    metadata["space_id"] = space_id
-    write_metadata(proj, metadata)
-
+    space_id = metadata["space_id"]
     api = huggingface_hub.HfApi(token=hf_token)
     huggingface_hub.create_repo(
         space_id,
@@ -427,6 +422,73 @@ def publish(space_id: str | None = None, hf_token: str | None = None) -> str:
             repo_id=space_id,
             repo_type="space",
             folder_path=tmp,
-            commit_message=f"Publish logbook: {manifest['title']}",
+            commit_message=f"Update logbook: {manifest['title']}",
         )
     return f"https://huggingface.co/spaces/{space_id}"
+
+
+def publish(space_id: str | None = None, hf_token: str | None = None) -> str:
+    proj = require_project_dir()
+    metadata = read_metadata(proj)
+    space_id = space_id or metadata.get("space_id")
+    if not space_id:
+        raise LogbookError(
+            "No Space id. Provide one: trackio logbook publish <username/space>"
+        )
+    metadata["space_id"] = space_id
+    metadata["autosync"] = True
+    write_metadata(proj, metadata)
+    return _push(proj, hf_token=hf_token)
+
+
+def is_autosync(proj: Path) -> bool:
+    metadata = read_metadata(proj)
+    return bool(metadata.get("autosync") and metadata.get("space_id"))
+
+
+def trigger_autosync(proj: Path) -> None:
+    import subprocess
+    import sys
+
+    if not is_autosync(proj):
+        return
+    (proj / ".sync_pending").write_text("1", encoding="utf-8")
+    try:
+        log = open(proj / ".sync.log", "a", encoding="utf-8")
+        subprocess.Popen(
+            [sys.executable, "-m", "trackio.cli", "logbook", "_sync"],
+            cwd=str(proj.parent),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except Exception:
+        pass
+
+
+def sync_worker(debounce: float = 2.5) -> None:
+    import fcntl
+    import time
+
+    proj = find_project_dir()
+    if proj is None:
+        return
+    lock = open(proj / ".sync_lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return
+    try:
+        pending = proj / ".sync_pending"
+        while pending.exists():
+            pending.unlink()
+            time.sleep(debounce)
+            try:
+                _push(proj)
+            except Exception:
+                pass
+    finally:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+        finally:
+            lock.close()
