@@ -1600,7 +1600,6 @@ def _handle_logbook(args):
             print(f"Opened logbook at {lb.logbook_root(proj)}")
             if args.space_id:
                 print(f"Will publish to: {args.space_id}")
-            print('Log findings with: trackio logbook note "..." --experiment "..."')
         elif action == "note":
             proj = lb.require_project_dir()
             if args.experiment:
