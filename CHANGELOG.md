@@ -1,5 +1,11 @@
 # trackio
 
+## 0.30.0
+
+### Features
+
+- [#586](https://github.com/gradio-app/trackio/pull/586) [`7db4c3b`](https://github.com/gradio-app/trackio/commit/7db4c3b6de6ff4903daf7dabed8842f212c8b7fd) - artifact tracking API — `log_artifact`, `use_artifact`, and an `Artifact` class for versioned, named file collections with aliases, content-addressed deduplication, and producer/consumer run lineage; works offline and syncs blobs to Hugging Face Spaces/Datasets.  Thanks @Saba9!
+
 ## 0.29.0
 
 ### Features
