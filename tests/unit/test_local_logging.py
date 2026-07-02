@@ -1,5 +1,8 @@
+import json
 import math
+import sys
 import time
+import types
 import warnings
 from unittest.mock import patch
 
@@ -206,3 +209,186 @@ def test_import_from_csv_without_numeric_metrics_raises(temp_dir, tmp_path):
             project="test_project_no_metrics",
             name="test_run",
         )
+
+
+class FakeWandbRun:
+    def __init__(self, run_id, name, rows, metric_definitions=None, config=None):
+        self.id = run_id
+        self.name = name
+        self.config = config or {}
+        self.json_config = json.dumps(
+            {"_wandb": {"value": {"m": metric_definitions or []}}}
+        )
+        self._rows = rows
+
+    def scan_history(self, page_size=None):
+        return iter(self._rows)
+
+
+def _fake_wandb(monkeypatch, runs):
+    class FakeApi:
+        def runs(self, path):
+            return list(runs)
+
+    monkeypatch.setitem(sys.modules, "wandb", types.SimpleNamespace(Api=FakeApi))
+
+
+def test_import_from_wandb(temp_dir, monkeypatch):
+    # eval/* metrics use eval_iter as their x-axis (wandb define_metric encoding:
+    # "1"=name, "2"=glob, "5"=1-based index of the step-metric record)
+    metric_definitions = [
+        {"1": "eval_iter", "6": [3]},
+        {"2": "eval/*", "5": 1, "6": [1]},
+    ]
+    rows = [
+        {"_step": 10, "_timestamp": 1700000000.0, "loss": 1.5},
+        # wandb merges same-step logs into one row: train metric at _step 20
+        # plus an eval logged at eval_iter 5
+        {
+            "_step": 20,
+            "_timestamp": 1700000060.0,
+            "loss": 1.2,
+            "eval/acc": 0.8,
+            "eval_iter": 5,
+        },
+    ]
+    run = FakeWandbRun(
+        "abc123", "my-run", rows, metric_definitions, config={"lr": 0.001}
+    )
+    _fake_wandb(monkeypatch, [run])
+
+    trackio.import_wandb("entity/proj", project="test_wandb_project")
+
+    results = SQLiteStorage.get_logs(project="test_wandb_project", run="my-run")
+    by_step = {r["step"]: r for r in results}
+    assert len(results) == 3
+    assert by_step[10]["loss"] == 1.5
+    assert by_step[20]["loss"] == 1.2
+    assert "eval/acc" not in by_step[20]
+    assert by_step[5]["eval/acc"] == 0.8
+    assert "loss" not in by_step[5]
+    assert "eval_iter" not in by_step[5]
+    config = SQLiteStorage.get_run_config("test_wandb_project", "my-run")
+    assert config["lr"] == 0.001
+
+    with pytest.raises(ValueError, match="already exists"):
+        trackio.import_wandb("entity/proj", project="test_wandb_project")
+
+
+def test_import_from_wandb_step_metrics_override(temp_dir, monkeypatch):
+    # no stored metric definitions: the caller supplies the mapping instead
+    rows = [
+        {"_step": 20, "_timestamp": 1700000060.0, "loss": 1.2},
+        {"_step": 21, "_timestamp": 1700000120.0, "eval/acc": 0.8, "eval_iter": 5},
+    ]
+    run = FakeWandbRun("def456", "my-run", rows)
+    _fake_wandb(monkeypatch, [run])
+
+    trackio.import_wandb(
+        "entity/proj",
+        project="test_wandb_override",
+        step_metrics={"eval/*": "eval_iter"},
+    )
+
+    results = SQLiteStorage.get_logs(project="test_wandb_override", run="my-run")
+    by_step = {r["step"]: r for r in results}
+    assert by_step[20]["loss"] == 1.2
+    assert by_step[5]["eval/acc"] == 0.8
+
+
+def test_import_from_wandb_offline_run_encoding(temp_dir, tmp_path, monkeypatch):
+    """
+    End-to-end against the installed wandb client, to catch wandb updates changing
+    the metric-definition encoding that `import_wandb` decodes:
+
+    1. Assert the `MetricRecord` protobuf field numbers the decoder relies on.
+    2. Create a real offline run with `define_metric()`, read back the metric
+       records the client actually wrote to the run file, re-encode them the way
+       wandb stores them in the run config, and import through that.
+
+    The history transport is faked because offline runs are not queryable through
+    `wandb.Api` without a server; the client-written metric definitions are real.
+    """
+    wandb = pytest.importorskip("wandb")
+    from wandb.proto import wandb_internal_pb2
+
+    from trackio.imports import _wandb_step_metric_definitions
+
+    # 1. the decoder reads keys "1", "2", "4", "5" of the stored MetricRecord
+    fields = wandb_internal_pb2.MetricRecord.DESCRIPTOR.fields_by_name
+    assert fields["name"].number == 1
+    assert fields["glob_name"].number == 2
+    assert fields["step_metric"].number == 4
+    assert fields["step_metric_index"].number == 5
+
+    # 2. real offline run
+    source_run = wandb.init(
+        project="source-project",
+        name="offline-run",
+        dir=str(tmp_path),
+        mode="offline",
+    )
+    source_run.define_metric("eval_iter")
+    source_run.define_metric("eval/*", step_metric="eval_iter")
+    source_run.log({"loss": 1.5})
+    source_run.log({"loss": 1.2, "eval/acc": 0.8, "eval_iter": 5})
+    source_run.finish()
+
+    try:
+        from wandb.sdk.internal.datastore import DataStore
+    except ImportError:
+        pytest.skip(
+            "wandb moved its internal datastore reader; update this test to keep "
+            "covering the client-written metric definitions"
+        )
+
+    run_file = next((tmp_path / "wandb").glob("offline-run-*/run-*.wandb"))
+    datastore = DataStore()
+    datastore.open_for_scan(str(run_file))
+    metric_records = []
+    while True:
+        data = datastore.scan_data()
+        if data is None:
+            break
+        record = wandb_internal_pb2.Record()
+        record.ParseFromString(bytes(data))
+        if record.WhichOneof("record_type") == "metric":
+            metric_records.append(record.metric)
+    assert metric_records, "the wandb client wrote no metric records"
+
+    # re-encode the client-written records as they appear in a stored run config
+    # (a list of dicts keyed by stringified protobuf field number)
+    stored = [
+        {
+            str(field.number): value
+            for field, value in message.ListFields()
+            if isinstance(value, (str, int, float))
+        }
+        for message in metric_records
+    ]
+    json_config = json.dumps({"_wandb": {"value": {"m": stored}}})
+    assert _wandb_step_metric_definitions(json_config)["eval/*"] == "eval_iter"
+
+    rows = [
+        {"_step": 0, "_timestamp": 1700000000.0, "loss": 1.5},
+        {
+            "_step": 1,
+            "_timestamp": 1700000060.0,
+            "loss": 1.2,
+            "eval/acc": 0.8,
+            "eval_iter": 5,
+        },
+    ]
+    run = FakeWandbRun("off123", "offline-run", rows, config={"lr": 0.001})
+    run.json_config = json_config
+    _fake_wandb(monkeypatch, [run])
+
+    trackio.import_wandb("entity/proj", project="test_wandb_offline")
+
+    results = SQLiteStorage.get_logs(project="test_wandb_offline", run="offline-run")
+    by_step = {r["step"]: r for r in results}
+    assert len(results) == 3
+    assert by_step[0]["loss"] == 1.5
+    assert by_step[1]["loss"] == 1.2
+    assert by_step[5]["eval/acc"] == 0.8
+    assert "eval_iter" not in by_step[5]

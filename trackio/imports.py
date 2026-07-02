@@ -1,5 +1,8 @@
 import csv
+import fnmatch
+import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from trackio import deploy, utils
@@ -283,6 +286,229 @@ def import_tf_events(
         raise ValueError("No valid TensorFlow events data could be imported")
 
     print(f"* Total imported events: {total_imported}")
+    print(f"* Created runs: {', '.join(imported_runs)}")
+
+    space_id, dataset_id, _ = utils.preprocess_space_and_dataset_ids(
+        space_id, dataset_id
+    )
+    if dataset_id is not None:
+        os.environ["TRACKIO_DATASET_ID"] = dataset_id
+        print(f"* Trackio metrics will be synced to Hugging Face Dataset: {dataset_id}")
+
+    if space_id is None:
+        utils.print_dashboard_instructions(project)
+    else:
+        deploy.create_space_if_not_exists(
+            space_id, dataset_id=dataset_id, private=private
+        )
+        deploy.wait_until_space_exists(space_id)
+        deploy.upload_db_to_space(project, space_id, force=force)
+        print(
+            f"* View dashboard by going to: {deploy.SPACE_URL.format(space_id=space_id)}"
+        )
+
+
+def _wandb_step_metric_definitions(json_config: str) -> dict[str, str]:
+    """
+    Extracts `wandb.define_metric()` step-metric mappings from a wandb run config.
+
+    wandb stores metric definitions in the run config under `_wandb.value.m` as a
+    list of records keyed by `MetricRecord` protobuf field number: `"1"` is the
+    metric name, `"2"` is a metric glob, `"4"` is the step metric name, and `"5"`
+    is the 1-based index of the record that defines the metric's step metric (the
+    client writes the name, the server rewrites it to an index). Returns a mapping
+    of metric name/glob -> step metric name.
+    """
+    try:
+        records = (
+            json.loads(json_config).get("_wandb", {}).get("value", {}).get("m", [])
+        )
+    except (ValueError, TypeError, AttributeError):
+        return {}
+    if not isinstance(records, list):
+        return {}
+    mapping: dict[str, str] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        pattern = record.get("1") or record.get("2")
+        if not pattern:
+            continue
+        step_metric = record.get("4")
+        step_index = record.get("5")
+        if not step_metric and isinstance(step_index, int):
+            if 1 <= step_index <= len(records) and isinstance(
+                records[step_index - 1], dict
+            ):
+                step_metric = records[step_index - 1].get("1")
+        if step_metric:
+            mapping[str(pattern)] = str(step_metric)
+    return mapping
+
+
+def _resolve_step_metric(key: str, step_metrics: dict[str, str]) -> str | None:
+    """Resolves the step metric for a key: exact match first, then glob patterns."""
+    if key in step_metrics:
+        return step_metrics[key]
+    for pattern, step_metric in step_metrics.items():
+        if fnmatch.fnmatchcase(key, pattern):
+            return step_metric
+    return None
+
+
+def import_wandb(
+    wandb_project: str,
+    project: str,
+    run_ids: list[str] | None = None,
+    name: str | None = None,
+    step_metrics: dict[str, str] | None = None,
+    space_id: str | None = None,
+    dataset_id: str | None = None,
+    private: bool | None = None,
+    force: bool = False,
+) -> None:
+    """
+    Imports the runs of a Weights & Biases project into a Trackio project. Each wandb
+    run is imported as a separate run, with its full metric history and config.
+
+    Metrics logged with a custom step metric (`wandb.define_metric(..., step_metric=...)`)
+    are imported at the value of that step metric, so they keep the same x-axis as in
+    wandb. This matters because wandb merges everything logged at the same internal step
+    into one history row: without splitting, metrics on a custom axis would be imported
+    at the wrong step. Step-metric definitions are read from each run's stored config
+    and can be extended or overridden with the `step_metrics` argument; the step-metric
+    keys themselves are encoded as steps rather than imported as metrics.
+
+    Args:
+        wandb_project (`str`):
+            The wandb project to import, as `"entity/project"`.
+        project (`str`):
+            The name of the Trackio project to import the runs into. Must not be an
+            existing project.
+        run_ids (`list[str]`, *optional*):
+            If provided, only the wandb runs with these IDs are imported. By default,
+            all runs of the wandb project are imported.
+        name (`str`, *optional*):
+            A name prefix for the imported runs (if not provided, the wandb run names
+            are used as-is).
+        step_metrics (`dict[str, str]`, *optional*):
+            A mapping of metric name (or glob, e.g. `"eval/*"`) to the metric that
+            serves as its x-axis, e.g. `{"eval/*": "eval_iter"}`. Merged with (and
+            taking precedence over) the definitions stored in each run.
+        space_id (`str`, *optional*):
+            If provided, the project will be logged to a Hugging Face Space instead of a
+            local directory. Should be a complete Space name like `"username/reponame"`
+            or `"orgname/reponame"`, or just `"reponame"` in which case the Space will
+            be created in the currently-logged-in Hugging Face user's namespace. If the
+            Space does not exist, it will be created. If the Space already exists, the
+            project will be logged to it.
+        dataset_id (`str`, *optional*):
+            Deprecated. Use `bucket_id` instead.
+        private (`bool`, *optional*):
+            Whether to make the Space private. If None (default), the repo will be
+            public unless the organization's default is private. This value is ignored
+            if the repo already exists.
+    """
+    try:
+        import wandb
+    except ImportError:
+        raise ImportError(
+            "The `wandb` package is not installed but is required for `import_wandb`. Please install trackio with the `wandb` extra: `pip install trackio[wandb]`."
+        )
+
+    if SQLiteStorage.get_runs(project):
+        raise ValueError(
+            f"Project '{project}' already exists. Cannot import wandb runs into existing project."
+        )
+
+    api = wandb.Api()
+    runs = list(api.runs(wandb_project))
+    if run_ids is not None:
+        runs = [run for run in runs if run.id in run_ids]
+    if not runs:
+        raise ValueError(f"No wandb runs found in '{wandb_project}'")
+
+    internal_keys = {"_step", "_runtime", "_timestamp", "_wandb"}
+    total_imported = 0
+    imported_runs = []
+    used_names = set()
+
+    for run in runs:
+        run_step_metrics = _wandb_step_metric_definitions(
+            getattr(run, "json_config", None) or "{}"
+        )
+        run_step_metrics.update(step_metrics or {})
+        axis_keys = set(run_step_metrics.values())
+
+        run_name = run.name or run.id
+        if name:
+            run_name = f"{name}_{run_name}"
+        if run_name in used_names:
+            run_name = f"{run_name}-{run.id}"
+        used_names.add(run_name)
+
+        metrics_list = []
+        steps = []
+        timestamps = []
+
+        for row in run.scan_history():
+            default_step = int(row.get("_step", 0))
+            if row.get("_timestamp") is not None:
+                timestamp = datetime.fromtimestamp(
+                    float(row["_timestamp"]), tz=timezone.utc
+                ).isoformat()
+            else:
+                timestamp = ""
+
+            by_axis: dict[str | None, dict] = {}
+            for key, value in row.items():
+                if key in internal_keys or key in axis_keys or value is None:
+                    continue
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue
+                axis = _resolve_step_metric(key, run_step_metrics)
+                by_axis.setdefault(axis, {})[key] = value
+
+            for axis, metrics in by_axis.items():
+                if axis is not None and isinstance(row.get(axis), (int, float)):
+                    step = int(row[axis])
+                else:
+                    step = default_step
+                metrics_list.append(metrics)
+                steps.append(step)
+                timestamps.append(timestamp)
+
+        if not metrics_list:
+            print(f"* Skipping wandb run '{run.id}': no numeric metric data found")
+            continue
+
+        config = {}
+        for key, value in dict(run.config).items():
+            try:
+                json.dumps(value)
+            except (TypeError, ValueError):
+                continue
+            config[key] = value
+
+        SQLiteStorage.bulk_log(
+            project=project,
+            run=run_name,
+            metrics_list=metrics_list,
+            steps=steps,
+            timestamps=timestamps,
+            config=config or None,
+        )
+
+        total_imported += len(metrics_list)
+        imported_runs.append(run_name)
+        print(
+            f"* Imported {len(metrics_list)} rows from wandb run '{run.id}' as run '{run_name}'"
+        )
+
+    if not imported_runs:
+        raise ValueError("No valid wandb run data could be imported")
+
+    print(f"* Total imported rows: {total_imported}")
     print(f"* Created runs: {', '.join(imported_runs)}")
 
     space_id, dataset_id, _ = utils.preprocess_space_and_dataset_ids(

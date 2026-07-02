@@ -82,6 +82,25 @@ wandb.log({"training_results": table})
 wandb.finish()
 ```
 
+### Importing Existing Runs
+
+You can also copy the runs of an existing wandb project into Trackio with `import_wandb` (requires `pip install trackio[wandb]` and being logged in to wandb):
+
+```python
+import trackio
+
+trackio.import_wandb("my-entity/my-project", project="my-project")
+```
+
+Each wandb run is imported as a separate run with its full metric history and config. Metrics logged with a custom step metric (`wandb.define_metric(..., step_metric=...)`) are imported at the value of that step metric, so they keep the same x-axis as in wandb. If a run's stored metric definitions are incomplete, you can pass them explicitly:
+
+```python
+trackio.import_wandb(
+    "my-entity/my-project",
+    project="my-project",
+    step_metrics={"eval/*": "eval_iter"},
+)
+```
 
 ## Neptune (`neptune`)
 
