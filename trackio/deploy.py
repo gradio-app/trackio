@@ -838,7 +838,12 @@ def _build_remote_client_with_retry(
     last_error: Exception | None = None
     while time.time() < deadline:
         try:
-            return RemoteClient(space_id, verbose=verbose, httpx_kwargs={"timeout": 90})
+            return RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=verbose,
+                httpx_kwargs={"timeout": 90},
+            )
         except (ValueError, ConnectionError) as e:
             last_error = e
             time.sleep(delay)
