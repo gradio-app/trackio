@@ -939,6 +939,12 @@ def main():
         action="store_true",
         help="Do not install the /logbook slash command alongside the skill",
     )
+    skills_add_parser.add_argument(
+        "--no-hook",
+        dest="no_hook",
+        action="store_true",
+        help="Do not install the Claude Code hook that mirrors the plan into the logbook",
+    )
 
     logbook_parser = subparsers.add_parser(
         "logbook",
@@ -998,6 +1004,7 @@ def main():
     )
 
     logbook_sub.add_parser("_sync", help=argparse.SUPPRESS)
+    logbook_sub.add_parser("sync-todos", help=argparse.SUPPRESS)
 
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
@@ -1652,6 +1659,8 @@ def _handle_logbook(args):
             lb.trigger_autosync(proj)
         elif action == "_sync":
             lb.sync_worker()
+        elif action == "sync-todos":
+            lb.sync_todos_from_stdin()
         elif action == "serve":
             lb.serve(port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
@@ -1826,6 +1835,43 @@ def _handle_skills_add(args):
                     f"Skipped '/logbook' command for {name} "
                     "(no slash-command directory convention)."
                 )
+
+    if args.claude and not args.no_hook:
+        hook_path = _install_claude_logbook_hook(args.global_)
+        if hook_path:
+            print(f"Installed logbook plan-sync hook: {hook_path}")
+
+
+def _install_claude_logbook_hook(global_: bool):
+    import json
+    from pathlib import Path
+
+    settings = (
+        Path("~/.claude/settings.json") if global_ else Path(".claude/settings.json")
+    ).expanduser()
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if settings.exists():
+        try:
+            data = json.loads(settings.read_text(encoding="utf-8"))
+        except Exception:
+            print(f"Could not parse {settings}; skipping hook install.")
+            return None
+    command = "trackio logbook sync-todos"
+    hooks = data.setdefault("hooks", {})
+    post = hooks.setdefault("PostToolUse", [])
+    for entry in post:
+        for h in entry.get("hooks", []):
+            if h.get("command") == command:
+                return settings
+    post.append(
+        {
+            "matcher": "TodoWrite",
+            "hooks": [{"type": "command", "command": command}],
+        }
+    )
+    settings.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return settings
 
 
 if __name__ == "__main__":

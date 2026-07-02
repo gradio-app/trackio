@@ -29,7 +29,11 @@ As soon as you have a plan for the campaign (e.g. when you'd write a to-do list 
 trackio logbook plan "Run baselines" "LoRA SFT" "Full fine-tune"
 ```
 
-Each becomes a `planned` row (and a page). This is the single most important habit — the reader should see the shape of the whole campaign, not just whatever has finished. Re-run `plan` to append steps as the plan evolves. Then, as you work, advance each with `--status`:
+Each becomes a `planned` row (and a page). This is the single most important habit — the reader should see the shape of the whole campaign, not just whatever has finished. Re-run `plan` to append steps as the plan evolves.
+
+(On Claude Code, a `TodoWrite` hook installed by `trackio skills add` mirrors your to-do list into this table automatically — but still call `plan` explicitly so it works in any harness and reads the way you intend.)
+
+Then, as you work, advance each with `--status`:
 
 ```bash
 trackio logbook note "Instruct baseline = 24.4% exec acc; target to beat." --experiment "Run baselines" --status done

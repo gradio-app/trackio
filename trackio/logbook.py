@@ -321,6 +321,38 @@ def set_experiment_status(proj: Path, slug: str, status: str) -> None:
     index.write_text("\n".join(lines), encoding="utf-8")
 
 
+def sync_todos_from_stdin() -> None:
+    import sys
+
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        return
+    todos = (payload.get("tool_input") or {}).get("todos") or []
+    proj = find_project_dir(payload.get("cwd"))
+    if proj is None or not todos:
+        return
+    status_map = {
+        "pending": "planned",
+        "in_progress": "in-progress",
+        "completed": "done",
+    }
+    changed = False
+    for todo in todos:
+        name = (todo.get("content") or todo.get("activeForm") or "").strip()
+        if not name:
+            continue
+        try:
+            ensure_experiment(
+                proj, name, status=status_map.get(todo.get("status"), "planned")
+            )
+            changed = True
+        except Exception:
+            continue
+    if changed:
+        trigger_autosync(proj)
+
+
 def ensure_experiment(proj: Path, name: str, status: str | None = None) -> str:
     slug = _slugify(name)
     if slug in _all_slugs(proj):
