@@ -71,8 +71,18 @@ For each experiment, capture enough that someone could re-run it:
 - **Where it ran**: link the HF **Job** URL (`--link https://huggingface.co/jobs/<owner>/<id>`) so a reader can open its logs/status.
 - **What it produced**: dump generated images/plots and their **raw data** to an HF **Bucket**, and link both — the image (unfurls as a preview) and the underlying data file (so results can be re-plotted or checked), plus the Trackio dashboard for live metrics.
 
+## Automatic capture from trackio
+
+If a logbook exists in the working directory, trackio **auto-notes itself** — no manual `note` needed for these:
+
+- `trackio.finish()` records the run + its dashboard under an experiment named after the trackio **project** (one note per run; re-runs update in place).
+- `trackio.log_artifact(...)` records the artifact.
+
+Local runs/artifacts are marked as local until you publish (see below). Set `TRACKIO_LOGBOOK_AUTONOTE=0` to disable (e.g. during large sweeps).
+
 ## Publishing & privacy
 
 - **Local until the first `publish`** — nothing leaves the machine, so drafts are safe. Scan for secrets/paths before that first publish; static Spaces are **public**.
 - After the first `publish`, `note`/`page` auto-sync in the background. After a **direct file edit**, run `trackio logbook sync` to push it.
 - The remote Space is remembered in `./.trackio/metadata.json`, so `publish`/`sync` need no argument after the first time.
+- **Publishing promotes local resources**: `publish` deploys any local trackio dashboards it captured as Spaces under the logbook's namespace and pushes local artifacts to a Bucket, then rewrites the links. Add `--private` to make the logbook, dashboards, and bucket all private (for team/internal logbooks); default is public.

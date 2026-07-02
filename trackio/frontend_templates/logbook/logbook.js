@@ -371,6 +371,13 @@
         div.className = "artifact-chip";
         div.innerHTML = inline(item);
         container.appendChild(div);
+      } else if (item.indexOf("trackio-local-dashboard://") !== -1) {
+        ul = null;
+        const div = document.createElement("div");
+        div.className = "artifact-chip";
+        div.innerHTML =
+          "🎯 <strong>Local dashboard</strong> — publish the logbook to share it";
+        container.appendChild(div);
       } else {
         if (!ul) {
           ul = document.createElement("ul");

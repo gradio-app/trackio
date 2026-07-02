@@ -1004,6 +1004,11 @@ def main():
         "publish", help="Publish to a static HF Space (first publish enables auto-sync)"
     )
     lb_pub.add_argument("space_id", nargs="?", help="HF Space id (username/space)")
+    lb_pub.add_argument(
+        "--private",
+        action="store_true",
+        help="Make the logbook and any promoted dashboards/buckets private",
+    )
 
     logbook_sub.add_parser(
         "sync", help="Push local edits to the Space now (after the first publish)"
@@ -1671,7 +1676,9 @@ def _handle_logbook(args):
         elif action == "serve":
             lb.serve(port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
-            print(f"Published: {lb.publish(space_id=args.space_id)}")
+            print(
+                f"Published: {lb.publish(space_id=args.space_id, private=args.private)}"
+            )
         elif action == "sync":
             proj = lb.require_project_dir()
             if not lb.is_autosync(proj):

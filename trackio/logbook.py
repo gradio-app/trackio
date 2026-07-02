@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from datetime import datetime, timezone
@@ -386,6 +387,114 @@ def ensure_experiment(proj: Path, name: str, status: str | None = None) -> str:
     return slug
 
 
+# ---- auto-note (called from trackio.finish / log_artifact) ----
+
+
+def _autonote_enabled() -> bool:
+    return os.environ.get("TRACKIO_LOGBOOK_AUTONOTE", "1").lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def _upsert_entry(
+    page_path: Path, marker: str, title: str, body: str, links: list[str] | None = None
+) -> None:
+    now = _now_iso()
+    lines = [
+        f"### {title}",
+        f"<!-- {marker} -->",
+        f"`{_human_time(now)}`",
+        "",
+        body.strip(),
+        "",
+    ]
+    for url in links or []:
+        lines.append(f"- {url}")
+    if links:
+        lines.append("")
+    block = "---\n\n" + "\n".join(lines)
+    text = page_path.read_text(encoding="utf-8")
+    pat = re.compile(
+        r"---\n\n### [^\n]*\n<!-- " + re.escape(marker) + r" -->.*?(?=\n---\n|\Z)",
+        re.S,
+    )
+    if pat.search(text):
+        text = pat.sub(lambda _m: block.rstrip("\n"), text, count=1)
+    else:
+        text = text.rstrip("\n") + "\n\n" + block + "\n"
+    page_path.write_text(text, encoding="utf-8")
+
+
+def register_local(
+    proj: Path, dashboard_project: str | None = None, artifact: str | None = None
+) -> None:
+    metadata = read_metadata(proj)
+    if dashboard_project:
+        metadata.setdefault("local_dashboards", {}).setdefault(dashboard_project, None)
+    if artifact:
+        arts = metadata.setdefault("local_artifacts", [])
+        if artifact not in arts:
+            arts.append(artifact)
+    write_metadata(proj, metadata)
+
+
+def auto_note_run(project: str, run_name: str, space_id: str | None = None) -> None:
+    if not _autonote_enabled():
+        return
+    proj = find_project_dir()
+    if proj is None:
+        return
+    try:
+        slug = ensure_experiment(proj, project)
+        page = _page_file_for_slug(proj, slug)
+        if space_id:
+            link = f"https://huggingface.co/spaces/{space_id}"
+        else:
+            link = f"trackio-local-dashboard://{project}"
+            register_local(proj, dashboard_project=project)
+        _upsert_entry(
+            page,
+            f"run:{project}/{run_name}",
+            f"Run: {run_name}",
+            f"Trackio run `{run_name}` in project `{project}`.",
+            links=[link],
+        )
+        trigger_autosync(proj)
+    except Exception:
+        pass
+
+
+def auto_note_artifact(project: str, qualified_name: str, size: int = 0) -> None:
+    if not _autonote_enabled():
+        return
+    proj = find_project_dir()
+    if proj is None:
+        return
+    try:
+        slug = ensure_experiment(proj, project)
+        page = _page_file_for_slug(proj, slug)
+        register_local(proj, artifact=qualified_name)
+        gb = (size or 0) / 1e9
+        size_str = (
+            f" · {gb:.2f} GB"
+            if gb >= 0.01
+            else (f" · {size / 1e6:.1f} MB" if size else "")
+        )
+        _upsert_entry(
+            page,
+            f"artifact:{qualified_name}",
+            f"Artifact: {qualified_name}",
+            "Logged a Trackio artifact.",
+            links=[f"**📦 Artifact** `{qualified_name}`{size_str}"],
+        )
+        trigger_autosync(proj)
+    except Exception:
+        pass
+
+
 def _resolve_artifact(name: str) -> str:
     try:
         from trackio.sqlite_storage import SQLiteStorage
@@ -535,7 +644,7 @@ def _readme(manifest: dict) -> str:
     )
 
 
-def _push(proj: Path, hf_token: str | None = None) -> str:
+def _push(proj: Path, hf_token: str | None = None, private: bool = False) -> str:
     import huggingface_hub
 
     metadata = read_metadata(proj)
@@ -548,6 +657,7 @@ def _push(proj: Path, hf_token: str | None = None) -> str:
         repo_type="space",
         space_sdk="static",
         exist_ok=True,
+        private=private,
         token=hf_token,
     )
     api.upload_folder(
@@ -560,7 +670,56 @@ def _push(proj: Path, hf_token: str | None = None) -> str:
     return f"https://huggingface.co/spaces/{space_id}"
 
 
-def publish(space_id: str | None = None, hf_token: str | None = None) -> str:
+def _rewrite_in_pages(proj: Path, old: str, new: str) -> None:
+    for md in _pages_dir(proj).rglob("*.md"):
+        text = md.read_text(encoding="utf-8")
+        if old in text:
+            md.write_text(text.replace(old, new), encoding="utf-8")
+
+
+def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
+    metadata = read_metadata(proj)
+    dashboards = metadata.get("local_dashboards", {})
+    for project, published in list(dashboards.items()):
+        target = published or f"{ns}/{project}"
+        if published is None:
+            try:
+                from trackio import sync as trackio_sync
+
+                print(f"  · promoting dashboard '{project}' → {target}")
+                trackio_sync(project=project, space_id=target, private=private)
+                dashboards[project] = target
+            except Exception as e:
+                print(f"  · could not promote dashboard '{project}': {e}")
+                continue
+        _rewrite_in_pages(
+            proj,
+            f"trackio-local-dashboard://{project}",
+            f"https://huggingface.co/spaces/{target}",
+        )
+    metadata["local_dashboards"] = dashboards
+
+    arts = metadata.get("local_artifacts", [])
+    if arts:
+        owner, _, name = metadata["space_id"].partition("/")
+        bucket = metadata.get("artifacts_bucket") or f"{owner}/{name}-artifacts"
+        try:
+            from trackio import bucket_storage
+
+            bucket_storage.create_bucket_if_not_exists(bucket, private=private)
+            for project in sorted({a.split("/")[0] for a in arts if "/" in a}):
+                print(f"  · pushing artifacts for '{project}' → bucket {bucket}")
+                bucket_storage.upload_project_to_bucket(project, bucket)
+            metadata["artifacts_bucket"] = bucket
+        except Exception as e:
+            print(f"  · could not push artifacts to bucket: {e}")
+
+    write_metadata(proj, metadata)
+
+
+def publish(
+    space_id: str | None = None, hf_token: str | None = None, private: bool = False
+) -> str:
     proj = require_project_dir()
     metadata = read_metadata(proj)
     space_id = space_id or metadata.get("space_id")
@@ -570,8 +729,10 @@ def publish(space_id: str | None = None, hf_token: str | None = None) -> str:
         )
     metadata["space_id"] = space_id
     metadata["autosync"] = True
+    metadata["private"] = private
     write_metadata(proj, metadata)
-    return _push(proj, hf_token=hf_token)
+    _promote_local_deps(proj, space_id.split("/")[0], private=private)
+    return _push(proj, hf_token=hf_token, private=private)
 
 
 def is_autosync(proj: Path) -> bool:
