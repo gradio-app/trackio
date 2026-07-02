@@ -453,9 +453,13 @@ def serve(port: int = 7861, open_browser: bool = True) -> None:
 
     proj = require_project_dir()
     write_site_files(proj)
-    handler = functools.partial(
-        http.server.SimpleHTTPRequestHandler, directory=str(logbook_root(proj))
-    )
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def end_headers(self):
+            self.send_header("Cache-Control", "no-store, max-age=0")
+            super().end_headers()
+
+    handler = functools.partial(Handler, directory=str(logbook_root(proj)))
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", port), handler) as httpd:
         url = f"http://localhost:{port}/"
