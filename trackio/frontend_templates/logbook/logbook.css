@@ -452,6 +452,180 @@ table.board tr.linked-row:hover a {
   color: var(--accent-strong);
 }
 
+/* ---- connect footer + modal ---- */
+#sidebar-foot {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#connect-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #c3c4cb;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+#connect-btn:hover {
+  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.4);
+  color: #fdba74;
+}
+#connect-btn .ico {
+  font-size: 15px;
+}
+
+#modal[hidden] {
+  display: none;
+}
+#modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 18, 30, 0.5);
+  backdrop-filter: blur(2px);
+}
+.modal-card {
+  position: relative;
+  background: var(--panel);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 620px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 70px rgba(20, 15, 50, 0.28);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--serif);
+  font-size: 21px;
+  letter-spacing: -0.01em;
+}
+.modal-logo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 9px;
+  padding: 8px 13px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.btn.copied {
+  border-color: #1a8a55;
+  color: #1a8a55;
+}
+.btn.icon {
+  font-size: 18px;
+  line-height: 1;
+  padding: 6px 11px;
+  font-weight: 400;
+}
+.modal-body {
+  padding: 20px 22px 26px;
+}
+.modal-intro {
+  margin: 0 0 20px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+#connect-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#connect-steps li {
+  margin-bottom: 18px;
+}
+.step-title {
+  font-weight: 600;
+  font-size: 14.5px;
+  margin-bottom: 8px;
+}
+.codeblock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #17181c;
+  border-radius: 10px;
+  padding: 11px 12px 11px 15px;
+}
+.codeblock code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: #f0efff;
+  background: none;
+  padding: 0;
+}
+.codeblock .copy {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.08);
+  color: #c3c4cb;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.codeblock .copy:hover {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fdba74;
+}
+.codeblock .copy.copied {
+  color: #52d08a;
+}
+
 @media (max-width: 720px) {
   #app {
     flex-direction: column;

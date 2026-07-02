@@ -14,11 +14,41 @@
           <div id="book-title">Logbook</div>
         </div>
         <nav id="tree"></nav>
+        <div id="sidebar-foot" hidden>
+          <button id="connect-btn" type="button">
+            <span class="ico">ⓘ</span> Connect your agent
+          </button>
+        </div>
       </aside>
       <main id="content">
         <div id="page"></div>
       </main>
     </div>
+
+    <div id="modal" hidden>
+      <div class="modal-backdrop"></div>
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <div class="modal-title">
+            <img class="modal-logo" src="./trackio-logo.png" alt="" />
+            Connect your agent
+          </div>
+          <div class="modal-actions">
+            <button id="copy-agent" class="btn">Copy for agent</button>
+            <button id="modal-close" class="btn icon" aria-label="Close">×</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <p class="modal-intro">
+            Point your coding agent at this logbook. It reads a compact,
+            token-efficient version — and if you've given it write access to this
+            Space, it can add findings that sync back automatically.
+          </p>
+          <ol id="connect-steps"></ol>
+        </div>
+      </div>
+    </div>
+
     <script src="./logbook.js"></script>
   </body>
 </html>

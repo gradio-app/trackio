@@ -1600,6 +1600,14 @@ def _handle_logbook(args):
                     lb.write_metadata(proj, metadata)
                 print(f"Attached to existing logbook at {lb.logbook_root(proj)}")
                 return
+            if args.space_id:
+                proj = lb.clone_logbook(args.space_id)
+                if proj is not None:
+                    print(
+                        f"Cloned logbook from {args.space_id} into "
+                        f"{lb.logbook_root(proj)}"
+                    )
+                    return
             proj = lb.create_logbook(
                 args.title or os.path.basename(os.getcwd()), space_id=args.space_id
             )

@@ -508,11 +508,95 @@
     loadPage(slug);
   }
 
+  function setupConnect() {
+    const space = MANIFEST.space_id;
+    if (!space) return;
+    const steps = [
+      { t: "Install Trackio, if you don't have it yet.", c: "uv tool install trackio" },
+      { t: "Add the Trackio skill for your agent, then reload it.", c: "trackio skills add" },
+      { t: "Connect to this logbook.", c: `trackio logbook open ${space}` },
+    ];
+    const ol = document.getElementById("connect-steps");
+    steps.forEach((s, i) => {
+      const li = document.createElement("li");
+      const title = document.createElement("div");
+      title.className = "step-title";
+      title.textContent = `${i + 1}. ${s.t}`;
+      const block = document.createElement("div");
+      block.className = "codeblock";
+      const code = document.createElement("code");
+      code.textContent = s.c;
+      const copy = document.createElement("button");
+      copy.className = "copy";
+      copy.type = "button";
+      copy.title = "Copy";
+      copy.textContent = "⧉";
+      copy.addEventListener("click", () => copyText(s.c, copy, "⧉"));
+      block.appendChild(code);
+      block.appendChild(copy);
+      li.appendChild(title);
+      li.appendChild(block);
+      ol.appendChild(li);
+    });
+
+    const agentPrompt =
+      `Read and help maintain this Trackio experiment logbook ("${MANIFEST.title}").\n\n` +
+      "1. If you don't have Trackio, install it:  uv tool install trackio\n" +
+      "2. Add the Trackio skill for your agent:   trackio skills add   (then reload)\n" +
+      `3. Connect to this logbook:                trackio logbook open ${space}\n\n` +
+      "You'll get a compact, token-efficient copy you can read. If I've given you " +
+      'write access to the Space, add findings with `trackio logbook note "..." ' +
+      '--experiment "..."` and they will sync back automatically.';
+
+    const foot = document.getElementById("sidebar-foot");
+    foot.hidden = false;
+    const modal = document.getElementById("modal");
+    const open = () => (modal.hidden = false);
+    const close = () => (modal.hidden = true);
+    document.getElementById("connect-btn").addEventListener("click", open);
+    document.getElementById("modal-close").addEventListener("click", close);
+    modal.querySelector(".modal-backdrop").addEventListener("click", close);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") close();
+    });
+    const agentBtn = document.getElementById("copy-agent");
+    agentBtn.addEventListener("click", () =>
+      copyText(agentPrompt, agentBtn, "Copy for agent")
+    );
+  }
+
+  function copyText(text, btn, restore) {
+    const done = () => {
+      const prev = btn.textContent;
+      btn.textContent = restore === "⧉" ? "✓" : "Copied!";
+      btn.classList.add("copied");
+      setTimeout(() => {
+        btn.textContent = restore;
+        btn.classList.remove("copied");
+      }, 1400);
+      void prev;
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch (e) {}
+      document.body.removeChild(ta);
+      done();
+    }
+  }
+
   async function init() {
     MANIFEST = await (await fetch("./logbook.json")).json();
     document.title = MANIFEST.title + " · Trackio Logbook";
     document.getElementById("book-title").textContent = MANIFEST.title;
     buildTree();
+    setupConnect();
     window.addEventListener("hashchange", route);
     route();
   }

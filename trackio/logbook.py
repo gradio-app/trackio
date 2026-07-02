@@ -124,6 +124,7 @@ def build_manifest(proj: Path) -> dict:
         "schema_version": SCHEMA_VERSION,
         "title": _title_of(pages / "index.md", "Logbook"),
         "emoji": metadata.get("emoji", "🎯"),
+        "space_id": metadata.get("space_id"),
         "updated_at": _now_iso(),
         "root": {
             "slug": ROOT_SLUG,
@@ -196,6 +197,39 @@ def create_logbook(
     )
     write_metadata(
         proj, {"space_id": space_id, "emoji": emoji, "created_at": _now_iso()}
+    )
+    (proj / ".gitignore").write_text(
+        "logbook/.sync_lock\nlogbook/.sync_pending\nlogbook/.sync.log\n",
+        encoding="utf-8",
+    )
+    write_site_files(proj)
+    return proj
+
+
+def clone_logbook(space_id: str) -> Path | None:
+    import huggingface_hub
+    from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
+
+    try:
+        snap = Path(huggingface_hub.snapshot_download(space_id, repo_type="space"))
+    except (RepositoryNotFoundError, HfHubHTTPError):
+        return None
+    if not (snap / "pages" / "index.md").is_file():
+        return None
+    proj = find_project_dir() or (Path.cwd() / PROJECT_DIR_NAME)
+    root = logbook_root(proj)
+    if _manifest_path(proj).exists() or (root / "pages" / "index.md").exists():
+        raise LogbookError(
+            f"A logbook already exists at {root}; remove it before cloning."
+        )
+    shutil.copytree(snap / "pages", root / "pages")
+    for fname in VIEWER_FILES:
+        if (snap / fname).is_file():
+            shutil.copy2(snap / fname, root / fname)
+    if (snap / "media").is_dir():
+        shutil.copytree(snap / "media", root / "media")
+    write_metadata(
+        proj, {"space_id": space_id, "autosync": True, "created_at": _now_iso()}
     )
     (proj / ".gitignore").write_text(
         "logbook/.sync_lock\nlogbook/.sync_pending\nlogbook/.sync.log\n",
