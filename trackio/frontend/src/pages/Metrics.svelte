@@ -4,6 +4,7 @@
   import LinePlot from "../components/LinePlot.svelte";
   import BarPlot from "../components/BarPlot.svelte";
   import Accordion from "../components/Accordion.svelte";
+  import GroupPanelControls from "../components/GroupPanelControls.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getLogsBatch } from "../lib/api.js";
   import {
@@ -46,6 +47,9 @@
   let hasLoaded = $state(false);
   let metricOrder = $state({});
   let dragState = $state({ group: null, index: -1 });
+  let panelsPerRowByGroup = $state({});
+  let rowsToShowByGroup = $state({});
+  let currentPageByGroup = $state({});
 
   let rawDataCache = new Map();
   let refreshTimer = null;
@@ -64,6 +68,34 @@
 
   function getPlotResult(metric) {
     return computeMetricPlotData(masterData, xColumn, metric, xLim);
+  }
+
+  function getVisibleMetrics(key, items) {
+    const perRow = panelsPerRowByGroup[key] ?? 4;
+    const cols = Math.max(1, Math.min(perRow, items.length || 1));
+    const rowsToShow = rowsToShowByGroup[key] ?? "all";
+    if (rowsToShow === "all") return items;
+    const totalRows = Math.max(1, Math.ceil(items.length / cols));
+    const rowsPerPage = Math.max(1, Math.min(rowsToShow, totalRows));
+    const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
+    const page = Math.min(currentPageByGroup[key] ?? 0, totalPages - 1);
+    const pageSize = rowsPerPage * cols;
+    const start = page * pageSize;
+    return items.slice(start, start + pageSize);
+  }
+
+  function setPanelsPerRow(key, value) {
+    panelsPerRowByGroup = { ...panelsPerRowByGroup, [key]: value };
+    currentPageByGroup = { ...currentPageByGroup, [key]: 0 };
+  }
+
+  function setRowsToShow(key, value) {
+    rowsToShowByGroup = { ...rowsToShowByGroup, [key]: value };
+    currentPageByGroup = { ...currentPageByGroup, [key]: 0 };
+  }
+
+  function setCurrentPage(key, value) {
+    currentPageByGroup = { ...currentPageByGroup, [key]: value };
   }
 
   function getOrderedMetrics(key, items) {
@@ -302,6 +334,8 @@
       {@const group = metricGroups[groupName]}
       {@const directKey = `${groupName}:direct`}
       {@const orderedDirect = getOrderedMetrics(directKey, group.direct)}
+      {@const visibleDirect = getVisibleMetrics(directKey, orderedDirect)}
+      {@const directCols = Math.max(1, Math.min(panelsPerRowByGroup[directKey] ?? 4, orderedDirect.length || 1))}
       {@const directCount = group.direct.length}
       {@const subCount = Object.values(group.subgroups).reduce((a, b) => a + b.length, 0)}
       {@const totalCount = directCount + subCount}
@@ -311,9 +345,23 @@
         open={true}
         hidden={!showHeaders}
       >
-        {#if orderedDirect.length > 0}
-          <div class="plot-grid">
-            {#each orderedDirect as metric, i}
+        {#snippet controls()}
+          {#if orderedDirect.length > 0}
+            <GroupPanelControls
+              panelsPerRow={panelsPerRowByGroup[directKey] ?? 4}
+              rowsToShow={rowsToShowByGroup[directKey] ?? "all"}
+              currentPage={currentPageByGroup[directKey] ?? 0}
+              totalPanels={orderedDirect.length}
+              onPanelsPerRowChange={(v) => setPanelsPerRow(directKey, v)}
+              onRowsToShowChange={(v) => setRowsToShow(directKey, v)}
+              onPageChange={(v) => setCurrentPage(directKey, v)}
+            />
+          {/if}
+        {/snippet}
+
+        {#if visibleDirect.length > 0}
+          <div class="plot-grid" style="--cols: {directCols}">
+            {#each visibleDirect as metric, i}
               {@const plotResult = getPlotResult(metric)}
               {@const plotData = plotResult.data}
               {@const yExtent = plotResult.yExtent}
@@ -361,13 +409,27 @@
           {#each Object.entries(group.subgroups) as [subName, subMetrics]}
             {@const subKey = `${groupName}:${subName}`}
             {@const orderedSub = getOrderedMetrics(subKey, subMetrics)}
+            {@const visibleSub = getVisibleMetrics(subKey, orderedSub)}
+            {@const subCols = Math.max(1, Math.min(panelsPerRowByGroup[subKey] ?? 4, orderedSub.length || 1))}
             <Accordion
               label="{subName} ({subMetrics.length})"
               open={true}
               hidden={!showHeaders}
             >
-              <div class="plot-grid">
-                {#each orderedSub as metric, i}
+              {#snippet controls()}
+                <GroupPanelControls
+                  panelsPerRow={panelsPerRowByGroup[subKey] ?? 4}
+                  rowsToShow={rowsToShowByGroup[subKey] ?? "all"}
+                  currentPage={currentPageByGroup[subKey] ?? 0}
+                  totalPanels={orderedSub.length}
+                  onPanelsPerRowChange={(v) => setPanelsPerRow(subKey, v)}
+                  onRowsToShowChange={(v) => setRowsToShow(subKey, v)}
+                  onPageChange={(v) => setCurrentPage(subKey, v)}
+                />
+              {/snippet}
+
+              <div class="plot-grid" style="--cols: {subCols}">
+                {#each visibleSub as metric, i}
                   {@const plotResult = getPlotResult(metric)}
                   {@const plotData = plotResult.data}
                   {@const yExtent = plotResult.yExtent}
@@ -425,9 +487,13 @@
     min-height: 0;
   }
   .plot-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
     gap: 16px;
+  }
+  .plot-grid :global(.plot-container) {
+    min-width: 0;
+    width: 100%;
   }
   .subgroup-list {
     margin-top: 16px;
