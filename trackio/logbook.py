@@ -100,18 +100,36 @@ def _title_of(md_path: Path, fallback: str) -> str:
     return fallback
 
 
-def _scan_children(dir_path: Path, rel_prefix: str) -> list[dict]:
+def _link_order(md_path: Path) -> list[str]:
+    try:
+        text = md_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    seen = []
+    for slug in re.findall(r"\(#/([A-Za-z0-9._-]+)\)", text):
+        if slug not in seen:
+            seen.append(slug)
+    return seen
+
+
+def _scan_children(dir_path: Path, rel_prefix: str, parent_md: Path) -> list[dict]:
     subs = [d for d in dir_path.iterdir() if d.is_dir() and (d / "page.md").is_file()]
-    subs.sort(key=lambda d: (d / "page.md").stat().st_ctime)
+    order = _link_order(parent_md)
+
+    def sort_key(d):
+        idx = order.index(d.name) if d.name in order else len(order)
+        return (idx, (d / "page.md").stat().st_ctime)
+
+    subs.sort(key=sort_key)
     children = []
     for d in subs:
-        rel = f"{rel_prefix}/{d.name}/page.md"
+        md = d / "page.md"
         children.append(
             {
                 "slug": d.name,
-                "title": _title_of(d / "page.md", d.name),
-                "file": rel,
-                "children": _scan_children(d, f"{rel_prefix}/{d.name}"),
+                "title": _title_of(md, d.name),
+                "file": f"{rel_prefix}/{d.name}/page.md",
+                "children": _scan_children(d, f"{rel_prefix}/{d.name}", md),
             }
         )
     return children
@@ -130,7 +148,7 @@ def build_manifest(proj: Path) -> dict:
             "slug": ROOT_SLUG,
             "title": _title_of(pages / "index.md", "Logbook"),
             "file": "pages/index.md",
-            "children": _scan_children(pages, "pages"),
+            "children": _scan_children(pages, "pages", pages / "index.md"),
         },
     }
 

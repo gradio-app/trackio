@@ -455,7 +455,7 @@
           `<a class="embed-title" href="${esc(u)}" target="_blank" rel="noopener">${esc(id)}</a>` +
           `<a class="embed-open" href="${esc(u)}" target="_blank" rel="noopener">Open ↗</a>` +
           `</div>` +
-          `<iframe class="embed-frame" src="https://${sub}.hf.space" loading="lazy" ` +
+          `<iframe class="embed-frame" src="https://${sub}.hf.space/?sidebar=hidden&navbar=hidden" loading="lazy" ` +
           `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
       },
     },
