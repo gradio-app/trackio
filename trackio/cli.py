@@ -972,6 +972,12 @@ def main():
         "--artifact", action="append", default=[], help="Trackio artifact name:vN"
     )
 
+    lb_plan = logbook_sub.add_parser(
+        "plan",
+        help="Seed the table of contents with planned experiments (in order)",
+    )
+    lb_plan.add_argument("steps", nargs="+", help="Experiment names, in plan order")
+
     lb_page = logbook_sub.add_parser(
         "page", help="Create a page (returns a slug to link from the index)"
     )
@@ -1620,6 +1626,13 @@ def _handle_logbook(args):
                 artifacts=args.artifact,
             )
             print(f"Logged to experiment '{slug}'.{_sync_suffix(lb, proj)}")
+            lb.trigger_autosync(proj)
+        elif action == "plan":
+            proj = lb.require_project_dir()
+            slugs = [
+                lb.ensure_experiment(proj, s, status="planned") for s in args.steps
+            ]
+            print(f"Seeded {len(slugs)} planned experiment(s).{_sync_suffix(lb, proj)}")
             lb.trigger_autosync(proj)
         elif action == "page":
             proj = lb.require_project_dir()

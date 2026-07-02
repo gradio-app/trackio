@@ -21,6 +21,20 @@ trackio logbook sync                                    # push later edits to th
 - **The main page** (`pages/index.md`) is the **table of contents only** — an `## Experiments` table of `| Status | Experiment |`, one row per experiment, each linking to that experiment's page. **Never write findings here.**
 - **Each experiment has its own page** where findings accumulate.
 
+## Start by seeding the plan into the table of contents
+
+As soon as you have a plan for the campaign (e.g. when you'd write a to-do list or leave plan mode), **map its major steps to experiments** so the table of contents reflects the plan up front:
+
+```bash
+trackio logbook plan "Run baselines" "LoRA SFT" "Full fine-tune"
+```
+
+Each becomes a `planned` row (and a page). This is the single most important habit — the reader should see the shape of the whole campaign, not just whatever has finished. Re-run `plan` to append steps as the plan evolves. Then, as you work, advance each with `--status`:
+
+```bash
+trackio logbook note "Instruct baseline = 24.4% exec acc; target to beat." --experiment "Run baselines" --status done
+```
+
 ## Logging findings — always onto an experiment
 
 ```bash
