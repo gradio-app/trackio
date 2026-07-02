@@ -469,7 +469,9 @@
   function buildTree() {
     const tree = document.getElementById("tree");
     tree.innerHTML = "";
-    flattenTree(MANIFEST.root, 0, []).forEach(({ node, depth }) => {
+    const nodes = [];
+    (MANIFEST.root.children || []).forEach((c) => flattenTree(c, 0, nodes));
+    nodes.forEach(({ node, depth }) => {
       const a = document.createElement("a");
       a.href = "#/" + node.slug;
       a.textContent = node.title;
@@ -483,6 +485,9 @@
     document
       .querySelectorAll("#tree a")
       .forEach((a) => a.classList.toggle("active", a.dataset.slug === slug));
+    document
+      .getElementById("book-head")
+      .classList.toggle("active", slug === MANIFEST.root.slug);
   }
 
   async function loadPage(slug) {
@@ -595,6 +600,9 @@
     MANIFEST = await (await fetch("./logbook.json")).json();
     document.title = MANIFEST.title + " · Trackio Logbook";
     document.getElementById("book-title").textContent = MANIFEST.title;
+    document.getElementById("book-head").addEventListener("click", () => {
+      location.hash = "#/" + MANIFEST.root.slug;
+    });
     buildTree();
     setupConnect();
     window.addEventListener("hashchange", route);

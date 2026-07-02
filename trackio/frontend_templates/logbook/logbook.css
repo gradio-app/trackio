@@ -61,9 +61,17 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 8px 18px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+#book-head:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+#book-head.active #book-title {
+  color: #fdba74;
 }
 
 #book-logo {
