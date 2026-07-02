@@ -58,9 +58,18 @@ Any page's content, the index table, and the styling (`logbook.css` / `index.htm
 
 - `--title`: a short, result-bearing headline ("96.4% valid — target met").
 - Body: 1–3 sentences with the number and what it means. **Tabular results** (baselines, sweeps, ablations) → write a **Markdown table** in the body, not prose — it renders as a real table.
-- `--link URL`: models/datasets/Spaces/dashboards/arXiv/GitHub/images — each unfurls into a card. Pass each as a **separate `--link` flag**, never inside the body text. A URL only unfurls when it's on its own line.
+- `--link URL`: each unfurls into a rich card. Pass each as a **separate `--link` flag**, never inside the body text. Supported: HF models / datasets / **Spaces & Trackio dashboards (embedded live)** / **Jobs** (`huggingface.co/jobs/...`) / **Buckets** (`huggingface.co/buckets/...`), arXiv, GitHub, and image URLs.
+- `--code PATH`: attach the exact script/config you ran (repeatable). It renders as a collapsible, syntax-highlighted accordion — the key to reproducibility. Attach the training script, eval harness, config, etc.
 - `--artifact project/name:vN`: reference a tracked Trackio artifact.
 - It's just Markdown you can also edit by hand — if something renders wrong, `serve` to preview and fix the file directly.
+
+## Make it reproducible
+
+For each experiment, capture enough that someone could re-run it:
+
+- The **exact code**: `--code train.py --code configs/sft.yaml`.
+- **Where it ran**: link the HF **Job** URL (`--link https://huggingface.co/jobs/<owner>/<id>`) so a reader can open its logs/status.
+- **What it produced**: dump generated images/plots and their **raw data** to an HF **Bucket**, and link both — the image (unfurls as a preview) and the underlying data file (so results can be re-plotted or checked), plus the Trackio dashboard for live metrics.
 
 ## Publishing & privacy
 

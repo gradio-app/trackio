@@ -977,6 +977,12 @@ def main():
     lb_note.add_argument(
         "--artifact", action="append", default=[], help="Trackio artifact name:vN"
     )
+    lb_note.add_argument(
+        "--code",
+        action="append",
+        default=[],
+        help="Path to a script/config to attach (collapsible, syntax-highlighted)",
+    )
 
     lb_plan = logbook_sub.add_parser(
         "plan",
@@ -1639,6 +1645,7 @@ def _handle_logbook(args):
                 page_slug=slug,
                 links=args.link,
                 artifacts=args.artifact,
+                code=args.code,
             )
             print(f"Logged to experiment '{slug}'.{_sync_suffix(lb, proj)}")
             lb.trigger_autosync(proj)

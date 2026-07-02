@@ -385,6 +385,33 @@ def _resolve_artifact(name: str) -> str:
         return f"**📦 Artifact** `{name}`"
 
 
+_LANG_BY_EXT = {
+    ".py": "python",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".sql": "sql",
+    ".toml": "toml",
+    ".md": "markdown",
+}
+
+
+def _code_block_lines(path: str) -> list[str]:
+    p = Path(path)
+    try:
+        content = p.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    if len(content) > 200_000:
+        content = content[:200_000] + "\n# … truncated …"
+    lang = _LANG_BY_EXT.get(p.suffix.lower(), "")
+    return ["", f"````{lang} title={p.name}", *content.split("\n"), "````", ""]
+
+
 def add_note(
     proj: Path,
     body: str,
@@ -392,6 +419,7 @@ def add_note(
     page_slug: str = ROOT_SLUG,
     links: list[str] | None = None,
     artifacts: list[str] | None = None,
+    code: list[str] | None = None,
 ) -> None:
     page_path = _page_file_for_slug(proj, page_slug)
     if page_path is None:
@@ -409,6 +437,8 @@ def add_note(
     lines.append("")
     lines.append(body)
     lines.append("")
+    for path in code or []:
+        lines += _code_block_lines(path)
     for art in artifacts:
         lines.append(f"- {_resolve_artifact(art)}")
     for url in links:

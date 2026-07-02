@@ -214,6 +214,71 @@ body {
   padding: 0;
 }
 
+/* ---- code blocks + collapsible accordion ---- */
+#page pre.hl {
+  background: #17181c;
+  border: none;
+  color: #e7e7ea;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+#page pre.hl code {
+  color: inherit;
+  font-family: var(--mono);
+}
+.code-accordion {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 12px 0;
+  background: #17181c;
+}
+.code-accordion summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: #e7e7ea;
+  background: #1e2027;
+  user-select: none;
+}
+.code-accordion summary::-webkit-details-marker {
+  display: none;
+}
+.code-accordion summary::before {
+  content: "▸";
+  color: var(--accent);
+  transition: transform 0.12s;
+}
+.code-accordion[open] summary::before {
+  transform: rotate(90deg);
+}
+.code-accordion .code-ico {
+  color: var(--accent);
+  font-weight: 700;
+}
+.code-accordion pre.hl {
+  margin: 0;
+  border-radius: 0;
+}
+.tok-comment {
+  color: #7a7d87;
+  font-style: italic;
+}
+.tok-string {
+  color: #a5d6a7;
+}
+.tok-keyword {
+  color: #fdba74;
+}
+.tok-number {
+  color: #7fd0e0;
+}
+
 #page a {
   color: var(--accent);
 }

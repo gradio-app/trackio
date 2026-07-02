@@ -74,20 +74,24 @@
         i++;
         continue;
       }
-      if (trimmed.startsWith("```")) {
+      const fence = trimmed.match(/^(`{3,}|~{3,})(.*)$/);
+      if (fence) {
         flushPara();
+        const marker = fence[1][0];
+        const closeRe = new RegExp("^" + marker + "{" + fence[1].length + ",}\\s*$");
+        const info = fence[2].trim();
         const buf = [];
         i++;
-        while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        while (i < lines.length && !closeRe.test(lines[i].trim())) {
           buf.push(lines[i]);
           i++;
         }
         i++;
-        const pre = document.createElement("pre");
-        const code = document.createElement("code");
-        code.textContent = buf.join("\n");
-        pre.appendChild(code);
-        container.appendChild(pre);
+        const lang = (info.split(/\s+/)[0] || "").toLowerCase();
+        const tm = info.match(/title=(\S+)/);
+        container.appendChild(
+          renderCode(buf.join("\n"), lang, tm ? tm[1] : null)
+        );
         continue;
       }
       if (trimmed === "---") {
@@ -275,6 +279,84 @@
     container.appendChild(wrap);
   }
 
+  const HL_RULES = {
+    python: [
+      ["comment", /#[^\n]*/],
+      ["string", /'''[\s\S]*?'''|"""[\s\S]*?"""|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/],
+      [
+        "keyword",
+        /\b(?:def|class|return|if|elif|else|for|while|import|from|as|with|try|except|finally|raise|in|not|and|or|is|None|True|False|lambda|yield|global|nonlocal|assert|pass|break|continue|async|await|print)\b/,
+      ],
+      ["number", /\b\d[\d_.eE+-]*\b/],
+    ],
+    bash: [
+      ["comment", /#[^\n]*/],
+      ["string", /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/],
+      ["keyword", /\b(?:if|then|else|fi|for|in|do|done|while|case|esac|function|export|source|echo|cd|return|local)\b/],
+      ["number", /(?<=\s)-{1,2}[a-zA-Z][\w-]*/],
+    ],
+    json: [
+      ["string", /"(?:\\.|[^"\\])*"/],
+      ["keyword", /\b(?:true|false|null)\b/],
+      ["number", /-?\b\d[\d.eE+-]*\b/],
+    ],
+    yaml: [
+      ["comment", /#[^\n]*/],
+      ["string", /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/],
+      ["keyword", /\b(?:true|false|null|yes|no)\b/],
+      ["number", /-?\b\d[\d.eE+-]*\b/],
+    ],
+  };
+  HL_RULES.javascript = HL_RULES.python;
+  HL_RULES.typescript = HL_RULES.python;
+  HL_RULES.sql = [
+    ["comment", /--[^\n]*/],
+    ["string", /'(?:\\.|[^'\\])*'/],
+    [
+      "keyword",
+      /\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP|BY|ORDER|LIMIT|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|AS|AND|OR|NOT|NULL|COUNT|DISTINCT|IN)\b/i,
+    ],
+    ["number", /\b\d[\d.]*\b/],
+  ];
+
+  function highlightCode(code, lang) {
+    const rules = HL_RULES[lang];
+    if (!rules) return esc(code);
+    const combined = new RegExp(rules.map((r) => "(" + r[1].source + ")").join("|"), "g");
+    let out = "";
+    let last = 0;
+    let m;
+    while ((m = combined.exec(code))) {
+      if (m[0] === "") {
+        combined.lastIndex++;
+        continue;
+      }
+      out += esc(code.slice(last, m.index));
+      let gi = 1;
+      while (gi < m.length && m[gi] === undefined) gi++;
+      out += `<span class="tok-${rules[gi - 1][0]}">${esc(m[0])}</span>`;
+      last = m.index + m[0].length;
+    }
+    out += esc(code.slice(last));
+    return out;
+  }
+
+  function renderCode(code, lang, title) {
+    const pre = document.createElement("pre");
+    pre.className = "hl";
+    const c = document.createElement("code");
+    c.innerHTML = highlightCode(code, lang);
+    pre.appendChild(c);
+    if (!title) return pre;
+    const det = document.createElement("details");
+    det.className = "code-accordion";
+    const sum = document.createElement("summary");
+    sum.innerHTML = `<span class="code-ico">&lt;/&gt;</span> ${esc(title)}`;
+    det.appendChild(sum);
+    det.appendChild(pre);
+    return det;
+  }
+
   const IMG_PATH = /^[^\s]+\.(png|jpe?g|gif|svg|webp)$/i;
 
   function renderList(items, container) {
@@ -375,6 +457,29 @@
           `</div>` +
           `<iframe class="embed-frame" src="https://${sub}.hf.space" loading="lazy" ` +
           `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
+      },
+    },
+    {
+      test: (u) => /huggingface\.co\/jobs\//.test(u),
+      render: (u, el) => {
+        const rest = u.split("/jobs/")[1].split(/[?#]/)[0].replace(/\/$/, "");
+        const parts = rest.split("/");
+        const jid = parts[1] || "";
+        base(
+          el,
+          u,
+          "HF Job",
+          "⚙️",
+          `${parts[0]} · ${jid.slice(0, 12)}${jid.length > 12 ? "…" : ""}`,
+          "Hugging Face Job — open to view status & logs"
+        );
+      },
+    },
+    {
+      test: (u) => /huggingface\.co\/buckets\//.test(u),
+      render: (u, el) => {
+        const id = u.split("/buckets/")[1].split(/[?#]/)[0].replace(/\/$/, "");
+        base(el, u, "HF Bucket", "🪣", id, "Hugging Face Bucket — stored artifacts & data");
       },
     },
     {
