@@ -362,12 +362,19 @@
     },
     {
       test: (u) => /huggingface\.co\/spaces\//.test(u),
-      render: async (u, el) => {
+      embed: true,
+      render: (u, el) => {
         const id = u.split("/spaces/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-        base(el, u, "HF Space", "🚀", id, "Interactive Space / dashboard");
-        const d = await getJSON(`https://huggingface.co/api/spaces/${id}`);
-        if (d)
-          fill(el, id, null, [d.sdk, `♥ ${fmt(d.likes)}`, ...(d.tags || []).slice(0, 2)]);
+        const sub = id.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+        el.classList.add("embed");
+        el.innerHTML =
+          `<div class="embed-head">` +
+          `<span class="unfurl-kind">🚀 HF Space</span>` +
+          `<a class="embed-title" href="${esc(u)}" target="_blank" rel="noopener">${esc(id)}</a>` +
+          `<a class="embed-open" href="${esc(u)}" target="_blank" rel="noopener">Open ↗</a>` +
+          `</div>` +
+          `<iframe class="embed-frame" src="https://${sub}.hf.space" loading="lazy" ` +
+          `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
       },
     },
     {
@@ -445,12 +452,14 @@
   }
 
   function unfurl(url) {
-    const el = document.createElement("a");
-    el.className = "unfurl";
-    el.href = url;
-    el.target = "_blank";
-    el.rel = "noopener";
     const provider = providers.find((p) => p.test(url));
+    const el = document.createElement(provider && provider.embed ? "div" : "a");
+    el.className = "unfurl";
+    if (el.tagName === "A") {
+      el.href = url;
+      el.target = "_blank";
+      el.rel = "noopener";
+    }
     if (provider) {
       const out = provider.render(url, el);
       if (out && typeof out.then === "function") out.catch(() => {});

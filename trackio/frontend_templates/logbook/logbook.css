@@ -316,6 +316,49 @@ body {
   text-overflow: ellipsis;
 }
 
+.unfurl.embed {
+  padding: 0;
+  overflow: hidden;
+}
+.embed-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.embed-head .unfurl-kind {
+  flex: 0 0 auto;
+}
+.embed-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 650;
+  font-size: 14px;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.embed-title:hover {
+  color: var(--accent);
+}
+.embed-open {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.embed-frame {
+  display: block;
+  width: 100%;
+  height: 560px;
+  border: 0;
+  background: var(--code-bg);
+}
+
 .unfurl.image {
   padding: 0;
 }
