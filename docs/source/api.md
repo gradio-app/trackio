@@ -56,6 +56,10 @@
 
 [[autodoc]] import_tf_events
 
+## import_wandb
+
+[[autodoc]] import_wandb
+
 ## save
 
 [[autodoc]] save

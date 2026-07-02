@@ -27,7 +27,7 @@ from trackio.frontend_config import resolve_frontend_dir
 from trackio.gpu import gpu_available
 from trackio.gpu import log_gpu as _log_nvidia_gpu
 from trackio.histogram import Histogram
-from trackio.imports import import_csv, import_tf_events
+from trackio.imports import import_csv, import_tf_events, import_wandb
 from trackio.launch import launch_trackio_dashboard
 from trackio.markdown import Markdown
 from trackio.media import (
@@ -74,6 +74,7 @@ __all__ = [
     "delete_project",
     "import_csv",
     "import_tf_events",
+    "import_wandb",
     "save",
     "Artifact",
     "Image",
