@@ -933,6 +933,89 @@ def main():
         action="store_true",
         help="Overwrite existing skill if it already exists",
     )
+    skills_add_parser.add_argument(
+        "--no-command",
+        dest="no_command",
+        action="store_true",
+        help="Do not install the /logbook slash command alongside the skill",
+    )
+    skills_add_parser.add_argument(
+        "--no-hook",
+        dest="no_hook",
+        action="store_true",
+        help="Do not install the Claude Code hook that mirrors the plan into the logbook",
+    )
+
+    logbook_parser = subparsers.add_parser(
+        "logbook",
+        help="Create and publish a shareable experiment logbook",
+    )
+    logbook_sub = logbook_parser.add_subparsers(dest="logbook_action", required=True)
+
+    lb_open = logbook_sub.add_parser(
+        "open", help="Start or attach to the logbook in this directory"
+    )
+    lb_open.add_argument(
+        "space_id", nargs="?", help="Optional HF Space id to publish to"
+    )
+    lb_open.add_argument("--title", help="Logbook title (only when creating)")
+
+    lb_note = logbook_sub.add_parser(
+        "note", help="Append a finding to an experiment page"
+    )
+    lb_note.add_argument("body", help="The finding text")
+    lb_note.add_argument(
+        "--experiment",
+        help="Experiment name (created + listed on the index if new)",
+    )
+    lb_note.add_argument(
+        "--status", help="Set the experiment's status (with --experiment)"
+    )
+    lb_note.add_argument("--title", help="Short heading for this entry")
+    lb_note.add_argument("--page", help="Target an existing page by slug instead")
+    lb_note.add_argument("--link", action="append", default=[], help="URL to unfurl")
+    lb_note.add_argument(
+        "--artifact", action="append", default=[], help="Trackio artifact name:vN"
+    )
+    lb_note.add_argument(
+        "--code",
+        action="append",
+        default=[],
+        help="Path to a script/config to attach (collapsible, syntax-highlighted)",
+    )
+
+    lb_plan = logbook_sub.add_parser(
+        "plan",
+        help="Seed the table of contents with planned experiments (in order)",
+    )
+    lb_plan.add_argument("steps", nargs="+", help="Experiment names, in plan order")
+
+    lb_page = logbook_sub.add_parser(
+        "page", help="Create a page (returns a slug to link from the index)"
+    )
+    lb_page.add_argument("title", help="Page title")
+    lb_page.add_argument("--parent", default="index", help="Parent page slug")
+
+    lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
+    lb_serve.add_argument("--port", type=int, default=7861)
+    lb_serve.add_argument("--no-browser", action="store_true")
+
+    lb_pub = logbook_sub.add_parser(
+        "publish", help="Publish to a static HF Space (first publish enables auto-sync)"
+    )
+    lb_pub.add_argument("space_id", nargs="?", help="HF Space id (username/space)")
+    lb_pub.add_argument(
+        "--private",
+        action="store_true",
+        help="Make the logbook and any promoted dashboards/buckets private",
+    )
+
+    logbook_sub.add_parser(
+        "sync", help="Push local edits to the Space now (after the first publish)"
+    )
+
+    logbook_sub.add_parser("_sync", help=argparse.SUPPRESS)
+    logbook_sub.add_parser("sync-todos", help=argparse.SUPPRESS)
 
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
@@ -1508,8 +1591,102 @@ def main():
     elif args.command == "skills":
         if args.skills_action == "add":
             _handle_skills_add(args)
+    elif args.command == "logbook":
+        _handle_logbook(args)
     else:
         parser.print_help()
+
+
+def _sync_suffix(lb, proj):
+    if lb.is_autosync(proj):
+        space = lb.read_metadata(proj).get("space_id")
+        return f" · syncing to {space}…"
+    return ""
+
+
+def _handle_logbook(args):
+    from trackio import logbook as lb
+
+    action = args.logbook_action
+    try:
+        if action == "open":
+            proj = lb.find_project_dir()
+            if proj is not None:
+                if args.space_id:
+                    metadata = lb.read_metadata(proj)
+                    metadata["space_id"] = args.space_id
+                    lb.write_metadata(proj, metadata)
+                print(f"Attached to existing logbook at {lb.logbook_root(proj)}")
+                return
+            if args.space_id:
+                proj = lb.clone_logbook(args.space_id)
+                if proj is not None:
+                    print(
+                        f"Cloned logbook from {args.space_id} into "
+                        f"{lb.logbook_root(proj)}"
+                    )
+                    return
+            proj = lb.create_logbook(
+                args.title or os.path.basename(os.getcwd()), space_id=args.space_id
+            )
+            print(f"Opened logbook at {lb.logbook_root(proj)}")
+            if args.space_id:
+                print(f"Will publish to: {args.space_id}")
+        elif action == "note":
+            proj = lb.require_project_dir()
+            if args.experiment:
+                slug = lb.ensure_experiment(proj, args.experiment, status=args.status)
+            elif args.page and args.page != lb.ROOT_SLUG:
+                slug = args.page
+            else:
+                error_exit(
+                    "The main page is the table of contents — notes go on an "
+                    'experiment. Use: trackio logbook note "..." --experiment "Name"'
+                )
+            lb.add_note(
+                proj,
+                args.body,
+                title=args.title,
+                page_slug=slug,
+                links=args.link,
+                artifacts=args.artifact,
+                code=args.code,
+            )
+            print(f"Logged to experiment '{slug}'.{_sync_suffix(lb, proj)}")
+            lb.trigger_autosync(proj)
+        elif action == "plan":
+            proj = lb.require_project_dir()
+            slugs = [
+                lb.ensure_experiment(proj, s, status="planned") for s in args.steps
+            ]
+            print(f"Seeded {len(slugs)} planned experiment(s).{_sync_suffix(lb, proj)}")
+            lb.trigger_autosync(proj)
+        elif action == "page":
+            proj = lb.require_project_dir()
+            page_slug = lb.add_page(proj, args.title, parent_slug=args.parent)
+            print(
+                f"Created page '{page_slug}'. Link it from a page with "
+                f"[{args.title}](#/{page_slug})"
+            )
+            lb.trigger_autosync(proj)
+        elif action == "_sync":
+            lb.sync_worker()
+        elif action == "sync-todos":
+            lb.sync_todos_from_stdin()
+        elif action == "serve":
+            lb.serve(port=args.port, open_browser=not args.no_browser)
+        elif action == "publish":
+            print(
+                f"Published: {lb.publish(space_id=args.space_id, private=args.private)}"
+            )
+        elif action == "sync":
+            proj = lb.require_project_dir()
+            if not lb.is_autosync(proj):
+                error_exit("Publish first: trackio logbook publish <username/space>")
+            lb.trigger_autosync(proj)
+            print(f"Syncing to {lb.read_metadata(proj).get('space_id')}…")
+    except lb.LogbookError as e:
+        error_exit(str(e))
 
 
 def _handle_skills_add(args):
@@ -1530,12 +1707,21 @@ def _handle_skills_add(args):
         "logging_metrics.md",
         "retrieving_metrics.md",
         "storage_schema.md",
+        "logbook.md",
     ]
+    COMMAND_PREFIX = ".agents/commands"
+    COMMAND_FILE = "logbook.md"
+
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+    USE_LOCAL = (REPO_ROOT / SKILL_PREFIX / "SKILL.md").is_file()
 
     if not (args.cursor or args.claude or args.codex or args.opencode or args.dest):
         error_exit(
             "Pick a destination via --cursor, --claude, --codex, --opencode, or --dest."
         )
+
+    if USE_LOCAL:
+        print(f"Using local Trackio source at {REPO_ROOT}")
 
     def download(url: str) -> str:
         from huggingface_hub.utils import get_session
@@ -1550,6 +1736,13 @@ def _handle_skills_add(args):
                 "the Trackio GitHub repository."
             )
         return response.text
+
+    def get_content(prefix: str, fname: str) -> str:
+        if USE_LOCAL:
+            local = REPO_ROOT / prefix / fname
+            if local.is_file():
+                return local.read_text(encoding="utf-8")
+        return download(f"{GITHUB_RAW}/{prefix}/{fname}")
 
     def remove_existing(path: Path, force: bool):
         if not (path.exists() or path.is_symlink()):
@@ -1570,8 +1763,9 @@ def _handle_skills_add(args):
         remove_existing(dest, force)
         dest.mkdir()
         for fname in SKILL_FILES:
-            content = download(f"{GITHUB_RAW}/{SKILL_PREFIX}/{fname}")
-            (dest / fname).write_text(content, encoding="utf-8")
+            (dest / fname).write_text(
+                get_content(SKILL_PREFIX, fname), encoding="utf-8"
+            )
         return dest
 
     def create_symlink(
@@ -1583,6 +1777,17 @@ def _handle_skills_add(args):
         remove_existing(link_path, force)
         link_path.symlink_to(os.path.relpath(central_skill_path, agent_skills_dir))
         return link_path
+
+    def install_command(command_dir: Path, force: bool) -> Path:
+        command_dir = command_dir.expanduser().resolve()
+        command_dir.mkdir(parents=True, exist_ok=True)
+        dest = command_dir / COMMAND_FILE
+        if dest.exists() and not force:
+            error_exit(
+                f"Command already exists at {dest}.\nRe-run with --force to overwrite."
+            )
+        dest.write_text(get_content(COMMAND_PREFIX, COMMAND_FILE), encoding="utf-8")
+        return dest
 
     global_targets = {
         "cursor": Path("~/.cursor/skills"),
@@ -1598,6 +1803,16 @@ def _handle_skills_add(args):
     }
     targets_dict = global_targets if args.global_ else local_targets
 
+    command_targets_global = {
+        "cursor": Path("~/.cursor/commands"),
+        "claude": Path("~/.claude/commands"),
+    }
+    command_targets_local = {
+        "cursor": Path(".cursor/commands"),
+        "claude": Path(".claude/commands"),
+    }
+    command_dict = command_targets_global if args.global_ else command_targets_local
+
     if args.dest:
         if args.cursor or args.claude or args.codex or args.opencode or args.global_:
             error_exit("--dest cannot be combined with agent flags or --global.")
@@ -1605,23 +1820,72 @@ def _handle_skills_add(args):
         print(f"Installed '{SKILL_ID}' to {skill_dest}")
         return
 
-    agent_targets = []
-    if args.cursor:
-        agent_targets.append(targets_dict["cursor"])
-    if args.claude:
-        agent_targets.append(targets_dict["claude"])
-    if args.codex:
-        agent_targets.append(targets_dict["codex"])
-    if args.opencode:
-        agent_targets.append(targets_dict["opencode"])
+    selected = [
+        name
+        for name, flag in (
+            ("cursor", args.cursor),
+            ("claude", args.claude),
+            ("codex", args.codex),
+            ("opencode", args.opencode),
+        )
+        if flag
+    ]
 
     central_path = CENTRAL_GLOBAL if args.global_ else CENTRAL_LOCAL
     central_skill_path = install_to(central_path, args.force)
     print(f"Installed '{SKILL_ID}' to central location: {central_skill_path}")
 
-    for agent_target in agent_targets:
-        link_path = create_symlink(agent_target, central_skill_path, args.force)
+    for name in selected:
+        link_path = create_symlink(targets_dict[name], central_skill_path, args.force)
         print(f"Created symlink: {link_path}")
+
+    if not args.no_command:
+        for name in selected:
+            if name in command_dict:
+                cmd_path = install_command(command_dict[name], args.force)
+                print(f"Installed '/logbook' command: {cmd_path}")
+            else:
+                print(
+                    f"Skipped '/logbook' command for {name} "
+                    "(no slash-command directory convention)."
+                )
+
+    if args.claude and not args.no_hook:
+        hook_path = _install_claude_logbook_hook(args.global_)
+        if hook_path:
+            print(f"Installed logbook plan-sync hook: {hook_path}")
+
+
+def _install_claude_logbook_hook(global_: bool):
+    import json
+    from pathlib import Path
+
+    settings = (
+        Path("~/.claude/settings.json") if global_ else Path(".claude/settings.json")
+    ).expanduser()
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if settings.exists():
+        try:
+            data = json.loads(settings.read_text(encoding="utf-8"))
+        except Exception:
+            print(f"Could not parse {settings}; skipping hook install.")
+            return None
+    command = "trackio logbook sync-todos"
+    hooks = data.setdefault("hooks", {})
+    post = hooks.setdefault("PostToolUse", [])
+    for entry in post:
+        for h in entry.get("hooks", []):
+            if h.get("command") == command:
+                return settings
+    post.append(
+        {
+            "matcher": "TodoWrite",
+            "hooks": [{"type": "command", "command": command}],
+        }
+    )
+    settings.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return settings
 
 
 if __name__ == "__main__":
