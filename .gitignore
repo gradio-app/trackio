@@ -3,6 +3,7 @@ tests/__pycache__/
 .trackio/
 .gradio/
 trackio.db
+/artifacts/
 *.pyc
 *.pyi
 *.claude/

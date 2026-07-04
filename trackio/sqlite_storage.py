@@ -26,7 +26,7 @@ except ImportError:
 import huggingface_hub as hf
 import orjson
 
-from trackio import cas
+from trackio import cas, references
 from trackio.commit_scheduler import CommitScheduler
 from trackio.dummy_commit_scheduler import DummyCommitScheduler
 from trackio.typehints import (
@@ -4180,8 +4180,11 @@ class SQLiteStorage:
             path = entry["path"]
             digest = Sha256Digest(entry["digest"])
             size = int(entry["size"])
-            canonical.append({"path": path, "digest": digest, "size": size})
             size_bytes += size
+            canonical_entry = {"path": path, "digest": digest, "size": size}
+            if references.is_reference_entry(entry):
+                canonical_entry["ref"] = entry["ref"]
+            canonical.append(canonical_entry)
         canonical.sort(key=lambda e: e["path"])
         payload = orjson.dumps(canonical, option=orjson.OPT_SORT_KEYS)
         manifest_digest = Sha256Digest(hashlib.sha256(payload).hexdigest())

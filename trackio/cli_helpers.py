@@ -2,6 +2,8 @@ import json
 import sys
 from typing import Any
 
+from trackio import references
+
 
 def format_json(data: Any) -> str:
     """Format data as JSON."""
@@ -63,7 +65,10 @@ def format_artifact(record: dict) -> str:
     manifest = record.get("manifest") or []
     lines.append(f"  files ({len(manifest)}):")
     for entry in manifest:
-        lines.append(f"    - {entry['path']} ({entry['size']} bytes)")
+        if references.is_reference_entry(entry):
+            lines.append(f"    - {entry['path']} -> {entry['ref']} (reference)")
+        else:
+            lines.append(f"    - {entry['path']} ({entry['size']} bytes)")
     return "\n".join(lines)
 
 

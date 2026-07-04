@@ -8,10 +8,14 @@ MEDIA_UPLOAD_KIND = "media"
 ARTIFACT_BLOB_UPLOAD_KIND = "artifact_blob"
 
 
-class ManifestEntry(TypedDict):
+class _ManifestEntryBase(TypedDict):
     path: str
     digest: Sha256Digest
     size: int
+
+
+class ManifestEntry(_ManifestEntryBase, total=False):
+    ref: str
 
 
 Manifest = list[ManifestEntry]

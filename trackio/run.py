@@ -10,7 +10,7 @@ from typing import Any
 import huggingface_hub
 from gradio_client import handle_file
 
-from trackio import cas, fragments, utils
+from trackio import cas, fragments, references, utils
 from trackio.alerts import (
     AlertLevel,
     format_alert_terminal,
@@ -1260,7 +1260,8 @@ class Run:
         else:
             self._wait_for_client_ready()
 
-            digests = [e["digest"] for e in manifest]
+            file_entries = [e for e in manifest if not references.is_reference_entry(e)]
+            digests = [e["digest"] for e in file_entries]
             with self._client_lock:
                 present_response = self._client.predict(
                     api_name="/check_artifact_blobs",
@@ -1278,7 +1279,7 @@ class Run:
                         entry["digest"],
                         str(cas.blob_path(self.project, entry["digest"])),
                     )
-                    for entry in manifest
+                    for entry in file_entries
                     if entry["digest"] not in present
                 ],
                 run_name=self.name,

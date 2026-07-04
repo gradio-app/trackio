@@ -24,6 +24,7 @@ from starlette.responses import RedirectResponse
 from starlette.routing import Route
 
 import trackio.cas as cas
+import trackio.references as references
 import trackio.utils as utils
 from trackio.asgi_app import (
     cleanup_uploaded_temp_file,
@@ -673,12 +674,11 @@ def artifact_log(
         raise TrackioAPIError(str(err)) from err
     if not isinstance(manifest, list) or not manifest:
         raise TrackioAPIError("Artifact manifest must be a non-empty list of entries.")
-    digests = []
+    file_digests = []
     paths = []
     for e in manifest:
         if not isinstance(e, dict):
             raise TrackioAPIError(f"Invalid artifact manifest entry: {e!r}")
-        digests.append(_validate_sha256_digest(e.get("digest")))
         try:
             paths.append(cas.validate_logical_path(e.get("path")))
         except ValueError as err:
@@ -686,12 +686,24 @@ def artifact_log(
         size = e.get("size")
         if not isinstance(size, int) or size < 0:
             raise TrackioAPIError(f"Artifact manifest entry has invalid size: {size!r}")
+        if references.is_reference_entry(e):
+            try:
+                references.validate_reference_uri(e.get("ref"))
+            except ValueError as err:
+                raise TrackioAPIError(str(err)) from err
+            digest = e.get("digest")
+            if not isinstance(digest, str) or not digest:
+                raise TrackioAPIError(
+                    f"Artifact reference entry must carry a string digest, got {digest!r}"
+                )
+        else:
+            file_digests.append(_validate_sha256_digest(e.get("digest")))
     try:
         cas.assert_manifest_paths_compatible(paths)
     except ValueError as err:
         raise TrackioAPIError(str(err)) from err
-    present = SQLiteStorage.list_artifact_blobs_present(project, digests)
-    missing = [d for d in digests if d not in present]
+    present = SQLiteStorage.list_artifact_blobs_present(project, file_digests)
+    missing = [d for d in file_digests if d not in present]
     if missing:
         preview = missing[:5]
         suffix = "..." if len(missing) > 5 else ""
