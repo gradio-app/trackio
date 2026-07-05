@@ -68,35 +68,6 @@ def _fetch_blob_from_remote(
         )
 
 
-def _verify_reference_unchanged(uri: str, scheme: str, expected_digest: str) -> None:
-    """Raise if the object at `uri` no longer matches `expected_digest`.
-
-    Re-probes the source for its current digest (the same sha256, provider ETag,
-    or LFS hash `resolve` records) and compares it to the digest captured when the
-    reference was logged, so a referenced object overwritten since then fails
-    loudly instead of silently materializing drifted content — mirroring wandb,
-    which re-queries the object's current ETag on download. Verification is
-    skipped when the recorded digest is the URI itself (no checksum was ever
-    captured) or the source cannot be re-probed (a genuine fetch error is then
-    surfaced by the fetch itself).
-    """
-    if not expected_digest or expected_digest == uri:
-        return
-    try:
-        resolved = references.resolve_reference(
-            uri, scheme, checksum=True, max_objects=1
-        )
-    except Exception:
-        return
-    current = resolved[0].digest if resolved else None
-    if current is not None and current != expected_digest:
-        raise ValueError(
-            f"Reference {uri!r} has changed since it was logged (recorded digest "
-            f"{expected_digest}, current {current}); the source object was "
-            "modified — re-log the artifact to capture the new version."
-        )
-
-
 def _materialize_reference(uri: str, scheme: str, dest: Path, digest: str) -> None:
     """Fetch the object at `uri` into `dest`, verified, idempotently, atomically.
 
@@ -105,16 +76,28 @@ def _materialize_reference(uri: str, scheme: str, dest: Path, digest: str) -> No
     (mirroring the size/mtime idempotence of `_materialize`), letting a repeated
     `download()` skip references already on disk.
 
-    Otherwise the object is first verified against its recorded `digest` (see
-    `_verify_reference_unchanged`, which rejects a drifted source), then streamed
-    into a sibling temporary file and promoted to `dest` with a single
-    `os.replace`, so an interrupted or failed fetch never leaves a truncated file
-    at the destination path. The temporary file is removed and the original error
-    re-raised if the fetch fails.
+    Otherwise the object is first verified against its recorded `digest`, rejecting
+    a drifted source.
     """
     if dest.is_file():
         return
-    _verify_reference_unchanged(uri, scheme, digest)
+
+    if not digest or digest == uri:
+        return
+    try:
+        resolved = references.resolve_reference(
+            uri, scheme, checksum=True, max_objects=1
+        )
+    except Exception:
+        return
+    current = resolved[0].digest if resolved else None
+    if current is not None and current != digest:
+        raise ValueError(
+            f"Reference {uri!r} has changed since it was logged (recorded digest "
+            f"{digest}, current {current}); the source object was "
+            "modified — re-log the artifact to capture the new version."
+        )
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.parent / f"{dest.name}.partial.{uuid.uuid4().hex}"
     try:
