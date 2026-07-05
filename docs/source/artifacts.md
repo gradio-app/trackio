@@ -99,7 +99,7 @@ By default, files are written to `./artifacts/<project>/<name>_v<version>/`, key
 
 ## Referencing external data
 
-Some data is too large to copy, or already lives in durable storage you don't want duplicated, for instance objects that already live in an object storage. `add_reference` records such data by **URI** in the manifest *without staging any bytes* into Trackio's storage, so you still get versioning, de-duplication, aliases, and lineage over data that never moves:
+Some data is too large to copy, or already lives in durable storage you don't want duplicated. `add_reference` records such data by **URI** in the manifest *without staging any bytes* into Trackio's storage, so you still get versioning, de-duplication, aliases, and lineage over data that never moves:
 
 ```python
 artifact = trackio.Artifact(name="training-set", type="dataset")
