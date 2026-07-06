@@ -77,29 +77,25 @@ def _materialize_reference(uri: str, scheme: str, dest: Path, digest: str) -> No
     `download()` skip references already on disk.
 
     Otherwise, when a real checksum was recorded, the source is re-probed and
-    compared — a drifted object raises, mirroring wandb's re-query-the-ETag check.
-    A reference whose recorded digest is the URI fallback (no checksum was
-    captured), or one that cannot be re-probed, skips verification but is still
-    fetched. The object is streamed into a sibling temporary file and promoted to
-    `dest` with a single `os.replace`, so an interrupted or failed fetch never
-    leaves a truncated file; the temporary file is removed and the original error
-    re-raised on failure.
+    compared — a drifted object raises. When the digest doesn't exists, or when
+    it cannot be re-probed, the verification is skipped but the artifact is still
+    materialized.
     """
     if dest.is_file():
         return
-    if digest and digest != uri:
+    if len(digest) > 0 and digest != uri:
         try:
             resolved = references.resolve_reference(
                 uri, scheme, checksum=True, max_objects=1
-            )
+            )[0]
         except Exception:
             resolved = None
-        current = resolved[0].digest if resolved else None
-        if current is not None and current != digest:
+        current_digest = resolved.digest if resolved is not None else None
+        if current_digest is not None and current_digest != digest:
             raise ValueError(
                 f"Reference {uri!r} has changed since it was logged (recorded "
-                f"digest {digest}, current {current}); the source object was "
-                "modified — re-log the artifact to capture the new version."
+                f"digest {digest}, current {current_digest}); the source object "
+                "was modified — re-log the artifact to capture the new version."
             )
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.parent / f"{dest.name}.partial.{uuid.uuid4().hex}"
@@ -115,7 +111,7 @@ class Artifact:
     """
     A versioned, named bundle of files and references attached to a project.
 
-    Construct an `Artifact`, add contents to it with `add_file` / `add_dir`
+    Construct an `Artifact`, add files to it with `add_file` / `add_dir`
     (bytes staged into content-addressed storage) or `add_reference` (an
     external URI recorded without copying any bytes), then persist it with
     `trackio.log_artifact`. Logging freezes the artifact and populates its
@@ -311,15 +307,14 @@ class Artifact:
 
         Unlike `add_file`/`add_dir`, a reference records the data's URI (plus,
         when available, a size and checksum) *without staging the bytes into
-        Trackio's content-addressed store*. This is how you version and track
-        lineage over large or already-durably-stored datasets (multi-TB on
-        NVMe or in the cloud) that must not be duplicated. Mirrors the semantics
-        of `wandb.Artifact.add_reference`.
+        the content-addressed store*. This is how you version and track
+        lineage over large or already-durably-stored datasets that must not be
+        duplicated.
 
         A URI that denotes a directory (`file://`) or object prefix (`s3://`,
         `gs://`, `hf://`, Azure) is expanded into one entry per object, capped
         by `max_objects`. Reference bytes are never uploaded to a Space or
-        bucket; unlike files, though, they *are* downloaded by `download()`.
+        bucket.
 
         Args:
             uri (`str`):
@@ -331,10 +326,10 @@ class Artifact:
                 pointer that cannot be checksummed or downloaded.
             name (`str`, *optional*):
                 Logical path the reference is stored under. Defaults to the last
-                segment of `uri`; for an expanded prefix it is the prefix under
-                which each object's relative path is nested.
+                segment of `uri`; for an expanded prefix (ending with /) it is the
+                prefix under which each object's relative path is nested.
             checksum (`bool`, *optional*, defaults to `True`):
-                When `True`, Trackio probes the source to derive its size and a
+                When `True`, probes the source to derive its size and a
                 checksum (and to expand a directory/prefix): `file://` is
                 stream-hashed to a sha256, `hf://` uses its LFS sha256 or git
                 blob id, and the cloud/HTTP stores use the provider `ETag`. This
@@ -344,9 +339,8 @@ class Artifact:
                 checksum can be obtained for a *remote* source (no ETag, a
                 missing cloud SDK, an opaque scheme), the URI itself is used as
                 the `digest` and a warning is emitted. A local `file://` path
-                that does not exist instead raises — a missing local file is
-                almost always a mistake. Pass `checksum=False` to skip remote
-                probing entirely.
+                that does not exist instead raises. Pass `checksum=False` to skip
+                remote probing entirely.
             max_objects (`int`, *optional*):
                 Cap on how many objects a directory/prefix expands into (default
                 10,000); exceeding it raises.
@@ -382,7 +376,7 @@ class Artifact:
                 "reference that expands to multiple objects."
             )
         used_uri_fallback = False
-        name_prefix = f"{name.rstrip('/')}/" if name else ""
+        name_prefix = f"{name.rstrip('/')}/" if name is not None else ""
         for entry in resolved:
             if entry.relkey is None:
                 logical = self._reference_logical_name(name, entry.uri, uri)
@@ -481,10 +475,7 @@ class Artifact:
         object at each reference URI is downloaded into the directory (via the
         bundled `httpx` for `http(s)://`, `huggingface_hub` for `hf://`, and the
         optional cloud SDK for `s3://`/`gs://`/Azure). Each object is written
-        atomically — streamed to a temporary file and moved into place only on
-        success — so an interrupted fetch never leaves a truncated file behind,
-        and an object already present on disk is left untouched rather than
-        re-fetched, so repeated calls stay idempotent. Because reference digests
+        atomically and calls are idempotent. Because reference digests
         are opaque (a provider ETag or the URI itself), a present file is assumed
         current and is not re-verified against the source. Downloading can
         transfer a large amount of data; to work with the URIs without
