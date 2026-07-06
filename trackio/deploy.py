@@ -3,7 +3,6 @@ import io
 import json as json_mod
 import os
 import shutil
-import sys
 import tempfile
 import threading
 import time
@@ -11,11 +10,6 @@ import warnings
 from collections import Counter
 from importlib.resources import files
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 import httpx
 import huggingface_hub
@@ -293,6 +287,11 @@ def resolve_auto_bucket_id(
 
 def _get_source_install_dependencies() -> str:
     """Get trackio dependencies from pyproject.toml for source installs."""
+    try:
+        import tomllib  # noqa: PLC0415
+    except ModuleNotFoundError:
+        import tomli as tomllib  # noqa: PLC0415
+
     trackio_path = files("trackio")
     pyproject_path = Path(trackio_path).parent / "pyproject.toml"
     with open(pyproject_path, "rb") as f:
