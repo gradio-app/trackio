@@ -197,3 +197,21 @@ def test_deploy_as_static_space_rejects_private_true(tmp_path, monkeypatch):
             private=True,
             frontend_dir=frontend_dir,
         )
+
+
+def test_build_remote_client_with_retry_passes_hf_token(monkeypatch):
+    monkeypatch.setattr(
+        deploy.huggingface_hub.utils, "get_token", lambda: "hf_supersecrettoken"
+    )
+    captured_kwargs = {}
+
+    def fake_remote_client(space_id, **kwargs):
+        captured_kwargs.update(kwargs)
+        return SimpleNamespace(space_id=space_id)
+
+    monkeypatch.setattr(deploy, "RemoteClient", fake_remote_client)
+
+    client = deploy._build_remote_client_with_retry("abidlabs/private-space")
+
+    assert client.space_id == "abidlabs/private-space"
+    assert captured_kwargs["hf_token"] == "hf_supersecrettoken"
