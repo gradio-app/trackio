@@ -92,10 +92,10 @@ artifact = trackio.use_artifact("my-model", type="model")
 ```python
 artifact = trackio.use_artifact("my-model:latest")
 path = artifact.download()
-# files are now under ./artifacts/my_project/my-model_v2/
+# files are now under ./.trackio/artifact-downloads/my_project/my-model_v2/
 ```
 
-By default, files are written to `./artifacts/<project>/<name>_v<version>/`, keyed by project so same-named artifacts from different projects never collide; pass `root` to choose another directory. `download()` is idempotent — files already present are skipped — and when the run is backed by a Space, any file missing locally is fetched from the remote.
+By default, files are written to `./.trackio/artifact-downloads/<project>/<name>_v<version>/`, keyed by project so same-named artifacts from different projects never collide; pass `root` to choose another directory. `download()` is idempotent — files already present are skipped — and when the run is backed by a Space, any file missing locally is fetched from the remote.
 
 ## Remote storage
 
