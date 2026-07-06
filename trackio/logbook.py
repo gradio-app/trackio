@@ -144,6 +144,7 @@ def build_manifest(proj: Path) -> dict:
         "title": _title_of(pages / "index.md", "Logbook"),
         "emoji": metadata.get("emoji", "🎯"),
         "space_id": metadata.get("space_id"),
+        "paper": metadata.get("paper"),
         "updated_at": _now_iso(),
         "root": {
             "slug": ROOT_SLUG,
