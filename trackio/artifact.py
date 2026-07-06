@@ -76,28 +76,31 @@ def _materialize_reference(uri: str, scheme: str, dest: Path, digest: str) -> No
     (mirroring the size/mtime idempotence of `_materialize`), letting a repeated
     `download()` skip references already on disk.
 
-    Otherwise the object is first verified against its recorded `digest`, rejecting
-    a drifted source.
+    Otherwise, when a real checksum was recorded, the source is re-probed and
+    compared — a drifted object raises, mirroring wandb's re-query-the-ETag check.
+    A reference whose recorded digest is the URI fallback (no checksum was
+    captured), or one that cannot be re-probed, skips verification but is still
+    fetched. The object is streamed into a sibling temporary file and promoted to
+    `dest` with a single `os.replace`, so an interrupted or failed fetch never
+    leaves a truncated file; the temporary file is removed and the original error
+    re-raised on failure.
     """
     if dest.is_file():
         return
-
-    if not digest or digest == uri:
-        return
-    try:
-        resolved = references.resolve_reference(
-            uri, scheme, checksum=True, max_objects=1
-        )
-    except Exception:
-        return
-    current = resolved[0].digest if resolved else None
-    if current is not None and current != digest:
-        raise ValueError(
-            f"Reference {uri!r} has changed since it was logged (recorded digest "
-            f"{digest}, current {current}); the source object was "
-            "modified — re-log the artifact to capture the new version."
-        )
-
+    if digest and digest != uri:
+        try:
+            resolved = references.resolve_reference(
+                uri, scheme, checksum=True, max_objects=1
+            )
+        except Exception:
+            resolved = None
+        current = resolved[0].digest if resolved else None
+        if current is not None and current != digest:
+            raise ValueError(
+                f"Reference {uri!r} has changed since it was logged (recorded "
+                f"digest {digest}, current {current}); the source object was "
+                "modified — re-log the artifact to capture the new version."
+            )
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.parent / f"{dest.name}.partial.{uuid.uuid4().hex}"
     try:
