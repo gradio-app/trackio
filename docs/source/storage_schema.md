@@ -153,6 +153,7 @@ Trackio derives parquet files from SQLite by flattening JSON columns into regula
 - `{project}.parquet` from `metrics`
 - `{project}_system.parquet` from `system_metrics`
 - `{project}_configs.parquet` from `configs`
+- `{project}_{table}.parquet` for each artifact table (`artifacts`, `artifact_versions`, `artifact_aliases`, `run_artifact_links`)
 
 The flattened parquet files keep the structural columns such as `timestamp`, `run_name`, and `step`, then add one column per key found in the JSON payload.
 
@@ -163,8 +164,11 @@ The flattened parquet files keep the structural columns such as `timestamp`, `ru
 - `metrics.parquet`
 - `aux/system_metrics.parquet`
 - `aux/configs.parquet`
+- `aux/artifacts.parquet`, `aux/artifact_versions.parquet`, `aux/artifact_aliases.parquet`, and `aux/run_artifact_links.parquet`
 - `runs.json`
 - `settings.json`
+
+Static deployment copies media files to `media/` and artifact blobs to `artifacts/blobs/sha256/{prefix}/{digest}` alongside these exports, so the browser-only dashboard can serve artifact downloads directly from the dataset or bucket.
 
 This is the layout used for static Spaces and exported datasets.
 

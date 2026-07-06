@@ -1165,6 +1165,13 @@ class SQLiteStorage:
             flat = SQLiteStorage._flatten_json_rows(configs_rows, "config")
             SQLiteStorage._write_parquet_rows(aux_dir / "configs.parquet", flat)
 
+        for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
+            artifact_rows = SQLiteStorage._read_table_rows(db_path, table)
+            if artifact_rows:
+                SQLiteStorage._write_parquet_rows(
+                    aux_dir / f"{table}.parquet", artifact_rows
+                )
+
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()

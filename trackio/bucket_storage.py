@@ -104,6 +104,7 @@ def _export_and_upload_static(
     dest_bucket_id: str,
     db_path: Path,
     media_dir: Path | None = None,
+    artifacts_dir: Path | None = None,
 ) -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = Path(tmp_dir)
@@ -113,6 +114,13 @@ def _export_and_upload_static(
 
         if media_dir and media_dir.exists():
             shutil.copytree(media_dir, output_dir / "media")
+
+        if artifacts_dir and artifacts_dir.exists():
+            shutil.copytree(
+                artifacts_dir,
+                output_dir / "artifacts",
+                ignore=shutil.ignore_patterns("*.partial.*"),
+            )
 
         files_to_add = []
         for f in output_dir.rglob("*"):
@@ -139,12 +147,34 @@ def _copy_project_media_between_buckets(
     )
 
 
+def _copy_project_artifacts_between_buckets(
+    source_bucket_id: str, dest_bucket_id: str, project: str
+) -> None:
+    source_artifacts_prefix = f"trackio/artifacts/{canonical_project_name(project)}/"
+    blobs_to_copy = _list_bucket_file_paths(
+        source_bucket_id, prefix=source_artifacts_prefix
+    )
+    if not blobs_to_copy:
+        return
+
+    huggingface_hub.copy_files(
+        f"hf://buckets/{source_bucket_id}/{source_artifacts_prefix}",
+        f"hf://buckets/{dest_bucket_id}/artifacts/",
+    )
+
+
 def upload_project_to_bucket_for_static(project: str, bucket_id: str) -> None:
     if not _local_db_has_data(project):
         _download_db_from_bucket(project, bucket_id)
 
     db_path = SQLiteStorage.get_project_db_path(project)
-    _export_and_upload_static(project, bucket_id, db_path, project_media_dir(project))
+    _export_and_upload_static(
+        project,
+        bucket_id,
+        db_path,
+        project_media_dir(project),
+        project_artifacts_dir(project),
+    )
 
 
 def export_from_bucket_for_static(
@@ -164,3 +194,6 @@ def export_from_bucket_for_static(
 
         _export_and_upload_static(project, dest_bucket_id, db_path)
         _copy_project_media_between_buckets(source_bucket_id, dest_bucket_id, project)
+        _copy_project_artifacts_between_buckets(
+            source_bucket_id, dest_bucket_id, project
+        )

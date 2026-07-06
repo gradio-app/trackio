@@ -228,6 +228,7 @@ export async function getArtifactConsumers(project, versionId) {
 }
 
 export function getArtifactBlobUrl(project, digest) {
+  if (_staticMode) return staticApi.getArtifactBlobUrl(project, digest);
   return `${BASE}/artifact_blob/${encodeURIComponent(project)}/${encodeURIComponent(digest)}`;
 }
 

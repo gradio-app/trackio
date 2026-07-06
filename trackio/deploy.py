@@ -43,6 +43,7 @@ from trackio.utils import (
     get_or_create_project_hash,
     on_spaces,
     preprocess_space_and_dataset_ids,
+    project_artifacts_dir,
     project_media_dir,
 )
 
@@ -922,6 +923,14 @@ def upload_dataset_for_static(
         if media_dir.exists():
             dest = output_dir / "media"
             shutil.copytree(media_dir, dest)
+
+        artifacts_dir = project_artifacts_dir(project)
+        if artifacts_dir.exists():
+            shutil.copytree(
+                artifacts_dir,
+                output_dir / "artifacts",
+                ignore=shutil.ignore_patterns("*.partial.*"),
+            )
 
         _retry_hf_write(
             "Dataset upload",
