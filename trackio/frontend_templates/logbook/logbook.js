@@ -45,8 +45,36 @@
   }
 
   const URL_ONLY = /^(https?:\/\/[^\s]+)$/;
+  const DETECTED_URL = /(https?:\/\/[^\s<)]+|trackio-local-dashboard:\/\/[^\s<)]+)/g;
 
   function renderMarkdown(md, container) {
+    const cellRe = /(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)/g;
+    let pos = 0;
+    let found = false;
+    let match;
+    while ((match = cellRe.exec(md))) {
+      found = true;
+      renderMarkdownPlain(md.slice(pos, match.index + match[1].length), container);
+      const meta = parseCellMeta(match[2]);
+      renderCell(meta, match[3], container);
+      pos = match.index + match[0].length;
+    }
+    if (found) {
+      renderMarkdownPlain(md.slice(pos), container);
+    } else {
+      renderMarkdownPlain(md, container);
+    }
+  }
+
+  function parseCellMeta(raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      return { type: "markdown", title: "Note" };
+    }
+  }
+
+  function renderMarkdownPlain(md, container) {
     const lines = md.replace(/<!--[\s\S]*?-->/g, "").split("\n");
     let i = 0;
     let para = [];
@@ -154,6 +182,151 @@
       i++;
     }
     flushPara();
+  }
+
+  function renderCell(meta, body, container) {
+    const cell = document.createElement("section");
+    cell.className = `cell ${meta.type || "markdown"}`;
+
+    const head = document.createElement("div");
+    head.className = "cell-head";
+    const rawTitle = (meta.title || "").trim();
+    const title = rawTitle && rawTitle.toLowerCase() !== "untitled" ? esc(rawTitle) : "";
+    const when = meta.created_at ? `<span>${esc(formatTime(meta.created_at))}</span>` : "";
+    head.innerHTML =
+      (title ? `<div class="cell-title">${title}</div>` : "") +
+      `<div class="cell-meta">${when}</div>`;
+    if (!title) head.classList.add("no-title");
+    cell.appendChild(head);
+
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "cell-body";
+    if (meta.type === "code") {
+      renderCodeCell(body, bodyEl);
+    } else {
+      renderMarkdownPlain(body, bodyEl);
+      renderDetectedEmbeds(body, bodyEl);
+    }
+    cell.appendChild(bodyEl);
+    container.appendChild(cell);
+  }
+
+  function formatTime(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function parseFences(text) {
+    const fenceRe = /(`{3,4}|~{3,4})([^\n]*)\n([\s\S]*?)\n\1/g;
+    const parts = [];
+    let pos = 0;
+    let match;
+    while ((match = fenceRe.exec(text))) {
+      if (match.index > pos) {
+        parts.push({ kind: "text", text: text.slice(pos, match.index) });
+      }
+      const info = match[2].trim();
+      const lang = (info.split(/\s+/)[0] || "").toLowerCase();
+      const titleMatch = info.match(/title=(\S+)/);
+      parts.push({
+        kind: lang === "result" || lang === "output" ? "output" : "code",
+        lang,
+        title: titleMatch ? titleMatch[1] : null,
+        text: match[3],
+      });
+      pos = match.index + match[0].length;
+    }
+    if (pos < text.length) parts.push({ kind: "text", text: text.slice(pos) });
+    return parts;
+  }
+
+  function extractUrls(text) {
+    const seen = new Set();
+    const urls = [];
+    let match;
+    while ((match = DETECTED_URL.exec(text))) {
+      const url = match[1].replace(/[.,;:]+$/, "");
+      if (!seen.has(url)) {
+        seen.add(url);
+        urls.push(url);
+      }
+    }
+    DETECTED_URL.lastIndex = 0;
+    return urls;
+  }
+
+  function renderDetectedEmbeds(text, container) {
+    extractUrls(text).forEach((url) => {
+      if (url.startsWith("trackio-local-dashboard://")) {
+        const div = document.createElement("div");
+        div.className = "artifact-chip";
+        div.innerHTML =
+          "🎯 <strong>Local Trackio dashboard</strong> — publish the logbook to share it";
+        container.appendChild(div);
+      } else {
+        container.appendChild(unfurl(url));
+      }
+    });
+  }
+
+  function renderCodeCell(body, container) {
+    const parts = parseFences(body);
+    parts.forEach((part) => {
+      if (part.kind === "text") {
+        const text = part.text.trim();
+        if (text) {
+          if (/^exit\s+\S+(\s|·)/.test(text)) {
+            container.appendChild(renderRunMeta(text));
+          } else {
+            renderMarkdownPlain(text, container);
+            renderDetectedEmbeds(text, container);
+          }
+        }
+        return;
+      }
+      if (part.kind === "output") {
+        container.appendChild(renderOutputAccordion(part.text));
+        renderDetectedEmbeds(part.text, container);
+        return;
+      }
+      if (part.title) {
+        container.appendChild(renderCode(part.text, part.lang, part.title));
+        return;
+      }
+      const command = document.createElement("div");
+      command.className = "command-block";
+      command.appendChild(renderCode(part.text, part.lang, null));
+      container.appendChild(command);
+    });
+  }
+
+  function renderOutputAccordion(text) {
+    const det = document.createElement("details");
+    det.className = "output-accordion";
+    const sum = document.createElement("summary");
+    const lineCount = text.trim() ? text.trimEnd().split("\n").length : 0;
+    sum.innerHTML = lineCount ? `${lineCount} lines` : "output";
+    const pre = document.createElement("pre");
+    pre.className = "output-pre";
+    const c = document.createElement("code");
+    c.textContent = text;
+    pre.appendChild(c);
+    det.appendChild(sum);
+    det.appendChild(pre);
+    return det;
+  }
+
+  function renderRunMeta(text) {
+    const div = document.createElement("div");
+    div.className = "run-meta";
+    div.textContent = text;
+    return div;
   }
 
   function parseRow(line) {
@@ -452,18 +625,19 @@
     {
       test: (u) => /huggingface\.co\/spaces\//.test(u),
       embed: true,
-      render: (u, el) => {
+      render: async (u, el) => {
         const id = u.split("/spaces/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-        const sub = id.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-        el.classList.add("embed");
-        el.innerHTML =
-          `<div class="embed-head">` +
-          `<span class="unfurl-kind">🚀 HF Space</span>` +
-          `<a class="embed-title" href="${esc(u)}" target="_blank" rel="noopener">${esc(id)}</a>` +
-          `<a class="embed-open" href="${esc(u)}" target="_blank" rel="noopener">Open ↗</a>` +
-          `</div>` +
-          `<iframe class="embed-frame" src="https://${sub}.hf.space/?sidebar=hidden&navbar=hidden" loading="lazy" ` +
-          `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
+        base(el, u, "HF Space", "🚀", id, "Hugging Face Space");
+        const d = await getJSON(`https://huggingface.co/api/spaces/${id}`);
+        const tags = (d && d.tags) || [];
+        if (tags.some((t) => String(t).toLowerCase() === "trackio")) {
+          renderTrackioSpaceEmbed(el, u, id);
+        } else if (d) {
+          fill(el, id, d.cardData?.title || (d.sdk ? `SDK: ${d.sdk}` : "Hugging Face Space"), [
+            `♥ ${fmt(d.likes)}`,
+            ...(tags || []).filter((t) => !String(t).includes(":")).slice(0, 3),
+          ]);
+        }
       },
     },
     {
@@ -536,6 +710,19 @@
       `<div class="unfurl-desc">${esc(desc)}</div>` +
       `<div class="unfurl-meta"></div></div></div>` +
       `<div class="unfurl-raw">${esc(url)}</div>`;
+  }
+
+  function renderTrackioSpaceEmbed(el, url, id) {
+    const sub = id.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    el.className = "trackio-embed unfurl embed";
+    el.innerHTML =
+      `<div class="embed-head">` +
+      `<span class="unfurl-kind">🎯 Trackio dashboard</span>` +
+      `<a class="embed-title" href="${esc(url)}" target="_blank" rel="noopener">${esc(id)}</a>` +
+      `<a class="embed-open" href="${esc(url)}" target="_blank" rel="noopener">Open ↗</a>` +
+      `</div>` +
+      `<iframe class="embed-frame" src="https://${sub}.hf.space/?sidebar=hidden&navbar=hidden" loading="lazy" ` +
+      `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
   }
 
   function fill(el, title, desc, chips) {
@@ -671,8 +858,8 @@
       "2. Add the Trackio skill for your agent:   trackio skills add   (then reload)\n" +
       `3. Connect to this logbook:                trackio logbook open ${space}\n\n` +
       "You'll get a compact, token-efficient copy you can read. If I've given you " +
-      'write access to the Space, add findings with `trackio logbook note "..." ' +
-      '--experiment "..."` and they will sync back automatically.';
+      'write access to the Space, add findings with `trackio logbook cell markdown "..." ' +
+      '--page "..."` and they will sync back automatically.';
 
     const foot = document.getElementById("sidebar-foot");
     foot.hidden = false;

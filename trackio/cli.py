@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 import huggingface_hub
 
@@ -233,6 +234,47 @@ def _serialize_space(space) -> dict:
     }
 
 
+def _maybe_handle_logbook_run_argv() -> bool:
+    argv = sys.argv[1:]
+    try:
+        logbook_idx = argv.index("logbook")
+    except ValueError:
+        return False
+    if len(argv) <= logbook_idx + 1 or argv[logbook_idx + 1] != "run":
+        return False
+
+    run_argv = argv[logbook_idx + 2 :]
+    if "--" in run_argv:
+        sep = run_argv.index("--")
+        option_argv = run_argv[:sep]
+        command = run_argv[sep + 1 :]
+    else:
+        option_argv = run_argv
+        command = []
+
+    run_parser = argparse.ArgumentParser(
+        prog=f"{os.path.basename(sys.argv[0])} logbook run",
+        description=(
+            "Run a command; log the command, its scripts, and output to a page"
+        ),
+    )
+    run_parser.add_argument("--page", help="Page title or slug")
+    run_parser.add_argument("--title", help="Cell title")
+    run_parser.add_argument("--link", action="append", default=[], help="URL to unfurl")
+    opts = run_parser.parse_args(option_argv)
+    if not command:
+        run_parser.error("No command provided. Use: trackio logbook run -- <command>")
+    args = argparse.Namespace(
+        logbook_action="run",
+        page=opts.page,
+        title=opts.title,
+        link=opts.link,
+        command=command,
+    )
+    _handle_logbook(args)
+    return True
+
+
 def _trackio_space_namespaces(api, token: str | None, author: str | None) -> list[str]:
     if author:
         return [author]
@@ -297,6 +339,9 @@ def _handle_list_spaces(args):
 
 
 def main():
+    if _maybe_handle_logbook_run_argv():
+        return
+
     parser = argparse.ArgumentParser(description="Trackio CLI")
     parser.add_argument(
         "--space",
@@ -943,7 +988,7 @@ def main():
         "--no-hook",
         dest="no_hook",
         action="store_true",
-        help="Do not install the Claude Code hook that mirrors the plan into the logbook",
+        help="Do not install the Claude Code hook that mirrors todos into the logbook",
     )
 
     logbook_parser = subparsers.add_parser(
@@ -960,38 +1005,65 @@ def main():
     )
     lb_open.add_argument("--title", help="Logbook title (only when creating)")
 
-    lb_note = logbook_sub.add_parser(
-        "note", help="Append a finding to an experiment page"
+    lb_cell = logbook_sub.add_parser(
+        "cell", help="Append a typed notebook-style cell to a logbook page"
     )
-    lb_note.add_argument("body", help="The finding text")
-    lb_note.add_argument(
-        "--experiment",
-        help="Experiment name (created + listed on the index if new)",
-    )
-    lb_note.add_argument(
-        "--status", help="Set the experiment's status (with --experiment)"
-    )
-    lb_note.add_argument("--title", help="Short heading for this entry")
-    lb_note.add_argument("--page", help="Target an existing page by slug instead")
-    lb_note.add_argument("--link", action="append", default=[], help="URL to unfurl")
-    lb_note.add_argument(
+    lb_cell_sub = lb_cell.add_subparsers(dest="cell_type", required=True)
+
+    lb_cell_md = lb_cell_sub.add_parser("markdown", help="Append a markdown cell")
+    lb_cell_md.add_argument("body", help="Markdown body")
+    lb_cell_md.add_argument("--title", help="Cell title")
+    lb_cell_md.add_argument("--page", help="Page title or slug")
+    lb_cell_md.add_argument("--link", action="append", default=[], help="URL to unfurl")
+    lb_cell_md.add_argument(
         "--artifact", action="append", default=[], help="Trackio artifact name:vN"
     )
-    lb_note.add_argument(
+    lb_cell_md.add_argument(
         "--code",
         action="append",
         default=[],
-        help="Path to a script/config to attach (collapsible, syntax-highlighted)",
+        help="Path to a script/config to attach",
+    )
+    lb_cell_md.add_argument(
+        "--attachment",
+        action="append",
+        default=[],
+        help=(
+            "Hidden raw-data attachment as name|kind|visible_url|raw_url[|description]. "
+            "Repeatable."
+        ),
     )
 
-    lb_plan = logbook_sub.add_parser(
-        "plan",
-        help="Seed the table of contents with planned experiments (in order)",
+    lb_cell_code = lb_cell_sub.add_parser("code", help="Append a code cell")
+    lb_cell_code.add_argument("--title", help="Cell title")
+    lb_cell_code.add_argument("--page", help="Page title or slug")
+    lb_cell_code.add_argument(
+        "--code", action="append", default=[], help="Path to code/config to include"
     )
-    lb_plan.add_argument("steps", nargs="+", help="Experiment names, in plan order")
+    lb_cell_code.add_argument("--code-text", help="Inline code to include")
+    lb_cell_code.add_argument("--language", help="Language for --code-text")
+    lb_cell_code.add_argument("--output", required=True, help="Output text")
+    lb_cell_code.add_argument(
+        "--attachment",
+        action="append",
+        default=[],
+        help=(
+            "Hidden raw-data attachment as name|kind|visible_url|raw_url[|description]. "
+            "Repeatable."
+        ),
+    )
+
+    lb_run = logbook_sub.add_parser(
+        "run",
+        help="Run a command; log the command, its scripts, and output to a page",
+    )
+    lb_run.add_argument("--page", help="Page title or slug")
+    lb_run.add_argument("--title", help="Cell title")
+    lb_run.add_argument("--link", action="append", default=[], help="URL to unfurl")
+    lb_run.add_argument("command", nargs="*")
 
     lb_page = logbook_sub.add_parser(
-        "page", help="Create a page (returns a slug to link from the index)"
+        "page", help="Create or select a page and make it the default target"
     )
     lb_page.add_argument("title", help="Page title")
     lb_page.add_argument("--parent", default="index", help="Parent page slug")
@@ -1604,6 +1676,31 @@ def _sync_suffix(lb, proj):
     return ""
 
 
+def _logbook_cell_target(lb, proj, args):
+    return lb.resolve_page(proj, getattr(args, "page", None))
+
+
+def _parse_logbook_attachments(values):
+    attachments = []
+    for value in values or []:
+        parts = value.split("|", 4)
+        if len(parts) < 4:
+            error_exit(
+                "--attachment must be name|kind|visible_url|raw_url[|description]"
+            )
+        name, kind, visible_url, raw_url = parts[:4]
+        attachment = {
+            "name": name,
+            "kind": kind,
+            "visible_url": visible_url,
+            "raw_url": raw_url,
+        }
+        if len(parts) == 5:
+            attachment["description"] = parts[4]
+        attachments.append(attachment)
+    return attachments
+
+
 def _handle_logbook(args):
     from trackio import logbook as lb
 
@@ -1632,41 +1729,58 @@ def _handle_logbook(args):
             print(f"Opened logbook at {lb.logbook_root(proj)}")
             if args.space_id:
                 print(f"Will publish to: {args.space_id}")
-        elif action == "note":
+        elif action == "run":
             proj = lb.require_project_dir()
-            if args.experiment:
-                slug = lb.ensure_experiment(proj, args.experiment, status=args.status)
-            elif args.page and args.page != lb.ROOT_SLUG:
-                slug = args.page
-            else:
-                error_exit(
-                    "The main page is the table of contents — notes go on an "
-                    'experiment. Use: trackio logbook note "..." --experiment "Name"'
-                )
-            lb.add_note(
+            command = list(args.command or [])
+            if command and command[0] == "--":
+                command = command[1:]
+            if not command:
+                error_exit("No command provided. Use: trackio logbook run -- <command>")
+            rc = lb.run_and_log(
                 proj,
-                args.body,
+                command,
+                page=args.page,
                 title=args.title,
-                page_slug=slug,
                 links=args.link,
-                artifacts=args.artifact,
-                code=args.code,
             )
-            print(f"Logged to experiment '{slug}'.{_sync_suffix(lb, proj)}")
-            lb.trigger_autosync(proj)
-        elif action == "plan":
+            slug = lb.read_metadata(proj).get("last_page", "?")
+            print(f"Logged run to page '{slug}'.{_sync_suffix(lb, proj)}")
+            sys.exit(rc)
+        elif action == "cell":
             proj = lb.require_project_dir()
-            slugs = [
-                lb.ensure_experiment(proj, s, status="planned") for s in args.steps
-            ]
-            print(f"Seeded {len(slugs)} planned experiment(s).{_sync_suffix(lb, proj)}")
+            slug = _logbook_cell_target(lb, proj, args)
+            if args.cell_type == "markdown":
+                lb.add_markdown_cell(
+                    proj,
+                    slug,
+                    args.body,
+                    title=args.title,
+                    links=args.link,
+                    artifacts=args.artifact,
+                    code=args.code,
+                    attachments=_parse_logbook_attachments(args.attachment),
+                )
+            elif args.cell_type == "code":
+                lb.add_code_cell(
+                    proj,
+                    slug,
+                    args.output,
+                    title=args.title,
+                    code_paths=args.code,
+                    code_text=args.code_text,
+                    language=args.language,
+                    attachments=_parse_logbook_attachments(args.attachment),
+                )
+            print(
+                f"Logged {args.cell_type} cell to page "
+                f"'{slug}'.{_sync_suffix(lb, proj)}"
+            )
             lb.trigger_autosync(proj)
         elif action == "page":
             proj = lb.require_project_dir()
-            page_slug = lb.add_page(proj, args.title, parent_slug=args.parent)
+            page_slug = lb.ensure_page(proj, args.title, parent_slug=args.parent)
             print(
-                f"Created page '{page_slug}'. Link it from a page with "
-                f"[{args.title}](#/{page_slug})"
+                f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}"
             )
             lb.trigger_autosync(proj)
         elif action == "_sync":
@@ -1853,7 +1967,7 @@ def _handle_skills_add(args):
     if args.claude and not args.no_hook:
         hook_path = _install_claude_logbook_hook(args.global_)
         if hook_path:
-            print(f"Installed logbook plan-sync hook: {hook_path}")
+            print(f"Installed logbook todo-sync hook: {hook_path}")
 
 
 def _install_claude_logbook_hook(global_: bool):

@@ -31,6 +31,15 @@ Use `import trackio` in your training scripts to log metrics:
 
 → See [logging_metrics.md](logging_metrics.md) for setup, TRL integration, and configuration options.
 
+**When a logbook exists**: run ML scripts through `trackio logbook run -- ...` instead of invoking `python ...` directly. Keep `trackio.init()` / `trackio.log()` / `trackio.finish()` inside the script, but launch it like:
+
+```bash
+trackio logbook page "Baseline"
+trackio logbook run -- python train.py --lr 1e-4
+```
+
+This tees output live and records the exact command, detected script/config files, exit code, duration, and captured output in the logbook.
+
 ### Python API → Alerts
 
 Insert `trackio.alert()` calls in training code to flag important events — like inserting print statements for debugging, but structured and queryable:
@@ -90,7 +99,7 @@ trackio list projects --space username/my-space --json
 When running experiments autonomously as an LLM agent, the recommended workflow is:
 
 1. **Set up training with alerts** — insert `trackio.alert()` calls for diagnostic conditions
-2. **Launch training** — run the script in the background
+2. **Launch training** — if a logbook exists, use `trackio logbook run -- ...`; otherwise run the script normally
 3. **Poll for alerts** — use `trackio list alerts --project <name> --json --since <timestamp>` to check for new alerts
 4. **Read metrics** — use `trackio get metric ...` to inspect specific values
 5. **Iterate** — based on alerts and metrics, stop the run, adjust hyperparameters, and launch a new run
