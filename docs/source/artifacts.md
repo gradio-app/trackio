@@ -30,6 +30,20 @@ When you pass a path, the artifact `name` defaults to `run-<run_id>-<basename>` 
 trackio.log_artifact("checkpoints/", name="my-model", type="model")
 ```
 
+### Artifact types
+
+Artifact `type` is a free-form category string. Trackio does not enforce a fixed list of types, but common conventions are:
+
+| Type | Use it for |
+| --- | --- |
+| `"model"` | Model checkpoints, adapter weights, tokenizers, model configs |
+| `"dataset"` | Training, validation, test, or generated datasets |
+| `"evaluation"` | Evaluation outputs, predictions, benchmark results, score files |
+| `"report"` | Figures, plots, tables, notebooks, or human-readable analysis bundles |
+| `"unspecified"` | The default when no type is provided |
+
+Use stable type names within a project so you can filter artifacts consistently and use `trackio.use_artifact(..., type="...")` to assert that a run is consuming the expected kind of artifact.
+
 ### Building an artifact explicitly
 
 For finer control — multiple files, custom logical paths, a description, or metadata — construct an [`Artifact`], add files to it, then log it:
@@ -92,10 +106,10 @@ artifact = trackio.use_artifact("my-model", type="model")
 ```python
 artifact = trackio.use_artifact("my-model:latest")
 path = artifact.download()
-# files are now under ./artifacts/my_project/my-model_v2/
+# files are now under ./.trackio/artifact-downloads/my_project/my-model_v2/
 ```
 
-By default, files are written to `./artifacts/<project>/<name>_v<version>/`, keyed by project so same-named artifacts from different projects never collide; pass `root` to choose another directory. `download()` is idempotent — files already present are skipped — and when the run is backed by a Space, any file missing locally is fetched from the remote.
+By default, files are written to `./.trackio/artifact-downloads/<project>/<name>_v<version>/`, keyed by project so same-named artifacts from different projects never collide; pass `root` to choose another directory. `download()` is idempotent — files already present are skipped — and when the run is backed by a Space, any file missing locally is fetched from the remote.
 
 ## Remote storage
 
