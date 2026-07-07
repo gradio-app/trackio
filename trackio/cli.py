@@ -1068,6 +1068,21 @@ def main():
     lb_page.add_argument("title", help="Page title")
     lb_page.add_argument("--parent", default="index", help="Parent page slug")
 
+    lb_read = logbook_sub.add_parser(
+        "read", help="Read logbook pages/cells in an agent-friendly form"
+    )
+    lb_read_sub = lb_read.add_subparsers(dest="read_target", required=True)
+    lb_read_pages = lb_read_sub.add_parser("pages", help="List logbook pages")
+    lb_read_pages.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read_page = lb_read_sub.add_parser(
+        "page", help="Read a page outline: cell ids and titles only"
+    )
+    lb_read_page.add_argument("page", nargs="?", help="Page title or slug")
+    lb_read_page.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read_cell = lb_read_sub.add_parser("cell", help="Read one full cell by id")
+    lb_read_cell.add_argument("cell_id", help="Cell id")
+    lb_read_cell.add_argument("--json", action="store_true", help="Output JSON")
+
     lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
     lb_serve.add_argument("--port", type=int, default=7861)
     lb_serve.add_argument("--no-browser", action="store_true")
@@ -1701,6 +1716,37 @@ def _parse_logbook_attachments(values):
     return attachments
 
 
+def _print_logbook_pages(pages):
+    if not pages:
+        print("No pages.")
+        return
+    print("Pages:")
+    for page in pages:
+        print(f"- {page['slug']} · {page['title']} · {page['cell_count']} cells")
+
+
+def _print_logbook_page_outline(page):
+    print(f"Page: {page['title']} ({page['slug']})")
+    if not page["cells"]:
+        print("No cells.")
+        return
+    print("Cells:")
+    for cell in page["cells"]:
+        created = f" · {cell['created_at']}" if cell.get("created_at") else ""
+        print(f"- {cell['id']} · {cell['type']} · {cell['title']}{created}")
+    print("\nRead a full cell with: trackio logbook read cell <cell-id>")
+
+
+def _print_logbook_cell(cell):
+    print(f"Cell: {cell['title']} ({cell['id']})")
+    print(f"Page: {cell['page_title']} ({cell['page']})")
+    print(f"Type: {cell['type']}")
+    if cell.get("created_at"):
+        print(f"Created: {cell['created_at']}")
+    print("\n---\n")
+    print(cell["body"])
+
+
 def _handle_logbook(args):
     from trackio import logbook as lb
 
@@ -1783,6 +1829,26 @@ def _handle_logbook(args):
                 f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}"
             )
             lb.trigger_autosync(proj)
+        elif action == "read":
+            proj = lb.require_project_dir()
+            if args.read_target == "pages":
+                pages = lb.list_pages(proj)
+                if args.json:
+                    print(format_json({"pages": pages}))
+                else:
+                    _print_logbook_pages(pages)
+            elif args.read_target == "page":
+                page = lb.read_page_outline(proj, args.page)
+                if args.json:
+                    print(format_json(page))
+                else:
+                    _print_logbook_page_outline(page)
+            elif args.read_target == "cell":
+                cell = lb.read_cell(proj, args.cell_id)
+                if args.json:
+                    print(format_json(cell))
+                else:
+                    _print_logbook_cell(cell)
         elif action == "_sync":
             lb.sync_worker()
         elif action == "sync-todos":

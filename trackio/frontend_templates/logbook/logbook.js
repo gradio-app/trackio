@@ -857,7 +857,9 @@
       "1. If you don't have Trackio, install it:  uv tool install trackio\n" +
       "2. Add the Trackio skill for your agent:   trackio skills add   (then reload)\n" +
       `3. Connect to this logbook:                trackio logbook open ${space}\n\n` +
-      "You'll get a compact, token-efficient copy you can read. If I've given you " +
+      "Read outlines first with `trackio logbook read pages` and " +
+      "`trackio logbook read page \"...\"`; then fetch relevant details with " +
+      "`trackio logbook read cell cell_<id>`. If I've given you " +
       'write access to the Space, add findings with `trackio logbook cell markdown "..." ' +
       '--page "..."` and they will sync back automatically.';
 

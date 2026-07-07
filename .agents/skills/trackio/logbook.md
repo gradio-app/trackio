@@ -12,12 +12,15 @@ trackio logbook page "..."                              # add/select a page as t
 trackio logbook cell markdown "..." --page "..."        # log a finding onto a page (creates it if new)
 trackio logbook cell code --page "..." --code train.py --output "..."
 trackio logbook run --page "..." -- python train.py --lr 3e-4  # run + capture command, scripts, output
+trackio logbook read pages                              # list pages
+trackio logbook read page "..."                         # read only cell ids + titles for a page
+trackio logbook read cell cell_<id>                     # read one full cell
 trackio logbook serve                                   # preview locally
 trackio logbook publish [username/space]                # first publish (public gate) → enables auto-sync
 trackio logbook sync                                    # push later edits to the Space now
 ```
 
-`cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Use `cell code` when the entry has code plus output. Models, datasets, Spaces, jobs, buckets, and images are detected from URLs in the markdown/output and rendered richly by the viewer. Trackio-tagged Spaces render as Trackio dashboards. Everything else is a direct file edit.
+`cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Use `cell code` when the entry has code plus output. Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, jobs, buckets, and images are detected from URLs in the markdown/output and rendered richly by the viewer. Trackio-tagged Spaces render as Trackio dashboards. Everything else is a direct file edit.
 
 `run` is the preferred way to execute experiments from the terminal: it tees output live, stores the exact command, attaches any script/config argv tokens it can see, records exit code and duration, and captures truncated output in one code cell.
 
@@ -49,11 +52,23 @@ trackio logbook cell markdown "3e-4 wins; 1e-3 diverges ~300 steps." --page "LR 
 
 After a page has been updated once, `cell` and `run` can omit `--page`; they append to the most recently updated page.
 
+## Read efficiently as an agent
+
+Start with outlines, not full page bodies:
+
+```bash
+trackio logbook read pages --json
+trackio logbook read page "Baseline" --json
+trackio logbook read cell cell_ab12cd34ef56 --json
+```
+
+`read page` returns only page metadata plus cell ids, types, titles, and timestamps. Use `read cell` for the full Markdown/code/output only when the cell title is relevant to your task. The generated `logbook.md` is also compact: it indexes pages and cells rather than expanding every cell body.
+
 ## Also editable directly (your normal file tools)
 
 Any page's content, the index table, and the styling (`logbook.css` / `index.html` / `logbook.js`, which live inside the logbook) are plain files — edit them when the CLI verbs aren't enough. `serve` to preview and fix.
 
-- `--title`: an optional short title for the cell.
+- `--title`: an optional short title for the cell; if omitted, Trackio derives one.
 - Body: normal Markdown. Use paragraphs, bullets, headings, and tables as appropriate for the material.
 - `--link URL`: each unfurls into a rich card. Pass each as a **separate `--link` flag**, never inside the body text. Supported: HF models / datasets / **Spaces & Trackio dashboards (embedded live)** / **Jobs** (`huggingface.co/jobs/...`) / **Buckets** (`huggingface.co/buckets/...`), arXiv, GitHub, and image URLs.
 - `--code PATH`: attach the exact script/config you ran (repeatable). It renders as a collapsible, syntax-highlighted accordion — the key to reproducibility. Attach the training script, eval harness, config, etc.

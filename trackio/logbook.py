@@ -26,6 +26,9 @@ CELL_TYPES = {"markdown", "code"}
 RUN_OUTPUT_LIMIT = 20_000
 RUN_OUTPUT_HEAD = 2_000
 RUN_OUTPUT_TAIL = RUN_OUTPUT_LIMIT - RUN_OUTPUT_HEAD
+CELL_RE = re.compile(
+    r"(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)"
+)
 
 
 class LogbookError(Exception):
@@ -184,48 +187,32 @@ def _walk(node: dict):
 
 def flatten_markdown(proj: Path, manifest: dict) -> str:
     root = logbook_root(proj)
-    out = [f"# {manifest['title']}", ""]
+    out = [
+        f"# {manifest['title']}",
+        "",
+        "This is a compact agent index. Read page outlines first, then inspect full "
+        "cells only when needed.",
+        "",
+    ]
     for node in _walk(manifest["root"]):
         text = (root / node["file"]).read_text(encoding="utf-8")
-        out.append(_flatten_cell_metadata(text).strip())
+        out.append(_page_outline_markdown(node, text).strip())
         out.append("")
     return "\n".join(out)
 
 
-def _flatten_cell_metadata(text: str) -> str:
-    def replace(match: re.Match) -> str:
-        try:
-            metadata = json.loads(match.group(1))
-        except Exception:
-            return ""
-        lines = [
-            "<!-- cell metadata omitted from human view; expanded for agents -->",
-            f"Cell type: {metadata.get('type', 'markdown')}",
-            f"Cell id: {metadata.get('id', '')}",
-        ]
-        if metadata.get("title"):
-            lines.append(f"Cell title: {metadata['title']}")
-        attachments = metadata.get("attachments") or []
-        if attachments:
-            lines.append("Attachments:")
-            for attachment in attachments:
-                name = (
-                    attachment.get("name")
-                    or attachment.get("visible_url")
-                    or "attachment"
-                )
-                kind = attachment.get("kind", "data")
-                lines.append(f"- {name} ({kind})")
-                if attachment.get("visible_url"):
-                    lines.append(f"  visible: {attachment['visible_url']}")
-                if attachment.get("raw_url"):
-                    lines.append(f"  raw: {attachment['raw_url']}")
-                if attachment.get("description"):
-                    lines.append(f"  description: {attachment['description']}")
+def _page_outline_markdown(node: dict, text: str) -> str:
+    cells = _parse_cells_from_text(text, node["slug"], node["title"])
+    lines = [f"## {node['title']}", "", f"Page: `{node['slug']}`"]
+    if not cells:
+        lines.append("")
+        lines.append("No cells.")
         return "\n".join(lines)
-
-    text = re.sub(r"<!-- trackio-cell\n([\s\S]*?)\n-->", replace, text)
-    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    lines += ["", "| Cell ID | Type | Title |", "| --- | --- | --- |"]
+    for cell in cells:
+        safe_title = cell["title"].replace("|", "\\|")
+        lines.append(f"| `{cell['id']}` | {cell['type']} | {safe_title} |")
+    return "\n".join(lines)
 
 
 def _ensure_viewer_files(proj: Path) -> None:
@@ -476,6 +463,97 @@ def resolve_page(proj: Path, page: str | None = None) -> str:
     raise LogbookError("No --page given and no recently-updated page found")
 
 
+def _resolve_existing_page(proj: Path, page: str | None = None) -> str:
+    if not page:
+        slug = read_metadata(proj).get("last_page") or ROOT_SLUG
+        if _page_file_for_slug(proj, slug) is not None:
+            return slug
+        return ROOT_SLUG
+    if page == ROOT_SLUG and _page_file_for_slug(proj, page) is not None:
+        return page
+    if _page_file_for_slug(proj, page) is not None:
+        return page
+    slug = _slugify(page)
+    if _page_file_for_slug(proj, slug) is not None:
+        return slug
+    manifest = build_manifest(proj)
+    needle = page.strip().lower()
+    for node in _walk(manifest["root"]):
+        if node["title"].strip().lower() == needle:
+            return node["slug"]
+    raise LogbookError(f"No page with title or slug '{page}' in this logbook.")
+
+
+def _node_for_slug(manifest: dict, slug: str) -> dict | None:
+    for node in _walk(manifest["root"]):
+        if node["slug"] == slug:
+            return node
+    return None
+
+
+def list_pages(proj: Path) -> list[dict]:
+    manifest = build_manifest(proj)
+    root = logbook_root(proj)
+    pages = []
+    for node in _walk(manifest["root"]):
+        text = (root / node["file"]).read_text(encoding="utf-8")
+        cells = _parse_cells_from_text(text, node["slug"], node["title"])
+        pages.append(
+            {
+                "slug": node["slug"],
+                "title": node["title"],
+                "file": node["file"],
+                "cell_count": len(cells),
+            }
+        )
+    return pages
+
+
+def read_page_outline(proj: Path, page: str | None = None) -> dict:
+    slug = _resolve_existing_page(proj, page)
+    manifest = build_manifest(proj)
+    node = _node_for_slug(manifest, slug)
+    if node is None:
+        raise LogbookError(f"No page with slug '{slug}' in this logbook.")
+    text = (logbook_root(proj) / node["file"]).read_text(encoding="utf-8")
+    cells = _parse_cells_from_text(text, node["slug"], node["title"])
+    return {
+        "slug": node["slug"],
+        "title": node["title"],
+        "file": node["file"],
+        "cells": [
+            {
+                "id": cell["id"],
+                "type": cell["type"],
+                "title": cell["title"],
+                "created_at": cell.get("created_at"),
+            }
+            for cell in cells
+        ],
+    }
+
+
+def read_cell(proj: Path, cell_id: str) -> dict:
+    manifest = build_manifest(proj)
+    root = logbook_root(proj)
+    for node in _walk(manifest["root"]):
+        text = (root / node["file"]).read_text(encoding="utf-8")
+        for cell in _parse_cells_from_text(text, node["slug"], node["title"]):
+            if cell["id"] == cell_id:
+                return {
+                    "id": cell["id"],
+                    "type": cell["type"],
+                    "title": cell["title"],
+                    "created_at": cell.get("created_at"),
+                    "page": cell["page"],
+                    "page_title": cell["page_title"],
+                    "file": node["file"],
+                    "metadata": cell["metadata"],
+                    "body": cell["body"],
+                }
+    raise LogbookError(f"No cell with id '{cell_id}' in this logbook.")
+
+
 # ---- auto-note (called from trackio.finish / log_artifact) ----
 
 
@@ -524,15 +602,89 @@ def _new_cell_id() -> str:
 def _cell_marker(cell_type: str, title: str | None = None, **metadata) -> str:
     if cell_type not in CELL_TYPES:
         raise LogbookError(f"Unsupported logbook cell type: {cell_type}")
+    title = (title or "").strip() or "Untitled"
     payload = {
         "type": cell_type,
         "id": metadata.pop("id", _new_cell_id()),
         "created_at": metadata.pop("created_at", _now_iso()),
+        "title": title,
     }
-    if title:
-        payload["title"] = title
     payload.update({k: v for k, v in metadata.items() if v not in (None, "", [])})
     return "<!-- trackio-cell\n" + json.dumps(payload, ensure_ascii=False) + "\n-->"
+
+
+def _shorten(text: str, limit: int = 80) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _strip_markdown_title(text: str) -> str:
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"[*_`>#]+", "", text)
+    return text.strip(" -:\t")
+
+
+def _default_cell_title(cell_type: str, body: str, metadata: dict) -> str:
+    command = metadata.get("command")
+    if command:
+        try:
+            return _shorten(f"Run: {shlex.join(command)}")
+        except TypeError:
+            return "Run"
+    if cell_type == "code":
+        titled = re.search(r"^````\w*\s+title=([^\n]+)", body, re.M)
+        if titled:
+            return _shorten(f"Code: {titled.group(1).strip()}")
+        return "Code cell"
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith("````") or line.startswith("<!--"):
+            continue
+        if line.startswith("#"):
+            line = line.lstrip("#").strip()
+        title = _strip_markdown_title(line)
+        if title:
+            return _shorten(title)
+    return "Markdown cell"
+
+
+def _parse_cell_meta(raw: str, body: str = "") -> dict:
+    try:
+        meta = json.loads(raw)
+    except Exception:
+        meta = {}
+    cell_type = meta.get("type") or "markdown"
+    if cell_type not in CELL_TYPES:
+        cell_type = "markdown"
+    meta["type"] = cell_type
+    meta["id"] = meta.get("id") or _new_cell_id()
+    meta["title"] = (meta.get("title") or "").strip() or _default_cell_title(
+        cell_type, body, meta
+    )
+    return meta
+
+
+def _parse_cells_from_text(text: str, page_slug: str, page_title: str) -> list[dict]:
+    cells = []
+    for match in CELL_RE.finditer(text):
+        body = match.group(3).strip()
+        meta = _parse_cell_meta(match.group(2), body)
+        cells.append(
+            {
+                "id": meta["id"],
+                "type": meta["type"],
+                "title": meta["title"],
+                "created_at": meta.get("created_at"),
+                "page": page_slug,
+                "page_title": page_title,
+                "metadata": meta,
+                "body": body,
+            }
+        )
+    return cells
 
 
 def _append_cell(
@@ -546,6 +698,7 @@ def _append_cell(
     page_path = _page_file_for_slug(proj, page_slug)
     if page_path is None:
         raise LogbookError(f"No page with slug '{page_slug}' in this logbook.")
+    title = (title or "").strip() or _default_cell_title(cell_type, body, metadata)
     block = (
         f"\n\n---\n{_cell_marker(cell_type, title=title, **metadata)}\n{body.strip()}\n"
     )
