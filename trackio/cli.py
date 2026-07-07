@@ -1062,7 +1062,9 @@ def main():
     lb_read = logbook_sub.add_parser(
         "read", help="Read logbook pages/cells in an agent-friendly form"
     )
-    lb_read_sub = lb_read.add_subparsers(dest="read_target", required=True)
+    lb_read.add_argument("--path", help="Logbook workspace/path to read")
+    lb_read.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read_sub = lb_read.add_subparsers(dest="read_target")
     lb_read_pages = lb_read_sub.add_parser("pages", help="List logbook pages")
     lb_read_pages.add_argument("--json", action="store_true", help="Output JSON")
     lb_read_page = lb_read_sub.add_parser("page", help="Read a page for agents")
@@ -1076,6 +1078,7 @@ def main():
     lb_read_cell.add_argument("--html", action="store_true", help="Include figure HTML")
 
     lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
+    lb_serve.add_argument("path", nargs="?", help="Logbook workspace/path to serve")
     lb_serve.add_argument("--port", type=int, default=7861)
     lb_serve.add_argument("--no-browser", action="store_true")
 
@@ -1839,8 +1842,14 @@ def _handle_logbook(args):
             )
             lb.trigger_autosync(proj)
         elif action == "read":
-            proj = lb.require_project_dir()
-            if args.read_target == "pages":
+            proj = lb.require_project_dir(args.path)
+            if args.read_target is None:
+                text = lb.read_logbook(proj)
+                if args.json:
+                    print(format_json({"logbook": text}))
+                else:
+                    print(text)
+            elif args.read_target == "pages":
                 pages = lb.list_pages(proj)
                 if args.json:
                     print(format_json({"pages": pages}))
@@ -1869,7 +1878,7 @@ def _handle_logbook(args):
         elif action == "sync-todos":
             lb.sync_todos_from_stdin()
         elif action == "serve":
-            lb.serve(port=args.port, open_browser=not args.no_browser)
+            lb.serve(path=args.path, port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
             print(
                 f"Published: {lb.publish(space_id=args.space_id, private=args.private)}"

@@ -1,6 +1,6 @@
 # Trackio Logbooks — sharing open experiments
 
-A **logbook** is a shareable, Hub-native lab notebook for an experiment campaign, stored in `./.trackio/logbook/` (found by walking up from the cwd, like `.git`). It publishes to a static Hugging Face Space that renders a rich human view — a main page listing experiments, nested experiment pages, and unfurled links (models, datasets, dashboards, artifacts) — while a flattened `logbook.md` remains available for other agents.
+A **logbook** is a shareable, Hub-native lab notebook for an experiment campaign, stored in `./.trackio/logbook/` (found by walking up from the cwd, like `.git`). It publishes to a static Hugging Face Space that renders a rich human view — a main page listing experiments, nested experiment pages, and unfurled links (models, datasets, dashboards, artifacts) — while `trackio logbook read` provides a compact agent view on demand.
 
 The logbook is **just files you edit directly**. There are only a few CLI commands; everything else is a normal file edit.
 
@@ -13,12 +13,13 @@ trackio logbook cell markdown "..." --page "..."        # log a finding onto a p
 trackio logbook cell code --page "..." --code train.py --output "..."
 trackio logbook cell figure --page "..." --html plot.html --raw data.json
 trackio logbook run --page "..." -- python train.py --lr 3e-4  # run + capture command, scripts, output
+trackio logbook read                                    # compact agent view of the whole logbook
 trackio logbook read pages                              # list pages
 trackio logbook read page "..."                         # markdown bodies + code/figure ids
 trackio logbook read cell cell_<id> --full              # read full code cell
 trackio logbook read cell cell_<id> --raw               # read figure raw data
 trackio logbook read cell cell_<id> --html              # read figure HTML
-trackio logbook serve                                   # preview locally
+trackio logbook serve [path]                            # preview locally
 trackio logbook publish [username/space]                # first publish (public gate) → enables auto-sync
 trackio logbook sync                                    # push later edits to the Space now
 ```
@@ -60,6 +61,8 @@ After a page has been updated once, `cell` and `run` can omit `--page`; they app
 Start with outlines, not full page bodies:
 
 ```bash
+trackio logbook read
+trackio logbook read --path /path/to/workspace
 trackio logbook read pages --json
 trackio logbook read page "Baseline" --json
 trackio logbook read cell cell_ab12cd34ef56 --full --json
@@ -72,7 +75,7 @@ trackio logbook read cell cell_figure1234 --raw --json
 - code cell ids/titles only; use `read cell <id> --full` for code/output
 - figure cell ids/titles only, plus whether raw/html are available; use `--raw`, `--html`, or `--full`
 
-The generated `logbook.md` follows the same compact shape: markdown content is visible, while code and figure payloads require explicit cell reads.
+`trackio logbook read` returns the compact whole-logbook view: markdown content is visible, while code and figure payloads require explicit cell reads. Trackio does not write a separate flattened Markdown artifact for this.
 
 ## Also editable directly (your normal file tools)
 

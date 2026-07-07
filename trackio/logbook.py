@@ -64,8 +64,8 @@ def find_project_dir(start: str | Path | None = None) -> Path | None:
     return None
 
 
-def require_project_dir() -> Path:
-    proj = find_project_dir()
+def require_project_dir(start: str | Path | None = None) -> Path:
+    proj = find_project_dir(start)
     if proj is None:
         raise LogbookError(
             "No logbook in this directory (or any parent). "
@@ -185,13 +185,14 @@ def _walk(node: dict):
         yield from _walk(child)
 
 
-def flatten_markdown(proj: Path, manifest: dict) -> str:
+def read_logbook(proj: Path) -> str:
+    manifest = build_manifest(proj)
     root = logbook_root(proj)
     out = [
         f"# {manifest['title']}",
         "",
-        "This is a compact agent index. Read page outlines first, then inspect full "
-        "cells only when needed.",
+        "This is a compact agent view of the logbook. Markdown cell content is "
+        "included; code and figure payloads require explicit cell reads.",
         "",
     ]
     for node in _walk(manifest["root"]):
@@ -251,7 +252,9 @@ def write_site_files(proj: Path) -> dict:
     (root / "logbook.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    (root / "logbook.md").write_text(flatten_markdown(proj, manifest), encoding="utf-8")
+    stale_agent_view = root / "logbook.md"
+    if stale_agent_view.exists():
+        stale_agent_view.unlink()
     return manifest
 
 
@@ -1106,13 +1109,19 @@ def status_text(proj: Path) -> str:
 # ---- serve / publish / sync ----
 
 
-def serve(port: int = 7861, open_browser: bool = True) -> None:
+def _highlight_command(text: str) -> str:
+    return f"\033[1m\033[38;5;208m{text}\033[0m"
+
+
+def serve(
+    path: str | Path | None = None, port: int = 7861, open_browser: bool = True
+) -> None:
     import functools  # noqa: PLC0415
     import http.server  # noqa: PLC0415
     import socketserver  # noqa: PLC0415
     import webbrowser  # noqa: PLC0415
 
-    proj = require_project_dir()
+    proj = require_project_dir(path)
     write_site_files(proj)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
@@ -1124,7 +1133,8 @@ def serve(port: int = 7861, open_browser: bool = True) -> None:
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", port), handler) as httpd:
         url = f"http://localhost:{port}/"
-        print(f"Serving logbook at {url}\nPress Ctrl+C to stop.")
+        print(_highlight_command(f"* Trackio logbook launched at: {url}"))
+        print("Press Ctrl+C to stop.")
         if open_browser:
             try:
                 webbrowser.open(url)
