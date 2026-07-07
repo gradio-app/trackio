@@ -20,9 +20,18 @@ ROOT_SLUG = "index"
 VIEWER_DIR = Path(__file__).parent / "frontend_templates" / "logbook"
 VIEWER_FILES = ["index.html", "logbook.css", "logbook.js", "trackio-logo.png"]
 
-EXP_HEADER = "| Status | Experiment |"
-EXP_SEP = "| --- | --- |"
-CELL_TYPES = {"markdown", "code", "figure"}
+TOC_HEADING = "## Pages"
+TOC_HEADER = "| Page |"
+TOC_SEP = "| --- |"
+TOC_PLACEHOLDER_TOKENS = ("logbook note", "logbook cell markdown", "logbook page")
+STATUS_COL_RE = re.compile(r"\b(status|state)\b", re.I)
+LINK_COL_RE = re.compile(r"\b(page|experiment|name|title)\b", re.I)
+CELL_TYPES = {"markdown", "code", "figure", "artifact"}
+ARTIFACT_URI_PREFIX = "trackio-artifact://"
+DEFAULT_HEAD = 3
+DEFAULT_TAIL = 3
+DEFAULT_RAW_LIMIT = 500
+FENCE_RE = re.compile(r"(`{3,4}|~{3,4})([^\n]*)\n([\s\S]*?)\n\1")
 RUN_OUTPUT_LIMIT = 20_000
 RUN_OUTPUT_HEAD = 2_000
 RUN_OUTPUT_TAIL = RUN_OUTPUT_LIMIT - RUN_OUTPUT_HEAD
@@ -40,12 +49,12 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _human_time(iso: str) -> str:
+def _short_time(iso: str) -> str:
     try:
         dt = datetime.fromisoformat(iso)
     except ValueError:
         return iso
-    return dt.strftime("%b %d, %Y · %H:%M UTC")
+    return dt.strftime("%Y-%m-%d %H:%M")
 
 
 def _slugify(text: str) -> str:
@@ -77,6 +86,76 @@ def require_project_dir(start: str | Path | None = None) -> Path:
 
 def logbook_root(proj: Path) -> Path:
     return proj / LOGBOOK_SUBDIR
+
+
+def _project_from_space(space_id: str) -> Path:
+    import tempfile  # noqa: PLC0415
+
+    import huggingface_hub  # noqa: PLC0415
+    from huggingface_hub.utils import (  # noqa: PLC0415
+        HfHubHTTPError,
+        RepositoryNotFoundError,
+    )
+
+    try:
+        snap = Path(huggingface_hub.snapshot_download(space_id, repo_type="space"))
+    except (RepositoryNotFoundError, HfHubHTTPError) as e:
+        raise LogbookError(f"Could not download Space '{space_id}': {e}") from e
+    if not (snap / "pages" / "index.md").is_file():
+        raise LogbookError(f"Space '{space_id}' does not contain a Trackio logbook.")
+    proj = Path(tempfile.mkdtemp(prefix="trackio-logbook-")) / PROJECT_DIR_NAME
+    proj.mkdir(parents=True)
+    (proj / LOGBOOK_SUBDIR).symlink_to(snap)
+    return proj
+
+
+def _project_from_url(url: str) -> Path:
+    import tempfile  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    base = url.rstrip("/")
+
+    def fetch(path: str) -> str:
+        with urllib.request.urlopen(f"{base}/{path}", timeout=15) as response:
+            return response.read().decode("utf-8")
+
+    try:
+        manifest = json.loads(fetch("logbook.json"))
+    except Exception as e:
+        raise LogbookError(f"Could not read a logbook at {url}: {e}") from e
+    proj = Path(tempfile.mkdtemp(prefix="trackio-logbook-")) / PROJECT_DIR_NAME
+    root = logbook_root(proj)
+    for node in _walk(manifest.get("root") or {}):
+        file = node.get("file")
+        if not file:
+            continue
+        dest = root / file
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            dest.write_text(fetch(file), encoding="utf-8")
+        except Exception:
+            continue
+    if not (root / "pages" / "index.md").is_file():
+        raise LogbookError(f"No logbook pages found at {url}")
+    return proj
+
+
+def resolve_read_source(source: str | None = None) -> Path:
+    if source is None:
+        return require_project_dir()
+    local = Path(source).expanduser()
+    if local.exists():
+        return require_project_dir(local)
+    if re.match(r"^https?://", source):
+        space = re.match(r"^https?://huggingface\.co/spaces/([^/?#]+/[^/?#]+)", source)
+        if space:
+            return _project_from_space(space.group(1))
+        return _project_from_url(source)
+    if re.match(r"^[\w.-]+/[\w.-]+$", source):
+        return _project_from_space(source)
+    raise LogbookError(
+        f"'{source}' is not a local logbook path, HF Space id, or logbook URL."
+    )
 
 
 def _pages_dir(proj: Path) -> Path:
@@ -186,55 +265,104 @@ def _walk(node: dict):
         yield from _walk(child)
 
 
-def read_logbook(proj: Path) -> str:
-    manifest = build_manifest(proj)
+AGENT_VIEW_NOTE = (
+    "> Agent view: markdown bodies are inline; code cells show the command, a "
+    "code head, and an output tail; figures inline small raw data. Fetch full "
+    "payloads with `trackio logbook read cell <id> [--full|--raw|--html]`."
+)
+
+
+def _index_prose(text: str) -> str:
+    return CELL_RE.sub("", text).strip()
+
+
+def read_logbook(
+    proj: Path,
+    manifest: dict | None = None,
+    head: int = DEFAULT_HEAD,
+    tail: int = DEFAULT_TAIL,
+    raw_limit: int = DEFAULT_RAW_LIMIT,
+) -> str:
+    manifest = manifest or build_manifest(proj)
     root = logbook_root(proj)
-    out = [
-        f"# {manifest['title']}",
-        "",
-        "This is a compact agent view of the logbook. Markdown cell content is "
-        "included; code and figure payloads require explicit cell reads.",
-        "",
-    ]
+    index_node = manifest["root"]
+    index_text = (root / index_node["file"]).read_text(encoding="utf-8")
+    out = [_index_prose(index_text), ""]
+    index_cells = _parse_cells_from_text(
+        index_text, index_node["slug"], index_node["title"]
+    )
+    for cell in index_cells:
+        out += _cell_agent_lines(cell, head, tail, raw_limit)
+    out += [AGENT_VIEW_NOTE, ""]
     for node in _walk(manifest["root"]):
+        if node["slug"] == index_node["slug"]:
+            continue
         text = (root / node["file"]).read_text(encoding="utf-8")
-        out.append(_page_outline_markdown(node, text).strip())
+        out.append(_page_outline_markdown(node, text, head, tail, raw_limit).strip())
         out.append("")
     return "\n".join(out)
 
 
-def _page_outline_markdown(node: dict, text: str) -> str:
+def _cell_agent_lines(cell: dict, head: int, tail: int, raw_limit: int) -> list[str]:
+    summary = _cell_public_summary(cell, head=head, tail=tail, raw_limit=raw_limit)
+    heading = f"### {cell['title']} · {cell['type']} · `{cell['id']}`"
+    created = cell.get("created_at")
+    if created:
+        heading += f" · {_short_time(created)}"
+    lines = [heading, ""]
+    preview = summary.get("preview") or ""
+    if preview:
+        lines += [preview, ""]
+    return lines
+
+
+def _page_outline_markdown(
+    node: dict,
+    text: str,
+    head: int = DEFAULT_HEAD,
+    tail: int = DEFAULT_TAIL,
+    raw_limit: int = DEFAULT_RAW_LIMIT,
+) -> str:
     cells = _parse_cells_from_text(text, node["slug"], node["title"])
-    lines = [f"## {node['title']}", "", f"Page: `{node['slug']}`"]
+    lines = [f"## {node['title']} · `{node['slug']}`", ""]
     if not cells:
-        lines.append("")
         lines.append("No cells.")
         return "\n".join(lines)
     for cell in cells:
-        lines += [
-            "",
-            f"### {cell['title']}",
-            "",
-            f"Cell: `{cell['id']}` · {cell['type']}",
-        ]
-        if cell["type"] == "markdown":
-            lines += ["", cell["body"]]
-        elif cell["type"] == "code":
-            lines.append("Code/output omitted. Read with `trackio logbook read cell "
-                         f"{cell['id']} --full`.")
-        elif cell["type"] == "figure":
-            parts = _figure_parts(cell["body"])
-            available = []
-            if parts["raw"]:
-                available.append("--raw")
-            if parts["html"]:
-                available.append("--html")
-            suffix = f" ({', '.join(available)} available)" if available else ""
-            lines.append(
-                "Figure payload omitted. Read with `trackio logbook read cell "
-                f"{cell['id']} --raw|--html|--full`{suffix}."
-            )
+        lines += _cell_agent_lines(cell, head, tail, raw_limit)
     return "\n".join(lines)
+
+
+def read_logbook_data(
+    proj: Path,
+    head: int = DEFAULT_HEAD,
+    tail: int = DEFAULT_TAIL,
+    raw_limit: int = DEFAULT_RAW_LIMIT,
+) -> dict:
+    manifest = build_manifest(proj)
+    root = logbook_root(proj)
+    pages = []
+    for node in _walk(manifest["root"]):
+        text = (root / node["file"]).read_text(encoding="utf-8")
+        cells = _parse_cells_from_text(text, node["slug"], node["title"])
+        entry = {
+            "slug": node["slug"],
+            "title": node["title"],
+            "file": node["file"],
+            "cells": [
+                _cell_public_summary(cell, head=head, tail=tail, raw_limit=raw_limit)
+                for cell in cells
+            ],
+        }
+        if node["slug"] == ROOT_SLUG:
+            entry["markdown"] = _index_prose(text)
+        pages.append(entry)
+    return {
+        "title": manifest["title"],
+        "space_id": manifest.get("space_id"),
+        "updated_at": manifest.get("updated_at"),
+        "pages": pages,
+    }
 
 
 def _ensure_viewer_files(proj: Path) -> None:
@@ -246,9 +374,14 @@ def _ensure_viewer_files(proj: Path) -> None:
             shutil.copy2(src, dest)
 
 
+def _estimate_tokens(text: str) -> int:
+    return max(1, int(len(text) / 3.3))
+
+
 def write_site_files(proj: Path) -> dict:
     _ensure_viewer_files(proj)
     manifest = build_manifest(proj)
+    manifest["agent_view_tokens"] = _estimate_tokens(read_logbook(proj, manifest))
     root = logbook_root(proj)
     (root / "logbook.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -275,12 +408,9 @@ def create_logbook(
     (root / "pages").mkdir(parents=True, exist_ok=True)
     (root / "pages" / "index.md").write_text(
         f"# {title}\n\n"
-        "> Index of experiments. Click one to open its page. Edit this page "
-        "freely — the table is just Markdown.\n\n"
-        "## Experiments\n\n"
-        f"{EXP_HEADER}\n{EXP_SEP}\n"
-        "| planned | "
-        'Log a finding with `trackio logbook cell markdown "..." --page "..."` |\n',
+        f"{TOC_HEADING}\n\n"
+        f"{TOC_HEADER}\n{TOC_SEP}\n"
+        '| Add a page with `trackio logbook page "..."` |\n',
         encoding="utf-8",
     )
     write_metadata(
@@ -371,32 +501,80 @@ def add_page(proj: Path, title: str, parent_slug: str = ROOT_SLUG) -> str:
     page_dir = parent_dir / slug
     page_dir.mkdir(parents=True, exist_ok=True)
     (page_dir / "page.md").write_text(f"# {title}\n", encoding="utf-8")
+    write_site_files(proj)
     return slug
 
 
-def _insert_toc_row(text: str, row: str) -> str:
+def _parse_table_cells(line: str) -> list[str]:
+    s = line.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [c.strip() for c in s.split("|")]
+
+
+def _toc_row(header_cells: list[str], name: str, slug: str, status: str | None) -> str:
+    link = f"[{name}](#/{slug})"
+    cells = []
+    link_at = None
+    for i, header in enumerate(header_cells):
+        if STATUS_COL_RE.search(header):
+            cells.append(status or "planned")
+        elif link_at is None and LINK_COL_RE.search(header):
+            cells.append(link)
+            link_at = i
+        else:
+            cells.append("")
+    if link_at is None:
+        link_at = next(
+            (i for i, h in enumerate(header_cells) if not STATUS_COL_RE.search(h)),
+            0,
+        )
+        cells[link_at] = link
+    return "| " + " | ".join(cells) + " |"
+
+
+def _insert_toc_row(text: str, name: str, slug: str, status: str | None) -> str:
     lines = [
         ln
         for ln in text.split("\n")
-        if "logbook note" not in ln and "logbook cell markdown" not in ln
+        if not (
+            ln.strip().startswith("|")
+            and any(token in ln for token in TOC_PLACEHOLDER_TOKENS)
+        )
     ]
     idx = next(
-        (i for i, ln in enumerate(lines) if ln.strip().lower() == "## experiments"),
+        (
+            i
+            for i, ln in enumerate(lines)
+            if ln.strip().lower() in ("## pages", "## experiments")
+        ),
         None,
     )
     if idx is not None:
+        table_at = None
         j = idx + 1
-        while j < len(lines) and not lines[j].strip().startswith("|"):
+        while j < len(lines):
+            stripped = lines[j].strip()
+            if stripped.startswith("|"):
+                table_at = j
+                break
+            if stripped.startswith("#"):
+                break
             j += 1
-        if j >= len(lines):
-            lines[idx + 1 : idx + 1] = ["", EXP_HEADER, EXP_SEP, row, ""]
+        if table_at is not None:
+            row = _toc_row(_parse_table_cells(lines[table_at]), name, slug, status)
+            k = table_at
+            while k < len(lines) and lines[k].strip().startswith("|"):
+                k += 1
+            lines.insert(k, row)
             return "\n".join(lines)
-        k = j
-        while k < len(lines) and lines[k].strip().startswith("|"):
-            k += 1
-        lines.insert(k, row)
+        row = _toc_row(["Page"], name, slug, status)
+        lines[idx + 1 : idx + 1] = ["", TOC_HEADER, TOC_SEP, row, ""]
         return "\n".join(lines)
-    block = ["", "## Experiments", "", EXP_HEADER, EXP_SEP, row, ""]
+    row = _toc_row(["Page"], name, slug, status)
+    block = ["", TOC_HEADING, "", TOC_HEADER, TOC_SEP, row, ""]
     h1 = next((i for i, ln in enumerate(lines) if ln.strip().startswith("# ")), None)
     at = (h1 + 1) if h1 is not None else len(lines)
     lines[at:at] = block
@@ -406,13 +584,34 @@ def _insert_toc_row(text: str, row: str) -> str:
 def set_page_status(proj: Path, slug: str, status: str) -> None:
     index = _pages_dir(proj) / "index.md"
     lines = index.read_text(encoding="utf-8").split("\n")
-    for i, ln in enumerate(lines):
-        if f"(#/{slug})" in ln and ln.strip().startswith("|"):
-            cells = ln.split("|")
-            if len(cells) >= 3:
-                cells[1] = f" {status} "
-                lines[i] = "|".join(cells)
-            break
+    row_at = next(
+        (
+            i
+            for i, ln in enumerate(lines)
+            if f"(#/{slug})" in ln and ln.strip().startswith("|")
+        ),
+        None,
+    )
+    if row_at is None:
+        return
+    head_at = row_at
+    while head_at > 0 and lines[head_at - 1].strip().startswith("|"):
+        head_at -= 1
+    col = next(
+        (
+            c
+            for c, header in enumerate(_parse_table_cells(lines[head_at]))
+            if STATUS_COL_RE.search(header)
+        ),
+        None,
+    )
+    if col is None:
+        return
+    cells = _parse_table_cells(lines[row_at])
+    if col >= len(cells):
+        return
+    cells[col] = status
+    lines[row_at] = "| " + " | ".join(cells) + " |"
     index.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -438,7 +637,9 @@ def sync_todos_from_stdin() -> None:
         if not name:
             continue
         try:
-            ensure_page(proj, name, status=status_map.get(todo.get("status"), "planned"))
+            ensure_page(
+                proj, name, status=status_map.get(todo.get("status"), "planned")
+            )
             changed = True
         except Exception:
             continue
@@ -469,9 +670,9 @@ def ensure_page(
     slug = add_page(proj, name, parent_slug=parent_slug)
     if parent_slug == ROOT_SLUG:
         index = _pages_dir(proj) / "index.md"
-        row = f"| {status or 'planned'} | [{name}](#/{slug}) |"
         index.write_text(
-            _insert_toc_row(index.read_text(encoding="utf-8"), row), encoding="utf-8"
+            _insert_toc_row(index.read_text(encoding="utf-8"), name, slug, status),
+            encoding="utf-8",
         )
     _remember_page(proj, slug)
     return slug
@@ -535,15 +736,174 @@ def list_pages(proj: Path) -> list[dict]:
 
 def _figure_parts(body: str) -> dict:
     parts = {"html": "", "raw": ""}
-    fence_re = re.compile(r"(`{3,4}|~{3,4})([^\n]*)\n([\s\S]*?)\n\1")
-    for match in fence_re.finditer(body):
+    for match in FENCE_RE.finditer(body):
         lang = (match.group(2).strip().split() or [""])[0].lower()
         if lang in parts and not parts[lang]:
             parts[lang] = match.group(3)
     return parts
 
 
-def _cell_public_summary(cell: dict) -> dict:
+def _parse_fences(body: str) -> list[dict]:
+    fences = []
+    for match in FENCE_RE.finditer(body):
+        info = match.group(2).strip()
+        lang = (info.split() or [""])[0].lower()
+        title = re.search(r"title=(\S+)", info)
+        fences.append(
+            {
+                "lang": lang,
+                "title": title.group(1) if title else None,
+                "text": match.group(3),
+            }
+        )
+    return fences
+
+
+def _n_lines(n: int) -> str:
+    return f"{n} line" if n == 1 else f"{n} lines"
+
+
+def _human_chars(n: int) -> str:
+    if n < 1000:
+        return f"{n} chars"
+    return f"{n / 1000:.1f}k chars"
+
+
+def _code_summary(cell: dict, head: int, tail: int) -> dict:
+    meta = cell["metadata"]
+    fences = _parse_fences(cell["body"])
+    output = ""
+    code_fence = None
+    attached = []
+    for fence in fences:
+        if fence["lang"] in ("output", "result") and not output:
+            output = fence["text"]
+        elif fence["title"]:
+            attached.append((fence["title"], len(fence["text"].split("\n"))))
+        elif code_fence is None:
+            code_fence = fence
+
+    command = meta.get("command")
+    preview_lines: list[str] = []
+    if command:
+        try:
+            command_line = shlex.join(command)
+        except TypeError:
+            command_line = " ".join(str(token) for token in command)
+        line = f"$ {command_line}"
+        if meta.get("exit_code") is not None:
+            line += f" → exit {meta['exit_code']}"
+        if meta.get("duration_s") is not None:
+            line += f" ({meta['duration_s']}s)"
+        preview_lines.append(line)
+        if (
+            code_fence
+            and code_fence["lang"] == "bash"
+            and code_fence["text"].lstrip().startswith("$")
+        ):
+            code_fence = None
+    if attached:
+        preview_lines.append(
+            "Attached: " + ", ".join(f"{name} ({_n_lines(n)})" for name, n in attached)
+        )
+
+    code_head: list[str] = []
+    code_lines = 0
+    if code_fence:
+        source_lines = code_fence["text"].rstrip("\n").split("\n")
+        code_lines = len(source_lines)
+        if head > 0:
+            code_head = source_lines[:head]
+            label = f"Code ({code_fence['lang'] or 'text'}, {_n_lines(code_lines)}"
+            label += f"; first {head}):" if code_lines > head else "):"
+            preview_lines += [label, "````", *code_head, "````"]
+
+    output_tail: list[str] = []
+    output_lines = 0
+    if output:
+        all_lines = output.rstrip("\n").split("\n")
+        output_lines = len(all_lines)
+        if tail > 0:
+            output_tail = all_lines[-tail:]
+            label = f"Output ({_n_lines(output_lines)}"
+            label += f"; last {tail}):" if output_lines > tail else "):"
+            preview_lines += [label, "````", *output_tail, "````"]
+
+    return {
+        "command": command,
+        "exit_code": meta.get("exit_code"),
+        "duration_s": meta.get("duration_s"),
+        "language": meta.get("language"),
+        "attached": [name for name, _ in attached],
+        "code_lines": code_lines,
+        "code_head": "\n".join(code_head),
+        "output_lines": output_lines,
+        "output_tail": "\n".join(output_tail),
+        "preview": "\n".join(preview_lines),
+    }
+
+
+def _figure_summary(cell: dict, raw_limit: int) -> dict:
+    parts = _figure_parts(cell["body"])
+    raw, html = parts["raw"], parts["html"]
+    summary = {
+        "has_raw": bool(raw),
+        "has_html": bool(html),
+        "raw_chars": len(raw),
+        "html_chars": len(html),
+    }
+    preview_lines: list[str] = []
+    if raw:
+        if raw_limit and len(raw) <= raw_limit:
+            summary["raw"] = raw
+            preview_lines += [
+                f"Raw data ({_human_chars(len(raw))}):",
+                "````",
+                *raw.rstrip("\n").split("\n"),
+                "````",
+            ]
+        else:
+            preview_lines.append(f"Raw data: {_human_chars(len(raw))} (--raw).")
+    if html:
+        preview_lines.append(f"HTML figure: {_human_chars(len(html))} (--html).")
+    if not preview_lines:
+        preview_lines.append("No figure payloads.")
+    summary["preview"] = "\n".join(preview_lines)
+    return summary
+
+
+def _artifact_summary(cell: dict) -> dict:
+    lines = [ln.strip() for ln in cell["body"].split("\n") if ln.strip()]
+    first = lines[0].replace("**📦 Artifact**", "📦").strip() if lines else "📦"
+    uri = next(
+        (
+            ln
+            for ln in lines
+            if ln.startswith(ARTIFACT_URI_PREFIX) or "huggingface.co/buckets/" in ln
+        ),
+        "",
+    )
+    local = uri.startswith(ARTIFACT_URI_PREFIX)
+    if local:
+        preview = f"{first} · local (pushed to a Bucket on publish)"
+    elif uri:
+        preview = f"{first} · {uri}"
+    else:
+        preview = first
+    return {
+        "artifact": cell["metadata"].get("artifact"),
+        "local": local,
+        "link": None if local else (uri or None),
+        "preview": preview,
+    }
+
+
+def _cell_public_summary(
+    cell: dict,
+    head: int = DEFAULT_HEAD,
+    tail: int = DEFAULT_TAIL,
+    raw_limit: int = DEFAULT_RAW_LIMIT,
+) -> dict:
     summary = {
         "id": cell["id"],
         "type": cell["type"],
@@ -552,14 +912,24 @@ def _cell_public_summary(cell: dict) -> dict:
     }
     if cell["type"] == "markdown":
         summary["body"] = cell["body"]
+        summary["preview"] = cell["body"]
+    elif cell["type"] == "artifact":
+        summary["body"] = cell["body"]
+        summary.update(_artifact_summary(cell))
+    elif cell["type"] == "code":
+        summary.update(_code_summary(cell, head, tail))
     elif cell["type"] == "figure":
-        parts = _figure_parts(cell["body"])
-        summary["has_html"] = bool(parts["html"])
-        summary["has_raw"] = bool(parts["raw"])
+        summary.update(_figure_summary(cell, raw_limit))
     return summary
 
 
-def read_page_outline(proj: Path, page: str | None = None) -> dict:
+def read_page_outline(
+    proj: Path,
+    page: str | None = None,
+    head: int = DEFAULT_HEAD,
+    tail: int = DEFAULT_TAIL,
+    raw_limit: int = DEFAULT_RAW_LIMIT,
+) -> dict:
     slug = _resolve_existing_page(proj, page)
     manifest = build_manifest(proj)
     node = _node_for_slug(manifest, slug)
@@ -571,7 +941,10 @@ def read_page_outline(proj: Path, page: str | None = None) -> dict:
         "slug": node["slug"],
         "title": node["title"],
         "file": node["file"],
-        "cells": [_cell_public_summary(cell) for cell in cells],
+        "cells": [
+            _cell_public_summary(cell, head=head, tail=tail, raw_limit=raw_limit)
+            for cell in cells
+        ],
     }
 
 
@@ -599,7 +972,7 @@ def read_cell(
                     "file": node["file"],
                     "metadata": cell["metadata"],
                 }
-                if cell["type"] == "markdown":
+                if cell["type"] in ("markdown", "artifact"):
                     result["body"] = cell["body"]
                 elif cell["type"] == "code":
                     if include_full:
@@ -626,35 +999,6 @@ def _autonote_enabled() -> bool:
         "no",
         "off",
     )
-
-
-def _upsert_entry(
-    page_path: Path, marker: str, title: str, body: str, links: list[str] | None = None
-) -> None:
-    now = _now_iso()
-    lines = [
-        f"### {title}",
-        f"<!-- {marker} -->",
-        f"`{_human_time(now)}`",
-        "",
-        body.strip(),
-        "",
-    ]
-    for url in links or []:
-        lines.append(f"- {url}")
-    if links:
-        lines.append("")
-    block = "---\n\n" + "\n".join(lines)
-    text = page_path.read_text(encoding="utf-8")
-    pat = re.compile(
-        r"---\n\n### [^\n]*\n<!-- " + re.escape(marker) + r" -->.*?(?=\n---\n|\Z)",
-        re.S,
-    )
-    if pat.search(text):
-        text = pat.sub(lambda _m: block.rstrip("\n"), text, count=1)
-    else:
-        text = text.rstrip("\n") + "\n\n" + block + "\n"
-    page_path.write_text(text, encoding="utf-8")
 
 
 def _new_cell_id() -> str:
@@ -769,12 +1113,7 @@ def _append_cell(
     with page_path.open("a", encoding="utf-8") as f:
         f.write(block)
     _remember_page(proj, page_slug)
-
-
-def _clean_cli_tokens(body: str, links: list[str], artifacts: list[str]) -> str:
-    links += re.findall(r"--link[=\s]+(\S+)", body)
-    artifacts += re.findall(r"--artifact[=\s]+(\S+)", body)
-    return re.sub(r"--(?:link|artifact)[=\s]+\S+", "", body).strip()
+    write_site_files(proj)
 
 
 def add_markdown_cell(
@@ -782,27 +1121,8 @@ def add_markdown_cell(
     page_slug: str,
     body: str,
     title: str | None = None,
-    links: list[str] | None = None,
-    artifacts: list[str] | None = None,
-    code: list[str] | None = None,
 ) -> None:
-    links = list(links or [])
-    artifacts = list(artifacts or [])
-    body = _clean_cli_tokens(body, links, artifacts)
-    lines = [body, ""]
-    for path in code or []:
-        lines += _code_block_lines(path)
-    for art in artifacts:
-        lines.append(f"- {_resolve_artifact(art)}")
-    for url in links:
-        lines.append(f"- {url.strip()}")
-    _append_cell(
-        proj,
-        page_slug,
-        "markdown",
-        "\n".join(lines),
-        title=title,
-    )
+    _append_cell(proj, page_slug, "markdown", body.strip(), title=title)
 
 
 def add_code_cell(
@@ -828,6 +1148,55 @@ def add_code_cell(
         "\n".join(lines),
         title=title,
         language=language,
+    )
+
+
+def _format_size(size: int | None) -> str:
+    gb = (size or 0) / 1e9
+    if gb >= 0.01:
+        return f" · {gb:.2f} GB"
+    if size:
+        return f" · {size / 1e6:.1f} MB"
+    return ""
+
+
+def _artifact_stats(qualified_name: str) -> tuple[int, int]:
+    try:
+        from trackio.sqlite_storage import SQLiteStorage  # noqa: PLC0415
+
+        project_and_name = qualified_name.split(":")[0]
+        if "/" not in project_and_name:
+            return (0, 0)
+        project, art_name = project_and_name.split("/", 1)
+        manifest = SQLiteStorage.get_artifact_manifest(project, art_name)
+        return (sum(entry.get("size", 0) for entry in manifest), len(manifest))
+    except Exception:
+        return (0, 0)
+
+
+def add_artifact_cell(
+    proj: Path,
+    page_slug: str,
+    qualified_name: str,
+    size: int | None = None,
+    title: str | None = None,
+) -> None:
+    files = 0
+    if size is None:
+        size, files = _artifact_stats(qualified_name)
+    register_local(proj, artifact=qualified_name)
+    line = f"**📦 Artifact** `{qualified_name}`"
+    if files:
+        line += f" · {files} files"
+    line += _format_size(size)
+    body = f"{line}\n\n{ARTIFACT_URI_PREFIX}{qualified_name}"
+    _append_cell(
+        proj,
+        page_slug,
+        "artifact",
+        body,
+        title=title or f"Artifact: {qualified_name}",
+        artifact=qualified_name,
     )
 
 
@@ -891,39 +1260,10 @@ def auto_note_artifact(project: str, qualified_name: str, size: int = 0) -> None
         return
     try:
         slug = ensure_page(proj, project)
-        register_local(proj, artifact=qualified_name)
-        gb = (size or 0) / 1e9
-        size_str = (
-            f" · {gb:.2f} GB"
-            if gb >= 0.01
-            else (f" · {size / 1e6:.1f} MB" if size else "")
-        )
-        add_markdown_cell(
-            proj,
-            slug,
-            f"Logged Trackio artifact: **📦 Artifact** `{qualified_name}`{size_str}",
-            title=f"Artifact: {qualified_name}",
-        )
+        add_artifact_cell(proj, slug, qualified_name, size=size)
         trigger_autosync(proj)
     except Exception:
         pass
-
-
-def _resolve_artifact(name: str) -> str:
-    try:
-        from trackio.sqlite_storage import SQLiteStorage  # noqa: PLC0415
-
-        project_and_name = name.split(":")[0] if ":" in name else name
-        if "/" not in project_and_name:
-            return f"**📦 Artifact** `{name}`"
-        project, art_name = project_and_name.split("/", 1)
-        manifest = SQLiteStorage.get_artifact_manifest(project, art_name)
-        size = sum(entry.get("size", 0) for entry in manifest)
-        gb = size / 1e9
-        size_str = f"{gb:.2f} GB" if gb >= 0.01 else f"{size / 1e6:.1f} MB"
-        return f"**📦 Artifact** `{name}` · {len(manifest)} files · {size_str}"
-    except Exception:
-        return f"**📦 Artifact** `{name}`"
 
 
 _LANG_BY_EXT = {
@@ -985,25 +1325,19 @@ def add_run_cell(
     duration_s: float,
     code_paths: list[str],
     title: str | None = None,
-    links: list[str] | None = None,
 ) -> None:
-    ended_at = _now_iso()
     command_line = shlex.join(command)
     lines = [
         "````bash",
         f"$ {command_line}",
         "````",
         "",
-        f"exit {exit_code} · {duration_s:.1f}s · {_human_time(ended_at)}",
+        f"exit {exit_code} · {duration_s:.1f}s",
         "",
     ]
     for path in code_paths:
         lines += _code_block_lines(path)
     lines += ["", "````output", *output.split("\n"), "````", ""]
-    for url in links or []:
-        lines.append(f"- {url.strip()}")
-    if links:
-        lines.append("")
     if title is None:
         command_name = Path(command[0]).name
         if code_paths:
@@ -1026,7 +1360,6 @@ def run_and_log(
     command: list[str],
     page: str | None = None,
     title: str | None = None,
-    links: list[str] | None = None,
 ) -> int:
     if not command:
         raise LogbookError("No command provided. Use: trackio logbook run -- <command>")
@@ -1078,7 +1411,6 @@ def run_and_log(
         duration_s,
         code_paths,
         title=title,
-        links=links,
     )
     trigger_autosync(proj)
     return 130 if interrupted else exit_code
@@ -1241,6 +1573,12 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
                 print(f"  · pushing artifacts for '{project}' → bucket {bucket}")
                 bucket_storage.upload_project_to_bucket(project, bucket)
             metadata["artifacts_bucket"] = bucket
+            for art in arts:
+                _rewrite_in_pages(
+                    proj,
+                    f"{ARTIFACT_URI_PREFIX}{art}",
+                    f"https://huggingface.co/buckets/{bucket}#{art}",
+                )
         except Exception as e:
             print(f"  · could not push artifacts to bucket: {e}")
 

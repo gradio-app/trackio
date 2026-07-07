@@ -36,16 +36,34 @@
     t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => {
       const safe = esc(url);
       const attrs = /^https?:/.test(url) ? ' target="_blank" rel="noopener"' : "";
-      return `<a href="${safe}"${attrs}>${txt}</a>`;
+      const item = /^https?:/.test(url) ? classifyResource(url) : null;
+      const data = item
+        ? ` class="res-link" data-res-url="${esc(item.url)}"`
+        : "";
+      return `<a href="${safe}"${attrs}${data}>${txt}</a>`;
     });
     t = t.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (m, pre, url) => {
-      return `${pre}<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+      const trailing = (url.match(/[.,;:!?'"`]+$/) || [""])[0];
+      const clean = trailing ? url.slice(0, -trailing.length) : url;
+      const item = classifyResource(clean);
+      if (item) return `${pre}${resChipHtml(item)}${trailing}`;
+      return `${pre}<a href="${clean}" target="_blank" rel="noopener">${clean}</a>${trailing}`;
     });
     return t;
   }
 
+  function resChipHtml(item) {
+    return (
+      `<a class="res-chip" href="${esc(item.url)}" target="_blank" ` +
+      `rel="noopener" data-res-url="${esc(item.url)}">` +
+      `<span class="res-chip-ico">${RESOURCE_ICONS[item.kind]}</span>` +
+      `${esc(item.id)}</a>`
+    );
+  }
+
   const URL_ONLY = /^(https?:\/\/[^\s]+)$/;
-  const DETECTED_URL = /(https?:\/\/[^\s<)]+|trackio-local-dashboard:\/\/[^\s<)]+)/g;
+  const DETECTED_URL =
+    /(https?:\/\/[^\s<)]+|trackio-local-dashboard:\/\/[^\s<)]+|trackio-artifact:\/\/[^\s<)]+)/g;
 
   function renderMarkdown(md, container) {
     const cellRe = /(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)/g;
@@ -84,8 +102,17 @@
       const joined = para.join(" ").trim();
       para = [];
       if (!joined) return;
+      if (/^trackio-artifact:\/\/\S+$/.test(joined)) return;
+      if (joined.indexOf("📦 Artifact") !== -1) {
+        const div = document.createElement("div");
+        div.className = "artifact-chip";
+        div.innerHTML = inline(joined);
+        container.appendChild(div);
+        return;
+      }
       if (URL_ONLY.test(joined) || IMG_PATH.test(joined)) {
-        container.appendChild(unfurl(joined));
+        const el = renderStandaloneUrl(joined);
+        if (el) container.appendChild(el);
         return;
       }
       const p = document.createElement("p");
@@ -204,7 +231,14 @@
     if (meta.type === "code") {
       renderCodeCell(body, bodyEl);
     } else if (meta.type === "figure") {
-      renderFigureCell(body, bodyEl);
+      renderFigureCell(body, bodyEl, head);
+    } else if (meta.type === "artifact") {
+      renderMarkdownPlain(body, bodyEl);
+      const chip = bodyEl.querySelector(".artifact-chip");
+      const uri = body.match(
+        /(trackio-artifact:\/\/\S+|https:\/\/huggingface\.co\/buckets\/[^\s<)]+#\S+)/
+      );
+      if (chip && uri) chip.dataset.resUrl = uri[1];
     } else {
       renderMarkdownPlain(body, bodyEl);
       renderDetectedEmbeds(body, bodyEl);
@@ -248,8 +282,10 @@
     return parts;
   }
 
-  function renderFigureCell(text, container) {
-    const htmlPart = parseFences(text).find((part) => part.lang === "html");
+  function renderFigureCell(text, container, head) {
+    const parts = parseFences(text);
+    const htmlPart = parts.find((part) => part.lang === "html");
+    const rawPart = parts.find((part) => part.lang === "raw");
     if (!htmlPart || !htmlPart.text.trim()) {
       const empty = document.createElement("p");
       empty.className = "muted";
@@ -262,7 +298,49 @@
     frame.sandbox = "allow-scripts allow-same-origin";
     frame.loading = "lazy";
     frame.srcdoc = htmlPart.text;
+    if (!rawPart || !rawPart.text.trim()) {
+      container.appendChild(frame);
+      return;
+    }
+    const sw = document.createElement("div");
+    sw.className = "fig-switch";
+    const thumb = document.createElement("span");
+    thumb.className = "fig-switch-thumb";
+    const figBtn = document.createElement("button");
+    figBtn.type = "button";
+    figBtn.className = "active";
+    figBtn.textContent = "Figure";
+    const rawBtn = document.createElement("button");
+    rawBtn.type = "button";
+    rawBtn.textContent = "Raw";
+    sw.appendChild(thumb);
+    sw.appendChild(figBtn);
+    sw.appendChild(rawBtn);
+    const rawView = document.createElement("div");
+    rawView.className = "figure-raw";
+    rawView.hidden = true;
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.textContent = rawPart.text;
+    pre.appendChild(code);
+    rawView.appendChild(pre);
+    rawView.appendChild(copySnippetBtn(rawPart.text));
+    const select = (showRaw) => {
+      sw.classList.toggle("raw", showRaw);
+      figBtn.classList.toggle("active", !showRaw);
+      rawBtn.classList.toggle("active", showRaw);
+      frame.hidden = showRaw;
+      rawView.hidden = !showRaw;
+    };
+    figBtn.addEventListener("click", () => select(false));
+    rawBtn.addEventListener("click", () => select(true));
+    if (head) {
+      head.insertBefore(sw, head.querySelector(".cell-meta"));
+    } else {
+      container.appendChild(sw);
+    }
     container.appendChild(frame);
+    container.appendChild(rawView);
   }
 
   function extractUrls(text) {
@@ -270,7 +348,7 @@
     const urls = [];
     let match;
     while ((match = DETECTED_URL.exec(text))) {
-      const url = match[1].replace(/[.,;:]+$/, "");
+      const url = match[1].replace(/[.,;:!?'"`]+$/, "");
       if (!seen.has(url)) {
         seen.add(url);
         urls.push(url);
@@ -280,6 +358,8 @@
     return urls;
   }
 
+  const IMG_URL = /(\.(png|jpe?g|gif|svg|webp)(\?|$)|\/artifact_blob\/)/i;
+
   function renderDetectedEmbeds(text, container) {
     extractUrls(text).forEach((url) => {
       if (url.startsWith("trackio-local-dashboard://")) {
@@ -288,64 +368,108 @@
         div.innerHTML =
           "🎯 <strong>Local Trackio dashboard</strong> — publish the logbook to share it";
         container.appendChild(div);
-      } else {
-        container.appendChild(unfurl(url));
+      } else if (IMG_URL.test(url)) {
+        container.appendChild(renderImage(url));
+      } else if (/huggingface\.co\/spaces\//.test(url)) {
+        maybeEmbedTrackioSpace(url, container);
       }
     });
+  }
+
+  function renderStandaloneUrl(url) {
+    if (IMG_URL.test(url) || IMG_PATH.test(url)) return renderImage(url);
+    if (classifyResource(url)) return null;
+    const p = document.createElement("p");
+    p.innerHTML = inline(url);
+    return p;
+  }
+
+  function renderImage(url) {
+    const a = document.createElement("a");
+    a.className = "unfurl image";
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.src = url;
+    img.alt = "artifact image";
+    a.appendChild(img);
+    return a;
+  }
+
+  function maybeEmbedTrackioSpace(url, container) {
+    const id = url.split("/spaces/")[1].split(/[?#]/)[0].replace(/\/$/, "");
+    const holder = document.createElement("div");
+    container.appendChild(holder);
+    getJSON(`https://huggingface.co/api/spaces/${id}`).then((d) => {
+      const tags = (d && d.tags) || [];
+      if (tags.some((t) => String(t).toLowerCase() === "trackio")) {
+        renderTrackioSpaceEmbed(holder, url, id);
+      } else {
+        holder.remove();
+      }
+    });
+  }
+
+  function jpGutter(label) {
+    const g = document.createElement("div");
+    g.className = "jp-gutter";
+    g.textContent = label;
+    return g;
   }
 
   function renderCodeCell(body, container) {
     const parts = parseFences(body);
+    const block = document.createElement("div");
+    block.className = "jp";
+    const input = document.createElement("div");
+    input.className = "jp-in";
+    const inputBody = document.createElement("div");
+    inputBody.className = "jp-in-body";
+    input.appendChild(jpGutter("In"));
+    input.appendChild(inputBody);
+    let metaEl = null;
+    let outputEl = null;
+    const embedTexts = [];
     parts.forEach((part) => {
       if (part.kind === "text") {
         const text = part.text.trim();
-        if (text) {
-          if (/^exit\s+\S+(\s|·)/.test(text)) {
-            container.appendChild(renderRunMeta(text));
-          } else {
-            renderMarkdownPlain(text, container);
-            renderDetectedEmbeds(text, container);
-          }
+        if (!text) return;
+        if (/^exit\s+\S+(\s|·)/.test(text)) {
+          metaEl = document.createElement("div");
+          metaEl.className = "jp-meta";
+          metaEl.textContent = text.replace(
+            /\s*·\s*[A-Z][a-z]{2} \d{1,2}, \d{4}.*$/,
+            ""
+          );
+        } else {
+          renderMarkdownPlain(text, container);
+          embedTexts.push(text);
         }
         return;
       }
       if (part.kind === "output") {
-        container.appendChild(renderOutputAccordion(part.text));
-        renderDetectedEmbeds(part.text, container);
+        outputEl = document.createElement("div");
+        outputEl.className = "jp-out";
+        outputEl.appendChild(jpGutter("Out"));
+        const pre = document.createElement("pre");
+        pre.className = "jp-out-pre";
+        const c = document.createElement("code");
+        c.textContent = part.text;
+        pre.appendChild(c);
+        outputEl.appendChild(pre);
+        outputEl.appendChild(copySnippetBtn(part.text));
+        embedTexts.push(part.text);
         return;
       }
-      if (part.title) {
-        container.appendChild(renderCode(part.text, part.lang, part.title));
-        return;
-      }
-      const command = document.createElement("div");
-      command.className = "command-block";
-      command.appendChild(renderCode(part.text, part.lang, null));
-      container.appendChild(command);
+      inputBody.appendChild(renderCode(part.text, part.lang, part.title));
     });
-  }
-
-  function renderOutputAccordion(text) {
-    const det = document.createElement("details");
-    det.className = "output-accordion";
-    const sum = document.createElement("summary");
-    const lineCount = text.trim() ? text.trimEnd().split("\n").length : 0;
-    sum.innerHTML = lineCount ? `${lineCount} lines` : "output";
-    const pre = document.createElement("pre");
-    pre.className = "output-pre";
-    const c = document.createElement("code");
-    c.textContent = text;
-    pre.appendChild(c);
-    det.appendChild(sum);
-    det.appendChild(pre);
-    return det;
-  }
-
-  function renderRunMeta(text) {
-    const div = document.createElement("div");
-    div.className = "run-meta";
-    div.textContent = text;
-    return div;
+    if (inputBody.childNodes.length > 0) block.appendChild(input);
+    if (metaEl) block.appendChild(metaEl);
+    if (outputEl) block.appendChild(outputEl);
+    if (block.childNodes.length) container.appendChild(block);
+    embedTexts.forEach((text) => renderDetectedEmbeds(text, container));
   }
 
   function parseRow(line) {
@@ -422,7 +546,7 @@
     const tbody = document.createElement("tbody");
     body.forEach((cells) => {
       const nonEmpty = cells.filter((x) => x !== "").length;
-      if (nonEmpty === 1 && cells[0]) {
+      if (header.length > 1 && nonEmpty === 1 && cells[0]) {
         const tr = document.createElement("tr");
         tr.className = "section-row";
         const td = document.createElement("td");
@@ -533,19 +657,48 @@
     return out;
   }
 
+  function copySnippetBtn(text) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "copy-snippet";
+    btn.title = "Copy";
+    btn.textContent = "⧉";
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      copyText(text, btn, "⧉");
+    });
+    return btn;
+  }
+
   function renderCode(code, lang, title) {
     const pre = document.createElement("pre");
     pre.className = "hl";
     const c = document.createElement("code");
     c.innerHTML = highlightCode(code, lang);
     pre.appendChild(c);
-    if (!title) return pre;
+    if (!title) {
+      const wrap = document.createElement("div");
+      wrap.className = "snippet";
+      wrap.appendChild(pre);
+      wrap.appendChild(copySnippetBtn(code));
+      return wrap;
+    }
     const det = document.createElement("details");
     det.className = "code-accordion";
     const sum = document.createElement("summary");
-    sum.innerHTML = `<span class="code-ico">&lt;/&gt;</span> ${esc(title)}`;
+    sum.innerHTML =
+      `<span class="code-ico">&lt;/&gt;</span>` +
+      `<span class="code-name">${esc(title)}</span>`;
+    sum
+      .querySelector(".code-name")
+      .addEventListener("click", (e) => e.preventDefault());
     det.appendChild(sum);
-    det.appendChild(pre);
+    const wrap = document.createElement("div");
+    wrap.className = "snippet";
+    wrap.appendChild(pre);
+    wrap.appendChild(copySnippetBtn(code));
+    det.appendChild(wrap);
     return det;
   }
 
@@ -555,8 +708,11 @@
     let ul = null;
     items.forEach((item) => {
       if (URL_ONLY.test(item) || IMG_PATH.test(item)) {
-        ul = null;
-        container.appendChild(unfurl(item));
+        const el = renderStandaloneUrl(item);
+        if (el) {
+          ul = null;
+          container.appendChild(el);
+        }
       } else if (item.indexOf("📦 Artifact") !== -1) {
         ul = null;
         const div = document.createElement("div");
@@ -582,30 +738,7 @@
     });
   }
 
-  /* -------------------- unfurl providers -------------------- */
-
-  function card(url, kind, icon, title, desc, chips) {
-    const a = document.createElement("a");
-    a.className = "unfurl";
-    a.href = url;
-    a.target = "_blank";
-    a.rel = "noopener";
-    const chipHtml = (chips || [])
-      .filter(Boolean)
-      .map((c) => `<span class="chip">${esc(c)}</span>`)
-      .join("");
-    a.innerHTML =
-      `<div class="unfurl-body">` +
-      `<div class="unfurl-ico">${icon}</div>` +
-      `<div class="unfurl-main">` +
-      `<div class="unfurl-kind">${esc(kind)}</div>` +
-      `<div class="unfurl-title">${esc(title)}</div>` +
-      (desc ? `<div class="unfurl-desc">${esc(desc)}</div>` : "") +
-      (chipHtml ? `<div class="unfurl-meta">${chipHtml}</div>` : "") +
-      `</div></div>` +
-      `<div class="unfurl-raw">${esc(url)}</div>`;
-    return a;
-  }
+  /* -------------------- resources rail -------------------- */
 
   function fmt(n) {
     if (n == null) return null;
@@ -614,121 +747,156 @@
     return String(n);
   }
 
-  const providers = [
-    {
-      test: (u) => /\.(png|jpe?g|gif|svg|webp)(\?|$)/i.test(u) || /\/artifact_blob\//.test(u),
-      render: (u, el) => {
-        el.className = "unfurl image";
-        el.href = u;
-        const img = document.createElement("img");
-        img.loading = "lazy";
-        img.src = u;
-        img.alt = "artifact image";
-        el.appendChild(img);
-      },
-    },
-    {
-      test: (u) => /huggingface\.co\/datasets\//.test(u),
-      render: async (u, el) => {
-        const id = u.split("/datasets/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-        base(el, u, "HF Dataset", "📊", id, "Hugging Face dataset");
-        const d = await getJSON(`https://huggingface.co/api/datasets/${id}`);
-        if (d)
-          fill(el, id, d.cardData?.pretty_name || id, [
-            `↓ ${fmt(d.downloads)}`,
-            `♥ ${fmt(d.likes)}`,
-            ...(d.tags || []).filter((t) => !t.includes(":")).slice(0, 3),
-          ]);
-      },
-    },
-    {
-      test: (u) => /huggingface\.co\/spaces\//.test(u),
-      embed: true,
-      render: async (u, el) => {
-        const id = u.split("/spaces/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-        base(el, u, "HF Space", "🚀", id, "Hugging Face Space");
-        const d = await getJSON(`https://huggingface.co/api/spaces/${id}`);
-        const tags = (d && d.tags) || [];
-        if (tags.some((t) => String(t).toLowerCase() === "trackio")) {
-          renderTrackioSpaceEmbed(el, u, id);
-        } else if (d) {
-          fill(el, id, d.cardData?.title || (d.sdk ? `SDK: ${d.sdk}` : "Hugging Face Space"), [
-            `♥ ${fmt(d.likes)}`,
-            ...(tags || []).filter((t) => !String(t).includes(":")).slice(0, 3),
-          ]);
-        }
-      },
-    },
-    {
-      test: (u) => /huggingface\.co\/jobs\//.test(u),
-      render: (u, el) => {
-        const rest = u.split("/jobs/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-        const parts = rest.split("/");
-        const jid = parts[1] || "";
-        base(
-          el,
-          u,
-          "HF Job",
-          "⚙️",
-          `${parts[0]} · ${jid.slice(0, 12)}${jid.length > 12 ? "…" : ""}`,
-          "Hugging Face Job — open to view status & logs"
-        );
-      },
-    },
-    {
-      test: (u) => /huggingface\.co\/buckets\//.test(u),
-      render: (u, el) => {
-        const id = u.split("/buckets/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-        base(el, u, "HF Bucket", "🪣", id, "Hugging Face Bucket — stored artifacts & data");
-      },
-    },
-    {
-      test: (u) => /arxiv\.org\/(abs|pdf)\//.test(u),
-      render: (u, el) => {
-        const id = u.split(/\/(abs|pdf)\//)[2].replace(/\.pdf$/, "");
-        base(el, u, "arXiv", "📄", `arXiv:${id}`, "Preprint");
-      },
-    },
-    {
-      test: (u) => /github\.com\/[^/]+\/[^/]+/.test(u),
-      render: async (u, el) => {
-        const m = u.match(/github\.com\/([^/]+)\/([^/?#]+)/);
-        const id = `${m[1]}/${m[2]}`;
-        base(el, u, "GitHub", "🐙", id, "Repository");
-        const d = await getJSON(`https://api.github.com/repos/${id}`);
-        if (d)
-          fill(el, id, d.description, [
-            `★ ${fmt(d.stargazers_count)}`,
-            d.language,
-          ]);
-      },
-    },
-    {
-      test: (u) => /huggingface\.co\/[^/]+\/[^/]+/.test(u),
-      render: async (u, el) => {
-        const id = u.split("huggingface.co/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-        base(el, u, "HF Model", "🤗", id, "Model on the Hugging Face Hub");
-        const d = await getJSON(`https://huggingface.co/api/models/${id}`);
-        if (d)
-          fill(el, id, d.pipeline_tag ? `Task: ${d.pipeline_tag}` : null, [
-            `↓ ${fmt(d.downloads)}`,
-            `♥ ${fmt(d.likes)}`,
-            ...(d.tags || []).filter((t) => !t.includes(":")).slice(0, 2),
-          ]);
-      },
-    },
+  const RESOURCE_SECTIONS = [
+    ["model", "Models", "🤗"],
+    ["dataset", "Datasets", "📊"],
+    ["space", "Spaces", "🚀"],
+    ["artifact", "Artifacts", "📦"],
+    ["paper", "Papers", "📄"],
+    ["repo", "Code", "🐙"],
+    ["job", "Jobs", "⚙️"],
+    ["bucket", "Buckets", "🪣"],
   ];
 
-  function base(el, url, kind, icon, title, desc) {
-    el.className = "unfurl";
-    el.href = url;
-    el.innerHTML =
-      `<div class="unfurl-body"><div class="unfurl-ico">${icon}</div>` +
-      `<div class="unfurl-main"><div class="unfurl-kind">${esc(kind)}</div>` +
-      `<div class="unfurl-title">${esc(title)}</div>` +
-      `<div class="unfurl-desc">${esc(desc)}</div>` +
-      `<div class="unfurl-meta"></div></div></div>` +
-      `<div class="unfurl-raw">${esc(url)}</div>`;
+  const RESOURCE_ICONS = Object.fromEntries(
+    RESOURCE_SECTIONS.map(([kind, , icon]) => [kind, icon])
+  );
+
+  const RESOURCE_DESC = {
+    model: "Model",
+    dataset: "Dataset",
+    space: "Space",
+    artifact: "Artifact — in Bucket",
+    paper: "Paper",
+    repo: "Repository",
+    job: "Job — status & logs",
+    bucket: "Bucket — artifacts & data",
+  };
+
+  const HF_NON_MODEL_PREFIX =
+    /^(datasets|spaces|jobs|buckets|papers|blog|docs|api|posts|collections|organizations|settings|new|join|login|pricing|tasks|learn|chat|models)(\/|$)/;
+
+  function hfId(url, marker) {
+    return url.split(marker)[1].split(/[?#]/)[0].replace(/\/$/, "");
+  }
+
+  function classifyResource(url) {
+    if (IMG_URL.test(url) || url.startsWith("trackio-local-dashboard://")) {
+      return null;
+    }
+    let m;
+    if (url.startsWith("trackio-artifact://")) {
+      return {
+        kind: "artifact",
+        id: url.slice("trackio-artifact://".length),
+        url,
+        local: true,
+      };
+    }
+    if ((m = url.match(/huggingface\.co\/buckets\/[^#\s]+#(.+)/))) {
+      return { kind: "artifact", id: decodeURIComponent(m[1]), url };
+    }
+    if (/huggingface\.co\/datasets\/[^/]+\/[^/]+/.test(url)) {
+      return { kind: "dataset", id: hfId(url, "/datasets/"), url };
+    }
+    if (/huggingface\.co\/spaces\/[^/]+\/[^/]+/.test(url)) {
+      return { kind: "space", id: hfId(url, "/spaces/"), url };
+    }
+    if (/huggingface\.co\/jobs\//.test(url)) {
+      const parts = hfId(url, "/jobs/").split("/");
+      const jid = parts[1] || "";
+      return {
+        kind: "job",
+        id: parts[0] + (jid ? ` · ${jid.slice(0, 12)}${jid.length > 12 ? "…" : ""}` : ""),
+        url,
+      };
+    }
+    if (/huggingface\.co\/buckets\//.test(url)) {
+      return { kind: "bucket", id: hfId(url, "/buckets/"), url };
+    }
+    if (/huggingface\.co\/papers\//.test(url)) {
+      return { kind: "paper", id: `Paper ${hfId(url, "/papers/")}`, url };
+    }
+    if ((m = url.match(/arxiv\.org\/(?:abs|pdf)\/([^?#\s]+)/))) {
+      return { kind: "paper", id: `arXiv:${m[1].replace(/\.pdf$/, "")}`, url };
+    }
+    if ((m = url.match(/github\.com\/([^/?#]+\/[^/?#]+)/))) {
+      return { kind: "repo", id: m[1], url };
+    }
+    if ((m = url.match(/huggingface\.co\/([^?#]+)/))) {
+      const rest = m[1].replace(/\/$/, "");
+      if (/^[^/]+\/[^/]+$/.test(rest) && !HF_NON_MODEL_PREFIX.test(rest)) {
+        return { kind: "model", id: rest, url };
+      }
+    }
+    return null;
+  }
+
+  async function fillRailMeta(item, el) {
+    const meta = el.querySelector(".rail-meta");
+    const set = (parts) => {
+      const text = parts.filter(Boolean).join(" · ");
+      if (text) meta.textContent = text;
+    };
+    if (item.kind === "model") {
+      const d = await getJSON(`https://huggingface.co/api/models/${item.id}`);
+      if (d) set([d.pipeline_tag, `↓ ${fmt(d.downloads)}`, `♥ ${fmt(d.likes)}`]);
+    } else if (item.kind === "dataset") {
+      const d = await getJSON(`https://huggingface.co/api/datasets/${item.id}`);
+      if (d) set([`↓ ${fmt(d.downloads)}`, `♥ ${fmt(d.likes)}`]);
+    } else if (item.kind === "space") {
+      const d = await getJSON(`https://huggingface.co/api/spaces/${item.id}`);
+      if (d) set([d.sdk, `♥ ${fmt(d.likes)}`]);
+    } else if (item.kind === "repo") {
+      const d = await getJSON(`https://api.github.com/repos/${item.id}`);
+      if (d) set([`★ ${fmt(d.stargazers_count)}`, d.language]);
+    }
+  }
+
+  function renderRail(md) {
+    const rail = document.getElementById("rail");
+    rail.innerHTML = "";
+    const groups = new Map();
+    extractUrls(md).forEach((url) => {
+      const item = classifyResource(url);
+      if (!item) return;
+      if (!groups.has(item.kind)) groups.set(item.kind, new Map());
+      groups.get(item.kind).set(item.url, item);
+    });
+    let any = false;
+    RESOURCE_SECTIONS.forEach(([kind, label, icon]) => {
+      const group = groups.get(kind);
+      if (!group || !group.size) return;
+      any = true;
+      const sec = document.createElement("div");
+      sec.className = "rail-section";
+      const head = document.createElement("div");
+      head.className = "rail-head";
+      head.innerHTML =
+        `<span class="rail-ico">${icon}</span>` +
+        `${esc(label)}<span class="rail-count">${group.size}</span>`;
+      sec.appendChild(head);
+      group.forEach((item) => {
+        const el = document.createElement(item.local ? "div" : "a");
+        el.className = item.local ? "rail-item rail-local" : "rail-item";
+        if (!item.local) {
+          el.href = item.url;
+          el.target = "_blank";
+          el.rel = "noopener";
+        }
+        el.dataset.resUrl = item.url;
+        const desc = item.local
+          ? "local · publish to share"
+          : RESOURCE_DESC[kind];
+        el.innerHTML =
+          `<div class="rail-title">${esc(item.id)}</div>` +
+          `<div class="rail-meta">${esc(desc)}</div>`;
+        sec.appendChild(el);
+        fillRailMeta(item, el).catch(() => {});
+      });
+      rail.appendChild(sec);
+    });
+    rail.hidden = !any;
   }
 
   function renderTrackioSpaceEmbed(el, url, id) {
@@ -744,17 +912,6 @@
       `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
   }
 
-  function fill(el, title, desc, chips) {
-    if (title) el.querySelector(".unfurl-title").textContent = title;
-    const d = el.querySelector(".unfurl-desc");
-    if (desc) d.textContent = desc;
-    const meta = el.querySelector(".unfurl-meta");
-    meta.innerHTML = (chips || [])
-      .filter(Boolean)
-      .map((c) => `<span class="chip">${esc(c)}</span>`)
-      .join("");
-  }
-
   async function getJSON(url) {
     if (UNFURL_CACHE[url] !== undefined) return UNFURL_CACHE[url];
     try {
@@ -767,28 +924,6 @@
       UNFURL_CACHE[url] = null;
       return null;
     }
-  }
-
-  function unfurl(url) {
-    const provider = providers.find((p) => p.test(url));
-    const el = document.createElement(provider && provider.embed ? "div" : "a");
-    el.className = "unfurl";
-    if (el.tagName === "A") {
-      el.href = url;
-      el.target = "_blank";
-      el.rel = "noopener";
-    }
-    if (provider) {
-      const out = provider.render(url, el);
-      if (out && typeof out.then === "function") out.catch(() => {});
-    } else {
-      let host = url;
-      try {
-        host = new URL(url).hostname.replace(/^www\./, "");
-      } catch (e) {}
-      base(el, url, "Link", "🔗", host, url);
-    }
-    return el;
   }
 
   /* -------------------- routing / render -------------------- */
@@ -830,9 +965,79 @@
       }
     }
     renderMarkdown(PAGE_CACHE[node.file], page);
+    if (node.slug === MANIFEST.root.slug) {
+      const hint = buildAgentHint();
+      const h1 = page.querySelector("h1");
+      if (h1 && h1.parentNode === page) {
+        page.insertBefore(hint, h1.nextSibling);
+      } else {
+        page.prepend(hint);
+      }
+    }
+    renderRail(PAGE_CACHE[node.file]);
     highlight(node.slug);
     document.getElementById("content").scrollTo(0, 0);
     window.scrollTo(0, 0);
+  }
+
+  function setupResourceHover() {
+    document.addEventListener("mouseover", (e) => {
+      const el = e.target.closest && e.target.closest("[data-res-url]");
+      if (!el) return;
+      const url = el.getAttribute("data-res-url");
+      document.querySelectorAll("[data-res-url]").forEach((n) => {
+        n.classList.toggle("res-hl", n.getAttribute("data-res-url") === url);
+      });
+      if (!el.classList.contains("rail-item")) {
+        const railItem = document.querySelector(
+          `#rail [data-res-url="${CSS.escape(url)}"]`
+        );
+        if (railItem) railItem.scrollIntoView({ block: "nearest" });
+      }
+    });
+    document.addEventListener("mouseout", (e) => {
+      const el = e.target.closest && e.target.closest("[data-res-url]");
+      if (!el) return;
+      document.querySelectorAll(".res-hl").forEach((n) => {
+        n.classList.remove("res-hl");
+      });
+    });
+  }
+
+  function buildAgentHint() {
+    const onSpaces =
+      /\.hf\.space$/.test(location.hostname) ||
+      /(^|\.)huggingface\.co$/.test(location.hostname);
+    let source = "";
+    if (onSpaces && MANIFEST.space_id) {
+      source = ` ${MANIFEST.space_id}`;
+    } else if (/^https?:$/.test(location.protocol)) {
+      source = ` ${location.origin}/`;
+    }
+    const command = `trackio logbook read${source}`;
+    const tokens = MANIFEST.agent_view_tokens;
+    const div = document.createElement("div");
+    div.className = "agent-hint";
+    const label = document.createElement("span");
+    label.className = "agent-hint-label";
+    label.textContent = "Read from the CLI:";
+    const code = document.createElement("code");
+    code.textContent = command;
+    const copy = document.createElement("button");
+    copy.className = "copy";
+    copy.type = "button";
+    copy.title = "Copy";
+    copy.textContent = "⧉";
+    copy.addEventListener("click", () => copyText(command, copy, "⧉"));
+    const note = document.createElement("span");
+    note.className = "agent-hint-note";
+    note.textContent =
+      "compact view for agents" + (tokens ? ` · ~${fmt(tokens)} tokens` : "");
+    div.appendChild(label);
+    div.appendChild(code);
+    div.appendChild(copy);
+    div.appendChild(note);
+    return div;
   }
 
   function route() {
@@ -934,6 +1139,7 @@
     });
     buildTree();
     setupConnect();
+    setupResourceHover();
     window.addEventListener("hashchange", route);
     route();
   }

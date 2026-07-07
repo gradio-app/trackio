@@ -261,7 +261,6 @@ def _maybe_handle_logbook_run_argv() -> bool:
     )
     run_parser.add_argument("--page", help="Page title or slug")
     run_parser.add_argument("--title", help="Cell title")
-    run_parser.add_argument("--link", action="append", default=[], help="URL to unfurl")
     opts = run_parser.parse_args(option_argv)
     if not command:
         run_parser.error("No command provided. Use: trackio logbook run -- <command>")
@@ -269,11 +268,24 @@ def _maybe_handle_logbook_run_argv() -> bool:
         logbook_action="run",
         page=opts.page,
         title=opts.title,
-        link=opts.link,
         command=command,
     )
     _handle_logbook(args)
     return True
+
+
+def _maybe_rewrite_logbook_read_argv() -> None:
+    argv = sys.argv
+    for i in range(1, len(argv) - 1):
+        if argv[i] == "logbook" and argv[i + 1] == "read":
+            j = i + 2
+            if (
+                j < len(argv)
+                and not argv[j].startswith("-")
+                and argv[j] not in ("pages", "page", "cell")
+            ):
+                argv[j : j + 1] = ["--path", argv[j]]
+            return
 
 
 def _trackio_space_namespaces(api, token: str | None, author: str | None) -> list[str]:
@@ -342,6 +354,7 @@ def _handle_list_spaces(args):
 def main():
     if _maybe_handle_logbook_run_argv():
         return
+    _maybe_rewrite_logbook_read_argv()
 
     parser = argparse.ArgumentParser(description="Trackio CLI")
     parser.add_argument(
@@ -963,6 +976,11 @@ def main():
         help="Install for OpenCode",
     )
     skills_add_parser.add_argument(
+        "--pi",
+        action="store_true",
+        help="Install for pi",
+    )
+    skills_add_parser.add_argument(
         "--global",
         dest="global_",
         action="store_true",
@@ -1015,16 +1033,12 @@ def main():
     lb_cell_md.add_argument("body", help="Markdown body")
     lb_cell_md.add_argument("--title", help="Cell title")
     lb_cell_md.add_argument("--page", help="Page title or slug")
-    lb_cell_md.add_argument("--link", action="append", default=[], help="URL to unfurl")
-    lb_cell_md.add_argument(
-        "--artifact", action="append", default=[], help="Trackio artifact name:vN"
+    lb_cell_art = lb_cell_sub.add_parser(
+        "artifact", help="Append an artifact cell referencing a Trackio artifact"
     )
-    lb_cell_md.add_argument(
-        "--code",
-        action="append",
-        default=[],
-        help="Path to a script/config to attach",
-    )
+    lb_cell_art.add_argument("name", help="Artifact reference project/name:vN")
+    lb_cell_art.add_argument("--title", help="Cell title")
+    lb_cell_art.add_argument("--page", help="Page title or slug")
 
     lb_cell_code = lb_cell_sub.add_parser("code", help="Append a code cell")
     lb_cell_code.add_argument("--title", help="Cell title")
@@ -1050,7 +1064,6 @@ def main():
     )
     lb_run.add_argument("--page", help="Page title or slug")
     lb_run.add_argument("--title", help="Cell title")
-    lb_run.add_argument("--link", action="append", default=[], help="URL to unfurl")
     lb_run.add_argument("command", nargs="*")
 
     lb_page = logbook_sub.add_parser(
@@ -1062,19 +1075,54 @@ def main():
     lb_read = logbook_sub.add_parser(
         "read", help="Read logbook pages/cells in an agent-friendly form"
     )
-    lb_read.add_argument("--path", help="Logbook workspace/path to read")
+    lb_read.add_argument(
+        "--path",
+        help="Logbook to read: local path, HF Space id, or URL",
+    )
     lb_read.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read.add_argument(
+        "--head",
+        type=int,
+        default=None,
+        help="Lines of code shown per code cell (default 3; 0 hides code)",
+    )
+    lb_read.add_argument(
+        "--tail",
+        type=int,
+        default=None,
+        help="Lines of output shown per code cell (default 3; 0 hides output)",
+    )
+    lb_read.add_argument(
+        "--raw-limit",
+        type=int,
+        default=None,
+        help="Inline figure raw data up to this many chars (default 500; 0 disables)",
+    )
     lb_read_sub = lb_read.add_subparsers(dest="read_target")
     lb_read_pages = lb_read_sub.add_parser("pages", help="List logbook pages")
     lb_read_pages.add_argument("--json", action="store_true", help="Output JSON")
     lb_read_page = lb_read_sub.add_parser("page", help="Read a page for agents")
     lb_read_page.add_argument("page", nargs="?", help="Page title or slug")
     lb_read_page.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read_page.add_argument(
+        "--head", type=int, default=argparse.SUPPRESS, help="Code lines per code cell"
+    )
+    lb_read_page.add_argument(
+        "--tail", type=int, default=argparse.SUPPRESS, help="Output lines per code cell"
+    )
+    lb_read_page.add_argument(
+        "--raw-limit",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Inline figure raw data up to this many chars",
+    )
     lb_read_cell = lb_read_sub.add_parser("cell", help="Read one cell by id")
     lb_read_cell.add_argument("cell_id", help="Cell id")
     lb_read_cell.add_argument("--json", action="store_true", help="Output JSON")
     lb_read_cell.add_argument("--full", action="store_true", help="Include full body")
-    lb_read_cell.add_argument("--raw", action="store_true", help="Include figure raw data")
+    lb_read_cell.add_argument(
+        "--raw", action="store_true", help="Include figure raw data"
+    )
     lb_read_cell.add_argument("--html", action="store_true", help="Include figure HTML")
 
     lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
@@ -1704,21 +1752,19 @@ def _print_logbook_page_outline(page):
     if not page["cells"]:
         print("No cells.")
         return
-    print("Cells:")
     for cell in page["cells"]:
-        created = f" · {cell['created_at']}" if cell.get("created_at") else ""
-        print(f"- {cell['id']} · {cell['type']} · {cell['title']}{created}")
-        if cell.get("body"):
-            print(cell["body"].rstrip())
-        if cell["type"] == "figure":
-            available = []
-            if cell.get("has_raw"):
-                available.append("raw")
-            if cell.get("has_html"):
-                available.append("html")
-            if available:
-                print(f"  available: {', '.join(available)}")
-    print("\nRead a full cell with: trackio logbook read cell <cell-id>")
+        created = (
+            f" · {cell['created_at'].replace('T', ' ')[:16]}"
+            if cell.get("created_at")
+            else ""
+        )
+        print(f"\n### {cell['title']} · {cell['type']} · {cell['id']}{created}")
+        if cell.get("preview"):
+            print(cell["preview"].rstrip())
+    print(
+        "\nFetch full payloads with: trackio logbook read cell <cell-id> "
+        "[--full|--raw|--html]"
+    )
 
 
 def _print_logbook_cell(cell):
@@ -1791,7 +1837,6 @@ def _handle_logbook(args):
                 command,
                 page=args.page,
                 title=args.title,
-                links=args.link,
             )
             slug = lb.read_metadata(proj).get("last_page", "?")
             print(f"Logged run to page '{slug}'.{_sync_suffix(lb, proj)}")
@@ -1800,15 +1845,9 @@ def _handle_logbook(args):
             proj = lb.require_project_dir()
             slug = _logbook_cell_target(lb, proj, args)
             if args.cell_type == "markdown":
-                lb.add_markdown_cell(
-                    proj,
-                    slug,
-                    args.body,
-                    title=args.title,
-                    links=args.link,
-                    artifacts=args.artifact,
-                    code=args.code,
-                )
+                lb.add_markdown_cell(proj, slug, args.body, title=args.title)
+            elif args.cell_type == "artifact":
+                lb.add_artifact_cell(proj, slug, args.name, title=args.title)
             elif args.cell_type == "code":
                 lb.add_code_cell(
                     proj,
@@ -1837,18 +1876,26 @@ def _handle_logbook(args):
         elif action == "page":
             proj = lb.require_project_dir()
             page_slug = lb.ensure_page(proj, args.title, parent_slug=args.parent)
-            print(
-                f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}"
-            )
+            print(f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}")
             lb.trigger_autosync(proj)
         elif action == "read":
-            proj = lb.require_project_dir(args.path)
+            proj = lb.resolve_read_source(args.path)
+            preview_opts = {
+                "head": lb.DEFAULT_HEAD
+                if getattr(args, "head", None) is None
+                else args.head,
+                "tail": lb.DEFAULT_TAIL
+                if getattr(args, "tail", None) is None
+                else args.tail,
+                "raw_limit": lb.DEFAULT_RAW_LIMIT
+                if getattr(args, "raw_limit", None) is None
+                else args.raw_limit,
+            }
             if args.read_target is None:
-                text = lb.read_logbook(proj)
                 if args.json:
-                    print(format_json({"logbook": text}))
+                    print(format_json(lb.read_logbook_data(proj, **preview_opts)))
                 else:
-                    print(text)
+                    print(lb.read_logbook(proj, **preview_opts))
             elif args.read_target == "pages":
                 pages = lb.list_pages(proj)
                 if args.json:
@@ -1856,7 +1903,7 @@ def _handle_logbook(args):
                 else:
                     _print_logbook_pages(pages)
             elif args.read_target == "page":
-                page = lb.read_page_outline(proj, args.page)
+                page = lb.read_page_outline(proj, args.page, **preview_opts)
                 if args.json:
                     print(format_json(page))
                 else:
@@ -1919,9 +1966,17 @@ def _handle_skills_add(args):
     REPO_ROOT = Path(__file__).resolve().parent.parent
     USE_LOCAL = (REPO_ROOT / SKILL_PREFIX / "SKILL.md").is_file()
 
-    if not (args.cursor or args.claude or args.codex or args.opencode or args.dest):
+    if not (
+        args.cursor
+        or args.claude
+        or args.codex
+        or args.opencode
+        or args.pi
+        or args.dest
+    ):
         error_exit(
-            "Pick a destination via --cursor, --claude, --codex, --opencode, or --dest."
+            "Pick a destination via --cursor, --claude, --codex, --opencode, "
+            "--pi, or --dest."
         )
 
     if USE_LOCAL:
@@ -1982,7 +2037,11 @@ def _handle_skills_add(args):
         link_path.symlink_to(os.path.relpath(central_skill_path, agent_skills_dir))
         return link_path
 
-    def install_command(command_dir: Path, force: bool) -> Path:
+    def install_command(
+        command_dir: Path, force: bool, strip_frontmatter: bool = False
+    ) -> Path:
+        import re
+
         command_dir = command_dir.expanduser().resolve()
         command_dir.mkdir(parents=True, exist_ok=True)
         dest = command_dir / COMMAND_FILE
@@ -1990,7 +2049,10 @@ def _handle_skills_add(args):
             error_exit(
                 f"Command already exists at {dest}.\nRe-run with --force to overwrite."
             )
-        dest.write_text(get_content(COMMAND_PREFIX, COMMAND_FILE), encoding="utf-8")
+        content = get_content(COMMAND_PREFIX, COMMAND_FILE)
+        if strip_frontmatter:
+            content = re.sub(r"\A---\n.*?\n---\n+", "", content, flags=re.S)
+        dest.write_text(content, encoding="utf-8")
         return dest
 
     global_targets = {
@@ -1998,27 +2060,46 @@ def _handle_skills_add(args):
         "claude": CLAUDE_GLOBAL,
         "codex": Path("~/.codex/skills"),
         "opencode": Path("~/.opencode/skills"),
+        "pi": Path("~/.pi/agent/skills"),
     }
     local_targets = {
         "cursor": Path(".cursor/skills"),
         "claude": CLAUDE_LOCAL,
         "codex": Path(".codex/skills"),
         "opencode": Path(".opencode/skills"),
+        "pi": Path(".pi/skills"),
     }
     targets_dict = global_targets if args.global_ else local_targets
 
     command_targets_global = {
         "cursor": Path("~/.cursor/commands"),
         "claude": Path("~/.claude/commands"),
+        "codex": Path("~/.codex/prompts"),
+        "opencode": Path("~/.config/opencode/commands"),
+        "pi": Path("~/.pi/agent/prompts"),
     }
     command_targets_local = {
         "cursor": Path(".cursor/commands"),
         "claude": Path(".claude/commands"),
+        "codex": Path("~/.codex/prompts"),
+        "opencode": Path(".opencode/commands"),
+        "pi": Path(".pi/prompts"),
     }
     command_dict = command_targets_global if args.global_ else command_targets_local
+    COMMAND_NOTES = {
+        "codex": " (Codex only reads ~/.codex/prompts; restart Codex to pick it up)"
+    }
+    STRIP_FRONTMATTER = {"pi"}
 
     if args.dest:
-        if args.cursor or args.claude or args.codex or args.opencode or args.global_:
+        if (
+            args.cursor
+            or args.claude
+            or args.codex
+            or args.opencode
+            or args.pi
+            or args.global_
+        ):
             error_exit("--dest cannot be combined with agent flags or --global.")
         skill_dest = install_to(Path(args.dest), args.force)
         print(f"Installed '{SKILL_ID}' to {skill_dest}")
@@ -2031,6 +2112,7 @@ def _handle_skills_add(args):
             ("claude", args.claude),
             ("codex", args.codex),
             ("opencode", args.opencode),
+            ("pi", args.pi),
         )
         if flag
     ]
@@ -2046,8 +2128,13 @@ def _handle_skills_add(args):
     if not args.no_command:
         for name in selected:
             if name in command_dict:
-                cmd_path = install_command(command_dict[name], args.force)
-                print(f"Installed '/logbook' command: {cmd_path}")
+                cmd_path = install_command(
+                    command_dict[name],
+                    args.force,
+                    strip_frontmatter=name in STRIP_FRONTMATTER,
+                )
+                note = COMMAND_NOTES.get(name, "")
+                print(f"Installed '/logbook' command: {cmd_path}{note}")
             else:
                 print(
                     f"Skipped '/logbook' command for {name} "

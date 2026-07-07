@@ -25,9 +25,7 @@ MARKER = ".mock_trackio_logbook_workspace"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Mock a full Trackio logbook session."
-    )
+    parser = argparse.ArgumentParser(description="Mock a full Trackio logbook session.")
     parser.add_argument(
         "--workspace",
         type=Path,
@@ -67,6 +65,23 @@ def _shell_quote(value: str) -> str:
 
 def _highlight_command(text: str) -> str:
     return f"\033[1m\033[38;5;208m{text}\033[0m"
+
+
+def plotly_figure_html(data: list[dict], layout: dict) -> str:
+    spec = json.dumps({"data": data, "layout": layout})
+    return (
+        "<!DOCTYPE html>\n<html>\n<head>\n"
+        '<meta charset="utf-8" />\n'
+        '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>\n'
+        "<style>html, body { margin: 0; padding: 0; }</style>\n"
+        "</head>\n<body>\n"
+        '<div id="figure"></div>\n'
+        "<script>\n"
+        f"const spec = {spec};\n"
+        'Plotly.newPlot("figure", spec.data, spec.layout, '
+        "{displayModeBar: false, responsive: true});\n"
+        "</script>\n</body>\n</html>"
+    )
 
 
 def write_file(path: Path, text: str) -> None:
@@ -118,6 +133,7 @@ def seed_repro_files(workspace: Path) -> None:
         print("exact_match=0.414")
         print("rationale_parse_rate=0.922")
         print("mean_tokens=184")
+        print("job=https://huggingface.co/jobs/mock-org/cot-baseline-001")
         """,
     )
     write_file(
@@ -134,6 +150,7 @@ def seed_repro_files(workspace: Path) -> None:
         print("exact_match=0.563")
         print("majority_margin_mean=0.31")
         print("cost_multiplier=18.6")
+        print("dashboard=https://huggingface.co/spaces/mock-org/cot-trackio-dashboard")
         """,
     )
     write_file(
@@ -162,18 +179,26 @@ def seed_repro_files(workspace: Path) -> None:
     )
     write_file(
         workspace / "figures" / "accuracy_bars.html",
-        """
-        <figure style="font-family: system-ui, sans-serif; max-width: 720px;">
-          <figcaption style="font-weight: 700; margin-bottom: 12px;">
-            GSM8K-mini exact match by prompting condition
-          </figcaption>
-          <div style="display: grid; gap: 10px;">
-            <div>Direct <span style="display:inline-block;background:#64748b;width:178px;height:14px"></span> 29.7%</div>
-            <div>CoT <span style="display:inline-block;background:#2563eb;width:248px;height:14px"></span> 41.4%</div>
-            <div>Self-consistency <span style="display:inline-block;background:#16a34a;width:338px;height:14px"></span> 56.3%</div>
-          </div>
-        </figure>
-        """,
+        plotly_figure_html(
+            data=[
+                {
+                    "type": "bar",
+                    "orientation": "h",
+                    "y": ["Direct", "CoT", "Self-consistency"],
+                    "x": [29.7, 41.4, 56.3],
+                    "marker": {"color": ["#64748b", "#2563eb", "#16a34a"]},
+                    "text": ["29.7%", "41.4%", "56.3%"],
+                    "textposition": "outside",
+                    "hovertemplate": "%{y}: %{x}%<extra></extra>",
+                }
+            ],
+            layout={
+                "title": {"text": "GSM8K-mini exact match by prompting condition"},
+                "xaxis": {"range": [0, 70], "ticksuffix": "%"},
+                "margin": {"l": 130, "r": 30, "t": 55, "b": 40},
+                "height": 340,
+            },
+        ),
     )
 
 
@@ -184,50 +209,24 @@ def build_logbook(workspace: Path) -> None:
     try:
         proj = logbook.create_logbook("Mock CoT Reproduction Logbook")
 
-        overview = logbook.ensure_page(proj, "Campaign overview")
-        logbook.add_markdown_cell(
-            proj,
-            overview,
-            "Goal: reproduce the main chain-of-thought and self-consistency claims on "
-            "a small GSM8K-style slice, then document which deltas survive under the "
-            "same prompt budget. Planned pages cover baselines, sampling, error "
-            "analysis, and final takeaways.",
-            title="Reproduction plan",
-            links=[
-                "https://arxiv.org/abs/2201.11903",
-                "https://github.com/openai/grade-school-math",
-            ],
-        )
-        logbook.add_markdown_cell(
-            proj,
-            overview,
-            "| Experiment | Status | Decision |\n"
-            "| --- | --- | --- |\n"
-            "| Direct baseline | done | Use as floor for prompt formatting checks. |\n"
-            "| CoT baseline | done | Primary target to beat. |\n"
-            "| Self-consistency | in progress | Promising but cost-heavy. |\n"
-            "| Error buckets | planned | Needed before deciding next ablation. |",
-            title="Campaign state table",
-            artifacts=["cot-repro/campaign-plan:v1"],
-        )
-
         baselines = logbook.ensure_page(proj, "Baselines")
         logbook.add_markdown_cell(
             proj,
             baselines,
-            "The direct-answer prompt landed at 29.7% exact match. The CoT prompt "
-            "improved to 41.4%, but parse failures rose because several rationales "
-            "ended without a clean final answer marker.",
+            "Goal: reproduce the main chain-of-thought claims from "
+            "https://arxiv.org/abs/2201.11903 on a small GSM8K-style slice "
+            "(https://github.com/openai/grade-school-math). The direct-answer "
+            "prompt landed at 29.7% exact match. The CoT prompt improved to "
+            "41.4%, but parse failures rose because several rationales ended "
+            "without a clean final answer marker. Evaluated on a slice of "
+            "https://huggingface.co/datasets/openai/gsm8k.",
             title="Baseline result",
-            code=["configs/baseline.json", "scripts/run_baseline.py"],
-            links=["https://huggingface.co/datasets/openai/gsm8k"],
         )
         logbook.run_and_log(
             proj,
             [py, "scripts/run_baseline.py"],
             page="Baselines",
             title="Execute baseline harness",
-            links=["https://huggingface.co/jobs/mock-org/cot-baseline-001"],
         )
         logbook.add_code_cell(
             proj,
@@ -235,11 +234,11 @@ def build_logbook(workspace: Path) -> None:
             "Validated on 50 sampled generations: 46 parsed, 4 missing marker.",
             title="Parse final answer helper",
             code_text=(
-            "def extract_final_answer(text):\n"
-            "    marker = 'Therefore, the answer is'\n"
-            "    if marker not in text:\n"
-            "        return None\n"
-            "    return text.split(marker, 1)[1].strip().rstrip('.')"
+                "def extract_final_answer(text):\n"
+                "    marker = 'Therefore, the answer is'\n"
+                "    if marker not in text:\n"
+                "        return None\n"
+                "    return text.split(marker, 1)[1].strip().rstrip('.')"
             ),
             language="python",
         )
@@ -250,17 +249,23 @@ def build_logbook(workspace: Path) -> None:
             [py, "scripts/run_self_consistency.py"],
             page="Self-consistency",
             title="Run 20-sample majority vote",
-            links=["https://huggingface.co/spaces/mock-org/cot-trackio-dashboard"],
         )
         logbook.add_markdown_cell(
             proj,
             self_consistency,
             "Self-consistency reached 56.3% exact match, a +14.9 point gain over "
             "single-sample CoT. The run is not yet the preferred recipe because it "
-            "costs 18.6x more tokens on this slice.",
+            "costs 18.6x more tokens on this slice. Sampling settings:\n\n"
+            "````json\n"
+            '{"samples_per_problem": 20, "temperature": 0.7, "vote": "majority"}\n'
+            "````",
             title="Sampling tradeoff",
-            code=["configs/self_consistency.json"],
-            artifacts=["cot-repro/self-consistency-generations:v2"],
+        )
+        logbook.add_artifact_cell(
+            proj,
+            self_consistency,
+            "cot-repro/self-consistency-generations:v2",
+            size=734_000_000,
         )
         logbook.add_figure_cell(
             proj,
@@ -280,12 +285,27 @@ def build_logbook(workspace: Path) -> None:
         logbook.add_figure_cell(
             proj,
             error_analysis,
-            html=(
-            "<div style='font-family: system-ui'>"
-            "<strong>Failure buckets</strong>"
-            "<ul><li>Arithmetic slip: 18</li><li>Wrong equation: 11</li>"
-            "<li>Answer extraction: 7</li><li>Ambiguous question: 3</li></ul>"
-            "</div>"
+            html=plotly_figure_html(
+                data=[
+                    {
+                        "type": "bar",
+                        "x": [
+                            "Arithmetic slip",
+                            "Wrong equation",
+                            "Answer extraction",
+                            "Ambiguous question",
+                        ],
+                        "y": [18, 11, 7, 3],
+                        "marker": {"color": "#f97316"},
+                        "hovertemplate": "%{x}: %{y}<extra></extra>",
+                    }
+                ],
+                layout={
+                    "title": {"text": "Failure buckets across 39 misses"},
+                    "yaxis": {"title": {"text": "count"}},
+                    "margin": {"l": 60, "r": 30, "t": 55, "b": 70},
+                    "height": 360,
+                },
             ),
             raw=json.dumps(
                 {
@@ -316,9 +336,9 @@ def build_logbook(workspace: Path) -> None:
             "queue: 5 samples\nqueue: 10 samples\nqueue: 20 samples\nqueue: verifier rerank",
             title="Ablation TODO generator",
             code_text=(
-            "ablations = ['5 samples', '10 samples', '20 samples', 'verifier rerank']\n"
-            "for ablation in ablations:\n"
-            "    print(f'queue: {ablation}')"
+                "ablations = ['5 samples', '10 samples', '20 samples', 'verifier rerank']\n"
+                "for ablation in ablations:\n"
+                "    print(f'queue: {ablation}')"
             ),
             language="python",
         )
@@ -341,7 +361,7 @@ def main() -> None:
     read_command = f"trackio logbook read --path {_shell_quote(str(workspace))}"
     open_command = f"trackio logbook serve {_shell_quote(str(workspace))}"
     print(f"Read logbook with: {read_command}")
-    print(_highlight_command(f"Open logbook with: {open_command}"))
+    print(_highlight_command(open_command))
 
 
 if __name__ == "__main__":
