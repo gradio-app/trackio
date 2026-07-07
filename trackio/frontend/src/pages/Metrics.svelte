@@ -5,6 +5,7 @@
   import BarPlot from "../components/BarPlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
+  import RunComparer from "../components/RunComparer.svelte";
   import { getLogsBatch } from "../lib/api.js";
   import {
     getMetricsPollIntervalMs,
@@ -25,6 +26,7 @@
     project = null,
     selectedRuns = [],
     allRuns = [],
+    runConfigs = {},
     smoothing = 10,
     xAxis = "step",
     logScaleX = false,
@@ -298,6 +300,9 @@
       <pre><code>{'trackio.finish()'}</code></pre>
     </div>
   {:else}
+    {#if showHeaders}
+      <RunComparer runs={selectedRuns} {runConfigs} {colorMap} />
+    {/if}
     {#each groupNames as groupName}
       {@const group = metricGroups[groupName]}
       {@const directKey = `${groupName}:direct`}

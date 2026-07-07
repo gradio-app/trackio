@@ -1,4 +1,5 @@
 <script>
+  import { copyTextToClipboard } from "../lib/clipboard.js";
   import {
     getThemePreference,
     setThemePreference,
@@ -73,26 +74,22 @@
   });
 
   async function copyCommand(cmd, idx) {
-    try {
-      await navigator.clipboard.writeText(cmd);
-      copiedIdx = idx;
-      setTimeout(() => {
-        if (copiedIdx === idx) copiedIdx = null;
-      }, 1500);
-    } catch {}
+    if (!(await copyTextToClipboard(cmd))) return;
+    copiedIdx = idx;
+    setTimeout(() => {
+      if (copiedIdx === idx) copiedIdx = null;
+    }, 1500);
   }
 
   async function copyText(text, which) {
-    try {
-      await navigator.clipboard.writeText(text);
-      if (which === "agent") {
-        agentCopied = true;
-        setTimeout(() => { agentCopied = false; }, 1500);
-      } else {
-        exampleCopied = true;
-        setTimeout(() => { exampleCopied = false; }, 1500);
-      }
-    } catch {}
+    if (!(await copyTextToClipboard(text))) return;
+    if (which === "agent") {
+      agentCopied = true;
+      setTimeout(() => { agentCopied = false; }, 1500);
+    } else {
+      exampleCopied = true;
+      setTimeout(() => { exampleCopied = false; }, 1500);
+    }
   }
 </script>
 

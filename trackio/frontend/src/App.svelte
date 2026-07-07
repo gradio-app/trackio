@@ -573,6 +573,7 @@
           project={selectedProject}
           selectedRuns={selectedRunRecords}
           allRuns={runs}
+          {runConfigs}
           {smoothing}
           {xAxis}
           {logScaleX}
