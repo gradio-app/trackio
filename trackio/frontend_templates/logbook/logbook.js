@@ -203,6 +203,8 @@
     bodyEl.className = "cell-body";
     if (meta.type === "code") {
       renderCodeCell(body, bodyEl);
+    } else if (meta.type === "figure") {
+      renderFigureCell(body, bodyEl);
     } else {
       renderMarkdownPlain(body, bodyEl);
       renderDetectedEmbeds(body, bodyEl);
@@ -244,6 +246,23 @@
     }
     if (pos < text.length) parts.push({ kind: "text", text: text.slice(pos) });
     return parts;
+  }
+
+  function renderFigureCell(text, container) {
+    const htmlPart = parseFences(text).find((part) => part.lang === "html");
+    if (!htmlPart || !htmlPart.text.trim()) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No figure HTML.";
+      container.appendChild(empty);
+      return;
+    }
+    const frame = document.createElement("iframe");
+    frame.className = "figure-frame";
+    frame.sandbox = "allow-scripts allow-same-origin";
+    frame.loading = "lazy";
+    frame.srcdoc = htmlPart.text;
+    container.appendChild(frame);
   }
 
   function extractUrls(text) {

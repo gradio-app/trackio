@@ -354,6 +354,14 @@ body {
 .cell.code .cell-head {
   background: #fbfbfc;
 }
+.figure-frame {
+  display: block;
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
 .command-block {
   margin: 10px 0 0;
 }

@@ -11,16 +11,19 @@ trackio logbook open [username/space]                   # scaffold ./.trackio/lo
 trackio logbook page "..."                              # add/select a page as the default target
 trackio logbook cell markdown "..." --page "..."        # log a finding onto a page (creates it if new)
 trackio logbook cell code --page "..." --code train.py --output "..."
+trackio logbook cell figure --page "..." --html plot.html --raw data.json
 trackio logbook run --page "..." -- python train.py --lr 3e-4  # run + capture command, scripts, output
 trackio logbook read pages                              # list pages
-trackio logbook read page "..."                         # read only cell ids + titles for a page
-trackio logbook read cell cell_<id>                     # read one full cell
+trackio logbook read page "..."                         # markdown bodies + code/figure ids
+trackio logbook read cell cell_<id> --full              # read full code cell
+trackio logbook read cell cell_<id> --raw               # read figure raw data
+trackio logbook read cell cell_<id> --html              # read figure HTML
 trackio logbook serve                                   # preview locally
 trackio logbook publish [username/space]                # first publish (public gate) → enables auto-sync
 trackio logbook sync                                    # push later edits to the Space now
 ```
 
-`cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Use `cell code` when the entry has code plus output. Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, jobs, buckets, and images are detected from URLs in the markdown/output and rendered richly by the viewer. Trackio-tagged Spaces render as Trackio dashboards. Everything else is a direct file edit.
+`cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Use `cell code` when the entry has code plus output. Use `cell figure` for HTML figures such as Plotly exports plus raw data. Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, jobs, buckets, and images are detected from URLs in the markdown/output and rendered richly by the viewer. Trackio-tagged Spaces render as Trackio dashboards. Everything else is a direct file edit.
 
 `run` is the preferred way to execute experiments from the terminal: it tees output live, stores the exact command, attaches any script/config argv tokens it can see, records exit code and duration, and captures truncated output in one code cell.
 
@@ -59,10 +62,17 @@ Start with outlines, not full page bodies:
 ```bash
 trackio logbook read pages --json
 trackio logbook read page "Baseline" --json
-trackio logbook read cell cell_ab12cd34ef56 --json
+trackio logbook read cell cell_ab12cd34ef56 --full --json
+trackio logbook read cell cell_figure1234 --raw --json
 ```
 
-`read page` returns only page metadata plus cell ids, types, titles, and timestamps. Use `read cell` for the full Markdown/code/output only when the cell title is relevant to your task. The generated `logbook.md` is also compact: it indexes pages and cells rather than expanding every cell body.
+`read page` returns page metadata plus:
+
+- full markdown cell bodies, because these are written for humans and agents
+- code cell ids/titles only; use `read cell <id> --full` for code/output
+- figure cell ids/titles only, plus whether raw/html are available; use `--raw`, `--html`, or `--full`
+
+The generated `logbook.md` follows the same compact shape: markdown content is visible, while code and figure payloads require explicit cell reads.
 
 ## Also editable directly (your normal file tools)
 
@@ -79,11 +89,11 @@ Any page's content, the index table, and the styling (`logbook.css` / `index.htm
 
 ```bash
 trackio logbook cell code --page "Eval" --title "Eval output" --code eval.py --output "exact_match: 0.41"
-trackio logbook cell code --page "Samples" --code generate.py --output "Generated grid: https://huggingface.co/buckets/user/run/grid.png" --attachment "sample_grid|image|https://huggingface.co/buckets/user/run/grid.png|https://huggingface.co/buckets/user/run/grid.json|Raw prompts, seeds, outputs, and scores"
+trackio logbook cell figure --page "Samples" --title "Generated grid" --html grid.html --raw grid.json
 trackio logbook run --page "Eval" -- python eval.py --checkpoint ckpt.safetensors
 ```
 
-Typed cells still live in the same Markdown files. Keep the persisted cell types simple: markdown and code. If an image or plot has raw data, add it as a hidden `--attachment` so humans see the clean output while agents can read the raw data URL from `logbook.md`.
+Typed cells still live in the same Markdown files. Keep the persisted cell types simple: markdown, code, and figure. If a plot has raw data, use a figure cell so humans see the HTML figure while agents can explicitly request the raw data.
 
 ## Make it reproducible
 

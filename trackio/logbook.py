@@ -22,7 +22,7 @@ VIEWER_FILES = ["index.html", "logbook.css", "logbook.js", "trackio-logo.png"]
 
 EXP_HEADER = "| Status | Experiment |"
 EXP_SEP = "| --- | --- |"
-CELL_TYPES = {"markdown", "code"}
+CELL_TYPES = {"markdown", "code", "figure"}
 RUN_OUTPUT_LIMIT = 20_000
 RUN_OUTPUT_HEAD = 2_000
 RUN_OUTPUT_TAIL = RUN_OUTPUT_LIMIT - RUN_OUTPUT_HEAD
@@ -208,10 +208,30 @@ def _page_outline_markdown(node: dict, text: str) -> str:
         lines.append("")
         lines.append("No cells.")
         return "\n".join(lines)
-    lines += ["", "| Cell ID | Type | Title |", "| --- | --- | --- |"]
     for cell in cells:
-        safe_title = cell["title"].replace("|", "\\|")
-        lines.append(f"| `{cell['id']}` | {cell['type']} | {safe_title} |")
+        lines += [
+            "",
+            f"### {cell['title']}",
+            "",
+            f"Cell: `{cell['id']}` · {cell['type']}",
+        ]
+        if cell["type"] == "markdown":
+            lines += ["", cell["body"]]
+        elif cell["type"] == "code":
+            lines.append("Code/output omitted. Read with `trackio logbook read cell "
+                         f"{cell['id']} --full`.")
+        elif cell["type"] == "figure":
+            parts = _figure_parts(cell["body"])
+            available = []
+            if parts["raw"]:
+                available.append("--raw")
+            if parts["html"]:
+                available.append("--html")
+            suffix = f" ({', '.join(available)} available)" if available else ""
+            lines.append(
+                "Figure payload omitted. Read with `trackio logbook read cell "
+                f"{cell['id']} --raw|--html|--full`{suffix}."
+            )
     return "\n".join(lines)
 
 
@@ -509,6 +529,32 @@ def list_pages(proj: Path) -> list[dict]:
     return pages
 
 
+def _figure_parts(body: str) -> dict:
+    parts = {"html": "", "raw": ""}
+    fence_re = re.compile(r"(`{3,4}|~{3,4})([^\n]*)\n([\s\S]*?)\n\1")
+    for match in fence_re.finditer(body):
+        lang = (match.group(2).strip().split() or [""])[0].lower()
+        if lang in parts and not parts[lang]:
+            parts[lang] = match.group(3)
+    return parts
+
+
+def _cell_public_summary(cell: dict) -> dict:
+    summary = {
+        "id": cell["id"],
+        "type": cell["type"],
+        "title": cell["title"],
+        "created_at": cell.get("created_at"),
+    }
+    if cell["type"] == "markdown":
+        summary["body"] = cell["body"]
+    elif cell["type"] == "figure":
+        parts = _figure_parts(cell["body"])
+        summary["has_html"] = bool(parts["html"])
+        summary["has_raw"] = bool(parts["raw"])
+    return summary
+
+
 def read_page_outline(proj: Path, page: str | None = None) -> dict:
     slug = _resolve_existing_page(proj, page)
     manifest = build_manifest(proj)
@@ -521,26 +567,25 @@ def read_page_outline(proj: Path, page: str | None = None) -> dict:
         "slug": node["slug"],
         "title": node["title"],
         "file": node["file"],
-        "cells": [
-            {
-                "id": cell["id"],
-                "type": cell["type"],
-                "title": cell["title"],
-                "created_at": cell.get("created_at"),
-            }
-            for cell in cells
-        ],
+        "cells": [_cell_public_summary(cell) for cell in cells],
     }
 
 
-def read_cell(proj: Path, cell_id: str) -> dict:
+def read_cell(
+    proj: Path,
+    cell_id: str,
+    *,
+    include_full: bool = False,
+    include_raw: bool = False,
+    include_html: bool = False,
+) -> dict:
     manifest = build_manifest(proj)
     root = logbook_root(proj)
     for node in _walk(manifest["root"]):
         text = (root / node["file"]).read_text(encoding="utf-8")
         for cell in _parse_cells_from_text(text, node["slug"], node["title"]):
             if cell["id"] == cell_id:
-                return {
+                result = {
                     "id": cell["id"],
                     "type": cell["type"],
                     "title": cell["title"],
@@ -549,8 +594,21 @@ def read_cell(proj: Path, cell_id: str) -> dict:
                     "page_title": cell["page_title"],
                     "file": node["file"],
                     "metadata": cell["metadata"],
-                    "body": cell["body"],
                 }
+                if cell["type"] == "markdown":
+                    result["body"] = cell["body"]
+                elif cell["type"] == "code":
+                    if include_full:
+                        result["body"] = cell["body"]
+                elif cell["type"] == "figure":
+                    parts = _figure_parts(cell["body"])
+                    result["has_html"] = bool(parts["html"])
+                    result["has_raw"] = bool(parts["raw"])
+                    if include_full or include_html:
+                        result["html"] = parts["html"]
+                    if include_full or include_raw:
+                        result["raw"] = parts["raw"]
+                return result
     raise LogbookError(f"No cell with id '{cell_id}' in this logbook.")
 
 
@@ -639,6 +697,8 @@ def _default_cell_title(cell_type: str, body: str, metadata: dict) -> str:
         if titled:
             return _shorten(f"Code: {titled.group(1).strip()}")
         return "Code cell"
+    if cell_type == "figure":
+        return "Figure"
     for line in body.splitlines():
         line = line.strip()
         if not line or line.startswith("````") or line.startswith("<!--"):
@@ -721,7 +781,6 @@ def add_markdown_cell(
     links: list[str] | None = None,
     artifacts: list[str] | None = None,
     code: list[str] | None = None,
-    attachments: list[dict] | None = None,
 ) -> None:
     links = list(links or [])
     artifacts = list(artifacts or [])
@@ -739,7 +798,6 @@ def add_markdown_cell(
         "markdown",
         "\n".join(lines),
         title=title,
-        attachments=attachments,
     )
 
 
@@ -751,7 +809,6 @@ def add_code_cell(
     code_paths: list[str] | None = None,
     code_text: str | None = None,
     language: str | None = None,
-    attachments: list[dict] | None = None,
 ) -> None:
     lines: list[str] = []
     for path in code_paths or []:
@@ -767,8 +824,22 @@ def add_code_cell(
         "\n".join(lines),
         title=title,
         language=language,
-        attachments=attachments,
     )
+
+
+def add_figure_cell(
+    proj: Path,
+    page_slug: str,
+    html: str | None = None,
+    raw: str | None = None,
+    title: str | None = None,
+) -> None:
+    if not html:
+        raise LogbookError("Figure cells require HTML content.")
+    lines = ["````html", html, "````", ""]
+    if raw:
+        lines += ["````raw", raw, "````", ""]
+    _append_cell(proj, page_slug, "figure", "\n".join(lines), title=title)
 
 
 def register_local(

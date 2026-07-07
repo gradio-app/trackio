@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import huggingface_hub
 
@@ -1024,15 +1025,6 @@ def main():
         default=[],
         help="Path to a script/config to attach",
     )
-    lb_cell_md.add_argument(
-        "--attachment",
-        action="append",
-        default=[],
-        help=(
-            "Hidden raw-data attachment as name|kind|visible_url|raw_url[|description]. "
-            "Repeatable."
-        ),
-    )
 
     lb_cell_code = lb_cell_sub.add_parser("code", help="Append a code cell")
     lb_cell_code.add_argument("--title", help="Cell title")
@@ -1043,15 +1035,14 @@ def main():
     lb_cell_code.add_argument("--code-text", help="Inline code to include")
     lb_cell_code.add_argument("--language", help="Language for --code-text")
     lb_cell_code.add_argument("--output", required=True, help="Output text")
-    lb_cell_code.add_argument(
-        "--attachment",
-        action="append",
-        default=[],
-        help=(
-            "Hidden raw-data attachment as name|kind|visible_url|raw_url[|description]. "
-            "Repeatable."
-        ),
-    )
+
+    lb_cell_figure = lb_cell_sub.add_parser("figure", help="Append a figure cell")
+    lb_cell_figure.add_argument("--title", help="Cell title")
+    lb_cell_figure.add_argument("--page", help="Page title or slug")
+    lb_cell_figure.add_argument("--html", help="Path to HTML, or inline HTML text")
+    lb_cell_figure.add_argument("--html-text", help="Inline HTML text")
+    lb_cell_figure.add_argument("--raw", help="Path/URL/text for raw data")
+    lb_cell_figure.add_argument("--raw-text", help="Inline raw data")
 
     lb_run = logbook_sub.add_parser(
         "run",
@@ -1074,14 +1065,15 @@ def main():
     lb_read_sub = lb_read.add_subparsers(dest="read_target", required=True)
     lb_read_pages = lb_read_sub.add_parser("pages", help="List logbook pages")
     lb_read_pages.add_argument("--json", action="store_true", help="Output JSON")
-    lb_read_page = lb_read_sub.add_parser(
-        "page", help="Read a page outline: cell ids and titles only"
-    )
+    lb_read_page = lb_read_sub.add_parser("page", help="Read a page for agents")
     lb_read_page.add_argument("page", nargs="?", help="Page title or slug")
     lb_read_page.add_argument("--json", action="store_true", help="Output JSON")
-    lb_read_cell = lb_read_sub.add_parser("cell", help="Read one full cell by id")
+    lb_read_cell = lb_read_sub.add_parser("cell", help="Read one cell by id")
     lb_read_cell.add_argument("cell_id", help="Cell id")
     lb_read_cell.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read_cell.add_argument("--full", action="store_true", help="Include full body")
+    lb_read_cell.add_argument("--raw", action="store_true", help="Include figure raw data")
+    lb_read_cell.add_argument("--html", action="store_true", help="Include figure HTML")
 
     lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
     lb_serve.add_argument("--port", type=int, default=7861)
@@ -1695,27 +1687,6 @@ def _logbook_cell_target(lb, proj, args):
     return lb.resolve_page(proj, getattr(args, "page", None))
 
 
-def _parse_logbook_attachments(values):
-    attachments = []
-    for value in values or []:
-        parts = value.split("|", 4)
-        if len(parts) < 4:
-            error_exit(
-                "--attachment must be name|kind|visible_url|raw_url[|description]"
-            )
-        name, kind, visible_url, raw_url = parts[:4]
-        attachment = {
-            "name": name,
-            "kind": kind,
-            "visible_url": visible_url,
-            "raw_url": raw_url,
-        }
-        if len(parts) == 5:
-            attachment["description"] = parts[4]
-        attachments.append(attachment)
-    return attachments
-
-
 def _print_logbook_pages(pages):
     if not pages:
         print("No pages.")
@@ -1734,6 +1705,16 @@ def _print_logbook_page_outline(page):
     for cell in page["cells"]:
         created = f" · {cell['created_at']}" if cell.get("created_at") else ""
         print(f"- {cell['id']} · {cell['type']} · {cell['title']}{created}")
+        if cell.get("body"):
+            print(cell["body"].rstrip())
+        if cell["type"] == "figure":
+            available = []
+            if cell.get("has_raw"):
+                available.append("raw")
+            if cell.get("has_html"):
+                available.append("html")
+            if available:
+                print(f"  available: {', '.join(available)}")
     print("\nRead a full cell with: trackio logbook read cell <cell-id>")
 
 
@@ -1743,8 +1724,28 @@ def _print_logbook_cell(cell):
     print(f"Type: {cell['type']}")
     if cell.get("created_at"):
         print(f"Created: {cell['created_at']}")
-    print("\n---\n")
-    print(cell["body"])
+    content_keys = [key for key in ("body", "raw", "html") if key in cell]
+    if not content_keys:
+        if cell["type"] == "code":
+            print("\nBody omitted. Use --full to include code/output.")
+        elif cell["type"] == "figure":
+            print("\nFigure content omitted. Use --raw, --html, or --full.")
+        return
+    for key in content_keys:
+        label = key.upper()
+        print(f"\n--- {label} ---\n")
+        print(cell[key])
+
+
+def _read_logbook_payload(path_or_text, inline_text):
+    if inline_text is not None:
+        return inline_text
+    if not path_or_text:
+        return ""
+    path = Path(path_or_text)
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return path_or_text
 
 
 def _handle_logbook(args):
@@ -1804,7 +1805,6 @@ def _handle_logbook(args):
                     links=args.link,
                     artifacts=args.artifact,
                     code=args.code,
-                    attachments=_parse_logbook_attachments(args.attachment),
                 )
             elif args.cell_type == "code":
                 lb.add_code_cell(
@@ -1815,7 +1815,16 @@ def _handle_logbook(args):
                     code_paths=args.code,
                     code_text=args.code_text,
                     language=args.language,
-                    attachments=_parse_logbook_attachments(args.attachment),
+                )
+            elif args.cell_type == "figure":
+                html = _read_logbook_payload(args.html, args.html_text)
+                raw = _read_logbook_payload(args.raw, args.raw_text)
+                lb.add_figure_cell(
+                    proj,
+                    slug,
+                    html=html,
+                    raw=raw,
+                    title=args.title,
                 )
             print(
                 f"Logged {args.cell_type} cell to page "
@@ -1844,7 +1853,13 @@ def _handle_logbook(args):
                 else:
                     _print_logbook_page_outline(page)
             elif args.read_target == "cell":
-                cell = lb.read_cell(proj, args.cell_id)
+                cell = lb.read_cell(
+                    proj,
+                    args.cell_id,
+                    include_full=args.full,
+                    include_raw=args.raw,
+                    include_html=args.html,
+                )
                 if args.json:
                     print(format_json(cell))
                 else:
