@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shlex
 import shutil
 import sys
 import textwrap
@@ -39,14 +38,6 @@ def parse_args() -> argparse.Namespace:
         "--keep-existing",
         action="store_true",
         help="Append to an existing generated workspace instead of resetting it.",
-    )
-    parser.add_argument(
-        "--trackio",
-        default=shutil.which("trackio") or "trackio",
-        help=(
-            'Trackio command to print in final instructions, e.g. "trackio" or '
-            '"python -m trackio.cli".'
-        ),
     )
     return parser.parse_args()
 
@@ -339,9 +330,6 @@ def build_logbook(workspace: Path) -> None:
 def main() -> None:
     args = parse_args()
     workspace = args.workspace.resolve()
-    trackio = shlex.split(args.trackio)
-    if not trackio:
-        raise SystemExit("--trackio cannot be empty")
     reset_workspace(workspace, keep_existing=args.keep_existing)
     seed_repro_files(workspace)
     build_logbook(workspace)
@@ -350,14 +338,8 @@ def main() -> None:
     print("\nMock logbook created.")
     print(f"Workspace: {workspace}")
     print(f"Logbook files: {logbook_dir}")
-    read_command = (
-        f"{' '.join(_shell_quote(part) for part in trackio)} "
-        f"logbook read --path {_shell_quote(str(workspace))}"
-    )
-    open_command = (
-        f"{' '.join(_shell_quote(part) for part in trackio)} "
-        f"logbook serve {_shell_quote(str(workspace))}"
-    )
+    read_command = f"trackio logbook read --path {_shell_quote(str(workspace))}"
+    open_command = f"trackio logbook serve {_shell_quote(str(workspace))}"
     print(f"Read logbook with: {read_command}")
     print(_highlight_command(f"Open logbook with: {open_command}"))
 

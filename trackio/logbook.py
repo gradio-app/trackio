@@ -26,6 +26,7 @@ CELL_TYPES = {"markdown", "code", "figure"}
 RUN_OUTPUT_LIMIT = 20_000
 RUN_OUTPUT_HEAD = 2_000
 RUN_OUTPUT_TAIL = RUN_OUTPUT_LIMIT - RUN_OUTPUT_HEAD
+TRY_NUM_PORTS = int(os.getenv("GRADIO_NUM_PORTS", "100"))
 CELL_RE = re.compile(
     r"(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)"
 )
@@ -1131,8 +1132,23 @@ def serve(
 
     handler = functools.partial(Handler, directory=str(logbook_root(proj)))
     socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        url = f"http://localhost:{port}/"
+    server_ports = [port] if port == 0 else range(port, port + TRY_NUM_PORTS)
+    httpd = None
+    for candidate_port in server_ports:
+        try:
+            httpd = socketserver.TCPServer(("", candidate_port), handler)
+            break
+        except OSError:
+            continue
+    if httpd is None:
+        raise LogbookError(
+            f"Cannot find empty port in range: {port}-{port + TRY_NUM_PORTS - 1}. "
+            "Pass --port to choose another starting port."
+        )
+
+    with httpd:
+        actual_port = httpd.server_address[1]
+        url = f"http://localhost:{actual_port}/"
         print(_highlight_command(f"* Trackio logbook launched at: {url}"))
         print("Press Ctrl+C to stop.")
         if open_browser:
