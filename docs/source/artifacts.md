@@ -30,6 +30,20 @@ When you pass a path, the artifact `name` defaults to `run-<run_id>-<basename>` 
 trackio.log_artifact("checkpoints/", name="my-model", type="model")
 ```
 
+### Artifact types
+
+Artifact `type` is a free-form category string. Trackio does not enforce a fixed list of types, but common conventions are:
+
+| Type | Use it for |
+| --- | --- |
+| `"model"` | Model checkpoints, adapter weights, tokenizers, model configs |
+| `"dataset"` | Training, validation, test, or generated datasets |
+| `"evaluation"` | Evaluation outputs, predictions, benchmark results, score files |
+| `"report"` | Figures, plots, tables, notebooks, or human-readable analysis bundles |
+| `"unspecified"` | The default when no type is provided |
+
+Use stable type names within a project so you can filter artifacts consistently and use `trackio.use_artifact(..., type="...")` to assert that a run is consuming the expected kind of artifact.
+
 ### Building an artifact explicitly
 
 For finer control — multiple files, custom logical paths, a description, or metadata — construct an [`Artifact`], add files to it, then log it:
