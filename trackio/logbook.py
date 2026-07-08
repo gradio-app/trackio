@@ -892,10 +892,24 @@ def _artifact_summary(cell: dict) -> dict:
         preview = first
     return {
         "artifact": cell["metadata"].get("artifact"),
+        "artifact_type": cell["metadata"].get("artifact_type"),
         "local": local,
         "link": None if local else (uri or None),
         "preview": preview,
     }
+
+
+def _strip_duplicate_heading(body: str, title: str) -> str:
+    match = re.match(r"\s*#{1,6}\s+([^\n]+)\n?", body)
+    if not match:
+        return body
+
+    def norm(text: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"[*_`#]", "", text)).strip().lower()
+
+    if norm(match.group(1)) == norm(title):
+        return body[match.end() :].lstrip("\n")
+    return body
 
 
 def _cell_public_summary(
@@ -912,7 +926,7 @@ def _cell_public_summary(
     }
     if cell["type"] == "markdown":
         summary["body"] = cell["body"]
-        summary["preview"] = cell["body"]
+        summary["preview"] = _strip_duplicate_heading(cell["body"], cell["title"])
     elif cell["type"] == "artifact":
         summary["body"] = cell["body"]
         summary.update(_artifact_summary(cell))
@@ -1180,12 +1194,15 @@ def add_artifact_cell(
     qualified_name: str,
     size: int | None = None,
     title: str | None = None,
+    artifact_type: str | None = None,
 ) -> None:
     files = 0
     if size is None:
         size, files = _artifact_stats(qualified_name)
     register_local(proj, artifact=qualified_name)
     line = f"**📦 Artifact** `{qualified_name}`"
+    if artifact_type and artifact_type != "artifact":
+        line += f" · {artifact_type}"
     if files:
         line += f" · {files} files"
     line += _format_size(size)
@@ -1197,6 +1214,7 @@ def add_artifact_cell(
         body,
         title=title or f"Artifact: {qualified_name}",
         artifact=qualified_name,
+        artifact_type=artifact_type,
     )
 
 
@@ -1252,7 +1270,12 @@ def auto_note_run(project: str, run_name: str, space_id: str | None = None) -> N
         pass
 
 
-def auto_note_artifact(project: str, qualified_name: str, size: int = 0) -> None:
+def auto_note_artifact(
+    project: str,
+    qualified_name: str,
+    size: int = 0,
+    artifact_type: str | None = None,
+) -> None:
     if not _autonote_enabled():
         return
     proj = find_project_dir()
@@ -1260,7 +1283,9 @@ def auto_note_artifact(project: str, qualified_name: str, size: int = 0) -> None
         return
     try:
         slug = ensure_page(proj, project)
-        add_artifact_cell(proj, slug, qualified_name, size=size)
+        add_artifact_cell(
+            proj, slug, qualified_name, size=size, artifact_type=artifact_type
+        )
         trigger_autosync(proj)
     except Exception:
         pass

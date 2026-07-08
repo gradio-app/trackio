@@ -1315,7 +1315,10 @@ class Run:
             from trackio import logbook as _logbook
 
             _logbook.auto_note_artifact(
-                self.project, artifact.qualified_name, artifact.size
+                self.project,
+                artifact.qualified_name,
+                artifact.size,
+                artifact_type=artifact.type,
             )
         except Exception:
             pass

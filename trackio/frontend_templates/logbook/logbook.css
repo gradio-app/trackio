@@ -348,10 +348,19 @@ body {
   min-width: 0;
   padding: 14px 18px 18px;
 }
-.cell-body > :first-child {
+#page .cell-body h1,
+#page .cell-body h2 {
+  font-family: var(--sans);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  margin: 22px 0 6px;
+}
+#page .cell-body > :first-child {
   margin-top: 0;
 }
-.cell-body > :last-child {
+#page .cell-body > :last-child {
   margin-bottom: 0;
 }
 .cell.code .cell-head {

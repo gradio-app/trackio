@@ -1039,6 +1039,11 @@ def main():
     lb_cell_art.add_argument("name", help="Artifact reference project/name:vN")
     lb_cell_art.add_argument("--title", help="Cell title")
     lb_cell_art.add_argument("--page", help="Page title or slug")
+    lb_cell_art.add_argument(
+        "--type",
+        dest="artifact_type",
+        help='Artifact type, e.g. "dataset" or "model"',
+    )
 
     lb_cell_code = lb_cell_sub.add_parser("code", help="Append a code cell")
     lb_cell_code.add_argument("--title", help="Cell title")
@@ -1847,7 +1852,13 @@ def _handle_logbook(args):
             if args.cell_type == "markdown":
                 lb.add_markdown_cell(proj, slug, args.body, title=args.title)
             elif args.cell_type == "artifact":
-                lb.add_artifact_cell(proj, slug, args.name, title=args.title)
+                lb.add_artifact_cell(
+                    proj,
+                    slug,
+                    args.name,
+                    title=args.title,
+                    artifact_type=args.artifact_type,
+                )
             elif args.cell_type == "code":
                 lb.add_code_cell(
                     proj,

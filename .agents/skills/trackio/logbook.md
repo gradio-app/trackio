@@ -7,7 +7,7 @@ The logbook is **just files you edit directly**. There are only a few CLI comman
 ## The few CLI commands
 
 ```bash
-trackio logbook open [username/space]                   # scaffold ./.trackio/logbook/ (run once)
+trackio logbook open [username/space] --title "..."     # scaffold ./.trackio/logbook/ (run once)
 trackio logbook page "..."                              # add/select a page as the default target
 trackio logbook cell markdown "..." --page "..."        # log a finding onto a page (creates it if new)
 trackio logbook cell code --page "..." --code train.py --output "..."
@@ -32,6 +32,7 @@ trackio logbook sync                                    # push later edits to th
 
 ## The structure
 
+- **Give the logbook a descriptive title.** Pass `--title "Reproducing X (paper)"` when you `open` it, or edit the `# ...` heading of `pages/index.md` afterwards. Without it the title defaults to the directory name (e.g. `cot`), which is a bad title for a published Space.
 - **The main page** (`pages/index.md`) is the **table of contents only** — an `## Pages` table with a single `Page` column by default, one row per page, each linking to that page. **Never write findings here.**
 - The default table is deliberately unopinionated. Add columns (e.g. `Status`, `Owner`, `Decision`) by editing the markdown directly; the CLI keeps appending rows correctly and fills a `Status` column if one exists.
 - **Each experiment has its own page** where findings accumulate.
@@ -86,11 +87,11 @@ trackio logbook read cell cell_figure1234 --raw --json
 
 Any page's content, the index table, and the styling (`logbook.css` / `index.html` / `logbook.js`, which live inside the logbook) are plain files — edit them when the CLI verbs aren't enough. `serve` to preview and fix.
 
-- `--title`: an optional short title for the cell; if omitted, Trackio derives one.
-- Body: normal Markdown. Use paragraphs, bullets, headings, and tables as appropriate for the material.
+- `--title`: an optional short title for the cell; if omitted, Trackio derives one. **Do not repeat the title as a heading at the top of the body** — the viewer already renders the title in the cell header.
+- Body: normal Markdown. Use paragraphs, bullets, headings, and tables as appropriate for the material. Bare Hub model ids mentioned in text or output (e.g. `meta-llama/Llama-3.1-8B-Instruct`) are detected and linked in the resources sidebar automatically.
 - Links: write URLs directly in the markdown body (or let them appear in command output). Resource URLs are collected into the page's **resources sidebar**, grouped by kind: HF models / datasets / Spaces / **Jobs** (`huggingface.co/jobs/...`) / **Buckets** (`huggingface.co/buckets/...`), arXiv / HF papers, and GitHub. **Trackio dashboards embed live** in the page body, and image URLs render inline. There is no `--link` flag.
 - Code: embed fenced code blocks directly in the markdown body — they render with syntax highlighting. For code-plus-output entries use `cell code` (its `--code PATH` includes a file); `logbook run` attaches the scripts it executed automatically.
-- Artifacts: `trackio.log_artifact()` records an **artifact cell** automatically; `trackio logbook cell artifact project/name:vN` records one manually. Artifact cells also appear in the resources sidebar (marked local until published).
+- Artifacts: `trackio.log_artifact()` records an **artifact cell** automatically; `trackio logbook cell artifact project/name:vN [--type dataset]` records one manually. Artifact cells also appear in the resources sidebar (marked local until published). **Log datasets you construct locally as artifacts of type `dataset`** (e.g. a hand-curated eval set) so they are captured and pushed to the Bucket on publish.
 - It's just Markdown you can also edit by hand — if something renders wrong, `serve` to preview and fix the file directly.
 
 ## Prefer typed cells when the shape is clear

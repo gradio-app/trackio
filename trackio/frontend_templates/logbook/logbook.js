@@ -42,7 +42,7 @@
         : "";
       return `<a href="${safe}"${attrs}${data}>${txt}</a>`;
     });
-    t = t.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (m, pre, url) => {
+    t = t.replace(/(^|[\s(])(https?:\/\/[^\s<>)"'`]+)/g, (m, pre, url) => {
       const trailing = (url.match(/[.,;:!?'"`]+$/) || [""])[0];
       const clean = trailing ? url.slice(0, -trailing.length) : url;
       const item = classifyResource(clean);
@@ -63,7 +63,7 @@
 
   const URL_ONLY = /^(https?:\/\/[^\s]+)$/;
   const DETECTED_URL =
-    /(https?:\/\/[^\s<)]+|trackio-local-dashboard:\/\/[^\s<)]+|trackio-artifact:\/\/[^\s<)]+)/g;
+    /(https?:\/\/[^\s<>)\]"'`]+|trackio-local-dashboard:\/\/[^\s<>)\]"'`]+|trackio-artifact:\/\/[^\s<>)\]"'`]+)/g;
 
   function renderMarkdown(md, container) {
     const cellRe = /(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)/g;
@@ -240,11 +240,25 @@
       );
       if (chip && uri) chip.dataset.resUrl = uri[1];
     } else {
-      renderMarkdownPlain(body, bodyEl);
-      renderDetectedEmbeds(body, bodyEl);
+      const cleaned = stripDuplicateTitle(body, meta.title);
+      renderMarkdownPlain(cleaned, bodyEl);
+      renderDetectedEmbeds(cleaned, bodyEl);
     }
     cell.appendChild(bodyEl);
     container.appendChild(cell);
+  }
+
+  function stripDuplicateTitle(body, title) {
+    if (!title) return body;
+    const m = body.match(/^\s*#{1,6}\s+([^\n]+)\n?/);
+    if (!m) return body;
+    const norm = (s) =>
+      s
+        .toLowerCase()
+        .replace(/[*_`#]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    return norm(m[1]) === norm(title) ? body.slice(m[0].length) : body;
   }
 
   function formatTime(iso) {
@@ -850,19 +864,157 @@
     } else if (item.kind === "repo") {
       const d = await getJSON(`https://api.github.com/repos/${item.id}`);
       if (d) set([`★ ${fmt(d.stargazers_count)}`, d.language]);
+    } else if (item.kind === "paper") {
+      const m = item.id.match(/^(?:arXiv:|Paper )(.+)$/);
+      if (!m) return;
+      const arxivId = m[1].replace(/v\d+$/, "");
+      const d = await getJSON(`https://huggingface.co/api/papers/${arxivId}`);
+      if (d && d.id) {
+        if (el.href) el.href = `https://huggingface.co/papers/${d.id}`;
+        const title =
+          d.title && d.title.length > 70 ? `${d.title.slice(0, 69)}…` : d.title;
+        set([title, d.upvotes ? `▲ ${fmt(d.upvotes)}` : null]);
+      }
     }
   }
 
+  const BARE_ID_SKIP_DIRS = new Set([
+    "scripts",
+    "configs",
+    "config",
+    "results",
+    "figures",
+    "data",
+    "datasets",
+    "src",
+    "tests",
+    "test",
+    "examples",
+    "pages",
+    "assets",
+    "docs",
+    "outputs",
+    "output",
+    "checkpoints",
+    "models",
+    "utils",
+    "lib",
+    "bin",
+    "tmp",
+    "node_modules",
+    "dist",
+    "build",
+  ]);
+  const FILE_EXT_RE =
+    /\.(py|pyc|js|ts|jsx|tsx|json|jsonl|yaml|yml|csv|tsv|md|txt|sh|bash|html|css|png|jpe?g|svg|gif|webp|ipynb|toml|cfg|ini|lock|pdf|whl|gz|zip|tar|pt|pth|bin|safetensors|db|sqlite)$/i;
+
+  async function detectBareModelIds(text, groups) {
+    const stripped = text.replace(DETECTED_URL, " ");
+    DETECTED_URL.lastIndex = 0;
+    const seen = new Set();
+    const candidates = [];
+    const re = /(^|[\s"'`(=[])([A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*)/g;
+    let m;
+    while ((m = re.exec(stripped)) && candidates.length < 15) {
+      const id = m[2].replace(/[.:,]+$/, "");
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (FILE_EXT_RE.test(id)) continue;
+      if (BARE_ID_SKIP_DIRS.has(id.split("/")[0].toLowerCase())) continue;
+      candidates.push(id);
+    }
+    const results = await Promise.all(
+      candidates.map((id) => getJSON(`https://huggingface.co/api/models/${id}`))
+    );
+    let added = false;
+    const confirmed = [];
+    results.forEach((d, i) => {
+      if (!d || !d.id) return;
+      const id = candidates[i];
+      confirmed.push(id);
+      const url = `https://huggingface.co/${id}`;
+      if (!groups.has("model")) groups.set("model", new Map());
+      if (!groups.get("model").has(url)) {
+        groups.get("model").set(url, { kind: "model", id, url });
+        added = true;
+      }
+    });
+    return { added, confirmed };
+  }
+
+  function chipifyBareIds(ids) {
+    if (!ids.length) return;
+    const escaped = ids.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const pattern = new RegExp("(" + escaped.join("|") + ")");
+    const splitter = new RegExp(pattern.source, "g");
+    document
+      .querySelectorAll("#page .cell.markdown .cell-body")
+      .forEach((body) => {
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            if (!pattern.test(node.nodeValue)) return NodeFilter.FILTER_REJECT;
+            for (
+              let el = node.parentElement;
+              el && el !== body;
+              el = el.parentElement
+            ) {
+              if (["A", "CODE", "PRE", "BUTTON"].indexOf(el.tagName) !== -1) {
+                return NodeFilter.FILTER_REJECT;
+              }
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        nodes.forEach((node) => {
+          const frag = document.createDocumentFragment();
+          node.nodeValue.split(splitter).forEach((part) => {
+            if (ids.indexOf(part) !== -1) {
+              const holder = document.createElement("span");
+              holder.innerHTML = resChipHtml({
+                kind: "model",
+                id: part,
+                url: `https://huggingface.co/${part}`,
+              });
+              frag.appendChild(holder.firstChild);
+            } else if (part) {
+              frag.appendChild(document.createTextNode(part));
+            }
+          });
+          node.parentNode.replaceChild(frag, node);
+        });
+      });
+  }
+
+  let RAIL_TOKEN = 0;
+
   function renderRail(md) {
-    const rail = document.getElementById("rail");
-    rail.innerHTML = "";
+    const token = ++RAIL_TOKEN;
+    const scanText = md.replace(
+      /(`{3,4}|~{3,4})(html|raw)[^\n]*\n[\s\S]*?\n\1/g,
+      " "
+    );
     const groups = new Map();
-    extractUrls(md).forEach((url) => {
+    extractUrls(scanText).forEach((url) => {
       const item = classifyResource(url);
       if (!item) return;
       if (!groups.has(item.kind)) groups.set(item.kind, new Map());
       groups.get(item.kind).set(item.url, item);
     });
+    paintRail(groups);
+    detectBareModelIds(scanText, groups)
+      .then((result) => {
+        if (token !== RAIL_TOKEN) return;
+        if (result.added) paintRail(groups);
+        chipifyBareIds(result.confirmed);
+      })
+      .catch(() => {});
+  }
+
+  function paintRail(groups) {
+    const rail = document.getElementById("rail");
+    rail.innerHTML = "";
     let any = false;
     RESOURCE_SECTIONS.forEach(([kind, label, icon]) => {
       const group = groups.get(kind);
@@ -912,16 +1064,52 @@
       `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
   }
 
+  const CACHE_PREFIX = "trackio-logbook:";
+  const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+  const CACHE_MISS_TTL_MS = 60 * 60 * 1000;
+
+  function cacheGet(url) {
+    try {
+      const raw = localStorage.getItem(CACHE_PREFIX + url);
+      if (!raw) return undefined;
+      const entry = JSON.parse(raw);
+      const ttl = entry.d === null ? CACHE_MISS_TTL_MS : CACHE_TTL_MS;
+      if (Date.now() - entry.t > ttl) {
+        localStorage.removeItem(CACHE_PREFIX + url);
+        return undefined;
+      }
+      return entry.d;
+    } catch (e) {
+      return undefined;
+    }
+  }
+
+  function cacheSet(url, data) {
+    try {
+      localStorage.setItem(
+        CACHE_PREFIX + url,
+        JSON.stringify({ t: Date.now(), d: data })
+      );
+    } catch (e) {}
+  }
+
   async function getJSON(url) {
     if (UNFURL_CACHE[url] !== undefined) return UNFURL_CACHE[url];
+    const cached = cacheGet(url);
+    if (cached !== undefined) {
+      UNFURL_CACHE[url] = cached;
+      return cached;
+    }
     try {
       const r = await fetch(url);
       if (!r.ok) throw new Error(r.status);
       const j = await r.json();
       UNFURL_CACHE[url] = j;
+      cacheSet(url, j);
       return j;
     } catch (e) {
       UNFURL_CACHE[url] = null;
+      cacheSet(url, null);
       return null;
     }
   }
@@ -983,22 +1171,20 @@
   function setupResourceHover() {
     document.addEventListener("mouseover", (e) => {
       const el = e.target.closest && e.target.closest("[data-res-url]");
-      if (!el) return;
+      if (!el || el.classList.contains("rail-item")) return;
       const url = el.getAttribute("data-res-url");
-      document.querySelectorAll("[data-res-url]").forEach((n) => {
+      document.querySelectorAll("#rail [data-res-url]").forEach((n) => {
         n.classList.toggle("res-hl", n.getAttribute("data-res-url") === url);
       });
-      if (!el.classList.contains("rail-item")) {
-        const railItem = document.querySelector(
-          `#rail [data-res-url="${CSS.escape(url)}"]`
-        );
-        if (railItem) railItem.scrollIntoView({ block: "nearest" });
-      }
+      const railItem = document.querySelector(
+        `#rail [data-res-url="${CSS.escape(url)}"]`
+      );
+      if (railItem) railItem.scrollIntoView({ block: "nearest" });
     });
     document.addEventListener("mouseout", (e) => {
       const el = e.target.closest && e.target.closest("[data-res-url]");
-      if (!el) return;
-      document.querySelectorAll(".res-hl").forEach((n) => {
+      if (!el || el.classList.contains("rail-item")) return;
+      document.querySelectorAll("#rail .res-hl").forEach((n) => {
         n.classList.remove("res-hl");
       });
     });
