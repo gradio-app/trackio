@@ -36,6 +36,7 @@ trackio logbook sync                                    # push later edits to th
 - **The main page** (`pages/index.md`) is the **table of contents only** — an `## Pages` table with a single `Page` column by default, one row per page, each linking to that page. **Never write findings here.**
 - The default table is deliberately unopinionated. Add columns (e.g. `Status`, `Owner`, `Decision`) by editing the markdown directly; the CLI keeps appending rows correctly and fills a `Status` column if one exists.
 - **Each experiment has its own page** where findings accumulate.
+- **Open every page with a short context cell.** Before the first experiment lands on a page, add a markdown cell saying what the page is trying to show or reproduce (e.g. the paper's claim, in a sentence or two) and how you plan to test it. A reader landing on the page should understand the cells that follow without reading the rest of the logbook.
 
 ## Add pages as they become relevant
 
