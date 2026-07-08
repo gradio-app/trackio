@@ -1310,6 +1310,19 @@ class Run:
         )
         if not self._is_local:
             artifact._remote_source = self._remote_source_dict()
+
+        try:
+            from trackio import logbook as _logbook
+
+            _logbook.auto_note_artifact(
+                self.project,
+                artifact.qualified_name,
+                artifact.size,
+                artifact_type=artifact.type,
+            )
+        except Exception:
+            pass
+
         return artifact
 
     @staticmethod
@@ -1575,3 +1588,10 @@ class Run:
                     )
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")
+
+        try:
+            from trackio import logbook as _logbook
+
+            _logbook.auto_note_run(self.project, self.name, space_id=self._space_id)
+        except Exception:
+            pass
