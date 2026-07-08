@@ -9,7 +9,9 @@
     return String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function flattenTree(node, depth, acc) {
@@ -43,11 +45,18 @@
       return `<a href="${safe}"${attrs}${data}>${txt}</a>`;
     });
     t = t.replace(/(^|[\s(])(https?:\/\/[^\s<>)"'`]+)/g, (m, pre, url) => {
-      const trailing = (url.match(/[.,;:!?'"`]+$/) || [""])[0];
+      let rest = "";
+      const cut = url.search(/&quot;|&#39;|&lt;|&gt;/);
+      if (cut !== -1) {
+        rest = url.slice(cut);
+        url = url.slice(0, cut);
+      }
+      const trailing = (url.match(/[.,;:!?`]+$/) || [""])[0];
       const clean = trailing ? url.slice(0, -trailing.length) : url;
+      if (!clean) return m;
       const item = classifyResource(clean);
-      if (item) return `${pre}${resChipHtml(item)}${trailing}`;
-      return `${pre}<a href="${clean}" target="_blank" rel="noopener">${clean}</a>${trailing}`;
+      if (item) return `${pre}${resChipHtml(item)}${trailing}${rest}`;
+      return `${pre}<a href="${clean}" target="_blank" rel="noopener">${clean}</a>${trailing}${rest}`;
     });
     return t;
   }

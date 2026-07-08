@@ -245,13 +245,6 @@ def _maybe_handle_logbook_run_argv() -> bool:
         return False
 
     run_argv = argv[logbook_idx + 2 :]
-    if "--" in run_argv:
-        sep = run_argv.index("--")
-        option_argv = run_argv[:sep]
-        command = run_argv[sep + 1 :]
-    else:
-        option_argv = run_argv
-        command = []
 
     run_parser = argparse.ArgumentParser(
         prog=f"{os.path.basename(sys.argv[0])} logbook run",
@@ -261,7 +254,12 @@ def _maybe_handle_logbook_run_argv() -> bool:
     )
     run_parser.add_argument("--page", help="Page title or slug")
     run_parser.add_argument("--title", help="Cell title")
-    opts = run_parser.parse_args(option_argv)
+    if "--" in run_argv:
+        sep = run_argv.index("--")
+        opts = run_parser.parse_args(run_argv[:sep])
+        command = run_argv[sep + 1 :]
+    else:
+        opts, command = run_parser.parse_known_args(run_argv)
     if not command:
         run_parser.error("No command provided. Use: trackio logbook run -- <command>")
     args = argparse.Namespace(

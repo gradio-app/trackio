@@ -105,7 +105,11 @@ def _project_from_space(space_id: str) -> Path:
         raise LogbookError(f"Space '{space_id}' does not contain a Trackio logbook.")
     proj = Path(tempfile.mkdtemp(prefix="trackio-logbook-")) / PROJECT_DIR_NAME
     proj.mkdir(parents=True)
-    (proj / LOGBOOK_SUBDIR).symlink_to(snap)
+    link = proj / LOGBOOK_SUBDIR
+    try:
+        link.symlink_to(snap)
+    except OSError:
+        shutil.copytree(snap, link)
     return proj
 
 
@@ -125,11 +129,14 @@ def _project_from_url(url: str) -> Path:
         raise LogbookError(f"Could not read a logbook at {url}: {e}") from e
     proj = Path(tempfile.mkdtemp(prefix="trackio-logbook-")) / PROJECT_DIR_NAME
     root = logbook_root(proj)
+    root_resolved = root.resolve()
     for node in _walk(manifest.get("root") or {}):
         file = node.get("file")
         if not file:
             continue
-        dest = root / file
+        dest = (root / file).resolve()
+        if not dest.is_relative_to(root_resolved):
+            continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         try:
             dest.write_text(fetch(file), encoding="utf-8")
@@ -1641,21 +1648,25 @@ def trigger_autosync(proj: Path) -> None:
         return
     (logbook_root(proj) / ".sync_pending").write_text("1", encoding="utf-8")
     try:
-        log = open(logbook_root(proj) / ".sync.log", "a", encoding="utf-8")
-        subprocess.Popen(
-            [sys.executable, "-m", "trackio.cli", "logbook", "_sync"],
-            cwd=str(proj.parent),
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
+        with open(logbook_root(proj) / ".sync.log", "a", encoding="utf-8") as log:
+            subprocess.Popen(
+                [sys.executable, "-m", "trackio.cli", "logbook", "_sync"],
+                cwd=str(proj.parent),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
     except Exception:
         pass
 
 
 def sync_worker(debounce: float = 2.5) -> None:
-    import fcntl  # noqa: PLC0415
     import time  # noqa: PLC0415
+
+    try:
+        import fcntl  # noqa: PLC0415
+    except ImportError:
+        fcntl = None
 
     proj = find_project_dir()
     if proj is None:
@@ -1663,10 +1674,11 @@ def sync_worker(debounce: float = 2.5) -> None:
     root = logbook_root(proj)
     lock = open(root / ".sync_lock", "w")
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return
-    try:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return
         pending = root / ".sync_pending"
         while pending.exists():
             pending.unlink()
@@ -1676,7 +1688,9 @@ def sync_worker(debounce: float = 2.5) -> None:
             except Exception:
                 pass
     finally:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_UN)
-        finally:
-            lock.close()
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            except OSError:
+                pass
+        lock.close()
