@@ -256,6 +256,7 @@ def build_manifest(proj: Path) -> dict:
         "emoji": metadata.get("emoji", "🎯"),
         "space_id": metadata.get("space_id"),
         "paper": metadata.get("paper"),
+        "tags": metadata.get("tags") or [],
         "updated_at": _now_iso(),
         "root": {
             "slug": ROOT_SLUG,
@@ -1529,10 +1530,11 @@ def serve(
 def _readme(manifest: dict) -> str:
     emoji = manifest.get("emoji", "🎯")
     title = manifest["title"].replace('"', "'")
+    extra_tags = "".join(f" - {tag}\n" for tag in manifest.get("tags") or [])
     return (
         f"---\ntitle: {title}\nemoji: {emoji}\ncolorFrom: yellow\ncolorTo: red\n"
         "sdk: static\npinned: false\ntags:\n - trackio\n - trackio-logbook\n"
-        " - open-experiment\n---\n\n"
+        f" - open-experiment\n{extra_tags}---\n\n"
         f"# {manifest['title']}\n\nAn open experiment logbook, published with "
         "[Trackio](https://github.com/gradio-app/trackio).\n"
     )

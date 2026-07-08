@@ -126,4 +126,5 @@ Local runs/artifacts are marked as local until you publish (see below). Set `TRA
 - **Local until the first `publish`** — nothing leaves the machine, so drafts are safe. Scan for secrets/paths before that first publish; static Spaces are **public**.
 - After the first `publish`, `cell`/`run`/`page` auto-sync in the background. After a **direct file edit**, run `trackio logbook sync` to push it.
 - The remote Space is remembered in `./.trackio/metadata.json`, so `publish`/`sync` need no argument after the first time.
+- Extra Space tags (e.g. required by a challenge board) go in `./.trackio/metadata.json` as `"tags": ["some-tag", ...]` — they are written into the published Space README on every publish/sync.
 - **Publishing promotes local resources**: `publish` deploys any local trackio dashboards it captured as Spaces under the logbook's namespace and pushes local artifacts to a Bucket, then rewrites the links. Add `--private` to make the logbook, dashboards, and bucket all private (for team/internal logbooks); default is public.

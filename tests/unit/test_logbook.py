@@ -127,6 +127,17 @@ def test_read_logbook_data_structure(proj):
     assert exp["cells"][0]["body"] == "Hello."
 
 
+def test_metadata_tags_flow_into_manifest_and_readme(proj):
+    metadata = logbook.read_metadata(proj)
+    metadata["tags"] = ["icml2026-repro", "paper-abc123"]
+    logbook.write_metadata(proj, metadata)
+    manifest = logbook.write_site_files(proj)
+    assert manifest["tags"] == ["icml2026-repro", "paper-abc123"]
+    readme = logbook._readme(manifest)
+    assert " - icml2026-repro\n" in readme
+    assert " - paper-abc123\n" in readme
+
+
 def test_run_and_log_captures_command_and_output(proj):
     logbook.ensure_page(proj, "Runs")
     exit_code = logbook.run_and_log(
