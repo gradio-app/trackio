@@ -1,5 +1,14 @@
 # trackio
 
+## 0.30.0
+
+### Features
+
+- [#603](https://github.com/gradio-app/trackio/pull/603) [`a793fd8`](https://github.com/gradio-app/trackio/commit/a793fd88827482134bce295c6228e117de64566a) - Move default artifact downloads under `./.trackio/artifact-downloads/` so materialized files stay out of the project root.  Thanks @abidlabs!
+- [#604](https://github.com/gradio-app/trackio/pull/604) [`dd3b8ee`](https://github.com/gradio-app/trackio/commit/dd3b8eeef4e0da8bf0df6238617e20ae81f3e564) - docs: clarify artifact types.  Thanks @abidlabs!
+- [#586](https://github.com/gradio-app/trackio/pull/586) [`7db4c3b`](https://github.com/gradio-app/trackio/commit/7db4c3b6de6ff4903daf7dabed8842f212c8b7fd) - artifact tracking API — `log_artifact`, `use_artifact`, and an `Artifact` class for versioned, named file collections with aliases, content-addressed deduplication, and producer/consumer run lineage; works offline and syncs blobs to Hugging Face Spaces/Datasets.  Thanks @Saba9!
+- [#597](https://github.com/gradio-app/trackio/pull/597) [`5ba561e`](https://github.com/gradio-app/trackio/commit/5ba561e1b4023abdf63624f4fb396367ed6e9e76) - Add experiment logbooks: shareable static-Space lab notebooks.  Thanks @abidlabs!
+
 ## 0.29.0
 
 ### Features
