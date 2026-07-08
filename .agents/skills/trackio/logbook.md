@@ -22,7 +22,7 @@ trackio logbook read cell cell_<id> --full              # read full code cell
 trackio logbook read cell cell_<id> --raw               # read figure raw data
 trackio logbook read cell cell_<id> --html              # read figure HTML
 trackio logbook serve [path]                            # preview locally
-trackio logbook publish [username/space]                # first publish (public gate) → enables auto-sync
+trackio logbook publish [username/space]                # first publish immediately creates a PUBLIC Space → enables auto-sync
 trackio logbook sync                                    # push later edits to the Space now
 ```
 
@@ -102,7 +102,7 @@ trackio logbook cell figure --page "Samples" --title "Generated grid" --html gri
 trackio logbook run --page "Eval" -- python eval.py --checkpoint ckpt.safetensors
 ```
 
-Typed cells still live in the same Markdown files. Keep the persisted cell types simple: markdown, code, figure, and artifact. If a plot has raw data, use a figure cell so humans see the HTML figure while agents can explicitly request the raw data.
+Typed cells still live in the same Markdown files. Keep the persisted cell types simple: markdown, code, figure, and artifact. If a plot has raw data, use a figure cell so humans see the HTML figure while agents can explicitly request the raw data. Export Plotly figures with `fig.write_html(path, include_plotlyjs="cdn")` — the default inlines ~3.5 MB of plotly.js into every figure.
 
 ## Make it reproducible
 
@@ -123,7 +123,7 @@ Local runs/artifacts are marked as local until you publish (see below). Set `TRA
 
 ## Publishing & privacy
 
-- **Local until the first `publish`** — nothing leaves the machine, so drafts are safe. Scan for secrets/paths before that first publish; static Spaces are **public**.
+- **Local until the first `publish`** — nothing leaves the machine, so drafts are safe. Scan for secrets/paths before that first publish; `publish` creates a **public** static Space immediately, with no confirmation prompt.
 - After the first `publish`, `cell`/`run`/`page` auto-sync in the background. After a **direct file edit**, run `trackio logbook sync` to push it.
 - The remote Space is remembered in `./.trackio/metadata.json`, so `publish`/`sync` need no argument after the first time.
 - Extra Space tags (e.g. required by a challenge board) go in `./.trackio/metadata.json` as `"tags": ["some-tag", ...]` — they are written into the published Space README on every publish/sync.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -79,7 +80,7 @@ def require_project_dir(start: str | Path | None = None) -> Path:
     if proj is None:
         raise LogbookError(
             "No logbook in this directory (or any parent). "
-            "Start one with: trackio logbook open [SPACE_ID]"
+            'Start one with: trackio logbook open --title "..."'
         )
     return proj
 
@@ -98,7 +99,11 @@ def _project_from_space(space_id: str) -> Path:
     )
 
     try:
-        snap = Path(huggingface_hub.snapshot_download(space_id, repo_type="space"))
+        huggingface_hub.utils.disable_progress_bars()
+        try:
+            snap = Path(huggingface_hub.snapshot_download(space_id, repo_type="space"))
+        finally:
+            huggingface_hub.utils.enable_progress_bars()
     except (RepositoryNotFoundError, HfHubHTTPError) as e:
         raise LogbookError(f"Could not download Space '{space_id}': {e}") from e
     if not (snap / "pages" / "index.md").is_file():
@@ -391,6 +396,18 @@ def write_site_files(proj: Path) -> dict:
     manifest = build_manifest(proj)
     manifest["agent_view_tokens"] = _estimate_tokens(read_logbook(proj, manifest))
     root = logbook_root(proj)
+    index_html = root / "index.html"
+    if index_html.is_file():
+        text = index_html.read_text(encoding="utf-8")
+        updated = re.sub(
+            r"<title>.*?</title>",
+            f"<title>{html.escape(manifest['title'])}</title>",
+            text,
+            count=1,
+            flags=re.S,
+        )
+        if updated != text:
+            index_html.write_text(updated, encoding="utf-8")
     (root / "logbook.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
@@ -1235,6 +1252,13 @@ def add_figure_cell(
 ) -> None:
     if not html:
         raise LogbookError("Figure cells require HTML content.")
+    if len(html) > 1_000_000:
+        print(
+            f"Note: figure HTML is {len(html) / 1_000_000:.1f} MB and is stored "
+            "inside the page. For Plotly, export with "
+            'fig.write_html(..., include_plotlyjs="cdn") to keep pages small.',
+            file=sys.stderr,
+        )
     lines = ["````html", html, "````", ""]
     if raw:
         lines += ["````raw", raw, "````", ""]
@@ -1529,7 +1553,7 @@ def serve(
 
 def _readme(manifest: dict) -> str:
     emoji = manifest.get("emoji", "🎯")
-    title = manifest["title"].replace('"', "'")
+    title = json.dumps(manifest["title"], ensure_ascii=False)
     extra_tags = "".join(f" - {tag}\n" for tag in manifest.get("tags") or [])
     return (
         f"---\ntitle: {title}\nemoji: {emoji}\ncolorFrom: yellow\ncolorTo: red\n"
@@ -1629,12 +1653,19 @@ def publish(
         raise LogbookError(
             "No Space id. Provide one: trackio logbook publish <username/space>"
         )
+    prior = {key: metadata.get(key) for key in ("space_id", "autosync", "private")}
     metadata["space_id"] = space_id
     metadata["autosync"] = True
     metadata["private"] = private
     write_metadata(proj, metadata)
-    _promote_local_deps(proj, space_id.split("/")[0], private=private)
-    return _push(proj, hf_token=hf_token, private=private)
+    try:
+        _promote_local_deps(proj, space_id.split("/")[0], private=private)
+        return _push(proj, hf_token=hf_token, private=private)
+    except Exception:
+        metadata = read_metadata(proj)
+        metadata.update(prior)
+        write_metadata(proj, metadata)
+        raise
 
 
 def is_autosync(proj: Path) -> bool:

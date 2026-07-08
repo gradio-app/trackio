@@ -127,6 +127,35 @@ def test_read_logbook_data_structure(proj):
     assert exp["cells"][0]["body"] == "Hello."
 
 
+def test_readme_title_with_colon_is_valid_yaml(proj):
+    yaml = pytest.importorskip("yaml")
+    manifest = logbook.write_site_files(proj)
+    manifest["title"] = 'Repro: Capacity without Access: "quotes" too'
+    readme = logbook._readme(manifest)
+    front = readme.split("---\n")[1]
+    assert yaml.safe_load(front)["title"] == manifest["title"]
+
+
+def test_write_site_files_sets_html_title(proj):
+    logbook.write_site_files(proj)
+    index_html = (logbook.logbook_root(proj) / "index.html").read_text(encoding="utf-8")
+    assert "<title>Test Logbook</title>" in index_html
+
+
+def test_publish_failure_reverts_metadata(proj, monkeypatch):
+    monkeypatch.setattr(logbook, "_promote_local_deps", lambda *a, **k: None)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("upload failed")
+
+    monkeypatch.setattr(logbook, "_push", boom)
+    with pytest.raises(RuntimeError):
+        logbook.publish("user/space")
+    metadata = logbook.read_metadata(proj)
+    assert metadata.get("space_id") is None
+    assert not metadata.get("autosync")
+
+
 def test_metadata_tags_flow_into_manifest_and_readme(proj):
     metadata = logbook.read_metadata(proj)
     metadata["tags"] = ["icml2026-repro", "paper-abc123"]

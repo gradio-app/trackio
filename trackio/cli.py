@@ -1,10 +1,12 @@
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
 import huggingface_hub
 
+import trackio
 from trackio import freeze, show, sync
 from trackio.cli_helpers import (
     error_exit,
@@ -355,6 +357,11 @@ def main():
     _maybe_rewrite_logbook_read_argv()
 
     parser = argparse.ArgumentParser(description="Trackio CLI")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"trackio {trackio.__version__}",
+    )
     parser.add_argument(
         "--space",
         required=False,
@@ -1012,7 +1019,11 @@ def main():
         "logbook",
         help="Create and publish a shareable experiment logbook",
     )
-    logbook_sub = logbook_parser.add_subparsers(dest="logbook_action", required=True)
+    logbook_sub = logbook_parser.add_subparsers(
+        dest="logbook_action",
+        required=True,
+        metavar="{open,cell,run,page,read,serve,publish,sync}",
+    )
 
     lb_open = logbook_sub.add_parser(
         "open", help="Start or attach to the logbook in this directory"
@@ -1080,7 +1091,10 @@ def main():
     )
     lb_read.add_argument(
         "--path",
-        help="Logbook to read: local path, HF Space id, or URL",
+        help=(
+            "Logbook to read: local path, HF Space id, or URL "
+            "(can also be passed positionally: trackio logbook read <source>)"
+        ),
     )
     lb_read.add_argument("--json", action="store_true", help="Output JSON")
     lb_read.add_argument(
@@ -1147,8 +1161,8 @@ def main():
         "sync", help="Push local edits to the Space now (after the first publish)"
     )
 
-    logbook_sub.add_parser("_sync", help=argparse.SUPPRESS)
-    logbook_sub.add_parser("sync-todos", help=argparse.SUPPRESS)
+    logbook_sub.add_parser("_sync")
+    logbook_sub.add_parser("sync-todos")
 
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
@@ -1747,7 +1761,11 @@ def _print_logbook_pages(pages):
         return
     print("Pages:")
     for page in pages:
-        print(f"- {page['slug']} · {page['title']} · {page['cell_count']} cells")
+        count = page["cell_count"]
+        print(
+            f"- {page['slug']} · {page['title']} · "
+            f"{count} cell{'' if count == 1 else 's'}"
+        )
 
 
 def _print_logbook_page_outline(page):
@@ -1813,6 +1831,12 @@ def _handle_logbook(args):
                     metadata["space_id"] = args.space_id
                     lb.write_metadata(proj, metadata)
                 print(f"Attached to existing logbook at {lb.logbook_root(proj)}")
+                if args.title:
+                    print(
+                        "Note: --title was ignored because this logbook already "
+                        "exists. To retitle it, edit the '# ...' heading in "
+                        f"{lb.logbook_root(proj) / 'pages' / 'index.md'}."
+                    )
                 return
             if args.space_id:
                 proj = lb.clone_logbook(args.space_id)
@@ -1936,9 +1960,12 @@ def _handle_logbook(args):
         elif action == "serve":
             lb.serve(path=args.path, port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
-            print(
-                f"Published: {lb.publish(space_id=args.space_id, private=args.private)}"
-            )
+            url = lb.publish(space_id=args.space_id, private=args.private)
+            print(f"Published: {url}")
+            space_id = lb.read_metadata(lb.require_project_dir()).get("space_id")
+            if space_id:
+                subdomain = re.sub(r"[^a-z0-9]+", "-", space_id.lower()).strip("-")
+                print(f"Rendered at: https://{subdomain}.static.hf.space/")
         elif action == "sync":
             proj = lb.require_project_dir()
             if not lb.is_autosync(proj):
