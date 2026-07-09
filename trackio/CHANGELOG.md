@@ -1,5 +1,11 @@
 # trackio
 
+## 0.30.1
+
+### Features
+
+- [#609](https://github.com/gradio-app/trackio/pull/609) [`2ed1295`](https://github.com/gradio-app/trackio/commit/2ed12959c73aa9c04ca1096cf7a8315ce2886ed1) - Serve live logbook preview from open.  Thanks @abidlabs!
+
 ## 0.30.0
 
 ### Features
