@@ -4,6 +4,7 @@
   let MANIFEST = null;
   const PAGE_CACHE = {};
   const UNFURL_CACHE = {};
+  const LIVE_RELOAD_MS = 1500;
 
   function esc(s) {
     return String(s)
@@ -1149,13 +1150,29 @@
       .classList.toggle("active", slug === MANIFEST.root.slug);
   }
 
-  async function loadPage(slug) {
+  function clearPageCache() {
+    Object.keys(PAGE_CACHE).forEach((key) => {
+      delete PAGE_CACHE[key];
+    });
+  }
+
+  function isLocalPreview() {
+    return ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+  }
+
+  async function fetchManifest() {
+    const suffix = isLocalPreview() ? `?t=${Date.now()}` : "";
+    return await (await fetch("./logbook.json" + suffix, { cache: "no-store" })).json();
+  }
+
+  async function loadPage(slug, opts = {}) {
     const node = findNode(MANIFEST.root, slug) || MANIFEST.root;
     const page = document.getElementById("page");
     page.innerHTML = "";
     if (!PAGE_CACHE[node.file]) {
       try {
-        const r = await fetch("./" + node.file);
+        const suffix = isLocalPreview() ? `?rev=${encodeURIComponent(MANIFEST.revision || "")}` : "";
+        const r = await fetch("./" + node.file + suffix, { cache: "no-store" });
         PAGE_CACHE[node.file] = await r.text();
       } catch (e) {
         PAGE_CACHE[node.file] = "# " + node.title + "\n\n_Could not load page._";
@@ -1173,8 +1190,10 @@
     }
     renderRail(PAGE_CACHE[node.file]);
     highlight(node.slug);
-    document.getElementById("content").scrollTo(0, 0);
-    window.scrollTo(0, 0);
+    if (!opts.preserveScroll) {
+      document.getElementById("content").scrollTo(0, 0);
+      window.scrollTo(0, 0);
+    }
   }
 
   function setupResourceHover() {
@@ -1235,9 +1254,25 @@
     return div;
   }
 
-  function route() {
+  function route(opts = {}) {
     const slug = (location.hash || "").replace(/^#\//, "") || MANIFEST.root.slug;
-    loadPage(slug);
+    loadPage(slug, opts);
+  }
+
+  function startLiveReload() {
+    if (!isLocalPreview()) return;
+    setInterval(async () => {
+      try {
+        const next = await fetchManifest();
+        if (!next || next.revision === MANIFEST.revision) return;
+        MANIFEST = next;
+        clearPageCache();
+        document.title = MANIFEST.title + " · Trackio Logbook";
+        document.getElementById("book-title").textContent = MANIFEST.title;
+        buildTree();
+        route({ preserveScroll: true });
+      } catch (e) {}
+    }, LIVE_RELOAD_MS);
   }
 
   function setupConnect() {
@@ -1326,7 +1361,7 @@
   }
 
   async function init() {
-    MANIFEST = await (await fetch("./logbook.json")).json();
+    MANIFEST = await fetchManifest();
     document.title = MANIFEST.title + " · Trackio Logbook";
     document.getElementById("book-title").textContent = MANIFEST.title;
     document.getElementById("book-head").addEventListener("click", () => {
@@ -1337,6 +1372,7 @@
     setupResourceHover();
     window.addEventListener("hashchange", route);
     route();
+    startLiveReload();
   }
 
   init();

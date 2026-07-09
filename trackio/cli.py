@@ -1032,6 +1032,13 @@ def main():
         "space_id", nargs="?", help="Optional HF Space id to publish to"
     )
     lb_open.add_argument("--title", help="Logbook title (only when creating)")
+    lb_open.add_argument(
+        "--no-serve",
+        action="store_true",
+        help="Open or attach without launching the local logbook preview",
+    )
+    lb_open.add_argument("--port", type=int, default=7861)
+    lb_open.add_argument("--no-browser", action="store_true")
 
     lb_cell = logbook_sub.add_parser(
         "cell", help="Append a typed notebook-style cell to a logbook page"
@@ -1837,21 +1844,22 @@ def _handle_logbook(args):
                         "exists. To retitle it, edit the '# ...' heading in "
                         f"{lb.logbook_root(proj) / 'pages' / 'index.md'}."
                     )
-                return
-            if args.space_id:
+            elif args.space_id:
                 proj = lb.clone_logbook(args.space_id)
                 if proj is not None:
                     print(
                         f"Cloned logbook from {args.space_id} into "
                         f"{lb.logbook_root(proj)}"
                     )
-                    return
-            proj = lb.create_logbook(
-                args.title or os.path.basename(os.getcwd()), space_id=args.space_id
-            )
-            print(f"Opened logbook at {lb.logbook_root(proj)}")
-            if args.space_id:
-                print(f"Will publish to: {args.space_id}")
+            if proj is None:
+                proj = lb.create_logbook(
+                    args.title or os.path.basename(os.getcwd()), space_id=args.space_id
+                )
+                print(f"Opened logbook at {lb.logbook_root(proj)}")
+                if args.space_id:
+                    print(f"Will publish to: {args.space_id}")
+            if not args.no_serve:
+                lb.start_preview(proj, port=args.port, open_browser=not args.no_browser)
         elif action == "run":
             proj = lb.require_project_dir()
             command = list(args.command or [])
