@@ -1199,16 +1199,60 @@ class Run:
             _emit_nonfatal_warning(f"trackio.log() failed to process metrics: {e}")
 
     def _artifact_log_with_retry(self, **kwargs) -> dict:
+        manifest = kwargs.get("manifest", [])
+        ref_entries = [
+            entry for entry in manifest if references.is_reference_entry(entry)
+        ]
+        upgrade_hint = (
+            "The server likely predates artifact references. To support "
+            "add_reference, you need to upgrade trackio to a more recent "
+            "release."
+        )
         attempts = len(ARTIFACT_LOG_RETRY_BACKOFFS) + 1
         for attempt in range(attempts):
             if attempt > 0:
                 time.sleep(ARTIFACT_LOG_RETRY_BACKOFFS[attempt - 1])
             try:
                 with self._client_lock:
-                    return self._client.predict(api_name="/artifact_log", **kwargs)
+                    record = self._client.predict(api_name="/artifact_log", **kwargs)
             except Exception as e:
                 if attempt == attempts - 1 or not is_transient_remote_error(e):
+                    message = str(e)
+                    pre_reference_rejection = ref_entries and (
+                        "Invalid sha256 digest" in message
+                        or (
+                            "blobs not on server" in message
+                            and any(entry["digest"] in message for entry in ref_entries)
+                        )
+                    )
+                    if pre_reference_rejection:
+                        raise RuntimeError(
+                            "The remote trackio server rejected this artifact's "
+                            f"reference entries ({message}). {upgrade_hint} "
+                            "Alternatively, log this artifact without "
+                            "add_reference entries."
+                        ) from e
                     raise
+            else:
+                stored = record.get("manifest")
+                stored_ref_paths = {
+                    entry["path"]
+                    for entry in (stored if isinstance(stored, list) else [])
+                    if isinstance(entry, dict) and references.is_reference_entry(entry)
+                }
+                dropped = sorted(
+                    {entry["path"] for entry in ref_entries} - stored_ref_paths
+                )
+                if dropped:
+                    preview = dropped[:5]
+                    suffix = "..." if len(dropped) > 5 else ""
+                    raise RuntimeError(
+                        "The remote trackio server stored this artifact's "
+                        f"reference entries as plain file entries "
+                        f"({preview}{suffix}), dropping their reference URIs. "
+                        f"{upgrade_hint} Then re-log this artifact."
+                    )
+                return record
 
     def log_artifact(
         self,

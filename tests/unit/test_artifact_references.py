@@ -6,7 +6,7 @@ import pytest
 from starlette.testclient import TestClient
 
 import trackio
-from trackio import bucket_storage, cas, references
+from trackio import Run, bucket_storage, cas, references
 from trackio import server as trackio_server
 from trackio.asgi_app import create_trackio_starlette_app
 from trackio.sqlite_storage import SQLiteStorage
@@ -1309,6 +1309,106 @@ def test_download_reference_failure_is_atomic_no_partial(
     assert not (root / "data.bin").exists()
     assert list(root.glob("*.partial.*")) == []
     trackio.finish()
+
+
+class _FakeRemoteClient:
+    def __init__(self, artifact_log):
+        self._artifact_log = artifact_log
+
+    def predict(self, *args, api_name=None, **kwargs):
+        if api_name == "/check_artifact_blobs":
+            return {"present": []}
+        if api_name == "/artifact_log":
+            return self._artifact_log()
+        return None
+
+
+def _remote_run(client):
+    return Run(
+        url="fake_url",
+        project="ref-remote",
+        client=client,
+        name="producer",
+        space_id="user/space",
+    )
+
+
+def test_reference_rejected_by_old_server_gives_upgrade_error(temp_dir):
+    def _old_server():
+        raise RuntimeError("Invalid sha256 digest: 's3etag'")
+
+    run = _remote_run(_FakeRemoteClient(_old_server))
+    art = trackio.Artifact(name="ds", type="dataset")
+    art.add_reference("s3://bucket/obj", checksum=False)
+    with pytest.raises(RuntimeError, match="predates artifact references"):
+        run.log_artifact(art)
+
+
+def test_file_reference_missing_blob_on_old_server_gives_upgrade_error(
+    temp_dir, tmp_path
+):
+    src = tmp_path / "data.bin"
+    src.write_bytes(b"payload")
+    digest = hashlib.sha256(b"payload").hexdigest()
+
+    def _old_server():
+        raise RuntimeError(f"Manifest references blobs not on server: ['{digest}']")
+
+    run = _remote_run(_FakeRemoteClient(_old_server))
+    art = trackio.Artifact(name="ds", type="dataset")
+    art.add_reference(src.resolve().as_uri())
+    with pytest.raises(RuntimeError, match="predates artifact references"):
+        run.log_artifact(art)
+
+
+def test_missing_file_blob_error_is_not_masked_as_old_server(temp_dir):
+    def _old_server():
+        raise RuntimeError(f"Manifest references blobs not on server: ['{'a' * 64}']")
+
+    run = _remote_run(_FakeRemoteClient(_old_server))
+    art = trackio.Artifact(name="ds", type="dataset")
+    art.add_reference("s3://bucket/obj", checksum=False)
+    with pytest.raises(RuntimeError, match="blobs not on server") as excinfo:
+        run.log_artifact(art)
+    assert "predates artifact references" not in str(excinfo.value)
+
+
+def test_reference_entries_dropped_by_old_server_raise(temp_dir, tmp_path):
+    src = tmp_path / "data.bin"
+    src.write_bytes(b"payload")
+    digest = hashlib.sha256(b"payload").hexdigest()
+    record = {
+        "version": 0,
+        "aliases": ["latest"],
+        "manifest": [{"path": "data.bin", "digest": digest, "size": 7}],
+        "manifest_digest": "b" * 64,
+        "size_bytes": 7,
+    }
+    run = _remote_run(_FakeRemoteClient(lambda: record))
+    art = trackio.Artifact(name="ds", type="dataset")
+    art.add_reference(src.resolve().as_uri())
+    with pytest.raises(RuntimeError, match="plain file entries"):
+        run.log_artifact(art)
+
+
+def test_reference_preserved_by_current_server_round_trips(temp_dir, tmp_path):
+    src = tmp_path / "data.bin"
+    src.write_bytes(b"payload")
+    uri = src.resolve().as_uri()
+    digest = hashlib.sha256(b"payload").hexdigest()
+    record = {
+        "version": 0,
+        "aliases": ["latest"],
+        "manifest": [{"path": "data.bin", "ref": uri, "digest": digest, "size": 7}],
+        "manifest_digest": "b" * 64,
+        "size_bytes": 7,
+    }
+    run = _remote_run(_FakeRemoteClient(lambda: record))
+    art = trackio.Artifact(name="ds", type="dataset")
+    art.add_reference(uri)
+    logged = run.log_artifact(art)
+    assert logged.references[0]["ref"] == uri
+    assert logged.version == "v0"
 
 
 def test_download_reference_warns_and_proceeds_on_drift(temp_dir, tmp_path):
