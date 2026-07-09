@@ -1,11 +1,12 @@
+<script module>
+  export const DEFAULT_LOGO_URLS = {
+    light: "/static/trackio/trackio_logo_type_light_transparent.png",
+    dark: "/static/trackio/trackio_logo_type_dark_transparent.png",
+  };
+</script>
+
 <script>
-  let {
-    logoUrls = {
-      light: "/static/trackio/trackio_logo_type_light_transparent.png",
-      dark: "/static/trackio/trackio_logo_type_dark_transparent.png",
-    },
-    darkMode = false,
-  } = $props();
+  let { logoUrls = DEFAULT_LOGO_URLS, darkMode = false } = $props();
 </script>
 
 <div class="logo-section">

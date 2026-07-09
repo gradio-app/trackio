@@ -38,7 +38,7 @@
     readOnlySource = null,
     projectLocked = false,
     spaceId = null,
-    logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
+    logoUrls = undefined,
     darkMode = false,
   } = $props();
 

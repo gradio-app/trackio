@@ -5,6 +5,7 @@ server, and storage layers.
 import hashlib
 import os
 import re
+import shutil
 import uuid
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -16,6 +17,22 @@ SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 ARTIFACT_VERSION_SPEC_RE = re.compile(r"^v(\d+)$")
 ARTIFACT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\Z")
 HASH_CHUNK_SIZE = 1024 * 1024
+PARTIAL_BLOB_MARKER = ".partial."
+PARTIAL_BLOB_GLOB = f"*{PARTIAL_BLOB_MARKER}*"
+
+
+def partial_blob_name(base: str = "") -> str:
+    """Temp filename for an in-flight blob write, excluded from sync/export."""
+    return f"{base}{PARTIAL_BLOB_MARKER}{uuid.uuid4().hex}"
+
+
+def is_partial_blob(filename: str) -> bool:
+    return PARTIAL_BLOB_MARKER in filename
+
+
+def copy_blobs_tree(src_dir: Path, dst_dir: Path) -> None:
+    """Copy an artifacts tree, excluding in-flight partial blob files."""
+    shutil.copytree(src_dir, dst_dir, ignore=shutil.ignore_patterns(PARTIAL_BLOB_GLOB))
 
 
 def validate_artifact_name(name: str) -> str:
@@ -137,7 +154,7 @@ def stage_blob_from_chunks(
     if target_path.is_file():
         return
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    partial = target_path.parent / f"{target_path.name}.partial.{uuid.uuid4().hex}"
+    partial = target_path.parent / partial_blob_name(target_path.name)
     sha = hashlib.sha256()
     try:
         with partial.open("wb") as dst:
@@ -181,7 +198,7 @@ def stage_blob_into_project(src_path: Path, project: str) -> tuple[Sha256Digest,
     """
     blobs_root = _project_blobs_root(project)
     blobs_root.mkdir(parents=True, exist_ok=True)
-    partial = blobs_root / f".partial.{uuid.uuid4().hex}"
+    partial = blobs_root / partial_blob_name()
     sha = hashlib.sha256()
     size = 0
     try:

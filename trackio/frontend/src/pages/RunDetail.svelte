@@ -2,7 +2,12 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
   import { getRunSummary, getRunArtifacts } from "../lib/api.js";
-  import { getQueryParam, navigateTo, setQueryParam } from "../lib/router.js";
+  import {
+    getQueryParam,
+    navigateTo,
+    setArtifactSelectionParams,
+  } from "../lib/router.js";
+  import { formatSize } from "../lib/format.js";
 
   let { project = null } = $props();
 
@@ -13,22 +18,12 @@
   let runArtifacts = $state({ input: [], output: [] });
   let expandedArtifact = $state({});
 
-  function formatSize(bytes) {
-    if (bytes == null) return "";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024)
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-
   function toggleArtifact(key) {
     expandedArtifact[key] = !expandedArtifact[key];
   }
 
   function openInArtifacts(name, version) {
-    setQueryParam("selected_artifact", name);
-    setQueryParam("selected_version", `v${version}`);
+    setArtifactSelectionParams(name, version);
     navigateTo("artifacts");
   }
 
@@ -55,11 +50,13 @@
     }
 
     loading = true;
+    const runRef = runId ? { id: runId, name: runName } : runName;
+    const artifactsPromise = getRunArtifacts(project, runRef).catch(() => ({
+      input: [],
+      output: [],
+    }));
     try {
-      const loadedSummary = await getRunSummary(
-        project,
-        runId ? { id: runId, name: runName } : runName,
-      );
+      const loadedSummary = await getRunSummary(project, runRef);
       if (seq !== loadSeq) return;
       summary = loadedSummary;
       if (loadedSummary?.run) {
@@ -70,16 +67,9 @@
     } finally {
       if (seq === loadSeq) loading = false;
     }
-    try {
-      const artifacts = await getRunArtifacts(
-        project,
-        runId ? { id: runId, name: runName } : runName,
-      );
-      if (seq !== loadSeq) return;
-      runArtifacts = artifacts;
-    } catch {
-      if (seq === loadSeq) runArtifacts = { input: [], output: [] };
-    }
+    const artifacts = await artifactsPromise;
+    if (seq !== loadSeq) return;
+    runArtifacts = artifacts;
   }
 
   $effect(() => {

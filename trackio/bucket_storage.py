@@ -4,6 +4,7 @@ from pathlib import Path
 
 import huggingface_hub
 
+from trackio.cas import copy_blobs_tree, is_partial_blob
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     TRACKIO_DIR,
@@ -59,7 +60,7 @@ def upload_project_to_bucket(project: str, bucket_id: str) -> None:
         for blob_file in artifacts_dir.rglob("*"):
             if not blob_file.is_file():
                 continue
-            if ".partial." in blob_file.name:
+            if is_partial_blob(blob_file.name):
                 continue
             rel = blob_file.relative_to(TRACKIO_DIR)
             files_to_add.append((str(blob_file), f"trackio/{rel.as_posix()}"))
@@ -116,11 +117,7 @@ def _export_and_upload_static(
             shutil.copytree(media_dir, output_dir / "media")
 
         if artifacts_dir and artifacts_dir.exists():
-            shutil.copytree(
-                artifacts_dir,
-                output_dir / "artifacts",
-                ignore=shutil.ignore_patterns("*.partial.*"),
-            )
+            copy_blobs_tree(artifacts_dir, output_dir / "artifacts")
 
         files_to_add = []
         for f in output_dir.rglob("*"):
@@ -131,35 +128,17 @@ def _export_and_upload_static(
         huggingface_hub.batch_bucket_files(dest_bucket_id, add=files_to_add)
 
 
-def _copy_project_media_between_buckets(
-    source_bucket_id: str, dest_bucket_id: str, project: str
+def _copy_project_prefix_between_buckets(
+    source_bucket_id: str, dest_bucket_id: str, project: str, kind: str
 ) -> None:
-    source_media_prefix = f"trackio/media/{canonical_project_name(project)}/"
-    media_to_copy = _list_bucket_file_paths(
-        source_bucket_id, prefix=source_media_prefix
-    )
-    if not media_to_copy:
+    source_prefix = f"trackio/{kind}/{canonical_project_name(project)}/"
+    files_to_copy = _list_bucket_file_paths(source_bucket_id, prefix=source_prefix)
+    if not files_to_copy:
         return
 
     huggingface_hub.copy_files(
-        f"hf://buckets/{source_bucket_id}/{source_media_prefix}",
-        f"hf://buckets/{dest_bucket_id}/media/",
-    )
-
-
-def _copy_project_artifacts_between_buckets(
-    source_bucket_id: str, dest_bucket_id: str, project: str
-) -> None:
-    source_artifacts_prefix = f"trackio/artifacts/{canonical_project_name(project)}/"
-    blobs_to_copy = _list_bucket_file_paths(
-        source_bucket_id, prefix=source_artifacts_prefix
-    )
-    if not blobs_to_copy:
-        return
-
-    huggingface_hub.copy_files(
-        f"hf://buckets/{source_bucket_id}/{source_artifacts_prefix}",
-        f"hf://buckets/{dest_bucket_id}/artifacts/",
+        f"hf://buckets/{source_bucket_id}/{source_prefix}",
+        f"hf://buckets/{dest_bucket_id}/{kind}/",
     )
 
 
@@ -193,7 +172,7 @@ def export_from_bucket_for_static(
             )
 
         _export_and_upload_static(project, dest_bucket_id, db_path)
-        _copy_project_media_between_buckets(source_bucket_id, dest_bucket_id, project)
-        _copy_project_artifacts_between_buckets(
-            source_bucket_id, dest_bucket_id, project
-        )
+        for kind in ("media", "artifacts"):
+            _copy_project_prefix_between_buckets(
+                source_bucket_id, dest_bucket_id, project, kind
+            )

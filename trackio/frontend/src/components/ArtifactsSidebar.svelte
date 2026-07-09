@@ -2,8 +2,12 @@
   import { tick } from "svelte";
   import ProjectSelector from "./ProjectSelector.svelte";
   import Logo from "./Logo.svelte";
+  import IndentGuides from "./IndentGuides.svelte";
   import { listArtifacts } from "../lib/api.js";
-  import { getQueryParam, setQueryParam } from "../lib/router.js";
+  import {
+    getArtifactSelectionFromUrl,
+    setArtifactSelectionParams,
+  } from "../lib/router.js";
 
   let {
     project = $bindable(null),
@@ -68,13 +72,8 @@
   }
 
   function selectVersion(artifact, version) {
-    selection = {
-      name: artifact.name,
-      version: version.version,
-      type: artifact.type,
-    };
-    setQueryParam("selected_artifact", artifact.name);
-    setQueryParam("selected_version", `v${version.version}`);
+    selection = { name: artifact.name, version: version.version };
+    setArtifactSelectionParams(artifact.name, version.version);
   }
 
   function isSelected(name, version) {
@@ -82,17 +81,17 @@
   }
 
   async function applyInitialSelection() {
-    const target = getQueryParam("selected_artifact");
-    const verParam = getQueryParam("selected_version");
-    let artifact = target ? artifacts.find((a) => a.name === target) : null;
+    const target = getArtifactSelectionFromUrl();
+    let artifact = target.name
+      ? artifacts.find((a) => a.name === target.name)
+      : null;
     if (!artifact) artifact = artifacts[0];
     if (!artifact || !artifact.versions.length) return;
 
-    let version = null;
-    if (verParam) {
-      const vnum = parseInt(String(verParam).replace(/^v/i, ""), 10);
-      version = artifact.versions.find((v) => v.version === vnum);
-    }
+    let version =
+      target.version != null
+        ? artifact.versions.find((v) => v.version === target.version)
+        : null;
     if (!version) version = artifact.versions[0];
 
     expandedArtifacts[artifact.name] = true;
@@ -140,13 +139,6 @@
     loadArtifacts();
   });
 </script>
-
-{#snippet treeGuides(depth)}
-  <span class="indent"
-    >{#each Array.from({ length: depth }) as _}<span class="indent-guide"
-      ></span>{/each}</span
-  >
-{/snippet}
 
 {#snippet chevronIcon()}
   <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"
@@ -219,7 +211,7 @@
                   class="tree-row artifact-row"
                   onclick={() => toggleArtifact(artifact.name)}
                 >
-                  {@render treeGuides(1)}
+                  <IndentGuides depth={1} />
                   <span class="chevron" class:open={artifactOpen(artifact.name)}
                     >{@render chevronIcon()}</span
                   >
@@ -241,7 +233,7 @@
                       )}
                       onclick={() => selectVersion(artifact, version)}
                     >
-                      {@render treeGuides(2)}
+                      <IndentGuides depth={2} />
                       <span class="tree-chevron-spacer"></span>
                       <span class="version-label">v{version.version}</span>
                       {#each version.aliases as alias}
@@ -355,24 +347,6 @@
     background: var(--background-fill-secondary, #f3f4f6);
   }
 
-  .indent {
-    display: flex;
-    align-self: stretch;
-    flex-shrink: 0;
-  }
-  .indent-guide {
-    width: 16px;
-    align-self: stretch;
-    position: relative;
-  }
-  .indent-guide::before {
-    content: "";
-    position: absolute;
-    left: 6px;
-    top: 0;
-    bottom: 0;
-    border-left: 1px solid var(--border-color-primary, #e5e7eb);
-  }
   .tree-chevron-spacer {
     display: inline-block;
     width: 12px;

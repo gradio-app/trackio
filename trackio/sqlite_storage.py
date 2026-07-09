@@ -3000,6 +3000,42 @@ class SQLiteStorage:
                 raise
 
     @staticmethod
+    def _detach_run_artifact_refs(cursor, id_col: str, id_val, run_name) -> None:
+        """Delete a run's artifact links and clear producer references on its
+        artifact versions, including legacy rows that predate run ids."""
+        try:
+            cursor.execute(
+                f"DELETE FROM run_artifact_links WHERE {id_col} = ?",
+                (id_val,),
+            )
+            if id_col == "run_id" and run_name is not None:
+                cursor.execute(
+                    "DELETE FROM run_artifact_links "
+                    "WHERE run_id IS NULL AND run_name = ?",
+                    (run_name,),
+                )
+        except sqlite3.OperationalError:
+            pass
+        try:
+            producer_col = (
+                "producer_run_id" if id_col == "run_id" else "producer_run_name"
+            )
+            cursor.execute(
+                "UPDATE artifact_versions SET producer_run_id = NULL, "
+                f"producer_run_name = NULL WHERE {producer_col} = ?",
+                (id_val,),
+            )
+            if id_col == "run_id" and run_name is not None:
+                cursor.execute(
+                    "UPDATE artifact_versions SET producer_run_id = NULL, "
+                    "producer_run_name = NULL "
+                    "WHERE producer_run_id IS NULL AND producer_run_name = ?",
+                    (run_name,),
+                )
+        except sqlite3.OperationalError:
+            pass
+
+    @staticmethod
     def delete_run(project: str, run: str, run_id: str | None = None) -> bool:
         """Delete a run from the database (metrics, config, system_metrics,
         alerts, traces, and artifact links). Artifact versions produced by the
@@ -3054,39 +3090,9 @@ class SQLiteStorage:
                             )
                     except sqlite3.OperationalError:
                         pass
-                    try:
-                        cursor.execute(
-                            f"DELETE FROM run_artifact_links WHERE {run_identity[0]} = ?",
-                            (run_identity[1],),
-                        )
-                        if run_identity[0] == "run_id" and run is not None:
-                            cursor.execute(
-                                "DELETE FROM run_artifact_links "
-                                "WHERE run_id IS NULL AND run_name = ?",
-                                (run,),
-                            )
-                    except sqlite3.OperationalError:
-                        pass
-                    try:
-                        producer_col = (
-                            "producer_run_id"
-                            if run_identity[0] == "run_id"
-                            else "producer_run_name"
-                        )
-                        cursor.execute(
-                            "UPDATE artifact_versions SET producer_run_id = NULL, "
-                            f"producer_run_name = NULL WHERE {producer_col} = ?",
-                            (run_identity[1],),
-                        )
-                        if run_identity[0] == "run_id" and run is not None:
-                            cursor.execute(
-                                "UPDATE artifact_versions SET producer_run_id = NULL, "
-                                "producer_run_name = NULL "
-                                "WHERE producer_run_id IS NULL AND producer_run_name = ?",
-                                (run,),
-                            )
-                    except sqlite3.OperationalError:
-                        pass
+                    SQLiteStorage._detach_run_artifact_refs(
+                        cursor, run_identity[0], run_identity[1], run
+                    )
                     conn.commit()
                     return True
                 except sqlite3.Error:
@@ -3804,40 +3810,9 @@ class SQLiteStorage:
                                 )
                             except sqlite3.OperationalError:
                                 pass
-                        try:
-                            source_cursor.execute(
-                                f"DELETE FROM run_artifact_links WHERE {metrics_col} = ?",
-                                (metrics_val,),
-                            )
-                            if metrics_col == "run_id":
-                                source_cursor.execute(
-                                    "DELETE FROM run_artifact_links "
-                                    "WHERE run_id IS NULL AND run_name = ?",
-                                    (run,),
-                                )
-                        except sqlite3.OperationalError:
-                            pass
-                        try:
-                            producer_col = (
-                                "producer_run_id"
-                                if metrics_col == "run_id"
-                                else "producer_run_name"
-                            )
-                            source_cursor.execute(
-                                "UPDATE artifact_versions SET producer_run_id = NULL, "
-                                f"producer_run_name = NULL WHERE {producer_col} = ?",
-                                (metrics_val,),
-                            )
-                            if metrics_col == "run_id":
-                                source_cursor.execute(
-                                    "UPDATE artifact_versions "
-                                    "SET producer_run_id = NULL, producer_run_name = NULL "
-                                    "WHERE producer_run_id IS NULL "
-                                    "AND producer_run_name = ?",
-                                    (run,),
-                                )
-                        except sqlite3.OperationalError:
-                            pass
+                        SQLiteStorage._detach_run_artifact_refs(
+                            source_cursor, metrics_col, metrics_val, run
+                        )
                         source_conn.commit()
 
                         return True
@@ -4886,9 +4861,10 @@ class SQLiteStorage:
 
     @staticmethod
     def list_artifacts(project: str) -> list[dict]:
-        """List every artifact in a project with per-version metadata, but not
-        the file manifests themselves. Artifacts are ordered by type then name;
-        each artifact's versions are newest-first. Returns [] when the project
+        """List every artifact in a project with per-version summaries
+        (version, aliases, size, file count), but not the file manifests or
+        metadata themselves. Artifacts are ordered by type then name; each
+        artifact's versions are newest-first. Returns [] when the project
         DB or the artifact tables don't exist yet."""
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
@@ -4904,8 +4880,7 @@ class SQLiteStorage:
                 version_rows = cursor.execute(
                     """SELECT id, artifact_id, version,
                            json_array_length(manifest) AS num_files,
-                           manifest_digest, metadata, size_bytes,
-                           producer_run_id, producer_run_name, created_at
+                           size_bytes, created_at
                     FROM artifact_versions
                     ORDER BY artifact_id, version DESC"""
                 ).fetchall()
@@ -4930,14 +4905,6 @@ class SQLiteStorage:
                         "aliases": aliases_by_version.get(int(row["id"]), []),
                         "size_bytes": int(row["size_bytes"]),
                         "num_files": int(row["num_files"]),
-                        "manifest_digest": row["manifest_digest"],
-                        "metadata": (
-                            orjson.loads(row["metadata"])
-                            if row["metadata"] is not None
-                            else None
-                        ),
-                        "producer_run_id": row["producer_run_id"],
-                        "producer_run_name": row["producer_run_name"],
                         "created_at": row["created_at"],
                     }
                 )

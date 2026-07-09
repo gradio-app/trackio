@@ -35,6 +35,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
+from trackio.cas import copy_blobs_tree
 from trackio.frontend_config import resolve_frontend_dir
 from trackio.pending_uploads import replay_pending_uploads
 from trackio.remote_client import RemoteClient
@@ -926,11 +927,7 @@ def upload_dataset_for_static(
 
         artifacts_dir = project_artifacts_dir(project)
         if artifacts_dir.exists():
-            shutil.copytree(
-                artifacts_dir,
-                output_dir / "artifacts",
-                ignore=shutil.ignore_patterns("*.partial.*"),
-            )
+            copy_blobs_tree(artifacts_dir, output_dir / "artifacts")
 
         _retry_hf_write(
             "Dataset upload",

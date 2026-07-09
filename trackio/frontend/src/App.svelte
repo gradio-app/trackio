@@ -12,6 +12,7 @@
   import RunDetail from "./pages/RunDetail.svelte";
   import Files from "./pages/Files.svelte";
   import ArtifactsSidebar from "./components/ArtifactsSidebar.svelte";
+  import { DEFAULT_LOGO_URLS } from "./components/Logo.svelte";
   import ArtifactsDetail from "./pages/ArtifactsDetail.svelte";
   import {
     getAllProjects,
@@ -32,7 +33,12 @@
   } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
   import { reconcileSelectedRuns } from "./lib/selection.js";
-  import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
+  import {
+    getPageFromPath,
+    navigateTo,
+    getQueryParam,
+    getArtifactSelectionFromUrl,
+  } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
 
@@ -91,7 +97,7 @@
   });
   let mutationPollTimer = $state(null);
   let appBootstrapReady = $state(false);
-  let logoUrls = $state({ light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" });
+  let logoUrls = $state(DEFAULT_LOGO_URLS);
   let plotOrder = $state([]);
   let tableTruncateLength = $state(250);
   let readOnlySource = $state(null);
@@ -358,11 +364,8 @@
   $effect(() => {
     urlTick;
     if (currentPage !== "artifacts" || !sidebarHidden) return;
-    const name = getQueryParam("selected_artifact");
-    const verParam = getQueryParam("selected_version");
-    if (!name || !verParam) return;
-    const version = parseInt(String(verParam).replace(/^v/i, ""), 10);
-    if (Number.isNaN(version)) return;
+    const { name, version } = getArtifactSelectionFromUrl();
+    if (!name || version == null) return;
     artifactSelection = { name, version };
   });
 

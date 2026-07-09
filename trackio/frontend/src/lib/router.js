@@ -54,6 +54,26 @@ export function getQueryParam(key) {
   return new URLSearchParams(window.location.search).get(key);
 }
 
+export function setArtifactSelectionParams(name, version) {
+  setQueryParam("selected_artifact", name);
+  setQueryParam("selected_version", `v${version}`);
+}
+
+export function getArtifactSelectionFromUrl() {
+  const name = getQueryParam("selected_artifact");
+  const verParam = getQueryParam("selected_version");
+  const version = verParam
+    ? parseInt(String(verParam).replace(/^v/i, ""), 10)
+    : NaN;
+  return { name, version: Number.isNaN(version) ? null : version };
+}
+
+export function openRunDetail(runName, runId) {
+  setQueryParam("selected_run_id", runId);
+  setQueryParam("selected_run", runName);
+  navigateTo("run-detail");
+}
+
 export function setQueryParam(key, value) {
   const params = new URLSearchParams(window.location.search);
   if (value != null && value !== "") {

@@ -1,11 +1,13 @@
 <script>
   import Accordion from "./Accordion.svelte";
+  import IndentGuides from "./IndentGuides.svelte";
   import {
     getArtifactManifest,
     getArtifactConsumers,
     getArtifactBlobUrl,
   } from "../lib/api.js";
-  import { navigateTo, setQueryParam } from "../lib/router.js";
+  import { openRunDetail } from "../lib/router.js";
+  import { formatSize } from "../lib/format.js";
 
   let { project = null, name = null, version = null, variant = "inline" } =
     $props();
@@ -17,15 +19,6 @@
   let copied = $state("");
   let copyTimer = null;
   let metaOverrides = $state({});
-
-  function formatSize(bytes) {
-    if (bytes == null) return "";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024)
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
 
   function formatDate(iso) {
     if (!iso) return "";
@@ -69,34 +62,17 @@
     return depth >= 2 || Object.keys(value).length > 12;
   }
 
-  function walkMetaDefaults(entries, depth, parentPath, out) {
-    for (const [k, v] of entries) {
-      if (isBranch(v)) {
-        const path = [...parentPath, k];
-        out[metaKey(path)] = defaultCollapsed(v, depth);
-        walkMetaDefaults(Object.entries(v), depth + 1, path, out);
-      }
-    }
-  }
-
   function branchPreview(v) {
     const s = JSON.stringify(v);
     return s.length > 80 ? s.slice(0, 80) + "…" : s;
   }
 
-  function isMetaCollapsed(path) {
-    const o = metaOverrides[metaKey(path)];
-    return o === undefined ? (metaDefaults[metaKey(path)] ?? false) : o;
+  function isMetaCollapsed(path, value, depth) {
+    return metaOverrides[metaKey(path)] ?? defaultCollapsed(value, depth);
   }
 
-  function toggleMeta(path) {
-    metaOverrides[metaKey(path)] = !isMetaCollapsed(path);
-  }
-
-  function openRun(runName, runId) {
-    setQueryParam("selected_run_id", runId);
-    setQueryParam("selected_run", runName);
-    navigateTo("run-detail");
+  function toggleMeta(path, value, depth) {
+    metaOverrides[metaKey(path)] = !isMetaCollapsed(path, value, depth);
   }
 
   async function copy(text, which) {
@@ -116,14 +92,6 @@
   let usageSnippet = $derived(
     record ? `trackio.use_artifact("${record.name}:v${record.version}")` : "",
   );
-
-  let metaDefaults = $derived.by(() => {
-    const out = {};
-    if (record?.metadata && isPlainObject(record.metadata)) {
-      walkMetaDefaults(Object.entries(record.metadata), 0, [], out);
-    }
-    return out;
-  });
 
   async function load() {
     record = null;
@@ -184,26 +152,17 @@
   </div>
 {/snippet}
 
-{#snippet indentGuides(depth)}
-  {#if depth > 0}
-    <span class="indent"
-      >{#each Array.from({ length: depth }) as _}<span class="indent-guide"
-        ></span>{/each}</span
-    >
-  {/if}
-{/snippet}
-
 {#snippet metaRows(entries, depth, parentPath)}
   {#each entries as [k, v]}
     {#if isBranch(v)}
       {@const path = [...parentPath, k]}
-      {@const collapsed = isMetaCollapsed(path)}
+      {@const collapsed = isMetaCollapsed(path, v, depth)}
       <div class="meta-key-cell">
-        {@render indentGuides(depth)}
+        <IndentGuides {depth} />
         <button
           type="button"
           class="meta-key-row"
-          onclick={() => toggleMeta(path)}
+          onclick={() => toggleMeta(path, v, depth)}
         >
           <span class="meta-chevron" class:open={!collapsed}>
             <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"
@@ -222,7 +181,7 @@
       {/if}
     {:else}
       <div class="meta-key-cell">
-        {@render indentGuides(depth)}
+        <IndentGuides {depth} />
         <span class="meta-chevron-spacer"></span>
         <span class="detail-key meta-leaf-key">{k}</span>
       </div>
@@ -231,153 +190,127 @@
   {/each}
 {/snippet}
 
-{#if variant === "panel"}
-  <div class="panel">
-    {#if loading}
-      <div class="status">Loading…</div>
-    {:else if error || !record}
-      <div class="status">Failed to load this version.</div>
-    {:else}
-      <header class="panel-header">
-        <div class="title-row">
-          <h2 class="art-name">{record.name}</h2>
-          <span class="ver-badge">v{record.version}</span>
-          {#each record.aliases as alias}
-            <span class="alias-pill" class:latest={alias === "latest"}
-              >{alias}</span
-            >
-          {/each}
-        </div>
-        <div class="fact-row">
-          <span class="fact type-chip">{record.type}</span>
-          <span class="dot">·</span>
-          <span class="fact"
-            >{(record.manifest || []).length}
-            {(record.manifest || []).length === 1 ? "file" : "files"}</span
+{#snippet lineageRows()}
+  {#if record.producer_run_name}
+    <span class="detail-key">Produced by</span>
+    <span class="detail-val">
+      <button
+        class="run-link"
+        onclick={() =>
+          openRunDetail(record.producer_run_name, record.producer_run_id)}
+        >{record.producer_run_name}</button
+      >
+    </span>
+  {/if}
+  {#if consumers.length}
+    <span class="detail-key">Used by</span>
+    <span class="detail-val">
+      {#each consumers as c, ci}<button
+          class="run-link"
+          onclick={() => openRunDetail(c.run_name, c.run_id)}
+          >{c.run_name ?? c.run_id}</button
+        >{ci < consumers.length - 1 ? ", " : ""}{/each}
+    </span>
+  {/if}
+{/snippet}
+
+<div class={variant === "panel" ? "panel" : "version-detail"}>
+  {#if loading}
+    <div class="status">Loading…</div>
+  {:else if error || !record}
+    <div class="status">Failed to load this version.</div>
+  {:else if variant === "panel"}
+    <header class="panel-header">
+      <div class="title-row">
+        <h2 class="art-name">{record.name}</h2>
+        <span class="ver-badge">v{record.version}</span>
+        {#each record.aliases as alias}
+          <span class="alias-pill" class:latest={alias === "latest"}
+            >{alias}</span
           >
-          <span class="dot">·</span>
-          <span class="fact">{formatSize(record.size_bytes)}</span>
-        </div>
-        <div class="use-snippet">
-          <code class="snippet"><span class="tok-mod">trackio</span><span
-              class="tok-punc">.</span><span class="tok-fn">use_artifact</span><span
-              class="tok-punc">(</span><span class="tok-str"
-              >"{record.name}:v{record.version}"</span><span class="tok-punc"
-              >)</span></code>
-          <button
-            class="copy-btn"
-            onclick={() => copy(usageSnippet, "use")}
-            title="Copy usage snippet"
-          >
-            {copied === "use" ? "Copied" : "Copy"}
-          </button>
-        </div>
-      </header>
-
-      <Accordion label="Overview">
-        <div class="detail-grid">
-          {#if record.description}
-            <span class="detail-key">Description</span>
-            <span class="detail-val">{record.description}</span>
-          {/if}
-          {#if record.producer_run_name}
-            <span class="detail-key">Produced by</span>
-            <span class="detail-val">
-              <button
-                class="run-link"
-                onclick={() =>
-                  openRun(record.producer_run_name, record.producer_run_id)}
-                >{record.producer_run_name}</button
-              >
-            </span>
-          {/if}
-          {#if consumers.length}
-            <span class="detail-key">Used by</span>
-            <span class="detail-val">
-              {#each consumers as c, ci}<button
-                  class="run-link"
-                  onclick={() => openRun(c.run_name, c.run_id)}
-                  >{c.run_name ?? c.run_id}</button
-                >{ci < consumers.length - 1 ? ", " : ""}{/each}
-            </span>
-          {/if}
-          <span class="detail-key">Created</span>
-          <span class="detail-val">{formatDate(record.created_at)}</span>
-          <span class="detail-key">Digest</span>
-          <span class="detail-val digest-val">
-            <span class="mono digest-text" title={record.manifest_digest}
-              >{record.manifest_digest?.slice(0, 16)}…</span
-            >
-            <button
-              class="copy-btn small"
-              onclick={() => copy(record.manifest_digest, "digest")}
-              title="Copy digest"
-            >
-              {copied === "digest" ? "Copied" : "Copy"}
-            </button>
-          </span>
-        </div>
-      </Accordion>
-
-      {#if record.metadata && Object.keys(record.metadata).length}
-        <Accordion label="Metadata ({Object.keys(record.metadata).length})">
-          <div class="meta-grid">
-            {@render metaRows(Object.entries(record.metadata), 0, [])}
-          </div>
-        </Accordion>
-      {/if}
-
-      <Accordion label="Files ({(record.manifest || []).length})">
-        {@render fileTable()}
-      </Accordion>
-    {/if}
-  </div>
-{:else}
-  <div class="version-detail">
-    {#if loading}
-      <div class="status">Loading…</div>
-    {:else if error || !record}
-      <div class="status">Failed to load this version.</div>
-    {:else}
-      <div class="detail-grid">
-        {#if record.producer_run_name}
-          <span class="detail-key">Produced by</span>
-          <span class="detail-val">
-            <button
-              class="run-link"
-              onclick={() =>
-                openRun(record.producer_run_name, record.producer_run_id)}
-              >{record.producer_run_name}</button
-            >
-          </span>
-        {/if}
-        {#if consumers.length}
-          <span class="detail-key">Used by</span>
-          <span class="detail-val">
-            {#each consumers as c, ci}<button
-                class="run-link"
-                onclick={() => openRun(c.run_name, c.run_id)}
-                >{c.run_name ?? c.run_id}</button
-              >{ci < consumers.length - 1 ? ", " : ""}{/each}
-          </span>
-        {/if}
-        <span class="detail-key">Digest</span>
-        <span class="detail-val mono"
-          >{record.manifest_digest?.slice(0, 16)}…</span
-        >
-        {#if record.metadata && Object.keys(record.metadata).length}
-          {#each Object.entries(record.metadata) as [k, v]}
-            <span class="detail-key">{k}</span>
-            <span class="detail-val"
-              >{typeof v === "object" ? JSON.stringify(v) : String(v)}</span
-            >
-          {/each}
-        {/if}
+        {/each}
       </div>
-      {@render fileTable()}
+      <div class="fact-row">
+        <span class="fact type-chip">{record.type}</span>
+        <span class="dot">·</span>
+        <span class="fact"
+          >{(record.manifest || []).length}
+          {(record.manifest || []).length === 1 ? "file" : "files"}</span
+        >
+        <span class="dot">·</span>
+        <span class="fact">{formatSize(record.size_bytes)}</span>
+      </div>
+      <div class="use-snippet">
+        <code class="snippet"><span class="tok-mod">trackio</span><span
+            class="tok-punc">.</span><span class="tok-fn">use_artifact</span><span
+            class="tok-punc">(</span><span class="tok-str"
+            >"{record.name}:v{record.version}"</span><span class="tok-punc"
+            >)</span></code>
+        <button
+          class="copy-btn"
+          onclick={() => copy(usageSnippet, "use")}
+          title="Copy usage snippet"
+        >
+          {copied === "use" ? "Copied" : "Copy"}
+        </button>
+      </div>
+    </header>
+
+    <Accordion label="Overview">
+      <div class="detail-grid">
+        {#if record.description}
+          <span class="detail-key">Description</span>
+          <span class="detail-val">{record.description}</span>
+        {/if}
+        {@render lineageRows()}
+        <span class="detail-key">Created</span>
+        <span class="detail-val">{formatDate(record.created_at)}</span>
+        <span class="detail-key">Digest</span>
+        <span class="detail-val digest-val">
+          <span class="mono digest-text" title={record.manifest_digest}
+            >{record.manifest_digest?.slice(0, 16)}…</span
+          >
+          <button
+            class="copy-btn small"
+            onclick={() => copy(record.manifest_digest, "digest")}
+            title="Copy digest"
+          >
+            {copied === "digest" ? "Copied" : "Copy"}
+          </button>
+        </span>
+      </div>
+    </Accordion>
+
+    {#if record.metadata && Object.keys(record.metadata).length}
+      <Accordion label="Metadata ({Object.keys(record.metadata).length})">
+        <div class="meta-grid">
+          {@render metaRows(Object.entries(record.metadata), 0, [])}
+        </div>
+      </Accordion>
     {/if}
-  </div>
-{/if}
+
+    <Accordion label="Files ({(record.manifest || []).length})">
+      {@render fileTable()}
+    </Accordion>
+  {:else}
+    <div class="detail-grid">
+      {@render lineageRows()}
+      <span class="detail-key">Digest</span>
+      <span class="detail-val mono"
+        >{record.manifest_digest?.slice(0, 16)}…</span
+      >
+      {#if record.metadata && Object.keys(record.metadata).length}
+        {#each Object.entries(record.metadata) as [k, v]}
+          <span class="detail-key">{k}</span>
+          <span class="detail-val"
+            >{typeof v === "object" ? JSON.stringify(v) : String(v)}</span
+          >
+        {/each}
+      {/if}
+    </div>
+    {@render fileTable()}
+  {/if}
+</div>
 
 <style>
   .version-detail {
@@ -541,24 +474,6 @@
   .meta-grid .detail-val {
     align-self: center;
     padding: 3px 0;
-  }
-  .indent {
-    display: flex;
-    align-self: stretch;
-    flex-shrink: 0;
-  }
-  .indent-guide {
-    width: 16px;
-    align-self: stretch;
-    position: relative;
-  }
-  .indent-guide::before {
-    content: "";
-    position: absolute;
-    left: 6px;
-    top: 0;
-    bottom: 0;
-    border-left: 1px solid var(--border-color-primary, #e5e7eb);
   }
   .meta-chevron-spacer {
     display: inline-block;

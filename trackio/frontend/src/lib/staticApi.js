@@ -69,11 +69,22 @@ async function getRunsJson() {
   return runsData;
 }
 
+let artifactVersionsPromise = null;
+
+function getArtifactVersions() {
+  if (!artifactVersionsPromise) {
+    artifactVersionsPromise = readParquet(
+      resolveUrl("aux/artifact_versions.parquet"),
+    ).catch(() => []);
+  }
+  return artifactVersionsPromise;
+}
+
 async function getArtifactTables() {
   if (artifactData) return artifactData;
   const [artifacts, versions, aliases, links] = await Promise.all([
     readParquet(resolveUrl("aux/artifacts.parquet")).catch(() => []),
-    readParquet(resolveUrl("aux/artifact_versions.parquet")).catch(() => []),
+    getArtifactVersions(),
     readParquet(resolveUrl("aux/artifact_aliases.parquet")).catch(() => []),
     readParquet(resolveUrl("aux/run_artifact_links.parquet")).catch(() => []),
   ]);
@@ -504,13 +515,13 @@ function rowHasTypedValue(row, types) {
 export async function getTabAvailability() {
   if (tabAvailabilityCache) return tabAvailabilityCache;
 
-  const [metricsRaw, systemRaw, tracesRaw, files, artifactTables] =
+  const [metricsRaw, systemRaw, tracesRaw, files, artifactVersions] =
     await Promise.all([
       getMetricsData().catch(() => []),
       getSystemData().catch(() => []),
       getTracesData().catch(() => []),
       getProjectFiles().catch(() => []),
-      getArtifactTables().catch(() => null),
+      getArtifactVersions(),
     ]);
 
   const metricsRows = (metricsRaw || []);
@@ -531,7 +542,7 @@ export async function getTabAvailability() {
     system: (systemRaw || []).length > 0,
     traces: (tracesRaw || []).length > 0,
     files: (files || []).length > 0,
-    artifacts: (artifactTables?.versions || []).length > 0,
+    artifacts: (artifactVersions || []).length > 0,
   };
   return tabAvailabilityCache;
 }
@@ -552,7 +563,10 @@ function compareCreatedAt(a, b) {
   return String(a.created_at || "").localeCompare(String(b.created_at || ""));
 }
 
+let artifactListCache = null;
+
 export async function listArtifacts() {
+  if (artifactListCache) return artifactListCache;
   const { artifacts, versions, aliases } = await getArtifactTables();
   const aliasMap = aliasesByVersionId(aliases);
   const versionsByArtifact = new Map();
@@ -568,17 +582,13 @@ export async function listArtifacts() {
       aliases: aliasMap.get(Number(row.id)) || [],
       size_bytes: Number(row.size_bytes),
       num_files: Array.isArray(manifest) ? manifest.length : 0,
-      manifest_digest: row.manifest_digest,
-      metadata: parseTraceJsonField(row.metadata, null),
-      producer_run_id: row.producer_run_id ?? null,
-      producer_run_name: row.producer_run_name ?? null,
       created_at: row.created_at,
     });
   }
   for (const entries of versionsByArtifact.values()) {
     entries.sort((a, b) => b.version - a.version);
   }
-  return [...artifacts]
+  artifactListCache = [...artifacts]
     .sort((a, b) => {
       if (a.type !== b.type) return a.type < b.type ? -1 : 1;
       if (a.name !== b.name) return a.name < b.name ? -1 : 1;
@@ -596,6 +606,7 @@ export async function listArtifacts() {
         versions: artVersions,
       };
     });
+  return artifactListCache;
 }
 
 export async function getArtifactManifest(_project, name, spec) {

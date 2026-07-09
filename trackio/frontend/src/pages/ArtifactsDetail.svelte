@@ -2,15 +2,11 @@
   import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
 
   let { project = null, selection = null, empty = false } = $props();
-
-  function verKey(name, version) {
-    return `${name}@v${version}`;
-  }
 </script>
 
 <div class="detail-pane">
   {#if selection}
-    {#key verKey(selection.name, selection.version)}
+    {#key `${selection.name}@v${selection.version}`}
       <ArtifactVersionDetail
         variant="panel"
         {project}
