@@ -1528,9 +1528,7 @@ def _find_preview_port(port: int) -> int:
     )
 
 
-def start_preview(
-    proj: Path, port: int = 7861, open_browser: bool = True
-) -> str:
+def start_preview(proj: Path, port: int = 7861, open_browser: bool = True) -> str:
     import webbrowser  # noqa: PLC0415
 
     write_site_files(proj)
