@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Logbook open live preview
+feat:Serve live logbook preview from open
