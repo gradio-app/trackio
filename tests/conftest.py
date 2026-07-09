@@ -62,6 +62,11 @@ def set_numpy_seed():
     np.random.seed(0)
 
 
+@pytest.fixture(autouse=True)
+def disable_logbook_autonote(monkeypatch):
+    monkeypatch.setenv("TRACKIO_LOGBOOK_AUTONOTE", "0")
+
+
 @pytest.fixture
 def image_ndarray():
     return np.random.randint(255, size=(100, 100, 3), dtype=np.uint8)
