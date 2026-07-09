@@ -8,7 +8,7 @@ from huggingface_hub.utils import get_token
 
 from trackio import cas, references, utils
 from trackio.remote_client import _merge_client_headers, _resolve_src_url
-from trackio.typehints import Manifest, ManifestEntry, Sha256Digest
+from trackio.typehints import ETag, Manifest, ManifestEntry, Sha256Digest, URIStr
 
 
 def _materialize(blob: Path, dst: Path, size: int) -> None:
@@ -68,8 +68,10 @@ def _fetch_blob_from_remote(
         )
 
 
-def _materialize_reference(uri: str, scheme: str, dest: Path, digest: str) -> None:
-    """Fetch the object at `uri` into `dest`, verified, idempotently, atomically.
+def _materialize_reference(
+    uri: str, scheme: str, dest: Path, digest: Sha256Digest | ETag | URIStr
+) -> None:
+    """Fetch the object at `uri` into `dest`, idempotently and atomically.
 
     If `dest` already exists it is left untouched and nothing is fetched:
     reference digests are opaque, so a file already present is assumed current
@@ -77,9 +79,8 @@ def _materialize_reference(uri: str, scheme: str, dest: Path, digest: str) -> No
     `download()` skip references already on disk.
 
     Otherwise, when a real checksum was recorded, the source is re-probed and
-    compared — a drifted object raises. When the digest doesn't exists, or when
-    it cannot be re-probed, the verification is skipped but the artifact is still
-    materialized.
+    compared. When the digest doesn't exist, or when it cannot be re-probed,
+    the comparison is skipped and the artifact is still materialized.
     """
     if dest.is_file():
         return
@@ -92,10 +93,9 @@ def _materialize_reference(uri: str, scheme: str, dest: Path, digest: str) -> No
             resolved = None
         current_digest = resolved.digest if resolved is not None else None
         if current_digest is not None and current_digest != digest:
-            raise ValueError(
-                f"Reference {uri!r} has changed since it was logged (recorded "
-                f"digest {digest}, current {current_digest}); the source object "
-                "was modified — re-log the artifact to capture the new version."
+            utils._emit_nonfatal_warning(
+                f"Reference {uri!r} may have changed since it was logged "
+                f"(recorded digest {digest}, current {current_digest})."
             )
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.parent / f"{dest.name}.partial.{uuid.uuid4().hex}"
@@ -143,7 +143,9 @@ class Artifact:
         self._description = description
         self._metadata: dict = dict(metadata) if metadata else {}
         self._pending_files: list[tuple[Path, str]] = []
-        self._pending_references: list[tuple[str, str, Sha256Digest, int]] = []
+        self._pending_references: list[
+            tuple[str, str, Sha256Digest | ETag | URIStr, int]
+        ] = []
         self._logged = False
         self._version: int | None = None
         self._aliases: tuple[str, ...] = ()
@@ -300,8 +302,6 @@ class Artifact:
         name: str | None = None,
         checksum: bool = True,
         max_objects: int | None = None,
-        size: int | None = None,
-        digest: str | None = None,
     ) -> None:
         """Stage a reference to external data, without copying any bytes.
 
@@ -315,6 +315,11 @@ class Artifact:
         `gs://`, `hf://`, Azure) is expanded into one entry per object, capped
         by `max_objects`. Reference bytes are never uploaded to a Space or
         bucket.
+
+        The URI is stored verbatim in the artifact manifest, and manifests may
+        be synced to a shared Hugging Face Dataset — so a signed URI triggers a
+        warning for security reasons; please prefer the object's canonical
+        unsigned URI (e.g. `s3://bucket/key`).
 
         Args:
             uri (`str`):
@@ -344,15 +349,6 @@ class Artifact:
             max_objects (`int`, *optional*):
                 Cap on how many objects a directory/prefix expands into (default
                 10,000); exceeding it raises.
-            size (`int`, *optional*):
-                Size in bytes for a single-object reference. Auto-detected when
-                the source can be probed (a conflicting value raises); supply it
-                for remote data that cannot be reached. Not allowed with an
-                expanding prefix.
-            digest (`str`, *optional*):
-                Precomputed lowercase sha256 hex digest for a single-object
-                reference. Overrides any probed checksum. Not allowed with an
-                expanding prefix.
         """
         if self._logged:
             raise RuntimeError(
@@ -360,21 +356,18 @@ class Artifact:
                 "logged or fetched."
             )
         scheme, normalized = references.validate_reference_uri(uri)
-        if size is not None and (not isinstance(size, int) or size < 0):
-            raise ValueError(
-                f"Reference size must be a non-negative int, got {size!r}."
+        if references.looks_signed(normalized):
+            utils._emit_nonfatal_warning(
+                f"Reference {uri!r} looks like a signed URL, and the full URI "
+                "(embedded credential included) is stored in the artifact "
+                "manifest, which may be synced to a shared HF Dataset. Prefer "
+                "the object's canonical unsigned URI (e.g. s3://bucket/key or "
+                "the URL without its signed query string)."
             )
-        caller_digest = cas.validate_digest(digest) if digest is not None else None
         cap = references.DEFAULT_MAX_OBJECTS if max_objects is None else max_objects
         resolved = references.resolve_reference(normalized, scheme, checksum, cap)
         if not resolved:
             raise ValueError(f"Reference URI {uri!r} matched no objects.")
-        expands = len(resolved) > 1 or resolved[0].relkey is not None
-        if expands and (size is not None or digest is not None):
-            raise ValueError(
-                "size= and digest= cannot be combined with a directory or prefix "
-                "reference that expands to multiple objects."
-            )
         used_uri_fallback = False
         name_prefix = f"{name.rstrip('/')}/" if name is not None else ""
         for entry in resolved:
@@ -382,19 +375,11 @@ class Artifact:
                 logical = self._reference_logical_name(name, entry.uri, uri)
             else:
                 logical = cas.validate_logical_path(name_prefix + entry.relkey)
-            ref_size = entry.size
-            if size is not None:
-                if ref_size is not None and ref_size != size:
-                    raise ValueError(
-                        f"Supplied size {size} does not match the source size "
-                        f"{ref_size} for {uri!r}."
-                    )
-                ref_size = size
-            ref_digest = caller_digest if caller_digest is not None else entry.digest
+            ref_digest: Sha256Digest | ETag | URIStr | None = entry.digest
             if ref_digest is None:
-                ref_digest = Sha256Digest(entry.uri)
+                ref_digest = URIStr(entry.uri)
                 used_uri_fallback = True
-            ref_size = 0 if ref_size is None else ref_size
+            ref_size = 0 if entry.size is None else entry.size
             self._pending_references.append((logical, entry.uri, ref_digest, ref_size))
         if checksum and used_uri_fallback:
             utils._emit_nonfatal_warning(
@@ -477,11 +462,12 @@ class Artifact:
         optional cloud SDK for `s3://`/`gs://`/Azure). Each object is written
         atomically and calls are idempotent. Because reference digests
         are opaque (a provider ETag or the URI itself), a present file is assumed
-        current and is not re-verified against the source. Downloading can
-        transfer a large amount of data; to work with the URIs without
-        downloading, read them from the `references` property or `get_entry_uri`
-        instead. A missing source, an unavailable client, or an unfetchable
-        scheme raises.
+        current and is not re-verified against the source, and a source whose
+        re-probed checksum no longer matches the recorded one is downloaded
+        anyway with a warning. Downloading can transfer a large amount of data;
+        to work with the URIs without downloading, read them from the `references`
+        property or `get_entry_uri` instead. A missing source, an unavailable
+        client, or an unfetchable scheme raises.
 
         Args:
             root (`str` or `Path`, *optional*):

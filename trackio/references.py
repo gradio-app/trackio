@@ -19,8 +19,8 @@ back before handing it to the SDK, so a manifest ref always round-trips.
 
 This module also defines the dependency-light reference primitives —
 `validate_reference_uri`, `local_path_from_file_uri`, `default_reference_name`,
-and the `is_reference_entry` manifest discriminator — shared by the artifact,
-storage, server, and CLI layers.
+the `looks_signed` credential heuristic, and the `is_reference_entry` manifest
+discriminator — shared by the artifact, storage, server, and CLI layers.
 
 To add a scheme, write a `ReferenceHandler` subclass and register it in
 `_HANDLERS` (before `HttpHandler` if it is a specialization of `https://`).
@@ -31,13 +31,13 @@ import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qsl, quote, unquote, urlsplit
 from urllib.request import url2pathname
 
 import httpx
 
 from trackio import cas
-from trackio.typehints import Sha256Digest
+from trackio.typehints import ETag, Sha256Digest
 
 DEFAULT_MAX_OBJECTS = 10_000
 _AZURE_BLOB_SUFFIX = ".blob.core.windows.net"
@@ -100,6 +100,25 @@ def is_reference_entry(entry: dict) -> bool:
     return "ref" in entry
 
 
+_SIGNED_QUERY_KEYS = frozenset(
+    {"x-amz-signature", "x-goog-signature", "sig", "token", "signature"}
+)
+
+
+def looks_signed(uri: str) -> bool:
+    """Heuristic: True when a URI's query string appears to embed a credential —
+    a presigned S3/GCS URL (`X-Amz-Signature`, `X-Goog-Signature`), a CloudFront
+    or S3 v2 `Signature`, an Azure SAS token (`sig`), or a bearer-style `token`
+    parameter. Bare `s3://`/`gs://` URIs carry no query and never match."""
+    query = urlsplit(uri).query
+    if not query:
+        return False
+    return any(
+        key.lower() in _SIGNED_QUERY_KEYS
+        for key, _ in parse_qsl(query, keep_blank_values=True)
+    )
+
+
 class ResolvedReference(NamedTuple):
     """One object a reference URI resolves to. `relkey` is None for a single
     object (the caller's `name`/basename is used) or the object's path relative
@@ -110,7 +129,7 @@ class ResolvedReference(NamedTuple):
     relkey: str | None
     uri: str
     size: int | None = None
-    digest: Sha256Digest | None = None
+    digest: Sha256Digest | ETag | None = None
 
 
 class ReferenceHandler(ABC):
@@ -216,8 +235,8 @@ class FileHandler(ReferenceHandler):
         shutil.copyfile(local, dest)
 
     def hint(self):
-        """Shown when a `file://` object was recorded without a hash (checksum=False)."""
-        return "Ensure the file exists locally, or pass digest=, to checksum it by content."
+        """Shown when a `file://` object was recorded without a content hash."""
+        return "Ensure the file exists locally so it can be checksummed by content."
 
     @staticmethod
     def _digest_and_size(path: Path, checksum: bool) -> tuple[Sha256Digest | None, int]:
@@ -252,7 +271,7 @@ class HttpHandler(ReferenceHandler):
 
     def hint(self):
         """Shown when the server exposed no usable ETag."""
-        return "Pass digest= to checksum it by content."
+        return "Check that the URL is reachable and that its server exposes an ETag header."
 
 
 class AzureHandler(ReferenceHandler):
@@ -344,8 +363,8 @@ class AzureHandler(ReferenceHandler):
     def hint(self):
         """Shown when neither the Azure SDK nor a public HTTP probe yielded an ETag."""
         return (
-            f"Install trackio[{self.extra}] and configure credentials, or pass "
-            "digest=, to checksum it by content."
+            f"Install trackio[{self.extra}] and configure credentials to "
+            "checksum it by content."
         )
 
     def _service(self, account_url):
@@ -456,8 +475,8 @@ class S3Handler(ReferenceHandler):
     def hint(self):
         """Shown when boto3 is absent or the object exposed no ETag."""
         return (
-            f"Install trackio[{self.extra}] and configure credentials, or pass "
-            "digest=, to checksum it by content."
+            f"Install trackio[{self.extra}] and configure credentials to "
+            "checksum it by content."
         )
 
     def _client(self):
@@ -543,8 +562,8 @@ class GcsHandler(ReferenceHandler):
     def hint(self):
         """Shown when the GCS SDK is absent or the blob exposed no ETag."""
         return (
-            f"Install trackio[{self.extra}] and configure credentials, or pass "
-            "digest=, to checksum it by content."
+            f"Install trackio[{self.extra}] and configure credentials to "
+            "checksum it by content."
         )
 
     def _client(self):
@@ -623,7 +642,7 @@ class HfHandler(ReferenceHandler):
 
     def hint(self):
         """Shown when the Hub file exposed no LFS sha256, blob id, or xet hash."""
-        return "Pass digest= to checksum it by content."
+        return "Check that the hf:// path exists and is readable (log in for a private repo)."
 
     def _fs(self):
         """An `HfFileSystem`, or None if huggingface_hub lacks fsspec support."""
@@ -643,15 +662,16 @@ class HfHandler(ReferenceHandler):
         return unquote(raw)
 
     @staticmethod
-    def _checksum(info: dict) -> Sha256Digest | None:
+    def _checksum(info: dict) -> Sha256Digest | ETag | None:
         """Pick a stable checksum from an HfFileSystem info dict: the LFS sha256
-        if present, else the git blob id or xet hash."""
+        if present, else the git blob id or xet hash (opaque provider tokens,
+        typed like an ETag)."""
         lfs = info.get("lfs")
         if isinstance(lfs, dict) and lfs.get("sha256"):
             return Sha256Digest(lfs["sha256"])
         for key in ("blob_id", "xet_hash"):
             if info.get(key):
-                return Sha256Digest(str(info[key]))
+                return ETag(str(info[key]))
         return None
 
 
@@ -678,7 +698,8 @@ class TrackingHandler(ReferenceHandler):
     def hint(self):
         """Shown for an unrecognized scheme, recordable only as an opaque pointer."""
         return (
-            "This scheme cannot be downloaded; pass digest= only to record the pointer."
+            "This scheme cannot be downloaded; the reference is recorded as an "
+            "opaque pointer."
         )
 
 
@@ -725,11 +746,11 @@ def _http_fetch(uri: str, dest: Path) -> None:
         _write_chunks(response.iter_bytes(), dest)
 
 
-def _etag_digest(raw: str | None) -> Sha256Digest | None:
+def _etag_digest(raw: str | None) -> ETag | None:
     """Normalize a provider ETag (stripping its surrounding quotes) into a
     reference digest, or None when there is no usable value."""
     cleaned = raw.strip('"') if raw else None
-    return Sha256Digest(cleaned) if cleaned else None
+    return ETag(cleaned) if cleaned else None
 
 
 def _within_max(count: int, max_objects: int, uri: str) -> None:

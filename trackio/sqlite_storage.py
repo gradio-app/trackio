@@ -4178,7 +4178,7 @@ class SQLiteStorage:
         size_bytes = 0
         for entry in manifest:
             path = entry["path"]
-            digest = Sha256Digest(entry["digest"])
+            digest = entry["digest"]
             size = int(entry["size"])
             size_bytes += size
             canonical_entry = {"path": path, "digest": digest, "size": size}

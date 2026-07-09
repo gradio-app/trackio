@@ -3,6 +3,8 @@ from typing import Any, NewType, TypedDict
 from gradio_client import FileData
 
 Sha256Digest = NewType("Sha256Digest", str)
+ETag = NewType("ETag", str)
+URIStr = NewType("URIStr", str)
 
 MEDIA_UPLOAD_KIND = "media"
 ARTIFACT_BLOB_UPLOAD_KIND = "artifact_blob"
@@ -10,7 +12,7 @@ ARTIFACT_BLOB_UPLOAD_KIND = "artifact_blob"
 
 class _ManifestEntryBase(TypedDict):
     path: str
-    digest: Sha256Digest
+    digest: Sha256Digest | ETag | URIStr
     size: int
 
 

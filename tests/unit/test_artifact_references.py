@@ -215,6 +215,22 @@ def test_is_reference_entry_discriminates():
     )
 
 
+def test_looks_signed_detects_credentialed_queries():
+    signed = references.looks_signed
+    assert signed("https://b.s3.amazonaws.com/k?X-Amz-Algorithm=x&X-Amz-Signature=y")
+    assert signed("https://acct.blob.core.windows.net/c/b?sv=2024-01-01&sig=abc")
+    assert signed("https://storage.googleapis.com/b/o?X-Goog-Signature=00ff")
+    assert signed("https://cdn.example.com/data.bin?token=secret")
+    assert signed(
+        "https://cdn.example.com/data.bin?Expires=1&Signature=x&Key-Pair-Id=y"
+    )
+    assert not signed("https://example.com/data.bin")
+    assert not signed("https://example.com/data.bin?version=3&format=json")
+    assert not signed("https://example.com/data.bin?significant=1")
+    assert not signed("s3://bucket/key")
+    assert not signed("gs://bucket/key")
+
+
 def test_local_path_from_file_uri_round_trips(tmp_path):
     f = tmp_path / "sub" / "data.bin"
     f.parent.mkdir(parents=True)
@@ -340,13 +356,36 @@ def test_add_reference_http_unreachable_records_uri_only(temp_dir, monkeypatch):
     trackio.init(project="ref-http-down")
     art = trackio.Artifact(name="ds", type="dataset")
     with pytest.warns(UserWarning, match="without a content checksum"):
-        art.add_reference("https://example.com/data.bin", size=99)
+        art.add_reference("https://example.com/data.bin")
     logged = trackio.log_artifact(art)
     trackio.finish()
 
     ref = logged.references[0]
-    assert ref["size"] == 99
+    assert ref["size"] == 0
     assert ref["digest"] == "https://example.com/data.bin"
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "https://b.s3.amazonaws.com/k?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=deadbeef",
+        "https://acct.blob.core.windows.net/c/b.bin?sv=2024-01-01&sig=abc%2Bdef",
+        "https://storage.googleapis.com/b/o.bin?X-Goog-Signature=00ff",
+        "https://cdn.example.com/data.bin?token=secret123",
+    ],
+)
+def test_add_reference_signed_url_warns(uri):
+    art = trackio.Artifact(name="ds", type="dataset")
+    with pytest.warns(UserWarning, match="signed URL"):
+        art.add_reference(uri, checksum=False)
+    assert art._pending_references[0][1] == uri
+
+
+def test_add_reference_unsigned_url_does_not_warn(recwarn):
+    art = trackio.Artifact(name="ds", type="dataset")
+    art.add_reference("https://example.com/data.bin?version=3", checksum=False)
+    art.add_reference("s3://bucket/key", checksum=False)
+    assert [w for w in recwarn if "signed URL" in str(w.message)] == []
 
 
 def test_download_fetches_http_reference(temp_dir, tmp_path, monkeypatch):
@@ -423,12 +462,12 @@ def test_add_reference_s3_without_boto3_falls_back_and_warns(temp_dir, monkeypat
     trackio.init(project="ref-s3-noboto3")
     art = trackio.Artifact(name="ds", type="dataset")
     with pytest.warns(UserWarning, match=r"trackio\[s3\]"):
-        art.add_reference("s3://bucket/key", size=123)
+        art.add_reference("s3://bucket/key")
     logged = trackio.log_artifact(art)
     trackio.finish()
 
     ref = logged.references[0]
-    assert ref["size"] == 123
+    assert ref["size"] == 0
     assert ref["digest"] == "s3://bucket/key"
 
 
@@ -440,7 +479,7 @@ def test_download_fetches_s3_reference(temp_dir, tmp_path, monkeypatch):
     )
     trackio.init(project="ref-s3-dl")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", size=8, checksum=False)
+    art.add_reference("s3://bucket/obj", checksum=False)
     trackio.log_artifact(art)
     trackio.finish()
 
@@ -455,7 +494,7 @@ def test_download_s3_reference_without_boto3_raises(temp_dir, tmp_path, monkeypa
     monkeypatch.setattr(references.S3Handler, "_client", lambda self: None)
     trackio.init(project="ref-s3-noraise")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", size=8, checksum=False)
+    art.add_reference("s3://bucket/obj", checksum=False)
     trackio.log_artifact(art)
     trackio.finish()
 
@@ -609,38 +648,12 @@ def test_download_unknown_scheme_reference_raises(temp_dir, tmp_path):
     trackio.finish()
 
 
-def test_add_reference_s3_with_caller_digest_and_size(temp_dir):
-    trackio.init(project="ref-s3-caller")
+def test_add_reference_rejects_size_and_digest_kwargs():
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference(
-        "s3://bucket/big.parquet", size=4096, digest="d" * 64, checksum=False
-    )
-    logged = trackio.log_artifact(art)
-    trackio.finish()
-
-    ref = logged.references[0]
-    assert ref["path"] == "big.parquet"
-    assert ref["size"] == 4096
-    assert ref["digest"] == "d" * 64
-    assert logged.size == 4096
-
-
-def test_size_or_digest_with_expanding_prefix_raises(temp_dir, monkeypatch):
-    pages = [{"Contents": [{"Key": "p/a", "Size": 1, "ETag": '"e"'}]}]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(pages=pages),
-    )
-    art = trackio.Artifact(name="ds", type="dataset")
-    with pytest.raises(ValueError, match="cannot be combined"):
-        art.add_reference("s3://bucket/p/", size=10)
-
-
-def test_add_reference_rejects_bad_digest(temp_dir):
-    art = trackio.Artifact(name="ds", type="dataset")
-    with pytest.raises(ValueError, match="Invalid artifact blob digest"):
-        art.add_reference("s3://bucket/obj", digest="not-a-sha", checksum=False)
+    with pytest.raises(TypeError):
+        art.add_reference("s3://bucket/big.parquet", size=4096)
+    with pytest.raises(TypeError):
+        art.add_reference("s3://bucket/big.parquet", digest="d" * 64)
 
 
 def test_add_reference_rejects_schemeless_uri(temp_dir):
@@ -661,11 +674,11 @@ def test_add_reference_missing_local_file_raises(temp_dir, tmp_path):
 def test_add_reference_after_log_raises(temp_dir):
     trackio.init(project="ref-after-log")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", size=1, checksum=False)
+    art.add_reference("s3://bucket/obj", checksum=False)
     trackio.log_artifact(art)
     trackio.finish()
     with pytest.raises(RuntimeError, match="already been logged"):
-        art.add_reference("s3://bucket/other", size=1)
+        art.add_reference("s3://bucket/other")
 
 
 def test_reference_and_file_path_collision_is_rejected(temp_dir, tmp_path):
@@ -674,16 +687,10 @@ def test_reference_and_file_path_collision_is_rejected(temp_dir, tmp_path):
     trackio.init(project="ref-collision")
     art = trackio.Artifact(name="ds", type="dataset")
     art.add_file(src, name="shared")
-    art.add_reference("s3://bucket/obj", name="shared", size=1, checksum=False)
+    art.add_reference("s3://bucket/obj", name="shared", checksum=False)
     with pytest.raises(ValueError, match="Duplicate logical path"):
         trackio.log_artifact(art)
     trackio.finish()
-
-
-def test_add_reference_rejects_negative_size(temp_dir):
-    art = trackio.Artifact(name="ds", type="dataset")
-    with pytest.raises(ValueError, match="non-negative"):
-        art.add_reference("s3://bucket/obj", size=-1)
 
 
 def test_mixed_file_and_reference_round_trip(temp_dir, tmp_path, monkeypatch):
@@ -742,7 +749,7 @@ def test_identical_reference_manifests_dedupe_to_one_version(temp_dir):
     for _ in range(2):
         trackio.init(project="ref-dedup")
         art = trackio.Artifact(name="ds", type="dataset")
-        art.add_reference("s3://bucket/key", size=100, checksum=False)
+        art.add_reference("s3://bucket/key", checksum=False)
         logged = trackio.log_artifact(art)
         trackio.finish()
         assert logged.version == "v0"
@@ -754,26 +761,36 @@ def test_identical_reference_manifests_dedupe_to_one_version(temp_dir):
     trackio.finish()
 
 
-def test_changing_reference_uri_or_digest_creates_new_version(temp_dir):
-    def _log(uri, size, digest=None):
+def test_changing_reference_uri_or_digest_creates_new_version(temp_dir, monkeypatch):
+    etag = {"value": "e1"}
+    monkeypatch.setattr(
+        references.S3Handler,
+        "_client",
+        lambda self: _FakeS3Client(
+            head={"ContentLength": 100, "ETag": f'"{etag["value"]}"'}
+        ),
+    )
+
+    def _log(uri):
         trackio.init(project="ref-versions")
         art = trackio.Artifact(name="ds", type="dataset")
-        art.add_reference(uri, name="data", size=size, digest=digest, checksum=False)
+        art.add_reference(uri, name="data")
         logged = trackio.log_artifact(art)
         trackio.finish()
         return logged.version
 
-    assert _log("s3://bucket/k0", 100) == "v0"
-    assert _log("s3://bucket/k1", 100) == "v1"
-    assert _log("s3://bucket/k1", 100, digest="e" * 64) == "v2"
-    assert _log("s3://bucket/k1", 100, digest="e" * 64) == "v2"
+    assert _log("s3://bucket/k0") == "v0"
+    assert _log("s3://bucket/k1") == "v1"
+    etag["value"] = "e2"
+    assert _log("s3://bucket/k1") == "v2"
+    assert _log("s3://bucket/k1") == "v2"
 
 
 def test_alias_rotation_on_reference_only_artifact(temp_dir):
     for i in range(3):
         trackio.init(project="ref-alias", name=f"run-{i}")
         art = trackio.Artifact(name="ds", type="dataset")
-        art.add_reference(f"s3://bucket/k{i}", name="data", size=10, checksum=False)
+        art.add_reference(f"s3://bucket/k{i}", name="data", checksum=False)
         trackio.log_artifact(art, aliases=["best"] if i == 1 else None)
         trackio.finish()
 
@@ -784,21 +801,27 @@ def test_alias_rotation_on_reference_only_artifact(temp_dir):
     trackio.finish()
 
 
-def test_reference_only_artifact_stages_no_blob(temp_dir):
+def test_reference_only_artifact_stages_no_blob(temp_dir, tmp_path):
+    payload = b"reference-only-payload"
+    src = tmp_path / "data.bin"
+    src.write_bytes(payload)
+    digest = hashlib.sha256(payload).hexdigest()
+
     trackio.init(project="ref-noblob")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", size=10, digest="f" * 64, checksum=False)
-    trackio.log_artifact(art)
+    art.add_reference(src.resolve().as_uri())
+    logged = trackio.log_artifact(art)
     trackio.finish()
 
-    assert not cas.blob_path("ref-noblob", "f" * 64).is_file()
-    assert SQLiteStorage.list_artifact_blobs_present("ref-noblob", ["f" * 64]) == set()
+    assert logged.references[0]["digest"] == digest
+    assert not cas.blob_path("ref-noblob", digest).is_file()
+    assert SQLiteStorage.list_artifact_blobs_present("ref-noblob", [digest]) == set()
 
 
 def test_reference_blobs_are_not_synced_to_bucket(temp_dir, monkeypatch):
     trackio.init(project="ref-sync")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", size=10, digest="f" * 64, checksum=False)
+    art.add_reference("s3://bucket/obj", checksum=False)
     trackio.log_artifact(art)
     trackio.finish()
 
@@ -820,16 +843,19 @@ def test_reference_blobs_are_not_synced_to_bucket(temp_dir, monkeypatch):
 def test_blob_endpoint_404_for_reference_but_200_for_staged_file(temp_dir, tmp_path):
     weights = tmp_path / "w.bin"
     weights.write_bytes(b"present-bytes")
+    external = tmp_path / "external.bin"
+    external.write_bytes(b"reference-bytes")
 
     trackio.init(project="ref-endpoint")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", size=10, digest="a" * 64, checksum=False)
+    art.add_reference(external.resolve().as_uri())
     art.add_file(weights)
     logged = trackio.log_artifact(art)
     trackio.finish()
 
     ref_digest = logged.references[0]["digest"]
     file_digest = next(e["digest"] for e in logged.manifest if "ref" not in e)
+    assert ref_digest != file_digest
     app = create_trackio_starlette_app([], {})
     client = TestClient(app)
     headers = {"X-Trackio-Write-Token": trackio_server.write_token}
@@ -842,7 +868,7 @@ def test_blob_endpoint_404_for_reference_but_200_for_staged_file(temp_dir, tmp_p
 
 def test_references_and_get_entry_uri_before_log(temp_dir):
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", size=10, checksum=False)
+    art.add_reference("s3://bucket/obj", checksum=False)
     assert art.references == []
     assert art.get_entry_uri("obj") is None
 
@@ -1050,20 +1076,6 @@ def test_add_reference_s3_prefix_checksum_false_expands(temp_dir, monkeypatch):
     by_path = {r["path"]: r for r in logged.references}
     assert set(by_path) == {"data/a.bin", "data/b.bin"}
     assert by_path["data/a.bin"]["digest"] == "s3://bucket/shards/a.bin"
-
-
-def test_s3_prefix_checksum_false_with_size_raises_cannot_combine(
-    temp_dir, monkeypatch
-):
-    pages = [{"Contents": [{"Key": "shards/a.bin", "Size": 3, "ETag": '"e"'}]}]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(pages=pages),
-    )
-    art = trackio.Artifact(name="ds", type="dataset")
-    with pytest.raises(ValueError, match="cannot be combined"):
-        art.add_reference("s3://bucket/shards/", checksum=False, size=10)
 
 
 def test_azure_split_handles_missing_blob_component():
@@ -1299,7 +1311,7 @@ def test_download_reference_failure_is_atomic_no_partial(
     trackio.finish()
 
 
-def test_download_reference_verifies_digest_and_raises_on_drift(temp_dir, tmp_path):
+def test_download_reference_warns_and_proceeds_on_drift(temp_dir, tmp_path):
     src = tmp_path / "data.bin"
     src.write_bytes(b"original-content")
     trackio.init(project="ref-verify")
@@ -1312,6 +1324,24 @@ def test_download_reference_verifies_digest_and_raises_on_drift(temp_dir, tmp_pa
 
     trackio.init(project="ref-verify", name="consumer")
     fetched = trackio.use_artifact("ds:latest")
-    with pytest.raises(ValueError, match="has changed since it was logged"):
-        fetched.download(tmp_path / "dl")
+    with pytest.warns(UserWarning, match="may have changed since it was logged"):
+        out = Path(fetched.download(tmp_path / "dl"))
     trackio.finish()
+    assert (out / "data.bin").read_bytes() == b"tampered-content-different-length"
+
+
+def test_download_unchanged_reference_does_not_warn(temp_dir, tmp_path, recwarn):
+    src = tmp_path / "data.bin"
+    src.write_bytes(b"stable-content")
+    trackio.init(project="ref-nodrift")
+    art = trackio.Artifact(name="ds", type="dataset")
+    art.add_reference(src.resolve().as_uri())
+    trackio.log_artifact(art)
+    trackio.finish()
+
+    trackio.init(project="ref-nodrift", name="consumer")
+    fetched = trackio.use_artifact("ds:latest")
+    out = Path(fetched.download(tmp_path / "dl"))
+    trackio.finish()
+    assert (out / "data.bin").read_bytes() == b"stable-content"
+    assert [w for w in recwarn if "may have changed" in str(w.message)] == []
