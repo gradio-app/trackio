@@ -1507,6 +1507,67 @@ def _highlight_command(text: str) -> str:
     return f"\033[1m\033[38;5;208m{text}\033[0m"
 
 
+def _find_preview_port(port: int) -> int:
+    import socket  # noqa: PLC0415
+
+    if port == 0:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+    for candidate in range(port, port + TRY_NUM_PORTS):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("127.0.0.1", candidate))
+            except OSError:
+                continue
+            return candidate
+    raise LogbookError(
+        f"Cannot find empty port in range: {port}-{port + TRY_NUM_PORTS - 1}. "
+        "Pass --port to choose another starting port."
+    )
+
+
+def start_preview(
+    proj: Path, port: int = 7861, open_browser: bool = True
+) -> str:
+    import webbrowser  # noqa: PLC0415
+
+    write_site_files(proj)
+    actual_port = _find_preview_port(port)
+    root = logbook_root(proj)
+    log_path = root / ".serve.log"
+    cmd = [
+        sys.executable,
+        "-m",
+        "trackio.cli",
+        "logbook",
+        "serve",
+        str(proj.parent),
+        "--port",
+        str(actual_port),
+        "--no-browser",
+    ]
+    log = log_path.open("a", encoding="utf-8")
+    subprocess.Popen(
+        cmd,
+        cwd=str(proj.parent),
+        stdin=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    url = f"http://localhost:{actual_port}/"
+    print(_highlight_command(f"* Trackio logbook launched at: {url}"))
+    print(f"  Server logs: {log_path}")
+    if open_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+    return url
+
+
 def serve(
     path: str | Path | None = None, port: int = 7861, open_browser: bool = True
 ) -> None:

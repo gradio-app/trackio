@@ -1859,7 +1859,9 @@ def _handle_logbook(args):
                 if args.space_id:
                     print(f"Will publish to: {args.space_id}")
             if not args.no_serve:
-                lb.serve(port=args.port, open_browser=not args.no_browser)
+                lb.start_preview(
+                    proj, port=args.port, open_browser=not args.no_browser
+                )
         elif action == "run":
             proj = lb.require_project_dir()
             command = list(args.command or [])
