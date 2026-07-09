@@ -99,9 +99,13 @@
     navigateTo("run-detail");
   }
 
-  function copy(text, which) {
+  async function copy(text, which) {
     if (!text) return;
-    navigator.clipboard?.writeText(text);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      return;
+    }
     copied = which;
     if (copyTimer) clearTimeout(copyTimer);
     copyTimer = setTimeout(() => {

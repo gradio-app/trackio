@@ -4,7 +4,7 @@
   import {
     getProjectSummary,
     getRunSummary,
-    getRunArtifacts,
+    getRunArtifactCounts,
     deleteRun,
     renameRun,
   } from "../lib/api.js";
@@ -40,7 +40,26 @@
     runsData.some((r) => r.outputs > 0 || r.inputs > 0),
   );
 
+  let loadSeq = 0;
+
+  function artifactCountsFor(counts, record) {
+    let inputs = 0;
+    let outputs = 0;
+    for (const row of counts) {
+      const matches =
+        row.run_id != null
+          ? row.run_id === record.id
+          : row.run_name === record.name;
+      if (matches) {
+        inputs += row.input || 0;
+        outputs += row.output || 0;
+      }
+    }
+    return { inputs, outputs };
+  }
+
   async function loadRuns() {
+    const seq = ++loadSeq;
     if (!project) {
       runsData = [];
       return;
@@ -50,31 +69,22 @@
     try {
       const summary = await getProjectSummary(project);
       const runRecords = summary.runs || [];
-      const [summaries, runArtifacts] = await Promise.all([
+      const [summaries, artifactCounts] = await Promise.all([
         Promise.all(runRecords.map((run) => getRunSummary(project, run))),
-        Promise.all(
-          runRecords.map((run) =>
-            getRunArtifacts(project, run).catch(() => ({
-              input: [],
-              output: [],
-            })),
-          ),
-        ),
+        getRunArtifactCounts(project),
       ]);
-      const data = summaries.map((s, i) => ({
-        id: runRecords[i].id ?? runRecords[i].name,
+      if (seq !== loadSeq) return;
+      runsData = summaries.map((s, i) => ({
+        id: runRecords[i].id,
         name: runRecords[i].name,
         numSteps: s.num_logs || 0,
         lastStep: s.last_step || 0,
-        outputs: (runArtifacts[i].output || []).length,
-        inputs: (runArtifacts[i].input || []).length,
+        ...artifactCountsFor(artifactCounts, runRecords[i]),
       }));
-
-      runsData = data;
     } catch (e) {
-      console.error("Failed to load runs:", e);
+      if (seq === loadSeq) console.error("Failed to load runs:", e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
@@ -200,7 +210,8 @@
                 <div class="run-name-with-dot">
                   <span
                     class="run-dot"
-                    style:background={runColorMap[run.id] ?? "#9ca3af"}
+                    style:background={runColorMap[run.id ?? run.name] ??
+                      "#9ca3af"}
                   ></span>
                   <button class="link-btn" onclick={() => { setQueryParam("selected_run_id", run.id); setQueryParam("selected_run", run.name); navigateTo("run-detail"); }}>
                     {run.name}

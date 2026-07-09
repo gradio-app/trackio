@@ -668,6 +668,24 @@ export async function getRunArtifacts(_project, run) {
   return result;
 }
 
+export async function getRunArtifactCounts() {
+  const { links } = await getArtifactTables();
+  const byKey = new Map();
+  for (const link of links) {
+    const runId = link.run_id ?? null;
+    const runName = link.run_name ?? null;
+    const key = JSON.stringify([runId, runName]);
+    if (!byKey.has(key)) {
+      byKey.set(key, { run_id: runId, run_name: runName, input: 0, output: 0 });
+    }
+    const entry = byKey.get(key);
+    if (link.direction === "input" || link.direction === "output") {
+      entry[link.direction] += 1;
+    }
+  }
+  return [...byKey.values()];
+}
+
 export async function getArtifactConsumers(_project, versionId) {
   const { links } = await getArtifactTables();
   return links

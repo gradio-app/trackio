@@ -219,6 +219,11 @@ export async function getRunArtifacts(project, run) {
   return await callApi("/get_run_artifacts", params);
 }
 
+export async function getRunArtifactCounts(project) {
+  if (await isStaticMode()) return staticApi.getRunArtifactCounts(project);
+  return await callApi("/get_run_artifact_counts", { project });
+}
+
 export async function getArtifactConsumers(project, versionId) {
   if (await isStaticMode()) return staticApi.getArtifactConsumers(project, versionId);
   return await callApi("/get_artifact_consumers", {

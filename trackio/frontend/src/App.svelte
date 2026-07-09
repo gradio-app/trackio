@@ -355,6 +355,17 @@
     navbarHidden = getQueryParam("navbar") === "hidden";
   });
 
+  $effect(() => {
+    urlTick;
+    if (currentPage !== "artifacts" || !sidebarHidden) return;
+    const name = getQueryParam("selected_artifact");
+    const verParam = getQueryParam("selected_version");
+    if (!name || !verParam) return;
+    const version = parseInt(String(verParam).replace(/^v/i, ""), 10);
+    if (Number.isNaN(version)) return;
+    artifactSelection = { name, version };
+  });
+
   onMount(() => {
     const sidebarParam = getQueryParam("sidebar");
     if (sidebarParam === "hidden") {
@@ -564,7 +575,7 @@
     />
   {/if}
 
-  {#if currentPage === "artifacts"}
+  {#if currentPage === "artifacts" && !sidebarHidden}
     <ArtifactsSidebar
       {projects}
       bind:project={selectedProject}

@@ -104,7 +104,10 @@
       ?.scrollIntoView({ block: "nearest" });
   }
 
+  let loadSeq = 0;
+
   async function loadArtifacts() {
+    const seq = ++loadSeq;
     expandedTypes = {};
     expandedArtifacts = {};
     selection = null;
@@ -116,12 +119,15 @@
     }
     loading = true;
     try {
-      artifacts = await listArtifacts(project);
+      const result = await listArtifacts(project);
+      if (seq !== loadSeq) return;
+      artifacts = result;
     } catch {
+      if (seq !== loadSeq) return;
       artifacts = [];
       error = true;
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
     empty = !error && artifacts.length === 0;
     if (!error && artifacts.length) {
