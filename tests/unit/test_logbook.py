@@ -28,6 +28,27 @@ def test_create_logbook_scaffolds_index_and_site(proj):
     )
     assert manifest["title"] == "Test Logbook"
     assert manifest["agent_view_tokens"] >= 1
+    assert manifest["revision"]
+    assert manifest["updated_at"]
+
+
+def test_write_site_files_refreshes_generated_viewer_assets(proj):
+    viewer_js = logbook.logbook_root(proj) / "logbook.js"
+    viewer_js.write_text("stale", encoding="utf-8")
+    logbook.write_site_files(proj)
+    assert viewer_js.read_text(encoding="utf-8") != "stale"
+
+
+def test_write_site_files_updates_revision_after_logbook_changes(proj):
+    manifest = json.loads(
+        (logbook.logbook_root(proj) / "logbook.json").read_text(encoding="utf-8")
+    )
+    slug = logbook.ensure_page(proj, "Live")
+    logbook.add_markdown_cell(proj, slug, "new result")
+    updated = json.loads(
+        (logbook.logbook_root(proj) / "logbook.json").read_text(encoding="utf-8")
+    )
+    assert updated["revision"] != manifest["revision"]
 
 
 def test_ensure_page_adds_toc_row(proj):

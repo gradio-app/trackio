@@ -383,7 +383,9 @@ def _ensure_viewer_files(proj: Path) -> None:
     for fname in VIEWER_FILES:
         dest = root / fname
         src = VIEWER_DIR / fname
-        if not dest.exists() and src.is_file():
+        if not src.is_file():
+            continue
+        if not dest.exists() or dest.read_bytes() != src.read_bytes():
             shutil.copy2(src, dest)
 
 
@@ -395,6 +397,8 @@ def write_site_files(proj: Path) -> dict:
     _ensure_viewer_files(proj)
     manifest = build_manifest(proj)
     manifest["agent_view_tokens"] = _estimate_tokens(read_logbook(proj, manifest))
+    manifest["revision"] = str(time.time_ns())
+    manifest["updated_at"] = _now_iso()
     root = logbook_root(proj)
     index_html = root / "index.html"
     if index_html.is_file():
