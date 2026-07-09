@@ -32,12 +32,21 @@
     navigateTo("artifacts");
   }
 
-  $effect(() => {
+  let loadSeq = 0;
+
+  function syncParamsFromUrl() {
     runId = getQueryParam("selected_run_id");
     runName = getQueryParam("selected_run");
+  }
+
+  $effect(() => {
+    syncParamsFromUrl();
+    window.addEventListener("popstate", syncParamsFromUrl);
+    return () => window.removeEventListener("popstate", syncParamsFromUrl);
   });
 
   async function loadDetail() {
+    const seq = ++loadSeq;
     expandedArtifact = {};
     if (!project || (!runName && !runId)) {
       summary = null;
@@ -51,22 +60,25 @@
         project,
         runId ? { id: runId, name: runName } : runName,
       );
+      if (seq !== loadSeq) return;
       summary = loadedSummary;
       if (loadedSummary?.run) {
         runName = loadedSummary.run;
       }
     } catch (e) {
-      console.error("Failed to load run detail:", e);
+      if (seq === loadSeq) console.error("Failed to load run detail:", e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
     try {
-      runArtifacts = await getRunArtifacts(
+      const artifacts = await getRunArtifacts(
         project,
         runId ? { id: runId, name: runName } : runName,
       );
+      if (seq !== loadSeq) return;
+      runArtifacts = artifacts;
     } catch {
-      runArtifacts = { input: [], output: [] };
+      if (seq === loadSeq) runArtifacts = { input: [], output: [] };
     }
   }
 
