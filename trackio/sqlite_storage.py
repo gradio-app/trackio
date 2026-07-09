@@ -803,6 +803,13 @@ class SQLiteStorage:
 
     @staticmethod
     def get_run_records(project: str) -> list[dict[str, str | None]]:
+        """Every run in `project`, from metrics plus artifact link rows.
+
+        Link rows carry caller-supplied identities, so they only add a run
+        entry when they introduce a run unknown to metrics: rows whose run_id
+        matches a metrics run under a different name are ignored, and rows
+        with a NULL run_id count only when no other source knows their name.
+        """
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -820,8 +827,28 @@ class SQLiteStorage:
                     ]
                     if has_links:
                         sources.append(
-                            "SELECT run_id, run_name, created_at FROM "
-                            "run_artifact_links WHERE run_name IS NOT NULL"
+                            """
+                            SELECT run_id, run_name, created_at
+                            FROM run_artifact_links AS l
+                            WHERE run_name IS NOT NULL
+                              AND (
+                                (l.run_id IS NOT NULL AND NOT EXISTS (
+                                  SELECT 1 FROM metrics m
+                                  WHERE m.run_id = l.run_id
+                                    AND m.run_name IS NOT l.run_name
+                                ))
+                                OR (
+                                  l.run_id IS NULL
+                                  AND l.run_name NOT IN
+                                    (SELECT run_name FROM metrics)
+                                  AND l.run_name NOT IN (
+                                    SELECT run_name FROM run_artifact_links
+                                    WHERE run_id IS NOT NULL
+                                      AND run_name IS NOT NULL
+                                  )
+                                )
+                              )
+                            """
                         )
                     cursor.execute(
                         f"""
@@ -2974,7 +3001,9 @@ class SQLiteStorage:
 
     @staticmethod
     def delete_run(project: str, run: str, run_id: str | None = None) -> bool:
-        """Delete a run from the database (metrics, config, and system_metrics)."""
+        """Delete a run from the database (metrics, config, system_metrics,
+        alerts, traces, and artifact links). Artifact versions produced by the
+        run are kept but their producer reference is cleared."""
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
@@ -3030,6 +3059,32 @@ class SQLiteStorage:
                             f"DELETE FROM run_artifact_links WHERE {run_identity[0]} = ?",
                             (run_identity[1],),
                         )
+                        if run_identity[0] == "run_id" and run is not None:
+                            cursor.execute(
+                                "DELETE FROM run_artifact_links "
+                                "WHERE run_id IS NULL AND run_name = ?",
+                                (run,),
+                            )
+                    except sqlite3.OperationalError:
+                        pass
+                    try:
+                        producer_col = (
+                            "producer_run_id"
+                            if run_identity[0] == "run_id"
+                            else "producer_run_name"
+                        )
+                        cursor.execute(
+                            "UPDATE artifact_versions SET producer_run_id = NULL, "
+                            f"producer_run_name = NULL WHERE {producer_col} = ?",
+                            (run_identity[1],),
+                        )
+                        if run_identity[0] == "run_id" and run is not None:
+                            cursor.execute(
+                                "UPDATE artifact_versions SET producer_run_id = NULL, "
+                                "producer_run_name = NULL "
+                                "WHERE producer_run_id IS NULL AND producer_run_name = ?",
+                                (run,),
+                            )
                     except sqlite3.OperationalError:
                         pass
                     conn.commit()
@@ -3288,25 +3343,36 @@ class SQLiteStorage:
                         pass
 
                     try:
-                        cursor.execute(
-                            f"UPDATE run_artifact_links SET run_name = ? "
-                            f"WHERE {run_col} = ?",
-                            (new_name, run_value),
-                        )
+                        if run_col == "run_id":
+                            cursor.execute(
+                                "UPDATE run_artifact_links SET run_name = ? "
+                                "WHERE run_id = ? "
+                                "OR (run_id IS NULL AND run_name = ?)",
+                                (new_name, run_value, old_name),
+                            )
+                        else:
+                            cursor.execute(
+                                "UPDATE run_artifact_links SET run_name = ? "
+                                "WHERE run_name = ?",
+                                (new_name, run_value),
+                            )
                     except sqlite3.OperationalError:
                         pass
 
-                    producer_col = (
-                        "producer_run_id"
-                        if run_col == "run_id"
-                        else "producer_run_name"
-                    )
                     try:
-                        cursor.execute(
-                            f"UPDATE artifact_versions SET producer_run_name = ? "
-                            f"WHERE {producer_col} = ?",
-                            (new_name, run_value),
-                        )
+                        if run_col == "run_id":
+                            cursor.execute(
+                                "UPDATE artifact_versions SET producer_run_name = ? "
+                                "WHERE producer_run_id = ? "
+                                "OR (producer_run_id IS NULL AND producer_run_name = ?)",
+                                (new_name, run_value, old_name),
+                            )
+                        else:
+                            cursor.execute(
+                                "UPDATE artifact_versions SET producer_run_name = ? "
+                                "WHERE producer_run_name = ?",
+                                (new_name, run_value),
+                            )
                     except sqlite3.OperationalError:
                         pass
 
@@ -3330,6 +3396,10 @@ class SQLiteStorage:
         When the source DB supports run_ids, ``run_id`` uniquely identifies the
         run being moved; only that run is touched even when other runs share
         the same ``run`` name.
+
+        Artifacts stay in the source project: the run's artifact link rows are
+        deleted there and producer references on artifact versions are cleared,
+        so the moved run no longer appears in the source project's run list.
         """
         source_db_path = SQLiteStorage.get_project_db_path(project)
         if not source_db_path.exists():
@@ -3734,6 +3804,40 @@ class SQLiteStorage:
                                 )
                             except sqlite3.OperationalError:
                                 pass
+                        try:
+                            source_cursor.execute(
+                                f"DELETE FROM run_artifact_links WHERE {metrics_col} = ?",
+                                (metrics_val,),
+                            )
+                            if metrics_col == "run_id":
+                                source_cursor.execute(
+                                    "DELETE FROM run_artifact_links "
+                                    "WHERE run_id IS NULL AND run_name = ?",
+                                    (run,),
+                                )
+                        except sqlite3.OperationalError:
+                            pass
+                        try:
+                            producer_col = (
+                                "producer_run_id"
+                                if metrics_col == "run_id"
+                                else "producer_run_name"
+                            )
+                            source_cursor.execute(
+                                "UPDATE artifact_versions SET producer_run_id = NULL, "
+                                f"producer_run_name = NULL WHERE {producer_col} = ?",
+                                (metrics_val,),
+                            )
+                            if metrics_col == "run_id":
+                                source_cursor.execute(
+                                    "UPDATE artifact_versions "
+                                    "SET producer_run_id = NULL, producer_run_name = NULL "
+                                    "WHERE producer_run_id IS NULL "
+                                    "AND producer_run_name = ?",
+                                    (run,),
+                                )
+                        except sqlite3.OperationalError:
+                            pass
                         source_conn.commit()
 
                         return True
@@ -4639,51 +4743,28 @@ class SQLiteStorage:
     @staticmethod
     def get_artifacts(project: str) -> list[dict]:
         """List every artifact in `project` with its latest version, total
-        version count, current aliases, and the size of the latest version."""
-        SQLiteStorage._ensure_hub_loaded()
-        db_path = SQLiteStorage.get_project_db_path(project)
-        if not db_path.exists():
-            return []
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            artifacts = cursor.execute(
-                "SELECT id, name, type, description, created_at FROM artifacts "
-                "ORDER BY name"
-            ).fetchall()
-            result: list[dict] = []
-            for a in artifacts:
-                artifact_id = int(a["id"])
-                latest = cursor.execute(
-                    """SELECT version, size_bytes FROM artifact_versions
-                    WHERE artifact_id = ? ORDER BY version DESC LIMIT 1""",
-                    (artifact_id,),
-                ).fetchone()
-                num_versions = cursor.execute(
-                    "SELECT COUNT(*) AS c FROM artifact_versions WHERE artifact_id = ?",
-                    (artifact_id,),
-                ).fetchone()["c"]
-                alias_rows = cursor.execute(
-                    "SELECT alias FROM artifact_aliases WHERE artifact_id = ? "
-                    "ORDER BY alias",
-                    (artifact_id,),
-                ).fetchall()
-                result.append(
-                    {
-                        "name": a["name"],
-                        "type": a["type"],
-                        "description": a["description"],
-                        "num_versions": int(num_versions),
-                        "latest_version": (
-                            int(latest["version"]) if latest is not None else None
-                        ),
-                        "size_bytes": (
-                            int(latest["size_bytes"]) if latest is not None else None
-                        ),
-                        "aliases": [r["alias"] for r in alias_rows],
-                        "created_at": a["created_at"],
-                    }
-                )
-            return result
+        version count, current aliases, and the size of the latest version.
+        A per-artifact projection of `list_artifacts`, ordered by name."""
+        result: list[dict] = []
+        for art in SQLiteStorage.list_artifacts(project):
+            versions = art["versions"]
+            latest = versions[0] if versions else None
+            result.append(
+                {
+                    "name": art["name"],
+                    "type": art["type"],
+                    "description": art["description"],
+                    "num_versions": art["num_versions"],
+                    "latest_version": art["latest_version"],
+                    "size_bytes": latest["size_bytes"] if latest else None,
+                    "aliases": sorted(
+                        {alias for v in versions for alias in v["aliases"]}
+                    ),
+                    "created_at": art["created_at"],
+                }
+            )
+        result.sort(key=lambda a: a["name"])
+        return result
 
     @staticmethod
     def get_run_artifacts(
@@ -4708,6 +4789,12 @@ class SQLiteStorage:
                 col, val = identity
             if val is None:
                 return empty
+            if col == "run_id" and run_name is not None:
+                where = "(ral.run_id = ? OR (ral.run_id IS NULL AND ral.run_name = ?))"
+                params: tuple = (val, run_name)
+            else:
+                where = f"ral.{col} = ?"
+                params = (val,)
             cursor = conn.cursor()
             rows = cursor.execute(
                 f"""SELECT ral.direction, ral.created_at,
@@ -4716,9 +4803,9 @@ class SQLiteStorage:
                 FROM run_artifact_links ral
                 JOIN artifact_versions av ON av.id = ral.artifact_version_id
                 JOIN artifacts a ON a.id = av.artifact_id
-                WHERE ral.{col} = ?
+                WHERE {where}
                 ORDER BY ral.created_at""",
-                (val,),
+                params,
             ).fetchall()
             result: dict[str, list[dict]] = {"input": [], "output": []}
             for row in rows:
@@ -4733,6 +4820,40 @@ class SQLiteStorage:
                     }
                 )
             return result
+
+    @staticmethod
+    def get_run_artifact_counts(project: str) -> list[dict]:
+        """Input/output artifact link counts grouped by (run_id, run_name) for
+        every run in `project`, in a single query. Returns [] when the DB or
+        the link table doesn't exist."""
+        SQLiteStorage._ensure_hub_loaded()
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        with SQLiteStorage._get_connection(db_path) as conn:
+            try:
+                rows = conn.execute(
+                    """SELECT run_id, run_name, direction, COUNT(*) AS n
+                    FROM run_artifact_links
+                    GROUP BY run_id, run_name, direction"""
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return []
+            counts: dict[tuple, dict] = {}
+            for row in rows:
+                key = (row["run_id"], row["run_name"])
+                entry = counts.setdefault(
+                    key,
+                    {
+                        "run_id": row["run_id"],
+                        "run_name": row["run_name"],
+                        "input": 0,
+                        "output": 0,
+                    },
+                )
+                if row["direction"] in ("input", "output"):
+                    entry[row["direction"]] += int(row["n"])
+            return list(counts.values())
 
     @staticmethod
     def get_artifact_consumers(project: str, version_id: int) -> list[dict]:
@@ -4781,9 +4902,10 @@ class SQLiteStorage:
                     FROM artifacts ORDER BY type, name"""
                 ).fetchall()
                 version_rows = cursor.execute(
-                    """SELECT id, artifact_id, version, manifest, manifest_digest,
-                           metadata, size_bytes, producer_run_id,
-                           producer_run_name, created_at
+                    """SELECT id, artifact_id, version,
+                           json_array_length(manifest) AS num_files,
+                           manifest_digest, metadata, size_bytes,
+                           producer_run_id, producer_run_name, created_at
                     FROM artifact_versions
                     ORDER BY artifact_id, version DESC"""
                 ).fetchall()
@@ -4807,7 +4929,7 @@ class SQLiteStorage:
                         "version": int(row["version"]),
                         "aliases": aliases_by_version.get(int(row["id"]), []),
                         "size_bytes": int(row["size_bytes"]),
-                        "num_files": len(orjson.loads(row["manifest"])),
+                        "num_files": int(row["num_files"]),
                         "manifest_digest": row["manifest_digest"],
                         "metadata": (
                             orjson.loads(row["metadata"])
