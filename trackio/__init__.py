@@ -650,6 +650,14 @@ def init(
     context_vars.current_run.set(run)
     globals()["config"] = run.config
 
+    if space_id is not None or server_url is None:
+        try:
+            from trackio import logbook as _logbook  # noqa: PLC0415
+
+            _logbook.auto_note_dashboard(project, space_id=space_id)
+        except Exception:
+            pass
+
     if _should_embed_local:
         try:
             show(project=project, open_browser=False, block_thread=False)

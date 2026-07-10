@@ -6,6 +6,11 @@ import pytest
 from trackio import logbook
 
 
+@pytest.fixture(autouse=True)
+def enable_autonote(monkeypatch):
+    monkeypatch.setenv("TRACKIO_LOGBOOK_AUTONOTE", "1")
+
+
 @pytest.fixture
 def proj(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -197,6 +202,246 @@ def test_run_and_log_captures_command_and_output(proj):
     text = logbook.read_logbook(proj)
     assert "out-marker" in text
     assert "exit 0" in text
+
+
+def _artifact_cells(proj, page):
+    outline = logbook.read_page_outline(proj, page)
+    return [c for c in outline["cells"] if c["type"] == "artifact"]
+
+
+def _page_text(proj, page):
+    outline = logbook.read_page_outline(proj, page)
+    return (logbook.logbook_root(proj) / outline["file"]).read_text(encoding="utf-8")
+
+
+def test_run_and_log_records_created_artifact_file(proj):
+    logbook.ensure_page(proj, "Runs")
+    exit_code = logbook.run_and_log(
+        proj,
+        [sys.executable, "-c", "open('model.pt','wb').write(b'x'*2048)"],
+        page="Runs",
+    )
+    assert exit_code == 0
+    cells = _artifact_cells(proj, "Runs")
+    assert len(cells) == 1
+    assert cells[0]["path"] == "model.pt"
+    assert cells[0]["artifact_type"] == "model"
+    assert cells[0]["local"] is False
+    assert "local file" in cells[0]["preview"]
+    text = _page_text(proj, "Runs")
+    assert "**📦 Artifact** `model.pt`" in text
+    assert "trackio-artifact://" not in text
+    assert not logbook.read_metadata(proj).get("local_artifacts")
+
+
+def test_run_and_log_records_modified_file(proj, tmp_path):
+    (tmp_path / "data.csv").write_text("a,b\n", encoding="utf-8")
+    logbook.ensure_page(proj, "Runs")
+    logbook.run_and_log(
+        proj,
+        [sys.executable, "-c", "open('data.csv','a').write('1,2\\n'*100)"],
+        page="Runs",
+    )
+    cells = _artifact_cells(proj, "Runs")
+    assert len(cells) == 1
+    assert cells[0]["path"] == "data.csv"
+    assert cells[0]["artifact_type"] == "dataset"
+
+
+def test_run_and_log_capture_disabled_by_flag_and_env(proj, monkeypatch):
+    logbook.ensure_page(proj, "Runs")
+    command = [sys.executable, "-c", "open('a.pt','wb').write(b'x'*100)"]
+    logbook.run_and_log(proj, command, page="Runs", capture_artifacts=False)
+    assert _artifact_cells(proj, "Runs") == []
+    monkeypatch.setenv("TRACKIO_LOGBOOK_AUTONOTE", "0")
+    logbook.run_and_log(proj, command, page="Runs")
+    assert _artifact_cells(proj, "Runs") == []
+
+
+def test_run_and_log_caps_auto_artifact_cells(proj):
+    logbook.ensure_page(proj, "Runs")
+    script = (
+        "import pathlib\n"
+        "for i in range(12):\n"
+        "    pathlib.Path(f'out_{i}.npy').write_bytes(b'x'*(100+i))\n"
+    )
+    logbook.run_and_log(proj, [sys.executable, "-c", script], page="Runs")
+    cells = _artifact_cells(proj, "Runs")
+    assert len(cells) == logbook._MAX_AUTO_ARTIFACT_CELLS
+    paths = {c["path"] for c in cells}
+    assert "out_11.npy" in paths
+    assert "out_0.npy" not in paths
+    assert "12 output files detected" in _page_text(proj, "Runs")
+
+
+def test_run_and_log_captures_artifacts_on_nonzero_exit(proj):
+    logbook.ensure_page(proj, "Runs")
+    exit_code = logbook.run_and_log(
+        proj,
+        [
+            sys.executable,
+            "-c",
+            "import sys; open('ckpt.safetensors','wb').write(b'x'*64); sys.exit(3)",
+        ],
+        page="Runs",
+    )
+    assert exit_code == 3
+    cells = _artifact_cells(proj, "Runs")
+    assert len(cells) == 1
+    assert cells[0]["path"] == "ckpt.safetensors"
+
+
+def test_run_and_log_skips_hidden_dirs_and_empty_files(proj):
+    logbook.ensure_page(proj, "Runs")
+    script = (
+        "import pathlib\n"
+        "pathlib.Path('.cache').mkdir()\n"
+        "pathlib.Path('.cache/x.pt').write_bytes(b'x'*100)\n"
+        "pathlib.Path('empty.pt').touch()\n"
+    )
+    logbook.run_and_log(proj, [sys.executable, "-c", script], page="Runs")
+    assert _artifact_cells(proj, "Runs") == []
+
+
+def test_diff_output_files_new_changed_unchanged():
+    before = {"a.pt": (1, 10), "b.pt": (1, 20), "c.pt": (1, 30)}
+    after = {"a.pt": (1, 10), "b.pt": (2, 25), "d.pt": (1, 5), "e.pt": (1, 0)}
+    assert logbook._diff_output_files(before, after) == [
+        ("b.pt", 25),
+        ("d.pt", 5),
+    ]
+
+
+def test_artifact_display_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    inside = tmp_path / "checkpoints" / "model.pt"
+    assert logbook._artifact_display_path(str(inside)) == "checkpoints/model.pt"
+    outside = tmp_path.parent / "elsewhere.pt"
+    assert logbook._artifact_display_path(str(outside)) == outside.as_posix()
+
+
+def _dashboard_cells(proj, page):
+    outline = logbook.read_page_outline(proj, page)
+    return [c for c in outline["cells"] if c["type"] == "dashboard"]
+
+
+def test_add_dashboard_cell_local(proj):
+    slug = logbook.ensure_page(proj, "mnist")
+    logbook.add_dashboard_cell(proj, slug, "mnist")
+    text = _page_text(proj, "mnist")
+    assert "trackio-local-dashboard://mnist" in text
+    assert logbook.read_metadata(proj)["local_dashboards"] == {"mnist": None}
+    cells = _dashboard_cells(proj, "mnist")
+    assert len(cells) == 1
+    assert cells[0]["project"] == "mnist"
+    assert cells[0]["local"] is True
+    assert cells[0]["link"] is None
+    assert "mnist" in cells[0]["preview"]
+
+
+def test_add_dashboard_cell_space(proj):
+    slug = logbook.ensure_page(proj, "mnist")
+    logbook.add_dashboard_cell(proj, slug, "mnist", space_id="me/mnist")
+    cells = _dashboard_cells(proj, "mnist")
+    assert cells[0]["local"] is False
+    assert cells[0]["link"] == "https://huggingface.co/spaces/me/mnist"
+    assert "local_dashboards" not in logbook.read_metadata(proj)
+
+
+def test_auto_note_dashboard_dedupes(proj):
+    logbook.auto_note_dashboard("mnist")
+    logbook.auto_note_dashboard("mnist")
+    logbook.auto_note_dashboard("mnist", space_id="me/mnist")
+    assert len(_dashboard_cells(proj, "mnist")) == 1
+    logbook.auto_note_dashboard("cifar")
+    assert len(_dashboard_cells(proj, "cifar")) == 1
+
+
+def test_auto_note_dashboard_disabled_or_no_logbook(proj, monkeypatch, tmp_path):
+    monkeypatch.setenv("TRACKIO_LOGBOOK_AUTONOTE", "0")
+    logbook.auto_note_dashboard("mnist")
+    assert logbook._page_file_for_slug(proj, "mnist") is None
+    monkeypatch.setenv("TRACKIO_LOGBOOK_AUTONOTE", "1")
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    monkeypatch.chdir(bare)
+    logbook.auto_note_dashboard("mnist")
+
+
+def test_init_creates_dashboard_cell_immediately(temp_dir, proj):
+    import trackio
+
+    trackio.init(project="p1", name="r1")
+    assert len(_dashboard_cells(proj, "p1")) == 1
+    trackio.finish()
+    trackio.init(project="p1", name="r2")
+    trackio.finish()
+    outline = logbook.read_page_outline(proj, "p1")
+    assert len([c for c in outline["cells"] if c["type"] == "dashboard"]) == 1
+    assert not [c for c in outline["cells"] if (c["title"] or "").startswith("Run:")]
+
+
+def test_promote_rewrites_dashboard_body(proj, monkeypatch):
+    import trackio as trackio_module
+
+    slug = logbook.ensure_page(proj, "mnist")
+    logbook.add_dashboard_cell(proj, slug, "mnist")
+    monkeypatch.setattr(trackio_module, "sync", lambda **kwargs: None)
+    logbook._promote_local_deps(proj, "me", private=False)
+    cells = _dashboard_cells(proj, "mnist")
+    assert cells[0]["local"] is False
+    assert cells[0]["link"] == "https://huggingface.co/spaces/me/mnist"
+
+
+def test_preview_handler_dashboard_info(proj, monkeypatch):
+    import http.client
+    import socketserver
+    import threading
+
+    calls = []
+
+    def fake_show(**kwargs):
+        calls.append(kwargs)
+        return (None, "http://127.0.0.1:9999/", None, "http://127.0.0.1:9999/?token=s")
+
+    import trackio as trackio_module
+
+    monkeypatch.setattr(trackio_module, "show", fake_show)
+    handler_cls = logbook._make_preview_handler(logbook._local_dashboard_launcher())
+    import functools
+
+    handler = functools.partial(handler_cls, directory=str(logbook.logbook_root(proj)))
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as httpd:
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for _ in range(2):
+                conn = http.client.HTTPConnection("127.0.0.1", port)
+                conn.request("GET", "/dashboard-info.json")
+                resp = conn.getresponse()
+                payload = json.loads(resp.read())
+                assert resp.status == 200
+                assert payload == {"url": "http://127.0.0.1:9999"}
+                assert "no-store" in resp.getheader("Cache-Control", "")
+                conn.close()
+        finally:
+            httpd.shutdown()
+    assert len(calls) == 1
+
+
+def test_cli_cell_dashboard(proj, monkeypatch):
+    from trackio import cli
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["trackio", "logbook", "cell", "dashboard", "mnist", "--page", "Demo"],
+    )
+    cli.main()
+    cells = _dashboard_cells(proj, "demo")
+    assert len(cells) == 1
+    assert cells[0]["project"] == "mnist"
 
 
 def test_resolve_read_source_local_and_invalid(proj, tmp_path):
