@@ -1319,11 +1319,6 @@
     if (!cells.length) return;
     const deck = document.createElement("section");
     deck.className = "pinned-notes";
-    const heading = document.createElement("div");
-    heading.className = "pinned-notes-heading";
-    heading.innerHTML = "<h2>Pinned notes</h2>";
-    deck.appendChild(heading);
-
     const list = document.createElement("div");
     list.className = "pinned-notes-list";
     cells.forEach(({ meta, body }) => {
@@ -1515,6 +1510,7 @@
         clearPageCache();
         document.title = MANIFEST.title + " · Trackio Logbook";
         document.getElementById("book-title").textContent = MANIFEST.title;
+        document.getElementById("book-head").setAttribute("aria-label", MANIFEST.title);
         buildTree();
         renderLogbook({ preserveScroll: true });
       } catch (e) {}
@@ -1610,6 +1606,7 @@
     MANIFEST = await fetchManifest();
     document.title = MANIFEST.title + " · Trackio Logbook";
     document.getElementById("book-title").textContent = MANIFEST.title;
+    document.getElementById("book-head").setAttribute("aria-label", MANIFEST.title);
     document.getElementById("book-head").addEventListener("click", () => {
       const target = "#/" + MANIFEST.root.slug;
       if (location.hash === target) scrollToHash();
