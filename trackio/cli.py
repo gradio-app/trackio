@@ -1857,6 +1857,7 @@ def _handle_logbook(args):
     action = args.logbook_action
     try:
         if action == "open":
+            print("Warning: Trackio Logbook is an experimental feature.")
             proj = lb.find_project_dir()
             if proj is not None:
                 if args.space_id:
