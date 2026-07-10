@@ -957,48 +957,6 @@ table.board tr.linked-row:hover a {
   color: var(--muted);
 }
 
-/* ---- logbook summary stats ---- */
-.logbook-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin: 0 0 28px;
-}
-.stat-tile {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: var(--radius);
-  padding: 18px 22px;
-  transition: border-color 0.12s, box-shadow 0.12s;
-}
-.stat-tile:hover {
-  border-color: rgba(249, 115, 22, 0.45);
-  box-shadow: 0 3px 12px rgba(31, 41, 55, 0.06);
-}
-.stat-icon {
-  font-size: 26px;
-  line-height: 1;
-}
-.stat-num {
-  font-family: var(--mono);
-  font-size: 32px;
-  font-weight: 600;
-  line-height: 1.1;
-  color: var(--accent-strong);
-}
-.stat-label {
-  font-size: 13px;
-  color: var(--muted);
-}
-@media (max-width: 560px) {
-  .logbook-stats {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* ---- inline resource chips ---- */
 #page .res-chip {
   display: inline-flex;
