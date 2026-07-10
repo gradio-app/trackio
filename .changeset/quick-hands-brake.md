@@ -1,5 +1,5 @@
 ---
-"trackio": minor
+"trackio": patch
 ---
 
 feat:Warn that logbook open is experimental
