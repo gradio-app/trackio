@@ -19,7 +19,15 @@ METADATA_FILE = "metadata.json"
 SCHEMA_VERSION = 1
 ROOT_SLUG = "index"
 VIEWER_DIR = Path(__file__).parent / "frontend_templates" / "logbook"
-VIEWER_FILES = ["index.html", "logbook.css", "logbook.js", "trackio-logo.png"]
+VIEWER_FILES = [
+    "index.html",
+    "logbook.css",
+    "logbook.js",
+    "trackio-logo.png",
+    "trackio-logo-light.png",
+    "trackio-wordmark-dark.png",
+    "bucket-icon.svg",
+]
 
 TOC_HEADING = "## Pages"
 TOC_HEADER = "| Page |"
