@@ -53,6 +53,99 @@ https://github.com/user-attachments/assets/2683cf27-7520-4fff-9ee9-bdc08a8ca404
 
 - **Free**: Everything here, including hosting on Hugging Face, is free!
 
+### Trackio vs. Weights & Biases
+
+Trackio covers the core experiment-tracking workflow while staying lightweight, local-first, and easy to self-host. W&B offers a broader enterprise platform with additional orchestration and governance features.
+
+<table>
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th align="center">Trackio</th>
+      <th align="center">Weights &amp; Biases</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Metrics, configs, and run tracking</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Live dashboards and run comparison</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Images, audio, and video</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Tables</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Automatic system metrics</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Alerts and webhooks</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Offline and local-first logging</td>
+      <td align="center">✅</td>
+      <td align="center">✅ Offline mode</td>
+    </tr>
+    <tr>
+      <td>Hosted dashboards and sharing</td>
+      <td align="center">✅ Hugging Face Spaces</td>
+      <td align="center">✅ W&amp;B Cloud</td>
+    </tr>
+    <tr>
+      <td>Self-hosting</td>
+      <td align="center">✅</td>
+      <td align="center">✅ Enterprise</td>
+    </tr>
+    <tr>
+      <td>Versioned artifacts and lineage</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Experiment reports</td>
+      <td align="center">✅ Markdown reports</td>
+      <td align="center">✅ Interactive reports</td>
+    </tr>
+    <tr>
+      <td>Hyperparameter sweeps</td>
+      <td align="center">❌</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Model registry</td>
+      <td align="center">❌</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Enterprise RBAC and governance</td>
+      <td align="center">❌</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td><mark><strong>💸 Is it free?</strong></mark></td>
+      <td align="center"><mark><strong>✅ YES</strong></mark></td>
+      <td align="center"><mark><strong>❌ No!</strong></mark></td>
+    </tr>
+  </tbody>
+</table>
+
+<sub>W&amp;B offers a <a href="https://site.wandb.ai/pricing/">free Personal tier</a>, but also has paid plans and reserves some capabilities for paid tiers. Trackio is <a href="LICENSE">open source</a>, and its documented local and Hugging Face Spaces workflows are free.</sub>
+
 Trackio is designed to be lightweight and _forkable_: **Python** for the backend and API, **Svelte 5** for the dashboard, so developers can fork the repository and extend either side.
 
 ## Installation
