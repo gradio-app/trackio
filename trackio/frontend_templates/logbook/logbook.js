@@ -404,7 +404,14 @@
 
   function renderStandaloneUrl(url) {
     if (IMG_URL.test(url) || IMG_PATH.test(url)) return renderImage(url);
-    if (classifyResource(url)) return null;
+    const item = classifyResource(url);
+    if (item) {
+      const marker = document.createElement("span");
+      marker.className = "resource-anchor";
+      marker.dataset.resUrl = item.url;
+      marker.setAttribute("aria-hidden", "true");
+      return marker;
+    }
     const p = document.createElement("p");
     p.innerHTML = inline(url);
     return p;
@@ -963,13 +970,13 @@
     return { added, confirmed };
   }
 
-  function chipifyBareIds(ids) {
+  function chipifyBareIds(ids, container) {
     if (!ids.length) return;
     const escaped = ids.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     const pattern = new RegExp("(" + escaped.join("|") + ")");
     const splitter = new RegExp(pattern.source, "g");
-    document
-      .querySelectorAll("#page .cell.markdown .cell-body")
+    container
+      .querySelectorAll(".cell.markdown .cell-body")
       .forEach((body) => {
         const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
           acceptNode(node) {
@@ -1010,8 +1017,9 @@
 
   let RAIL_TOKEN = 0;
 
-  function renderRail(md) {
-    const token = ++RAIL_TOKEN;
+  function renderRail(md, body, rail) {
+    const token = String(++RAIL_TOKEN);
+    rail.dataset.renderToken = token;
     const scanText = md.replace(
       /(`{3,4}|~{3,4})(html|raw)[^\n]*\n[\s\S]*?\n\1/g,
       " "
@@ -1023,32 +1031,21 @@
       if (!groups.has(item.kind)) groups.set(item.kind, new Map());
       groups.get(item.kind).set(item.url, item);
     });
-    paintRail(groups);
+    paintRail(groups, body, rail);
     detectBareModelIds(scanText, groups)
       .then((result) => {
-        if (token !== RAIL_TOKEN) return;
-        if (result.added) paintRail(groups);
-        chipifyBareIds(result.confirmed);
+        if (rail.dataset.renderToken !== token) return;
+        chipifyBareIds(result.confirmed, body);
+        if (result.added) paintRail(groups, body, rail);
       })
       .catch(() => {});
   }
 
-  function paintRail(groups) {
-    const rail = document.getElementById("rail");
+  function paintRail(groups, body, rail) {
     rail.innerHTML = "";
-    let any = false;
     RESOURCE_SECTIONS.forEach(([kind, label, icon]) => {
       const group = groups.get(kind);
       if (!group || !group.size) return;
-      any = true;
-      const sec = document.createElement("div");
-      sec.className = "rail-section";
-      const head = document.createElement("div");
-      head.className = "rail-head";
-      head.innerHTML =
-        `<span class="rail-ico">${icon}</span>` +
-        `${esc(label)}<span class="rail-count">${group.size}</span>`;
-      sec.appendChild(head);
       group.forEach((item) => {
         const el = document.createElement(item.local ? "div" : "a");
         el.className = item.local ? "rail-item rail-local" : "rail-item";
@@ -1062,14 +1059,51 @@
           ? "local · publish to share"
           : RESOURCE_DESC[kind];
         el.innerHTML =
+          `<div class="rail-kind"><span>${icon}</span>${esc(label.replace(/s$/, ""))}</div>` +
           `<div class="rail-title">${esc(item.id)}</div>` +
           `<div class="rail-meta">${esc(desc)}</div>`;
-        sec.appendChild(el);
-        fillRailMeta(item, el).catch(() => {});
+        rail.appendChild(el);
+        fillRailMeta(item, el)
+          .catch(() => {})
+          .finally(() => scheduleRailPosition(body, rail));
       });
-      rail.appendChild(sec);
     });
-    rail.hidden = !any;
+    rail.hidden = !rail.childElementCount;
+    scheduleRailPosition(body, rail);
+  }
+
+  function resourceAnchor(body, url) {
+    return body.querySelector(`[data-res-url="${CSS.escape(url)}"]`);
+  }
+
+  function positionRail(body, rail) {
+    if (rail.hidden || !rail.isConnected) return;
+    const bodyRect = body.getBoundingClientRect();
+    const items = Array.from(rail.querySelectorAll(".rail-item")).map((el, index) => {
+      const anchor = resourceAnchor(body, el.dataset.resUrl);
+      return {
+        el,
+        index,
+        desired: anchor
+          ? Math.max(0, anchor.getBoundingClientRect().top - bodyRect.top)
+          : 0,
+      };
+    });
+    items.sort((a, b) => a.desired - b.desired || a.index - b.index);
+    let cursor = 0;
+    items.forEach(({ el, desired }) => {
+      const top = Math.max(desired, cursor);
+      el.style.top = `${top}px`;
+      cursor = top + el.offsetHeight + 10;
+    });
+    rail.style.minHeight = `${Math.max(body.offsetHeight, cursor)}px`;
+  }
+
+  function scheduleRailPosition(body, rail) {
+    cancelAnimationFrame(Number(rail.dataset.positionFrame || 0));
+    rail.dataset.positionFrame = String(
+      requestAnimationFrame(() => positionRail(body, rail))
+    );
   }
 
   function renderTrackioSpaceEmbed(el, url, id) {
@@ -1225,35 +1259,80 @@
     return await (await fetch("./logbook.json" + suffix, { cache: "no-store" })).json();
   }
 
-  async function loadPage(slug, opts = {}) {
-    const node = findNode(MANIFEST.root, slug) || MANIFEST.root;
+  async function fetchPage(node) {
+    if (PAGE_CACHE[node.file]) return PAGE_CACHE[node.file];
+    try {
+      const suffix = isLocalPreview()
+        ? `?rev=${encodeURIComponent(MANIFEST.revision || "")}`
+        : "";
+      const r = await fetch("./" + node.file + suffix, { cache: "no-store" });
+      PAGE_CACHE[node.file] = await r.text();
+    } catch (e) {
+      PAGE_CACHE[node.file] = "# " + node.title + "\n\n_Could not load section._";
+    }
+    return PAGE_CACHE[node.file];
+  }
+
+  function allNodes() {
+    const nodes = [];
+    flattenTree(MANIFEST.root, 0, nodes);
+    return nodes.map(({ node }) => node);
+  }
+
+  const RAIL_OBSERVERS = [];
+
+  async function renderLogbook(opts = {}) {
+    const scrollY = window.scrollY;
     const page = document.getElementById("page");
+    RAIL_OBSERVERS.splice(0).forEach((observer) => observer.disconnect());
     page.innerHTML = "";
-    if (!PAGE_CACHE[node.file]) {
-      try {
-        const suffix = isLocalPreview() ? `?rev=${encodeURIComponent(MANIFEST.revision || "")}` : "";
-        const r = await fetch("./" + node.file + suffix, { cache: "no-store" });
-        PAGE_CACHE[node.file] = await r.text();
-      } catch (e) {
-        PAGE_CACHE[node.file] = "# " + node.title + "\n\n_Could not load page._";
+    const nodes = allNodes();
+    const markdown = await Promise.all(nodes.map(fetchPage));
+    nodes.forEach((node, index) => {
+      const section = document.createElement("section");
+      section.className = "page-section";
+      section.id = "/" + node.slug;
+      section.dataset.slug = node.slug;
+
+      const layout = document.createElement("div");
+      layout.className = "page-layout";
+      const body = document.createElement("div");
+      body.className = "page-body";
+      const rail = document.createElement("aside");
+      rail.className = "context-rail";
+      rail.setAttribute("aria-label", `Resources for ${node.title}`);
+
+      renderMarkdown(markdown[index], body);
+      if (node.slug === MANIFEST.root.slug) {
+        section.classList.add("book-intro");
+        const hint = buildAgentHint();
+        const h1 = body.querySelector("h1");
+        if (h1 && h1.parentNode === body) {
+          body.insertBefore(hint, h1.nextSibling);
+        } else {
+          body.prepend(hint);
+        }
       }
-    }
-    renderMarkdown(PAGE_CACHE[node.file], page);
-    if (node.slug === MANIFEST.root.slug) {
-      const hint = buildAgentHint();
-      const h1 = page.querySelector("h1");
-      if (h1 && h1.parentNode === page) {
-        page.insertBefore(hint, h1.nextSibling);
+      layout.appendChild(body);
+      layout.appendChild(rail);
+      section.appendChild(layout);
+      page.appendChild(section);
+      renderRail(markdown[index], body, rail);
+      if (window.ResizeObserver) {
+        const observer = new ResizeObserver(() => scheduleRailPosition(body, rail));
+        observer.observe(body);
+        observer.observe(rail);
+        RAIL_OBSERVERS.push(observer);
+      }
+    });
+    requestAnimationFrame(() => {
+      if (opts.preserveScroll) {
+        window.scrollTo(0, scrollY);
       } else {
-        page.prepend(hint);
+        scrollToHash({ behavior: "auto" });
       }
-    }
-    renderRail(PAGE_CACHE[node.file]);
-    highlight(node.slug);
-    if (!opts.preserveScroll) {
-      document.getElementById("content").scrollTo(0, 0);
-      window.scrollTo(0, 0);
-    }
+      updateActiveSection();
+    });
   }
 
   function setupResourceHover() {
@@ -1261,18 +1340,16 @@
       const el = e.target.closest && e.target.closest("[data-res-url]");
       if (!el || el.classList.contains("rail-item")) return;
       const url = el.getAttribute("data-res-url");
-      document.querySelectorAll("#rail [data-res-url]").forEach((n) => {
+      const section = el.closest(".page-section");
+      const scope = section || document;
+      scope.querySelectorAll(".context-rail [data-res-url]").forEach((n) => {
         n.classList.toggle("res-hl", n.getAttribute("data-res-url") === url);
       });
-      const railItem = document.querySelector(
-        `#rail [data-res-url="${CSS.escape(url)}"]`
-      );
-      if (railItem) railItem.scrollIntoView({ block: "nearest" });
     });
     document.addEventListener("mouseout", (e) => {
       const el = e.target.closest && e.target.closest("[data-res-url]");
       if (!el || el.classList.contains("rail-item")) return;
-      document.querySelectorAll("#rail .res-hl").forEach((n) => {
+      document.querySelectorAll(".context-rail .res-hl").forEach((n) => {
         n.classList.remove("res-hl");
       });
     });
@@ -1314,9 +1391,42 @@
     return div;
   }
 
-  function route(opts = {}) {
+  function currentSlug() {
     const slug = (location.hash || "").replace(/^#\//, "") || MANIFEST.root.slug;
-    loadPage(slug, opts);
+    return findNode(MANIFEST.root, slug) ? slug : MANIFEST.root.slug;
+  }
+
+  function scrollToHash(opts = {}) {
+    const slug = currentSlug();
+    if (!location.hash) {
+      window.scrollTo({ top: 0, behavior: opts.behavior || "auto" });
+      highlight(slug);
+      return;
+    }
+    const section = document.getElementById("/" + slug);
+    if (section) section.scrollIntoView({ behavior: opts.behavior || "smooth" });
+    highlight(slug);
+  }
+
+  let SCROLL_FRAME = 0;
+  function updateActiveSection() {
+    cancelAnimationFrame(SCROLL_FRAME);
+    SCROLL_FRAME = requestAnimationFrame(() => {
+      const sections = Array.from(document.querySelectorAll(".page-section"));
+      if (!sections.length) return;
+      const marker = Math.min(window.innerHeight * 0.28, 180);
+      let active = sections[0];
+      sections.forEach((section) => {
+        if (section.getBoundingClientRect().top <= marker) active = section;
+      });
+      if (
+        window.innerHeight + window.scrollY >=
+        document.documentElement.scrollHeight - 2
+      ) {
+        active = sections[sections.length - 1];
+      }
+      highlight(active.dataset.slug);
+    });
   }
 
   function startLiveReload() {
@@ -1330,7 +1440,7 @@
         document.title = MANIFEST.title + " · Trackio Logbook";
         document.getElementById("book-title").textContent = MANIFEST.title;
         buildTree();
-        route({ preserveScroll: true });
+        renderLogbook({ preserveScroll: true });
       } catch (e) {}
     }, LIVE_RELOAD_MS);
   }
@@ -1425,13 +1535,16 @@
     document.title = MANIFEST.title + " · Trackio Logbook";
     document.getElementById("book-title").textContent = MANIFEST.title;
     document.getElementById("book-head").addEventListener("click", () => {
-      location.hash = "#/" + MANIFEST.root.slug;
+      const target = "#/" + MANIFEST.root.slug;
+      if (location.hash === target) scrollToHash();
+      else location.hash = target;
     });
     buildTree();
     setupConnect();
     setupResourceHover();
-    window.addEventListener("hashchange", route);
-    route();
+    window.addEventListener("hashchange", () => scrollToHash());
+    window.addEventListener("scroll", updateActiveSection, { passive: true });
+    await renderLogbook();
     startLiveReload();
   }
 

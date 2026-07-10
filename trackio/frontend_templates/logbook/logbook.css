@@ -29,6 +29,10 @@ body {
   padding: 0;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--bg);
   color: var(--ink);
@@ -130,8 +134,6 @@ body {
 #content {
   flex: 1;
   min-width: 0;
-  display: flex;
-  justify-content: center;
   padding: 48px 40px 120px;
   background-color: var(--paper);
   background-image:
@@ -144,7 +146,37 @@ body {
 #page {
   width: 100%;
   min-width: 0;
-  max-width: 760px;
+  max-width: 1052px;
+  margin: 0 auto;
+}
+
+.page-section {
+  scroll-margin-top: 40px;
+  padding: 0 0 70px;
+  margin: 0 0 64px;
+  border-bottom: 1px solid rgba(31, 41, 55, 0.12);
+}
+
+.page-section:last-child {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.page-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 760px) 248px;
+  gap: 44px;
+  align-items: start;
+}
+
+.page-body {
+  min-width: 0;
+}
+
+.resource-anchor {
+  display: block;
+  height: 0;
+  overflow: hidden;
 }
 
 #page h1 {
@@ -956,44 +988,30 @@ table.board tr.linked-row:hover a {
   background: var(--accent-soft);
 }
 
-/* ---- resources rail ---- */
-#rail {
+/* ---- contextual resources rail ---- */
+.context-rail {
+  position: relative;
   width: 248px;
-  flex: 0 0 248px;
-  margin-left: 36px;
-  position: sticky;
-  top: 48px;
-  align-self: flex-start;
-  max-height: calc(100vh - 72px);
-  overflow-y: auto;
 }
-#rail[hidden] {
-  display: block;
-  visibility: hidden;
+.context-rail[hidden] {
+  display: none;
 }
-.rail-section {
-  margin-bottom: 24px;
-}
-.rail-head {
+.rail-kind {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 600;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-.rail-head .rail-ico {
-  font-size: 13px;
-}
-.rail-count {
-  margin-left: 4px;
   color: var(--accent);
+  margin-bottom: 4px;
 }
 .rail-item {
+  position: absolute;
+  left: 0;
+  right: 0;
   display: block;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1025,21 +1043,25 @@ table.board tr.linked-row:hover a {
   margin-top: 2px;
 }
 
-@media (max-width: 1180px) {
-  #content {
-    flex-wrap: wrap;
+@media (max-width: 1400px) {
+  .page-layout {
+    display: block;
   }
-  #rail {
+  .context-rail {
     width: 100%;
-    flex: 1 1 100%;
-    margin-left: 0;
     margin-top: 28px;
     position: static;
-    max-height: none;
-    max-width: 760px;
+    min-height: 0 !important;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
   }
-  #rail[hidden] {
+  .context-rail[hidden] {
     display: none;
+  }
+  .context-rail .rail-item {
+    position: static;
+    margin-bottom: 0;
   }
 }
 
