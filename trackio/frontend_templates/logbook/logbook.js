@@ -1279,6 +1279,20 @@
     return nodes.map(({ node }) => node);
   }
 
+  function removePageDirectory(body) {
+    const heading = Array.from(body.children).find(
+      (el) => el.tagName === "H2" && el.textContent.trim().toLowerCase() === "pages"
+    );
+    if (!heading) return;
+    let current = heading;
+    while (current) {
+      const next = current.nextElementSibling;
+      current.remove();
+      if (next && ["H1", "H2"].includes(next.tagName)) break;
+      current = next;
+    }
+  }
+
   const RAIL_OBSERVERS = [];
 
   async function renderLogbook(opts = {}) {
@@ -1305,6 +1319,7 @@
       renderMarkdown(markdown[index], body);
       if (node.slug === MANIFEST.root.slug) {
         section.classList.add("book-intro");
+        removePageDirectory(body);
         const hint = buildAgentHint();
         const h1 = body.querySelector("h1");
         if (h1 && h1.parentNode === body) {

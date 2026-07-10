@@ -40,6 +40,10 @@ def test_logbook_renders_pages_as_single_document(tmp_path, monkeypatch):
 
                 expect(page.locator(".page-section")).to_have_count(3)
                 expect(
+                    page.get_by_role("heading", name="Pages", exact=True)
+                ).to_have_count(0)
+                expect(page.locator('[data-slug="index"] table.board')).to_have_count(0)
+                expect(
                     page.get_by_role("heading", name="First experiment")
                 ).to_be_visible()
                 expect(
