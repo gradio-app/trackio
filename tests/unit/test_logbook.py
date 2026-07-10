@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from trackio import logbook
+from trackio import cli, logbook
 
 
 @pytest.fixture
@@ -15,6 +15,18 @@ def proj(tmp_path, monkeypatch):
 def _index_text(proj):
     return (logbook.logbook_root(proj) / "pages" / "index.md").read_text(
         encoding="utf-8"
+    )
+
+
+def test_logbook_open_warns_that_feature_is_experimental(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["trackio", "logbook", "open", "--no-serve"])
+
+    cli.main()
+
+    assert (
+        "Warning: Trackio Logbook is an experimental feature."
+        in capsys.readouterr().out
     )
 
 
