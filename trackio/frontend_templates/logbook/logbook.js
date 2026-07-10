@@ -249,6 +249,8 @@
         /(trackio-artifact:\/\/\S+|https:\/\/huggingface\.co\/buckets\/[^\s<)]+#\S+)/
       );
       if (chip && uri) chip.dataset.resUrl = uri[1];
+    } else if (meta.type === "dashboard") {
+      renderDashboardCell(meta, body, bodyEl);
     } else {
       const cleaned = stripDuplicateTitle(body, meta.title);
       renderMarkdownPlain(cleaned, bodyEl);
@@ -805,10 +807,18 @@
   }
 
   function classifyResource(url) {
-    if (IMG_URL.test(url) || url.startsWith("trackio-local-dashboard://")) {
+    if (IMG_URL.test(url)) {
       return null;
     }
     let m;
+    if (url.startsWith("trackio-local-dashboard://")) {
+      return {
+        kind: "space",
+        id: url.slice("trackio-local-dashboard://".length),
+        url,
+        local: true,
+      };
+    }
     if (url.startsWith("trackio-artifact://")) {
       return {
         kind: "artifact",
@@ -857,6 +867,7 @@
   }
 
   async function fillRailMeta(item, el) {
+    if (item.local) return;
     const meta = el.querySelector(".rail-meta");
     const set = (parts) => {
       const text = parts.filter(Boolean).join(" · ");
@@ -1072,6 +1083,55 @@
       `</div>` +
       `<iframe class="embed-frame" src="https://${sub}.hf.space/?sidebar=hidden&navbar=hidden" loading="lazy" ` +
       `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
+  }
+
+  let DASHBOARD_INFO = null;
+  function fetchDashboardInfo() {
+    if (!DASHBOARD_INFO) {
+      DASHBOARD_INFO = fetch("./dashboard-info.json", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+    }
+    return DASHBOARD_INFO;
+  }
+
+  function renderLocalDashboardEmbed(el, baseUrl, project) {
+    const open = baseUrl.replace(/\/$/, "") + "/?project=" + encodeURIComponent(project);
+    const src = open + "&sidebar=hidden&navbar=hidden";
+    el.className = "trackio-embed unfurl embed";
+    el.innerHTML =
+      `<div class="embed-head">` +
+      `<span class="unfurl-kind">🎯 Trackio dashboard</span>` +
+      `<a class="embed-title" href="${esc(open)}" target="_blank" rel="noopener">${esc(project)}</a>` +
+      `<a class="embed-open" href="${esc(open)}" target="_blank" rel="noopener">Open ↗</a>` +
+      `</div>` +
+      `<iframe class="embed-frame" src="${esc(src)}" loading="lazy" ` +
+      `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
+  }
+
+  function renderDashboardCell(meta, body, container) {
+    const project = meta.dashboard_project || "";
+    const holder = document.createElement("div");
+    container.appendChild(holder);
+    const space = body.match(/https:\/\/huggingface\.co\/spaces\/[^\s<>)"'`]+/);
+    if (space) {
+      const id = space[0].split("/spaces/")[1].split(/[?#]/)[0].replace(/\/$/, "");
+      renderTrackioSpaceEmbed(holder, space[0], id);
+      return;
+    }
+    const chip = () => {
+      holder.className = "artifact-chip";
+      holder.innerHTML =
+        "🎯 <strong>Local Trackio dashboard</strong> — publish the logbook to share it";
+    };
+    if (!isLocalPreview()) {
+      chip();
+      return;
+    }
+    fetchDashboardInfo().then((info) => {
+      if (info && info.url) renderLocalDashboardEmbed(holder, info.url, project);
+      else chip();
+    });
   }
 
   const CACHE_PREFIX = "trackio-logbook:";

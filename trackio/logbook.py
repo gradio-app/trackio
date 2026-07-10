@@ -27,8 +27,10 @@ TOC_SEP = "| --- |"
 TOC_PLACEHOLDER_TOKENS = ("logbook note", "logbook cell markdown", "logbook page")
 STATUS_COL_RE = re.compile(r"\b(status|state)\b", re.I)
 LINK_COL_RE = re.compile(r"\b(page|experiment|name|title)\b", re.I)
-CELL_TYPES = {"markdown", "code", "figure", "artifact"}
+CELL_TYPES = {"markdown", "code", "figure", "artifact", "dashboard"}
 ARTIFACT_URI_PREFIX = "trackio-artifact://"
+LOCAL_DASHBOARD_PREFIX = "trackio-local-dashboard://"
+SPACE_URL_RE = re.compile(r"https://huggingface\.co/spaces/[^\s<>)\"'`]+")
 DEFAULT_HEAD = 3
 DEFAULT_TAIL = 3
 DEFAULT_RAW_LIMIT = 500
@@ -913,17 +915,40 @@ def _artifact_summary(cell: dict) -> dict:
         "",
     )
     local = uri.startswith(ARTIFACT_URI_PREFIX)
+    path = cell["metadata"].get("path")
     if local:
         preview = f"{first} · local (pushed to a Bucket on publish)"
     elif uri:
         preview = f"{first} · {uri}"
     else:
         preview = first
-    return {
+    summary = {
         "artifact": cell["metadata"].get("artifact"),
         "artifact_type": cell["metadata"].get("artifact_type"),
         "local": local,
         "link": None if local else (uri or None),
+        "preview": preview,
+    }
+    if path:
+        summary["path"] = path
+    return summary
+
+
+def _dashboard_summary(cell: dict) -> dict:
+    project = cell["metadata"].get("dashboard_project")
+    match = SPACE_URL_RE.search(cell["body"])
+    link = match.group(0) if match else None
+    if link:
+        preview = f"🎯 Dashboard `{project}` · {link}"
+    else:
+        preview = (
+            f"🎯 Dashboard `{project}` · local "
+            "(live in preview; promoted to a Space on publish)"
+        )
+    return {
+        "project": project,
+        "local": link is None,
+        "link": link,
         "preview": preview,
     }
 
@@ -959,6 +984,9 @@ def _cell_public_summary(
     elif cell["type"] == "artifact":
         summary["body"] = cell["body"]
         summary.update(_artifact_summary(cell))
+    elif cell["type"] == "dashboard":
+        summary["body"] = cell["body"]
+        summary.update(_dashboard_summary(cell))
     elif cell["type"] == "code":
         summary.update(_code_summary(cell, head, tail))
     elif cell["type"] == "figure":
@@ -1015,7 +1043,7 @@ def read_cell(
                     "file": node["file"],
                     "metadata": cell["metadata"],
                 }
-                if cell["type"] in ("markdown", "artifact"):
+                if cell["type"] in ("markdown", "artifact", "dashboard"):
                     result["body"] = cell["body"]
                 elif cell["type"] == "code":
                     if include_full:
@@ -1198,8 +1226,12 @@ def _format_size(size: int | None) -> str:
     gb = (size or 0) / 1e9
     if gb >= 0.01:
         return f" · {gb:.2f} GB"
-    if size:
+    if size and size >= 100_000:
         return f" · {size / 1e6:.1f} MB"
+    if size and size >= 1_000:
+        return f" · {size / 1e3:.1f} kB"
+    if size:
+        return f" · {size} B"
     return ""
 
 
@@ -1247,6 +1279,57 @@ def add_artifact_cell(
     )
 
 
+def add_dashboard_cell(
+    proj: Path,
+    page_slug: str,
+    project: str,
+    space_id: str | None = None,
+    title: str | None = None,
+) -> None:
+    if space_id:
+        link = f"https://huggingface.co/spaces/{space_id}"
+    else:
+        link = f"{LOCAL_DASHBOARD_PREFIX}{project}"
+        register_local(proj, dashboard_project=project)
+    body = f"**🎯 Trackio dashboard** `{project}`\n\n{link}"
+    _append_cell(
+        proj,
+        page_slug,
+        "dashboard",
+        body,
+        title=title or f"Dashboard: {project}",
+        dashboard_project=project,
+    )
+
+
+def add_path_artifact_cell(
+    proj: Path,
+    page_slug: str,
+    path: str,
+    size: int,
+    artifact_type: str | None = None,
+    title: str | None = None,
+) -> None:
+    display = _artifact_display_path(path)
+    shown = display if "`" in display else f"`{display}`"
+    line = f"**📦 Artifact** {shown}"
+    if artifact_type:
+        line += f" · {artifact_type}"
+    line += _format_size(size)
+    line += " · local file"
+    _append_cell(
+        proj,
+        page_slug,
+        "artifact",
+        line,
+        title=title or f"Artifact: {Path(path).name}",
+        path=display,
+        size=size,
+        artifact_type=artifact_type,
+        auto=True,
+    )
+
+
 def add_figure_cell(
     proj: Path,
     page_slug: str,
@@ -1282,7 +1365,23 @@ def register_local(
     write_metadata(proj, metadata)
 
 
-def auto_note_run(project: str, run_name: str, space_id: str | None = None) -> None:
+def _page_has_dashboard_cell(proj: Path, slug: str, project: str) -> bool:
+    path = _page_file_for_slug(proj, slug)
+    if path is None or not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    if f"{LOCAL_DASHBOARD_PREFIX}{project}" in text:
+        return True
+    for cell in _parse_cells_from_text(text, slug, slug):
+        if (
+            cell["type"] == "dashboard"
+            and cell["metadata"].get("dashboard_project") == project
+        ):
+            return True
+    return False
+
+
+def auto_note_dashboard(project: str, space_id: str | None = None) -> None:
     if not _autonote_enabled():
         return
     proj = find_project_dir()
@@ -1290,17 +1389,9 @@ def auto_note_run(project: str, run_name: str, space_id: str | None = None) -> N
         return
     try:
         slug = ensure_page(proj, project)
-        if space_id:
-            link = f"https://huggingface.co/spaces/{space_id}"
-        else:
-            link = f"trackio-local-dashboard://{project}"
-            register_local(proj, dashboard_project=project)
-        add_code_cell(
-            proj,
-            slug,
-            f"Trackio run `{run_name}` in project `{project}`.\n{link}",
-            title=f"Run: {run_name}",
-        )
+        if _page_has_dashboard_cell(proj, slug, project):
+            return
+        add_dashboard_cell(proj, slug, project, space_id=space_id)
         trigger_autosync(proj)
     except Exception:
         pass
@@ -1341,6 +1432,32 @@ _LANG_BY_EXT = {
     ".md": "markdown",
 }
 
+_ARTIFACT_TYPE_BY_EXT = {
+    ".pt": "model",
+    ".pth": "model",
+    ".ckpt": "model",
+    ".safetensors": "model",
+    ".gguf": "model",
+    ".onnx": "model",
+    ".pkl": "model",
+    ".joblib": "model",
+    ".h5": "model",
+    ".tflite": "model",
+    ".pb": "model",
+    ".npz": "dataset",
+    ".npy": "dataset",
+    ".parquet": "dataset",
+    ".csv": "dataset",
+    ".tsv": "dataset",
+    ".arrow": "dataset",
+    ".jsonl": "dataset",
+    ".feather": "dataset",
+    ".msgpack": "dataset",
+}
+_SNAPSHOT_SKIP_DIRS = {"__pycache__", "node_modules", "venv", "env", "site-packages"}
+_SNAPSHOT_MAX_ENTRIES = 50_000
+_MAX_AUTO_ARTIFACT_CELLS = 10
+
 
 def _code_block_lines(path: str) -> list[str]:
     p = Path(path)
@@ -1377,6 +1494,55 @@ def _detect_code_paths(command: list[str]) -> list[str]:
     return paths
 
 
+def _snapshot_output_files(root: Path) -> dict[str, tuple[int, int]] | None:
+    snapshot: dict[str, tuple[int, int]] = {}
+    scanned = 0
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if not d.startswith(".") and d not in _SNAPSHOT_SKIP_DIRS
+        ]
+        scanned += len(dirnames) + len(filenames)
+        if scanned > _SNAPSHOT_MAX_ENTRIES:
+            return None
+        for name in filenames:
+            if Path(name).suffix.lower() not in _ARTIFACT_TYPE_BY_EXT:
+                continue
+            full = os.path.join(dirpath, name)
+            try:
+                if os.path.islink(full):
+                    continue
+                stat = os.stat(full)
+            except OSError:
+                continue
+            snapshot[full] = (stat.st_mtime_ns, stat.st_size)
+    return snapshot
+
+
+def _diff_output_files(
+    before: dict[str, tuple[int, int]],
+    after: dict[str, tuple[int, int]],
+) -> list[tuple[str, int]]:
+    changed = [
+        (path, stat[1])
+        for path, stat in after.items()
+        if stat[1] > 0 and before.get(path) != stat
+    ]
+    changed.sort(key=lambda item: (-item[1], item[0]))
+    return changed
+
+
+def _artifact_display_path(path: str) -> str:
+    try:
+        rel = os.path.relpath(path)
+    except ValueError:
+        return Path(path).as_posix()
+    if rel.startswith(".."):
+        return Path(path).as_posix()
+    return Path(rel).as_posix()
+
+
 def add_run_cell(
     proj: Path,
     page_slug: str,
@@ -1386,6 +1552,7 @@ def add_run_cell(
     duration_s: float,
     code_paths: list[str],
     title: str | None = None,
+    artifact_note: str | None = None,
 ) -> None:
     command_line = shlex.join(command)
     lines = [
@@ -1396,6 +1563,8 @@ def add_run_cell(
         f"exit {exit_code} · {duration_s:.1f}s",
         "",
     ]
+    if artifact_note:
+        lines += [artifact_note, ""]
     for path in code_paths:
         lines += _code_block_lines(path)
     lines += ["", "````output", *output.split("\n"), "````", ""]
@@ -1421,11 +1590,18 @@ def run_and_log(
     command: list[str],
     page: str | None = None,
     title: str | None = None,
+    capture_artifacts: bool = True,
 ) -> int:
     if not command:
         raise LogbookError("No command provided. Use: trackio logbook run -- <command>")
     slug = resolve_page(proj, page)
     code_paths = _detect_code_paths(command)
+    before = None
+    if capture_artifacts and _autonote_enabled():
+        try:
+            before = _snapshot_output_files(Path.cwd())
+        except Exception:
+            before = None
     output_parts: list[str] = []
     started = time.monotonic()
     interrupted = False
@@ -1463,6 +1639,20 @@ def run_and_log(
 
     duration_s = time.monotonic() - started
     output = _truncate_run_output("".join(output_parts))
+    changed: list[tuple[str, int]] = []
+    artifact_note = None
+    if before is not None:
+        try:
+            after = _snapshot_output_files(Path.cwd())
+            changed = _diff_output_files(before, after or {})
+        except Exception:
+            changed = []
+        if len(changed) > _MAX_AUTO_ARTIFACT_CELLS:
+            artifact_note = (
+                f"{len(changed)} output files detected; recording the "
+                f"{_MAX_AUTO_ARTIFACT_CELLS} largest."
+            )
+            changed = changed[:_MAX_AUTO_ARTIFACT_CELLS]
     add_run_cell(
         proj,
         slug,
@@ -1472,7 +1662,19 @@ def run_and_log(
         duration_s,
         code_paths,
         title=title,
+        artifact_note=artifact_note,
     )
+    for path, size in changed:
+        try:
+            add_path_artifact_cell(
+                proj,
+                slug,
+                path,
+                size,
+                artifact_type=_ARTIFACT_TYPE_BY_EXT.get(Path(path).suffix.lower()),
+            )
+        except Exception:
+            pass
     trigger_autosync(proj)
     return 130 if interrupted else exit_code
 
@@ -1566,29 +1768,70 @@ def start_preview(proj: Path, port: int = 7861, open_browser: bool = True) -> st
     return url
 
 
-def serve(
-    path: str | Path | None = None, port: int = 7861, open_browser: bool = True
-) -> None:
-    import functools  # noqa: PLC0415
-    import http.server  # noqa: PLC0415
-    import socketserver  # noqa: PLC0415
-    import webbrowser  # noqa: PLC0415
+def _local_dashboard_launcher():
+    import threading  # noqa: PLC0415
 
-    proj = require_project_dir(path)
-    write_site_files(proj)
+    state = {"url": None, "failed": False}
+    lock = threading.Lock()
+
+    def dashboard_url() -> str | None:
+        with lock:
+            if state["url"] is None and not state["failed"]:
+                try:
+                    from trackio import show  # noqa: PLC0415
+
+                    _server, local_url, _share, _full = show(
+                        open_browser=False, block_thread=False
+                    )
+                    state["url"] = local_url.rstrip("/")
+                except Exception:
+                    state["failed"] = True
+            return state["url"]
+
+    return dashboard_url
+
+
+def _make_preview_handler(dashboard_url_fn):
+    import http.server  # noqa: PLC0415
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         def end_headers(self):
             self.send_header("Cache-Control", "no-store, max-age=0")
             super().end_headers()
 
-    handler = functools.partial(Handler, directory=str(logbook_root(proj)))
-    socketserver.TCPServer.allow_reuse_address = True
+        def do_GET(self):
+            if self.path.split("?", 1)[0] == "/dashboard-info.json":
+                payload = json.dumps({"url": dashboard_url_fn()}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            super().do_GET()
+
+    return Handler
+
+
+def serve(
+    path: str | Path | None = None, port: int = 7861, open_browser: bool = True
+) -> None:
+    import functools  # noqa: PLC0415
+    import socketserver  # noqa: PLC0415
+    import webbrowser  # noqa: PLC0415
+
+    proj = require_project_dir(path)
+    write_site_files(proj)
+
+    handler_cls = _make_preview_handler(_local_dashboard_launcher())
+    handler = functools.partial(handler_cls, directory=str(logbook_root(proj)))
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    socketserver.ThreadingTCPServer.daemon_threads = True
     server_ports = [port] if port == 0 else range(port, port + TRY_NUM_PORTS)
     httpd = None
     for candidate_port in server_ports:
         try:
-            httpd = socketserver.TCPServer(("", candidate_port), handler)
+            httpd = socketserver.ThreadingTCPServer(("", candidate_port), handler)
             break
         except OSError:
             continue
@@ -1677,7 +1920,7 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
                 continue
         _rewrite_in_pages(
             proj,
-            f"trackio-local-dashboard://{project}",
+            f"{LOCAL_DASHBOARD_PREFIX}{project}",
             f"https://huggingface.co/spaces/{target}",
         )
     metadata["local_dashboards"] = dashboards

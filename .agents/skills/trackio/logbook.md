@@ -13,7 +13,8 @@ trackio logbook cell markdown "..." --page "..."        # log a finding onto a p
 trackio logbook cell code --page "..." --code train.py --output "..."
 trackio logbook cell figure --page "..." --html plot.html --raw data.json
 trackio logbook cell artifact project/name:vN            # record a Trackio artifact as its own cell
-trackio logbook run --page "..." -- python train.py --lr 3e-4  # run + capture command, scripts, output
+trackio logbook cell dashboard <project> [--space owner/name]  # embed a live Trackio dashboard
+trackio logbook run --page "..." -- python train.py --lr 3e-4  # run + capture command, scripts, output, output files
 trackio logbook read                                    # compact agent view of the whole logbook
 trackio logbook read <username/space | url>             # read a remote logbook (Space id, Space URL, or serve URL)
 trackio logbook read pages                              # list pages
@@ -26,9 +27,9 @@ trackio logbook publish [username/space]                # first publish immediat
 trackio logbook sync                                    # push later edits to the Space now
 ```
 
-`cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Fenced code blocks inside the markdown render with syntax highlighting, so embed short snippets directly in the body. Use `cell code` when the entry is code plus output. Use `cell figure` for HTML figures such as Plotly exports plus raw data. Use `cell artifact` to record a Trackio artifact (usually unnecessary — `trackio.log_artifact()` records one automatically). Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, artifacts, papers, jobs, buckets, and repos are detected from URLs in the markdown/output and collected into the page's resources sidebar by the viewer; images render inline and Trackio-tagged Spaces embed as live dashboards. Everything else is a direct file edit.
+`cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Fenced code blocks inside the markdown render with syntax highlighting, so embed short snippets directly in the body. Use `cell code` when the entry is code plus output. Use `cell figure` for HTML figures such as Plotly exports plus raw data. Use `cell artifact` to record a Trackio artifact (usually unnecessary — `trackio.log_artifact()` records one automatically). Use `cell dashboard` to embed a project's live Trackio dashboard (usually unnecessary — `trackio.init()` records one automatically). Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, artifacts, papers, jobs, buckets, and repos are detected from URLs in the markdown/output and collected into the page's resources sidebar by the viewer; images render inline and Trackio-tagged Spaces embed as live dashboards. Everything else is a direct file edit.
 
-`run` is the preferred way to execute experiments from the terminal: it tees output live, stores the exact command, attaches any script/config argv tokens it can see, records exit code and duration, and captures truncated output in one code cell.
+`run` is the preferred way to execute experiments from the terminal: it tees output live, stores the exact command, attaches any script/config argv tokens it can see, records exit code and duration, and captures truncated output in one code cell. It also detects model/data files the command created or modified under the working directory (checkpoints like `.pt`/`.safetensors`/`.ckpt`, datasets like `.parquet`/`.csv`/`.jsonl`) and records each as a **path-reference artifact cell** — only the path, size, and type are logged; the file itself stays on disk and is not pushed anywhere on publish. Disable with `--no-artifacts`.
 
 ## The structure
 
@@ -90,7 +91,7 @@ Any page's content, the index table, and the styling (`logbook.css` / `index.htm
 
 - `--title`: an optional short title for the cell; if omitted, Trackio derives one. **Do not repeat the title as a heading at the top of the body** — the viewer already renders the title in the cell header.
 - Body: normal Markdown. Use paragraphs, bullets, headings, and tables as appropriate for the material. Bare Hub model ids mentioned in text or output (e.g. `meta-llama/Llama-3.1-8B-Instruct`) are detected and linked in the resources sidebar automatically.
-- Links: write URLs directly in the markdown body (or let them appear in command output). Resource URLs are collected into the page's **resources sidebar**, grouped by kind: HF models / datasets / Spaces / **Jobs** (`huggingface.co/jobs/...`) / **Buckets** (`huggingface.co/buckets/...`), arXiv / HF papers, and GitHub. **Trackio dashboards embed live** in the page body, and image URLs render inline. There is no `--link` flag.
+- Links: write URLs directly in the markdown body (or let them appear in command output). Resource URLs are collected into the page's **resources sidebar**, grouped by kind: HF models / datasets / Spaces / **Jobs** (`huggingface.co/jobs/...`) / **Buckets** (`huggingface.co/buckets/...`), arXiv / HF papers, and GitHub. **Trackio dashboards embed live** in the page body — in the local preview too: `serve` hosts the local dashboard so embeds are live during training — and image URLs render inline. There is no `--link` flag.
 - Code: embed fenced code blocks directly in the markdown body — they render with syntax highlighting. For code-plus-output entries use `cell code` (its `--code PATH` includes a file); `logbook run` attaches the scripts it executed automatically.
 - Artifacts: `trackio.log_artifact()` records an **artifact cell** automatically; `trackio logbook cell artifact project/name:vN [--type dataset]` records one manually. Artifact cells also appear in the resources sidebar (marked local until published). **Log datasets you construct locally as artifacts of type `dataset`** (e.g. a hand-curated eval set) so they are captured and pushed to the Bucket on publish.
 - It's just Markdown you can also edit by hand — if something renders wrong, `serve` to preview and fix the file directly.
@@ -117,8 +118,9 @@ For each experiment, capture enough that someone could re-run it:
 
 If a logbook exists in the working directory, trackio **auto-captures itself** — no manual cell needed for these:
 
-- `trackio.finish()` records the run + its dashboard under an experiment named after the trackio **project** (one cell per run; re-runs update in place).
+- `trackio.init()` immediately records an **embedded dashboard cell** on a page named after the trackio **project** (one per project per page; live in the local preview, promoted to a Space on publish), so anyone watching the logbook sees training metrics in real time. `finish()` no longer writes a run cell. Note: the hook lives in the trackio the script imports — a separate environment with an older trackio won't fire it.
 - `trackio.log_artifact(...)` records the artifact as its own **artifact cell**, which also appears in the resources sidebar. On `publish`, artifacts are pushed to an HF Bucket and the cells link to it.
+- `trackio logbook run` records model/data files the command created or modified as **path-reference artifact cells** (path, size, and type only). Unlike `log_artifact` cells, these are **not** pushed to a Bucket on publish — use `trackio.log_artifact()` for files that must travel with the logbook. Disable per run with `--no-artifacts`.
 
 Local runs/artifacts are marked as local until you publish (see below). Set `TRACKIO_LOGBOOK_AUTONOTE=0` to disable (e.g. during large sweeps).
 

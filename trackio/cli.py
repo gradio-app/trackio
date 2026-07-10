@@ -256,6 +256,11 @@ def _maybe_handle_logbook_run_argv() -> bool:
     )
     run_parser.add_argument("--page", help="Page title or slug")
     run_parser.add_argument("--title", help="Cell title")
+    run_parser.add_argument(
+        "--no-artifacts",
+        action="store_true",
+        help="Do not record output model/data files as artifact cells",
+    )
     if "--" in run_argv:
         sep = run_argv.index("--")
         opts = run_parser.parse_args(run_argv[:sep])
@@ -268,6 +273,7 @@ def _maybe_handle_logbook_run_argv() -> bool:
         logbook_action="run",
         page=opts.page,
         title=opts.title,
+        no_artifacts=opts.no_artifacts,
         command=command,
     )
     _handle_logbook(args)
@@ -958,7 +964,10 @@ def main():
     )
     skills_add_parser = skills_subparsers.add_parser(
         "add",
-        help="Download and install the Trackio skill for an AI assistant",
+        help=(
+            "Install the Trackio skill to the central .agents/skills location; "
+            "pass agent flags to also symlink it for specific assistants"
+        ),
     )
     skills_add_parser.add_argument(
         "--cursor",
@@ -1079,12 +1088,29 @@ def main():
     lb_cell_figure.add_argument("--raw", help="Path/URL/text for raw data")
     lb_cell_figure.add_argument("--raw-text", help="Inline raw data")
 
+    lb_cell_dash = lb_cell_sub.add_parser(
+        "dashboard", help="Embed a Trackio dashboard for a project"
+    )
+    lb_cell_dash.add_argument("project", help="Trackio project name")
+    lb_cell_dash.add_argument(
+        "--space",
+        dest="space_id",
+        help="HF Space id (owner/name) hosting the dashboard",
+    )
+    lb_cell_dash.add_argument("--title", help="Cell title")
+    lb_cell_dash.add_argument("--page", help="Page title or slug")
+
     lb_run = logbook_sub.add_parser(
         "run",
         help="Run a command; log the command, its scripts, and output to a page",
     )
     lb_run.add_argument("--page", help="Page title or slug")
     lb_run.add_argument("--title", help="Cell title")
+    lb_run.add_argument(
+        "--no-artifacts",
+        action="store_true",
+        help="Do not record output model/data files as artifact cells",
+    )
     lb_run.add_argument("command", nargs="*")
 
     lb_page = logbook_sub.add_parser(
@@ -1873,6 +1899,7 @@ def _handle_logbook(args):
                 command,
                 page=args.page,
                 title=args.title,
+                capture_artifacts=not getattr(args, "no_artifacts", False),
             )
             slug = lb.read_metadata(proj).get("last_page", "?")
             print(f"Logged run to page '{slug}'.{_sync_suffix(lb, proj)}")
@@ -1908,6 +1935,14 @@ def _handle_logbook(args):
                     slug,
                     html=html,
                     raw=raw,
+                    title=args.title,
+                )
+            elif args.cell_type == "dashboard":
+                lb.add_dashboard_cell(
+                    proj,
+                    slug,
+                    args.project,
+                    space_id=args.space_id,
                     title=args.title,
                 )
             print(
@@ -2010,19 +2045,6 @@ def _handle_skills_add(args):
 
     REPO_ROOT = Path(__file__).resolve().parent.parent
     USE_LOCAL = (REPO_ROOT / SKILL_PREFIX / "SKILL.md").is_file()
-
-    if not (
-        args.cursor
-        or args.claude
-        or args.codex
-        or args.opencode
-        or args.pi
-        or args.dest
-    ):
-        error_exit(
-            "Pick a destination via --cursor, --claude, --codex, --opencode, "
-            "--pi, or --dest."
-        )
 
     if USE_LOCAL:
         print(f"Using local Trackio source at {REPO_ROOT}")
