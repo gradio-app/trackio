@@ -73,7 +73,7 @@
 
   const URL_ONLY = /^(https?:\/\/[^\s]+)$/;
   const DETECTED_URL =
-    /(https?:\/\/[^\s<>)\]"'`]+|trackio-local-dashboard:\/\/[^\s<>)\]"'`]+|trackio-artifact:\/\/[^\s<>)\]"'`]+)/g;
+    /(https?:\/\/[^\s<>)\]"'`]+|trackio-local-dashboard:\/\/[^\s<>)\]"'`]+|trackio-artifact:\/\/[^\s<>)\]"'`]+|trackio-local-path:\/\/[^\s<>)\]"'`]+)/g;
 
   function renderMarkdown(md, container) {
     const cellRe = /(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)/g;
@@ -144,6 +144,7 @@
       para = [];
       if (!joined) return;
       if (/^trackio-artifact:\/\/\S+$/.test(joined)) return;
+      if (/^trackio-local-path:\/\/\S+$/.test(joined)) return;
       if (joined.indexOf("📦 Artifact") !== -1) {
         const div = document.createElement("div");
         div.className = "artifact-chip";
@@ -280,7 +281,7 @@
       renderMarkdownPlain(body, bodyEl);
       const chip = bodyEl.querySelector(".artifact-chip");
       const uri = body.match(
-        /(trackio-artifact:\/\/\S+|https:\/\/huggingface\.co\/buckets\/[^\s<)]+#\S+)/
+        /(trackio-artifact:\/\/\S+|trackio-local-path:\/\/\S+|https:\/\/huggingface\.co\/buckets\/[^\s<)]+#\S+)/
       );
       if (chip && uri) chip.dataset.resUrl = uri[1];
     } else if (meta.type === "dashboard") {
@@ -288,7 +289,7 @@
       cell.dataset.resUrl = sp
         ? sp[0]
         : `trackio-local-dashboard://${(meta.dashboard_project || "").trim()}`;
-      renderDashboardCell(meta, body, bodyEl);
+      renderDashboardCell(meta, body, bodyEl, head);
     } else {
       const cleaned = stripDuplicateTitle(body, meta.title);
       renderMarkdownPlain(cleaned, bodyEl);
@@ -968,6 +969,14 @@
         local: true,
       };
     }
+    if (url.startsWith("trackio-local-path://")) {
+      return {
+        kind: "artifact",
+        id: url.slice("trackio-local-path://".length),
+        url,
+        local: true,
+      };
+    }
     if ((m = url.match(/huggingface\.co\/buckets\/[^#\s]+#(.+)/))) {
       return { kind: "artifact", id: decodeURIComponent(m[1]), url };
     }
@@ -1318,69 +1327,63 @@
     );
   }
 
-  function renderTrackioSpaceEmbed(el, url, id) {
-    const sub = id.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    el.className = "trackio-embed unfurl embed";
-    el.dataset.resUrl = url;
-    el.innerHTML =
-      `<div class="embed-head">` +
-      `<span class="unfurl-kind">🎯 Trackio dashboard</span>` +
-      `<a class="embed-title" href="${esc(url)}" target="_blank" rel="noopener">${esc(id)}</a>` +
-      `<a class="embed-open" href="${esc(url)}" target="_blank" rel="noopener">Open ↗</a>` +
-      `</div>` +
-      `<iframe class="embed-frame" src="https://${sub}.hf.space/?sidebar=hidden&navbar=hidden" loading="lazy" ` +
-      `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
+  function dashboardSubdomainFromUrl(url) {
+    return spaceIdFromUrl(url).toLowerCase().replace(/[^a-z0-9-]/g, "-");
   }
 
-  let DASHBOARD_INFO = null;
-  function fetchDashboardInfo() {
-    if (!DASHBOARD_INFO) {
-      DASHBOARD_INFO = fetch("./dashboard-info.json", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null);
+  function dashboardOpenLink(head, url) {
+    if (!head || !url) return;
+    const meta = head.querySelector(".cell-meta");
+    if (!meta) return;
+    let link = meta.querySelector(".cell-open");
+    if (!link) {
+      link = document.createElement("a");
+      link.className = "cell-open";
+      link.target = "_blank";
+      link.rel = "noopener";
+      meta.insertBefore(link, meta.firstChild);
     }
-    return DASHBOARD_INFO;
+    link.href = url;
+    link.textContent = "Open ↗";
   }
 
-  function renderLocalDashboardEmbed(el, baseUrl, project) {
-    const open = baseUrl.replace(/\/$/, "") + "/?project=" + encodeURIComponent(project);
-    const src = open + "&sidebar=hidden&navbar=hidden";
-    el.className = "trackio-embed unfurl embed";
-    el.dataset.resUrl = `trackio-local-dashboard://${project}`;
-    el.innerHTML =
-      `<div class="embed-head">` +
-      `<span class="unfurl-kind">🎯 Trackio dashboard</span>` +
-      `<a class="embed-title" href="${esc(open)}" target="_blank" rel="noopener">${esc(project)}</a>` +
-      `<a class="embed-open" href="${esc(open)}" target="_blank" rel="noopener">Open ↗</a>` +
-      `</div>` +
-      `<iframe class="embed-frame" src="${esc(src)}" loading="lazy" ` +
-      `allow="clipboard-read; clipboard-write; fullscreen"></iframe>`;
+  function dashboardFrame(src) {
+    const iframe = document.createElement("iframe");
+    iframe.className = "dashboard-frame";
+    iframe.src = src;
+    iframe.loading = "lazy";
+    iframe.allow = "clipboard-read; clipboard-write; fullscreen";
+    return iframe;
   }
 
-  function renderDashboardCell(meta, body, container) {
+  function renderDashboardCell(meta, body, container, head) {
     const project = meta.dashboard_project || "";
     const holder = document.createElement("div");
+    holder.className = "dashboard-shell";
     container.appendChild(holder);
     const space = body.match(/https:\/\/huggingface\.co\/spaces\/[^\s<>)"'`]+/);
     if (space) {
-      const id = space[0].split("/spaces/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-      renderTrackioSpaceEmbed(holder, space[0], id);
+      const url = space[0];
+      dashboardOpenLink(head, url);
+      holder.appendChild(
+        dashboardFrame(
+          `https://${dashboardSubdomainFromUrl(url)}.hf.space/?sidebar=hidden&hide_empty_tabs=true`
+        )
+      );
       return;
     }
-    const chip = () => {
+    if (!isLocalPreview()) {
       holder.className = "artifact-chip";
       holder.dataset.resUrl = `trackio-local-dashboard://${project}`;
       holder.innerHTML =
         "🎯 <strong>Local Trackio dashboard</strong> — publish the logbook to share it";
-    };
-    if (!isLocalPreview()) {
-      chip();
       return;
     }
-    fetchDashboardInfo().then((info) => {
-      if (info && info.url) renderLocalDashboardEmbed(holder, info.url, project);
-      else chip();
-    });
+    const open = "/dashboard/?project=" + encodeURIComponent(project);
+    dashboardOpenLink(head, open);
+    holder.appendChild(
+      dashboardFrame(open + "&sidebar=hidden&hide_empty_tabs=true"),
+    );
   }
 
   const CACHE_PREFIX = "trackio-logbook:";
@@ -1443,7 +1446,7 @@
     nodes.forEach(({ node, depth }) => {
       const a = document.createElement("a");
       a.href = "#/" + node.slug;
-      a.textContent = node.title;
+      a.textContent = "§ " + node.title;
       a.className = "depth-" + depth;
       a.dataset.slug = node.slug;
       tree.appendChild(a);
@@ -1541,6 +1544,17 @@
     container.closest(".book-intro").classList.add("has-pinned-notes");
   }
 
+  function removeIndexProse(body) {
+    const h1 = Array.from(body.children).find((el) => el.tagName === "H1");
+    if (!h1) return;
+    let current = h1.nextElementSibling;
+    while (current && current.tagName !== "H2") {
+      const next = current.nextElementSibling;
+      current.remove();
+      current = next;
+    }
+  }
+
   function removePageDirectory(body) {
     const heading = Array.from(body.children).find(
       (el) => el.tagName === "H2" && el.textContent.trim().toLowerCase() === "pages"
@@ -1583,6 +1597,7 @@
       renderMarkdown(markdown[index], body);
       if (node.slug === MANIFEST.root.slug) {
         section.classList.add("book-intro");
+        removeIndexProse(body);
         removePageDirectory(body);
         const hint = buildAgentHint();
         const h1 = body.querySelector("h1");
@@ -1697,16 +1712,26 @@
 
   function artifactInfoFromCell(meta, body) {
     const name = meta.artifact || meta.path || "";
-    const local = !!meta.path;
     let size = null;
     const sm = body.match(/·\s*([\d.]+\s*[kMGT]?B)\b/);
     if (sm) size = sm[1].trim();
     if (!size && meta.size != null) size = fmtBytes(meta.size);
     const bucket = body.match(/https:\/\/huggingface\.co\/buckets\/[^\s<>)"'`]+/);
     const artUri = body.match(/trackio-artifact:\/\/\S+/);
+    const pathUri = body.match(/trackio-local-path:\/\/\S+/);
     const url = bucket ? bucket[0] : "";
-    const resUrl = url || (artUri ? artUri[0] : `trackio-artifact://${name}`);
-    return { name, type: meta.artifact_type || "", size, local, url, resUrl };
+    const local = !bucket;
+    const resUrl =
+      url || (artUri ? artUri[0] : pathUri ? pathUri[0] : `trackio-artifact://${name}`);
+    return {
+      name,
+      type: meta.artifact_type || "",
+      size,
+      local,
+      isPathRef: !!meta.path,
+      url,
+      resUrl,
+    };
   }
 
   function cellArtifactItems(md) {
@@ -1720,30 +1745,6 @@
       if (meta.type === "artifact") {
         const info = artifactInfoFromCell(meta, body);
         if (info.name) items.push({ ...info, order });
-      } else if (meta.type === "figure") {
-        const name = (meta.title || "Figure").trim();
-        items.push({
-          name,
-          type: "figure",
-          size: null,
-          local: true,
-          url: "",
-          resUrl: `trackio-figure://${name}`,
-          order,
-        });
-      } else if (meta.type === "code") {
-        parseFences(body).forEach((p) => {
-          if (!p.title) return;
-          items.push({
-            name: p.title,
-            type: "script",
-            size: null,
-            local: true,
-            url: "",
-            resUrl: `trackio-script://${p.title}`,
-            order,
-          });
-        });
       }
     }
     return items;

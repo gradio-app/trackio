@@ -1117,7 +1117,6 @@ def main():
         "page", help="Create or select a page and make it the default target"
     )
     lb_page.add_argument("title", help="Page title")
-    lb_page.add_argument("--parent", default="index", help="Parent page slug")
 
     lb_read = logbook_sub.add_parser(
         "read", help="Read logbook pages/cells in an agent-friendly form"
@@ -1952,7 +1951,7 @@ def _handle_logbook(args):
             lb.trigger_autosync(proj)
         elif action == "page":
             proj = lb.require_project_dir()
-            page_slug = lb.ensure_page(proj, args.title, parent_slug=args.parent)
+            page_slug = lb.ensure_page(proj, args.title)
             print(f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}")
             lb.trigger_autosync(proj)
         elif action == "read":

@@ -1,5 +1,18 @@
+function trackioBase() {
+  return window.__trackio_base || "";
+}
+
+function stripBase(pathname) {
+  const base = trackioBase();
+  if (base && pathname.startsWith(base)) {
+    return pathname.slice(base.length) || "/";
+  }
+  return pathname;
+}
+
 export function getPageFromPath() {
-  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const raw = stripBase(window.location.pathname);
+  const pathname = raw.replace(/\/+$/, "") || "/";
   const clean =
     pathname === "/" ? "" : pathname.replace(/^\//, "").split("/")[0];
   switch (clean) {
@@ -40,7 +53,7 @@ export function navigateTo(page) {
     files: "/files",
     settings: "/settings",
   };
-  const path = pathMap[page] || "/";
+  const path = trackioBase() + (pathMap[page] || "/");
   const search = params.toString();
   const url = search ? `${path}?${search}` : path;
   window.history.pushState({}, "", url);

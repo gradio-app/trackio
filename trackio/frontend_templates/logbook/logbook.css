@@ -37,7 +37,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
 }
@@ -208,6 +208,10 @@ body {
   letter-spacing: -0.02em;
   margin: 0 0 8px;
   overflow-wrap: anywhere;
+}
+
+#page .page-section:not(.book-intro) h1 {
+  font-size: 26px;
 }
 
 #page h2 {
@@ -394,13 +398,29 @@ body {
 }
 .cell-meta {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--sans);
   font-size: 13px;
   color: var(--muted);
 }
+.cell-open {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.cell-open:hover {
+  color: var(--accent-strong);
+}
 .cell-body {
   min-width: 0;
   padding: 14px 18px 18px;
+}
+.cell.dashboard .cell-body {
+  padding: 0;
 }
 #page .cell-body h1,
 #page .cell-body h2 {
@@ -825,6 +845,17 @@ a.out-artifact:hover .out-artifact-name {
   background: var(--code-bg);
 }
 
+.dashboard-shell {
+  display: block;
+}
+.dashboard-shell .dashboard-frame {
+  display: block;
+  width: 100%;
+  height: 900px;
+  border: 0;
+  background: var(--code-bg);
+}
+
 .unfurl.image {
   padding: 0;
 }
@@ -844,6 +875,9 @@ a.out-artifact:hover .out-artifact-name {
   padding: 10px 14px;
   margin: 8px 0;
   font-size: 14px;
+}
+.cell.dashboard .artifact-chip {
+  margin: 14px 18px 18px;
 }
 .artifact-chip code {
   color: var(--accent);

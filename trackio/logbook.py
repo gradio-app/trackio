@@ -37,8 +37,10 @@ STATUS_COL_RE = re.compile(r"\b(status|state)\b", re.I)
 LINK_COL_RE = re.compile(r"\b(page|experiment|name|title)\b", re.I)
 CELL_TYPES = {"markdown", "code", "figure", "artifact", "dashboard"}
 ARTIFACT_URI_PREFIX = "trackio-artifact://"
+PATH_ARTIFACT_URI_PREFIX = "trackio-local-path://"
 LOCAL_DASHBOARD_PREFIX = "trackio-local-dashboard://"
 SPACE_URL_RE = re.compile(r"https://huggingface\.co/spaces/[^\s<>)\"'`]+")
+BUCKET_URL_RE = re.compile(r"https://huggingface\.co/buckets/[^\s<>)\"'`]+")
 DEFAULT_HEAD = 3
 DEFAULT_TAIL = 3
 DEFAULT_RAW_LIMIT = 500
@@ -256,7 +258,7 @@ def _scan_children(dir_path: Path, rel_prefix: str, parent_md: Path) -> list[dic
                 "slug": d.name,
                 "title": _title_of(md, d.name),
                 "file": f"{rel_prefix}/{d.name}/page.md",
-                "children": _scan_children(d, f"{rel_prefix}/{d.name}", md),
+                "children": [],
             }
         )
     return children
@@ -504,7 +506,7 @@ def clone_logbook(space_id: str) -> Path | None:
 
 def _all_slugs(proj: Path) -> set[str]:
     slugs = {ROOT_SLUG}
-    for d in _pages_dir(proj).rglob("*"):
+    for d in _pages_dir(proj).iterdir():
         if d.is_dir() and (d / "page.md").is_file():
             slugs.add(d.name)
     return slugs
@@ -513,7 +515,7 @@ def _all_slugs(proj: Path) -> set[str]:
 def _page_dir_for_slug(proj: Path, slug: str) -> Path | None:
     if slug == ROOT_SLUG:
         return _pages_dir(proj)
-    for d in _pages_dir(proj).rglob("*"):
+    for d in _pages_dir(proj).iterdir():
         if d.is_dir() and d.name == slug and (d / "page.md").is_file():
             return d
     return None
@@ -526,10 +528,7 @@ def _page_file_for_slug(proj: Path, slug: str) -> Path | None:
     return (d / "page.md") if d else None
 
 
-def add_page(proj: Path, title: str, parent_slug: str = ROOT_SLUG) -> str:
-    parent_dir = _page_dir_for_slug(proj, parent_slug)
-    if parent_dir is None:
-        raise LogbookError(f"No page with slug '{parent_slug}' in this logbook.")
+def add_page(proj: Path, title: str) -> str:
     existing = _all_slugs(proj)
     base = _slugify(title)
     slug = base
@@ -537,7 +536,7 @@ def add_page(proj: Path, title: str, parent_slug: str = ROOT_SLUG) -> str:
     while slug in existing:
         slug = f"{base}-{n}"
         n += 1
-    page_dir = parent_dir / slug
+    page_dir = _pages_dir(proj) / slug
     page_dir.mkdir(parents=True, exist_ok=True)
     (page_dir / "page.md").write_text(f"# {title}\n", encoding="utf-8")
     write_site_files(proj)
@@ -689,7 +688,6 @@ def sync_todos_from_stdin() -> None:
 def ensure_page(
     proj: Path,
     title_or_slug: str,
-    parent_slug: str = ROOT_SLUG,
     status: str | None = None,
 ) -> str:
     name = title_or_slug.strip()
@@ -706,13 +704,12 @@ def ensure_page(
             set_page_status(proj, slug, status)
         _remember_page(proj, slug)
         return slug
-    slug = add_page(proj, name, parent_slug=parent_slug)
-    if parent_slug == ROOT_SLUG:
-        index = _pages_dir(proj) / "index.md"
-        index.write_text(
-            _insert_toc_row(index.read_text(encoding="utf-8"), name, slug, status),
-            encoding="utf-8",
-        )
+    slug = add_page(proj, name)
+    index = _pages_dir(proj) / "index.md"
+    index.write_text(
+        _insert_toc_row(index.read_text(encoding="utf-8"), name, slug, status),
+        encoding="utf-8",
+    )
     _remember_page(proj, slug)
     return slug
 
@@ -914,27 +911,23 @@ def _figure_summary(cell: dict, raw_limit: int) -> dict:
 def _artifact_summary(cell: dict) -> dict:
     lines = [ln.strip() for ln in cell["body"].split("\n") if ln.strip()]
     first = lines[0].replace("**📦 Artifact**", "📦").strip() if lines else "📦"
-    uri = next(
-        (
-            ln
-            for ln in lines
-            if ln.startswith(ARTIFACT_URI_PREFIX) or "huggingface.co/buckets/" in ln
-        ),
-        "",
-    )
-    local = uri.startswith(ARTIFACT_URI_PREFIX)
+    bucket_match = BUCKET_URL_RE.search(cell["body"])
+    link = bucket_match.group(0) if bucket_match else None
+    local = link is None
     path = cell["metadata"].get("path")
-    if local:
+    if link:
+        preview = f"{first} · {link}"
+    elif path:
+        preview = f"{first} · local file (pushed to a Bucket on publish)"
+    elif local:
         preview = f"{first} · local (pushed to a Bucket on publish)"
-    elif uri:
-        preview = f"{first} · {uri}"
     else:
         preview = first
     summary = {
         "artifact": cell["metadata"].get("artifact"),
         "artifact_type": cell["metadata"].get("artifact_type"),
         "local": local,
-        "link": None if local else (uri or None),
+        "link": link,
         "preview": preview,
     }
     if path:
@@ -1324,12 +1317,21 @@ def add_path_artifact_cell(
     if artifact_type:
         line += f" · {artifact_type}"
     line += _format_size(size)
-    line += " · local file"
+    body = f"{line}\n\n{PATH_ARTIFACT_URI_PREFIX}{display}"
+    register_local(
+        proj,
+        path_artifact={
+            "path": display,
+            "abs_path": str(Path(path).resolve()),
+            "size": size,
+            "artifact_type": artifact_type,
+        },
+    )
     _append_cell(
         proj,
         page_slug,
         "artifact",
-        line,
+        body,
         title=title or f"Artifact: {Path(path).name}",
         path=display,
         size=size,
@@ -1361,7 +1363,10 @@ def add_figure_cell(
 
 
 def register_local(
-    proj: Path, dashboard_project: str | None = None, artifact: str | None = None
+    proj: Path,
+    dashboard_project: str | None = None,
+    artifact: str | None = None,
+    path_artifact: dict | None = None,
 ) -> None:
     metadata = read_metadata(proj)
     if dashboard_project:
@@ -1370,6 +1375,10 @@ def register_local(
         arts = metadata.setdefault("local_artifacts", [])
         if artifact not in arts:
             arts.append(artifact)
+    if path_artifact:
+        entries = metadata.setdefault("local_path_artifacts", [])
+        entries[:] = [e for e in entries if e.get("path") != path_artifact["path"]]
+        entries.append(path_artifact)
     write_metadata(proj, metadata)
 
 
@@ -1776,93 +1785,94 @@ def start_preview(proj: Path, port: int = 7861, open_browser: bool = True) -> st
     return url
 
 
-def _local_dashboard_launcher():
-    import threading  # noqa: PLC0415
+def _logbook_static_app(root: Path):
+    from starlette.applications import Starlette  # noqa: PLC0415
+    from starlette.responses import FileResponse, PlainTextResponse  # noqa: PLC0415
+    from starlette.routing import Route  # noqa: PLC0415
 
-    state = {"url": None, "failed": False}
-    lock = threading.Lock()
+    root = root.resolve()
 
-    def dashboard_url() -> str | None:
-        with lock:
-            if state["url"] is None and not state["failed"]:
-                try:
-                    from trackio import show  # noqa: PLC0415
+    async def endpoint(request):
+        rel = request.path_params.get("path", "") or "index.html"
+        candidate = (root / rel).resolve()
+        if not candidate.is_relative_to(root):
+            return PlainTextResponse("Not found", status_code=404)
+        if candidate.is_dir():
+            candidate = candidate / "index.html"
+        if not candidate.is_file():
+            return PlainTextResponse("Not found", status_code=404)
+        return FileResponse(candidate, headers={"Cache-Control": "no-store, max-age=0"})
 
-                    _server, local_url, _share, _full = show(
-                        open_browser=False, block_thread=False
-                    )
-                    state["url"] = local_url.rstrip("/")
-                except Exception:
-                    state["failed"] = True
-            return state["url"]
-
-    return dashboard_url
+    return Starlette(routes=[Route("/{path:path}", endpoint)])
 
 
-def _make_preview_handler(dashboard_url_fn):
-    import http.server  # noqa: PLC0415
+def _build_preview_app(proj: Path):
+    from starlette.applications import Starlette  # noqa: PLC0415
+    from starlette.routing import Mount  # noqa: PLC0415
 
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def end_headers(self):
-            self.send_header("Cache-Control", "no-store, max-age=0")
-            super().end_headers()
+    from trackio.frontend_config import resolve_frontend_dir  # noqa: PLC0415
+    from trackio.server import build_starlette_app_only  # noqa: PLC0415
 
-        def do_GET(self):
-            if self.path.split("?", 1)[0] == "/dashboard-info.json":
-                payload = json.dumps({"url": dashboard_url_fn()}).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
-                return
-            super().do_GET()
-
-    return Handler
+    dashboard_app, _write_token = build_starlette_app_only(
+        mcp_server=False,
+        frontend_dir=str(resolve_frontend_dir(None).path),
+    )
+    static_app = _logbook_static_app(logbook_root(proj))
+    return Starlette(
+        routes=[
+            Mount("/dashboard", app=dashboard_app),
+            Mount("/", app=static_app),
+        ]
+    )
 
 
 def serve(
     path: str | Path | None = None, port: int = 7861, open_browser: bool = True
 ) -> None:
-    import functools  # noqa: PLC0415
-    import socketserver  # noqa: PLC0415
+    import time as _time  # noqa: PLC0415
     import webbrowser  # noqa: PLC0415
+
+    from trackio.launch import start_server  # noqa: PLC0415
 
     proj = require_project_dir(path)
     write_site_files(proj)
+    app = _build_preview_app(proj)
 
-    handler_cls = _make_preview_handler(_local_dashboard_launcher())
-    handler = functools.partial(handler_cls, directory=str(logbook_root(proj)))
-    socketserver.ThreadingTCPServer.allow_reuse_address = True
-    socketserver.ThreadingTCPServer.daemon_threads = True
-    server_ports = [port] if port == 0 else range(port, port + TRY_NUM_PORTS)
-    httpd = None
-    for candidate_port in server_ports:
+    candidates = (
+        [_find_preview_port(0)] if port == 0 else range(port, port + TRY_NUM_PORTS)
+    )
+    server = None
+    actual_port = None
+    last_err: Exception | None = None
+    for candidate_port in candidates:
         try:
-            httpd = socketserver.ThreadingTCPServer(("", candidate_port), handler)
+            _name, actual_port, _url, server = start_server(
+                app, server_name="0.0.0.0", server_port=candidate_port
+            )
             break
-        except OSError:
+        except OSError as e:
+            last_err = e
             continue
-    if httpd is None:
+    if server is None:
         raise LogbookError(
             f"Cannot find empty port in range: {port}-{port + TRY_NUM_PORTS - 1}. "
             "Pass --port to choose another starting port."
-        )
+        ) from last_err
 
-    with httpd:
-        actual_port = httpd.server_address[1]
-        url = f"http://localhost:{actual_port}/"
-        print(_highlight_command(f"* Trackio logbook launched at: {url}"))
-        print("Press Ctrl+C to stop.")
-        if open_browser:
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
+    url = f"http://localhost:{actual_port}/"
+    print(_highlight_command(f"* Trackio logbook launched at: {url}"))
+    print(f"  Dashboard embedded at: {url}dashboard/")
+    print("Press Ctrl+C to stop.")
+    if open_browser:
         try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nStopped.")
+            webbrowser.open(url)
+        except Exception:
+            pass
+    try:
+        while True:
+            _time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nStopped.")
 
 
 def _readme(manifest: dict) -> str:
@@ -1934,23 +1944,43 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
     metadata["local_dashboards"] = dashboards
 
     arts = metadata.get("local_artifacts", [])
-    if arts:
+    path_arts = metadata.get("local_path_artifacts", [])
+    if arts or path_arts:
         owner, _, name = metadata["space_id"].partition("/")
         bucket = metadata.get("artifacts_bucket") or f"{owner}/{name}-artifacts"
         try:
             from trackio import bucket_storage  # noqa: PLC0415
 
             bucket_storage.create_bucket_if_not_exists(bucket, private=private)
+            metadata["artifacts_bucket"] = bucket
+
             for project in sorted({a.split("/")[0] for a in arts if "/" in a}):
                 print(f"  · pushing artifacts for '{project}' → bucket {bucket}")
                 bucket_storage.upload_project_to_bucket(project, bucket)
-            metadata["artifacts_bucket"] = bucket
             for art in arts:
                 _rewrite_in_pages(
                     proj,
                     f"{ARTIFACT_URI_PREFIX}{art}",
                     f"https://huggingface.co/buckets/{bucket}#{art}",
                 )
+
+            if path_arts:
+                print(
+                    f"  · pushing {len(path_arts)} local file artifact(s) → bucket {bucket}"
+                )
+                uploaded = bucket_storage.upload_logbook_path_artifacts_to_bucket(
+                    bucket, path_arts
+                )
+                for rel in uploaded:
+                    _rewrite_in_pages(
+                        proj,
+                        f"{PATH_ARTIFACT_URI_PREFIX}{rel}",
+                        f"https://huggingface.co/buckets/{bucket}#"
+                        f"{bucket_storage.LOGBOOK_FILES_BUCKET_PREFIX}/{rel}",
+                    )
+                missing = [e["path"] for e in path_arts if e["path"] not in uploaded]
+                for rel in missing:
+                    print(f"  · skipped local file artifact (missing on disk): {rel}")
         except Exception as e:
             print(f"  · could not push artifacts to bucket: {e}")
 
