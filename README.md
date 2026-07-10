@@ -53,101 +53,6 @@ https://github.com/user-attachments/assets/2683cf27-7520-4fff-9ee9-bdc08a8ca404
 
 - **Free**: Everything here, including hosting on Hugging Face, is free!
 
-### Trackio vs. Weights & Biases
-
-Trackio covers the core experiment-tracking workflow while staying lightweight, local-first, and easy to self-host. W&B offers a broader enterprise platform with additional orchestration and governance features.
-
-<table>
-  <thead>
-    <tr>
-      <th>Feature</th>
-      <th align="center">Trackio</th>
-      <th align="center">Weights &amp; Biases</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Metrics, configs, and run tracking</td>
-      <td align="center">✅</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Live dashboards and run comparison</td>
-      <td align="center">✅</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Images, audio, and video</td>
-      <td align="center">✅</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Tables</td>
-      <td align="center">✅</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Automatic system metrics</td>
-      <td align="center">✅</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Alerts and webhooks</td>
-      <td align="center">✅</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Offline and local-first logging</td>
-      <td align="center">✅</td>
-      <td align="center">✅ Offline mode</td>
-    </tr>
-    <tr>
-      <td>Hosted dashboards and sharing</td>
-      <td align="center">✅ Hugging Face Spaces</td>
-      <td align="center">✅ W&amp;B Cloud</td>
-    </tr>
-    <tr>
-      <td>Self-hosting</td>
-      <td align="center">✅</td>
-      <td align="center">✅ Enterprise</td>
-    </tr>
-    <tr>
-      <td>Versioned artifacts and lineage</td>
-      <td align="center">✅</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Experiment reports</td>
-      <td align="center">✅ Markdown reports</td>
-      <td align="center">✅ Interactive reports</td>
-    </tr>
-    <tr>
-      <td>Hyperparameter sweeps</td>
-      <td align="center">❌</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Model registry</td>
-      <td align="center">❌</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td>Enterprise RBAC and governance</td>
-      <td align="center">❌</td>
-      <td align="center">✅</td>
-    </tr>
-    <tr>
-      <td><mark><strong>💸 Is it free?</strong></mark></td>
-      <td align="center"><mark><strong>✅ YES</strong></mark></td>
-      <td align="center"><mark><strong>❌ No!</strong></mark></td>
-    </tr>
-  </tbody>
-</table>
-
-<sub>W&amp;B offers a <a href="https://site.wandb.ai/pricing/">free Personal tier</a>, but also has paid plans and reserves some capabilities for paid tiers. Trackio is <a href="LICENSE">open source</a>, and its documented local and Hugging Face Spaces workflows are free.</sub>
-
-Trackio is designed to be lightweight and _forkable_: **Python** for the backend and API, **Svelte 5** for the dashboard, so developers can fork the repository and extend either side.
-
 ## Installation
 
 Trackio requires [Python 3.10 or higher](https://www.python.org/downloads/). Install with `pip`:
@@ -416,6 +321,86 @@ When a `space_id` is provided, the same background thread batches queued entries
 These numbers were measured against a free-tier Hugging Face Space (2 vCPU / 16 GB RAM). Throughput will scale with the Space hardware tier, and local-only logging is orders of magnitude faster since no network round-trip is involved.
 
 > **Tip:** For high-frequency logging (e.g. logging every training step), Trackio's queue-and-batch design means your training loop is never blocked by network I/O. Even if the Space is temporarily unreachable, logs accumulate locally and are replayed once the connection is restored.
+
+### Trackio features (vs. W&B)
+
+Trackio covers the core experiment-tracking workflow while staying lightweight, local-first, and easy to self-host. Here, we provide feature-by-feature comparison with W&B
+
+<table>
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th align="center">Trackio</th>
+      <th align="center">Weights &amp; Biases</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Metrics, configs, and run tracking</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Live dashboards and run comparison</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Images, audio, and video</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Tables</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Automatic system metrics</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Alerts and webhooks</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Hosted dashboards and sharing</td>
+      <td align="center">✅ Hugging Face Spaces</td>
+      <td align="center">✅ W&B Cloud</td>
+    </tr>
+    <tr>
+      <td>Versioned artifacts and lineage</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Experiment reports</td>
+      <td align="center">✅</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Hyperparameter sweeps</td>
+      <td align="center">❌</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td>Artifact registry</td>
+      <td align="center">❌</td>
+      <td align="center">✅</td>
+    </tr>
+    <tr>
+      <td><mark><strong>💸 Free for unlimited personal and team use?</strong></mark></td>
+      <td align="center"><mark><strong>✅ YES</strong></mark></td>
+      <td align="center"><mark><strong>❌ No!</strong></mark></td>
+    </tr>
+  </tbody>
+</table>
+
+Trackio is designed to be lightweight and _forkable_: **Python** for the backend and API, **Svelte 5** for the dashboard, so developers can fork the repository and extend either side.
+
+
 
 ## Note: Trackio is in Beta (DB Schema May Change)
 
