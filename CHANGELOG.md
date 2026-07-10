@@ -1,5 +1,13 @@
 # trackio
 
+## 0.30.2
+
+### Features
+
+- [#614](https://github.com/gradio-app/trackio/pull/614) [`eba80c7`](https://github.com/gradio-app/trackio/commit/eba80c7464af250519a90b8ac3179ff6652b651a) - Render logbooks as single-page documents with section navigation and contextual resources.  Thanks @abidlabs!
+- [#612](https://github.com/gradio-app/trackio/pull/612) [`2c1b943`](https://github.com/gradio-app/trackio/commit/2c1b9436b093e9f9335c99c10fe4b6afa622e314) - Warn that logbook open is experimental.  Thanks @abidlabs!
+- [#611](https://github.com/gradio-app/trackio/pull/611) [`96b1d94`](https://github.com/gradio-app/trackio/commit/96b1d94def7596aa1302864cbfc57942dd63822b) - Logbook: auto-capture output artifacts and live-embedded dashboard cells.  Thanks @abidlabs!
+
 ## 0.30.1
 
 ### Features
