@@ -181,71 +181,25 @@ body {
 
 /* ---- pinned notes ---- */
 .pinned-notes {
-  margin: 30px 0 4px;
-  padding: 20px;
-  border: 1px solid rgba(249, 115, 22, 0.28);
-  border-radius: 14px;
-  background: rgba(255, 247, 237, 0.74);
+  margin: 30px 0 0;
 }
 .pinned-notes-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.pinned-notes-heading > span {
-  font-size: 19px;
-  line-height: 1.35;
+  margin-bottom: 10px;
 }
 #page .pinned-notes h2 {
   margin: 0;
-  font-size: 21px;
-}
-#page .pinned-notes-heading p {
-  margin: 1px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
 }
 .pinned-notes-list .cell {
   margin: 12px 0 0;
-  border-color: rgba(249, 115, 22, 0.3);
-  box-shadow: 0 3px 12px rgba(249, 115, 22, 0.07);
-}
-.pinned-notes-list .cell-head {
-  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(249, 115, 22, 0.55);
 }
 .cell.pinned-source {
-  border-color: rgba(249, 115, 22, 0.38);
+  border-color: rgba(249, 115, 22, 0.55);
 }
-.cell-meta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.pin-badge,
-.pin-source {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-  font-family: var(--sans);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1;
-}
-.pin-badge {
-  padding: 5px 7px;
-  border-radius: 999px;
-  color: var(--accent-strong);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-}
-.pin-source {
-  color: var(--accent-strong);
-  text-decoration: none;
-}
-.pin-source:hover {
-  text-decoration: underline;
+.book-intro.has-pinned-notes {
+  border-bottom: none;
+  padding-bottom: 22px;
+  margin-bottom: 30px;
 }
 
 #page h1 {
@@ -1001,6 +955,48 @@ table.board tr.linked-row:hover a {
   margin-left: auto;
   font-size: 12px;
   color: var(--muted);
+}
+
+/* ---- logbook summary stats ---- */
+.logbook-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 0 0 28px;
+}
+.stat-tile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 18px 22px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.stat-tile:hover {
+  border-color: rgba(249, 115, 22, 0.45);
+  box-shadow: 0 3px 12px rgba(31, 41, 55, 0.06);
+}
+.stat-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.stat-num {
+  font-family: var(--mono);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--accent-strong);
+}
+.stat-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (max-width: 560px) {
+  .logbook-stats {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- inline resource chips ---- */
