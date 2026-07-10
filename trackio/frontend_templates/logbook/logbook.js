@@ -77,20 +77,51 @@
 
   function renderMarkdown(md, container) {
     const cellRe = /(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)/g;
+    const tokens = [];
     let pos = 0;
     let found = false;
     let match;
     while ((match = cellRe.exec(md))) {
       found = true;
-      renderMarkdownPlain(md.slice(pos, match.index + match[1].length), container);
-      const meta = parseCellMeta(match[2]);
-      renderCell(meta, match[3], container);
+      tokens.push({
+        kind: "md",
+        text: md.slice(pos, match.index + match[1].length),
+      });
+      tokens.push({
+        kind: "cell",
+        meta: parseCellMeta(match[2]),
+        body: match[3],
+      });
       pos = match.index + match[0].length;
     }
-    if (found) {
-      renderMarkdownPlain(md.slice(pos), container);
-    } else {
-      renderMarkdownPlain(md, container);
+    tokens.push({ kind: "md", text: found ? md.slice(pos) : md });
+
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t.kind === "md") {
+        renderMarkdownPlain(t.text, container);
+        continue;
+      }
+      if (t.consumed) continue;
+      if (t.meta.type === "code") {
+        const arts = [];
+        for (let j = i + 1; j < tokens.length; j++) {
+          const n = tokens[j];
+          if (n.kind === "md") {
+            if (n.text.trim() === "") continue;
+            break;
+          }
+          if (n.meta.type === "artifact") {
+            arts.push(n);
+            n.consumed = true;
+            continue;
+          }
+          break;
+        }
+        renderCell(t.meta, t.body, container, arts);
+      } else {
+        renderCell(t.meta, t.body, container);
+      }
     }
   }
 
@@ -116,7 +147,7 @@
       if (joined.indexOf("📦 Artifact") !== -1) {
         const div = document.createElement("div");
         div.className = "artifact-chip";
-        div.innerHTML = inline(joined);
+        div.innerHTML = ARTIFACT_ICON_IMG + inline(joined.replace(/📦\s*/, ""));
         container.appendChild(div);
         return;
       }
@@ -221,7 +252,7 @@
     flushPara();
   }
 
-  function renderCell(meta, body, container) {
+  function renderCell(meta, body, container, artifacts) {
     const cell = document.createElement("section");
     cell.className = `cell ${meta.type || "markdown"}`;
     if (meta.id) cell.dataset.cellId = meta.id;
@@ -241,8 +272,9 @@
     const bodyEl = document.createElement("div");
     bodyEl.className = "cell-body";
     if (meta.type === "code") {
-      renderCodeCell(body, bodyEl);
+      renderCodeCell(body, bodyEl, artifacts);
     } else if (meta.type === "figure") {
+      cell.dataset.resUrl = `trackio-figure://${(meta.title || "Figure").trim()}`;
       renderFigureCell(body, bodyEl, head);
     } else if (meta.type === "artifact") {
       renderMarkdownPlain(body, bodyEl);
@@ -252,6 +284,10 @@
       );
       if (chip && uri) chip.dataset.resUrl = uri[1];
     } else if (meta.type === "dashboard") {
+      const sp = body.match(/https:\/\/huggingface\.co\/spaces\/[^\s<>)"'`]+/);
+      cell.dataset.resUrl = sp
+        ? sp[0]
+        : `trackio-local-dashboard://${(meta.dashboard_project || "").trim()}`;
       renderDashboardCell(meta, body, bodyEl);
     } else {
       const cleaned = stripDuplicateTitle(body, meta.title);
@@ -315,6 +351,43 @@
     return parts;
   }
 
+  function fitFigureFrame(frame, wrap) {
+    let doc;
+    try {
+      doc = frame.contentDocument;
+    } catch (e) {
+      return;
+    }
+    if (!doc || !doc.body) return;
+    frame.style.transform = "none";
+    frame.style.width = "100%";
+    frame.style.height = "auto";
+    const avail = wrap.clientWidth;
+    const cw = Math.max(doc.body.scrollWidth, doc.documentElement.scrollWidth, 1);
+    const ch = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 1);
+    if (avail && cw > avail + 1) {
+      const scale = avail / cw;
+      frame.style.width = `${cw}px`;
+      frame.style.height = `${ch}px`;
+      frame.style.transformOrigin = "top left";
+      frame.style.transform = `scale(${scale})`;
+      wrap.style.height = `${Math.ceil(ch * scale)}px`;
+    } else {
+      frame.style.width = "100%";
+      frame.style.height = `${ch}px`;
+      wrap.style.height = `${ch}px`;
+    }
+  }
+
+  function attachFigureFit(frame, wrap) {
+    const refit = () => fitFigureFrame(frame, wrap);
+    frame.addEventListener("load", refit);
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(() => refit());
+      ro.observe(wrap);
+    }
+  }
+
   function renderFigureCell(text, container, head) {
     const parts = parseFences(text);
     const htmlPart = parts.find((part) => part.lang === "html");
@@ -331,8 +404,12 @@
     frame.sandbox = "allow-scripts allow-same-origin";
     frame.loading = "lazy";
     frame.srcdoc = htmlPart.text;
+    const figWrap = document.createElement("div");
+    figWrap.className = "figure-fit";
+    figWrap.appendChild(frame);
+    attachFigureFit(frame, figWrap);
     if (!rawPart || !rawPart.text.trim()) {
-      container.appendChild(frame);
+      container.appendChild(figWrap);
       return;
     }
     const sw = document.createElement("div");
@@ -362,7 +439,7 @@
       sw.classList.toggle("raw", showRaw);
       figBtn.classList.toggle("active", !showRaw);
       rawBtn.classList.toggle("active", showRaw);
-      frame.hidden = showRaw;
+      figWrap.hidden = showRaw;
       rawView.hidden = !showRaw;
     };
     figBtn.addEventListener("click", () => select(false));
@@ -372,7 +449,7 @@
     } else {
       container.appendChild(sw);
     }
-    container.appendChild(frame);
+    container.appendChild(figWrap);
     container.appendChild(rawView);
   }
 
@@ -398,6 +475,7 @@
       if (url.startsWith("trackio-local-dashboard://")) {
         const div = document.createElement("div");
         div.className = "artifact-chip";
+        div.dataset.resUrl = url;
         div.innerHTML =
           "🎯 <strong>Local Trackio dashboard</strong> — publish the logbook to share it";
         container.appendChild(div);
@@ -459,7 +537,29 @@
     return g;
   }
 
-  function renderCodeCell(body, container) {
+  function renderOutArtifact(info) {
+    const remote = !info.local && !!info.url;
+    const el = document.createElement(remote ? "a" : "div");
+    el.className = "out-artifact";
+    if (remote) {
+      el.href = info.url;
+      el.target = "_blank";
+      el.rel = "noopener";
+    }
+    el.dataset.resUrl = info.resUrl;
+    const parts = [info.type, info.size].filter(Boolean).map(esc);
+    const state = remote
+      ? `<span class="out-artifact-state open">Open ↗</span>`
+      : `<span class="out-artifact-state">publish to share</span>`;
+    const meta = parts.length ? `${parts.join(" · ")} · ${state}` : state;
+    el.innerHTML =
+      `<span class="out-artifact-ico">${ARTIFACT_ICON_IMG}</span>` +
+      `<span class="out-artifact-name">${esc(info.name)}</span>` +
+      `<span class="out-artifact-meta">${meta}</span>`;
+    return el;
+  }
+
+  function renderCodeCell(body, container, artifacts) {
     const parts = parseFences(body);
     const block = document.createElement("div");
     block.className = "jp";
@@ -471,6 +571,16 @@
     input.appendChild(inputBody);
     let metaEl = null;
     let outputEl = null;
+    let outBody = null;
+    const ensureOut = () => {
+      if (outputEl) return;
+      outputEl = document.createElement("div");
+      outputEl.className = "jp-out";
+      outputEl.appendChild(jpGutter("Out"));
+      outBody = document.createElement("div");
+      outBody.className = "jp-out-body";
+      outputEl.appendChild(outBody);
+    };
     const embedTexts = [];
     parts.forEach((part) => {
       if (part.kind === "text") {
@@ -490,21 +600,30 @@
         return;
       }
       if (part.kind === "output") {
-        outputEl = document.createElement("div");
-        outputEl.className = "jp-out";
-        outputEl.appendChild(jpGutter("Out"));
+        ensureOut();
         const pre = document.createElement("pre");
         pre.className = "jp-out-pre";
         const c = document.createElement("code");
         c.textContent = part.text;
         pre.appendChild(c);
-        outputEl.appendChild(pre);
+        outBody.appendChild(pre);
         outputEl.appendChild(copySnippetBtn(part.text));
         embedTexts.push(part.text);
         return;
       }
       inputBody.appendChild(renderCode(part.text, part.lang, part.title));
     });
+    if (artifacts && artifacts.length) {
+      ensureOut();
+      const artWrap = document.createElement("div");
+      artWrap.className = "jp-artifacts";
+      artifacts.forEach((a) => {
+        artWrap.appendChild(
+          renderOutArtifact(artifactInfoFromCell(a.meta, a.body))
+        );
+      });
+      outBody.appendChild(artWrap);
+    }
     if (inputBody.childNodes.length > 0) block.appendChild(input);
     if (metaEl) block.appendChild(metaEl);
     if (outputEl) block.appendChild(outputEl);
@@ -726,6 +845,7 @@
     }
     const det = document.createElement("details");
     det.className = "code-accordion";
+    det.dataset.resUrl = `trackio-script://${title}`;
     const sum = document.createElement("summary");
     sum.innerHTML =
       `<span class="code-ico">&lt;/&gt;</span>` +
@@ -757,12 +877,14 @@
         ul = null;
         const div = document.createElement("div");
         div.className = "artifact-chip";
-        div.innerHTML = inline(item);
+        div.innerHTML = inline(item.replace("📦", "🪣"));
         container.appendChild(div);
       } else if (item.indexOf("trackio-local-dashboard://") !== -1) {
         ul = null;
+        const uri = item.match(/trackio-local-dashboard:\/\/\S+/)?.[0] || "";
         const div = document.createElement("div");
         div.className = "artifact-chip";
+        if (uri) div.dataset.resUrl = uri;
         div.innerHTML =
           "🎯 <strong>Local dashboard</strong> — publish the logbook to share it";
         container.appendChild(div);
@@ -788,10 +910,11 @@
   }
 
   const RESOURCE_SECTIONS = [
+    ["dashboard", "Dashboards", "🎯"],
     ["model", "Models", "🤗"],
     ["dataset", "Datasets", "📊"],
     ["space", "Spaces", "🚀"],
-    ["artifact", "Artifacts", "📦"],
+    ["artifact", "Artifacts", "🪣"],
     ["paper", "Papers", "📄"],
     ["repo", "Code", "🐙"],
     ["job", "Jobs", "⚙️"],
@@ -802,7 +925,11 @@
     RESOURCE_SECTIONS.map(([kind, , icon]) => [kind, icon])
   );
 
+  const ARTIFACT_ICON_IMG = `<img class="art-ico" src="./bucket-icon.svg" alt="" />`;
+  const DASHBOARD_ICON_IMG = `<img class="art-ico" src="./trackio-logo-light.png" alt="" />`;
+
   const RESOURCE_DESC = {
+    dashboard: "Dashboard",
     model: "Model",
     dataset: "Dataset",
     space: "Space",
@@ -827,7 +954,7 @@
     let m;
     if (url.startsWith("trackio-local-dashboard://")) {
       return {
-        kind: "space",
+        kind: "dashboard",
         id: url.slice("trackio-local-dashboard://".length),
         url,
         local: true,
@@ -893,7 +1020,7 @@
     } else if (item.kind === "dataset") {
       const d = await getJSON(`https://huggingface.co/api/datasets/${item.id}`);
       if (d) set([`↓ ${fmt(d.downloads)}`, `♥ ${fmt(d.likes)}`]);
-    } else if (item.kind === "space") {
+    } else if (item.kind === "space" || item.kind === "dashboard") {
       const d = await getJSON(`https://huggingface.co/api/spaces/${item.id}`);
       if (d) set([d.sdk, `♥ ${fmt(d.likes)}`]);
     } else if (item.kind === "repo") {
@@ -1023,6 +1150,44 @@
   }
 
   let RAIL_TOKEN = 0;
+  const RAIL_EXCLUDE_KINDS = new Set(["paper", "repo", "artifact", "dashboard"]);
+
+  function railDashboardItem(it) {
+    return {
+      kind: "dashboard",
+      id: it.id,
+      url: it.local ? it.resUrl : it.url || it.resUrl,
+      local: it.local,
+      railLabel: "Dashboard",
+    };
+  }
+
+  function promoteTrackioSpacesInRail(groups, dashResUrls, body, rail, token) {
+    const spaceGroup = groups.get("space");
+    if (!spaceGroup || !spaceGroup.size) return;
+    spaceGroup.forEach((item, url) => {
+      getJSON(`https://huggingface.co/api/spaces/${item.id}`)
+        .then((d) => {
+          if (rail.dataset.renderToken !== token) return;
+          const tags = (d && d.tags) || [];
+          if (!tags.some((t) => String(t).toLowerCase() === "trackio")) return;
+          if (dashResUrls.has(url)) return;
+          spaceGroup.delete(url);
+          if (!spaceGroup.size) groups.delete("space");
+          if (!groups.has("dashboard")) groups.set("dashboard", new Map());
+          groups.get("dashboard").set(url, {
+            kind: "dashboard",
+            id: item.id,
+            url: item.url,
+            local: false,
+            railLabel: "Dashboard",
+          });
+          dashResUrls.add(url);
+          paintRail(groups, body, rail);
+        })
+        .catch(() => {});
+    });
+  }
 
   function renderRail(md, body, rail) {
     const token = String(++RAIL_TOKEN);
@@ -1032,13 +1197,40 @@
       " "
     );
     const groups = new Map();
+    const dashMap = new Map();
+    const dashResUrls = new Set();
+    cellDashboardItems(md).forEach((it) => {
+      if (dashMap.has(it.resUrl)) return;
+      dashMap.set(it.resUrl, railDashboardItem(it));
+      dashResUrls.add(it.resUrl);
+    });
+    if (dashMap.size) groups.set("dashboard", dashMap);
     extractUrls(scanText).forEach((url) => {
       const item = classifyResource(url);
       if (!item) return;
+      if (RAIL_EXCLUDE_KINDS.has(item.kind)) return;
+      if (dashResUrls.has(url)) return;
       if (!groups.has(item.kind)) groups.set(item.kind, new Map());
       groups.get(item.kind).set(item.url, item);
     });
+    const artMap = new Map();
+    cellArtifactItems(md).forEach((it) => {
+      if (artMap.has(it.resUrl)) return;
+      const label = it.type
+        ? it.type.charAt(0).toUpperCase() + it.type.slice(1)
+        : "Artifact";
+      artMap.set(it.resUrl, {
+        kind: "artifact",
+        id: it.name,
+        url: it.local ? it.resUrl : it.url || it.resUrl,
+        local: it.local,
+        railLabel: label,
+        size: it.size,
+      });
+    });
+    if (artMap.size) groups.set("artifact", artMap);
     paintRail(groups, body, rail);
+    promoteTrackioSpacesInRail(groups, dashResUrls, body, rail, token);
     detectBareModelIds(scanText, groups)
       .then((result) => {
         if (rail.dataset.renderToken !== token) return;
@@ -1062,11 +1254,24 @@
           el.rel = "noopener";
         }
         el.dataset.resUrl = item.url;
-        const desc = item.local
-          ? "local · publish to share"
-          : RESOURCE_DESC[kind];
+        let desc;
+        if (kind === "artifact") {
+          const state = item.local ? "publish to share" : "Open ↗";
+          desc = item.size ? `${item.size} · ${state}` : state;
+        } else if (kind === "dashboard") {
+          desc = item.local ? "publish to share" : "Open ↗";
+        } else {
+          desc = item.local ? "publish to share" : RESOURCE_DESC[kind];
+        }
+        const kindLabel = item.railLabel || label.replace(/s$/, "");
+        const iconHtml =
+          kind === "artifact"
+            ? ARTIFACT_ICON_IMG
+            : kind === "dashboard"
+              ? DASHBOARD_ICON_IMG
+              : `<span>${icon}</span>`;
         el.innerHTML =
-          `<div class="rail-kind"><span>${icon}</span>${esc(label.replace(/s$/, ""))}</div>` +
+          `<div class="rail-kind">${iconHtml}${esc(kindLabel)}</div>` +
           `<div class="rail-title">${esc(item.id)}</div>` +
           `<div class="rail-meta">${esc(desc)}</div>`;
         rail.appendChild(el);
@@ -1116,6 +1321,7 @@
   function renderTrackioSpaceEmbed(el, url, id) {
     const sub = id.toLowerCase().replace(/[^a-z0-9-]/g, "-");
     el.className = "trackio-embed unfurl embed";
+    el.dataset.resUrl = url;
     el.innerHTML =
       `<div class="embed-head">` +
       `<span class="unfurl-kind">🎯 Trackio dashboard</span>` +
@@ -1140,6 +1346,7 @@
     const open = baseUrl.replace(/\/$/, "") + "/?project=" + encodeURIComponent(project);
     const src = open + "&sidebar=hidden&navbar=hidden";
     el.className = "trackio-embed unfurl embed";
+    el.dataset.resUrl = `trackio-local-dashboard://${project}`;
     el.innerHTML =
       `<div class="embed-head">` +
       `<span class="unfurl-kind">🎯 Trackio dashboard</span>` +
@@ -1162,6 +1369,7 @@
     }
     const chip = () => {
       holder.className = "artifact-chip";
+      holder.dataset.resUrl = `trackio-local-dashboard://${project}`;
       holder.innerHTML =
         "🎯 <strong>Local Trackio dashboard</strong> — publish the logbook to share it";
     };
@@ -1399,6 +1607,19 @@
       }
     });
     if (bookIntroBody) renderPinnedNotes(pinnedCells, bookIntroBody);
+    if (bookIntroBody) {
+      const section = bookIntroBody.closest(".book-intro");
+      const hasExtra = Array.from(bookIntroBody.children).some(
+        (el) =>
+          el.tagName !== "H1" &&
+          !el.classList.contains("agent-hint") &&
+          !el.classList.contains("logbook-stats") &&
+          !el.classList.contains("pinned-notes")
+      );
+      if (section && !section.classList.contains("has-pinned-notes") && !hasExtra) {
+        section.classList.add("book-intro-tight");
+      }
+    }
     requestAnimationFrame(() => {
       if (opts.preserveScroll) {
         window.scrollTo(0, scrollY);
@@ -1429,79 +1650,316 @@
     });
   }
 
-  const STATS_ARTIFACT_KINDS = ["artifact", "dataset", "model", "bucket"];
   let STATS_TOKEN = 0;
+  let STATS_LISTENERS = false;
+
+  function fmtBytes(n) {
+    if (n == null || isNaN(n)) return null;
+    if (n < 1000) return `${n} B`;
+    const units = ["kB", "MB", "GB", "TB"];
+    let v = n;
+    let i = -1;
+    do {
+      v /= 1000;
+      i++;
+    } while (v >= 1000 && i < units.length - 1);
+    return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
+  }
+
+  function spaceIdFromUrl(url) {
+    return url.split("/spaces/")[1].split(/[?#]/)[0].replace(/\/$/, "");
+  }
+
+  const LB_CELL_RE = /(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)/g;
+
+  function cellDashboardItems(md) {
+    const re = new RegExp(LB_CELL_RE.source, "g");
+    const items = [];
+    let m;
+    while ((m = re.exec(md))) {
+      const meta = parseCellMeta(m[2]);
+      if (meta.type !== "dashboard") continue;
+      const body = m[3];
+      const project = meta.dashboard_project || "";
+      const sp = body.match(/https:\/\/huggingface\.co\/spaces\/[^\s<>)"'`]+/);
+      const local = !sp;
+      const url = sp ? sp[0] : "";
+      const resUrl = local ? `trackio-local-dashboard://${project}` : url;
+      items.push({
+        id: local ? project : spaceIdFromUrl(url),
+        local,
+        url,
+        resUrl,
+      });
+    }
+    return items;
+  }
+
+  function artifactInfoFromCell(meta, body) {
+    const name = meta.artifact || meta.path || "";
+    const local = !!meta.path;
+    let size = null;
+    const sm = body.match(/·\s*([\d.]+\s*[kMGT]?B)\b/);
+    if (sm) size = sm[1].trim();
+    if (!size && meta.size != null) size = fmtBytes(meta.size);
+    const bucket = body.match(/https:\/\/huggingface\.co\/buckets\/[^\s<>)"'`]+/);
+    const artUri = body.match(/trackio-artifact:\/\/\S+/);
+    const url = bucket ? bucket[0] : "";
+    const resUrl = url || (artUri ? artUri[0] : `trackio-artifact://${name}`);
+    return { name, type: meta.artifact_type || "", size, local, url, resUrl };
+  }
+
+  function cellArtifactItems(md) {
+    const re = new RegExp(LB_CELL_RE.source, "g");
+    const items = [];
+    let m;
+    while ((m = re.exec(md))) {
+      const meta = parseCellMeta(m[2]);
+      const body = m[3];
+      const order = meta.created_at || "";
+      if (meta.type === "artifact") {
+        const info = artifactInfoFromCell(meta, body);
+        if (info.name) items.push({ ...info, order });
+      } else if (meta.type === "figure") {
+        const name = (meta.title || "Figure").trim();
+        items.push({
+          name,
+          type: "figure",
+          size: null,
+          local: true,
+          url: "",
+          resUrl: `trackio-figure://${name}`,
+          order,
+        });
+      } else if (meta.type === "code") {
+        parseFences(body).forEach((p) => {
+          if (!p.title) return;
+          items.push({
+            name: p.title,
+            type: "script",
+            size: null,
+            local: true,
+            url: "",
+            resUrl: `trackio-script://${p.title}`,
+            order,
+          });
+        });
+      }
+    }
+    return items;
+  }
+
+  function collectLogbookResources(markdownList) {
+    const re = new RegExp(LB_CELL_RE.source, "g");
+    const dashboards = new Map();
+    markdownList.forEach((md) => {
+      let m;
+      while ((m = re.exec(md))) {
+        const meta = parseCellMeta(m[2]);
+        const body = m[3];
+        if (meta.type !== "dashboard") continue;
+        const project = meta.dashboard_project || "";
+        const space = body.match(/https:\/\/huggingface\.co\/spaces\/[^\s<>)"'`]+/);
+        const local = !space;
+        const url = space ? space[0] : "";
+        const key = local ? `local:${project}` : `space:${spaceIdFromUrl(url)}`;
+        const resUrl = local ? `trackio-local-dashboard://${project}` : url;
+        if (!dashboards.has(key))
+          dashboards.set(key, { project, local, url, resUrl });
+      }
+    });
+    const artifacts = new Map();
+    markdownList.forEach((md) => {
+      cellArtifactItems(md).forEach((it) => {
+        const key = `${it.type}:${it.name}`;
+        const prev = artifacts.get(key);
+        if (!prev || it.order >= prev.order) artifacts.set(key, it);
+      });
+    });
+    return {
+      dashboards: Array.from(dashboards.values()).sort((a, b) =>
+        a.project.localeCompare(b.project)
+      ),
+      artifacts: Array.from(artifacts.values()).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      ),
+    };
+  }
+
+  function closeStatPopovers() {
+    document
+      .querySelectorAll(".stat-popover")
+      .forEach((p) => (p.hidden = true));
+    document
+      .querySelectorAll(".stat-tile.open")
+      .forEach((t) => t.classList.remove("open"));
+  }
+
+  function ensureStatListeners() {
+    if (STATS_LISTENERS) return;
+    STATS_LISTENERS = true;
+    document.addEventListener("click", closeStatPopovers);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeStatPopovers();
+    });
+  }
+
+  function stateHtml(remote, url) {
+    return remote
+      ? `<a class="stat-row-state open" href="${esc(url)}" target="_blank" rel="noopener" title="Open in a new tab">Open ↗</a>`
+      : `<span class="stat-row-state">publish to share</span>`;
+  }
+
+  function scrollToResource(resUrl) {
+    closeStatPopovers();
+    if (!resUrl) return;
+    const el = document.querySelector(
+      `#page .page-body [data-res-url="${CSS.escape(resUrl)}"]:not(.stat-row)`
+    );
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("res-flash");
+    setTimeout(() => el.classList.remove("res-flash"), 1500);
+  }
+
+  function dashRowHtml(d) {
+    const inner =
+      `<span class="stat-row-ico">${DASHBOARD_ICON_IMG}</span>` +
+      `<div class="stat-row-main"><div class="stat-row-title">${esc(d.project)}</div>` +
+      `<div class="stat-row-meta">${stateHtml(!d.local, d.url)}</div></div>`;
+    return `<div class="stat-row" data-res-url="${esc(d.resUrl)}" title="Jump to it in the logbook">${inner}</div>`;
+  }
+
+  function artRowHtml(a) {
+    const remote = !a.local && !!a.url;
+    const parts = [a.type, a.size].filter(Boolean).map(esc);
+    const meta = parts.length
+      ? `${parts.join(" · ")} · ${stateHtml(remote, a.url)}`
+      : stateHtml(remote, a.url);
+    const inner =
+      `<span class="stat-row-ico">${ARTIFACT_ICON_IMG}</span>` +
+      `<div class="stat-row-main"><div class="stat-row-title">${esc(a.name)}</div>` +
+      `<div class="stat-row-meta">${meta}</div></div>`;
+    return `<div class="stat-row" data-res-url="${esc(a.resUrl)}" title="Jump to it in the logbook">${inner}</div>`;
+  }
+
+  function statTile(icon, alt, singular, plural, head, rowFn) {
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "stat-tile";
+    const render = (items) => {
+      const count = items.length;
+      const label = count === 1 ? singular : plural;
+      const caret = count > 0 ? `<span class="stat-caret">▾</span>` : "";
+      tile.innerHTML =
+        `<img class="stat-icon" src="${icon}" alt="${esc(alt)}" />` +
+        `<div class="stat-text"><div class="stat-num">${count}</div>` +
+        `<div class="stat-label">${esc(label)}</div></div>` +
+        caret;
+      tile.disabled = count === 0;
+      if (count > 0) {
+        const pop = document.createElement("div");
+        pop.className = "stat-popover";
+        pop.hidden = true;
+        pop.innerHTML =
+          `<div class="stat-pop-head">${esc(head)}</div>` +
+          items.map(rowFn).join("");
+        pop.addEventListener("click", (e) => {
+          if (e.target.closest("a.stat-row-state")) {
+            e.stopPropagation();
+            return;
+          }
+          e.stopPropagation();
+          const row = e.target.closest(".stat-row");
+          if (row) scrollToResource(row.dataset.resUrl);
+        });
+        tile.appendChild(pop);
+      }
+    };
+    tile.addEventListener("click", (e) => {
+      if (tile.disabled) return;
+      e.stopPropagation();
+      const pop = tile.querySelector(".stat-popover");
+      if (!pop) return;
+      const isOpen = !pop.hidden;
+      closeStatPopovers();
+      if (!isOpen) {
+        pop.hidden = false;
+        tile.classList.add("open");
+      }
+    });
+    return { tile, render };
+  }
 
   function buildLogbookStats(markdownList) {
     const token = ++STATS_TOKEN;
+    ensureStatListeners();
+    const { dashboards, artifacts } = collectLogbookResources(markdownList);
+
+    const el = document.createElement("div");
+    el.className = "logbook-stats";
+    const dash = statTile(
+      "./trackio-logo-light.png",
+      "Trackio",
+      "Trackio Dashboard",
+      "Trackio Dashboards",
+      "Dashboards created in this logbook",
+      dashRowHtml
+    );
+    const art = statTile(
+      "./bucket-icon.svg",
+      "Bucket",
+      "Artifact",
+      "Artifacts",
+      "Artifacts created in this logbook",
+      artRowHtml
+    );
+    dash.render(dashboards);
+    art.render(artifacts);
+    el.appendChild(dash.tile);
+    el.appendChild(art.tile);
+
     const scanText = markdownList
       .map((md) =>
         md.replace(/(`{3,4}|~{3,4})(html|raw)[^\n]*\n[\s\S]*?\n\1/g, " ")
       )
       .join("\n");
-    const groups = new Map();
+    const seen = new Set(
+      dashboards.map((d) =>
+        d.local ? `local:${d.project}` : `space:${spaceIdFromUrl(d.url)}`
+      )
+    );
+    const remoteSpaces = new Map();
     extractUrls(scanText).forEach((url) => {
       const item = classifyResource(url);
-      if (!item) return;
-      if (!groups.has(item.kind)) groups.set(item.kind, new Map());
-      groups.get(item.kind).set(item.url, item);
+      if (item && item.kind === "space" && !item.local) {
+        remoteSpaces.set(item.url, item);
+      }
     });
-    const spaces = Array.from((groups.get("space") || new Map()).values());
-    const artifactCount = () =>
-      STATS_ARTIFACT_KINDS.reduce(
-        (n, kind) => n + (groups.get(kind) ? groups.get(kind).size : 0),
-        0
-      );
-
-    const el = document.createElement("div");
-    el.className = "logbook-stats";
-    const makeTile = (icon, alt) => {
-      const tile = document.createElement("div");
-      tile.className = "stat-tile";
-      tile.innerHTML =
-        `<img class="stat-icon" src="${icon}" alt="${alt}" />` +
-        `<div class="stat-text"><div class="stat-num"></div>` +
-        `<div class="stat-label"></div></div>`;
-      el.appendChild(tile);
-      return tile;
-    };
-    const dashTile = makeTile("./trackio-logo-light.png", "Trackio");
-    const artTile = makeTile("./bucket-icon.svg", "Bucket");
-    const setTile = (tile, n, singular, plural) => {
-      tile.querySelector(".stat-num").textContent = String(n);
-      tile.querySelector(".stat-label").textContent = n === 1 ? singular : plural;
-    };
-
-    let dashboards = spaces.filter((s) => s.local).length;
-    setTile(dashTile, dashboards, "Trackio Dashboard", "Trackio Dashboards");
-    setTile(artTile, artifactCount(), "Artifact", "Artifacts");
-
-    spaces
-      .filter((s) => !s.local)
-      .forEach((s) => {
-        getJSON(`https://huggingface.co/api/spaces/${s.id}`)
-          .then((d) => {
-            if (STATS_TOKEN !== token) return;
-            const tags = (d && d.tags) || [];
-            if (tags.some((t) => String(t).toLowerCase() === "trackio")) {
-              dashboards += 1;
-              setTile(
-                dashTile,
-                dashboards,
-                "Trackio Dashboard",
-                "Trackio Dashboards"
-              );
-            }
-          })
-          .catch(() => {});
-      });
-    detectBareModelIds(scanText, groups)
-      .then((result) => {
-        if (result.added && STATS_TOKEN === token) {
-          setTile(artTile, artifactCount(), "Artifact", "Artifacts");
-        }
-      })
-      .catch(() => {});
+    remoteSpaces.forEach((s) => {
+      const key = `space:${s.id}`;
+      if (seen.has(key)) return;
+      getJSON(`https://huggingface.co/api/spaces/${s.id}`)
+        .then((d) => {
+          if (STATS_TOKEN !== token) return;
+          const tags = (d && d.tags) || [];
+          if (
+            !seen.has(key) &&
+            tags.some((t) => String(t).toLowerCase() === "trackio")
+          ) {
+            seen.add(key);
+            dashboards.push({
+              project: s.id,
+              local: false,
+              url: s.url,
+              resUrl: s.url,
+            });
+            dashboards.sort((a, b) => a.project.localeCompare(b.project));
+            dash.render(dashboards);
+          }
+        })
+        .catch(() => {});
+    });
     return el;
   }
 
