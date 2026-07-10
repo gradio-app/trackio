@@ -955,19 +955,19 @@ table.board tr.linked-row:hover a {
 
 /* ---- logbook summary stats ---- */
 .logbook-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   margin: 0 0 28px;
 }
 .stat-tile {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: var(--radius);
-  padding: 18px 22px;
+  padding: 13px 40px;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 .stat-tile:hover {
@@ -975,26 +975,27 @@ table.board tr.linked-row:hover a {
   box-shadow: 0 3px 12px rgba(31, 41, 55, 0.06);
 }
 .stat-icon {
-  width: 29px;
-  height: 29px;
-  flex: 0 0 29px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   object-fit: contain;
+}
+.stat-text {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
 }
 .stat-num {
   font-family: var(--mono);
-  font-size: 32px;
+  font-size: 19px;
   font-weight: 600;
   line-height: 1.1;
   color: var(--accent-strong);
 }
 .stat-label {
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--muted);
-}
-@media (max-width: 560px) {
-  .logbook-stats {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ---- inline resource chips ---- */
