@@ -1455,18 +1455,18 @@
 
     const el = document.createElement("div");
     el.className = "logbook-stats";
-    const makeTile = (icon) => {
+    const makeTile = (icon, alt) => {
       const tile = document.createElement("div");
       tile.className = "stat-tile";
       tile.innerHTML =
-        `<span class="stat-icon">${icon}</span>` +
+        `<img class="stat-icon" src="${icon}" alt="${alt}" />` +
         `<div class="stat-text"><div class="stat-num"></div>` +
         `<div class="stat-label"></div></div>`;
       el.appendChild(tile);
       return tile;
     };
-    const dashTile = makeTile("🎯");
-    const artTile = makeTile("📦");
+    const dashTile = makeTile("./trackio-logo-light.png", "Trackio");
+    const artTile = makeTile("./bucket-icon.svg", "Bucket");
     const setTile = (tile, n, singular, plural) => {
       tile.querySelector(".stat-num").textContent = String(n);
       tile.querySelector(".stat-label").textContent = n === 1 ? singular : plural;

@@ -24,7 +24,9 @@ VIEWER_FILES = [
     "logbook.css",
     "logbook.js",
     "trackio-logo.png",
+    "trackio-logo-light.png",
     "trackio-wordmark-dark.png",
+    "bucket-icon.svg",
 ]
 
 TOC_HEADING = "## Pages"

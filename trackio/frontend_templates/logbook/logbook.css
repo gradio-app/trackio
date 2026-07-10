@@ -975,8 +975,10 @@ table.board tr.linked-row:hover a {
   box-shadow: 0 3px 12px rgba(31, 41, 55, 0.06);
 }
 .stat-icon {
-  font-size: 26px;
-  line-height: 1;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  object-fit: contain;
 }
 .stat-num {
   font-family: var(--mono);
