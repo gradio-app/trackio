@@ -224,6 +224,8 @@
   function renderCell(meta, body, container) {
     const cell = document.createElement("section");
     cell.className = `cell ${meta.type || "markdown"}`;
+    if (meta.id) cell.dataset.cellId = meta.id;
+    if (isPinned(meta)) cell.classList.add("pinned-source");
 
     const head = document.createElement("div");
     head.className = "cell-head";
@@ -234,6 +236,12 @@
       (title ? `<div class="cell-title">${title}</div>` : "") +
       `<div class="cell-meta">${when}</div>`;
     if (!title) head.classList.add("no-title");
+    if (isPinned(meta)) {
+      const badge = document.createElement("span");
+      badge.className = "pin-badge";
+      badge.textContent = "📌 Pinned";
+      head.querySelector(".cell-meta").prepend(badge);
+    }
     cell.appendChild(head);
 
     const bodyEl = document.createElement("div");
@@ -258,6 +266,11 @@
     }
     cell.appendChild(bodyEl);
     container.appendChild(cell);
+    return cell;
+  }
+
+  function isPinned(meta) {
+    return Boolean(meta && (meta.pinned === true || meta.pinned === "true"));
   }
 
   function stripDuplicateTitle(body, title) {
@@ -1279,6 +1292,61 @@
     return nodes.map(({ node }) => node);
   }
 
+  function collectPinnedCells(markdown, nodes) {
+    const cells = [];
+    markdown.forEach((text, index) => {
+      const cellRe = /(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)/g;
+      let match;
+      let cellIndex = 0;
+      while ((match = cellRe.exec(text))) {
+        const meta = parseCellMeta(match[2]);
+        if (isPinned(meta)) {
+          cells.push({
+            meta,
+            body: match[3],
+            node: nodes[index],
+            index: cells.length,
+            order: meta.pinned_at || meta.created_at || "",
+            cellIndex,
+          });
+        }
+        cellIndex++;
+      }
+    });
+    return cells.sort(
+      (a, b) =>
+        a.order.localeCompare(b.order) ||
+        a.index - b.index ||
+        a.cellIndex - b.cellIndex
+    );
+  }
+
+  function renderPinnedNotes(cells, container) {
+    if (!cells.length) return;
+    const deck = document.createElement("section");
+    deck.className = "pinned-notes";
+    const heading = document.createElement("div");
+    heading.className = "pinned-notes-heading";
+    heading.innerHTML =
+      "<span>📌</span><div><h2>Pinned notes</h2><p>Important context surfaced from the experiment timeline.</p></div>";
+    deck.appendChild(heading);
+
+    const list = document.createElement("div");
+    list.className = "pinned-notes-list";
+    cells.forEach(({ meta, body, node }) => {
+      const cell = renderCell(meta, body, list);
+      cell.classList.add("pinned-copy");
+      const source = document.createElement("a");
+      source.className = "pin-source";
+      source.href = "#/" + node.slug;
+      source.textContent = `From ${node.title}`;
+      cell.querySelector(".cell-meta").prepend(source);
+    });
+    deck.appendChild(list);
+    const hint = container.querySelector(".agent-hint");
+    container.insertBefore(deck, hint ? hint.nextSibling : container.firstChild);
+  }
+
   function removePageDirectory(body) {
     const heading = Array.from(body.children).find(
       (el) => el.tagName === "H2" && el.textContent.trim().toLowerCase() === "pages"
@@ -1302,6 +1370,8 @@
     page.innerHTML = "";
     const nodes = allNodes();
     const markdown = await Promise.all(nodes.map(fetchPage));
+    const pinnedCells = collectPinnedCells(markdown, nodes);
+    let bookIntroBody = null;
     nodes.forEach((node, index) => {
       const section = document.createElement("section");
       section.className = "page-section";
@@ -1327,6 +1397,7 @@
         } else {
           body.prepend(hint);
         }
+        bookIntroBody = body;
       }
       layout.appendChild(body);
       layout.appendChild(rail);
@@ -1340,6 +1411,7 @@
         RAIL_OBSERVERS.push(observer);
       }
     });
+    if (bookIntroBody) renderPinnedNotes(pinnedCells, bookIntroBody);
     requestAnimationFrame(() => {
       if (opts.preserveScroll) {
         window.scrollTo(0, scrollY);
