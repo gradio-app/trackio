@@ -1326,7 +1326,9 @@
       cell.classList.add("pinned-copy");
     });
     deck.appendChild(list);
-    const anchor = container.querySelector(".agent-hint");
+    const anchor =
+      container.querySelector(".logbook-stats") ||
+      container.querySelector(".agent-hint");
     container.insertBefore(deck, anchor ? anchor.nextSibling : container.firstChild);
     container.closest(".book-intro").classList.add("has-pinned-notes");
   }
@@ -1381,6 +1383,7 @@
         } else {
           body.prepend(hint);
         }
+        hint.after(buildLogbookStats(markdown));
         bookIntroBody = body;
       }
       layout.appendChild(body);
@@ -1424,6 +1427,82 @@
         n.classList.remove("res-hl");
       });
     });
+  }
+
+  const STATS_ARTIFACT_KINDS = ["artifact", "dataset", "model", "bucket"];
+  let STATS_TOKEN = 0;
+
+  function buildLogbookStats(markdownList) {
+    const token = ++STATS_TOKEN;
+    const scanText = markdownList
+      .map((md) =>
+        md.replace(/(`{3,4}|~{3,4})(html|raw)[^\n]*\n[\s\S]*?\n\1/g, " ")
+      )
+      .join("\n");
+    const groups = new Map();
+    extractUrls(scanText).forEach((url) => {
+      const item = classifyResource(url);
+      if (!item) return;
+      if (!groups.has(item.kind)) groups.set(item.kind, new Map());
+      groups.get(item.kind).set(item.url, item);
+    });
+    const spaces = Array.from((groups.get("space") || new Map()).values());
+    const artifactCount = () =>
+      STATS_ARTIFACT_KINDS.reduce(
+        (n, kind) => n + (groups.get(kind) ? groups.get(kind).size : 0),
+        0
+      );
+
+    const el = document.createElement("div");
+    el.className = "logbook-stats";
+    const makeTile = (icon) => {
+      const tile = document.createElement("div");
+      tile.className = "stat-tile";
+      tile.innerHTML =
+        `<span class="stat-icon">${icon}</span>` +
+        `<div class="stat-text"><div class="stat-num"></div>` +
+        `<div class="stat-label"></div></div>`;
+      el.appendChild(tile);
+      return tile;
+    };
+    const dashTile = makeTile("🎯");
+    const artTile = makeTile("📦");
+    const setTile = (tile, n, singular, plural) => {
+      tile.querySelector(".stat-num").textContent = String(n);
+      tile.querySelector(".stat-label").textContent = n === 1 ? singular : plural;
+    };
+
+    let dashboards = spaces.filter((s) => s.local).length;
+    setTile(dashTile, dashboards, "Trackio Dashboard", "Trackio Dashboards");
+    setTile(artTile, artifactCount(), "Artifact", "Artifacts");
+
+    spaces
+      .filter((s) => !s.local)
+      .forEach((s) => {
+        getJSON(`https://huggingface.co/api/spaces/${s.id}`)
+          .then((d) => {
+            if (STATS_TOKEN !== token) return;
+            const tags = (d && d.tags) || [];
+            if (tags.some((t) => String(t).toLowerCase() === "trackio")) {
+              dashboards += 1;
+              setTile(
+                dashTile,
+                dashboards,
+                "Trackio Dashboard",
+                "Trackio Dashboards"
+              );
+            }
+          })
+          .catch(() => {});
+      });
+    detectBareModelIds(scanText, groups)
+      .then((result) => {
+        if (result.added && STATS_TOKEN === token) {
+          setTile(artTile, artifactCount(), "Artifact", "Artifacts");
+        }
+      })
+      .catch(() => {});
+    return el;
   }
 
   function buildAgentHint() {
