@@ -1446,9 +1446,13 @@
     nodes.forEach(({ node, depth }) => {
       const a = document.createElement("a");
       a.href = "#/" + node.slug;
-      a.textContent = "§ " + node.title;
       a.className = "depth-" + depth;
       a.dataset.slug = node.slug;
+      const mark = document.createElement("span");
+      mark.className = "tree-mark";
+      mark.textContent = "§";
+      a.appendChild(mark);
+      a.appendChild(document.createTextNode(" " + node.title));
       tree.appendChild(a);
     });
   }

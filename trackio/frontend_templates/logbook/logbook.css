@@ -118,6 +118,16 @@ body {
   font-weight: 600;
 }
 
+#tree a .tree-mark {
+  color: #6b6d76;
+}
+
+#tree a:hover .tree-mark,
+#tree a.active .tree-mark {
+  color: inherit;
+  opacity: 0.6;
+}
+
 #tree .depth-1 {
   padding-left: 22px;
 }
@@ -151,8 +161,8 @@ body {
 
 .page-section {
   scroll-margin-top: 40px;
-  padding: 0 0 70px;
-  margin: 0 0 64px;
+  padding: 0 0 35px;
+  margin: 0 0 32px;
 }
 
 .page-section:last-child {
@@ -390,7 +400,7 @@ body {
 .cell-title {
   flex: 1;
   min-width: 0;
-  font-size: 15.5px;
+  font-size: 13px;
   font-weight: 650;
   color: var(--ink);
   line-height: 1.35;
@@ -1060,11 +1070,11 @@ table.board tr.linked-row:hover a {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: var(--radius);
-  padding: 14px 26px;
+  padding: 12px 23px;
   font: inherit;
   text-align: left;
   cursor: pointer;
