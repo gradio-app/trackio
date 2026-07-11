@@ -5,6 +5,11 @@
   import IndentGuides from "./IndentGuides.svelte";
   import { listArtifacts } from "../lib/api.js";
   import {
+    getAppPollIntervalMs,
+    isRateLimitCooldownActive,
+    isTabHidden,
+  } from "../lib/hostPolling.js";
+  import {
     getArtifactSelectionFromUrl,
     setArtifactSelectionParams,
   } from "../lib/router.js";
@@ -52,7 +57,6 @@
 
   let searching = $derived(search.trim().length > 0);
 
-  // Type groups are expanded by default; only an explicit collapse hides them.
   function typeOpen(type) {
     return searching || expandedTypes[type] !== false;
   }
@@ -134,9 +138,32 @@
     }
   }
 
+  async function refreshArtifacts() {
+    if (!project || loading) return;
+    const seq = ++loadSeq;
+    const result = await listArtifacts(project).catch(() => null);
+    if (result == null || seq !== loadSeq) return;
+    if (JSON.stringify(result) !== JSON.stringify(artifacts)) {
+      artifacts = result;
+    }
+    error = false;
+    empty = artifacts.length === 0;
+    if (!selection && artifacts.length) {
+      await applyInitialSelection();
+    }
+  }
+
   $effect(() => {
     project;
     loadArtifacts();
+  });
+
+  $effect(() => {
+    const timer = setInterval(() => {
+      if (isTabHidden() || isRateLimitCooldownActive()) return;
+      refreshArtifacts();
+    }, getAppPollIntervalMs());
+    return () => clearInterval(timer);
   });
 </script>
 

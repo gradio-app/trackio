@@ -1,10 +1,9 @@
-import shutil
 import tempfile
 from pathlib import Path
 
 import huggingface_hub
 
-from trackio.cas import copy_blobs_tree, is_partial_blob
+from trackio.cas import is_partial_blob
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import (
     TRACKIO_DIR,
@@ -113,17 +112,23 @@ def _export_and_upload_static(
             project, output_dir, db_path_override=db_path
         )
 
-        if media_dir and media_dir.exists():
-            shutil.copytree(media_dir, output_dir / "media")
-
-        if artifacts_dir and artifacts_dir.exists():
-            copy_blobs_tree(artifacts_dir, output_dir / "artifacts")
-
         files_to_add = []
         for f in output_dir.rglob("*"):
             if f.is_file():
                 rel = f.relative_to(output_dir)
                 files_to_add.append((str(f), rel.as_posix()))
+
+        if media_dir and media_dir.exists():
+            for f in media_dir.rglob("*"):
+                if f.is_file():
+                    rel = f.relative_to(media_dir)
+                    files_to_add.append((str(f), f"media/{rel.as_posix()}"))
+
+        if artifacts_dir and artifacts_dir.exists():
+            for f in artifacts_dir.rglob("*"):
+                if f.is_file() and not is_partial_blob(f.name):
+                    rel = f.relative_to(artifacts_dir)
+                    files_to_add.append((str(f), f"artifacts/{rel.as_posix()}"))
 
         huggingface_hub.batch_bucket_files(dest_bucket_id, add=files_to_add)
 

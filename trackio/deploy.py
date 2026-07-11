@@ -2,7 +2,6 @@ import importlib.metadata
 import io
 import json as json_mod
 import os
-import shutil
 import sys
 import tempfile
 import threading
@@ -35,7 +34,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
-from trackio.cas import copy_blobs_tree
+from trackio.cas import PARTIAL_BLOB_GLOB
 from trackio.frontend_config import resolve_frontend_dir
 from trackio.pending_uploads import replay_pending_uploads
 from trackio.remote_client import RemoteClient
@@ -920,21 +919,37 @@ def upload_dataset_for_static(
         output_dir = Path(tmp_dir)
         SQLiteStorage.export_for_static_space(project, output_dir)
 
-        media_dir = project_media_dir(project)
-        if media_dir.exists():
-            dest = output_dir / "media"
-            shutil.copytree(media_dir, dest)
-
-        artifacts_dir = project_artifacts_dir(project)
-        if artifacts_dir.exists():
-            copy_blobs_tree(artifacts_dir, output_dir / "artifacts")
-
         _retry_hf_write(
             "Dataset upload",
             lambda: hf_api.upload_folder(
                 repo_id=dataset_id,
                 repo_type="dataset",
                 folder_path=str(output_dir),
+            ),
+        )
+
+    media_dir = project_media_dir(project)
+    if media_dir.exists():
+        _retry_hf_write(
+            "Dataset media upload",
+            lambda: hf_api.upload_folder(
+                repo_id=dataset_id,
+                repo_type="dataset",
+                folder_path=str(media_dir),
+                path_in_repo="media",
+            ),
+        )
+
+    artifacts_dir = project_artifacts_dir(project)
+    if artifacts_dir.exists():
+        _retry_hf_write(
+            "Dataset artifacts upload",
+            lambda: hf_api.upload_folder(
+                repo_id=dataset_id,
+                repo_type="dataset",
+                folder_path=str(artifacts_dir),
+                path_in_repo="artifacts",
+                ignore_patterns=[PARTIAL_BLOB_GLOB],
             ),
         )
 

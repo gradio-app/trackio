@@ -8,12 +8,14 @@ pattern in `test_token_auth.py`).
 
 import hashlib
 import re
+import sqlite3
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
-from trackio import server
+import trackio
+from trackio import cas, server, utils
 from trackio.exceptions import TrackioAPIError
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import canonical_project_name
@@ -590,4 +592,164 @@ def test_rename_run_updates_artifact_links_and_producer(
     assert (
         SQLiteStorage.get_artifact_manifest("p", "m", "latest")["producer_run_name"]
         == "new-name"
+    )
+
+
+def _insert_metrics_row(project, run_name, run_id):
+    db_path = SQLiteStorage.init_db(project)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO metrics (timestamp, run_id, run_name, step, metrics) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("2026-01-01T00:00:00+00:00", run_id, run_name, 0, "{}"),
+        )
+        conn.commit()
+
+
+def _create_legacy_project_db(project):
+    db_path = SQLiteStorage.get_project_db_path(project)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "timestamp TEXT, run_name TEXT, step INTEGER, metrics TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO metrics (timestamp, run_name, step, metrics) "
+            "VALUES ('2026-01-01T00:00:00+00:00', 'legacy-run', 0, '{}')"
+        )
+        conn.commit()
+
+
+def test_run_records_single_entry_for_name_keyed_metrics(
+    temp_dir, auth_bypassed, stage_blob
+):
+    _insert_metrics_row("p", "train", "train")
+    digest, _ = stage_blob("p", b"w")
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="train",
+        run_id="uuid-1",
+    )
+    records = [r for r in SQLiteStorage.get_run_records("p") if r["name"] == "train"]
+    assert len(records) == 1
+
+
+def test_run_artifacts_dedupe_legacy_and_modern_link_rows(
+    temp_dir, auth_bypassed, stage_blob
+):
+    digest, _ = stage_blob("p", b"w")
+    manifest = [{"path": "w.bin", "digest": digest, "size": 1}]
+    _log_artifact(auth_bypassed, manifest=manifest, name="m", run_name="r", run_id=None)
+    _log_artifact(
+        auth_bypassed, manifest=manifest, name="m", run_name="r", run_id="rid"
+    )
+    out = SQLiteStorage.get_run_artifacts("p", "r", "rid")["output"]
+    assert len(out) == 1
+    counts = SQLiteStorage.get_run_artifact_counts("p")
+    assert sum(c["output"] for c in counts) == 1
+
+
+def test_delete_artifact_only_run_without_run_id(temp_dir, auth_bypassed, stage_blob):
+    digest, _ = stage_blob("p", b"w")
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="ao",
+        run_id=None,
+    )
+    records = SQLiteStorage.get_run_records("p")
+    assert any(r["name"] == "ao" and r["id"] is None for r in records)
+
+    assert SQLiteStorage.delete_run("p", "ao") is True
+
+    assert all(r["name"] != "ao" for r in SQLiteStorage.get_run_records("p"))
+    assert SQLiteStorage.get_run_artifacts("p", "ao", None) == {
+        "input": [],
+        "output": [],
+    }
+
+
+def test_rename_artifact_only_run_without_run_id(temp_dir, auth_bypassed, stage_blob):
+    digest, _ = stage_blob("p", b"w")
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="ao",
+        run_id=None,
+    )
+
+    SQLiteStorage.rename_run("p", "ao", "ao-renamed")
+
+    names = {r["name"] for r in SQLiteStorage.get_run_records("p")}
+    assert "ao-renamed" in names and "ao" not in names
+    out = SQLiteStorage.get_run_artifacts("p", "ao-renamed", None)["output"]
+    assert [a["name"] for a in out] == ["m"]
+
+
+def test_delete_run_preserves_same_name_run_lineage(
+    temp_dir, auth_bypassed, stage_blob
+):
+    digest, _ = stage_blob("p", b"w")
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="train",
+        run_id=None,
+    )
+    _insert_metrics_row("p", "train", "keep-id")
+    _insert_metrics_row("p", "train", "gone-id")
+
+    assert SQLiteStorage.delete_run("p", "train", run_id="gone-id") is True
+
+    out = SQLiteStorage.get_run_artifacts("p", "train", None)["output"]
+    assert [a["name"] for a in out] == ["m"]
+    assert (
+        SQLiteStorage.get_artifact_manifest("p", "m", "latest")["producer_run_name"]
+        == "train"
+    )
+
+
+def test_legacy_metrics_db_artifact_links_resolved_by_name(
+    temp_dir, auth_bypassed, stage_blob
+):
+    _create_legacy_project_db("p")
+    digest, _ = stage_blob("p", b"w")
+    _log_artifact(
+        auth_bypassed,
+        manifest=[{"path": "w.bin", "digest": digest, "size": 1}],
+        name="m",
+        run_name="legacy-run",
+        run_id="client-uuid",
+    )
+
+    records = SQLiteStorage.get_run_records("p")
+    assert [r["name"] for r in records] == ["legacy-run"]
+
+    out = SQLiteStorage.get_run_artifacts("p", "legacy-run", records[0]["id"])
+    assert [a["name"] for a in out["output"]] == ["m"]
+
+    counts = SQLiteStorage.get_run_artifact_counts("p")
+    assert counts == [
+        {"run_id": None, "run_name": "legacy-run", "input": 0, "output": 1}
+    ]
+
+
+def test_static_frontend_blob_url_matches_cas_layout(temp_dir):
+    digest = "ab" + "0" * 62
+    rel = cas.blob_path("p", digest).relative_to(utils.project_artifacts_dir("p"))
+    assert rel.as_posix() == f"blobs/sha256/{digest[:2]}/{digest}"
+
+    js_path = (
+        Path(trackio.__file__).parent / "frontend" / "src" / "lib" / "staticApi.js"
+    )
+    if not js_path.exists():
+        pytest.skip("frontend sources not present in this install")
+    assert (
+        "artifacts/blobs/sha256/${digest.slice(0, 2)}/${digest}" in js_path.read_text()
     )

@@ -8,7 +8,7 @@
     deleteRun,
     renameRun,
   } from "../lib/api.js";
-  import { navigateTo, setQueryParam } from "../lib/router.js";
+  import { openRunDetail } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
 
@@ -42,20 +42,27 @@
 
   let loadSeq = 0;
 
-  function artifactCountsFor(counts, record) {
-    let inputs = 0;
-    let outputs = 0;
+  function buildArtifactCountMaps(counts) {
+    const byId = new Map();
+    const byName = new Map();
     for (const row of counts) {
-      const matches =
-        row.run_id != null
-          ? row.run_id === record.id
-          : row.run_name === record.name;
-      if (matches) {
-        inputs += row.input || 0;
-        outputs += row.output || 0;
-      }
+      const map = row.run_id != null ? byId : byName;
+      const key = row.run_id != null ? row.run_id : row.run_name;
+      const entry = map.get(key) ?? { inputs: 0, outputs: 0 };
+      entry.inputs += row.input || 0;
+      entry.outputs += row.output || 0;
+      map.set(key, entry);
     }
-    return { inputs, outputs };
+    return { byId, byName };
+  }
+
+  function artifactCountsFor(maps, record) {
+    const idCounts = record.id != null ? maps.byId.get(record.id) : null;
+    const nameCounts = maps.byName.get(record.name);
+    return {
+      inputs: (idCounts?.inputs ?? 0) + (nameCounts?.inputs ?? 0),
+      outputs: (idCounts?.outputs ?? 0) + (nameCounts?.outputs ?? 0),
+    };
   }
 
   async function loadRuns() {
@@ -74,12 +81,13 @@
         getRunArtifactCounts(project),
       ]);
       if (seq !== loadSeq) return;
+      const countMaps = buildArtifactCountMaps(artifactCounts);
       runsData = summaries.map((s, i) => ({
         id: runRecords[i].id,
         name: runRecords[i].name,
         numSteps: s.num_logs || 0,
         lastStep: s.last_step || 0,
-        ...artifactCountsFor(artifactCounts, runRecords[i]),
+        ...artifactCountsFor(countMaps, runRecords[i]),
       }));
     } catch (e) {
       if (seq === loadSeq) console.error("Failed to load runs:", e);
@@ -213,7 +221,7 @@
                     style:background={runColorMap[run.id ?? run.name] ??
                       "#9ca3af"}
                   ></span>
-                  <button class="link-btn" onclick={() => { setQueryParam("selected_run_id", run.id); setQueryParam("selected_run", run.name); navigateTo("run-detail"); }}>
+                  <button class="link-btn" onclick={() => openRunDetail(run.name, run.id)}>
                     {run.name}
                   </button>
                 </div>

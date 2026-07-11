@@ -5,7 +5,6 @@ server, and storage layers.
 import hashlib
 import os
 import re
-import shutil
 import uuid
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -28,11 +27,6 @@ def partial_blob_name(base: str = "") -> str:
 
 def is_partial_blob(filename: str) -> bool:
     return PARTIAL_BLOB_MARKER in filename
-
-
-def copy_blobs_tree(src_dir: Path, dst_dir: Path) -> None:
-    """Copy an artifacts tree, excluding in-flight partial blob files."""
-    shutil.copytree(src_dir, dst_dir, ignore=shutil.ignore_patterns(PARTIAL_BLOB_GLOB))
 
 
 def validate_artifact_name(name: str) -> str:
