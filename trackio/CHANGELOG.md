@@ -1,5 +1,11 @@
 # trackio
 
+## 0.30.3
+
+### Features
+
+- [#616](https://github.com/gradio-app/trackio/pull/616) [`645498b`](https://github.com/gradio-app/trackio/commit/645498be37bafab28f884a36e80c5bc0eab06cd9) - Logbook single page.  Thanks @abidlabs!
+
 ## 0.30.2
 
 ### Features
