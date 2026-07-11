@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 
 import pytest
@@ -226,12 +227,15 @@ def test_run_and_log_records_created_artifact_file(proj):
     assert len(cells) == 1
     assert cells[0]["path"] == "model.pt"
     assert cells[0]["artifact_type"] == "model"
-    assert cells[0]["local"] is False
+    assert cells[0]["local"] is True
     assert "local file" in cells[0]["preview"]
     text = _page_text(proj, "Runs")
     assert "**📦 Artifact** `model.pt`" in text
     assert "trackio-artifact://" not in text
+    assert "trackio-local-path://model.pt" in text
     assert not logbook.read_metadata(proj).get("local_artifacts")
+    path_arts = logbook.read_metadata(proj).get("local_path_artifacts")
+    assert path_arts and path_arts[0]["path"] == "model.pt"
 
 
 def test_run_and_log_records_modified_file(proj, tmp_path):
@@ -381,6 +385,117 @@ def test_init_creates_dashboard_cell_immediately(temp_dir, proj):
     assert not [c for c in outline["cells"] if (c["title"] or "").startswith("Run:")]
 
 
+def test_promote_pushes_path_artifact_to_bucket_preserving_relative_path(
+    proj, tmp_path, monkeypatch
+):
+    import huggingface_hub
+
+    checkpoints = tmp_path / "checkpoints"
+    checkpoints.mkdir()
+    model_path = checkpoints / "model.pt"
+    model_path.write_bytes(b"x" * 4096)
+
+    slug = logbook.ensure_page(proj, "Runs")
+    logbook.add_path_artifact_cell(
+        proj, slug, str(model_path), size=4096, artifact_type="model"
+    )
+    metadata = logbook.read_metadata(proj)
+    metadata["space_id"] = "me/Runs"
+    logbook.write_metadata(proj, metadata)
+
+    calls = []
+    monkeypatch.setattr(
+        huggingface_hub,
+        "create_bucket",
+        lambda bucket_id, **kw: calls.append(("create", bucket_id)),
+    )
+    monkeypatch.setattr(
+        huggingface_hub,
+        "batch_bucket_files",
+        lambda bucket_id, add, **kw: calls.append(("upload", bucket_id, add)),
+    )
+    monkeypatch.setattr(huggingface_hub.utils, "get_token", lambda: "tok")
+
+    logbook._promote_local_deps(proj, "me", private=False)
+
+    cells = _artifact_cells(proj, "Runs")
+    assert cells[0]["local"] is False
+    assert (
+        cells[0]["link"]
+        == "https://huggingface.co/buckets/me/Runs-artifacts#logbook-files/checkpoints/model.pt"
+    )
+
+    upload_call = next(c for c in calls if c[0] == "upload")
+    assert upload_call[1] == "me/Runs-artifacts"
+    assert upload_call[2] == [
+        (str(model_path.resolve()), "logbook-files/checkpoints/model.pt")
+    ]
+
+    metadata = logbook.read_metadata(proj)
+    assert metadata["artifacts_bucket"] == "me/Runs-artifacts"
+
+
+def test_promote_reuses_existing_bucket_on_second_publish(proj, tmp_path, monkeypatch):
+    import huggingface_hub
+
+    f = tmp_path / "out.csv"
+    f.write_bytes(b"a,b\n1,2\n")
+    slug = logbook.ensure_page(proj, "Runs")
+    logbook.add_path_artifact_cell(proj, slug, str(f), size=8, artifact_type="dataset")
+    metadata = logbook.read_metadata(proj)
+    metadata["space_id"] = "me/Runs"
+    logbook.write_metadata(proj, metadata)
+
+    create_calls = []
+    monkeypatch.setattr(
+        huggingface_hub,
+        "create_bucket",
+        lambda bucket_id, **kw: create_calls.append(bucket_id),
+    )
+    monkeypatch.setattr(huggingface_hub, "batch_bucket_files", lambda *a, **kw: None)
+    monkeypatch.setattr(huggingface_hub.utils, "get_token", lambda: "tok")
+
+    logbook._promote_local_deps(proj, "me", private=False)
+    first_bucket = logbook.read_metadata(proj)["artifacts_bucket"]
+
+    # A second cell captured after the first publish should reuse the same bucket.
+    f2 = tmp_path / "out2.csv"
+    f2.write_bytes(b"c,d\n3,4\n")
+    logbook.add_path_artifact_cell(proj, slug, str(f2), size=8, artifact_type="dataset")
+    logbook._promote_local_deps(proj, "me", private=False)
+
+    assert logbook.read_metadata(proj)["artifacts_bucket"] == first_bucket
+    assert create_calls == [first_bucket, first_bucket]
+
+
+def test_promote_skips_missing_path_artifact_file(proj, tmp_path, monkeypatch):
+    import huggingface_hub
+
+    f = tmp_path / "gone.pt"
+    f.write_bytes(b"x" * 10)
+    slug = logbook.ensure_page(proj, "Runs")
+    logbook.add_path_artifact_cell(proj, slug, str(f), size=10, artifact_type="model")
+    f.unlink()
+    metadata = logbook.read_metadata(proj)
+    metadata["space_id"] = "me/Runs"
+    logbook.write_metadata(proj, metadata)
+
+    monkeypatch.setattr(huggingface_hub, "create_bucket", lambda *a, **kw: None)
+    uploads = []
+    monkeypatch.setattr(
+        huggingface_hub,
+        "batch_bucket_files",
+        lambda bucket_id, add, **kw: uploads.append(add),
+    )
+    monkeypatch.setattr(huggingface_hub.utils, "get_token", lambda: "tok")
+
+    logbook._promote_local_deps(proj, "me", private=False)
+
+    cells = _artifact_cells(proj, "Runs")
+    assert cells[0]["local"] is True
+    assert uploads == []
+
+
 def test_promote_rewrites_dashboard_body(proj, monkeypatch):
     import trackio as trackio_module
 
@@ -393,41 +508,31 @@ def test_promote_rewrites_dashboard_body(proj, monkeypatch):
     assert cells[0]["link"] == "https://huggingface.co/spaces/me/mnist"
 
 
-def test_preview_handler_dashboard_info(proj, monkeypatch):
-    import http.client
-    import socketserver
-    import threading
+def test_preview_app_serves_logbook_and_mounted_dashboard(proj):
+    from starlette.testclient import TestClient
 
-    calls = []
+    app = logbook._build_preview_app(proj)
+    client = TestClient(app)
 
-    def fake_show(**kwargs):
-        calls.append(kwargs)
-        return (None, "http://127.0.0.1:9999/", None, "http://127.0.0.1:9999/?token=s")
+    root = client.get("/")
+    assert root.status_code == 200
+    assert "no-store" in root.headers.get("cache-control", "")
+    assert "Test Logbook" in root.text
 
-    import trackio as trackio_module
+    dash_root = client.get("/dashboard/")
+    assert dash_root.status_code == 200
+    assert 'window.__trackio_base = "/dashboard"' in dash_root.text
 
-    monkeypatch.setattr(trackio_module, "show", fake_show)
-    handler_cls = logbook._make_preview_handler(logbook._local_dashboard_launcher())
-    import functools
+    match = re.search(r'src="(/dashboard/assets/[^"]+\.js)"', dash_root.text)
+    assert match
+    asset = client.get(match.group(1))
+    assert asset.status_code == 200
+    assert "javascript" in asset.headers.get("content-type", "")
 
-    handler = functools.partial(handler_cls, directory=str(logbook.logbook_root(proj)))
-    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as httpd:
-        port = httpd.server_address[1]
-        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-        thread.start()
-        try:
-            for _ in range(2):
-                conn = http.client.HTTPConnection("127.0.0.1", port)
-                conn.request("GET", "/dashboard-info.json")
-                resp = conn.getresponse()
-                payload = json.loads(resp.read())
-                assert resp.status == 200
-                assert payload == {"url": "http://127.0.0.1:9999"}
-                assert "no-store" in resp.getheader("Cache-Control", "")
-                conn.close()
-        finally:
-            httpd.shutdown()
-    assert len(calls) == 1
+    missing = client.get("/dashboard/no-such-file.js")
+    assert missing.status_code == 404 or "html" in missing.headers.get(
+        "content-type", ""
+    )
 
 
 def test_cli_cell_dashboard(proj, monkeypatch):
