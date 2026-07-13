@@ -1199,7 +1199,8 @@ def main():
         help="Cell id to pin (default: the most recent cell on the target page)",
     )
     lb_pin.add_argument(
-        "--page", help="Page title or slug to scope the search / pick the last cell from"
+        "--page",
+        help="Page title or slug to scope the search / pick the last cell from",
     )
     lb_pin.add_argument(
         "--unpin", action="store_true", help="Unpin the cell instead of pinning it"
