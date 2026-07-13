@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:artifacts UI
+feat:feat: browse artifacts from the UI
