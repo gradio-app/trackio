@@ -82,7 +82,6 @@
 
   function buildSpec(barData) {
     const keys = barData.map((d) => d.key);
-    const labels = barData.map((d) => d.label);
     const colorRange = keys.map((k) => colorMap[k] || "#999");
     const labelByKey = Object.fromEntries(
       barData.map((d) => [d.key, d.label]),
@@ -107,7 +106,7 @@
           type: "nominal",
           sort: keys,
           axis: {
-            labelAngle: labels.length > 4 ? -45 : 0,
+            labelAngle: keys.length > 4 ? -45 : 0,
             labelLimit: 120,
             labelExpr: `${JSON.stringify(labelByKey)}[datum.value] || datum.value`,
           },

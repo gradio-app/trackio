@@ -819,8 +819,12 @@ class SQLiteStorage:
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
-                has_links = bool(
-                    SQLiteStorage._table_columns(conn, "run_artifact_links")
+                has_links = (
+                    bool(SQLiteStorage._table_columns(conn, "run_artifact_links"))
+                    and cursor.execute(
+                        "SELECT 1 FROM run_artifact_links LIMIT 1"
+                    ).fetchone()
+                    is not None
                 )
                 if SQLiteStorage._supports_run_ids(conn):
                     sources = [
@@ -3412,39 +3416,26 @@ class SQLiteStorage:
                     except sqlite3.OperationalError:
                         pass
 
-                    try:
-                        if run_col == "run_id":
-                            cursor.execute(
-                                "UPDATE run_artifact_links SET run_name = ? "
-                                "WHERE run_id = ? "
-                                "OR (run_id IS NULL AND run_name = ?)",
-                                (new_name, run_value, old_name),
-                            )
-                        else:
-                            cursor.execute(
-                                "UPDATE run_artifact_links SET run_name = ? "
-                                "WHERE run_name = ?",
-                                (new_name, run_value),
-                            )
-                    except sqlite3.OperationalError:
-                        pass
-
-                    try:
-                        if run_col == "run_id":
-                            cursor.execute(
-                                "UPDATE artifact_versions SET producer_run_name = ? "
-                                "WHERE producer_run_id = ? "
-                                "OR (producer_run_id IS NULL AND producer_run_name = ?)",
-                                (new_name, run_value, old_name),
-                            )
-                        else:
-                            cursor.execute(
-                                "UPDATE artifact_versions SET producer_run_name = ? "
-                                "WHERE producer_run_name = ?",
-                                (new_name, run_value),
-                            )
-                    except sqlite3.OperationalError:
-                        pass
+                    for table, id_col, name_col in (
+                        ("run_artifact_links", "run_id", "run_name"),
+                        ("artifact_versions", "producer_run_id", "producer_run_name"),
+                    ):
+                        try:
+                            if run_col == "run_id":
+                                cursor.execute(
+                                    f"UPDATE {table} SET {name_col} = ? "
+                                    f"WHERE {id_col} = ? "
+                                    f"OR ({id_col} IS NULL AND {name_col} = ?)",
+                                    (new_name, run_value, old_name),
+                                )
+                            else:
+                                cursor.execute(
+                                    f"UPDATE {table} SET {name_col} = ? "
+                                    f"WHERE {name_col} = ?",
+                                    (new_name, run_value),
+                                )
+                        except sqlite3.OperationalError:
+                            pass
 
                     conn.commit()
 
@@ -4784,54 +4775,25 @@ class SQLiteStorage:
         """List every artifact in `project` with its latest version, total
         version count, current aliases, and the size of the latest version,
         ordered by name."""
-        SQLiteStorage._ensure_hub_loaded()
-        db_path = SQLiteStorage.get_project_db_path(project)
-        if not db_path.exists():
-            return []
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
-                artifact_rows = cursor.execute(
-                    """SELECT a.id, a.name, a.type, a.description, a.created_at,
-                           COUNT(av.id) AS num_versions,
-                           MAX(av.version) AS latest_version,
-                           av.size_bytes
-                    FROM artifacts a
-                    LEFT JOIN artifact_versions av ON av.artifact_id = a.id
-                    GROUP BY a.id
-                    ORDER BY a.name"""
-                ).fetchall()
-                alias_rows = cursor.execute(
-                    "SELECT artifact_id, alias FROM artifact_aliases"
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return []
-            aliases_by_artifact: dict[int, set] = {}
-            for row in alias_rows:
-                aliases_by_artifact.setdefault(int(row["artifact_id"]), set()).add(
-                    row["alias"]
-                )
-            return [
-                {
-                    "name": row["name"],
-                    "type": row["type"],
-                    "description": row["description"],
-                    "num_versions": int(row["num_versions"]),
-                    "latest_version": (
-                        int(row["latest_version"])
-                        if row["latest_version"] is not None
-                        else None
-                    ),
-                    "size_bytes": (
-                        int(row["size_bytes"])
-                        if row["size_bytes"] is not None
-                        else None
-                    ),
-                    "aliases": sorted(aliases_by_artifact.get(int(row["id"]), ())),
-                    "created_at": row["created_at"],
-                }
-                for row in artifact_rows
-            ]
+        return [
+            {
+                "name": art["name"],
+                "type": art["type"],
+                "description": art["description"],
+                "num_versions": art["num_versions"],
+                "latest_version": art["latest_version"],
+                "size_bytes": (
+                    art["versions"][0]["size_bytes"] if art["versions"] else None
+                ),
+                "aliases": sorted(
+                    {alias for v in art["versions"] for alias in v["aliases"]}
+                ),
+                "created_at": art["created_at"],
+            }
+            for art in sorted(
+                SQLiteStorage.list_artifacts(project), key=lambda a: a["name"]
+            )
+        ]
 
     @staticmethod
     def get_run_artifacts(

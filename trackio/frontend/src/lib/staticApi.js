@@ -563,16 +563,12 @@ function compareCreatedAt(a, b) {
   return String(a.created_at || "").localeCompare(String(b.created_at || ""));
 }
 
-let artifactListCache = null;
-
 export async function listArtifacts() {
-  if (artifactListCache) return artifactListCache;
   const { artifacts, versions, aliases } = await getArtifactTables();
   const aliasMap = aliasesByVersionId(aliases);
   const versionsByArtifact = new Map();
   for (const row of versions) {
     const artifactId = Number(row.artifact_id);
-    const manifest = parseTraceJsonField(row.manifest, []);
     if (!versionsByArtifact.has(artifactId)) {
       versionsByArtifact.set(artifactId, []);
     }
@@ -581,14 +577,13 @@ export async function listArtifacts() {
       version: Number(row.version),
       aliases: aliasMap.get(Number(row.id)) || [],
       size_bytes: Number(row.size_bytes),
-      num_files: Array.isArray(manifest) ? manifest.length : 0,
       created_at: row.created_at,
     });
   }
   for (const entries of versionsByArtifact.values()) {
     entries.sort((a, b) => b.version - a.version);
   }
-  artifactListCache = [...artifacts]
+  return [...artifacts]
     .sort((a, b) => {
       if (a.type !== b.type) return a.type < b.type ? -1 : 1;
       if (a.name !== b.name) return a.name < b.name ? -1 : 1;
@@ -606,7 +601,6 @@ export async function listArtifacts() {
         versions: artVersions,
       };
     });
-  return artifactListCache;
 }
 
 export async function getArtifactManifest(_project, name, spec) {

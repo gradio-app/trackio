@@ -928,30 +928,23 @@ def upload_dataset_for_static(
             ),
         )
 
-    media_dir = project_media_dir(project)
-    if media_dir.exists():
-        _retry_hf_write(
-            "Dataset media upload",
-            lambda: hf_api.upload_folder(
-                repo_id=dataset_id,
-                repo_type="dataset",
-                folder_path=str(media_dir),
-                path_in_repo="media",
-            ),
-        )
-
-    artifacts_dir = project_artifacts_dir(project)
-    if artifacts_dir.exists():
-        _retry_hf_write(
-            "Dataset artifacts upload",
-            lambda: hf_api.upload_folder(
-                repo_id=dataset_id,
-                repo_type="dataset",
-                folder_path=str(artifacts_dir),
-                path_in_repo="artifacts",
-                ignore_patterns=[PARTIAL_BLOB_GLOB],
-            ),
-        )
+    for folder, path_in_repo, ignore_patterns in (
+        (project_media_dir(project), "media", None),
+        (project_artifacts_dir(project), "artifacts", [PARTIAL_BLOB_GLOB]),
+    ):
+        if folder.exists():
+            _retry_hf_write(
+                f"Dataset {path_in_repo} upload",
+                lambda folder=folder, path_in_repo=path_in_repo, ignore_patterns=ignore_patterns: (
+                    hf_api.upload_folder(
+                        repo_id=dataset_id,
+                        repo_type="dataset",
+                        folder_path=str(folder),
+                        path_in_repo=path_in_repo,
+                        ignore_patterns=ignore_patterns,
+                    )
+                ),
+            )
 
     print(f"* Dataset uploaded: https://huggingface.co/datasets/{dataset_id}")
 
