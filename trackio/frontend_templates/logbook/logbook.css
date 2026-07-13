@@ -527,6 +527,71 @@ body {
   border-radius: 8px;
   padding: 12px 14px;
 }
+/* ---- figure share ---- */
+.cell-share {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.cell-share-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--code-bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.cell-share-btn:hover {
+  color: var(--accent-strong);
+  border-color: rgba(249, 115, 22, 0.35);
+  background: var(--accent-soft);
+}
+.cell-share-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.cell-share-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 152px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(31, 41, 55, 0.14);
+}
+.cell-share-menu[hidden] {
+  display: none;
+}
+.cell-share-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s;
+}
+.cell-share-item:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
 /* ---- copyable snippets ---- */
 .snippet {
   position: relative;
