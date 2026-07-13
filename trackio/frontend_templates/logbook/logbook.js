@@ -276,8 +276,14 @@
       renderCodeCell(body, bodyEl, artifacts);
     } else if (meta.type === "figure") {
       cell.dataset.resUrl = `trackio-figure://${(meta.title || "Figure").trim()}`;
+      // Only offer sharing when the figure is backed by a real image URL — the
+      // shared post links straight to that image. A data-URI / relative / HTML
+      // figure has no shareable link, so no icon (a link to the whole logbook
+      // adds little value).
+      const imgUrl = figureImageLink(body);
       const metaEl = head.querySelector(".cell-meta");
-      if (metaEl) metaEl.insertBefore(buildShareControl(meta), metaEl.firstChild);
+      if (imgUrl && metaEl)
+        metaEl.insertBefore(buildShareControl(meta, imgUrl), metaEl.firstChild);
       renderFigureCell(body, bodyEl, head);
     } else if (meta.type === "artifact") {
       renderMarkdownPlain(body, bodyEl);
@@ -463,12 +469,24 @@
     '<circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>' +
     '<line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>';
 
-  // Share control for a figure cell: an icon button that opens a small menu
-  // (X / LinkedIn / Copy link). Sits at the front of `.cell-meta`, so it lands
-  // between the Figure/Raw toggle and the date when raw data exists, and right
-  // before the date otherwise. Shares the current page URL (deep-links to the
-  // page a figure lives on); the figure title becomes the share text.
-  function buildShareControl(meta) {
+  // The first real image URL (http/https) inside a figure cell's HTML, or null.
+  // A data-URI, relative path, or non-image HTML figure has no shareable link.
+  function figureImageLink(body) {
+    const parts = parseFences(body);
+    const htmlPart = parts.find((part) => part.lang === "html");
+    if (!htmlPart) return null;
+    const m = htmlPart.text.match(
+      /<img\b[^>]*\bsrc\s*=\s*["']?(https?:\/\/[^"'\s>]+)/i
+    );
+    return m ? m[1] : null;
+  }
+
+  // Share control for an image-backed figure cell: an icon button that opens a
+  // small menu (X / LinkedIn / Copy image link). Sits at the front of
+  // `.cell-meta`, so it lands between the Figure/Raw toggle and the date when
+  // raw data exists, and right before the date otherwise. The shared post links
+  // straight to `imageUrl`; the figure title becomes the share text.
+  function buildShareControl(meta, imageUrl) {
     const wrap = document.createElement("span");
     wrap.className = "cell-share";
     const btn = document.createElement("button");
@@ -493,11 +511,11 @@
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.className = "cell-share-item";
-    copyBtn.textContent = "Copy link";
+    copyBtn.textContent = "Copy image link";
     menu.append(xLink, liLink, copyBtn);
     wrap.append(btn, menu);
 
-    const shareUrl = () => window.location.href;
+    const shareUrl = () => imageUrl;
     const shareText = (meta.title || "Figure").trim();
     const close = () => {
       menu.hidden = true;
@@ -525,7 +543,7 @@
         copyBtn.textContent = "Copy failed";
       }
       setTimeout(() => {
-        copyBtn.textContent = "Copy link";
+        copyBtn.textContent = "Copy image link";
         close();
       }, 1200);
     });
