@@ -1,5 +1,11 @@
 # trackio
 
+## 0.30.4
+
+### Features
+
+- [#618](https://github.com/gradio-app/trackio/pull/618) [`64c18f6`](https://github.com/gradio-app/trackio/commit/64c18f65bf98d6f54040395a1ca0473347ba6a2b) - Logbook: share button on figures + `logbook pin` CLI.  Thanks @abidlabs!
+
 ## 0.30.3
 
 ### Features
