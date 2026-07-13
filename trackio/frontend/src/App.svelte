@@ -87,6 +87,7 @@
   let sidebarOpen = $state(true);
   let sidebarHidden = $state(false);
   let navbarHidden = $state(false);
+  let hideEmptyTabs = $state(false);
   let urlTick = $state(0);
   let alerts = $state([]);
   let pollTimer = $state(null);
@@ -153,7 +154,12 @@
   }
 
   function isBareDashboardPath() {
-    const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+    const base = window.__trackio_base || "";
+    let pathname = window.location.pathname;
+    if (base && pathname.startsWith(base)) {
+      pathname = pathname.slice(base.length) || "/";
+    }
+    pathname = pathname.replace(/\/+$/, "") || "/";
     return pathname === "/";
   }
 
@@ -407,6 +413,8 @@
       showHeaders = false;
     }
 
+    hideEmptyTabs = getQueryParam("hide_empty_tabs") === "true";
+
     shouldOpenFirstNonEmptyTab = isBareDashboardPath();
     currentPage = getPageFromPath();
 
@@ -596,6 +604,7 @@
         {currentPage}
         {tabAvailability}
         optionalEmptyTabs={OPTIONAL_EMPTY_TABS}
+        {hideEmptyTabs}
         onNavigate={handleNavigate}
       />
     {/if}

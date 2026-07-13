@@ -15,6 +15,7 @@ Trackio is an experiment tracking library for logging and visualizing ML trainin
 | **Firing alerts** for training diagnostics | Python API | [alerts.md](alerts.md) |
 | **Retrieving metrics & alerts** after/during training | CLI | [retrieving_metrics.md](retrieving_metrics.md) |
 | **Inspecting storage schema and running direct SQL** | CLI | [storage_schema.md](storage_schema.md) |
+| **Sharing an experiment campaign as a logbook** | CLI | [logbook.md](logbook.md) |
 
 ## When to Use Each
 
@@ -26,9 +27,18 @@ Use `import trackio` in your training scripts to log metrics:
 - Log metrics with `trackio.log()` or use TRL's `report_to="trackio"`
 - Finalize with `trackio.finish()`
 
-**Key concept**: For remote/cloud training, pass `space_id` — metrics sync to a Space dashboard so they persist after the instance terminates.
+**Key concept**: For remote/cloud training, pass `space_id` — metrics sync to a Space dashboard so they persist after the instance terminates. Auto-created Spaces are **public by default** — pass `private=True` if the metrics should not be public.
 
 → See [logging_metrics.md](logging_metrics.md) for setup, TRL integration, and configuration options.
+
+**When a logbook exists**: run ML scripts through `trackio logbook run -- ...` instead of invoking `python ...` directly. Keep `trackio.init()` / `trackio.log()` / `trackio.finish()` inside the script, but launch it like:
+
+```bash
+trackio logbook page "Baseline"
+trackio logbook run -- python train.py --lr 1e-4
+```
+
+This tees output live and records the exact command, detected script/config files, exit code, duration, and captured output in the logbook. `trackio.init()` inside the script immediately adds a live embedded dashboard cell to the logbook page for that project, so anyone watching the logbook preview sees training metrics in real time.
 
 ### Python API → Alerts
 
@@ -65,7 +75,9 @@ Use the `trackio` command to query logged metrics and alerts:
 ```python
 import trackio
 
-trackio.init(project="my-project", space_id="username/trackio")
+# Spaces are PUBLIC by default (good for shareable dashboards);
+# pass private=True if the metrics should not be public
+trackio.init(project="my-project", space_id="username/trackio", private=True)
 trackio.log({"loss": 0.1, "accuracy": 0.9})
 trackio.log({"loss": 0.09, "accuracy": 0.91})
 trackio.finish()
@@ -87,7 +99,7 @@ trackio list projects --space username/my-space --json
 When running experiments autonomously as an LLM agent, the recommended workflow is:
 
 1. **Set up training with alerts** — insert `trackio.alert()` calls for diagnostic conditions
-2. **Launch training** — run the script in the background
+2. **Launch training** — if a logbook exists, use `trackio logbook run -- ...`; otherwise run the script normally
 3. **Poll for alerts** — use `trackio list alerts --project <name> --json --since <timestamp>` to check for new alerts
 4. **Read metrics** — use `trackio get metric ...` to inspect specific values
 5. **Iterate** — based on alerts and metrics, stop the run, adjust hyperparameters, and launch a new run

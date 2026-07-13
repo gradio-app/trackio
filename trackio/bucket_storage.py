@@ -17,6 +17,31 @@ def create_bucket_if_not_exists(bucket_id: str, private: bool | None = None) -> 
     huggingface_hub.create_bucket(bucket_id, private=private, exist_ok=True)
 
 
+LOGBOOK_FILES_BUCKET_PREFIX = "logbook-files"
+
+
+def upload_logbook_path_artifacts_to_bucket(
+    bucket_id: str, entries: list[dict]
+) -> list[str]:
+    """Uploads local files referenced by path-artifact cells, preserving their
+    relative path under a stable bucket prefix. Returns the relative paths that
+    were actually uploaded (missing files are skipped)."""
+    additions: list[tuple[str, str]] = []
+    uploaded: list[str] = []
+    for entry in entries:
+        local_path = Path(entry["abs_path"])
+        if not local_path.is_file():
+            continue
+        remote_path = f"{LOGBOOK_FILES_BUCKET_PREFIX}/{entry['path']}"
+        additions.append((str(local_path), remote_path))
+        uploaded.append(entry["path"])
+    if additions:
+        huggingface_hub.batch_bucket_files(
+            bucket_id, add=additions, token=huggingface_hub.utils.get_token()
+        )
+    return uploaded
+
+
 def _list_bucket_file_paths(bucket_id: str, prefix: str | None = None) -> list[str]:
     items = huggingface_hub.list_bucket_tree(bucket_id, prefix=prefix, recursive=True)
     return [

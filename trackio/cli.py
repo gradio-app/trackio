@@ -1,8 +1,12 @@
 import argparse
 import os
+import re
+import sys
+from pathlib import Path
 
 import huggingface_hub
 
+import trackio
 from trackio import freeze, show, sync
 from trackio.cli_helpers import (
     error_exit,
@@ -233,6 +237,63 @@ def _serialize_space(space) -> dict:
     }
 
 
+def _maybe_handle_logbook_run_argv() -> bool:
+    argv = sys.argv[1:]
+    try:
+        logbook_idx = argv.index("logbook")
+    except ValueError:
+        return False
+    if len(argv) <= logbook_idx + 1 or argv[logbook_idx + 1] != "run":
+        return False
+
+    run_argv = argv[logbook_idx + 2 :]
+
+    run_parser = argparse.ArgumentParser(
+        prog=f"{os.path.basename(sys.argv[0])} logbook run",
+        description=(
+            "Run a command; log the command, its scripts, and output to a page"
+        ),
+    )
+    run_parser.add_argument("--page", help="Page title or slug")
+    run_parser.add_argument("--title", help="Cell title")
+    run_parser.add_argument(
+        "--no-artifacts",
+        action="store_true",
+        help="Do not record output model/data files as artifact cells",
+    )
+    if "--" in run_argv:
+        sep = run_argv.index("--")
+        opts = run_parser.parse_args(run_argv[:sep])
+        command = run_argv[sep + 1 :]
+    else:
+        opts, command = run_parser.parse_known_args(run_argv)
+    if not command:
+        run_parser.error("No command provided. Use: trackio logbook run -- <command>")
+    args = argparse.Namespace(
+        logbook_action="run",
+        page=opts.page,
+        title=opts.title,
+        no_artifacts=opts.no_artifacts,
+        command=command,
+    )
+    _handle_logbook(args)
+    return True
+
+
+def _maybe_rewrite_logbook_read_argv() -> None:
+    argv = sys.argv
+    for i in range(1, len(argv) - 1):
+        if argv[i] == "logbook" and argv[i + 1] == "read":
+            j = i + 2
+            if (
+                j < len(argv)
+                and not argv[j].startswith("-")
+                and argv[j] not in ("pages", "page", "cell")
+            ):
+                argv[j : j + 1] = ["--path", argv[j]]
+            return
+
+
 def _trackio_space_namespaces(api, token: str | None, author: str | None) -> list[str]:
     if author:
         return [author]
@@ -297,7 +358,16 @@ def _handle_list_spaces(args):
 
 
 def main():
+    if _maybe_handle_logbook_run_argv():
+        return
+    _maybe_rewrite_logbook_read_argv()
+
     parser = argparse.ArgumentParser(description="Trackio CLI")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"trackio {trackio.__version__}",
+    )
     parser.add_argument(
         "--space",
         required=False,
@@ -894,7 +964,10 @@ def main():
     )
     skills_add_parser = skills_subparsers.add_parser(
         "add",
-        help="Download and install the Trackio skill for an AI assistant",
+        help=(
+            "Install the Trackio skill to the central .agents/skills location; "
+            "pass agent flags to also symlink it for specific assistants"
+        ),
     )
     skills_add_parser.add_argument(
         "--cursor",
@@ -917,6 +990,11 @@ def main():
         help="Install for OpenCode",
     )
     skills_add_parser.add_argument(
+        "--pi",
+        action="store_true",
+        help="Install for pi",
+    )
+    skills_add_parser.add_argument(
         "--global",
         dest="global_",
         action="store_true",
@@ -933,6 +1011,207 @@ def main():
         action="store_true",
         help="Overwrite existing skill if it already exists",
     )
+    skills_add_parser.add_argument(
+        "--no-command",
+        dest="no_command",
+        action="store_true",
+        help="Do not install the /logbook slash command alongside the skill",
+    )
+    skills_add_parser.add_argument(
+        "--no-hook",
+        dest="no_hook",
+        action="store_true",
+        help="Do not install the Claude Code hook that mirrors todos into the logbook",
+    )
+
+    logbook_parser = subparsers.add_parser(
+        "logbook",
+        help="Create and publish a shareable experiment logbook",
+    )
+    logbook_sub = logbook_parser.add_subparsers(
+        dest="logbook_action",
+        required=True,
+        metavar="{open,cell,run,page,read,serve,publish,sync}",
+    )
+
+    lb_open = logbook_sub.add_parser(
+        "open", help="Start or attach to the logbook in this directory"
+    )
+    lb_open.add_argument(
+        "space_id", nargs="?", help="Optional HF Space id to publish to"
+    )
+    lb_open.add_argument("--title", help="Logbook title (only when creating)")
+    lb_open.add_argument(
+        "--no-serve",
+        action="store_true",
+        help="Open or attach without launching the local logbook preview",
+    )
+    lb_open.add_argument("--port", type=int, default=7861)
+    lb_open.add_argument("--no-browser", action="store_true")
+
+    lb_cell = logbook_sub.add_parser(
+        "cell", help="Append a typed notebook-style cell to a logbook page"
+    )
+    lb_cell_sub = lb_cell.add_subparsers(dest="cell_type", required=True)
+
+    lb_cell_md = lb_cell_sub.add_parser("markdown", help="Append a markdown cell")
+    lb_cell_md.add_argument("body", help="Markdown body")
+    lb_cell_md.add_argument("--title", help="Cell title")
+    lb_cell_md.add_argument("--page", help="Page title or slug")
+    lb_cell_art = lb_cell_sub.add_parser(
+        "artifact", help="Append an artifact cell referencing a Trackio artifact"
+    )
+    lb_cell_art.add_argument("name", help="Artifact reference project/name:vN")
+    lb_cell_art.add_argument("--title", help="Cell title")
+    lb_cell_art.add_argument("--page", help="Page title or slug")
+    lb_cell_art.add_argument(
+        "--type",
+        dest="artifact_type",
+        help='Artifact type, e.g. "dataset" or "model"',
+    )
+
+    lb_cell_code = lb_cell_sub.add_parser("code", help="Append a code cell")
+    lb_cell_code.add_argument("--title", help="Cell title")
+    lb_cell_code.add_argument("--page", help="Page title or slug")
+    lb_cell_code.add_argument(
+        "--code", action="append", default=[], help="Path to code/config to include"
+    )
+    lb_cell_code.add_argument("--code-text", help="Inline code to include")
+    lb_cell_code.add_argument("--language", help="Language for --code-text")
+    lb_cell_code.add_argument("--output", required=True, help="Output text")
+
+    lb_cell_figure = lb_cell_sub.add_parser("figure", help="Append a figure cell")
+    lb_cell_figure.add_argument("--title", help="Cell title")
+    lb_cell_figure.add_argument("--page", help="Page title or slug")
+    lb_cell_figure.add_argument("--html", help="Path to HTML, or inline HTML text")
+    lb_cell_figure.add_argument("--html-text", help="Inline HTML text")
+    lb_cell_figure.add_argument("--raw", help="Path/URL/text for raw data")
+    lb_cell_figure.add_argument("--raw-text", help="Inline raw data")
+
+    lb_cell_dash = lb_cell_sub.add_parser(
+        "dashboard", help="Embed a Trackio dashboard for a project"
+    )
+    lb_cell_dash.add_argument("project", help="Trackio project name")
+    lb_cell_dash.add_argument(
+        "--space",
+        dest="space_id",
+        help="HF Space id (owner/name) hosting the dashboard",
+    )
+    lb_cell_dash.add_argument("--title", help="Cell title")
+    lb_cell_dash.add_argument("--page", help="Page title or slug")
+
+    lb_run = logbook_sub.add_parser(
+        "run",
+        help="Run a command; log the command, its scripts, and output to a page",
+    )
+    lb_run.add_argument("--page", help="Page title or slug")
+    lb_run.add_argument("--title", help="Cell title")
+    lb_run.add_argument(
+        "--no-artifacts",
+        action="store_true",
+        help="Do not record output model/data files as artifact cells",
+    )
+    lb_run.add_argument("command", nargs="*")
+
+    lb_page = logbook_sub.add_parser(
+        "page", help="Create or select a page and make it the default target"
+    )
+    lb_page.add_argument("title", help="Page title")
+
+    lb_read = logbook_sub.add_parser(
+        "read", help="Read logbook pages/cells in an agent-friendly form"
+    )
+    lb_read.add_argument(
+        "--path",
+        help=(
+            "Logbook to read: local path, HF Space id, or URL "
+            "(can also be passed positionally: trackio logbook read <source>)"
+        ),
+    )
+    lb_read.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read.add_argument(
+        "--head",
+        type=int,
+        default=None,
+        help="Lines of code shown per code cell (default 3; 0 hides code)",
+    )
+    lb_read.add_argument(
+        "--tail",
+        type=int,
+        default=None,
+        help="Lines of output shown per code cell (default 3; 0 hides output)",
+    )
+    lb_read.add_argument(
+        "--raw-limit",
+        type=int,
+        default=None,
+        help="Inline figure raw data up to this many chars (default 500; 0 disables)",
+    )
+    lb_read_sub = lb_read.add_subparsers(dest="read_target")
+    lb_read_pages = lb_read_sub.add_parser("pages", help="List logbook pages")
+    lb_read_pages.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read_page = lb_read_sub.add_parser("page", help="Read a page for agents")
+    lb_read_page.add_argument("page", nargs="?", help="Page title or slug")
+    lb_read_page.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read_page.add_argument(
+        "--head", type=int, default=argparse.SUPPRESS, help="Code lines per code cell"
+    )
+    lb_read_page.add_argument(
+        "--tail", type=int, default=argparse.SUPPRESS, help="Output lines per code cell"
+    )
+    lb_read_page.add_argument(
+        "--raw-limit",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Inline figure raw data up to this many chars",
+    )
+    lb_read_cell = lb_read_sub.add_parser("cell", help="Read one cell by id")
+    lb_read_cell.add_argument("cell_id", help="Cell id")
+    lb_read_cell.add_argument("--json", action="store_true", help="Output JSON")
+    lb_read_cell.add_argument("--full", action="store_true", help="Include full body")
+    lb_read_cell.add_argument(
+        "--raw", action="store_true", help="Include figure raw data"
+    )
+    lb_read_cell.add_argument("--html", action="store_true", help="Include figure HTML")
+
+    lb_serve = logbook_sub.add_parser("serve", help="Preview the logbook locally")
+    lb_serve.add_argument("path", nargs="?", help="Logbook workspace/path to serve")
+    lb_serve.add_argument("--port", type=int, default=7861)
+    lb_serve.add_argument("--no-browser", action="store_true")
+
+    lb_pub = logbook_sub.add_parser(
+        "publish", help="Publish to a static HF Space (first publish enables auto-sync)"
+    )
+    lb_pub.add_argument("space_id", nargs="?", help="HF Space id (username/space)")
+    lb_pub.add_argument(
+        "--private",
+        action="store_true",
+        help="Make the logbook and any promoted dashboards/buckets private",
+    )
+
+    lb_pin = logbook_sub.add_parser(
+        "pin",
+        help="Pin (or unpin) a cell so it surfaces on the logbook intro",
+    )
+    lb_pin.add_argument(
+        "cell_id",
+        nargs="?",
+        help="Cell id to pin (default: the most recent cell on the target page)",
+    )
+    lb_pin.add_argument(
+        "--page",
+        help="Page title or slug to scope the search / pick the last cell from",
+    )
+    lb_pin.add_argument(
+        "--unpin", action="store_true", help="Unpin the cell instead of pinning it"
+    )
+
+    logbook_sub.add_parser(
+        "sync", help="Push local edits to the Space now (after the first publish)"
+    )
+
+    logbook_sub.add_parser("_sync")
+    logbook_sub.add_parser("sync-todos")
 
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
@@ -1508,8 +1787,270 @@ def main():
     elif args.command == "skills":
         if args.skills_action == "add":
             _handle_skills_add(args)
+    elif args.command == "logbook":
+        _handle_logbook(args)
     else:
         parser.print_help()
+
+
+def _sync_suffix(lb, proj):
+    if lb.is_autosync(proj):
+        space = lb.read_metadata(proj).get("space_id")
+        return f" · syncing to {space}…"
+    return ""
+
+
+def _logbook_cell_target(lb, proj, args):
+    return lb.resolve_page(proj, getattr(args, "page", None))
+
+
+def _print_logbook_pages(pages):
+    if not pages:
+        print("No pages.")
+        return
+    print("Pages:")
+    for page in pages:
+        count = page["cell_count"]
+        print(
+            f"- {page['slug']} · {page['title']} · "
+            f"{count} cell{'' if count == 1 else 's'}"
+        )
+
+
+def _print_logbook_page_outline(page):
+    print(f"Page: {page['title']} ({page['slug']})")
+    if not page["cells"]:
+        print("No cells.")
+        return
+    for cell in page["cells"]:
+        created = (
+            f" · {cell['created_at'].replace('T', ' ')[:16]}"
+            if cell.get("created_at")
+            else ""
+        )
+        print(f"\n### {cell['title']} · {cell['type']} · {cell['id']}{created}")
+        if cell.get("preview"):
+            print(cell["preview"].rstrip())
+    print(
+        "\nFetch full payloads with: trackio logbook read cell <cell-id> "
+        "[--full|--raw|--html]"
+    )
+
+
+def _print_logbook_cell(cell):
+    print(f"Cell: {cell['title']} ({cell['id']})")
+    print(f"Page: {cell['page_title']} ({cell['page']})")
+    print(f"Type: {cell['type']}")
+    if cell.get("created_at"):
+        print(f"Created: {cell['created_at']}")
+    content_keys = [key for key in ("body", "raw", "html") if key in cell]
+    if not content_keys:
+        if cell["type"] == "code":
+            print("\nBody omitted. Use --full to include code/output.")
+        elif cell["type"] == "figure":
+            print("\nFigure content omitted. Use --raw, --html, or --full.")
+        return
+    for key in content_keys:
+        label = key.upper()
+        print(f"\n--- {label} ---\n")
+        print(cell[key])
+
+
+def _read_logbook_payload(path_or_text, inline_text):
+    if inline_text is not None:
+        return inline_text
+    if not path_or_text:
+        return ""
+    path = Path(path_or_text)
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return path_or_text
+
+
+def _handle_logbook(args):
+    from trackio import logbook as lb
+
+    action = args.logbook_action
+    try:
+        if action == "open":
+            print("Warning: Trackio Logbook is an experimental feature.")
+            proj = lb.find_project_dir()
+            if proj is not None:
+                if args.space_id:
+                    metadata = lb.read_metadata(proj)
+                    metadata["space_id"] = args.space_id
+                    lb.write_metadata(proj, metadata)
+                print(f"Attached to existing logbook at {lb.logbook_root(proj)}")
+                if args.title:
+                    print(
+                        "Note: --title was ignored because this logbook already "
+                        "exists. To retitle it, edit the '# ...' heading in "
+                        f"{lb.logbook_root(proj) / 'pages' / 'index.md'}."
+                    )
+            elif args.space_id:
+                proj = lb.clone_logbook(args.space_id)
+                if proj is not None:
+                    print(
+                        f"Cloned logbook from {args.space_id} into "
+                        f"{lb.logbook_root(proj)}"
+                    )
+            if proj is None:
+                proj = lb.create_logbook(
+                    args.title or os.path.basename(os.getcwd()), space_id=args.space_id
+                )
+                print(f"Opened logbook at {lb.logbook_root(proj)}")
+                if args.space_id:
+                    print(f"Will publish to: {args.space_id}")
+            if not args.no_serve:
+                lb.start_preview(proj, port=args.port, open_browser=not args.no_browser)
+        elif action == "run":
+            proj = lb.require_project_dir()
+            command = list(args.command or [])
+            if command and command[0] == "--":
+                command = command[1:]
+            if not command:
+                error_exit("No command provided. Use: trackio logbook run -- <command>")
+            rc = lb.run_and_log(
+                proj,
+                command,
+                page=args.page,
+                title=args.title,
+                capture_artifacts=not getattr(args, "no_artifacts", False),
+            )
+            slug = lb.read_metadata(proj).get("last_page", "?")
+            print(f"Logged run to page '{slug}'.{_sync_suffix(lb, proj)}")
+            sys.exit(rc)
+        elif action == "cell":
+            proj = lb.require_project_dir()
+            slug = _logbook_cell_target(lb, proj, args)
+            if args.cell_type == "markdown":
+                lb.add_markdown_cell(proj, slug, args.body, title=args.title)
+            elif args.cell_type == "artifact":
+                lb.add_artifact_cell(
+                    proj,
+                    slug,
+                    args.name,
+                    title=args.title,
+                    artifact_type=args.artifact_type,
+                )
+            elif args.cell_type == "code":
+                lb.add_code_cell(
+                    proj,
+                    slug,
+                    args.output,
+                    title=args.title,
+                    code_paths=args.code,
+                    code_text=args.code_text,
+                    language=args.language,
+                )
+            elif args.cell_type == "figure":
+                html = _read_logbook_payload(args.html, args.html_text)
+                raw = _read_logbook_payload(args.raw, args.raw_text)
+                lb.add_figure_cell(
+                    proj,
+                    slug,
+                    html=html,
+                    raw=raw,
+                    title=args.title,
+                )
+            elif args.cell_type == "dashboard":
+                lb.add_dashboard_cell(
+                    proj,
+                    slug,
+                    args.project,
+                    space_id=args.space_id,
+                    title=args.title,
+                )
+            print(
+                f"Logged {args.cell_type} cell to page "
+                f"'{slug}'.{_sync_suffix(lb, proj)}"
+            )
+            lb.trigger_autosync(proj)
+        elif action == "page":
+            proj = lb.require_project_dir()
+            page_slug = lb.ensure_page(proj, args.title)
+            print(f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}")
+            lb.trigger_autosync(proj)
+        elif action == "pin":
+            proj = lb.require_project_dir()
+            cell_id = args.cell_id or lb.last_cell_id(proj, page=args.page)
+            if not cell_id:
+                error_exit(
+                    "No cell to pin. Pass a cell id, or add a cell first "
+                    "(optionally scope with --page)."
+                )
+            res = lb.set_cell_pinned(
+                proj, cell_id, pinned=not args.unpin, page=args.page
+            )
+            verb = "Unpinned" if args.unpin else "Pinned"
+            print(
+                f"{verb} cell {cell_id} on page "
+                f"'{res['page']}'.{_sync_suffix(lb, proj)}"
+            )
+            lb.trigger_autosync(proj)
+        elif action == "read":
+            proj = lb.resolve_read_source(args.path)
+            preview_opts = {
+                "head": lb.DEFAULT_HEAD
+                if getattr(args, "head", None) is None
+                else args.head,
+                "tail": lb.DEFAULT_TAIL
+                if getattr(args, "tail", None) is None
+                else args.tail,
+                "raw_limit": lb.DEFAULT_RAW_LIMIT
+                if getattr(args, "raw_limit", None) is None
+                else args.raw_limit,
+            }
+            if args.read_target is None:
+                if args.json:
+                    print(format_json(lb.read_logbook_data(proj, **preview_opts)))
+                else:
+                    print(lb.read_logbook(proj, **preview_opts))
+            elif args.read_target == "pages":
+                pages = lb.list_pages(proj)
+                if args.json:
+                    print(format_json({"pages": pages}))
+                else:
+                    _print_logbook_pages(pages)
+            elif args.read_target == "page":
+                page = lb.read_page_outline(proj, args.page, **preview_opts)
+                if args.json:
+                    print(format_json(page))
+                else:
+                    _print_logbook_page_outline(page)
+            elif args.read_target == "cell":
+                cell = lb.read_cell(
+                    proj,
+                    args.cell_id,
+                    include_full=args.full,
+                    include_raw=args.raw,
+                    include_html=args.html,
+                )
+                if args.json:
+                    print(format_json(cell))
+                else:
+                    _print_logbook_cell(cell)
+        elif action == "_sync":
+            lb.sync_worker()
+        elif action == "sync-todos":
+            lb.sync_todos_from_stdin()
+        elif action == "serve":
+            lb.serve(path=args.path, port=args.port, open_browser=not args.no_browser)
+        elif action == "publish":
+            url = lb.publish(space_id=args.space_id, private=args.private)
+            print(f"Published: {url}")
+            space_id = lb.read_metadata(lb.require_project_dir()).get("space_id")
+            if space_id:
+                subdomain = re.sub(r"[^a-z0-9]+", "-", space_id.lower()).strip("-")
+                print(f"Rendered at: https://{subdomain}.static.hf.space/")
+        elif action == "sync":
+            proj = lb.require_project_dir()
+            if not lb.is_autosync(proj):
+                error_exit("Publish first: trackio logbook publish <username/space>")
+            lb.trigger_autosync(proj)
+            print(f"Syncing to {lb.read_metadata(proj).get('space_id')}…")
+    except lb.LogbookError as e:
+        error_exit(str(e))
 
 
 def _handle_skills_add(args):
@@ -1530,12 +2071,16 @@ def _handle_skills_add(args):
         "logging_metrics.md",
         "retrieving_metrics.md",
         "storage_schema.md",
+        "logbook.md",
     ]
+    COMMAND_PREFIX = ".agents/commands"
+    COMMAND_FILE = "logbook.md"
 
-    if not (args.cursor or args.claude or args.codex or args.opencode or args.dest):
-        error_exit(
-            "Pick a destination via --cursor, --claude, --codex, --opencode, or --dest."
-        )
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+    USE_LOCAL = (REPO_ROOT / SKILL_PREFIX / "SKILL.md").is_file()
+
+    if USE_LOCAL:
+        print(f"Using local Trackio source at {REPO_ROOT}")
 
     def download(url: str) -> str:
         from huggingface_hub.utils import get_session
@@ -1550,6 +2095,13 @@ def _handle_skills_add(args):
                 "the Trackio GitHub repository."
             )
         return response.text
+
+    def get_content(prefix: str, fname: str) -> str:
+        if USE_LOCAL:
+            local = REPO_ROOT / prefix / fname
+            if local.is_file():
+                return local.read_text(encoding="utf-8")
+        return download(f"{GITHUB_RAW}/{prefix}/{fname}")
 
     def remove_existing(path: Path, force: bool):
         if not (path.exists() or path.is_symlink()):
@@ -1570,8 +2122,9 @@ def _handle_skills_add(args):
         remove_existing(dest, force)
         dest.mkdir()
         for fname in SKILL_FILES:
-            content = download(f"{GITHUB_RAW}/{SKILL_PREFIX}/{fname}")
-            (dest / fname).write_text(content, encoding="utf-8")
+            (dest / fname).write_text(
+                get_content(SKILL_PREFIX, fname), encoding="utf-8"
+            )
         return dest
 
     def create_symlink(
@@ -1584,44 +2137,146 @@ def _handle_skills_add(args):
         link_path.symlink_to(os.path.relpath(central_skill_path, agent_skills_dir))
         return link_path
 
+    def install_command(
+        command_dir: Path, force: bool, strip_frontmatter: bool = False
+    ) -> Path:
+        import re
+
+        command_dir = command_dir.expanduser().resolve()
+        command_dir.mkdir(parents=True, exist_ok=True)
+        dest = command_dir / COMMAND_FILE
+        if dest.exists() and not force:
+            error_exit(
+                f"Command already exists at {dest}.\nRe-run with --force to overwrite."
+            )
+        content = get_content(COMMAND_PREFIX, COMMAND_FILE)
+        if strip_frontmatter:
+            content = re.sub(r"\A---\n.*?\n---\n+", "", content, flags=re.S)
+        dest.write_text(content, encoding="utf-8")
+        return dest
+
     global_targets = {
         "cursor": Path("~/.cursor/skills"),
         "claude": CLAUDE_GLOBAL,
         "codex": Path("~/.codex/skills"),
         "opencode": Path("~/.opencode/skills"),
+        "pi": Path("~/.pi/agent/skills"),
     }
     local_targets = {
         "cursor": Path(".cursor/skills"),
         "claude": CLAUDE_LOCAL,
         "codex": Path(".codex/skills"),
         "opencode": Path(".opencode/skills"),
+        "pi": Path(".pi/skills"),
     }
     targets_dict = global_targets if args.global_ else local_targets
 
+    command_targets_global = {
+        "cursor": Path("~/.cursor/commands"),
+        "claude": Path("~/.claude/commands"),
+        "codex": Path("~/.codex/prompts"),
+        "opencode": Path("~/.config/opencode/commands"),
+        "pi": Path("~/.pi/agent/prompts"),
+    }
+    command_targets_local = {
+        "cursor": Path(".cursor/commands"),
+        "claude": Path(".claude/commands"),
+        "codex": Path("~/.codex/prompts"),
+        "opencode": Path(".opencode/commands"),
+        "pi": Path(".pi/prompts"),
+    }
+    command_dict = command_targets_global if args.global_ else command_targets_local
+    COMMAND_NOTES = {
+        "codex": " (Codex only reads ~/.codex/prompts; restart Codex to pick it up)"
+    }
+    STRIP_FRONTMATTER = {"pi"}
+
     if args.dest:
-        if args.cursor or args.claude or args.codex or args.opencode or args.global_:
+        if (
+            args.cursor
+            or args.claude
+            or args.codex
+            or args.opencode
+            or args.pi
+            or args.global_
+        ):
             error_exit("--dest cannot be combined with agent flags or --global.")
         skill_dest = install_to(Path(args.dest), args.force)
         print(f"Installed '{SKILL_ID}' to {skill_dest}")
         return
 
-    agent_targets = []
-    if args.cursor:
-        agent_targets.append(targets_dict["cursor"])
-    if args.claude:
-        agent_targets.append(targets_dict["claude"])
-    if args.codex:
-        agent_targets.append(targets_dict["codex"])
-    if args.opencode:
-        agent_targets.append(targets_dict["opencode"])
+    selected = [
+        name
+        for name, flag in (
+            ("cursor", args.cursor),
+            ("claude", args.claude),
+            ("codex", args.codex),
+            ("opencode", args.opencode),
+            ("pi", args.pi),
+        )
+        if flag
+    ]
 
     central_path = CENTRAL_GLOBAL if args.global_ else CENTRAL_LOCAL
     central_skill_path = install_to(central_path, args.force)
     print(f"Installed '{SKILL_ID}' to central location: {central_skill_path}")
 
-    for agent_target in agent_targets:
-        link_path = create_symlink(agent_target, central_skill_path, args.force)
+    for name in selected:
+        link_path = create_symlink(targets_dict[name], central_skill_path, args.force)
         print(f"Created symlink: {link_path}")
+
+    if not args.no_command:
+        for name in selected:
+            if name in command_dict:
+                cmd_path = install_command(
+                    command_dict[name],
+                    args.force,
+                    strip_frontmatter=name in STRIP_FRONTMATTER,
+                )
+                note = COMMAND_NOTES.get(name, "")
+                print(f"Installed '/logbook' command: {cmd_path}{note}")
+            else:
+                print(
+                    f"Skipped '/logbook' command for {name} "
+                    "(no slash-command directory convention)."
+                )
+
+    if args.claude and not args.no_hook:
+        hook_path = _install_claude_logbook_hook(args.global_)
+        if hook_path:
+            print(f"Installed logbook todo-sync hook: {hook_path}")
+
+
+def _install_claude_logbook_hook(global_: bool):
+    import json
+    from pathlib import Path
+
+    settings = (
+        Path("~/.claude/settings.json") if global_ else Path(".claude/settings.json")
+    ).expanduser()
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if settings.exists():
+        try:
+            data = json.loads(settings.read_text(encoding="utf-8"))
+        except Exception:
+            print(f"Could not parse {settings}; skipping hook install.")
+            return None
+    command = "trackio logbook sync-todos"
+    hooks = data.setdefault("hooks", {})
+    post = hooks.setdefault("PostToolUse", [])
+    for entry in post:
+        for h in entry.get("hooks", []):
+            if h.get("command") == command:
+                return settings
+    post.append(
+        {
+            "matcher": "TodoWrite",
+            "hooks": [{"type": "command", "command": command}],
+        }
+    )
+    settings.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return settings
 
 
 if __name__ == "__main__":

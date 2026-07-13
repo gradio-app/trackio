@@ -296,10 +296,11 @@ class Artifact:
         Args:
             root (`str` or `Path`, *optional*):
                 Directory to write the files into. Defaults to
-                `./artifacts/<project>/<name>_v<version>/`, keyed by project so
-                same-named artifacts from different projects never collide, and
-                by the resolved version so a moving alias like `latest` never
-                leaves behind stale files from a previous version.
+                `./.trackio/artifact-downloads/<project>/<name>_v<version>/`,
+                keyed by project so same-named artifacts from different projects
+                never collide, and by the resolved version so a moving alias
+                like `latest` never leaves behind stale files from a previous
+                version.
 
         Returns:
             The absolute path to the download directory, as a string.
@@ -314,7 +315,11 @@ class Artifact:
         if root is None:
             project = utils.canonical_project_name(self._project)
             root_path = (
-                Path.cwd() / "artifacts" / project / f"{self._name}_v{self._version}"
+                Path.cwd()
+                / ".trackio"
+                / "artifact-downloads"
+                / project
+                / f"{self._name}_v{self._version}"
             )
         else:
             root_path = Path(root)

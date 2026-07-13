@@ -15,3 +15,4 @@ build/
 tf_test_run/
 test.py
 screenshots/
+examples/mock_logbook_session/

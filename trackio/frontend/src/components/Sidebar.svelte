@@ -61,7 +61,7 @@
 
   let loginHref = $derived.by(() => {
     navTick;
-    return `${window.location.origin}/oauth/hf/start`;
+    return `${window.location.origin}${window.__trackio_base || ""}/oauth/hf/start`;
   });
 
 
@@ -561,7 +561,7 @@
       {:else if spacesMode && runMutationAllowed && mutationAuth === "oauth"}
         <div class="oauth-footer">
           <p class="oauth-signed-in">Signed in with Hugging Face</p>
-          <a class="oauth-logout" href="/oauth/logout" onclick={() => { sessionStorage.removeItem("trackio_oauth_session"); }}>Logout</a>
+          <a class="oauth-logout" href={`${window.__trackio_base || ""}/oauth/logout`} onclick={() => { sessionStorage.removeItem("trackio_oauth_session"); }}>Logout</a>
         </div>
       {/if}
     </div>
