@@ -56,9 +56,13 @@
     return { byId, byName };
   }
 
-  function artifactCountsFor(maps, record) {
+  function artifactCountsFor(maps, record, nameRecordCounts) {
     const idCounts = record.id != null ? maps.byId.get(record.id) : null;
-    const nameCounts = maps.byName.get(record.name);
+    const soleRecordForName = (nameRecordCounts.get(record.name) ?? 0) === 1;
+    const nameCounts =
+      record.id == null || soleRecordForName
+        ? maps.byName.get(record.name)
+        : null;
     return {
       inputs: (idCounts?.inputs ?? 0) + (nameCounts?.inputs ?? 0),
       outputs: (idCounts?.outputs ?? 0) + (nameCounts?.outputs ?? 0),
@@ -78,16 +82,20 @@
       const runRecords = summary.runs || [];
       const [summaries, artifactCounts] = await Promise.all([
         Promise.all(runRecords.map((run) => getRunSummary(project, run))),
-        getRunArtifactCounts(project),
+        getRunArtifactCounts(project).catch(() => []),
       ]);
       if (seq !== loadSeq) return;
       const countMaps = buildArtifactCountMaps(artifactCounts);
+      const nameRecordCounts = new Map();
+      for (const r of runRecords) {
+        nameRecordCounts.set(r.name, (nameRecordCounts.get(r.name) ?? 0) + 1);
+      }
       runsData = summaries.map((s, i) => ({
         id: runRecords[i].id,
         name: runRecords[i].name,
         numSteps: s.num_logs || 0,
         lastStep: s.last_step || 0,
-        ...artifactCountsFor(countMaps, runRecords[i]),
+        ...artifactCountsFor(countMaps, runRecords[i], nameRecordCounts),
       }));
     } catch (e) {
       if (seq === loadSeq) console.error("Failed to load runs:", e);

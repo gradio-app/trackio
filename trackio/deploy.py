@@ -915,9 +915,26 @@ def upload_dataset_for_static(
         else:
             raise ValueError(f"Failed to create Dataset: {e}")
 
+    def _upload_folder(folder: Path, path_in_repo: str, ignore_patterns=None) -> None:
+        if not folder.exists():
+            return
+        _retry_hf_write(
+            f"Dataset {path_in_repo} upload",
+            lambda: hf_api.upload_folder(
+                repo_id=dataset_id,
+                repo_type="dataset",
+                folder_path=str(folder),
+                path_in_repo=path_in_repo,
+                ignore_patterns=ignore_patterns,
+            ),
+        )
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = Path(tmp_dir)
         SQLiteStorage.export_for_static_space(project, output_dir)
+
+        _upload_folder(project_media_dir(project), "media")
+        _upload_folder(project_artifacts_dir(project), "artifacts", [PARTIAL_BLOB_GLOB])
 
         _retry_hf_write(
             "Dataset upload",
@@ -927,24 +944,6 @@ def upload_dataset_for_static(
                 folder_path=str(output_dir),
             ),
         )
-
-    for folder, path_in_repo, ignore_patterns in (
-        (project_media_dir(project), "media", None),
-        (project_artifacts_dir(project), "artifacts", [PARTIAL_BLOB_GLOB]),
-    ):
-        if folder.exists():
-            _retry_hf_write(
-                f"Dataset {path_in_repo} upload",
-                lambda folder=folder, path_in_repo=path_in_repo, ignore_patterns=ignore_patterns: (
-                    hf_api.upload_folder(
-                        repo_id=dataset_id,
-                        repo_type="dataset",
-                        folder_path=str(folder),
-                        path_in_repo=path_in_repo,
-                        ignore_patterns=ignore_patterns,
-                    )
-                ),
-            )
 
     print(f"* Dataset uploaded: https://huggingface.co/datasets/{dataset_id}")
 

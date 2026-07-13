@@ -648,19 +648,53 @@ export async function getArtifactManifest(_project, name, spec) {
   };
 }
 
+async function getLinkOwnership() {
+  const runs = await getRunsJson();
+  const recordIds = new Set();
+  const ownersByName = new Map();
+  for (const r of runs) {
+    const id = r.id ?? r.run_id ?? r.name ?? null;
+    if (id == null) continue;
+    recordIds.add(id);
+    const name = r.name ?? null;
+    if (name == null) continue;
+    if (!ownersByName.has(name)) ownersByName.set(name, new Set());
+    ownersByName.get(name).add(id);
+  }
+  return { recordIds, ownersByName };
+}
+
+function canonicalLinkRunId(link, { recordIds, ownersByName }) {
+  const runId = link.run_id ?? null;
+  if (runId != null && recordIds.has(runId)) return runId;
+  const owners = ownersByName.get(link.run_name ?? null);
+  return owners && owners.size === 1 ? owners.values().next().value : null;
+}
+
 export async function getRunArtifacts(_project, run) {
   const result = { input: [], output: [] };
   const target = normalizeRun(run);
   if (target.name == null && target.id == null) return result;
   const { artifacts, versions, links } = await getArtifactTables();
+  const ownership = await getLinkOwnership();
   const versionsById = new Map(versions.map((v) => [Number(v.id), v]));
   const artifactsById = new Map(artifacts.map((a) => [Number(a.id), a]));
-  const runLinks = links.filter((l) => matchesRun(l, run)).sort(compareCreatedAt);
+  const runLinks = links
+    .filter((l) =>
+      target.id != null
+        ? canonicalLinkRunId(l, ownership) === target.id
+        : matchesRun(l, run),
+    )
+    .sort(compareCreatedAt);
+  const seen = new Set();
   for (const link of runLinks) {
     const version = versionsById.get(Number(link.artifact_version_id));
     if (!version) continue;
     const art = artifactsById.get(Number(version.artifact_id));
     if (!art || !result[link.direction]) continue;
+    const dedupeKey = `${link.direction}:${Number(version.id)}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     result[link.direction].push({
       version_id: Number(version.id),
       name: art.name,
@@ -675,14 +709,21 @@ export async function getRunArtifacts(_project, run) {
 
 export async function getRunArtifactCounts() {
   const { links } = await getArtifactTables();
+  const ownership = await getLinkOwnership();
   const byKey = new Map();
+  const seenByKey = new Map();
   for (const link of links) {
-    const runId = link.run_id ?? null;
+    const runId = canonicalLinkRunId(link, ownership);
     const runName = link.run_name ?? null;
     const key = JSON.stringify([runId, runName]);
     if (!byKey.has(key)) {
       byKey.set(key, { run_id: runId, run_name: runName, input: 0, output: 0 });
+      seenByKey.set(key, new Set());
     }
+    const seen = seenByKey.get(key);
+    const linkKey = `${link.direction}:${Number(link.artifact_version_id)}`;
+    if (seen.has(linkKey)) continue;
+    seen.add(linkKey);
     const entry = byKey.get(key);
     if (link.direction === "input" || link.direction === "output") {
       entry[link.direction] += 1;

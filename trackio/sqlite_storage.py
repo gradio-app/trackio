@@ -3416,18 +3416,31 @@ class SQLiteStorage:
                     except sqlite3.OperationalError:
                         pass
 
+                    legacy_rows_renameable = (
+                        run_col == "run_id"
+                        and not SQLiteStorage._run_name_still_in_use(
+                            cursor, old_name, run_value
+                        )
+                    )
                     for table, id_col, name_col in (
                         ("run_artifact_links", "run_id", "run_name"),
                         ("artifact_versions", "producer_run_id", "producer_run_name"),
                     ):
                         try:
                             if run_col == "run_id":
-                                cursor.execute(
-                                    f"UPDATE {table} SET {name_col} = ? "
-                                    f"WHERE {id_col} = ? "
-                                    f"OR ({id_col} IS NULL AND {name_col} = ?)",
-                                    (new_name, run_value, old_name),
-                                )
+                                if legacy_rows_renameable:
+                                    cursor.execute(
+                                        f"UPDATE {table} SET {name_col} = ? "
+                                        f"WHERE {id_col} = ? "
+                                        f"OR ({id_col} IS NULL AND {name_col} = ?)",
+                                        (new_name, run_value, old_name),
+                                    )
+                                else:
+                                    cursor.execute(
+                                        f"UPDATE {table} SET {name_col} = ? "
+                                        f"WHERE {id_col} = ?",
+                                        (new_name, run_value),
+                                    )
                             else:
                                 cursor.execute(
                                     f"UPDATE {table} SET {name_col} = ? "
@@ -4801,6 +4814,10 @@ class SQLiteStorage:
         run_name: str | None,
         run_id: str | None,
     ) -> dict[str, list[dict]]:
+        """Artifact links for one run. Orphan link rows — a NULL run_id, or a
+        run_id that belongs to no run record — are attributed by name, but only
+        when this run is the sole run record with that name, mirroring
+        get_run_artifact_counts."""
         SQLiteStorage._ensure_hub_loaded()
         empty = {"input": [], "output": []}
         db_path = SQLiteStorage.get_project_db_path(project)
@@ -4827,14 +4844,19 @@ class SQLiteStorage:
                     col, val = identity
                 if val is None:
                     return empty
+                where = f"ral.{col} = ?"
+                params = (val,)
                 if col == "run_id" and run_name is not None:
-                    where = (
-                        "(ral.run_id = ? OR (ral.run_id IS NULL AND ral.run_name = ?))"
-                    )
-                    params = (val, run_name)
-                else:
-                    where = f"ral.{col} = ?"
-                    params = (val,)
+                    records = SQLiteStorage.get_run_records(project)
+                    same_name = [r["id"] for r in records if r["name"] == run_name]
+                    if same_name == [val]:
+                        record_ids = [r["id"] for r in records if r["id"] is not None]
+                        orphan = "ral.run_id IS NULL"
+                        if record_ids:
+                            placeholders = ",".join("?" * len(record_ids))
+                            orphan += f" OR ral.run_id NOT IN ({placeholders})"
+                        where = f"(ral.run_id = ? OR (ral.run_name = ? AND ({orphan})))"
+                        params = (val, run_name, *record_ids)
             cursor = conn.cursor()
             try:
                 rows = cursor.execute(
@@ -4869,10 +4891,11 @@ class SQLiteStorage:
     def get_run_artifact_counts(project: str) -> list[dict]:
         """Input/output artifact link counts for every run in `project`,
         grouped by canonical run identity: name-keyed (run_id None) when the
-        metrics table predates run ids, otherwise keyed by run_id with legacy
-        NULL-run_id rows folded into the sole same-name run when unambiguous.
-        Duplicate links to the same version and direction count once. Returns
-        [] when the DB or the link table doesn't exist."""
+        metrics table predates run ids, otherwise keyed by run_id with orphan
+        rows (a NULL run_id, or a run_id belonging to no run record) folded
+        into the sole same-name run record when unambiguous. Duplicate links
+        to the same version and direction count once. Returns [] when the DB
+        or the link table doesn't exist."""
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -4887,18 +4910,21 @@ class SQLiteStorage:
             except sqlite3.OperationalError:
                 return []
             legacy_metrics = not SQLiteStorage._supports_run_ids(conn)
+            records = [] if legacy_metrics else SQLiteStorage.get_run_records(project)
+            record_ids = {r["id"] for r in records if r["id"] is not None}
             ids_by_name: dict[str, set] = {}
-            for row in rows:
-                if row["run_id"] is not None and row["run_name"] is not None:
-                    ids_by_name.setdefault(row["run_name"], set()).add(row["run_id"])
+            for r in records:
+                if r["id"] is not None and r["name"] is not None:
+                    ids_by_name.setdefault(r["name"], set()).add(r["id"])
             counts: dict[tuple, dict] = {}
             links_by_key: dict[tuple, set] = {}
             for row in rows:
                 run_id, run_name = row["run_id"], row["run_name"]
                 if legacy_metrics:
                     run_id = None
-                elif run_id is None and len(ids_by_name.get(run_name, ())) == 1:
-                    run_id = next(iter(ids_by_name[run_name]))
+                elif run_id is None or run_id not in record_ids:
+                    owners = ids_by_name.get(run_name, ())
+                    run_id = next(iter(owners)) if len(owners) == 1 else None
                 key = (run_id, run_name)
                 entry = counts.setdefault(
                     key,
