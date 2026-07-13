@@ -1061,6 +1061,77 @@ def read_cell(
     raise LogbookError(f"No cell with id '{cell_id}' in this logbook.")
 
 
+def _resolve_slug(proj: Path, page: str) -> str:
+    """Resolve a page slug or title to its slug."""
+    want = _slugify(page)
+    for node in _walk(build_manifest(proj)["root"]):
+        if page in (node["slug"], node["title"]) or node["slug"] == want:
+            return node["slug"]
+    raise LogbookError(f"No page matching '{page}' in this logbook.")
+
+
+def last_cell_id(proj: Path, page: str | None = None) -> str | None:
+    """Id of the most recent cell on `page` (or the current default page)."""
+    slug = _resolve_slug(proj, page) if page else read_metadata(proj).get("last_page")
+    if not slug:
+        return None
+    path = _page_file_for_slug(proj, slug)
+    if path is None or not path.exists():
+        return None
+    cells = _parse_cells_from_text(path.read_text(encoding="utf-8"), slug, "")
+    return cells[-1]["id"] if cells else None
+
+
+def set_cell_pinned(
+    proj: Path, cell_id: str, *, pinned: bool = True, page: str | None = None
+) -> dict:
+    """Pin or unpin a cell by id.
+
+    Pinned cells surface in a deck on the logbook intro (the frontend reads the
+    `pinned` flag from each cell's metadata). Rewrites the owning page in place.
+    """
+    root = logbook_root(proj)
+    scope = _resolve_slug(proj, page) if page else None
+    for node in _walk(build_manifest(proj)["root"]):
+        if scope and node["slug"] != scope:
+            continue
+        path = root / node["file"]
+        text = path.read_text(encoding="utf-8")
+        state = {"hit": False, "title": None}
+
+        def _repl(m):
+            try:
+                meta = json.loads(m.group(2))
+            except json.JSONDecodeError:
+                return m.group(0)
+            if meta.get("id") != cell_id:
+                return m.group(0)
+            state["hit"] = True
+            state["title"] = meta.get("title")
+            if pinned:
+                meta["pinned"] = True
+                meta.setdefault("pinned_at", _now_iso())
+            else:
+                meta.pop("pinned", None)
+                meta.pop("pinned_at", None)
+            marker = (
+                "<!-- trackio-cell\n" + json.dumps(meta, ensure_ascii=False) + "\n-->"
+            )
+            return f"{m.group(1)}---\n{marker}\n{m.group(3)}"
+
+        new_text = CELL_RE.sub(_repl, text)
+        if state["hit"]:
+            path.write_text(new_text, encoding="utf-8")
+            write_site_files(proj)
+            return {
+                "page": node["slug"],
+                "page_title": node["title"],
+                "title": state["title"],
+                "pinned": pinned,
+            }
+    raise LogbookError(f"No cell with id '{cell_id}' in this logbook.")
+
+
 # ---- auto-note (called from trackio.finish / log_artifact) ----
 
 

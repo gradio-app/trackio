@@ -1189,6 +1189,22 @@ def main():
         help="Make the logbook and any promoted dashboards/buckets private",
     )
 
+    lb_pin = logbook_sub.add_parser(
+        "pin",
+        help="Pin (or unpin) a cell so it surfaces on the logbook intro",
+    )
+    lb_pin.add_argument(
+        "cell_id",
+        nargs="?",
+        help="Cell id to pin (default: the most recent cell on the target page)",
+    )
+    lb_pin.add_argument(
+        "--page", help="Page title or slug to scope the search / pick the last cell from"
+    )
+    lb_pin.add_argument(
+        "--unpin", action="store_true", help="Unpin the cell instead of pinning it"
+    )
+
     logbook_sub.add_parser(
         "sync", help="Push local edits to the Space now (after the first publish)"
     )
@@ -1953,6 +1969,23 @@ def _handle_logbook(args):
             proj = lb.require_project_dir()
             page_slug = lb.ensure_page(proj, args.title)
             print(f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}")
+            lb.trigger_autosync(proj)
+        elif action == "pin":
+            proj = lb.require_project_dir()
+            cell_id = args.cell_id or lb.last_cell_id(proj, page=args.page)
+            if not cell_id:
+                error_exit(
+                    "No cell to pin. Pass a cell id, or add a cell first "
+                    "(optionally scope with --page)."
+                )
+            res = lb.set_cell_pinned(
+                proj, cell_id, pinned=not args.unpin, page=args.page
+            )
+            verb = "Unpinned" if args.unpin else "Pinned"
+            print(
+                f"{verb} cell {cell_id} on page "
+                f"'{res['page']}'.{_sync_suffix(lb, proj)}"
+            )
             lb.trigger_autosync(proj)
         elif action == "read":
             proj = lb.resolve_read_source(args.path)

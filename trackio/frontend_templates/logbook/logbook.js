@@ -276,6 +276,8 @@
       renderCodeCell(body, bodyEl, artifacts);
     } else if (meta.type === "figure") {
       cell.dataset.resUrl = `trackio-figure://${(meta.title || "Figure").trim()}`;
+      const metaEl = head.querySelector(".cell-meta");
+      if (metaEl) metaEl.insertBefore(buildShareControl(meta), metaEl.firstChild);
       renderFigureCell(body, bodyEl, head);
     } else if (meta.type === "artifact") {
       renderMarkdownPlain(body, bodyEl);
@@ -452,6 +454,87 @@
     }
     container.appendChild(figWrap);
     container.appendChild(rawView);
+  }
+
+  const SHARE_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>' +
+    '<circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>' +
+    '<line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>';
+
+  // Share control for a figure cell: an icon button that opens a small menu
+  // (X / LinkedIn / Copy link). Sits at the front of `.cell-meta`, so it lands
+  // between the Figure/Raw toggle and the date when raw data exists, and right
+  // before the date otherwise. Shares the current page URL (deep-links to the
+  // page a figure lives on); the figure title becomes the share text.
+  function buildShareControl(meta) {
+    const wrap = document.createElement("span");
+    wrap.className = "cell-share";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cell-share-btn";
+    btn.setAttribute("aria-label", "Share figure");
+    btn.title = "Share";
+    btn.innerHTML = SHARE_ICON;
+    const menu = document.createElement("div");
+    menu.className = "cell-share-menu";
+    menu.hidden = true;
+    const xLink = document.createElement("a");
+    xLink.className = "cell-share-item";
+    xLink.target = "_blank";
+    xLink.rel = "noopener";
+    xLink.textContent = "Share on X";
+    const liLink = document.createElement("a");
+    liLink.className = "cell-share-item";
+    liLink.target = "_blank";
+    liLink.rel = "noopener";
+    liLink.textContent = "Share on LinkedIn";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "cell-share-item";
+    copyBtn.textContent = "Copy link";
+    menu.append(xLink, liLink, copyBtn);
+    wrap.append(btn, menu);
+
+    const shareUrl = () => window.location.href;
+    const shareText = (meta.title || "Figure").trim();
+    const close = () => {
+      menu.hidden = true;
+    };
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const url = shareUrl();
+      xLink.href =
+        "https://twitter.com/intent/tweet?text=" +
+        encodeURIComponent(shareText) +
+        "&url=" +
+        encodeURIComponent(url);
+      liLink.href =
+        "https://www.linkedin.com/sharing/share-offsite/?url=" +
+        encodeURIComponent(url);
+      menu.hidden = !menu.hidden;
+    });
+    copyBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(shareUrl());
+        copyBtn.textContent = "Copied!";
+      } catch (_) {
+        copyBtn.textContent = "Copy failed";
+      }
+      setTimeout(() => {
+        copyBtn.textContent = "Copy link";
+        close();
+      }, 1200);
+    });
+    xLink.addEventListener("click", close);
+    liLink.addEventListener("click", close);
+    document.addEventListener("click", (e) => {
+      if (!wrap.contains(e.target)) close();
+    });
+    return wrap;
   }
 
   function extractUrls(text) {
