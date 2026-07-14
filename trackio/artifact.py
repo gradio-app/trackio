@@ -5,9 +5,9 @@ from pathlib import Path
 import httpx
 from huggingface_hub.utils import get_token
 
-from trackio import cas, utils
+from trackio import cas, references, utils
 from trackio.remote_client import _merge_client_headers, _resolve_src_url
-from trackio.typehints import Manifest, Sha256Digest
+from trackio.typehints import ETag, Manifest, ManifestEntry, Sha256Digest, URIStr
 
 
 def _materialize(blob: Path, dst: Path, size: int) -> None:
@@ -67,13 +67,54 @@ def _fetch_blob_from_remote(
         )
 
 
+def _materialize_reference(
+    uri: str, scheme: str, dest: Path, digest: Sha256Digest | ETag | URIStr
+) -> None:
+    """Fetch the object at `uri` into `dest`, idempotently and atomically.
+
+    If `dest` already exists it is left untouched and nothing is fetched:
+    reference digests are opaque, so a file already present is assumed current
+    (mirroring the size/mtime idempotence of `_materialize`), letting a repeated
+    `download()` skip references already on disk.
+
+    Otherwise, when a real checksum was recorded, the source is re-probed and
+    compared. When the digest doesn't exist, or when it cannot be re-probed,
+    the comparison is skipped and the artifact is still materialized.
+    """
+    if dest.is_file():
+        return
+    if len(digest) > 0 and digest != uri:
+        try:
+            resolved = references.resolve_reference(
+                uri, scheme, checksum=True, max_objects=1
+            )[0]
+        except Exception:
+            resolved = None
+        current_digest = resolved.digest if resolved is not None else None
+        if current_digest is not None and current_digest != digest:
+            utils._emit_nonfatal_warning(
+                f"Reference {uri!r} may have changed since it was logged "
+                f"(recorded digest {digest}, current {current_digest})."
+            )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    partial = dest.parent / cas.partial_blob_name(dest.name)
+    try:
+        references.fetch_reference(uri, scheme, partial)
+        os.replace(partial, dest)
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise
+
+
 class Artifact:
     """
-    A versioned, named bundle of files attached to a project.
+    A versioned, named bundle of files and references attached to a project.
 
-    Construct an `Artifact`, add files to it with `add_file` / `add_dir`, then
-    persist it with `trackio.log_artifact`. Logging freezes the artifact and
-    populates its read-only `version`, `aliases`, `size`, and `manifest`.
+    Construct an `Artifact`, add files to it with `add_file` / `add_dir`
+    (bytes staged into content-addressed storage) or `add_reference` (an
+    external URI recorded without copying any bytes), then persist it with
+    `trackio.log_artifact`. Logging freezes the artifact and populates its
+    read-only `version`, `aliases`, `size`, and `manifest`.
 
     Args:
         name (`str`):
@@ -101,6 +142,9 @@ class Artifact:
         self._description = description
         self._metadata: dict = dict(metadata) if metadata else {}
         self._pending_files: list[tuple[Path, str]] = []
+        self._pending_references: list[
+            tuple[str, str, Sha256Digest | ETag | URIStr, int]
+        ] = []
         self._logged = False
         self._version: int | None = None
         self._aliases: tuple[str, ...] = ()
@@ -152,14 +196,18 @@ class Artifact:
 
     @property
     def size(self) -> int | None:
-        """Total size of the artifact's files in bytes, or None if not yet logged."""
+        """Total size in bytes of the artifact's files plus any referenced data
+        whose size is known, or None if not yet logged."""
         return self._size
 
     @property
     def manifest(self) -> Manifest | None:
-        """List of file entries (each with `path`, `digest`, and `size`)
-        describing the artifact's contents, or None if not yet logged or
-        fetched. Returns a fresh copy on each access."""
+        """List of manifest entries describing the artifact's contents, or None
+        if not yet logged or fetched. File entries carry `path`, `digest`, and
+        `size`; reference entries carry `path`, `ref` (a URI), `size`, and a
+        `digest` — a sha256 for local/LFS references, the provider's opaque ETag
+        for HTTP or object-store references, or the URI itself when no checksum
+        is available. Returns a fresh copy on each access."""
         return None if self._manifest is None else [dict(e) for e in self._manifest]
 
     @property
@@ -247,19 +295,131 @@ class Artifact:
                 logical = cas.validate_logical_path(prefix + rel)
                 self._pending_files.append((entry, logical))
 
-    def _build_manifest(self, project: str) -> Manifest:
-        if not self._pending_files:
+    def add_reference(
+        self,
+        uri: str,
+        name: str | None = None,
+        checksum: bool = True,
+        max_objects: int | None = None,
+    ) -> None:
+        """Stage a reference to external data, without copying any bytes.
+
+        Unlike `add_file`/`add_dir`, a reference records the data's URI (plus,
+        when available, a size and checksum) *without staging the bytes into
+        the content-addressed store*. This is how you version and track
+        lineage over large or already-durably-stored datasets that must not be
+        duplicated.
+
+        A URI that denotes a directory (`file://`, `hf://`, or a prefix
+        expanded by a custom handler) is expanded into one entry per object,
+        capped by `max_objects`. Reference bytes are never uploaded to a Space
+        or bucket.
+
+        The URI is stored verbatim in the artifact manifest, and manifests may
+        be synced to a shared Hugging Face Dataset — so a signed URI triggers a
+        warning for security reasons; please prefer the object's canonical
+        unsigned URI (e.g. `s3://bucket/key`).
+
+        Args:
+            uri (`str`):
+                Location of the referenced data, percent-encoded (build local
+                URIs with `pathlib.Path.as_uri()`). `file://`, `http(s)://`,
+                and `hf://` are resolved and fetched natively; any other scheme
+                (`s3://`, `gs://`, Azure blob URLs, ...) requires a custom
+                `ReferenceHandler` registered via
+                `trackio.register_reference_handler` — see the artifacts
+                documentation for complete examples — and raises otherwise.
+            name (`str`, *optional*):
+                Logical path the reference is stored under. Defaults to the last
+                segment of `uri`; for an expanded prefix (ending with /) it is the
+                prefix under which each object's relative path is nested.
+            checksum (`bool`, *optional*, defaults to `True`):
+                When `True`, probes the source to derive its size and a
+                checksum (and to expand a directory/prefix): `file://` is
+                stream-hashed to a sha256, `hf://` uses its LFS sha256 or git
+                blob id, and `http(s)://` uses the server `ETag`. This may read
+                the filesystem or make network requests. When no checksum can
+                be obtained for a *remote* source (e.g. no ETag), the URI
+                itself is used as the `digest` and a warning is emitted. A
+                local `file://` path that does not exist instead raises. Pass
+                `checksum=False` to skip remote probing entirely.
+            max_objects (`int`, *optional*):
+                Cap on how many objects a directory/prefix expands into (default
+                10,000); exceeding it raises.
+        """
+        if self._logged:
+            raise RuntimeError(
+                "Cannot add references to an Artifact that has already been "
+                "logged or fetched."
+            )
+        scheme, normalized = references.validate_reference_uri(uri)
+        if references.looks_signed(normalized):
+            utils._emit_nonfatal_warning(
+                f"Reference {uri!r} looks like a signed URL, and the full URI "
+                "(embedded credential included) is stored in the artifact "
+                "manifest, which may be synced to a shared HF Dataset. Prefer "
+                "the object's canonical unsigned URI (e.g. s3://bucket/key or "
+                "the URL without its signed query string)."
+            )
+        cap = references.DEFAULT_MAX_OBJECTS if max_objects is None else max_objects
+        resolved = references.resolve_reference(normalized, scheme, checksum, cap)
+        if not resolved:
+            raise ValueError(f"Reference URI {uri!r} matched no objects.")
+        used_uri_fallback = False
+        name_prefix = f"{name.rstrip('/')}/" if name is not None else ""
+        for entry in resolved:
+            if entry.relkey is None:
+                logical = self._reference_logical_name(name, entry.uri, uri)
+            else:
+                logical = cas.validate_logical_path(name_prefix + entry.relkey)
+            ref_digest: Sha256Digest | ETag | URIStr | None = entry.digest
+            if ref_digest is None:
+                ref_digest = URIStr(entry.uri)
+                used_uri_fallback = True
+            ref_size = 0 if entry.size is None else entry.size
+            self._pending_references.append((logical, entry.uri, ref_digest, ref_size))
+        if checksum and used_uri_fallback:
+            utils._emit_nonfatal_warning(
+                f"Reference {uri!r} was recorded without a content checksum, so its "
+                "version identity is its URI; re-logging changed content at the same "
+                "location will reuse the existing version instead of creating a new "
+                f"one. {references.checksum_hint(scheme, normalized)}"
+            )
+
+    @staticmethod
+    def _reference_logical_name(name: str | None, resolved_uri: str, uri: str) -> str:
+        if name is not None:
+            return cas.validate_logical_path(name)
+        derived = references.default_reference_name(resolved_uri)
+        if not derived:
             raise ValueError(
-                f"Artifact {self._name!r} has no files; call add_file/add_dir first."
+                f"Could not derive a name from URI {uri!r}; pass name= explicitly."
+            )
+        return cas.validate_logical_path(derived)
+
+    def _build_manifest(self, project: str) -> Manifest:
+        if not self._pending_files and not self._pending_references:
+            raise ValueError(
+                f"Artifact {self._name!r} has no files or references; "
+                "call add_file/add_dir/add_reference first."
             )
         cas.assert_manifest_paths_compatible(
-            logical for _, logical in self._pending_files
+            [logical for _, logical in self._pending_files]
+            + [logical for logical, *_ in self._pending_references]
         )
 
         entries: Manifest = []
         for src, logical in self._pending_files:
             digest, size = cas.stage_blob_into_project(src, project)
             entries.append({"path": logical, "digest": digest, "size": size})
+        for logical, uri, ref_digest, ref_size in self._pending_references:
+            entry: ManifestEntry = {
+                "path": logical,
+                "ref": uri,
+                "digest": ref_digest,
+                "size": ref_size,
+            }
+            entries.append(entry)
         return entries
 
     def _hydrate_from_db(
@@ -292,6 +452,19 @@ class Artifact:
         Files are copied from Trackio's content-addressed cache (and fetched
         from the remote when missing locally), so repeated calls are cheap and
         idempotent.
+
+        Reference entries added via `add_reference` are fetched here too: the
+        object at each reference URI is downloaded into the directory (via the
+        bundled `httpx` for `http(s)://`, `huggingface_hub` for `hf://`, and
+        the registered custom `ReferenceHandler` for any other scheme). Each
+        object is written atomically and calls are idempotent. Because reference digests
+        are opaque (a provider ETag or the URI itself), a present file is assumed
+        current and is not re-verified against the source, and a source whose
+        re-probed checksum no longer matches the recorded one is downloaded
+        anyway with a warning. Downloading can transfer a large amount of data;
+        to work with the URIs without downloading, read them from the `references`
+        property or `get_entry_uri` instead. A missing source, an unreachable
+        server, or a scheme with no registered handler raises.
 
         Args:
             root (`str` or `Path`, *optional*):
@@ -326,8 +499,14 @@ class Artifact:
         root_path.mkdir(parents=True, exist_ok=True)
 
         for entry in self._manifest:
-            digest = cas.validate_digest(entry["digest"])
             logical = cas.validate_logical_path(entry["path"])
+            if references.is_reference_entry(entry):
+                scheme, uri = references.validate_reference_uri(entry["ref"])
+                _materialize_reference(
+                    uri, scheme, root_path / logical, entry["digest"]
+                )
+                continue
+            digest = cas.validate_digest(entry["digest"])
             blob = cas.blob_path(self._project, digest)
             if not blob.is_file():
                 if self._remote_source is None:
@@ -342,6 +521,27 @@ class Artifact:
             _materialize(blob, root_path / logical, entry["size"])
 
         return str(root_path)
+
+    @property
+    def references(self) -> list[dict]:
+        """Reference entries (each with `path`, `ref`, `size`, and a `digest`)
+        recorded via `add_reference`. These point at external data not stored in
+        Trackio; read them to work with the URIs without downloading (unlike
+        `download()`, which fetches them). Returns a fresh copy on each access;
+        empty if the artifact has no references or has not been logged yet."""
+        if self._manifest is None:
+            return []
+        return [dict(e) for e in self._manifest if references.is_reference_entry(e)]
+
+    def get_entry_uri(self, name: str) -> str | None:
+        """Return the URI recorded for the reference entry at logical path
+        `name`, or None if there is no reference entry with that name."""
+        if self._manifest is None:
+            return None
+        for entry in self._manifest:
+            if entry.get("path") == name and references.is_reference_entry(entry):
+                return entry["ref"]
+        return None
 
     def __repr__(self) -> str:
         parts: list[str] = [f"name={self._name!r}", f"type={self._type!r}"]
