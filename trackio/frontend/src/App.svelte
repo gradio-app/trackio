@@ -11,6 +11,9 @@
   import Runs from "./pages/Runs.svelte";
   import RunDetail from "./pages/RunDetail.svelte";
   import Files from "./pages/Files.svelte";
+  import ArtifactsSidebar from "./components/ArtifactsSidebar.svelte";
+  import { DEFAULT_LOGO_URLS } from "./components/Logo.svelte";
+  import ArtifactsDetail from "./pages/ArtifactsDetail.svelte";
   import {
     getAllProjects,
     getRunsForProject,
@@ -30,7 +33,12 @@
   } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
   import { reconcileSelectedRuns } from "./lib/selection.js";
-  import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
+  import {
+    getPageFromPath,
+    navigateTo,
+    getQueryParam,
+    getArtifactSelectionFromUrl,
+  } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
 
@@ -90,7 +98,7 @@
   });
   let mutationPollTimer = $state(null);
   let appBootstrapReady = $state(false);
-  let logoUrls = $state({ light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" });
+  let logoUrls = $state(DEFAULT_LOGO_URLS);
   let plotOrder = $state([]);
   let tableTruncateLength = $state(250);
   let readOnlySource = $state(null);
@@ -110,6 +118,7 @@
     "media",
     "reports",
     "files",
+    "artifacts",
   ]);
   const AUTO_OPEN_TAB_ORDER = [
     "metrics",
@@ -119,9 +128,12 @@
     "reports",
     "runs",
     "files",
+    "artifacts",
   ];
   let runConfigs = $state({});
   let runConfigsProject = $state(null);
+  let artifactSelection = $state(null);
+  let artifactsEmpty = $state(false);
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -243,6 +255,7 @@
       reports: false,
       runs: false,
       files: false,
+      artifacts: false,
     };
   }
 
@@ -352,6 +365,14 @@
   $effect(() => {
     urlTick;
     navbarHidden = getQueryParam("navbar") === "hidden";
+  });
+
+  $effect(() => {
+    urlTick;
+    if (currentPage !== "artifacts" || !sidebarHidden) return;
+    const { name, version } = getArtifactSelectionFromUrl();
+    if (!name || version == null) return;
+    artifactSelection = { name, version };
   });
 
   onMount(() => {
@@ -565,6 +586,18 @@
     />
   {/if}
 
+  {#if currentPage === "artifacts" && !sidebarHidden}
+    <ArtifactsSidebar
+      {projects}
+      bind:project={selectedProject}
+      projectLocked={projectLocked}
+      {logoUrls}
+      {darkMode}
+      bind:selection={artifactSelection}
+      bind:empty={artifactsEmpty}
+    />
+  {/if}
+
   <div class="main">
     {#if !navbarHidden}
       <Navbar
@@ -630,6 +663,12 @@
         <RunDetail project={selectedProject} />
       {:else if currentPage === "files"}
         <Files project={selectedProject} />
+      {:else if currentPage === "artifacts"}
+        <ArtifactsDetail
+          project={selectedProject}
+          selection={artifactSelection}
+          empty={artifactsEmpty}
+        />
       {:else if currentPage === "settings"}
         <Settings {spaceId} selectedProject={selectedProject} {projects} />
       {/if}

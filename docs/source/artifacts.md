@@ -382,6 +382,12 @@ These handlers raise when the source can't be probed; if you'd rather record an 
 
 Register handlers in every process that adds *or downloads* such references: `Artifact.download()` needs the handler to fetch the bytes, and a URI whose scheme has no registered handler raises.
 
+## Browsing artifacts in the dashboard
+
+The dashboard's **Artifacts** tab (shown once a project has artifacts) lists artifacts grouped by type, with each version's aliases, size, and file count. Selecting a version shows its file manifest — click a file to download it — plus its metadata and lineage: the run that produced it and the runs that used it, each linking to the run's detail page.
+
+Run detail pages show the same lineage from the other direction, with **Output artifacts** and **Input artifacts** sections linking back to the Artifacts tab.
+
 ## Remote storage
 
 When your run targets a Hugging Face Space or self-hosted server (see [Track](track.md)), artifact files are content-addressed and uploaded once: Trackio skips blobs the server already has, so re-logging shared files is cheap. Artifact metadata and blobs are persisted alongside your other run data to the configured HF Dataset or bucket.

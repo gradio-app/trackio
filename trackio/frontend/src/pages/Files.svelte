@@ -1,6 +1,7 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getFileUrl, getProjectFiles } from "../lib/api.js";
+  import { formatSize } from "../lib/format.js";
 
   let { project = null } = $props();
 
@@ -19,13 +20,6 @@
   function isPreviewable(name) {
     const ext = name.split(".").pop().toLowerCase();
     return TEXT_EXTENSIONS.has(ext);
-  }
-
-  function formatSize(bytes) {
-    if (bytes == null) return "";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   async function togglePreview(file) {

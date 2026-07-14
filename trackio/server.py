@@ -744,6 +744,30 @@ def get_artifacts(project: str) -> list[dict]:
     return SQLiteStorage.get_artifacts(project)
 
 
+def list_artifacts(project: str) -> list[dict]:
+    project = _validate_project_name(project)
+    return SQLiteStorage.list_artifacts(project)
+
+
+def get_run_artifacts(
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, list[dict]]:
+    project = _validate_project_name(project)
+    return SQLiteStorage.get_run_artifacts(project, run_name=run, run_id=run_id)
+
+
+def get_run_artifact_counts(project: str) -> list[dict]:
+    project = _validate_project_name(project)
+    return SQLiteStorage.get_run_artifact_counts(project)
+
+
+def get_artifact_consumers(project: str, version_id: int) -> list[dict]:
+    project = _validate_project_name(project)
+    return SQLiteStorage.get_artifact_consumers(project, version_id)
+
+
 def log_artifact_use(
     request: Request,
     project: str,
@@ -1206,6 +1230,7 @@ def get_tab_availability(project: str) -> dict[str, bool]:
         "media": flags["media"],
         "reports": flags["reports"] or flags["alerts"],
         "files": _project_has_files(project),
+        "artifacts": flags["artifacts"],
     }
 
 
@@ -1259,6 +1284,10 @@ def _api_registry() -> dict[str, Any]:
         "artifact_log": artifact_log,
         "get_artifact_manifest": get_artifact_manifest,
         "get_artifacts": get_artifacts,
+        "list_artifacts": list_artifacts,
+        "get_run_artifacts": get_run_artifacts,
+        "get_run_artifact_counts": get_run_artifact_counts,
+        "get_artifact_consumers": get_artifact_consumers,
         "log_artifact_use": log_artifact_use,
         "log": log,
         "bulk_log": bulk_log,

@@ -56,7 +56,11 @@ class Runs:
         if self._runs is None:
             records = SQLiteStorage.get_run_records(self.project)
             self._runs = [
-                Run(self.project, str(record["name"]), run_id=str(record["id"]))
+                Run(
+                    self.project,
+                    str(record["name"]),
+                    run_id=str(record["id"]) if record["id"] is not None else None,
+                )
                 for record in records
             ]
 
