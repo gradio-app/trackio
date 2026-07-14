@@ -1,6 +1,5 @@
 import os
 import shutil
-import uuid
 from pathlib import Path
 
 import httpx
@@ -21,7 +20,7 @@ def _materialize(blob: Path, dst: Path, size: int) -> None:
         dst_stat = dst.stat()
         if dst_stat.st_size == size and dst_stat.st_mtime_ns == blob_stat.st_mtime_ns:
             return
-    partial = dst.parent / f"{dst.name}.partial.{uuid.uuid4().hex}"
+    partial = dst.parent / cas.partial_blob_name(dst.name)
     try:
         shutil.copyfile(blob, partial)
         os.utime(partial, ns=(blob_stat.st_atime_ns, blob_stat.st_mtime_ns))

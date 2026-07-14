@@ -111,6 +111,12 @@ path = artifact.download()
 
 By default, files are written to `./.trackio/artifact-downloads/<project>/<name>_v<version>/`, keyed by project so same-named artifacts from different projects never collide; pass `root` to choose another directory. `download()` is idempotent — files already present are skipped — and when the run is backed by a Space, any file missing locally is fetched from the remote.
 
+## Browsing artifacts in the dashboard
+
+The dashboard's **Artifacts** tab (shown once a project has artifacts) lists artifacts grouped by type, with each version's aliases, size, and file count. Selecting a version shows its file manifest — click a file to download it — plus its metadata and lineage: the run that produced it and the runs that used it, each linking to the run's detail page.
+
+Run detail pages show the same lineage from the other direction, with **Output artifacts** and **Input artifacts** sections linking back to the Artifacts tab.
+
 ## Remote storage
 
 When your run targets a Hugging Face Space or self-hosted server (see [Track](track.md)), artifact files are content-addressed and uploaded once: Trackio skips blobs the server already has, so re-logging shared files is cheap. Artifact metadata and blobs are persisted alongside your other run data to the configured HF Dataset or bucket.

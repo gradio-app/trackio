@@ -1,8 +1,14 @@
 <script>
   import { tick } from "svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getProjectSummary, getRunSummary, deleteRun, renameRun } from "../lib/api.js";
-  import { navigateTo, setQueryParam } from "../lib/router.js";
+  import {
+    getProjectSummary,
+    getRunSummary,
+    getRunArtifactCounts,
+    deleteRun,
+    renameRun,
+  } from "../lib/api.js";
+  import { openRunDetail } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
 
@@ -30,9 +36,44 @@
     return runsData.filter((r) => matches.has(r.name));
   });
 
+  let hasArtifacts = $derived(
+    runsData.some((r) => r.outputs > 0 || r.inputs > 0),
+  );
+
+  let loadSeq = 0;
+
+  function buildArtifactCountMaps(counts) {
+    const byId = new Map();
+    const byName = new Map();
+    for (const row of counts) {
+      const map = row.run_id != null ? byId : byName;
+      const key = row.run_id != null ? row.run_id : row.run_name;
+      const entry = map.get(key) ?? { inputs: 0, outputs: 0 };
+      entry.inputs += row.input || 0;
+      entry.outputs += row.output || 0;
+      map.set(key, entry);
+    }
+    return { byId, byName };
+  }
+
+  function artifactCountsFor(maps, record, nameRecordCounts) {
+    const idCounts = record.id != null ? maps.byId.get(record.id) : null;
+    const soleRecordForName = (nameRecordCounts.get(record.name) ?? 0) === 1;
+    const nameCounts =
+      record.id == null || soleRecordForName
+        ? maps.byName.get(record.name)
+        : null;
+    return {
+      inputs: (idCounts?.inputs ?? 0) + (nameCounts?.inputs ?? 0),
+      outputs: (idCounts?.outputs ?? 0) + (nameCounts?.outputs ?? 0),
+    };
+  }
+
   async function loadRuns() {
+    const seq = ++loadSeq;
     if (!project) {
       runsData = [];
+      loading = false;
       return;
     }
 
@@ -40,21 +81,27 @@
     try {
       const summary = await getProjectSummary(project);
       const runRecords = summary.runs || [];
-      const summaries = await Promise.all(
-        runRecords.map((run) => getRunSummary(project, run)),
-      );
-      const data = summaries.map((s, i) => ({
-        id: runRecords[i].id ?? runRecords[i].name,
+      const [summaries, artifactCounts] = await Promise.all([
+        Promise.all(runRecords.map((run) => getRunSummary(project, run))),
+        getRunArtifactCounts(project).catch(() => []),
+      ]);
+      if (seq !== loadSeq) return;
+      const countMaps = buildArtifactCountMaps(artifactCounts);
+      const nameRecordCounts = new Map();
+      for (const r of runRecords) {
+        nameRecordCounts.set(r.name, (nameRecordCounts.get(r.name) ?? 0) + 1);
+      }
+      runsData = summaries.map((s, i) => ({
+        id: runRecords[i].id,
         name: runRecords[i].name,
         numSteps: s.num_logs || 0,
         lastStep: s.last_step || 0,
+        ...artifactCountsFor(countMaps, runRecords[i], nameRecordCounts),
       }));
-
-      runsData = data;
     } catch (e) {
-      console.error("Failed to load runs:", e);
+      if (seq === loadSeq) console.error("Failed to load runs:", e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
   }
 
@@ -130,6 +177,9 @@
           <th>Run Name</th>
           <th>Steps</th>
           <th>Last Step</th>
+          {#if hasArtifacts}
+            <th>Artifacts</th>
+          {/if}
         </tr>
       </thead>
       <tbody>
@@ -177,9 +227,10 @@
                 <div class="run-name-with-dot">
                   <span
                     class="run-dot"
-                    style:background={runColorMap[run.id] ?? "#9ca3af"}
+                    style:background={runColorMap[run.id ?? run.name] ??
+                      "#9ca3af"}
                   ></span>
-                  <button class="link-btn" onclick={() => { setQueryParam("selected_run_id", run.id); setQueryParam("selected_run", run.name); navigateTo("run-detail"); }}>
+                  <button class="link-btn" onclick={() => openRunDetail(run.name, run.id)}>
                     {run.name}
                   </button>
                 </div>
@@ -187,6 +238,32 @@
             </td>
             <td>{run.numSteps}</td>
             <td>{run.lastStep}</td>
+            {#if hasArtifacts}
+              <td>
+                {#if run.outputs > 0 || run.inputs > 0}
+                  <div class="artifact-counts">
+                    {#if run.outputs > 0}
+                      <span
+                        class="art-count"
+                        title="{run.outputs} output artifact{run.outputs === 1
+                          ? ''
+                          : 's'} (produced)">↑ {run.outputs}</span
+                      >
+                    {/if}
+                    {#if run.inputs > 0}
+                      <span
+                        class="art-count"
+                        title="{run.inputs} input artifact{run.inputs === 1
+                          ? ''
+                          : 's'} (consumed)">↓ {run.inputs}</span
+                      >
+                    {/if}
+                  </div>
+                {:else}
+                  <span class="art-none">—</span>
+                {/if}
+              </td>
+            {/if}
           </tr>
         {/each}
       </tbody>
@@ -333,5 +410,24 @@
     opacity: 0.45;
     cursor: not-allowed;
     pointer-events: none;
+  }
+  .artifact-counts {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .art-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
+    background: transparent;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: 9px;
+    padding: 1px 8px;
+    white-space: nowrap;
+  }
+  .art-none {
+    color: var(--body-text-color-subdued, #9ca3af);
   }
 </style>
