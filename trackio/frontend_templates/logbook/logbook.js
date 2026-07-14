@@ -5,6 +5,8 @@
   const PAGE_CACHE = {};
   const UNFURL_CACHE = {};
   const LIVE_RELOAD_MS = 1500;
+  const FIGURE_FRAME_WINDOWS = new Set();
+  let FIGURE_NAVIGATION_READY = false;
 
   function esc(s) {
     return String(s)
@@ -405,6 +407,7 @@
     frame.sandbox = "allow-scripts allow-same-origin";
     frame.loading = "lazy";
     frame.srcdoc = htmlPart.text;
+    registerFigureNavigation(frame);
     const figWrap = document.createElement("div");
     figWrap.className = "figure-fit";
     figWrap.appendChild(frame);
@@ -457,6 +460,25 @@
     }
     container.appendChild(figWrap);
     container.appendChild(rawView);
+  }
+
+  // Poster embeds can send `{ type: "trackio-logbook:navigate", target: "..." }`
+  // from their iframe. Only accept messages from figure frames we created, and
+  // only route to pages that are present in this logbook's manifest.
+  function registerFigureNavigation(frame) {
+    FIGURE_FRAME_WINDOWS.add(frame.contentWindow);
+    if (FIGURE_NAVIGATION_READY) return;
+    FIGURE_NAVIGATION_READY = true;
+    window.addEventListener("message", (event) => {
+      if (!FIGURE_FRAME_WINDOWS.has(event.source)) return;
+      const message = event.data;
+      if (!message || message.type !== "trackio-logbook:navigate") return;
+      const target = String(message.target || "").replace(/^#?\//, "");
+      if (!target || !MANIFEST || !findNode(MANIFEST.root, target)) return;
+      const hash = "#/" + target;
+      if (location.hash === hash) scrollToHash();
+      else location.hash = hash;
+    });
   }
 
   const FULLSCREEN_ICON =
