@@ -205,7 +205,7 @@ class FileHandler(ReferenceHandler):
         local = local_path_from_file_uri(uri)
         if local.is_dir():
             entries: list[ResolvedReference] = []
-            for path in sorted(local.rglob("*")):
+for path in local.rglob("*"):
                 if path.is_symlink() or not path.is_file():
                     continue
                 digest, size = self._digest_and_size(path, checksum)
