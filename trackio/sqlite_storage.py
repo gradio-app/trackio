@@ -4824,6 +4824,7 @@ class SQLiteStorage:
         if not db_path.exists():
             return empty
         with SQLiteStorage._get_connection(db_path) as conn:
+            with_clause = ""
             if not SQLiteStorage._supports_run_ids(conn):
                 name = run_name if run_name is not None else run_id
                 if name is None:
@@ -4850,17 +4851,42 @@ class SQLiteStorage:
                     records = SQLiteStorage.get_run_records(project)
                     same_name = [r["id"] for r in records if r["name"] == run_name]
                     if same_name == [val]:
-                        record_ids = [r["id"] for r in records if r["id"] is not None]
-                        orphan = "ral.run_id IS NULL"
-                        if record_ids:
-                            placeholders = ",".join("?" * len(record_ids))
-                            orphan += f" OR ral.run_id NOT IN ({placeholders})"
-                        where = f"(ral.run_id = ? OR (ral.run_name = ? AND ({orphan})))"
-                        params = (val, run_name, *record_ids)
+                        with_clause = """
+                            WITH valid_run_ids AS (
+                                SELECT DISTINCT run_id
+                                FROM metrics
+                                WHERE run_id IS NOT NULL
+                                UNION
+                                SELECT DISTINCT l.run_id
+                                FROM run_artifact_links l
+                                WHERE l.run_id IS NOT NULL
+                                  AND l.run_name IS NOT NULL
+                                  AND l.run_name NOT IN (
+                                      SELECT run_name FROM metrics
+                                      WHERE run_name IS NOT NULL
+                                  )
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM metrics m
+                                      WHERE m.run_id = l.run_id
+                                  )
+                            )
+                        """
+                        where = """
+                            (ral.run_id = ? OR (
+                                ral.run_name = ? AND (
+                                    ral.run_id IS NULL OR NOT EXISTS (
+                                        SELECT 1 FROM valid_run_ids valid
+                                        WHERE valid.run_id = ral.run_id
+                                    )
+                                )
+                            ))
+                        """
+                        params = (val, run_name)
             cursor = conn.cursor()
             try:
                 rows = cursor.execute(
-                    f"""SELECT ral.direction, MIN(ral.created_at) AS created_at,
+                    f"""{with_clause}
+                    SELECT ral.direction, MIN(ral.created_at) AS created_at,
                            av.id AS version_id, av.version, av.size_bytes,
                            a.name, a.type
                     FROM run_artifact_links ral

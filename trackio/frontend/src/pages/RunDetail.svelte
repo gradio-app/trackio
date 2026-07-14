@@ -46,6 +46,7 @@
     if (!project || (!runName && !runId)) {
       summary = null;
       runArtifacts = { input: [], output: [] };
+      loading = false;
       return;
     }
 

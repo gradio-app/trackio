@@ -118,6 +118,7 @@
     error = false;
     if (!project) {
       artifacts = [];
+      loading = false;
       return;
     }
     loading = true;

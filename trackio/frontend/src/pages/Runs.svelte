@@ -73,6 +73,7 @@
     const seq = ++loadSeq;
     if (!project) {
       runsData = [];
+      loading = false;
       return;
     }
 
