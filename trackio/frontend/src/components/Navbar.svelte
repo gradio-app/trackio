@@ -3,10 +3,11 @@
     currentPage = "metrics",
     tabAvailability = {},
     optionalEmptyTabs = new Set(),
+    hideEmptyTabs = false,
     onNavigate,
   } = $props();
 
-  const links = [
+  const ALL_LINKS = [
     { id: "metrics", label: "Metrics" },
     { id: "system", label: "System Metrics" },
     { id: "traces", label: "Traces" },
@@ -23,6 +24,14 @@
   function isOptionalEmpty(id) {
     return optionalEmptyTabs.has(id) && tabAvailability[id] === false;
   }
+
+  let links = $derived(
+    hideEmptyTabs
+      ? ALL_LINKS.filter(
+          (link) => link.id === currentPage || !isOptionalEmpty(link.id),
+        )
+      : ALL_LINKS,
+  );
 </script>
 
 <nav class="navbar">
