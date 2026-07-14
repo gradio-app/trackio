@@ -177,8 +177,10 @@ def resolve_reference(
 
 
 def fetch_reference(uri: str, scheme: str, dest: Path) -> None:
-    """Download the single object at `uri` to `dest`. Raises if no registered
-    handler claims the scheme or the source cannot be read."""
+    """Download the single object at `uri` to `dest`, creating `dest`'s parent
+    directories if needed. Raises if no registered handler claims the scheme or
+    the source cannot be read."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
     _select(scheme, uri).fetch(uri, dest)
 
 

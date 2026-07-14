@@ -97,7 +97,7 @@ def _materialize_reference(
                 f"(recorded digest {digest}, current {current_digest})."
             )
     dest.parent.mkdir(parents=True, exist_ok=True)
-    partial = dest.parent / f"{dest.name}.partial.{uuid.uuid4().hex}"
+    partial = dest.parent / cas.partial_blob_name(dest.name)
     try:
         references.fetch_reference(uri, scheme, partial)
         os.replace(partial, dest)
