@@ -1,5 +1,40 @@
 # trackio
 
+## 0.30.4
+
+### Features
+
+- [#618](https://github.com/gradio-app/trackio/pull/618) [`64c18f6`](https://github.com/gradio-app/trackio/commit/64c18f65bf98d6f54040395a1ca0473347ba6a2b) - Logbook: share button on figures + `logbook pin` CLI.  Thanks @abidlabs!
+
+## 0.30.3
+
+### Features
+
+- [#616](https://github.com/gradio-app/trackio/pull/616) [`645498b`](https://github.com/gradio-app/trackio/commit/645498be37bafab28f884a36e80c5bc0eab06cd9) - Logbook single page.  Thanks @abidlabs!
+
+## 0.30.2
+
+### Features
+
+- [#614](https://github.com/gradio-app/trackio/pull/614) [`eba80c7`](https://github.com/gradio-app/trackio/commit/eba80c7464af250519a90b8ac3179ff6652b651a) - Render logbooks as single-page documents with section navigation and contextual resources.  Thanks @abidlabs!
+- [#612](https://github.com/gradio-app/trackio/pull/612) [`2c1b943`](https://github.com/gradio-app/trackio/commit/2c1b9436b093e9f9335c99c10fe4b6afa622e314) - Warn that logbook open is experimental.  Thanks @abidlabs!
+- [#611](https://github.com/gradio-app/trackio/pull/611) [`96b1d94`](https://github.com/gradio-app/trackio/commit/96b1d94def7596aa1302864cbfc57942dd63822b) - Logbook: auto-capture output artifacts and live-embedded dashboard cells.  Thanks @abidlabs!
+
+## 0.30.1
+
+### Features
+
+- [#609](https://github.com/gradio-app/trackio/pull/609) [`2ed1295`](https://github.com/gradio-app/trackio/commit/2ed12959c73aa9c04ca1096cf7a8315ce2886ed1) - Serve live logbook preview from open.  Thanks @abidlabs!
+
+## 0.30.0
+
+### Features
+
+- [#603](https://github.com/gradio-app/trackio/pull/603) [`a793fd8`](https://github.com/gradio-app/trackio/commit/a793fd88827482134bce295c6228e117de64566a) - Move default artifact downloads under `./.trackio/artifact-downloads/` so materialized files stay out of the project root.  Thanks @abidlabs!
+- [#604](https://github.com/gradio-app/trackio/pull/604) [`dd3b8ee`](https://github.com/gradio-app/trackio/commit/dd3b8eeef4e0da8bf0df6238617e20ae81f3e564) - docs: clarify artifact types.  Thanks @abidlabs!
+- [#586](https://github.com/gradio-app/trackio/pull/586) [`7db4c3b`](https://github.com/gradio-app/trackio/commit/7db4c3b6de6ff4903daf7dabed8842f212c8b7fd) - artifact tracking API — `log_artifact`, `use_artifact`, and an `Artifact` class for versioned, named file collections with aliases, content-addressed deduplication, and producer/consumer run lineage; works offline and syncs blobs to Hugging Face Spaces/Datasets.  Thanks @Saba9!
+- [#597](https://github.com/gradio-app/trackio/pull/597) [`5ba561e`](https://github.com/gradio-app/trackio/commit/5ba561e1b4023abdf63624f4fb396367ed6e9e76) - Add experiment logbooks: shareable static-Space lab notebooks.  Thanks @abidlabs!
+
 ## 0.29.0
 
 ### Features

@@ -249,6 +249,10 @@ def _authorization_bearer_token(request: Request) -> str | None:
     return token or None
 
 
+def _root_path(request: Request) -> str:
+    return request.scope.get("root_path", "")
+
+
 def _oauth_redirect_uri(request: Request) -> str:
     space_host = os.getenv("SPACE_HOST")
     if space_host:
@@ -280,7 +284,7 @@ def _evict_expired_oauth():
 def oauth_hf_start(request: Request):
     client_id = os.getenv("OAUTH_CLIENT_ID")
     if not client_id:
-        return RedirectResponse(url="/", status_code=302)
+        return RedirectResponse(url=f"{_root_path(request)}/", status_code=302)
     _evict_expired_oauth()
     state = secrets.token_urlsafe(32)
     _pending_oauth_states[state] = time.monotonic()
@@ -301,7 +305,7 @@ def oauth_hf_start(request: Request):
 def oauth_hf_callback(request: Request):
     client_id = os.getenv("OAUTH_CLIENT_ID")
     client_secret = os.getenv("OAUTH_CLIENT_SECRET")
-    err = "/?oauth_error=1"
+    err = f"{_root_path(request)}/?oauth_error=1"
     if not client_id or not client_secret:
         return RedirectResponse(url=err, status_code=302)
     got_state = request.query_params.get("state")
@@ -332,7 +336,9 @@ def oauth_hf_callback(request: Request):
     session_id = secrets.token_urlsafe(32)
     _oauth_sessions[session_id] = (access_token, time.monotonic())
     _on_spaces = on_spaces()
-    resp = RedirectResponse(url=f"/?oauth_session={session_id}", status_code=302)
+    resp = RedirectResponse(
+        url=f"{_root_path(request)}/?oauth_session={session_id}", status_code=302
+    )
     resp.set_cookie(
         key="trackio_hf_access_token",
         value=access_token,
@@ -347,7 +353,7 @@ def oauth_hf_callback(request: Request):
 
 def oauth_logout(request: Request):
     _on_spaces = on_spaces()
-    resp = RedirectResponse(url="/", status_code=302)
+    resp = RedirectResponse(url=f"{_root_path(request)}/", status_code=302)
     resp.delete_cookie(
         "trackio_hf_access_token",
         path="/",

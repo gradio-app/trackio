@@ -1355,6 +1355,19 @@ class Run:
         )
         if not self._is_local:
             artifact._remote_source = self._remote_source_dict()
+
+        try:
+            from trackio import logbook as _logbook
+
+            _logbook.auto_note_artifact(
+                self.project,
+                artifact.qualified_name,
+                artifact.size,
+                artifact_type=artifact.type,
+            )
+        except Exception:
+            pass
+
         return artifact
 
     @staticmethod
