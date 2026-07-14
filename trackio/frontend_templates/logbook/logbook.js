@@ -466,7 +466,13 @@
   // from their iframe. Only accept messages from figure frames we created, and
   // only route to pages that are present in this logbook's manifest.
   function registerFigureNavigation(frame) {
-    FIGURE_FRAME_WINDOWS.add(frame.contentWindow);
+    const registerFrameWindow = () => {
+      if (frame.contentWindow) FIGURE_FRAME_WINDOWS.add(frame.contentWindow);
+    };
+    // `srcdoc` replaces the initial about:blank document. Register after that
+    // navigation as well, so messages come from the live figure document.
+    frame.addEventListener("load", registerFrameWindow);
+    registerFrameWindow();
     if (FIGURE_NAVIGATION_READY) return;
     FIGURE_NAVIGATION_READY = true;
     window.addEventListener("message", (event) => {
