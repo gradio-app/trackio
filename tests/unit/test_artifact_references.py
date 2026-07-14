@@ -1,5 +1,6 @@
 import hashlib
 from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit
 
 import httpx
 import pytest
@@ -34,109 +35,6 @@ class _Resp:
         return False
 
 
-class _FakeS3Client:
-    def __init__(self, head=None, pages=None, blobs=None):
-        self._head = head
-        self._pages = pages or []
-        self._blobs = blobs or {}
-
-    def head_object(self, Bucket, Key):
-        if self._head is None:
-            raise RuntimeError("404")
-        return self._head
-
-    def get_paginator(self, _name):
-        return self
-
-    def paginate(self, Bucket, Prefix):
-        return iter(self._pages)
-
-    def download_fileobj(self, Bucket, Key, Fileobj):
-        Fileobj.write(self._blobs.get(Key, b""))
-
-
-class _FakeBlob:
-    def __init__(self, name, size, etag, body=b""):
-        self.name = name
-        self.size = size
-        self.etag = etag
-        self._body = body
-
-    def download_to_filename(self, dest):
-        Path(dest).write_bytes(self._body)
-
-
-class _FakeBucket:
-    def __init__(self, single=None, listing=None):
-        self._single = single
-        self._listing = listing or []
-
-    def get_blob(self, key):
-        return self._single
-
-    def blob(self, key):
-        return self._single
-
-
-class _FakeGcsClient:
-    def __init__(self, single=None, listing=None):
-        self._bucket = _FakeBucket(single=single, listing=listing)
-        self._listing = listing or []
-
-    def bucket(self, name):
-        return self._bucket
-
-    def list_blobs(self, bucket, prefix=None):
-        return iter(self._listing)
-
-
-class _FakeProps:
-    def __init__(self, size, etag):
-        self.size = size
-        self.etag = etag
-
-
-class _FakeDownloader:
-    def __init__(self, body):
-        self._body = body
-
-    def readinto(self, f):
-        f.write(self._body)
-
-
-class _FakeBlobClient:
-    def __init__(self, props=None, body=b""):
-        self._props = props
-        self._body = body
-
-    def get_blob_properties(self):
-        return self._props
-
-    def download_blob(self):
-        return _FakeDownloader(self._body)
-
-
-class _FakeContainerClient:
-    def __init__(self, listing):
-        self._listing = listing
-
-    def list_blobs(self, name_starts_with=None):
-        return iter(self._listing)
-
-
-class _FakeAzureService:
-    def __init__(self, props=None, body=b"", listing=None):
-        self._props = props
-        self._body = body
-        self._listing = listing or []
-
-    def get_blob_client(self, container, blob):
-        return _FakeBlobClient(props=self._props, body=self._body)
-
-    def get_container_client(self, container):
-        return _FakeContainerClient(self._listing)
-
-
 class _FakeHfFs:
     def __init__(self, info=None, find=None, files=None):
         self._info = info or {}
@@ -153,6 +51,60 @@ class _FakeHfFs:
 
     def get_file(self, rpath, lpath):
         Path(lpath).write_bytes(self._files.get(rpath, b""))
+
+
+class _MemoryStoreHandler(references.ReferenceHandler):
+    """Custom handler for mem://bucket/key URIs backed by an in-memory dict,
+    mirroring the object-store handlers shown in the artifacts documentation."""
+
+    def __init__(self, objects, etags=None):
+        self._objects = objects
+        self._etags = etags or {}
+
+    def matches(self, scheme, uri):
+        return scheme == "mem"
+
+    def resolve(self, uri, checksum, max_objects):
+        parts = urlsplit(uri)
+        bucket, key = parts.netloc, unquote(parts.path.lstrip("/"))
+        if key and not key.endswith("/"):
+            body = self._objects[key]
+            return [
+                references.ResolvedReference(
+                    relkey=None,
+                    uri=uri,
+                    size=len(body),
+                    digest=self._etags.get(key) if checksum else None,
+                )
+            ]
+        base = key[: key.rfind("/") + 1]
+        entries = []
+        for obj_key in sorted(self._objects):
+            if not obj_key.startswith(key):
+                continue
+            if len(entries) >= max_objects:
+                raise ValueError(f"{uri} expands to more than {max_objects} objects")
+            entries.append(
+                references.ResolvedReference(
+                    relkey=obj_key[len(base) :],
+                    uri=f"mem://{bucket}/{quote(obj_key, safe='/')}",
+                    size=len(self._objects[obj_key]),
+                    digest=self._etags.get(obj_key) if checksum else None,
+                )
+            )
+        return entries
+
+    def fetch(self, uri, dest):
+        parts = urlsplit(uri)
+        key = unquote(parts.path.lstrip("/"))
+        Path(dest).write_bytes(self._objects[key])
+
+    def hint(self):
+        return "Provide an etag for the object."
+
+
+def _prepend_handler(monkeypatch, handler):
+    monkeypatch.setattr(references, "_HANDLERS", [handler, *references._HANDLERS])
 
 
 def test_validate_reference_uri_accepts_any_scheme():
@@ -183,17 +135,44 @@ def test_validate_reference_uri_rejects(uri, match):
         references.validate_reference_uri(uri)
 
 
-def test_handler_dispatch_by_scheme_and_netloc():
+def test_handler_dispatch_by_scheme():
     select = references._select
-    assert isinstance(select("s3", "s3://b/k"), references.S3Handler)
-    assert isinstance(select("gs", "gs://b/k"), references.GcsHandler)
-    assert isinstance(select("hf", "hf://datasets/u/r/f"), references.HfHandler)
+    assert isinstance(select("file", "file:///data/x.bin"), references.FileHandler)
+    assert isinstance(select("http", "http://example.com/x"), references.HttpHandler)
     assert isinstance(select("https", "https://example.com/x"), references.HttpHandler)
+    assert isinstance(select("hf", "hf://datasets/u/r/f"), references.HfHandler)
+    with pytest.raises(ValueError, match="No reference handler"):
+        select("s3", "s3://b/k")
+    with pytest.raises(ValueError, match="register_reference_handler"):
+        select("dvc", "dvc://x")
+
+
+def test_register_reference_handler_public_api():
+    handler = _MemoryStoreHandler({"k": b"v"})
+    trackio.register_reference_handler(handler)
+    try:
+        assert references._select("mem", "mem://b/k") is handler
+    finally:
+        references._HANDLERS.remove(handler)
+
+
+def test_register_reference_handler_rejects_non_handler():
+    with pytest.raises(TypeError, match="ReferenceHandler instance"):
+        trackio.register_reference_handler("not-a-handler")
+
+
+def test_registered_handler_wins_over_builtin_http(monkeypatch):
+    class _StoreHandler(_MemoryStoreHandler):
+        def matches(self, scheme, uri):
+            return scheme == "https" and urlsplit(uri).netloc == "store.example.com"
+
+    handler = _StoreHandler({"obj": b"x"})
+    _prepend_handler(monkeypatch, handler)
+    assert references._select("https", "https://store.example.com/obj") is handler
     assert isinstance(
-        select("https", "https://acct.blob.core.windows.net/c/b"),
-        references.AzureHandler,
+        references._select("https", "https://example.com/obj"),
+        references.HttpHandler,
     )
-    assert isinstance(select("dvc", "dvc://x"), references.TrackingHandler)
 
 
 def test_default_reference_name_uses_last_segment():
@@ -384,7 +363,6 @@ def test_add_reference_signed_url_warns(uri):
 def test_add_reference_unsigned_url_does_not_warn(recwarn):
     art = trackio.Artifact(name="ds", type="dataset")
     art.add_reference("https://example.com/data.bin?version=3", checksum=False)
-    art.add_reference("s3://bucket/key", checksum=False)
     assert [w for w in recwarn if "signed URL" in str(w.message)] == []
 
 
@@ -412,157 +390,61 @@ def test_download_fetches_http_reference(temp_dir, tmp_path, monkeypatch):
     assert (out / "data.bin").read_bytes() == b"hello"
 
 
-def test_add_reference_s3_probes_size_and_digest(temp_dir, monkeypatch):
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(head={"ContentLength": 4096, "ETag": '"s3etag"'}),
+def test_registered_handler_probes_size_and_digest(temp_dir, monkeypatch):
+    handler = _MemoryStoreHandler(
+        {"prefix/model.bin": b"1234"}, etags={"prefix/model.bin": "etag-1"}
     )
-    trackio.init(project="ref-s3")
+    _prepend_handler(monkeypatch, handler)
+    trackio.init(project="ref-custom")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/prefix/model.bin")
+    art.add_reference("mem://bucket/prefix/model.bin")
     logged = trackio.log_artifact(art)
     trackio.finish()
 
     ref = logged.references[0]
     assert ref["path"] == "model.bin"
-    assert ref["size"] == 4096
-    assert ref["digest"] == "s3etag"
+    assert ref["size"] == 4
+    assert ref["digest"] == "etag-1"
 
 
-def test_add_reference_s3_prefix_expands(temp_dir, monkeypatch):
-    pages = [
-        {
-            "Contents": [
-                {"Key": "prefix/a.bin", "Size": 3, "ETag": '"e1"'},
-                {"Key": "prefix/sub/b.bin", "Size": 5, "ETag": '"e2"'},
-                {"Key": "prefix/", "Size": 0, "ETag": '"dir"'},
-            ]
-        }
-    ]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(head=None, pages=pages),
+def test_registered_handler_prefix_expands_encodes_and_fetches(
+    temp_dir, tmp_path, monkeypatch
+):
+    objects = {"shards/my file.bin": b"payload!", "shards/sub/b.bin": b"beta"}
+    handler = _MemoryStoreHandler(
+        objects, etags={key: f"e{i}" for i, key in enumerate(sorted(objects))}
     )
-    trackio.init(project="ref-s3-prefix")
+    _prepend_handler(monkeypatch, handler)
+    trackio.init(project="ref-custom-prefix")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/prefix/", name="data")
+    art.add_reference("mem://bucket/shards/", name="data")
     logged = trackio.log_artifact(art)
     trackio.finish()
 
     by_path = {r["path"]: r for r in logged.references}
-    assert set(by_path) == {"data/a.bin", "data/sub/b.bin"}
-    assert by_path["data/a.bin"]["ref"] == "s3://bucket/prefix/a.bin"
-    assert by_path["data/a.bin"]["digest"] == "e1"
+    assert set(by_path) == {"data/my file.bin", "data/sub/b.bin"}
+    assert by_path["data/my file.bin"]["ref"] == "mem://bucket/shards/my%20file.bin"
+
+    trackio.init(project="ref-custom-prefix", name="consumer")
+    fetched = trackio.use_artifact("ds:latest")
+    out = Path(fetched.download(tmp_path / "dl"))
+    trackio.finish()
+    assert (out / "data" / "my file.bin").read_bytes() == b"payload!"
+    assert (out / "data" / "sub" / "b.bin").read_bytes() == b"beta"
 
 
-def test_add_reference_s3_without_boto3_falls_back_and_warns(temp_dir, monkeypatch):
-    monkeypatch.setattr(references.S3Handler, "_client", lambda self: None)
-    trackio.init(project="ref-s3-noboto3")
+def test_registered_handler_unchecksummed_resolve_warns_with_hint(
+    temp_dir, monkeypatch
+):
+    handler = _MemoryStoreHandler({"obj": b"data"})
+    _prepend_handler(monkeypatch, handler)
+    trackio.init(project="ref-custom-nodigest")
     art = trackio.Artifact(name="ds", type="dataset")
-    with pytest.warns(UserWarning, match=r"trackio\[s3\]"):
-        art.add_reference("s3://bucket/key")
+    with pytest.warns(UserWarning, match="Provide an etag"):
+        art.add_reference("mem://bucket/obj")
     logged = trackio.log_artifact(art)
     trackio.finish()
-
-    ref = logged.references[0]
-    assert ref["size"] == 0
-    assert ref["digest"] == "s3://bucket/key"
-
-
-def test_download_fetches_s3_reference(temp_dir, tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(blobs={"obj": b"s3-bytes"}),
-    )
-    trackio.init(project="ref-s3-dl")
-    art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", checksum=False)
-    trackio.log_artifact(art)
-    trackio.finish()
-
-    trackio.init(project="ref-s3-dl", name="consumer")
-    fetched = trackio.use_artifact("ds:latest")
-    out = Path(fetched.download(tmp_path / "dl"))
-    trackio.finish()
-    assert (out / "obj").read_bytes() == b"s3-bytes"
-
-
-def test_download_s3_reference_without_boto3_raises(temp_dir, tmp_path, monkeypatch):
-    monkeypatch.setattr(references.S3Handler, "_client", lambda self: None)
-    trackio.init(project="ref-s3-noraise")
-    art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", checksum=False)
-    trackio.log_artifact(art)
-    trackio.finish()
-
-    trackio.init(project="ref-s3-noraise", name="consumer")
-    fetched = trackio.use_artifact("ds:latest")
-    with pytest.raises(RuntimeError, match="trackio\\[s3\\]"):
-        fetched.download(tmp_path / "dl")
-    trackio.finish()
-
-
-def test_add_reference_gs_probes_and_fetches(temp_dir, tmp_path, monkeypatch):
-    blob = _FakeBlob("obj", 7, '"gsetag"', body=b"gs-data")
-    monkeypatch.setattr(
-        references.GcsHandler,
-        "_client",
-        lambda self: _FakeGcsClient(single=blob),
-    )
-    trackio.init(project="ref-gs")
-    art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("gs://bucket/obj")
-    trackio.log_artifact(art)
-    trackio.finish()
-
-    trackio.init(project="ref-gs", name="consumer")
-    fetched = trackio.use_artifact("ds:latest")
-    assert fetched.references[0]["digest"] == "gsetag"
-    assert fetched.references[0]["size"] == 7
-    out = Path(fetched.download(tmp_path / "dl"))
-    trackio.finish()
-    assert (out / "obj").read_bytes() == b"gs-data"
-
-
-def test_add_reference_gs_prefix_expands(temp_dir, monkeypatch):
-    listing = [_FakeBlob("prefix/a", 1, '"e1"'), _FakeBlob("prefix/b", 2, '"e2"')]
-    monkeypatch.setattr(
-        references.GcsHandler,
-        "_client",
-        lambda self: _FakeGcsClient(listing=listing),
-    )
-    trackio.init(project="ref-gs-prefix")
-    art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("gs://bucket/prefix/")
-    logged = trackio.log_artifact(art)
-    trackio.finish()
-    assert {r["path"] for r in logged.references} == {"a", "b"}
-
-
-def test_add_reference_azure_probes_and_fetches(temp_dir, tmp_path, monkeypatch):
-    props = _FakeProps(11, '"azetag"')
-    monkeypatch.setattr(
-        references.AzureHandler,
-        "_service",
-        lambda self, url: _FakeAzureService(props=props, body=b"azure-bytes"),
-    )
-    uri = "https://acct.blob.core.windows.net/container/obj.bin"
-    trackio.init(project="ref-azure")
-    art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference(uri)
-    trackio.log_artifact(art)
-    trackio.finish()
-
-    trackio.init(project="ref-azure", name="consumer")
-    fetched = trackio.use_artifact("ds:latest")
-    assert fetched.references[0]["digest"] == "azetag"
-    assert fetched.references[0]["size"] == 11
-    out = Path(fetched.download(tmp_path / "dl"))
-    trackio.finish()
-    assert (out / "obj.bin").read_bytes() == b"azure-bytes"
+    assert logged.references[0]["digest"] == "mem://bucket/obj"
 
 
 def test_add_reference_hf_lfs_uses_sha256_digest(temp_dir, monkeypatch):
@@ -620,30 +502,37 @@ def test_add_reference_hf_directory_expands_and_fetches(
     assert (out / "data" / "sub" / "b.txt").read_bytes() == b"bbbb"
 
 
-def test_unknown_scheme_is_recorded_permissively_and_warns(temp_dir):
-    trackio.init(project="ref-dvc")
+def test_add_reference_unknown_scheme_raises(temp_dir):
     art = trackio.Artifact(name="ds", type="dataset")
-    with pytest.warns(UserWarning, match="cannot be downloaded"):
+    with pytest.raises(ValueError, match="register_reference_handler"):
         art.add_reference("dvc://repo/models/model.pkl")
-    logged = trackio.log_artifact(art)
-    trackio.finish()
-
-    ref = logged.references[0]
-    assert ref["ref"] == "dvc://repo/models/model.pkl"
-    assert ref["digest"] == "dvc://repo/models/model.pkl"
+    with pytest.raises(ValueError, match="No reference handler"):
+        art.add_reference("s3://bucket/key", checksum=False)
+    assert art._pending_references == []
 
 
 def test_download_unknown_scheme_reference_raises(temp_dir, tmp_path):
-    trackio.init(project="ref-dvc-dl")
-    art = trackio.Artifact(name="ds", type="dataset")
-    with pytest.warns(UserWarning):
-        art.add_reference("dvc://repo/obj")
-    trackio.log_artifact(art)
-    trackio.finish()
-
+    SQLiteStorage.commit_artifact_version(
+        project="ref-dvc-dl",
+        name="ds",
+        type="dataset",
+        description=None,
+        manifest=[
+            {
+                "path": "obj",
+                "ref": "dvc://repo/obj",
+                "digest": "dvc://repo/obj",
+                "size": 0,
+            }
+        ],
+        metadata=None,
+        aliases=None,
+        run_name="r",
+        run_id=None,
+    )
     trackio.init(project="ref-dvc-dl", name="consumer")
     fetched = trackio.use_artifact("ds:latest")
-    with pytest.raises(ValueError, match="not supported for"):
+    with pytest.raises(ValueError, match="No reference handler"):
         fetched.download(tmp_path / "dl")
     trackio.finish()
 
@@ -674,11 +563,11 @@ def test_add_reference_missing_local_file_raises(temp_dir, tmp_path):
 def test_add_reference_after_log_raises(temp_dir):
     trackio.init(project="ref-after-log")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", checksum=False)
+    art.add_reference("https://example.com/obj", checksum=False)
     trackio.log_artifact(art)
     trackio.finish()
     with pytest.raises(RuntimeError, match="already been logged"):
-        art.add_reference("s3://bucket/other")
+        art.add_reference("https://example.com/other")
 
 
 def test_reference_and_file_path_collision_is_rejected(temp_dir, tmp_path):
@@ -687,7 +576,7 @@ def test_reference_and_file_path_collision_is_rejected(temp_dir, tmp_path):
     trackio.init(project="ref-collision")
     art = trackio.Artifact(name="ds", type="dataset")
     art.add_file(src, name="shared")
-    art.add_reference("s3://bucket/obj", name="shared", checksum=False)
+    art.add_reference("https://example.com/obj", name="shared", checksum=False)
     with pytest.raises(ValueError, match="Duplicate logical path"):
         trackio.log_artifact(art)
     trackio.finish()
@@ -749,7 +638,7 @@ def test_identical_reference_manifests_dedupe_to_one_version(temp_dir):
     for _ in range(2):
         trackio.init(project="ref-dedup")
         art = trackio.Artifact(name="ds", type="dataset")
-        art.add_reference("s3://bucket/key", checksum=False)
+        art.add_reference("https://example.com/key", checksum=False)
         logged = trackio.log_artifact(art)
         trackio.finish()
         assert logged.version == "v0"
@@ -764,11 +653,9 @@ def test_identical_reference_manifests_dedupe_to_one_version(temp_dir):
 def test_changing_reference_uri_or_digest_creates_new_version(temp_dir, monkeypatch):
     etag = {"value": "e1"}
     monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(
-            head={"ContentLength": 100, "ETag": f'"{etag["value"]}"'}
-        ),
+        references.httpx,
+        "head",
+        lambda *a, **k: _Resp({"content-length": "100", "etag": f'"{etag["value"]}"'}),
     )
 
     def _log(uri):
@@ -779,18 +666,18 @@ def test_changing_reference_uri_or_digest_creates_new_version(temp_dir, monkeypa
         trackio.finish()
         return logged.version
 
-    assert _log("s3://bucket/k0") == "v0"
-    assert _log("s3://bucket/k1") == "v1"
+    assert _log("https://example.com/k0") == "v0"
+    assert _log("https://example.com/k1") == "v1"
     etag["value"] = "e2"
-    assert _log("s3://bucket/k1") == "v2"
-    assert _log("s3://bucket/k1") == "v2"
+    assert _log("https://example.com/k1") == "v2"
+    assert _log("https://example.com/k1") == "v2"
 
 
 def test_alias_rotation_on_reference_only_artifact(temp_dir):
     for i in range(3):
         trackio.init(project="ref-alias", name=f"run-{i}")
         art = trackio.Artifact(name="ds", type="dataset")
-        art.add_reference(f"s3://bucket/k{i}", name="data", checksum=False)
+        art.add_reference(f"https://example.com/k{i}", name="data", checksum=False)
         trackio.log_artifact(art, aliases=["best"] if i == 1 else None)
         trackio.finish()
 
@@ -821,7 +708,7 @@ def test_reference_only_artifact_stages_no_blob(temp_dir, tmp_path):
 def test_reference_blobs_are_not_synced_to_bucket(temp_dir, monkeypatch):
     trackio.init(project="ref-sync")
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", checksum=False)
+    art.add_reference("https://example.com/obj", checksum=False)
     trackio.log_artifact(art)
     trackio.finish()
 
@@ -868,7 +755,7 @@ def test_blob_endpoint_404_for_reference_but_200_for_staged_file(temp_dir, tmp_p
 
 def test_references_and_get_entry_uri_before_log(temp_dir):
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", checksum=False)
+    art.add_reference("https://example.com/obj", checksum=False)
     assert art.references == []
     assert art.get_entry_uri("obj") is None
 
@@ -895,46 +782,6 @@ def test_pre_change_file_manifest_parses_unchanged(temp_dir):
     assert record["manifest_digest"] == fetched["manifest_digest"]
 
 
-class _RaisingS3Client:
-    def head_object(self, Bucket, Key):
-        raise RuntimeError("AccessDenied")
-
-    def get_paginator(self, _name):
-        return self
-
-    def paginate(self, Bucket, Prefix):
-        raise RuntimeError("AccessDenied")
-
-
-class _RaisingGcsClient:
-    def bucket(self, name):
-        return self
-
-    def get_blob(self, key):
-        raise RuntimeError("Forbidden")
-
-    def list_blobs(self, bucket, prefix=None):
-        raise RuntimeError("Forbidden")
-
-
-class _RaisingAzureBlobClient:
-    def get_blob_properties(self):
-        raise RuntimeError("ResourceNotFoundError")
-
-
-class _RaisingAzureContainerClient:
-    def list_blobs(self, name_starts_with=None):
-        raise RuntimeError("AuthorizationFailure")
-
-
-class _RaisingAzureService:
-    def get_blob_client(self, container, blob):
-        return _RaisingAzureBlobClient()
-
-    def get_container_client(self, container):
-        return _RaisingAzureContainerClient()
-
-
 class _RaisingHfFs:
     def info(self, path):
         raise RuntimeError("RepositoryNotFoundError")
@@ -950,269 +797,6 @@ def test_relative_key_strips_prefix_directory_and_preserves_structure():
     assert rk("prefix/sub/b.bin", "prefix/") == "sub/b.bin"
     assert rk("a/b/c/d.bin", "a/b/") == "c/d.bin"
     assert rk("datasets/u/r/a.txt", "datasets/u/r/") == "a.txt"
-
-
-def test_s3_bucket_root_reference_preserves_subdirectory_paths(monkeypatch):
-    pages = [
-        {
-            "Contents": [
-                {"Key": "train/data.csv", "Size": 1, "ETag": '"e1"'},
-                {"Key": "test/data.csv", "Size": 2, "ETag": '"e2"'},
-            ]
-        }
-    ]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(pages=pages),
-    )
-    resolved = references.resolve_reference("s3://bucket", "s3", True, 100)
-    assert {r.relkey for r in resolved} == {"train/data.csv", "test/data.csv"}
-
-
-def test_s3_prefix_expansion_percent_encodes_keys_and_round_trips(
-    tmp_path, monkeypatch
-):
-    pages = [{"Contents": [{"Key": "shards/my file.bin", "Size": 3, "ETag": '"e"'}]}]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(pages=pages),
-    )
-    resolved = references.resolve_reference("s3://bucket/shards/", "s3", True, 5)
-    assert len(resolved) == 1
-    assert resolved[0].uri == "s3://bucket/shards/my%20file.bin"
-    scheme, validated = references.validate_reference_uri(resolved[0].uri)
-
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(blobs={"shards/my file.bin": b"payload"}),
-    )
-    dest = tmp_path / "out.bin"
-    references.fetch_reference(validated, scheme, dest)
-    assert dest.read_bytes() == b"payload"
-
-
-def test_s3_fetch_decodes_percent_encoded_key(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(blobs={"my key.bin": b"decoded"}),
-    )
-    dest = tmp_path / "out.bin"
-    references.fetch_reference("s3://bucket/my%20key.bin", "s3", dest)
-    assert dest.read_bytes() == b"decoded"
-
-
-def test_add_reference_s3_space_key_round_trips_through_download(
-    temp_dir, tmp_path, monkeypatch
-):
-    pages = [{"Contents": [{"Key": "shards/my file.bin", "Size": 7, "ETag": '"e"'}]}]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(
-            pages=pages, blobs={"shards/my file.bin": b"payload!"}
-        ),
-    )
-    trackio.init(project="ref-s3-space")
-    art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/shards/", name="data")
-    logged = trackio.log_artifact(art)
-    trackio.finish()
-
-    ref = logged.references[0]
-    assert ref["path"] == "data/my file.bin"
-    assert ref["ref"] == "s3://bucket/shards/my%20file.bin"
-
-    trackio.init(project="ref-s3-space", name="consumer")
-    fetched = trackio.use_artifact("ds:latest")
-    out = Path(fetched.download(tmp_path / "dl"))
-    trackio.finish()
-    assert (out / "data" / "my file.bin").read_bytes() == b"payload!"
-
-
-def test_s3_prefix_expands_with_checksum_false(monkeypatch):
-    pages = [
-        {
-            "Contents": [
-                {"Key": "shards/a.bin", "Size": 3, "ETag": '"e1"'},
-                {"Key": "shards/b.bin", "Size": 5, "ETag": '"e2"'},
-            ]
-        }
-    ]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(pages=pages),
-    )
-    resolved = references.resolve_reference("s3://bucket/shards/", "s3", False, 5)
-    assert {r.relkey for r in resolved} == {"a.bin", "b.bin"}
-    assert all(r.digest is None for r in resolved)
-    assert {r.size for r in resolved} == {3, 5}
-
-
-def test_add_reference_s3_prefix_checksum_false_expands(temp_dir, monkeypatch):
-    pages = [
-        {
-            "Contents": [
-                {"Key": "shards/a.bin", "Size": 3, "ETag": '"e1"'},
-                {"Key": "shards/b.bin", "Size": 5, "ETag": '"e2"'},
-            ]
-        }
-    ]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(pages=pages),
-    )
-    trackio.init(project="ref-s3-nocs-prefix")
-    art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/shards/", name="data", checksum=False)
-    logged = trackio.log_artifact(art)
-    trackio.finish()
-
-    by_path = {r["path"]: r for r in logged.references}
-    assert set(by_path) == {"data/a.bin", "data/b.bin"}
-    assert by_path["data/a.bin"]["digest"] == "s3://bucket/shards/a.bin"
-
-
-def test_azure_split_handles_missing_blob_component():
-    split = references.AzureHandler._split
-    assert split("https://acct.blob.core.windows.net/mycontainer") == (
-        "https://acct.blob.core.windows.net",
-        "mycontainer",
-        "",
-    )
-    assert split("https://acct.blob.core.windows.net/c/dir/obj.bin") == (
-        "https://acct.blob.core.windows.net",
-        "c",
-        "dir/obj.bin",
-    )
-    assert split("https://acct.blob.core.windows.net/c/my%20blob") == (
-        "https://acct.blob.core.windows.net",
-        "c",
-        "my blob",
-    )
-
-
-def test_azure_container_root_url_expands_without_crashing(monkeypatch):
-    listing = [_FakeBlob("a.bin", 1, '"e1"'), _FakeBlob("b.bin", 2, '"e2"')]
-    monkeypatch.setattr(
-        references.AzureHandler,
-        "_service",
-        lambda self, url: _FakeAzureService(listing=listing),
-    )
-    resolved = references.resolve_reference(
-        "https://acct.blob.core.windows.net/mycontainer", "https", True, 100
-    )
-    assert {r.relkey for r in resolved} == {"a.bin", "b.bin"}
-
-
-def test_azure_public_blob_falls_back_to_http_when_no_sdk(tmp_path, monkeypatch):
-    monkeypatch.setattr(references.AzureHandler, "_service", lambda self, url: None)
-    monkeypatch.setattr(
-        references.httpx,
-        "head",
-        lambda *a, **k: _Resp({"content-length": "17", "etag": '"http-etag"'}),
-    )
-    uri = "https://acct.blob.core.windows.net/container/public.bin"
-    resolved = references.resolve_reference(uri, "https", True, 100)
-    assert len(resolved) == 1
-    assert resolved[0].size == 17
-    assert resolved[0].digest == "http-etag"
-
-    monkeypatch.setattr(
-        references.httpx,
-        "stream",
-        lambda *a, **k: _Resp(body=b"public-azure-data"),
-    )
-    dest = tmp_path / "out.bin"
-    references.fetch_reference(uri, "https", dest)
-    assert dest.read_bytes() == b"public-azure-data"
-
-
-def test_azure_prefix_skips_directory_marker_blobs(monkeypatch):
-    listing = [_FakeBlob("dir/", 0, '"marker"'), _FakeBlob("dir/a.bin", 3, '"e1"')]
-    monkeypatch.setattr(
-        references.AzureHandler,
-        "_service",
-        lambda self, url: _FakeAzureService(listing=listing),
-    )
-    resolved = references.resolve_reference(
-        "https://acct.blob.core.windows.net/container/dir/", "https", True, 100
-    )
-    assert {r.relkey for r in resolved} == {"a.bin"}
-
-
-def test_s3_single_object_head_failure_degrades(monkeypatch):
-    monkeypatch.setattr(
-        references.S3Handler, "_client", lambda self: _RaisingS3Client()
-    )
-    resolved = references.resolve_reference("s3://bucket/obj", "s3", True, 100)
-    assert resolved == [references.ResolvedReference(None, "s3://bucket/obj")]
-
-
-def test_s3_prefix_listing_failure_degrades(monkeypatch):
-    monkeypatch.setattr(
-        references.S3Handler, "_client", lambda self: _RaisingS3Client()
-    )
-    resolved = references.resolve_reference("s3://bucket/p/", "s3", True, 100)
-    assert resolved == [references.ResolvedReference(None, "s3://bucket/p/")]
-
-
-def test_add_reference_s3_listing_failure_records_uri_and_warns(temp_dir, monkeypatch):
-    monkeypatch.setattr(
-        references.S3Handler, "_client", lambda self: _RaisingS3Client()
-    )
-    trackio.init(project="ref-s3-degraded")
-    art = trackio.Artifact(name="ds", type="dataset")
-    with pytest.warns(UserWarning, match=r"trackio\[s3\]"):
-        art.add_reference("s3://bucket/obj")
-    logged = trackio.log_artifact(art)
-    trackio.finish()
-    assert logged.references[0]["digest"] == "s3://bucket/obj"
-
-
-def test_gcs_probe_and_listing_failure_degrade(monkeypatch):
-    monkeypatch.setattr(
-        references.GcsHandler, "_client", lambda self: _RaisingGcsClient()
-    )
-    single = references.resolve_reference("gs://bucket/obj", "gs", True, 100)
-    assert single == [references.ResolvedReference(None, "gs://bucket/obj")]
-    listing = references.resolve_reference("gs://bucket/p/", "gs", True, 100)
-    assert listing == [references.ResolvedReference(None, "gs://bucket/p/")]
-
-
-def test_gcs_missing_client_degrades(monkeypatch):
-    monkeypatch.setattr(references.GcsHandler, "_client", lambda self: None)
-    resolved = references.resolve_reference("gs://bucket/obj", "gs", True, 100)
-    assert resolved == [references.ResolvedReference(None, "gs://bucket/obj")]
-
-
-def test_gcs_missing_object_degrades_without_prefix_scan(monkeypatch):
-    monkeypatch.setattr(
-        references.GcsHandler,
-        "_client",
-        lambda self: _FakeGcsClient(single=None, listing=[_FakeBlob("obj2", 9, '"x"')]),
-    )
-    resolved = references.resolve_reference("gs://bucket/obj", "gs", True, 100)
-    assert resolved == [references.ResolvedReference(None, "gs://bucket/obj")]
-
-
-def test_azure_probe_and_listing_failure_degrade(monkeypatch):
-    monkeypatch.setattr(
-        references.AzureHandler,
-        "_service",
-        lambda self, url: _RaisingAzureService(),
-    )
-    obj_uri = "https://acct.blob.core.windows.net/container/obj.bin"
-    single = references.resolve_reference(obj_uri, "https", True, 100)
-    assert single == [references.ResolvedReference(None, obj_uri)]
-    prefix_uri = "https://acct.blob.core.windows.net/container/dir/"
-    listing = references.resolve_reference(prefix_uri, "https", True, 100)
-    assert listing == [references.ResolvedReference(None, prefix_uri)]
 
 
 def test_hf_info_failure_degrades(monkeypatch):
@@ -1243,24 +827,6 @@ def test_file_handler_resolve_reports_size_and_digest(tmp_path):
     assert len(resolved) == 1
     assert resolved[0].size == len(payload)
     assert resolved[0].digest == hashlib.sha256(payload).hexdigest()
-
-
-def test_s3_prefix_expansion_respects_max_objects(monkeypatch):
-    pages = [
-        {
-            "Contents": [
-                {"Key": "p/a", "Size": 1, "ETag": '"e1"'},
-                {"Key": "p/b", "Size": 1, "ETag": '"e2"'},
-            ]
-        }
-    ]
-    monkeypatch.setattr(
-        references.S3Handler,
-        "_client",
-        lambda self: _FakeS3Client(pages=pages),
-    )
-    with pytest.raises(ValueError, match="expands to more than 1 objects"):
-        references.resolve_reference("s3://bucket/p/", "s3", True, 1)
 
 
 def test_download_reference_is_idempotent_and_skips_present(temp_dir, tmp_path):
@@ -1339,7 +905,7 @@ def test_reference_rejected_by_old_server_gives_upgrade_error(temp_dir):
 
     run = _remote_run(_FakeRemoteClient(_old_server))
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", checksum=False)
+    art.add_reference("https://example.com/obj", checksum=False)
     with pytest.raises(RuntimeError, match="predates artifact references"):
         run.log_artifact(art)
 
@@ -1367,7 +933,7 @@ def test_missing_file_blob_error_is_not_masked_as_old_server(temp_dir):
 
     run = _remote_run(_FakeRemoteClient(_old_server))
     art = trackio.Artifact(name="ds", type="dataset")
-    art.add_reference("s3://bucket/obj", checksum=False)
+    art.add_reference("https://example.com/obj", checksum=False)
     with pytest.raises(RuntimeError, match="blobs not on server") as excinfo:
         run.log_artifact(art)
     assert "predates artifact references" not in str(excinfo.value)

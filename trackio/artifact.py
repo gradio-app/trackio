@@ -207,8 +207,8 @@ class Artifact:
         if not yet logged or fetched. File entries carry `path`, `digest`, and
         `size`; reference entries carry `path`, `ref` (a URI), `size`, and a
         `digest` — a sha256 for local/LFS references, the provider's opaque ETag
-        for cloud/HTTP references, or the URI itself when no checksum is
-        available. Returns a fresh copy on each access."""
+        for HTTP or object-store references, or the URI itself when no checksum
+        is available. Returns a fresh copy on each access."""
         return None if self._manifest is None else [dict(e) for e in self._manifest]
 
     @property
@@ -311,10 +311,10 @@ class Artifact:
         lineage over large or already-durably-stored datasets that must not be
         duplicated.
 
-        A URI that denotes a directory (`file://`) or object prefix (`s3://`,
-        `gs://`, `hf://`, Azure) is expanded into one entry per object, capped
-        by `max_objects`. Reference bytes are never uploaded to a Space or
-        bucket.
+        A URI that denotes a directory (`file://`, `hf://`, or a prefix
+        expanded by a custom handler) is expanded into one entry per object,
+        capped by `max_objects`. Reference bytes are never uploaded to a Space
+        or bucket.
 
         The URI is stored verbatim in the artifact manifest, and manifests may
         be synced to a shared Hugging Face Dataset — so a signed URI triggers a
@@ -325,10 +325,11 @@ class Artifact:
             uri (`str`):
                 Location of the referenced data, percent-encoded (build local
                 URIs with `pathlib.Path.as_uri()`). `file://`, `http(s)://`,
-                `hf://`, `s3://`, `gs://`, and Azure blob URLs
-                (`https://<account>.blob.core.windows.net/...`) are resolved and
-                fetched natively; any other scheme is recorded as an opaque
-                pointer that cannot be checksummed or downloaded.
+                and `hf://` are resolved and fetched natively; any other scheme
+                (`s3://`, `gs://`, Azure blob URLs, ...) requires a custom
+                `ReferenceHandler` registered via
+                `trackio.register_reference_handler` — see the artifacts
+                documentation for complete examples — and raises otherwise.
             name (`str`, *optional*):
                 Logical path the reference is stored under. Defaults to the last
                 segment of `uri`; for an expanded prefix (ending with /) it is the
@@ -337,15 +338,12 @@ class Artifact:
                 When `True`, probes the source to derive its size and a
                 checksum (and to expand a directory/prefix): `file://` is
                 stream-hashed to a sha256, `hf://` uses its LFS sha256 or git
-                blob id, and the cloud/HTTP stores use the provider `ETag`. This
-                may read the filesystem or make network requests. Cloud schemes
-                use optional SDKs
-                (`trackio[s3]`, `trackio[gcs]`, `trackio[azure]`). When no
-                checksum can be obtained for a *remote* source (no ETag, a
-                missing cloud SDK, an opaque scheme), the URI itself is used as
-                the `digest` and a warning is emitted. A local `file://` path
-                that does not exist instead raises. Pass `checksum=False` to skip
-                remote probing entirely.
+                blob id, and `http(s)://` uses the server `ETag`. This may read
+                the filesystem or make network requests. When no checksum can
+                be obtained for a *remote* source (e.g. no ETag), the URI
+                itself is used as the `digest` and a warning is emitted. A
+                local `file://` path that does not exist instead raises. Pass
+                `checksum=False` to skip remote probing entirely.
             max_objects (`int`, *optional*):
                 Cap on how many objects a directory/prefix expands into (default
                 10,000); exceeding it raises.
@@ -458,16 +456,16 @@ class Artifact:
 
         Reference entries added via `add_reference` are fetched here too: the
         object at each reference URI is downloaded into the directory (via the
-        bundled `httpx` for `http(s)://`, `huggingface_hub` for `hf://`, and the
-        optional cloud SDK for `s3://`/`gs://`/Azure). Each object is written
-        atomically and calls are idempotent. Because reference digests
+        bundled `httpx` for `http(s)://`, `huggingface_hub` for `hf://`, and
+        the registered custom `ReferenceHandler` for any other scheme). Each
+        object is written atomically and calls are idempotent. Because reference digests
         are opaque (a provider ETag or the URI itself), a present file is assumed
         current and is not re-verified against the source, and a source whose
         re-probed checksum no longer matches the recorded one is downloaded
         anyway with a warning. Downloading can transfer a large amount of data;
         to work with the URIs without downloading, read them from the `references`
-        property or `get_entry_uri` instead. A missing source, an unavailable
-        client, or an unfetchable scheme raises.
+        property or `get_entry_uri` instead. A missing source, an unreachable
+        server, or a scheme with no registered handler raises.
 
         Args:
             root (`str` or `Path`, *optional*):

@@ -36,6 +36,11 @@ from trackio.media import (
     TrackioVideo,
     get_project_media_path,
 )
+from trackio.references import (
+    ReferenceHandler,
+    ResolvedReference,
+    register_reference_handler,
+)
 from trackio.remote_client import RemoteClient
 from trackio.run import Run
 from trackio.server import TrackioDashboardApp, build_starlette_app_only
@@ -76,6 +81,9 @@ __all__ = [
     "import_tf_events",
     "save",
     "Artifact",
+    "ReferenceHandler",
+    "ResolvedReference",
+    "register_reference_handler",
     "Image",
     "Video",
     "Audio",

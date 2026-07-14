@@ -4,26 +4,22 @@ fetch them without staging any bytes at log time.
 Each supported scheme is a `ReferenceHandler`: `matches` claims a URI, `resolve`
 probes it for size + a checksum (expanding a directory or object prefix into one
 entry per object), and `fetch` downloads a single object. `_select` returns the
-first handler whose `matches` is true, falling back to `TrackingHandler` (which
-records an opaque pointer and refuses to download). Cloud SDKs are optional and
-imported lazily inside the handler that needs them, so trackio's core dependency
-set is unchanged: a reference whose client is unavailable resolves without a
-checksum and only raises if you try to `fetch` it. An Azure blob whose SDK or
-credentials are absent is the exception — because blob URLs are also valid
-HTTPS URLs, a single blob falls back to a plain HTTP probe and download.
+first handler whose `matches` is true, raising for a scheme no handler claims.
+The built-in handlers cover `file://`, `http(s)://`, and `hf://` — all served
+by trackio's existing dependencies. Any other scheme (`s3://`, `gs://`, Azure
+blob URLs, ...) is supported by registering a custom `ReferenceHandler` via
+`register_reference_handler`; the artifacts documentation includes complete,
+copy-pasteable handlers for the major cloud object stores.
 
-Object keys are carried through URIs percent-encoded (cloud keys may contain
-spaces, which `validate_reference_uri` rejects): `resolve` encodes the keys it
-discovers when synthesizing per-object ref URIs, and `fetch` decodes the key
-back before handing it to the SDK, so a manifest ref always round-trips.
+Object keys are carried through URIs percent-encoded (object-store keys may
+contain spaces, which `validate_reference_uri` rejects): `resolve` encodes the
+keys it discovers when synthesizing per-object ref URIs, and `fetch` decodes the
+key back before reading the source, so a manifest ref always round-trips.
 
 This module also defines the dependency-light reference primitives —
 `validate_reference_uri`, `local_path_from_file_uri`, `default_reference_name`,
 the `looks_signed` credential heuristic, and the `is_reference_entry` manifest
 discriminator — shared by the artifact, storage, server, and CLI layers.
-
-To add a scheme, write a `ReferenceHandler` subclass and register it in
-`_HANDLERS` (before `HttpHandler` if it is a specialization of `https://`).
 """
 
 import importlib
@@ -40,7 +36,6 @@ from trackio import cas
 from trackio.typehints import ETag, Sha256Digest
 
 DEFAULT_MAX_OBJECTS = 10_000
-_AZURE_BLOB_SUFFIX = ".blob.core.windows.net"
 
 
 def validate_reference_uri(uri: str) -> tuple[str, str]:
@@ -48,11 +43,11 @@ def validate_reference_uri(uri: str) -> tuple[str, str]:
 
     The URI must be a non-empty string carrying a scheme and free of NUL and
     whitespace (spaces and other special characters must be percent-encoded).
-    The scheme is not restricted: `file://`, `http(s)://`, `hf://`, `s3://`,
-    `gs://`, and Azure blob URLs are resolved and fetched natively, while any
-    other scheme is recorded as an opaque, un-checksummed pointer. The URI is
-    returned unchanged. Use `local_path_from_file_uri` to resolve a `file://`
-    URI to a local filesystem path.
+    The scheme is not restricted here — this validates only the URI's shape;
+    whether a scheme can actually be resolved and fetched is decided by the
+    registered `ReferenceHandler`s. The URI is returned unchanged. Use
+    `local_path_from_file_uri` to resolve a `file://` URI to a local
+    filesystem path.
     """
     if not isinstance(uri, str) or not uri:
         raise ValueError(f"Invalid reference URI: {uri!r} (must be non-empty)")
@@ -123,8 +118,9 @@ class ResolvedReference(NamedTuple):
     """One object a reference URI resolves to. `relkey` is None for a single
     object (the caller's `name`/basename is used) or the object's path relative
     to the expanded prefix. `digest` is the object's checksum — a content sha256
-    for `file://` and LFS `hf://`, or the provider's opaque ETag for cloud/HTTP
-    references; None when unavailable (the caller then falls back to the URI)."""
+    for `file://` and LFS `hf://`, or the provider's opaque ETag for HTTP and
+    object-store references; None when unavailable (the caller then falls back
+    to the URI)."""
 
     relkey: str | None
     uri: str
@@ -135,16 +131,19 @@ class ResolvedReference(NamedTuple):
 class ReferenceHandler(ABC):
     """Resolves and fetches references for one family of URI schemes.
 
-    Concrete handlers are stateless and instantiated once in `_HANDLERS`. Any
-    third-party client is imported and constructed lazily (see each handler's
-    private accessor), so importing this module never requires an optional SDK.
+    This is the extension point for schemes trackio does not handle natively:
+    subclass it and register an instance with `register_reference_handler`.
+    Concrete handlers are stateless; the built-ins are instantiated once in
+    `_HANDLERS`.
     """
 
     @abstractmethod
     def matches(self, scheme: str, uri: str) -> bool:
         """Whether this handler owns `uri`. `_select` tries handlers in order and
-        takes the first match, so a specialization (e.g. Azure over generic HTTP)
-        must be registered ahead of the handler it narrows."""
+        takes the first match; handlers registered via
+        `register_reference_handler` are consulted before the built-ins, so a
+        specialization (e.g. an object store addressed by `https://` URLs) wins
+        over the generic HTTP handler."""
 
     @abstractmethod
     def resolve(
@@ -170,15 +169,16 @@ class ReferenceHandler(ABC):
 def resolve_reference(
     uri: str, scheme: str, checksum: bool, max_objects: int
 ) -> list[ResolvedReference]:
-    """Resolve `uri` to one or more objects. Never raises for a missing optional
-    client or an unreachable remote (those resolve un-checksummed); raises for a
-    missing local `file://` path or an expansion exceeding `max_objects`."""
+    """Resolve `uri` to one or more objects. Never raises for an unreachable
+    remote (those resolve un-checksummed); raises for a scheme no registered
+    handler claims, a missing local `file://` path, or an expansion exceeding
+    `max_objects`."""
     return _select(scheme, uri).resolve(uri, checksum, max_objects)
 
 
 def fetch_reference(uri: str, scheme: str, dest: Path) -> None:
-    """Download the single object at `uri` to `dest`. Raises if the scheme is
-    not fetchable or a required client is unavailable."""
+    """Download the single object at `uri` to `dest`. Raises if no registered
+    handler claims the scheme or the source cannot be read."""
     _select(scheme, uri).fetch(uri, dest)
 
 
@@ -205,7 +205,7 @@ class FileHandler(ReferenceHandler):
         local = local_path_from_file_uri(uri)
         if local.is_dir():
             entries: list[ResolvedReference] = []
-for path in local.rglob("*"):
+            for path in local.rglob("*"):
                 if path.is_symlink() or not path.is_file():
                     continue
                 digest, size = self._digest_and_size(path, checksum)
@@ -253,8 +253,9 @@ class HttpHandler(ReferenceHandler):
 
     Size and a checksum come from the `Content-Length` and `ETag` headers of a
     `HEAD` request; both are optional, so a server that omits them (or is
-    unreachable) resolves the reference un-checksummed. Registered after the more
-    specific `AzureHandler`."""
+    unreachable) resolves the reference un-checksummed. A custom handler
+    registered via `register_reference_handler` can claim specific `https://`
+    hosts (e.g. an object store's blob endpoints) ahead of this one."""
 
     def matches(self, scheme, uri):
         """Owns `http(s)://` URLs not claimed by a more specific handler."""
@@ -272,310 +273,6 @@ class HttpHandler(ReferenceHandler):
     def hint(self):
         """Shown when the server exposed no usable ETag."""
         return "Check that the URL is reachable and that its server exposes an ETag header."
-
-
-class AzureHandler(ReferenceHandler):
-    """Azure Blob Storage objects, addressed as
-    `https://<account>.blob.core.windows.net/<container>/<blob>`.
-
-    Because they are `https://` URLs, this handler is registered before
-    `HttpHandler` and claims them by host suffix. Size and an ETag come from the
-    blob properties (a container prefix is expanded); both use the optional
-    `azure-storage-blob` + `azure-identity` packages (`trackio[azure]`). When
-    those packages or credentials are unavailable, a single blob falls back to a
-    plain HTTPS HEAD/GET (like `HttpHandler`), so a public blob still resolves
-    with a size + ETag and downloads; a container prefix cannot be listed over
-    HTTP and degrades to an un-checksummed pointer."""
-
-    extra = "azure"
-
-    def matches(self, scheme, uri):
-        """Owns `https://` URLs whose host is an Azure Blob endpoint."""
-        return scheme in ("http", "https") and urlsplit(uri).netloc.lower().endswith(
-            _AZURE_BLOB_SUFFIX
-        )
-
-    def resolve(self, uri, checksum, max_objects):
-        """Read blob properties for a single object, or list a container prefix
-        into one entry per blob. A single blob falls back to an HTTP probe when
-        the SDK/credentials are unavailable; any other failure (a container that
-        cannot be listed, a missing blob, an auth error) degrades to an
-        un-checksummed pointer."""
-        account_url, container, blob_name = self._split(uri)
-        is_object = bool(blob_name) and not blob_name.endswith("/")
-        if is_object and not checksum:
-            return [ResolvedReference(None, uri)]
-        service = self._service(account_url)
-        if is_object:
-            if service is None:
-                return _http_resolve(uri, checksum)
-            try:
-                props = service.get_blob_client(
-                    container, blob_name
-                ).get_blob_properties()
-            except Exception:
-                return [ResolvedReference(None, uri)]
-            return [
-                ResolvedReference(
-                    None, uri, size=props.size, digest=_etag_digest(props.etag)
-                )
-            ]
-        if service is None:
-            return [ResolvedReference(None, uri)]
-        entries: list[ResolvedReference] = []
-        try:
-            for blob in service.get_container_client(container).list_blobs(
-                name_starts_with=blob_name
-            ):
-                if blob.name.endswith("/"):
-                    continue
-                entries.append(
-                    ResolvedReference(
-                        relkey=_relative_key(blob.name, blob_name),
-                        uri=f"{account_url}/{container}/{quote(blob.name, safe='/')}",
-                        size=blob.size,
-                        digest=(
-                            _etag_digest(getattr(blob, "etag", None))
-                            if checksum
-                            else None
-                        ),
-                    )
-                )
-                _within_max(len(entries), max_objects, uri)
-        except ValueError:
-            raise
-        except Exception:
-            return [ResolvedReference(None, uri)]
-        return entries
-
-    def fetch(self, uri, dest):
-        """Download the blob into `dest` via the Azure SDK, or a plain HTTPS GET
-        when the SDK or credentials are unavailable."""
-        account_url, container, blob_name = self._split(uri)
-        service = self._service(account_url)
-        if service is None:
-            _http_fetch(uri, dest)
-            return
-        downloader = service.get_blob_client(container, blob_name).download_blob()
-        with dest.open("wb") as f:
-            downloader.readinto(f)
-
-    def hint(self):
-        """Shown when neither the Azure SDK nor a public HTTP probe yielded an ETag."""
-        return (
-            f"Install trackio[{self.extra}] and configure credentials to "
-            "checksum it by content."
-        )
-
-    def _service(self, account_url):
-        """A `BlobServiceClient` using default credentials, or None if the Azure
-        SDK is not installed or a client cannot be constructed."""
-        blob = _import("azure.storage.blob")
-        identity = _import("azure.identity")
-        if blob is None or identity is None:
-            return None
-        try:
-            return blob.BlobServiceClient(
-                account_url, credential=identity.DefaultAzureCredential()
-            )
-        except Exception:
-            return None
-
-    @staticmethod
-    def _split(uri: str) -> tuple[str, str, str]:
-        """Split an Azure blob URL into (account_url, container, blob_name),
-        decoding the percent-encoded blob name. A URL with no blob component (an
-        account/container root) yields an empty blob_name, which `resolve` treats
-        as a container-level prefix expansion."""
-        parts = urlsplit(uri)
-        segments = parts.path.lstrip("/").split("/", 1)
-        container = segments[0]
-        blob_name = unquote(segments[1]) if len(segments) > 1 else ""
-        return f"{parts.scheme}://{parts.netloc}", container, blob_name
-
-
-class S3Handler(ReferenceHandler):
-    """Amazon S3 objects (`s3://bucket/key`).
-
-    Size and an ETag come from a `head_object` call (a prefix is expanded with a
-    `list_objects_v2` paginator); both need the optional `boto3` package
-    (`trackio[s3]`). S3 multipart-upload ETags are not MD5s, but trackio treats
-    every reference digest as an opaque token, so that is fine."""
-
-    extra = "s3"
-
-    def matches(self, scheme, uri):
-        """Owns `s3://` URIs."""
-        return scheme == "s3"
-
-    def resolve(self, uri, checksum, max_objects):
-        """HEAD a single object for size + ETag, else paginate the prefix into one
-        entry per object. Degrades to an un-checksummed pointer when boto3 is
-        unavailable, the object cannot be headed, or the listing fails."""
-        parts = urlsplit(uri)
-        bucket, key = parts.netloc, unquote(parts.path.lstrip("/"))
-        is_object = bool(key) and not key.endswith("/")
-        if is_object and not checksum:
-            return [ResolvedReference(None, uri)]
-        client = self._client()
-        if client is None:
-            return [ResolvedReference(None, uri)]
-        if is_object:
-            try:
-                head = client.head_object(Bucket=bucket, Key=key)
-            except Exception:
-                return [ResolvedReference(None, uri)]
-            return [
-                ResolvedReference(
-                    None,
-                    uri,
-                    size=int(head["ContentLength"]),
-                    digest=_etag_digest(head.get("ETag")),
-                )
-            ]
-        entries: list[ResolvedReference] = []
-        try:
-            for page in client.get_paginator("list_objects_v2").paginate(
-                Bucket=bucket, Prefix=key
-            ):
-                for obj in page.get("Contents", []):
-                    obj_key = obj["Key"]
-                    if obj_key.endswith("/"):
-                        continue
-                    entries.append(
-                        ResolvedReference(
-                            relkey=_relative_key(obj_key, key),
-                            uri=f"s3://{bucket}/{quote(obj_key, safe='/')}",
-                            size=int(obj["Size"]),
-                            digest=(
-                                _etag_digest(obj.get("ETag")) if checksum else None
-                            ),
-                        )
-                    )
-                    _within_max(len(entries), max_objects, uri)
-        except ValueError:
-            raise
-        except Exception:
-            return [ResolvedReference(None, uri)]
-        return entries
-
-    def fetch(self, uri, dest):
-        """Download the object into `dest`; raise if boto3 is unavailable."""
-        client = self._client()
-        if client is None:
-            raise RuntimeError(
-                "Downloading this reference needs the 'boto3' package; install "
-                f"trackio[{self.extra}]."
-            )
-        parts = urlsplit(uri)
-        key = unquote(parts.path.lstrip("/"))
-        with dest.open("wb") as f:
-            client.download_fileobj(parts.netloc, key, f)
-
-    def hint(self):
-        """Shown when boto3 is absent or the object exposed no ETag."""
-        return (
-            f"Install trackio[{self.extra}] and configure credentials to "
-            "checksum it by content."
-        )
-
-    def _client(self):
-        """An S3 client, or None if boto3 is not installed or a client cannot be
-        constructed (e.g. no region configured)."""
-        boto3 = _import("boto3")
-        if boto3 is None:
-            return None
-        try:
-            return boto3.client("s3")
-        except Exception:
-            return None
-
-
-class GcsHandler(ReferenceHandler):
-    """Google Cloud Storage objects (`gs://bucket/key`).
-
-    Size and an ETag come from the blob metadata (a prefix is expanded); both
-    need the optional `google-cloud-storage` package (`trackio[gcs]`)."""
-
-    extra = "gcs"
-
-    def matches(self, scheme, uri):
-        """Owns `gs://` URIs."""
-        return scheme == "gs"
-
-    def resolve(self, uri, checksum, max_objects):
-        """Read blob metadata for a single object, or list a prefix into one entry
-        per blob. Degrades to an un-checksummed pointer when the SDK/credentials
-        are unavailable, the object is missing, or the listing fails."""
-        parts = urlsplit(uri)
-        bucket, key = parts.netloc, unquote(parts.path.lstrip("/"))
-        is_object = bool(key) and not key.endswith("/")
-        if is_object and not checksum:
-            return [ResolvedReference(None, uri)]
-        client = self._client()
-        if client is None:
-            return [ResolvedReference(None, uri)]
-        if is_object:
-            try:
-                blob = client.bucket(bucket).get_blob(key)
-            except Exception:
-                return [ResolvedReference(None, uri)]
-            if blob is None:
-                return [ResolvedReference(None, uri)]
-            return [
-                ResolvedReference(
-                    None, uri, size=blob.size, digest=_etag_digest(blob.etag)
-                )
-            ]
-        entries: list[ResolvedReference] = []
-        try:
-            for blob in client.list_blobs(bucket, prefix=key):
-                if blob.name.endswith("/"):
-                    continue
-                entries.append(
-                    ResolvedReference(
-                        relkey=_relative_key(blob.name, key),
-                        uri=f"gs://{bucket}/{quote(blob.name, safe='/')}",
-                        size=blob.size,
-                        digest=_etag_digest(blob.etag) if checksum else None,
-                    )
-                )
-                _within_max(len(entries), max_objects, uri)
-        except ValueError:
-            raise
-        except Exception:
-            return [ResolvedReference(None, uri)]
-        return entries
-
-    def fetch(self, uri, dest):
-        """Download the object into `dest`; raise if the SDK is unavailable."""
-        client = self._client()
-        if client is None:
-            raise RuntimeError(
-                "Downloading this reference needs the 'google-cloud-storage' package; "
-                f"install trackio[{self.extra}]."
-            )
-        parts = urlsplit(uri)
-        key = unquote(parts.path.lstrip("/"))
-        client.bucket(parts.netloc).blob(key).download_to_filename(str(dest))
-
-    def hint(self):
-        """Shown when the GCS SDK is absent or the blob exposed no ETag."""
-        return (
-            f"Install trackio[{self.extra}] and configure credentials to "
-            "checksum it by content."
-        )
-
-    def _client(self):
-        """A GCS client, or None if google-cloud-storage is not installed or no
-        credentials are available to construct it."""
-        storage = _import("google.cloud.storage")
-        if storage is None:
-            return None
-        try:
-            return storage.Client()
-        except Exception:
-            return None
 
 
 class HfHandler(ReferenceHandler):
@@ -675,34 +372,6 @@ class HfHandler(ReferenceHandler):
         return None
 
 
-class TrackingHandler(ReferenceHandler):
-    """Fallback for schemes no other handler owns: record the URI as an opaque
-    pointer, and refuse to download it. Selected explicitly by `_select`, so its
-    `matches` always returns False."""
-
-    def matches(self, scheme, uri):
-        """Never matches; `_select` uses this handler only as the explicit fallback."""
-        return False
-
-    def resolve(self, uri, checksum, max_objects):
-        """Record the URI verbatim, with no size or checksum."""
-        return [ResolvedReference(None, uri)]
-
-    def fetch(self, uri, dest):
-        """Always raise: an opaque-pointer scheme has no download mechanism."""
-        raise ValueError(
-            f"Cannot download reference {uri!r}: its scheme is not supported for "
-            "retrieval."
-        )
-
-    def hint(self):
-        """Shown for an unrecognized scheme, recordable only as an opaque pointer."""
-        return (
-            "This scheme cannot be downloaded; the reference is recorded as an "
-            "opaque pointer."
-        )
-
-
 def _import(module: str):
     """Import an optional module by name, returning None if it is not installed."""
     try:
@@ -714,8 +383,7 @@ def _import(module: str):
 def _http_resolve(uri: str, checksum: bool) -> list[ResolvedReference]:
     """Resolve an HTTP(S) URL to a single entry via a `HEAD` request, taking its
     size from `Content-Length` and checksum from `ETag`. Returns an
-    un-checksummed entry when `checksum` is False or the request fails. Shared by
-    `HttpHandler` and the `AzureHandler` public-blob fallback."""
+    un-checksummed entry when `checksum` is False or the request fails."""
     if not checksum:
         return [ResolvedReference(None, uri)]
     try:
@@ -734,8 +402,7 @@ def _http_resolve(uri: str, checksum: bool) -> list[ResolvedReference]:
 
 
 def _http_fetch(uri: str, dest: Path) -> None:
-    """Stream an HTTP(S) URL's body into `dest`. Shared by `HttpHandler` and the
-    `AzureHandler` public-blob fallback."""
+    """Stream an HTTP(S) URL's body into `dest`."""
     with httpx.stream(
         "GET",
         uri,
@@ -801,19 +468,39 @@ def _write_chunks(chunks, dest: Path) -> None:
 
 _HANDLERS: list[ReferenceHandler] = [
     FileHandler(),
-    AzureHandler(),
     HttpHandler(),
-    S3Handler(),
-    GcsHandler(),
     HfHandler(),
 ]
-_FALLBACK: ReferenceHandler = TrackingHandler()
+
+
+def register_reference_handler(handler: ReferenceHandler) -> None:
+    """Register a custom `ReferenceHandler` for `Artifact.add_reference` URIs.
+
+    The handler is consulted before the built-in `file://`/`http(s)://`/`hf://`
+    handlers, so it can own a scheme trackio does not handle natively (`s3://`,
+    `gs://`, `dvc://`, ...) or specialize a built-in one (e.g. claim an object
+    store's `https://` blob endpoints ahead of the generic HTTP handler). The
+    artifacts documentation includes complete handlers for the major cloud
+    object stores.
+    """
+    if not isinstance(handler, ReferenceHandler):
+        raise TypeError(
+            "register_reference_handler expects a ReferenceHandler instance, "
+            f"got {handler!r}."
+        )
+    _HANDLERS.insert(0, handler)
 
 
 def _select(scheme: str, uri: str) -> ReferenceHandler:
-    """Return the first registered handler that claims `uri`, or the
-    `TrackingHandler` fallback when none do."""
+    """Return the first registered handler that claims `uri`, raising when
+    none do."""
     for handler in _HANDLERS:
         if handler.matches(scheme, uri):
             return handler
-    return _FALLBACK
+    raise ValueError(
+        f"No reference handler for URI {uri!r} (scheme {scheme!r}). Built-in "
+        "handlers cover file://, http(s)://, and hf://; for other schemes, "
+        "register a custom ReferenceHandler with "
+        "trackio.register_reference_handler() (see the artifacts documentation "
+        "for S3/GCS/Azure examples)."
+    )
