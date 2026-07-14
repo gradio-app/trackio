@@ -108,3 +108,44 @@ def test_dashboard_cell_uses_the_main_cell_header(tmp_path, monkeypatch):
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_figure_fullscreen_control_uses_native_fullscreen(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Fullscreen figure logbook")
+    slug = logbook.ensure_page(proj, "Figure")
+    logbook.add_figure_cell(proj, slug, html="<div>chart</div>", title="Chart")
+    logbook.write_site_files(proj)
+
+    handler = functools.partial(
+        _QuietHandler, directory=str(logbook.logbook_root(proj))
+    )
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page()
+                page.add_init_script(
+                    """
+                    Element.prototype.requestFullscreen = function () {
+                      window.__fullscreenTarget = this;
+                      return Promise.resolve();
+                    };
+                    """
+                )
+                page.goto(f"http://127.0.0.1:{server.server_address[1]}/")
+
+                control = page.get_by_role("button", name="Open figure in fullscreen")
+                expect(control).to_have_count(1)
+                expect(page.locator(".cell-share")).to_have_count(0)
+                control.click()
+                assert (
+                    page.evaluate("window.__fullscreenTarget.className") == "figure-fit"
+                )
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()
