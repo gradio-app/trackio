@@ -121,6 +121,10 @@
 {/snippet}
 
 <div class="run-detail-page">
+  <button class="back-link" onclick={() => navigateTo("runs")}>
+    <span aria-hidden="true">←</span>
+    All runs
+  </button>
   {#if loading}
     <LoadingTrackio />
   {:else if !summary}
@@ -190,6 +194,24 @@
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
+  }
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--body-text-color-subdued, #6b7280);
+    font: inherit;
+    font-size: var(--text-sm, 12px);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .back-link:hover {
+    color: var(--body-text-color, #1f2937);
+    text-decoration: underline;
   }
   .detail-card {
     background: var(--background-fill-primary, white);
