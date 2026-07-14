@@ -1,5 +1,11 @@
 # trackio
 
+## 0.31.2
+
+### Features
+
+- [#624](https://github.com/gradio-app/trackio/pull/624) [`a0918ed`](https://github.com/gradio-app/trackio/commit/a0918edc7594bb211f9e6871546b9d36939f0658) - Fix poster hotspot navigation after iframe load.  Thanks @abidlabs!
+
 ## 0.31.1
 
 ### Features
