@@ -1,5 +1,12 @@
 # trackio
 
+## 0.31.0
+
+### Features
+
+- [#601](https://github.com/gradio-app/trackio/pull/601) [`8c49140`](https://github.com/gradio-app/trackio/commit/8c491406c54685369d43f3a9c4d4a0e99108bc49) - browse artifacts from the UI.  Thanks @Saba9!
+- [#602](https://github.com/gradio-app/trackio/pull/602) [`1ae1558`](https://github.com/gradio-app/trackio/commit/1ae155803b5450b181a47767255421499074c70b) - feat: add Artifact.add_reference to reference external objects without copy.  Thanks @adrien-grl!
+
 ## 0.30.4
 
 ### Features
