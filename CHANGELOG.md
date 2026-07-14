@@ -1,5 +1,12 @@
 # trackio
 
+## 0.31.1
+
+### Features
+
+- [#621](https://github.com/gradio-app/trackio/pull/621) [`a40f1a4`](https://github.com/gradio-app/trackio/commit/a40f1a464c51652ecdeab04d999659d71b76047e) - add native fullscreen mode for logbook figures.  Thanks @abidlabs!
+- [#623](https://github.com/gradio-app/trackio/pull/623) [`31fd4d7`](https://github.com/gradio-app/trackio/commit/31fd4d7b4004f0c511484f089e6a550da1b4d71e) - let interactive logbook figures navigate to logbook pages.  Thanks @abidlabs!
+
 ## 0.31.0
 
 ### Features
