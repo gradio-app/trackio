@@ -2089,6 +2089,31 @@
     highlight(slug);
   }
 
+  function navigateToLogbookSlug(target) {
+    const slug = String(target || "").replace(/^#?\//, "").trim();
+    if (!slug || !findNode(MANIFEST.root, slug)) return;
+    const hash = "#/" + slug;
+    if (location.hash === hash) {
+      scrollToHash({ behavior: "smooth" });
+    } else {
+      location.hash = hash;
+    }
+  }
+
+  function setupFigureNavigation() {
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== "trackio-logbook:navigate") return;
+      // Only accept messages from one of this logbook's sandboxed figure
+      // iframes, rather than from an arbitrary same-origin page.
+      const isFigureFrame = Array.from(
+        document.querySelectorAll("iframe.figure-frame")
+      ).some((frame) => frame.contentWindow === event.source);
+      if (!isFigureFrame) return;
+      navigateToLogbookSlug(data.target);
+    });
+  }
+
   let SCROLL_FRAME = 0;
   function updateActiveSection() {
     cancelAnimationFrame(SCROLL_FRAME);
@@ -2225,6 +2250,7 @@
     buildTree();
     setupConnect();
     setupResourceHover();
+    setupFigureNavigation();
     window.addEventListener("hashchange", () => scrollToHash());
     window.addEventListener("scroll", updateActiveSection, { passive: true });
     await renderLogbook();
