@@ -8,6 +8,7 @@ let tracesData = null;
 let runsData = null;
 let settingsData = null;
 let fileListData = null;
+let artifactData = null;
 
 function resolveUrl(filename) {
   if (config.bucket_id) {
@@ -66,6 +67,29 @@ async function getRunsJson() {
   }
   runsData = await resp.json();
   return runsData;
+}
+
+let artifactVersionsPromise = null;
+
+function getArtifactVersions() {
+  if (!artifactVersionsPromise) {
+    artifactVersionsPromise = readParquet(
+      resolveUrl("aux/artifact_versions.parquet"),
+    ).catch(() => []);
+  }
+  return artifactVersionsPromise;
+}
+
+async function getArtifactTables() {
+  if (artifactData) return artifactData;
+  const [artifacts, versions, aliases, links] = await Promise.all([
+    readParquet(resolveUrl("aux/artifacts.parquet")).catch(() => []),
+    getArtifactVersions(),
+    readParquet(resolveUrl("aux/artifact_aliases.parquet")).catch(() => []),
+    readParquet(resolveUrl("aux/run_artifact_links.parquet")).catch(() => []),
+  ]);
+  artifactData = { artifacts, versions, aliases, links };
+  return artifactData;
 }
 
 async function getSettingsJson() {
@@ -491,12 +515,14 @@ function rowHasTypedValue(row, types) {
 export async function getTabAvailability() {
   if (tabAvailabilityCache) return tabAvailabilityCache;
 
-  const [metricsRaw, systemRaw, tracesRaw, files] = await Promise.all([
-    getMetricsData().catch(() => []),
-    getSystemData().catch(() => []),
-    getTracesData().catch(() => []),
-    getProjectFiles().catch(() => []),
-  ]);
+  const [metricsRaw, systemRaw, tracesRaw, files, artifactVersions] =
+    await Promise.all([
+      getMetricsData().catch(() => []),
+      getSystemData().catch(() => []),
+      getTracesData().catch(() => []),
+      getProjectFiles().catch(() => []),
+      getArtifactVersions(),
+    ]);
 
   const metricsRows = (metricsRaw || []);
   let metrics = false;
@@ -516,8 +542,214 @@ export async function getTabAvailability() {
     system: (systemRaw || []).length > 0,
     traces: (tracesRaw || []).length > 0,
     files: (files || []).length > 0,
+    artifacts: (artifactVersions || []).length > 0,
   };
   return tabAvailabilityCache;
+}
+
+const ARTIFACT_VERSION_SPEC_RE = /^v(\d+)$/;
+
+function aliasesByVersionId(aliases) {
+  const map = new Map();
+  for (const row of aliases) {
+    const versionId = Number(row.artifact_version_id);
+    if (!map.has(versionId)) map.set(versionId, []);
+    map.get(versionId).push(row.alias);
+  }
+  return map;
+}
+
+function compareCreatedAt(a, b) {
+  return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+}
+
+export async function listArtifacts() {
+  const { artifacts, versions, aliases } = await getArtifactTables();
+  const aliasMap = aliasesByVersionId(aliases);
+  const versionsByArtifact = new Map();
+  for (const row of versions) {
+    const artifactId = Number(row.artifact_id);
+    if (!versionsByArtifact.has(artifactId)) {
+      versionsByArtifact.set(artifactId, []);
+    }
+    versionsByArtifact.get(artifactId).push({
+      version_id: Number(row.id),
+      version: Number(row.version),
+      aliases: aliasMap.get(Number(row.id)) || [],
+      size_bytes: Number(row.size_bytes),
+      created_at: row.created_at,
+    });
+  }
+  for (const entries of versionsByArtifact.values()) {
+    entries.sort((a, b) => b.version - a.version);
+  }
+  return [...artifacts]
+    .sort((a, b) => {
+      if (a.type !== b.type) return a.type < b.type ? -1 : 1;
+      if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+      return 0;
+    })
+    .map((art) => {
+      const artVersions = versionsByArtifact.get(Number(art.id)) || [];
+      return {
+        name: art.name,
+        type: art.type,
+        description: art.description ?? null,
+        created_at: art.created_at,
+        num_versions: artVersions.length,
+        latest_version: artVersions.length ? artVersions[0].version : null,
+        versions: artVersions,
+      };
+    });
+}
+
+export async function getArtifactManifest(_project, name, spec) {
+  const { artifacts, versions, aliases } = await getArtifactTables();
+  const art = artifacts.find((a) => a.name === name);
+  if (!art) return null;
+  const artifactId = Number(art.id);
+  const artVersions = versions.filter(
+    (v) => Number(v.artifact_id) === artifactId,
+  );
+  const target = spec || "latest";
+  const specMatch = ARTIFACT_VERSION_SPEC_RE.exec(target);
+  let row = null;
+  if (specMatch) {
+    const versionInt = Number(specMatch[1]);
+    row = artVersions.find((v) => Number(v.version) === versionInt) || null;
+  } else {
+    const aliasRow = aliases.find(
+      (a) => Number(a.artifact_id) === artifactId && a.alias === target,
+    );
+    if (aliasRow) {
+      row =
+        artVersions.find(
+          (v) => Number(v.id) === Number(aliasRow.artifact_version_id),
+        ) || null;
+    }
+  }
+  if (!row) return null;
+  const aliasMap = aliasesByVersionId(aliases);
+  return {
+    artifact_id: artifactId,
+    version_id: Number(row.id),
+    version: Number(row.version),
+    name: art.name,
+    type: art.type,
+    description: art.description ?? null,
+    manifest: parseTraceJsonField(row.manifest, []),
+    manifest_digest: row.manifest_digest,
+    metadata: parseTraceJsonField(row.metadata, null),
+    size_bytes: Number(row.size_bytes),
+    producer_run_id: row.producer_run_id ?? null,
+    producer_run_name: row.producer_run_name ?? null,
+    created_at: row.created_at,
+    aliases: aliasMap.get(Number(row.id)) || [],
+  };
+}
+
+async function getLinkOwnership() {
+  const runs = await getRunsJson();
+  const recordIds = new Set();
+  const ownersByName = new Map();
+  for (const r of runs) {
+    const id = r.id ?? r.run_id ?? r.name ?? null;
+    if (id == null) continue;
+    recordIds.add(id);
+    const name = r.name ?? null;
+    if (name == null) continue;
+    if (!ownersByName.has(name)) ownersByName.set(name, new Set());
+    ownersByName.get(name).add(id);
+  }
+  return { recordIds, ownersByName };
+}
+
+function canonicalLinkRunId(link, { recordIds, ownersByName }) {
+  const runId = link.run_id ?? null;
+  if (runId != null && recordIds.has(runId)) return runId;
+  const owners = ownersByName.get(link.run_name ?? null);
+  return owners && owners.size === 1 ? owners.values().next().value : null;
+}
+
+export async function getRunArtifacts(_project, run) {
+  const result = { input: [], output: [] };
+  const target = normalizeRun(run);
+  if (target.name == null && target.id == null) return result;
+  const { artifacts, versions, links } = await getArtifactTables();
+  const ownership = await getLinkOwnership();
+  const versionsById = new Map(versions.map((v) => [Number(v.id), v]));
+  const artifactsById = new Map(artifacts.map((a) => [Number(a.id), a]));
+  const runLinks = links
+    .filter((l) =>
+      target.id != null
+        ? canonicalLinkRunId(l, ownership) === target.id
+        : matchesRun(l, run),
+    )
+    .sort(compareCreatedAt);
+  const seen = new Set();
+  for (const link of runLinks) {
+    const version = versionsById.get(Number(link.artifact_version_id));
+    if (!version) continue;
+    const art = artifactsById.get(Number(version.artifact_id));
+    if (!art || !result[link.direction]) continue;
+    const dedupeKey = `${link.direction}:${Number(version.id)}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    result[link.direction].push({
+      version_id: Number(version.id),
+      name: art.name,
+      type: art.type,
+      version: Number(version.version),
+      size_bytes: Number(version.size_bytes),
+      created_at: link.created_at,
+    });
+  }
+  return result;
+}
+
+export async function getRunArtifactCounts() {
+  const { links } = await getArtifactTables();
+  const ownership = await getLinkOwnership();
+  const byKey = new Map();
+  const seenByKey = new Map();
+  for (const link of links) {
+    const runId = canonicalLinkRunId(link, ownership);
+    const runName = link.run_name ?? null;
+    const key = JSON.stringify([runId, runName]);
+    if (!byKey.has(key)) {
+      byKey.set(key, { run_id: runId, run_name: runName, input: 0, output: 0 });
+      seenByKey.set(key, new Set());
+    }
+    const seen = seenByKey.get(key);
+    const linkKey = `${link.direction}:${Number(link.artifact_version_id)}`;
+    if (seen.has(linkKey)) continue;
+    seen.add(linkKey);
+    const entry = byKey.get(key);
+    if (link.direction === "input" || link.direction === "output") {
+      entry[link.direction] += 1;
+    }
+  }
+  return [...byKey.values()];
+}
+
+export async function getArtifactConsumers(_project, versionId) {
+  const { links } = await getArtifactTables();
+  return links
+    .filter(
+      (l) =>
+        l.direction === "input" &&
+        Number(l.artifact_version_id) === Number(versionId),
+    )
+    .sort(compareCreatedAt)
+    .map((l) => ({
+      run_name: l.run_name ?? null,
+      run_id: l.run_id ?? null,
+      created_at: l.created_at,
+    }));
+}
+
+export function getArtifactBlobUrl(_project, digest) {
+  return resolveUrl(`artifacts/blobs/sha256/${digest.slice(0, 2)}/${digest}`);
 }
 
 export async function getProjectFiles() {

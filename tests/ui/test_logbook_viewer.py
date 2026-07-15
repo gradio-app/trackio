@@ -108,3 +108,41 @@ def test_dashboard_cell_uses_the_main_cell_header(tmp_path, monkeypatch):
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_figure_hotspot_navigates_to_its_logbook_page(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Interactive figure logbook")
+    target = logbook.ensure_page(proj, "Claim evidence")
+    conclusion = logbook.ensure_page(proj, "Conclusion")
+    logbook.add_markdown_cell(proj, target, "Evidence lives here.")
+    logbook.add_figure_cell(
+        proj,
+        conclusion,
+        html=(
+            "<button onclick=\"parent.postMessage({type:'trackio-logbook:navigate',"
+            f"target:'{target}'}} , '*')\">Open details</button>"
+        ),
+    )
+    logbook.write_site_files(proj)
+
+    handler = functools.partial(
+        _QuietHandler, directory=str(logbook.logbook_root(proj))
+    )
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                page.goto(f"http://127.0.0.1:{server.server_address[1]}/#/conclusion")
+                page.frame_locator("iframe.figure-frame").get_by_role(
+                    "button", name="Open details"
+                ).click()
+                expect(page).to_have_url(re.compile(r"#/claim-evidence$"))
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()

@@ -60,11 +60,11 @@
     const runValues = new Map();
     for (const d of data) {
       if (d.data_type === "smoothed") continue;
-      const run = d[colorField];
-      if (run && d[y] != null) {
-        runValues.set(run, {
-          run,
-          label: d[colorDisplayField] || run,
+      const key = d[colorField];
+      if (key && d[y] != null) {
+        runValues.set(key, {
+          key,
+          label: d[colorDisplayField] || key,
           value: d[y],
         });
       }
@@ -81,8 +81,11 @@
   }
 
   function buildSpec(barData) {
-    const runs = barData.map((d) => d.run);
-    const colorRange = runs.map((r) => colorMap[r] || "#999");
+    const keys = barData.map((d) => d.key);
+    const colorRange = keys.map((k) => colorMap[k] || "#999");
+    const labelByKey = Object.fromEntries(
+      barData.map((d) => [d.key, d.label]),
+    );
 
     const yTitle = y.includes("/") ? y.split("/").pop() : y;
 
@@ -99,13 +102,13 @@
       },
       encoding: {
         x: {
-          field: "run",
+          field: "key",
           type: "nominal",
-          sort: runs,
+          sort: keys,
           axis: {
-            labelExpr: "datum.label",
-            labelAngle: runs.length > 4 ? -45 : 0,
+            labelAngle: keys.length > 4 ? -45 : 0,
             labelLimit: 120,
+            labelExpr: `${JSON.stringify(labelByKey)}[datum.value] || datum.value`,
           },
           title: null,
         },
@@ -116,13 +119,13 @@
           scale: { zero: true },
         },
         color: {
-          field: "run",
+          field: "key",
           type: "nominal",
-          scale: { domain: runs, range: colorRange },
+          scale: { domain: keys, range: colorRange },
           legend: null,
         },
         tooltip: [
-          { field: colorDisplayField || "label", type: "nominal", title: "Run" },
+          { field: "label", type: "nominal", title: "Run" },
           { field: "value", type: "quantitative", title: yTitle },
         ],
       },

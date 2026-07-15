@@ -5,6 +5,8 @@
   const PAGE_CACHE = {};
   const UNFURL_CACHE = {};
   const LIVE_RELOAD_MS = 1500;
+  const FIGURE_FRAME_WINDOWS = new Set();
+  let FIGURE_NAVIGATION_READY = false;
 
   function esc(s) {
     return String(s)
@@ -276,14 +278,6 @@
       renderCodeCell(body, bodyEl, artifacts);
     } else if (meta.type === "figure") {
       cell.dataset.resUrl = `trackio-figure://${(meta.title || "Figure").trim()}`;
-      // Only offer sharing when the figure is backed by a real image URL — the
-      // shared post links straight to that image. A data-URI / relative / HTML
-      // figure has no shareable link, so no icon (a link to the whole logbook
-      // adds little value).
-      const imgUrl = figureImageLink(body);
-      const metaEl = head.querySelector(".cell-meta");
-      if (imgUrl && metaEl)
-        metaEl.insertBefore(buildShareControl(meta, imgUrl), metaEl.firstChild);
       renderFigureCell(body, bodyEl, head);
     } else if (meta.type === "artifact") {
       renderMarkdownPlain(body, bodyEl);
@@ -371,20 +365,34 @@
     frame.style.transform = "none";
     frame.style.width = "100%";
     frame.style.height = "auto";
+    frame.style.position = "";
+    frame.style.left = "";
+    frame.style.top = "";
     const avail = wrap.clientWidth;
+    const isFullscreen =
+      document.fullscreenElement === wrap ||
+      document.webkitFullscreenElement === wrap;
+    const availHeight = isFullscreen ? wrap.clientHeight : Infinity;
     const cw = Math.max(doc.body.scrollWidth, doc.documentElement.scrollWidth, 1);
     const ch = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 1);
-    if (avail && cw > avail + 1) {
-      const scale = avail / cw;
+    const scale = Math.min(avail / cw, availHeight / ch);
+    if (avail && scale < 1 - 1e-3) {
       frame.style.width = `${cw}px`;
       frame.style.height = `${ch}px`;
       frame.style.transformOrigin = "top left";
       frame.style.transform = `scale(${scale})`;
-      wrap.style.height = `${Math.ceil(ch * scale)}px`;
+      if (isFullscreen) {
+        frame.style.position = "absolute";
+        frame.style.left = `${Math.max(0, (avail - cw * scale) / 2)}px`;
+        frame.style.top = `${Math.max(0, (availHeight - ch * scale) / 2)}px`;
+        wrap.style.height = "100%";
+      } else {
+        wrap.style.height = `${Math.ceil(ch * scale)}px`;
+      }
     } else {
       frame.style.width = "100%";
       frame.style.height = `${ch}px`;
-      wrap.style.height = `${ch}px`;
+      wrap.style.height = isFullscreen ? "100%" : `${ch}px`;
     }
   }
 
@@ -413,10 +421,16 @@
     frame.sandbox = "allow-scripts allow-same-origin";
     frame.loading = "lazy";
     frame.srcdoc = htmlPart.text;
+    registerFigureNavigation(frame);
     const figWrap = document.createElement("div");
     figWrap.className = "figure-fit";
     figWrap.appendChild(frame);
     attachFigureFit(frame, figWrap);
+    if (head) {
+      const metaEl = head.querySelector(".cell-meta");
+      if (metaEl)
+        metaEl.insertBefore(buildFullscreenControl(figWrap, frame), metaEl.firstChild);
+    }
     if (!rawPart || !rawPart.text.trim()) {
       container.appendChild(figWrap);
       return;
@@ -462,95 +476,62 @@
     container.appendChild(rawView);
   }
 
-  const SHARE_ICON =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>' +
-    '<circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/>' +
-    '<line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>';
-
-  // The first real image URL (http/https) inside a figure cell's HTML, or null.
-  // A data-URI, relative path, or non-image HTML figure has no shareable link.
-  function figureImageLink(body) {
-    const parts = parseFences(body);
-    const htmlPart = parts.find((part) => part.lang === "html");
-    if (!htmlPart) return null;
-    const m = htmlPart.text.match(
-      /<img\b[^>]*\bsrc\s*=\s*["']?(https?:\/\/[^"'\s>]+)/i
-    );
-    return m ? m[1] : null;
+  // Poster embeds can send `{ type: "trackio-logbook:navigate", target: "..." }`
+  // from their iframe. Only accept messages from figure frames we created, and
+  // only route to pages that are present in this logbook's manifest.
+  function registerFigureNavigation(frame) {
+    const registerFrameWindow = () => {
+      if (frame.contentWindow) FIGURE_FRAME_WINDOWS.add(frame.contentWindow);
+    };
+    // `srcdoc` replaces the initial about:blank document. Register after that
+    // navigation as well, so messages come from the live figure document.
+    frame.addEventListener("load", registerFrameWindow);
+    registerFrameWindow();
+    if (FIGURE_NAVIGATION_READY) return;
+    FIGURE_NAVIGATION_READY = true;
+    window.addEventListener("message", (event) => {
+      if (!FIGURE_FRAME_WINDOWS.has(event.source)) return;
+      const message = event.data;
+      if (!message || message.type !== "trackio-logbook:navigate") return;
+      const target = String(message.target || "").replace(/^#?\//, "");
+      if (!target || !MANIFEST || !findNode(MANIFEST.root, target)) return;
+      const hash = "#/" + target;
+      if (location.hash === hash) scrollToHash();
+      else location.hash = hash;
+    });
   }
 
-  // Share control for an image-backed figure cell: an icon button that opens a
-  // small menu (X / LinkedIn / Copy image link). Sits at the front of
-  // `.cell-meta`, so it lands between the Figure/Raw toggle and the date when
-  // raw data exists, and right before the date otherwise. The shared post links
-  // straight to `imageUrl`; the figure title becomes the share text.
-  function buildShareControl(meta, imageUrl) {
+  const FULLSCREEN_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>' +
+    '<path d="M3 8 8 3M16 3l5 5M21 16l-5 5M8 21l-5-5"/></svg>';
+
+  // Figures are rendered in same-origin iframes, so fullscreen the fitted
+  // wrapper rather than the iframe document. This uses the browser's native
+  // fullscreen UI and preserves the figure's existing responsive sizing.
+  function buildFullscreenControl(figWrap, frame) {
     const wrap = document.createElement("span");
-    wrap.className = "cell-share";
+    wrap.className = "cell-fullscreen";
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "cell-share-btn";
-    btn.setAttribute("aria-label", "Share figure");
-    btn.title = "Share";
-    btn.innerHTML = SHARE_ICON;
-    const menu = document.createElement("div");
-    menu.className = "cell-share-menu";
-    menu.hidden = true;
-    const xLink = document.createElement("a");
-    xLink.className = "cell-share-item";
-    xLink.target = "_blank";
-    xLink.rel = "noopener";
-    xLink.textContent = "Share on X";
-    const liLink = document.createElement("a");
-    liLink.className = "cell-share-item";
-    liLink.target = "_blank";
-    liLink.rel = "noopener";
-    liLink.textContent = "Share on LinkedIn";
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "cell-share-item";
-    copyBtn.textContent = "Copy image link";
-    menu.append(xLink, liLink, copyBtn);
-    wrap.append(btn, menu);
+    btn.className = "cell-fullscreen-btn";
+    btn.setAttribute("aria-label", "Open figure in fullscreen");
+    btn.title = "Open figure in fullscreen";
+    btn.innerHTML = FULLSCREEN_ICON;
+    wrap.appendChild(btn);
 
-    const shareUrl = () => imageUrl;
-    const shareText = (meta.title || "Figure").trim();
-    const close = () => {
-      menu.hidden = true;
-    };
-
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const url = shareUrl();
-      xLink.href =
-        "https://twitter.com/intent/tweet?text=" +
-        encodeURIComponent(shareText) +
-        "&url=" +
-        encodeURIComponent(url);
-      liLink.href =
-        "https://www.linkedin.com/sharing/share-offsite/?url=" +
-        encodeURIComponent(url);
-      menu.hidden = !menu.hidden;
-    });
-    copyBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
+    btn.addEventListener("click", async () => {
+      const request = figWrap.requestFullscreen || figWrap.webkitRequestFullscreen;
+      if (!request) return;
       try {
-        await navigator.clipboard.writeText(shareUrl());
-        copyBtn.textContent = "Copied!";
+        await request.call(figWrap);
       } catch (_) {
-        copyBtn.textContent = "Copy failed";
+        // Fullscreen can be disabled by the embedding browser or policy.
       }
-      setTimeout(() => {
-        copyBtn.textContent = "Copy image link";
-        close();
-      }, 1200);
     });
-    xLink.addEventListener("click", close);
-    liLink.addEventListener("click", close);
-    document.addEventListener("click", (e) => {
-      if (!wrap.contains(e.target)) close();
+    document.addEventListener("fullscreenchange", () => {
+      if (document.fullscreenElement === figWrap) fitFigureFrame(frame, figWrap);
     });
     return wrap;
   }
@@ -2122,6 +2103,31 @@
     highlight(slug);
   }
 
+  function navigateToLogbookSlug(target) {
+    const slug = String(target || "").replace(/^#?\//, "").trim();
+    if (!slug || !findNode(MANIFEST.root, slug)) return;
+    const hash = "#/" + slug;
+    if (location.hash === hash) {
+      scrollToHash({ behavior: "smooth" });
+    } else {
+      location.hash = hash;
+    }
+  }
+
+  function setupFigureNavigation() {
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== "trackio-logbook:navigate") return;
+      // Only accept messages from one of this logbook's sandboxed figure
+      // iframes, rather than from an arbitrary same-origin page.
+      const isFigureFrame = Array.from(
+        document.querySelectorAll("iframe.figure-frame")
+      ).some((frame) => frame.contentWindow === event.source);
+      if (!isFigureFrame) return;
+      navigateToLogbookSlug(data.target);
+    });
+  }
+
   let SCROLL_FRAME = 0;
   function updateActiveSection() {
     cancelAnimationFrame(SCROLL_FRAME);
@@ -2258,6 +2264,7 @@
     buildTree();
     setupConnect();
     setupResourceHover();
+    setupFigureNavigation();
     window.addEventListener("hashchange", () => scrollToHash());
     window.addEventListener("scroll", updateActiveSection, { passive: true });
     await renderLogbook();

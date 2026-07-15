@@ -1,5 +1,31 @@
 # trackio
 
+## 0.31.3
+
+### Features
+
+- [#626](https://github.com/gradio-app/trackio/pull/626) [`174aecf`](https://github.com/gradio-app/trackio/commit/174aecff33e6d1cc8d71965a73538c0510abed46) - Fix logbook Markdown escaping and figure hotspot navigation.  Thanks @abidlabs!
+
+## 0.31.2
+
+### Features
+
+- [#624](https://github.com/gradio-app/trackio/pull/624) [`a0918ed`](https://github.com/gradio-app/trackio/commit/a0918edc7594bb211f9e6871546b9d36939f0658) - Fix poster hotspot navigation after iframe load.  Thanks @abidlabs!
+
+## 0.31.1
+
+### Features
+
+- [#621](https://github.com/gradio-app/trackio/pull/621) [`a40f1a4`](https://github.com/gradio-app/trackio/commit/a40f1a464c51652ecdeab04d999659d71b76047e) - add native fullscreen mode for logbook figures.  Thanks @abidlabs!
+- [#623](https://github.com/gradio-app/trackio/pull/623) [`31fd4d7`](https://github.com/gradio-app/trackio/commit/31fd4d7b4004f0c511484f089e6a550da1b4d71e) - let interactive logbook figures navigate to logbook pages.  Thanks @abidlabs!
+
+## 0.31.0
+
+### Features
+
+- [#601](https://github.com/gradio-app/trackio/pull/601) [`8c49140`](https://github.com/gradio-app/trackio/commit/8c491406c54685369d43f3a9c4d4a0e99108bc49) - browse artifacts from the UI.  Thanks @Saba9!
+- [#602](https://github.com/gradio-app/trackio/pull/602) [`1ae1558`](https://github.com/gradio-app/trackio/commit/1ae155803b5450b181a47767255421499074c70b) - feat: add Artifact.add_reference to reference external objects without copy.  Thanks @adrien-grl!
+
 ## 0.30.4
 
 ### Features

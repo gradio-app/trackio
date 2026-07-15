@@ -15,6 +15,7 @@
     { id: "reports", label: "Alerts & Reports" },
     { id: "runs", label: "Runs" },
     { id: "files", label: "Files" },
+    { id: "artifacts", label: "Artifacts" },
   ];
 
   function handleClick(id) {
@@ -23,6 +24,10 @@
 
   function isOptionalEmpty(id) {
     return optionalEmptyTabs.has(id) && tabAvailability[id] === false;
+  }
+
+  function isActive(id) {
+    return currentPage === id || (id === "runs" && currentPage === "run-detail");
   }
 
   let links = $derived(
@@ -40,7 +45,7 @@
     {#each links as link}
       <button
         class="nav-link"
-        class:active={currentPage === link.id}
+        class:active={isActive(link.id)}
         class:empty={isOptionalEmpty(link.id)}
         onclick={() => handleClick(link.id)}
         title={isOptionalEmpty(link.id) ? `${link.label} is empty for this project` : link.label}

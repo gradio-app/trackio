@@ -203,6 +203,40 @@ export async function getProjectFiles(project) {
   return await callApi("/get_project_files", { project });
 }
 
+export async function listArtifacts(project) {
+  if (await isStaticMode()) return staticApi.listArtifacts(project);
+  return await callApi("/list_artifacts", { project });
+}
+
+export async function getArtifactManifest(project, name, spec) {
+  if (await isStaticMode()) return staticApi.getArtifactManifest(project, name, spec);
+  return await callApi("/get_artifact_manifest", { project, name, spec });
+}
+
+export async function getRunArtifacts(project, run) {
+  const params = { project, ...normalizeRun(run) };
+  if (await isStaticMode()) return staticApi.getRunArtifacts(project, run);
+  return await callApi("/get_run_artifacts", params);
+}
+
+export async function getRunArtifactCounts(project) {
+  if (await isStaticMode()) return staticApi.getRunArtifactCounts(project);
+  return await callApi("/get_run_artifact_counts", { project });
+}
+
+export async function getArtifactConsumers(project, versionId) {
+  if (await isStaticMode()) return staticApi.getArtifactConsumers(project, versionId);
+  return await callApi("/get_artifact_consumers", {
+    project,
+    version_id: versionId,
+  });
+}
+
+export function getArtifactBlobUrl(project, digest) {
+  if (_staticMode) return staticApi.getArtifactBlobUrl(project, digest);
+  return `${BASE}/artifact_blob/${encodeURIComponent(project)}/${encodeURIComponent(digest)}`;
+}
+
 export async function getTabAvailability(project) {
   if (await isStaticMode()) return staticApi.getTabAvailability(project);
   return await callApi("/get_tab_availability", { project });
