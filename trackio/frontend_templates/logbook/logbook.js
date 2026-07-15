@@ -365,20 +365,34 @@
     frame.style.transform = "none";
     frame.style.width = "100%";
     frame.style.height = "auto";
+    frame.style.position = "";
+    frame.style.left = "";
+    frame.style.top = "";
     const avail = wrap.clientWidth;
+    const isFullscreen =
+      document.fullscreenElement === wrap ||
+      document.webkitFullscreenElement === wrap;
+    const availHeight = isFullscreen ? wrap.clientHeight : Infinity;
     const cw = Math.max(doc.body.scrollWidth, doc.documentElement.scrollWidth, 1);
     const ch = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 1);
-    if (avail && cw > avail + 1) {
-      const scale = avail / cw;
+    const scale = Math.min(avail / cw, availHeight / ch);
+    if (avail && scale < 1 - 1e-3) {
       frame.style.width = `${cw}px`;
       frame.style.height = `${ch}px`;
       frame.style.transformOrigin = "top left";
       frame.style.transform = `scale(${scale})`;
-      wrap.style.height = `${Math.ceil(ch * scale)}px`;
+      if (isFullscreen) {
+        frame.style.position = "absolute";
+        frame.style.left = `${Math.max(0, (avail - cw * scale) / 2)}px`;
+        frame.style.top = `${Math.max(0, (availHeight - ch * scale) / 2)}px`;
+        wrap.style.height = "100%";
+      } else {
+        wrap.style.height = `${Math.ceil(ch * scale)}px`;
+      }
     } else {
       frame.style.width = "100%";
       frame.style.height = `${ch}px`;
-      wrap.style.height = `${ch}px`;
+      wrap.style.height = isFullscreen ? "100%" : `${ch}px`;
     }
   }
 
