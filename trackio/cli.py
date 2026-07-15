@@ -1055,7 +1055,10 @@ def main():
     lb_cell_sub = lb_cell.add_subparsers(dest="cell_type", required=True)
 
     lb_cell_md = lb_cell_sub.add_parser("markdown", help="Append a markdown cell")
-    lb_cell_md.add_argument("body", help="Markdown body")
+    lb_cell_md.add_argument(
+        "body",
+        help="Markdown body (literal \\n escape sequences are converted to line breaks)",
+    )
     lb_cell_md.add_argument("--title", help="Cell title")
     lb_cell_md.add_argument("--page", help="Page title or slug")
     lb_cell_art = lb_cell_sub.add_parser(
@@ -1924,7 +1927,11 @@ def _handle_logbook(args):
             proj = lb.require_project_dir()
             slug = _logbook_cell_target(lb, proj, args)
             if args.cell_type == "markdown":
-                lb.add_markdown_cell(proj, slug, args.body, title=args.title)
+                # Agent/tool callers often send a single argument containing
+                # escaped newlines. Treat those as Markdown line breaks while
+                # preserving normal shell-provided newlines unchanged.
+                body = args.body.replace("\\r\\n", "\n").replace("\\n", "\n")
+                lb.add_markdown_cell(proj, slug, body, title=args.title)
             elif args.cell_type == "artifact":
                 lb.add_artifact_cell(
                     proj,
