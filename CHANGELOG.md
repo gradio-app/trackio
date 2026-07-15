@@ -1,5 +1,11 @@
 # trackio
 
+## 0.31.5
+
+### Features
+
+- [#630](https://github.com/gradio-app/trackio/pull/630) [`bed508c`](https://github.com/gradio-app/trackio/commit/bed508c04c487686dea3dea70c67b058dd895f96) - Fix automatic dashboard cells to use the active logbook page instead of creating a page named after the Trackio project.  Thanks @abidlabs!
+
 ## 0.31.4
 
 ### Features
