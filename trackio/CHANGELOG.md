@@ -1,5 +1,11 @@
 # trackio
 
+## 0.31.3
+
+### Features
+
+- [#626](https://github.com/gradio-app/trackio/pull/626) [`174aecf`](https://github.com/gradio-app/trackio/commit/174aecff33e6d1cc8d71965a73538c0510abed46) - Fix logbook Markdown escaping and figure hotspot navigation.  Thanks @abidlabs!
+
 ## 0.31.2
 
 ### Features
