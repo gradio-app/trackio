@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import html
 import json
 import os
@@ -1411,15 +1412,59 @@ def add_path_artifact_cell(
     )
 
 
+FIGURE_IMAGE_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".avif": "image/avif",
+    ".svg": "image/svg+xml",
+}
+
+
+def is_figure_image_path(path: str | Path) -> bool:
+    """Whether ``path`` points at an image file trackio can embed in a figure."""
+    return Path(path).suffix.lower() in FIGURE_IMAGE_MIME_BY_SUFFIX
+
+
+def figure_html_from_image(path: str | Path) -> str:
+    """Build an ``<img>`` tag with a base64 data URI from a local image file.
+
+    Lets figure cells accept an image path (e.g. a matplotlib PNG) directly,
+    instead of requiring the caller to hand-encode the image into HTML.
+    """
+    path = Path(path)
+    mime = FIGURE_IMAGE_MIME_BY_SUFFIX.get(path.suffix.lower())
+    if mime is None:
+        supported = ", ".join(sorted(FIGURE_IMAGE_MIME_BY_SUFFIX))
+        raise LogbookError(
+            f"Unsupported image type '{path.suffix or path.name}'. "
+            f"Supported image extensions: {supported}."
+        )
+    if not path.is_file():
+        raise LogbookError(f"Image file not found: {path}")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    alt = html.escape(path.stem)
+    return (
+        f'<img src="data:{mime};base64,{encoded}" alt="{alt}" '
+        'style="max-width:100%;height:auto;" />'
+    )
+
+
 def add_figure_cell(
     proj: Path,
     page_slug: str,
     html: str | None = None,
     raw: str | None = None,
     title: str | None = None,
+    image: str | Path | None = None,
 ) -> None:
+    if image:
+        html = figure_html_from_image(image)
     if not html:
-        raise LogbookError("Figure cells require HTML content.")
+        raise LogbookError("Figure cells require HTML content or an image.")
     if len(html) > 1_000_000:
         print(
             f"Note: figure HTML is {len(html) / 1_000_000:.1f} MB and is stored "

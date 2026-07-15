@@ -1086,8 +1086,13 @@ def main():
     lb_cell_figure = lb_cell_sub.add_parser("figure", help="Append a figure cell")
     lb_cell_figure.add_argument("--title", help="Cell title")
     lb_cell_figure.add_argument("--page", help="Page title or slug")
-    lb_cell_figure.add_argument("--html", help="Path to HTML, or inline HTML text")
+    lb_cell_figure.add_argument(
+        "--html", help="Path to an HTML or image file, or inline HTML text"
+    )
     lb_cell_figure.add_argument("--html-text", help="Inline HTML text")
+    lb_cell_figure.add_argument(
+        "--image", help="Path to an image file (PNG, JPG, GIF, WEBP, SVG, ...)"
+    )
     lb_cell_figure.add_argument("--raw", help="Path/URL/text for raw data")
     lb_cell_figure.add_argument("--raw-text", help="Inline raw data")
 
@@ -1951,7 +1956,19 @@ def _handle_logbook(args):
                     language=args.language,
                 )
             elif args.cell_type == "figure":
-                html = _read_logbook_payload(args.html, args.html_text)
+                if args.image:
+                    html = lb.figure_html_from_image(args.image)
+                elif (
+                    args.html
+                    and args.html_text is None
+                    and Path(args.html).is_file()
+                    and lb.is_figure_image_path(args.html)
+                ):
+                    # `--html plot.png` — embed the image instead of trying to
+                    # read a binary file as UTF-8 text.
+                    html = lb.figure_html_from_image(args.html)
+                else:
+                    html = _read_logbook_payload(args.html, args.html_text)
                 raw = _read_logbook_payload(args.raw, args.raw_text)
                 lb.add_figure_cell(
                     proj,
