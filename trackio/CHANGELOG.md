@@ -1,5 +1,11 @@
 # trackio
 
+## 0.31.4
+
+### Features
+
+- [#628](https://github.com/gradio-app/trackio/pull/628) [`3eeaa99`](https://github.com/gradio-app/trackio/commit/3eeaa99bd05bef69053b9a1b5c7af3abf56c360c) - let `logbook cell figure` embed image files directly.  Thanks @abidlabs!/n  `trackio logbook cell figure` now accepts an image path via a new `--image`/n  flag, and `--html <file>` transparently embeds the file when it points at an/n  image. Previously the only way to add a PNG/JPG figure was to hand-encode it/n  into an `<img>` data-URI, and passing an image path to `--html` crashed with a/n  `UnicodeDecodeError` (the binary file was read as UTF-8 text). Images are/n  embedded as responsive base64 data URIs. The Python API `add_figure_cell` gains/n  a matching `image=` parameter.
+
 ## 0.31.3
 
 ### Features
