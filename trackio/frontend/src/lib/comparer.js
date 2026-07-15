@@ -27,8 +27,17 @@ export function runKeyOf(run) {
   return run?.id ?? run?.name;
 }
 
+/**
+ * Only plain objects are traversed (including prototype-less ones, like
+ * the maps buildComparerRows feeds into flattenConfig). Anything else —
+ * arrays, Dates, Maps — is considered a leaf.
+ */
 function isTraversable(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
 const BIGINT_SAFE_MAX = BigInt(Number.MAX_SAFE_INTEGER);
@@ -92,6 +101,10 @@ export function flattenConfig(config) {
 /**
  * Serializes with object keys recursively sorted, so deep-equal objects
  * canonicalize identically even when the fields are ordered differently.
+ * Also used as the display/copy serialization in formatCellValue, so a
+ * cell's rendered text differs exactly when its row is marked as
+ * differing. Out-of-range BigInts become quoted strings, matching
+ * flattenConfig's leaf treatment and keeping copied JSON reparse-safe.
  */
 function stableStringify(value) {
   if (Array.isArray(value)) {
@@ -104,7 +117,7 @@ function stableStringify(value) {
     return `{${parts.join(",")}}`;
   }
   if (typeof value === "bigint") {
-    return String(value);
+    return JSON.stringify(fromBigInt(value));
   }
   const encoded = JSON.stringify(value);
   return encoded === undefined ? "null" : encoded;
@@ -250,7 +263,9 @@ export function filterComparerRows(rows, searchText, diffOnly) {
  * Formats a cell for rendering and copying. `text` is always the full,
  * untruncated value — display truncation is the component's concern, and
  * the copy button must receive everything — while `missing` marks keys the
- * run never had, rendered as an em dash.
+ * run never had, rendered as an em dash. JSON values render through
+ * stableStringify so deep-equal objects with different key order display
+ * identically, keeping what the user sees consistent with rowDiffers.
  * @param {unknown} value
  * @returns {{text: string, missing: boolean}}
  */
@@ -268,11 +283,7 @@ export function formatCellValue(value) {
     case "boolean":
     case "bigint":
       return { text: String(value), missing: false };
-    default: {
-      const text = JSON.stringify(value, (key, nested) =>
-        typeof nested === "bigint" ? fromBigInt(nested) : nested,
-      );
-      return { text: text ?? String(value), missing: false };
-    }
+    default:
+      return { text: stableStringify(value), missing: false };
   }
 }

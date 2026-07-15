@@ -77,6 +77,15 @@ describe("flattenConfig", () => {
     expect(flat["__proto__"]).toBe(7);
   });
 
+  test("keeps non-plain objects as leaf values", () => {
+    const when = new Date("2026-01-01T00:00:00Z");
+    const lookup = new Map([["k", 1]]);
+    expect(flattenConfig({ when, nested: { lookup } })).toEqual({
+      when,
+      "nested.lookup": lookup,
+    });
+  });
+
   test("keeps literal dotted keys distinct from nested paths", () => {
     expect(flattenConfig({ "a.b": 1, a: { b: 2 } })).toEqual({
       "a\\.b": 1,
@@ -137,6 +146,15 @@ describe("rowDiffers", () => {
     expect(rowDiffers([9223372036854775806n, 9223372036854775807n], 2)).toBe(
       true,
     );
+  });
+
+  test("dates compare by instant, not identity", () => {
+    expect(
+      rowDiffers([new Date("2026-01-01"), new Date("2026-01-01")], 2),
+    ).toBe(false);
+    expect(
+      rowDiffers([new Date("2026-01-01"), new Date("2026-01-02")], 2),
+    ).toBe(true);
   });
 });
 
@@ -308,5 +326,13 @@ describe("formatCellValue", () => {
     expect(formatCellValue([9223372036854775807n]).text).toBe(
       '["9223372036854775807"]',
     );
+  });
+
+  test("renders deep-equal objects identically regardless of key order", () => {
+    const a = { x: 1, nested: { y: 2, z: 3 } };
+    const b = { nested: { z: 3, y: 2 }, x: 1 };
+    expect(rowDiffers([a, b], 2)).toBe(false);
+    expect(formatCellValue(a).text).toBe(formatCellValue(b).text);
+    expect(formatCellValue(b).text).toBe('{"nested":{"y":2,"z":3},"x":1}');
   });
 });
