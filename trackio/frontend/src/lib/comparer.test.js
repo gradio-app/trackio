@@ -335,4 +335,28 @@ describe("formatCellValue", () => {
     expect(formatCellValue(a).text).toBe(formatCellValue(b).text);
     expect(formatCellValue(b).text).toBe('{"nested":{"y":2,"z":3},"x":1}');
   });
+
+  test("quotes strings that could be mistaken for another type", () => {
+    expect(formatCellValue("1").text).toBe('"1"');
+    expect(formatCellValue(1).text).toBe("1");
+    expect(formatCellValue("0.01").text).toBe('"0.01"');
+    expect(formatCellValue("NaN").text).toBe('"NaN"');
+    expect(formatCellValue("true").text).toBe('"true"');
+    expect(formatCellValue("null").text).toBe('"null"');
+    expect(formatCellValue('{"a":1}').text).toBe('"{\\"a\\":1}"');
+    expect(formatCellValue("[1,2]").text).toBe('"[1,2]"');
+  });
+
+  test("quotes empty and whitespace-padded strings", () => {
+    expect(formatCellValue("").text).toBe('""');
+    expect(formatCellValue(" adam").text).toBe('" adam"');
+    expect(formatCellValue("adam ").text).toBe('"adam "');
+  });
+
+  test("keeps ordinary strings unquoted", () => {
+    expect(formatCellValue("adam").text).toBe("adam");
+    expect(formatCellValue("v1.2.3").text).toBe("v1.2.3");
+    expect(formatCellValue("0.010").text).toBe("0.010");
+    expect(formatCellValue("resnet-50").text).toBe("resnet-50");
+  });
 });

@@ -19,6 +19,7 @@ Props:
   import { copyTextToClipboard } from "../lib/clipboard.js";
   import {
     COMPARER_MAX_COLUMNS,
+    MISSING_MARKER,
     buildComparerRows,
     filterComparerRows,
     formatCellValue,
@@ -148,7 +149,7 @@ Props:
                       {@const cell = formatCellValue(row.values[colIndex])}
                       <td class="value-cell">
                         {#if cell.missing}
-                          <span class="missing">–</span>
+                          <span class="missing">{MISSING_MARKER}</span>
                         {:else}
                           <span
                             class="cell-text"

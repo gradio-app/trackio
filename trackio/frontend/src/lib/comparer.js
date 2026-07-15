@@ -6,6 +6,11 @@ import { PROMOTED_RESERVED_KEYS } from "./grouping.js";
 export const COMPARER_MAX_COLUMNS = 10;
 
 /**
+ * Rendered in place of a value for keys a run never logged.
+ */
+export const MISSING_MARKER = "–";
+
+/**
  * Display labels for the reserved config keys surfaced in the
  * Metadata section, keyed by storage name (`_Created` → "Created").
  */
@@ -101,10 +106,11 @@ export function flattenConfig(config) {
 /**
  * Serializes with object keys recursively sorted, so deep-equal objects
  * canonicalize identically even when the fields are ordered differently.
- * Also used as the display/copy serialization in formatCellValue, so a
- * cell's rendered text differs exactly when its row is marked as
- * differing. Out-of-range BigInts become quoted strings, matching
- * flattenConfig's leaf treatment and keeping copied JSON reparse-safe.
+ * Also used as the display/copy serialization in formatCellValue for
+ * object/array values, so two such cells render identically exactly when
+ * they compare equal. Out-of-range BigInts become quoted strings,
+ * matching flattenConfig's leaf treatment and keeping copied JSON
+ * reparse-safe.
  */
 function stableStringify(value) {
   if (Array.isArray(value)) {
@@ -126,7 +132,9 @@ function stableStringify(value) {
 /**
  * Type-tagged canonical form used for cell equality: `1` and `"1"` stay
  * distinct, NaN equals NaN, and `null` is a real value while `undefined`
- * means the key is absent from that run.
+ * means the key is absent from that run. BigInts deliberately share the
+ * `number:` tag (via fromBigInt): an int64 read from parquet in static
+ * mode must equal the same value arriving as a JSON number in live mode.
  */
 function canonicalize(value) {
   if (value === undefined) return "missing:";
@@ -260,12 +268,29 @@ export function filterComparerRows(rows, searchText, diffOnly) {
 }
 
 /**
+ * Whether a string's raw text could be mistaken for another value's
+ * rendering, so it needs its JSON-quoted form to stay distinguishable:
+ * anything some number renders as (`"1"`, `"NaN"`), the boolean/null
+ * words, JSON-looking text, the missing marker, and empty or
+ * whitespace-padded strings that would otherwise be invisible.
+ */
+function isAmbiguousString(value) {
+  if (value === "" || value !== value.trim()) return true;
+  if (value === "true" || value === "false" || value === "null") return true;
+  if (value === MISSING_MARKER) return true;
+  if (value.startsWith("{") || value.startsWith("[")) return true;
+  return String(Number(value)) === value;
+}
+
+/**
  * Formats a cell for rendering and copying. `text` is always the full,
  * untruncated value — display truncation is the component's concern, and
  * the copy button must receive everything — while `missing` marks keys the
- * run never had, rendered as an em dash. JSON values render through
- * stableStringify so deep-equal objects with different key order display
- * identically, keeping what the user sees consistent with rowDiffers.
+ * run never had, rendered as the missing marker. Strings render raw for
+ * readability unless the raw text is ambiguous (see isAmbiguousString);
+ * those render JSON-quoted so `1` and `"1"` stay visually distinct.
+ * Together with stableStringify for object values, two cells render
+ * identically exactly when rowDiffers considers them equal.
  * @param {unknown} value
  * @returns {{text: string, missing: boolean}}
  */
@@ -278,7 +303,10 @@ export function formatCellValue(value) {
   }
   switch (typeof value) {
     case "string":
-      return { text: value, missing: false };
+      return {
+        text: isAmbiguousString(value) ? JSON.stringify(value) : value,
+        missing: false,
+      };
     case "number":
     case "boolean":
     case "bigint":
