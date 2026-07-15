@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 import sys
@@ -124,6 +125,55 @@ def test_cells_roundtrip_through_read(proj):
     fig = logbook.read_cell(proj, figure_cell["id"], include_raw=True)
     assert fig["raw"] == '{"x": 1}'
     assert fig["has_html"]
+
+
+# A minimal valid 1x1 PNG.
+_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def test_figure_html_from_image_embeds_data_uri(tmp_path):
+    png = tmp_path / "plot.png"
+    png.write_bytes(_PNG_BYTES)
+    html = logbook.figure_html_from_image(png)
+    assert html.startswith('<img src="data:image/png;base64,')
+    assert "max-width:100%" in html
+    assert 'alt="plot"' in html
+
+
+def test_figure_html_from_image_rejects_unsupported_type(tmp_path):
+    bad = tmp_path / "notes.txt"
+    bad.write_text("hello")
+    with pytest.raises(logbook.LogbookError, match="Unsupported image type"):
+        logbook.figure_html_from_image(bad)
+
+
+def test_figure_html_from_image_missing_file(tmp_path):
+    with pytest.raises(logbook.LogbookError, match="not found"):
+        logbook.figure_html_from_image(tmp_path / "absent.png")
+
+
+def test_add_figure_cell_accepts_image_path(proj, tmp_path):
+    slug = logbook.ensure_page(proj, "Figs")
+    png = tmp_path / "chart.png"
+    png.write_bytes(_PNG_BYTES)
+    logbook.add_figure_cell(proj, slug, image=png, title="Chart")
+
+    outline = logbook.read_page_outline(proj, "Figs")
+    figure_cell = outline["cells"][0]
+    assert figure_cell["type"] == "figure"
+    fig = logbook.read_cell(proj, figure_cell["id"], include_html=True)
+    assert fig["has_html"]
+    assert "data:image/png;base64," in fig["html"]
+
+
+def test_is_figure_image_path():
+    assert logbook.is_figure_image_path("a/b/plot.PNG")
+    assert logbook.is_figure_image_path("chart.svg")
+    assert not logbook.is_figure_image_path("page.html")
+    assert not logbook.is_figure_image_path("notes.txt")
 
 
 def test_read_head_tail_options(proj):
