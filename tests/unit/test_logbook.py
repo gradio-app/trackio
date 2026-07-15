@@ -403,12 +403,22 @@ def test_add_dashboard_cell_space(proj):
 
 
 def test_auto_note_dashboard_dedupes(proj):
+    page = logbook.ensure_page(proj, "Training results")
     logbook.auto_note_dashboard("mnist")
     logbook.auto_note_dashboard("mnist")
     logbook.auto_note_dashboard("mnist", space_id="me/mnist")
-    assert len(_dashboard_cells(proj, "mnist")) == 1
+    assert len(_dashboard_cells(proj, page)) == 1
     logbook.auto_note_dashboard("cifar")
-    assert len(_dashboard_cells(proj, "cifar")) == 1
+    assert len(_dashboard_cells(proj, page)) == 2
+    assert logbook._page_file_for_slug(proj, "mnist") is None
+    assert logbook._page_file_for_slug(proj, "cifar") is None
+
+
+def test_auto_note_dashboard_without_active_page_is_a_noop(proj):
+    logbook.auto_note_dashboard("mnist")
+
+    assert logbook._page_file_for_slug(proj, "mnist") is None
+    assert "local_dashboards" not in logbook.read_metadata(proj)
 
 
 def test_auto_note_dashboard_disabled_or_no_logbook(proj, monkeypatch, tmp_path):
@@ -425,14 +435,16 @@ def test_auto_note_dashboard_disabled_or_no_logbook(proj, monkeypatch, tmp_path)
 def test_init_creates_dashboard_cell_immediately(temp_dir, proj):
     import trackio
 
+    page = logbook.ensure_page(proj, "Training results")
     trackio.init(project="p1", name="r1")
-    assert len(_dashboard_cells(proj, "p1")) == 1
+    assert len(_dashboard_cells(proj, page)) == 1
     trackio.finish()
     trackio.init(project="p1", name="r2")
     trackio.finish()
-    outline = logbook.read_page_outline(proj, "p1")
+    outline = logbook.read_page_outline(proj, page)
     assert len([c for c in outline["cells"] if c["type"] == "dashboard"]) == 1
     assert not [c for c in outline["cells"] if (c["title"] or "").startswith("Run:")]
+    assert logbook._page_file_for_slug(proj, "p1") is None
 
 
 def test_promote_pushes_path_artifact_to_bucket_preserving_relative_path(

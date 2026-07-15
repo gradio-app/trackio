@@ -1521,7 +1521,7 @@ def auto_note_dashboard(project: str, space_id: str | None = None) -> None:
     if proj is None:
         return
     try:
-        slug = ensure_page(proj, project)
+        slug = resolve_page(proj)
         if _page_has_dashboard_cell(proj, slug, project):
             return
         add_dashboard_cell(proj, slug, project, space_id=space_id)
