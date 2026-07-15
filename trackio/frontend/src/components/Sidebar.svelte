@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
   import Dropdown from "./Dropdown.svelte";
+  import ProjectSelector from "./ProjectSelector.svelte";
+  import Logo from "./Logo.svelte";
   import GradioCheckbox from "./GradioCheckbox.svelte";
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
@@ -36,7 +38,7 @@
     readOnlySource = null,
     projectLocked = false,
     spaceId = null,
-    logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
+    logoUrls = undefined,
     darkMode = false,
   } = $props();
 
@@ -237,26 +239,10 @@
   {#if open}
     <div class="sidebar-content">
       <div class="sidebar-scroll">
-      <div class="logo-section">
-        <img
-          src={darkMode ? logoUrls.dark : logoUrls.light}
-          alt="Trackio"
-          class="logo"
-        />
-      </div>
+      <Logo {logoUrls} {darkMode} />
 
       <div class="section">
-        {#if projectLocked}
-          <div class="section-label">Project</div>
-          <div class="locked-project">{selectedProject ?? "—"}</div>
-        {:else}
-          <Dropdown
-            label="Project"
-            choices={projects}
-            bind:value={selectedProject}
-            filterable={true}
-          />
-        {/if}
+        <ProjectSelector {projects} bind:selectedProject {projectLocked} />
       </div>
 
       {#if variant === "compact" && currentPage === "runs"}
@@ -724,13 +710,6 @@
     text-decoration: underline;
     color: var(--body-text-color, #1f2937);
   }
-  .logo-section {
-    margin-bottom: 20px;
-  }
-  .logo {
-    width: 80%;
-    max-width: 200px;
-  }
   .section {
     margin-top: 2px;
     margin-bottom: 18px;
@@ -806,16 +785,6 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--body-text-color-subdued, #6b7280);
-  }
-  .locked-project {
-    margin-top: 4px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--body-text-color, #1f2937);
-    padding: 8px 10px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-md, 6px);
-    background: var(--background-fill-secondary, #f9fafb);
   }
   .runs-header {
     display: flex;

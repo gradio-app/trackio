@@ -2,7 +2,6 @@ import importlib.metadata
 import io
 import json as json_mod
 import os
-import shutil
 import tempfile
 import threading
 import time
@@ -29,6 +28,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
+from trackio.cas import PARTIAL_BLOB_GLOB
 from trackio.frontend_config import resolve_frontend_dir
 from trackio.pending_uploads import replay_pending_uploads
 from trackio.remote_client import RemoteClient
@@ -37,6 +37,7 @@ from trackio.utils import (
     get_or_create_project_hash,
     on_spaces,
     preprocess_space_and_dataset_ids,
+    project_artifacts_dir,
     project_media_dir,
 )
 
@@ -918,14 +919,26 @@ def upload_dataset_for_static(
         else:
             raise ValueError(f"Failed to create Dataset: {e}")
 
+    def _upload_folder(folder: Path, path_in_repo: str, ignore_patterns=None) -> None:
+        if not folder.exists():
+            return
+        _retry_hf_write(
+            f"Dataset {path_in_repo} upload",
+            lambda: hf_api.upload_folder(
+                repo_id=dataset_id,
+                repo_type="dataset",
+                folder_path=str(folder),
+                path_in_repo=path_in_repo,
+                ignore_patterns=ignore_patterns,
+            ),
+        )
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = Path(tmp_dir)
         SQLiteStorage.export_for_static_space(project, output_dir)
 
-        media_dir = project_media_dir(project)
-        if media_dir.exists():
-            dest = output_dir / "media"
-            shutil.copytree(media_dir, dest)
+        _upload_folder(project_media_dir(project), "media")
+        _upload_folder(project_artifacts_dir(project), "artifacts", [PARTIAL_BLOB_GLOB])
 
         _retry_hf_write(
             "Dataset upload",
