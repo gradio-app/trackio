@@ -1,11 +1,5 @@
 <script>
-  let {
-    label = "",
-    open = $bindable(true),
-    hidden = false,
-    children,
-    controls,
-  } = $props();
+  let { label = "", open = $bindable(true), hidden = false, children } = $props();
 
   function toggle() {
     open = !open;
@@ -18,17 +12,10 @@
   </div>
 {:else}
   <div class="accordion">
-    <div class="accordion-header-row">
-      <button class="accordion-header" onclick={toggle}>
-        <span class="arrow" class:rotated={open}>▾</span>
-        <span class="accordion-label">{label}</span>
-      </button>
-      {#if controls}
-        <div class="accordion-controls">
-          {@render controls()}
-        </div>
-      {/if}
-    </div>
+    <button class="accordion-header" onclick={toggle}>
+      <span class="arrow" class:rotated={open}>▾</span>
+      <span class="accordion-label">{label}</span>
+    </button>
     {#if open}
       <div class="accordion-body">
         {#if children}{@render children()}{/if}
@@ -48,20 +35,14 @@
   .accordion-hidden {
     margin-bottom: 8px;
   }
-  .accordion-header-row {
-    display: flex;
-    align-items: center;
-    background: var(--background-fill-primary, white);
-  }
   .accordion-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 1;
-    min-width: 0;
+    width: 100%;
     padding: 10px 14px;
     border: none;
-    background: none;
+    background: var(--background-fill-primary, white);
     color: var(--body-text-color, #1f2937);
     font-size: var(--text-md, 14px);
     font-weight: 600;
@@ -70,12 +51,6 @@
   }
   .accordion-header:hover {
     background: var(--background-fill-secondary, #f9fafb);
-  }
-  .accordion-controls {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    padding-right: 12px;
   }
   .arrow {
     font-size: 14px;

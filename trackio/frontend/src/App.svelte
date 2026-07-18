@@ -66,6 +66,7 @@
   let runs = $state([]);
   let selectedRuns = $state([]);
   let smoothing = $state(10);
+  let panelsPerRow = $state(4);
   let xAxis = $state("step");
   let logScaleX = $state(false);
   let logScaleY = $state(false);
@@ -541,6 +542,7 @@
       {runConfigs}
       bind:selectedRuns
       bind:smoothing
+      bind:panelsPerRow
       bind:xAxis
       bind:logScaleX
       bind:logScaleY
@@ -574,6 +576,7 @@
           selectedRuns={selectedRunRecords}
           allRuns={runs}
           {smoothing}
+          {panelsPerRow}
           {xAxis}
           {logScaleX}
           {logScaleY}
