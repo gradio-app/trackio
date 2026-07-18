@@ -110,6 +110,113 @@ def test_dashboard_cell_uses_the_main_cell_header(tmp_path, monkeypatch):
             thread.join()
 
 
+def test_logbook_index_hub_summary(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Reproduction: Hub summary test")
+    index = logbook.logbook_root(proj) / "pages" / "index.md"
+    index.write_text(
+        "# Reproduction: Hub summary test\n\n"
+        "[OpenReview paper](https://openreview.net/forum?id=abc123XYZ1)\n\n"
+        "## Pages\n\n| Page |\n| --- |\n",
+        encoding="utf-8",
+    )
+    claim = logbook.ensure_page(proj, "Claim 1: Demo")
+    logbook.add_markdown_cell(
+        proj,
+        claim,
+        "Models: https://huggingface.co/org/model-a "
+        "https://huggingface.co/org/model-b "
+        "https://huggingface.co/org/model-c\n"
+        "Datasets: https://huggingface.co/datasets/org/data-a "
+        "https://huggingface.co/datasets/org/data-b\n"
+        "Job: https://huggingface.co/jobs/org/abc123def4567890\n"
+        "Code: https://github.com/org/repro-repo",
+    )
+    logbook.add_artifact_cell(proj, claim, "org/bundle:v1")
+    claim_path = logbook.logbook_root(proj) / "pages" / claim / "page.md"
+    claim_path.write_text(
+        claim_path.read_text(encoding="utf-8").replace(
+            "trackio-artifact://org/bundle:v1",
+            "https://huggingface.co/buckets/org/my-bucket-artifacts#org/bundle:v1",
+        ),
+        encoding="utf-8",
+    )
+    logbook.write_site_files(proj)
+
+    handler = functools.partial(
+        _QuietHandler, directory=str(logbook.logbook_root(proj))
+    )
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                page.goto(f"http://127.0.0.1:{server.server_address[1]}/")
+
+                intro = page.locator('[data-slug="index"] .page-body')
+                expect(intro.locator("h1")).to_have_text(
+                    "Reproduction: Hub summary test"
+                )
+                expect(intro.locator(".index-paper-link a")).to_have_attribute(
+                    "href", "https://openreview.net/forum?id=abc123XYZ1"
+                )
+                expect(intro.locator(".agent-hint")).to_have_count(1)
+
+                summary = page.locator(".logbook-hub-summary")
+                expect(summary).to_have_count(1)
+                expect(summary.locator(".hub-summary-heading").nth(0)).to_have_text(
+                    "Hugging Face artifacts"
+                )
+                counts = summary.locator(".hub-summary-count")
+                expect(counts).to_have_text(
+                    ["3 models", "2 datasets", "1 job", "1 bucket"]
+                )
+                expect(summary.get_by_role("link", name="org/model-a")).to_have_attribute(
+                    "href", "https://huggingface.co/org/model-a"
+                )
+                expect(summary.get_by_role("link", name="org/model-b")).to_have_attribute(
+                    "href", "https://huggingface.co/org/model-b"
+                )
+                expect(summary.get_by_role("link", name="org/model-c")).to_have_attribute(
+                    "href", "https://huggingface.co/org/model-c"
+                )
+                expect(summary.get_by_role("link", name="org/data-a")).to_have_attribute(
+                    "href", "https://huggingface.co/datasets/org/data-a"
+                )
+                expect(summary.get_by_role("link", name="org/data-b")).to_have_attribute(
+                    "href", "https://huggingface.co/datasets/org/data-b"
+                )
+                expect(
+                    summary.get_by_role("link", name="org · abc123def456…")
+                ).to_have_attribute(
+                    "href", "https://huggingface.co/jobs/org/abc123def4567890"
+                )
+                expect(
+                    summary.get_by_role("link", name="org/bundle:v1")
+                ).to_have_attribute(
+                    "href",
+                    "https://huggingface.co/buckets/org/my-bucket-artifacts#org/bundle:v1",
+                )
+                expect(summary.locator(".hub-summary-heading").nth(1)).to_have_text(
+                    "Code"
+                )
+                expect(
+                    summary.get_by_role("link", name="github.com/org/repro-repo")
+                ).to_have_attribute("href", "https://github.com/org/repro-repo")
+                expect(page.locator(".logbook-stats")).to_have_count(0)
+
+                expect(
+                    page.locator('[data-slug="claim-1-demo"] .context-rail .rail-item')
+                ).to_have_count(7)
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()
+
+
 def test_figure_hotspot_navigates_to_its_logbook_page(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     proj = logbook.create_logbook("Interactive figure logbook")
