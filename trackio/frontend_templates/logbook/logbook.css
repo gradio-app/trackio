@@ -1095,7 +1095,74 @@ table.board tr.linked-row:hover a {
   color: var(--muted);
 }
 
-/* ---- logbook summary stats ---- */
+/* ---- logbook hub summary (index) ---- */
+.logbook-hub-summary {
+  margin: 0 0 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.hub-summary-block {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+}
+.hub-summary-heading {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hub-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin: 6px 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.hub-summary-count {
+  flex: 0 0 auto;
+  min-width: 7.5em;
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+.hub-summary-links a {
+  color: var(--link);
+  text-decoration: none;
+}
+.hub-summary-links a:hover {
+  text-decoration: underline;
+}
+.hub-summary-local {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.hub-summary-code a {
+  display: inline-block;
+  margin-right: 12px;
+  color: var(--link);
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.hub-summary-code a:hover {
+  text-decoration: underline;
+}
+.hub-summary-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ---- logbook summary stats (legacy) ---- */
 .logbook-stats {
   display: flex;
   flex-wrap: wrap;

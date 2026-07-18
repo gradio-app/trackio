@@ -2,6 +2,7 @@ import base64
 import json
 import re
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -667,3 +668,68 @@ def test_project_from_url_blocks_path_traversal(monkeypatch):
     assert (root / "pages" / "index.md").is_file()
     escaped = (root / ".." / ".." / "trackio-evil-traversal.md").resolve()
     assert not escaped.exists()
+
+
+def test_repro_slug_from_title():
+    slug = logbook.repro_slug_from_title(
+        "Adversarially Robust Control of CVaR via Rockafellar-Uryasev Conformal Inference"
+    )
+    assert slug.startswith("repro-adversarially-robust-control")
+    assert logbook._looks_like_openreview_repo("Vhesstbfg6")
+    assert logbook._looks_like_openreview_repo("repro-Vhesstbfg6")
+    assert not logbook._looks_like_openreview_repo(slug)
+
+
+def test_scaffold_icml_logbook_structure(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    info = logbook.scaffold_icml_logbook(
+        title="Demo Paper Title",
+        orid="abc123XYZ1",
+        claims=["Headline accuracy", "Ablations"],
+        openreview_url="https://openreview.net/forum?id=abc123XYZ1",
+    )
+    proj = Path(info["proj"])
+    metadata = logbook.read_metadata(proj)
+    assert metadata["tags"] == ["icml2026-repro", "paper-abc123XYZ1"]
+    index = (logbook.logbook_root(proj) / "pages" / "index.md").read_text(
+        encoding="utf-8"
+    )
+    assert index.startswith("# Reproduction: Demo Paper Title")
+    assert "openreview.net/forum?id=abc123XYZ1" in index
+    toc = logbook._link_order(logbook.logbook_root(proj) / "pages" / "index.md")
+    assert toc[0] == "executive-summary"
+    assert toc[-1] == "conclusion"
+    assert all(s.startswith("claim-") for s in toc[1:-1])
+
+
+def test_validate_icml_logbook_passes_scaffold(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    info = logbook.scaffold_icml_logbook(
+        title="Validate Me",
+        orid="abc123XYZ1",
+        claims=["Claim text"],
+    )
+    proj = Path(info["proj"])
+    metadata = logbook.read_metadata(proj)
+    metadata["space_id"] = f"user/{info['slug']}"
+    logbook.write_metadata(proj, metadata)
+    result = logbook.validate_logbook(
+        proj, profile="icml2026", space_id=metadata["space_id"]
+    )
+    structural_errors = [
+        e
+        for e in result["errors"]
+        if "Conclusion page needs a reproduction bundle" not in e
+    ]
+    assert structural_errors == []
+
+
+def test_validate_icml_logbook_rejects_openreview_slug(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    logbook.scaffold_icml_logbook(title="Bad Slug", orid="abc123XYZ1")
+    proj = logbook.require_project_dir()
+    result = logbook.validate_logbook(
+        proj, profile="icml2026", space_id="user/Vhesstbfg6"
+    )
+    assert not result["ok"]
+    assert any("repro-" in err for err in result["errors"])

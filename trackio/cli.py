@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import re
 import sys
@@ -1031,7 +1032,7 @@ def main():
     logbook_sub = logbook_parser.add_subparsers(
         dest="logbook_action",
         required=True,
-        metavar="{open,cell,run,page,read,serve,publish,sync}",
+        metavar="{open,cell,run,page,read,serve,publish,sync,validate,scaffold}",
     )
 
     lb_open = logbook_sub.add_parser(
@@ -1195,6 +1196,51 @@ def main():
         "--private",
         action="store_true",
         help="Make the logbook and any promoted dashboards/buckets private",
+    )
+    lb_pub.add_argument(
+        "--force",
+        action="store_true",
+        help="Publish even when ICML validation fails (icml2026-repro tag)",
+    )
+
+    lb_validate = logbook_sub.add_parser(
+        "validate", help="Check logbook structure before publishing"
+    )
+    lb_validate.add_argument(
+        "--profile",
+        default="icml2026",
+        help="Validation profile (default: icml2026)",
+    )
+    lb_validate.add_argument(
+        "space_id",
+        nargs="?",
+        help="Optional HF Space id to validate the publish slug",
+    )
+
+    lb_scaffold = logbook_sub.add_parser(
+        "scaffold", help="Create a canonical ICML reproduction logbook template"
+    )
+    lb_scaffold.add_argument("--title", required=True, help="Paper title")
+    lb_scaffold.add_argument("--orid", required=True, help="OpenReview forum id")
+    lb_scaffold.add_argument("--arxiv", help="arXiv id (for HF paper link)")
+    lb_scaffold.add_argument("--openreview-url", help="Full OpenReview paper URL")
+    lb_scaffold.add_argument(
+        "--hf-indexed",
+        action="store_true",
+        help="Paper is indexed on huggingface.co/papers",
+    )
+    lb_scaffold.add_argument(
+        "--claims-json",
+        help='JSON array of claim strings, e.g. \'["headline accuracy", "..."]\'',
+    )
+    lb_scaffold.add_argument(
+        "--username",
+        help="HF username for metadata.space_id (username/repro-<slug>)",
+    )
+    lb_scaffold.add_argument(
+        "--profile",
+        default="icml2026",
+        help="Scaffold profile (default: icml2026)",
     )
 
     lb_pin = logbook_sub.add_parser(
@@ -2061,12 +2107,55 @@ def _handle_logbook(args):
         elif action == "serve":
             lb.serve(path=args.path, port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
-            url = lb.publish(space_id=args.space_id, private=args.private)
+            url = lb.publish(
+                space_id=args.space_id,
+                private=args.private,
+                force=getattr(args, "force", False),
+            )
             print(f"Published: {url}")
             space_id = lb.read_metadata(lb.require_project_dir()).get("space_id")
             if space_id:
                 subdomain = re.sub(r"[^a-z0-9]+", "-", space_id.lower()).strip("-")
                 print(f"Rendered at: https://{subdomain}.static.hf.space/")
+        elif action == "validate":
+            proj = lb.require_project_dir()
+            result = lb.validate_logbook(
+                proj, profile=args.profile, space_id=args.space_id
+            )
+            for warning in result["warnings"]:
+                print(f"warning: {warning}")
+            if result["errors"]:
+                for err in result["errors"]:
+                    print(f"error: {err}")
+                error_exit("Logbook validation failed.")
+            print("Logbook validation passed.")
+        elif action == "scaffold":
+            if args.profile != "icml2026":
+                error_exit(f"Unknown scaffold profile: {args.profile}")
+            claims = None
+            if args.claims_json:
+                try:
+                    claims = json.loads(args.claims_json)
+                except json.JSONDecodeError as e:
+                    error_exit(f"Invalid --claims-json: {e}")
+                if not isinstance(claims, list):
+                    error_exit("--claims-json must be a JSON array of strings.")
+            info = lb.scaffold_icml_logbook(
+                title=args.title,
+                orid=args.orid,
+                claims=claims,
+                arxiv_id=args.arxiv,
+                openreview_url=args.openreview_url,
+                hf_indexed=args.hf_indexed,
+                username=args.username,
+            )
+            print(f"Scaffolded logbook: {info['title']}")
+            print(f"Publish target: {info['space_id']}")
+            print(
+                "Next: reproduce claims, validate, then publish:\n"
+                f"  trackio logbook validate --profile icml2026 {info['space_id']}\n"
+                f"  trackio logbook publish {info['space_id']}"
+            )
         elif action == "sync":
             proj = lb.require_project_dir()
             if not lb.is_autosync(proj):

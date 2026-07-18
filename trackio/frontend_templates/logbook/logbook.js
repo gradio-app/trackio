@@ -1692,7 +1692,7 @@
         } else {
           body.prepend(hint);
         }
-        hint.after(buildLogbookStats(markdown));
+        hint.after(buildLogbookHubSummary(markdown));
         bookIntroBody = body;
       }
       layout.appendChild(body);
@@ -1714,7 +1714,7 @@
         (el) =>
           el.tagName !== "H1" &&
           !el.classList.contains("agent-hint") &&
-          !el.classList.contains("logbook-stats") &&
+          !el.classList.contains("logbook-hub-summary") &&
           !el.classList.contains("pinned-notes")
       );
       if (section && !section.classList.contains("has-pinned-notes") && !hasExtra) {
@@ -1750,9 +1750,6 @@
       });
     });
   }
-
-  let STATS_TOKEN = 0;
-  let STATS_LISTENERS = false;
 
   function fmtBytes(n) {
     if (n == null || isNaN(n)) return null;
@@ -1873,180 +1870,164 @@
     };
   }
 
-  function closeStatPopovers() {
-    document
-      .querySelectorAll(".stat-popover")
-      .forEach((p) => (p.hidden = true));
-    document
-      .querySelectorAll(".stat-tile.open")
-      .forEach((t) => t.classList.remove("open"));
-  }
-
-  function ensureStatListeners() {
-    if (STATS_LISTENERS) return;
-    STATS_LISTENERS = true;
-    document.addEventListener("click", closeStatPopovers);
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeStatPopovers();
-    });
-  }
-
-  function stateHtml(remote, url) {
-    return remote
-      ? `<a class="stat-row-state open" href="${esc(url)}" target="_blank" rel="noopener" title="Open in a new tab">Open ↗</a>`
-      : `<span class="stat-row-state">publish to share</span>`;
-  }
-
-  function scrollToResource(resUrl) {
-    closeStatPopovers();
-    if (!resUrl) return;
-    const el = document.querySelector(
-      `#page .page-body [data-res-url="${CSS.escape(resUrl)}"]:not(.stat-row)`
+  function scanMarkdownUrls(md) {
+    return extractUrls(
+      md.replace(/(`{3,4}|~{3,4})(html|raw)[^\n]*\n[\s\S]*?\n\1/g, " ")
     );
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.add("res-flash");
-    setTimeout(() => el.classList.remove("res-flash"), 1500);
   }
 
-  function dashRowHtml(d) {
-    const inner =
-      `<span class="stat-row-ico">${DASHBOARD_ICON_IMG}</span>` +
-      `<div class="stat-row-main"><div class="stat-row-title">${esc(d.project)}</div>` +
-      `<div class="stat-row-meta">${stateHtml(!d.local, d.url)}</div></div>`;
-    return `<div class="stat-row" data-res-url="${esc(d.resUrl)}" title="Jump to it in the logbook">${inner}</div>`;
-  }
-
-  function artRowHtml(a) {
-    const remote = !a.local && !!a.url;
-    const parts = [a.type, a.size].filter(Boolean).map(esc);
-    const meta = parts.length
-      ? `${parts.join(" · ")} · ${stateHtml(remote, a.url)}`
-      : stateHtml(remote, a.url);
-    const inner =
-      `<span class="stat-row-ico">${ARTIFACT_ICON_IMG}</span>` +
-      `<div class="stat-row-main"><div class="stat-row-title">${esc(a.name)}</div>` +
-      `<div class="stat-row-meta">${meta}</div></div>`;
-    return `<div class="stat-row" data-res-url="${esc(a.resUrl)}" title="Jump to it in the logbook">${inner}</div>`;
-  }
-
-  function statTile(icon, alt, singular, plural, head, rowFn) {
-    const tile = document.createElement("button");
-    tile.type = "button";
-    tile.className = "stat-tile";
-    const render = (items) => {
-      const count = items.length;
-      const label = count === 1 ? singular : plural;
-      const caret = count > 0 ? `<span class="stat-caret">▾</span>` : "";
-      tile.innerHTML =
-        `<img class="stat-icon" src="${icon}" alt="${esc(alt)}" />` +
-        `<div class="stat-text"><div class="stat-num">${count}</div>` +
-        `<div class="stat-label">${esc(label)}</div></div>` +
-        caret;
-      tile.disabled = count === 0;
-      if (count > 0) {
-        const pop = document.createElement("div");
-        pop.className = "stat-popover";
-        pop.hidden = true;
-        pop.innerHTML =
-          `<div class="stat-pop-head">${esc(head)}</div>` +
-          items.map(rowFn).join("");
-        pop.addEventListener("click", (e) => {
-          if (e.target.closest("a.stat-row-state")) {
-            e.stopPropagation();
-            return;
-          }
-          e.stopPropagation();
-          const row = e.target.closest(".stat-row");
-          if (row) scrollToResource(row.dataset.resUrl);
-        });
-        tile.appendChild(pop);
-      }
+  function collectAllLogbookHubResources(markdownList) {
+    const groups = {
+      model: new Map(),
+      dataset: new Map(),
+      space: new Map(),
+      job: new Map(),
+      bucket: new Map(),
+      repo: new Map(),
     };
-    tile.addEventListener("click", (e) => {
-      if (tile.disabled) return;
-      e.stopPropagation();
-      const pop = tile.querySelector(".stat-popover");
-      if (!pop) return;
-      const isOpen = !pop.hidden;
-      closeStatPopovers();
-      if (!isOpen) {
-        pop.hidden = false;
-        tile.classList.add("open");
+    markdownList.forEach((md) => {
+      scanMarkdownUrls(md).forEach((url) => {
+        const item = classifyResource(url);
+        if (!item || item.kind === "paper" || item.kind === "dashboard") return;
+        if (item.kind === "repo") {
+          if (!groups.repo.has(item.url)) groups.repo.set(item.url, item);
+          return;
+        }
+        if (item.kind === "artifact") {
+          if (!groups.bucket.has(url)) {
+            groups.bucket.set(url, { id: item.id, url, local: false });
+          }
+          return;
+        }
+        const bucket = groups[item.kind];
+        if (bucket && !bucket.has(item.url)) bucket.set(item.url, item);
+      });
+      cellDashboardItems(md).forEach((it) => {
+        if (!it.url || groups.space.has(it.url)) return;
+        groups.space.set(it.url, {
+          kind: "space",
+          id: spaceIdFromUrl(it.url),
+          url: it.url,
+          local: false,
+        });
+      });
+      const re = new RegExp(LB_CELL_RE.source, "g");
+      let m;
+      while ((m = re.exec(md))) {
+        if (parseCellMeta(m[2]).type !== "artifact") continue;
+        const body = m[3];
+        const info = artifactInfoFromCell(parseCellMeta(m[2]), body);
+        if (!info.name || groups.bucket.has(info.resUrl)) continue;
+        const full =
+          body.match(/https:\/\/huggingface\.co\/buckets\/[^\s<>)"'`]+(?:#\S+)?/)?.[0] ||
+          info.url ||
+          info.resUrl;
+        groups.bucket.set(info.resUrl, {
+          id: info.name,
+          url: full,
+          local: info.local,
+        });
       }
     });
-    return { tile, render };
+    return groups;
   }
 
-  function buildLogbookStats(markdownList) {
-    const token = ++STATS_TOKEN;
-    ensureStatListeners();
-    const { dashboards, artifacts } = collectLogbookResources(markdownList);
+  function hubCountLabel(count, singular, plural) {
+    return `${count} ${count === 1 ? singular : plural}`;
+  }
 
-    const el = document.createElement("div");
-    el.className = "logbook-stats";
-    const dash = statTile(
-      "./trackio-logo-light.png",
-      "Trackio",
-      "Trackio Dashboard",
-      "Trackio Dashboards",
-      "Dashboards created in this logbook",
-      dashRowHtml
-    );
-    const art = statTile(
-      "./bucket-icon.svg",
-      "Bucket",
-      "Artifact",
-      "Artifacts",
-      "Artifacts created in this logbook",
-      artRowHtml
-    );
-    dash.render(dashboards);
-    art.render(artifacts);
-    el.appendChild(dash.tile);
-    el.appendChild(art.tile);
-
-    const scanText = markdownList
-      .map((md) =>
-        md.replace(/(`{3,4}|~{3,4})(html|raw)[^\n]*\n[\s\S]*?\n\1/g, " ")
-      )
-      .join("\n");
-    const seen = new Set(
-      dashboards.map((d) =>
-        d.local ? `local:${d.project}` : `space:${spaceIdFromUrl(d.url)}`
-      )
-    );
-    const remoteSpaces = new Map();
-    extractUrls(scanText).forEach((url) => {
-      const item = classifyResource(url);
-      if (item && item.kind === "space" && !item.local) {
-        remoteSpaces.set(item.url, item);
+  function hubSummaryRow(countLabel, items) {
+    const row = document.createElement("div");
+    row.className = "hub-summary-row";
+    const label = document.createElement("span");
+    label.className = "hub-summary-count";
+    label.textContent = countLabel;
+    const links = document.createElement("span");
+    links.className = "hub-summary-links";
+    items.forEach((item, index) => {
+      if (index) links.appendChild(document.createTextNode(" · "));
+      if (item.local) {
+        const span = document.createElement("span");
+        span.className = "hub-summary-local";
+        span.textContent = item.id;
+        links.appendChild(span);
+      } else {
+        const a = document.createElement("a");
+        a.href = item.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = item.id;
+        links.appendChild(a);
       }
     });
-    remoteSpaces.forEach((s) => {
-      const key = `space:${s.id}`;
-      if (seen.has(key)) return;
-      getJSON(`https://huggingface.co/api/spaces/${s.id}`)
-        .then((d) => {
-          if (STATS_TOKEN !== token) return;
-          const tags = (d && d.tags) || [];
-          if (
-            !seen.has(key) &&
-            tags.some((t) => String(t).toLowerCase() === "trackio")
-          ) {
-            seen.add(key);
-            dashboards.push({
-              project: s.id,
-              local: false,
-              url: s.url,
-              resUrl: s.url,
-            });
-            dashboards.sort((a, b) => a.project.localeCompare(b.project));
-            dash.render(dashboards);
-          }
-        })
-        .catch(() => {});
+    row.appendChild(label);
+    row.appendChild(links);
+    return row;
+  }
+
+  function buildLogbookHubSummary(markdownList) {
+    const groups = collectAllLogbookHubResources(markdownList);
+    const el = document.createElement("div");
+    el.className = "logbook-hub-summary";
+
+    const hfKinds = [
+      ["model", "model", "models"],
+      ["dataset", "dataset", "datasets"],
+      ["space", "Space", "Spaces"],
+      ["job", "job", "jobs"],
+      ["bucket", "bucket", "buckets"],
+    ];
+    let hfHasAny = false;
+    const hfBlock = document.createElement("div");
+    hfBlock.className = "hub-summary-block";
+    const hfTitle = document.createElement("h2");
+    hfTitle.className = "hub-summary-heading";
+    hfTitle.textContent = "Hugging Face artifacts";
+    hfBlock.appendChild(hfTitle);
+
+    hfKinds.forEach(([key, singular, plural]) => {
+      const map = groups[key];
+      if (!map || !map.size) return;
+      hfHasAny = true;
+      hfBlock.appendChild(
+        hubSummaryRow(
+          hubCountLabel(map.size, singular, plural),
+          Array.from(map.values())
+        )
+      );
     });
+
+    if (hfHasAny) el.appendChild(hfBlock);
+
+    if (groups.repo.size) {
+      const codeBlock = document.createElement("div");
+      codeBlock.className = "hub-summary-block";
+      const codeTitle = document.createElement("h2");
+      codeTitle.className = "hub-summary-heading";
+      codeTitle.textContent = "Code";
+      codeBlock.appendChild(codeTitle);
+      const row = document.createElement("div");
+      row.className = "hub-summary-row hub-summary-code";
+      groups.repo.forEach((item) => {
+        const a = document.createElement("a");
+        a.href = item.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = item.id;
+        row.appendChild(a);
+      });
+      codeBlock.appendChild(row);
+      el.appendChild(codeBlock);
+    }
+
+    if (!hfHasAny && !groups.repo.size) {
+      const hint = document.createElement("p");
+      hint.className = "hub-summary-empty";
+      hint.textContent =
+        "Link Hugging Face models, datasets, Jobs, Buckets, and GitHub repos in logbook cells — they appear here automatically.";
+      el.appendChild(hint);
+    }
+
     return el;
   }
 

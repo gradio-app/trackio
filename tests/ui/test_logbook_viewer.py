@@ -110,6 +110,63 @@ def test_dashboard_cell_uses_the_main_cell_header(tmp_path, monkeypatch):
             thread.join()
 
 
+def test_logbook_index_hub_summary(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Reproduction: Hub summary test")
+    index = logbook.logbook_root(proj) / "pages" / "index.md"
+    index.write_text(
+        "# Reproduction: Hub summary test\n\n"
+        "[OpenReview paper](https://openreview.net/forum?id=abc123XYZ1)\n\n"
+        "## Pages\n\n| Page |\n| --- |\n",
+        encoding="utf-8",
+    )
+    claim = logbook.ensure_page(proj, "Claim 1: Demo")
+    logbook.add_markdown_cell(
+        proj,
+        claim,
+        "Models: https://huggingface.co/org/model-a and "
+        "https://huggingface.co/datasets/org/data-b\n"
+        "Code: https://github.com/org/repro-repo",
+    )
+    logbook.write_site_files(proj)
+
+    handler = functools.partial(
+        _QuietHandler, directory=str(logbook.logbook_root(proj))
+    )
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                page.goto(f"http://127.0.0.1:{server.server_address[1]}/")
+
+                summary = page.locator(".logbook-hub-summary")
+                expect(summary).to_have_count(1)
+                expect(summary.locator(".hub-summary-heading").nth(0)).to_have_text(
+                    "Hugging Face artifacts"
+                )
+                expect(summary.get_by_role("link", name="org/model-a")).to_have_attribute(
+                    "href", "https://huggingface.co/org/model-a"
+                )
+                expect(summary.get_by_role("link", name="org/data-b")).to_have_attribute(
+                    "href", "https://huggingface.co/datasets/org/data-b"
+                )
+                expect(summary.locator(".hub-summary-heading").nth(1)).to_have_text(
+                    "Code"
+                )
+                expect(
+                    summary.get_by_role("link", name="github.com/org/repro-repo")
+                ).to_have_attribute("href", "https://github.com/org/repro-repo")
+                expect(page.locator(".logbook-stats")).to_have_count(0)
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()
+
+
 def test_figure_hotspot_navigates_to_its_logbook_page(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     proj = logbook.create_logbook("Interactive figure logbook")

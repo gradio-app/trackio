@@ -2103,8 +2103,368 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
     write_metadata(proj, metadata)
 
 
+HF_REPO_NAME_MAX = 96
+OPENREVIEW_ID_RE = re.compile(r"^[A-Za-z0-9]{8,12}$")
+HF_PAPER_URL_RE = re.compile(r"https://huggingface\.co/papers/\S+")
+OPENREVIEW_URL_RE = re.compile(r"https://openreview\.net/forum\?id=\S+")
+HUB_URL_RE = re.compile(
+    r"https://huggingface\.co/(models|datasets|spaces|jobs|buckets)/[^\s<>\"'`]+"
+)
+GITHUB_REPO_RE = re.compile(r"https://github\.com/[^\s<>\"'`]+")
+
+
+def repro_slug_from_title(title: str, *, max_len: int = HF_REPO_NAME_MAX) -> str:
+    clean = re.sub(r"^Reproduction:\s*", "", title.strip(), flags=re.I).strip()
+    slug = f"repro-{_slugify(clean)}"
+    if len(slug) <= max_len:
+        return slug
+    return slug[:max_len].rstrip("-")
+
+
+def _repo_name_from_space_id(space_id: str | None) -> str | None:
+    if not space_id or "/" not in space_id:
+        return None
+    return space_id.partition("/")[2]
+
+
+def _looks_like_openreview_repo(name: str) -> bool:
+    if OPENREVIEW_ID_RE.fullmatch(name):
+        return True
+    if name.startswith("repro-"):
+        suffix = name[6:]
+        if OPENREVIEW_ID_RE.fullmatch(suffix):
+            return True
+    return False
+
+
+def _index_markdown(proj: Path) -> str:
+    return (_pages_dir(proj) / "index.md").read_text(encoding="utf-8")
+
+
+def _collect_hub_resources(text: str) -> tuple[bool, bool]:
+    has_hub = bool(HUB_URL_RE.search(text))
+    has_github = bool(GITHUB_REPO_RE.search(text))
+    return has_hub, has_github
+
+
+def validate_logbook(
+    proj: Path | None = None,
+    *,
+    profile: str | None = None,
+    space_id: str | None = None,
+) -> dict:
+    """Validate logbook structure. Returns {ok, errors, warnings}."""
+    proj = proj or require_project_dir()
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if profile != "icml2026":
+        if profile:
+            errors.append(f"Unknown validation profile: {profile}")
+        return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+    metadata = read_metadata(proj)
+    tags = metadata.get("tags") or []
+    if "icml2026-repro" not in tags:
+        errors.append('metadata.json tags must include "icml2026-repro".')
+    paper_tags = [t for t in tags if t.startswith("paper-")]
+    if not paper_tags:
+        errors.append(
+            'metadata.json tags must include "paper-<openreview-id>".'
+        )
+    elif len(paper_tags) > 1:
+        warnings.append(
+            f'Multiple paper-* tags found ({", ".join(paper_tags)}); '
+            "expected exactly one."
+        )
+
+    repo = _repo_name_from_space_id(space_id or metadata.get("space_id"))
+    if not repo:
+        errors.append(
+            "No Space slug set. Pass space_id or set metadata.space_id to "
+            "username/repro-<slugified-paper-title> before publishing."
+        )
+    elif not repo.startswith("repro-"):
+        errors.append(
+            f'Space repo name must start with "repro-" (got "{repo}"). '
+            "Never publish with an OpenReview id as the slug."
+        )
+    elif _looks_like_openreview_repo(repo):
+        errors.append(
+            f'Space slug "{repo}" looks like an OpenReview id, not a '
+            "title-derived repro-<paper-title> slug."
+        )
+    elif len(repo) <= len("repro-") + 8:
+        warnings.append(
+            f'Space slug "{repo}" is very short; use the full slugified '
+            "paper title, not an abbreviation."
+        )
+
+    index_text = _index_markdown(proj)
+    index_prose = _index_prose(index_text)
+    title = _title_of(_pages_dir(proj) / "index.md", "")
+    if not re.match(r"^Reproduction:\s+.+\S", title, re.I):
+        errors.append(
+            'Index heading must be "# Reproduction: <paper title>" '
+            f'(got "{title or "(empty)"}").'
+        )
+    if not HF_PAPER_URL_RE.search(index_prose) and not OPENREVIEW_URL_RE.search(
+        index_prose
+    ):
+        errors.append(
+            "Index page must link to the HF paper page or OpenReview "
+            "(https://huggingface.co/papers/… or https://openreview.net/forum?id=…)."
+        )
+
+    toc_slugs = _link_order(_pages_dir(proj) / "index.md")
+    manifest = build_manifest(proj)
+    disk_slugs = [
+        node["slug"]
+        for node in _walk(manifest["root"])
+        if node["slug"] != ROOT_SLUG
+    ]
+    if set(disk_slugs) != set(toc_slugs):
+        errors.append(
+            "Page list on the index must match sidebar pages exactly "
+            "(no extra or missing pages)."
+        )
+    if not toc_slugs:
+        errors.append(
+            "Index Pages table is empty. Add Executive summary, Claim pages, "
+            "and Conclusion."
+        )
+    else:
+        if toc_slugs[0] != "executive-summary":
+            errors.append(
+                'First sidebar page must be "Executive summary" '
+                f'(slug executive-summary; got "{toc_slugs[0]}").'
+            )
+        if toc_slugs[-1] != "conclusion":
+            errors.append(
+                f'Last sidebar page must be "Conclusion" (got "{toc_slugs[-1]}").'
+            )
+        claim_slugs = toc_slugs[1:-1]
+        if not claim_slugs:
+            errors.append(
+                "Add at least one Claim page between Executive summary and Conclusion."
+            )
+        for slug in claim_slugs:
+            if not re.match(r"^claim-\d+", slug):
+                errors.append(
+                    f'Claim page slug must start with "claim-" (got "{slug}").'
+                )
+
+    root = logbook_root(proj)
+    exec_node = _node_for_slug(manifest, "executive-summary")
+    if exec_node is None:
+        errors.append('Missing page "Executive summary".')
+    else:
+        exec_cells = _parse_cells_from_text(
+            (root / exec_node["file"]).read_text(encoding="utf-8"),
+            exec_node["slug"],
+            exec_node["title"],
+        )
+        pinned_md = [
+            c
+            for c in exec_cells
+            if c["type"] == "markdown"
+            and c["metadata"].get("pinned")
+            and (c["title"] or "").strip().lower() == "executive summary"
+        ]
+        if not pinned_md:
+            errors.append(
+                'Executive summary page needs a pinned markdown cell titled '
+                '"Executive summary".'
+            )
+        pinned_poster = [
+            c
+            for c in exec_cells
+            if c["type"] == "figure"
+            and c["metadata"].get("pinned")
+            and "poster_embed.html" in c["body"]
+        ]
+        if not pinned_poster:
+            errors.append(
+                "Executive summary page needs a pinned figure cell referencing "
+                "poster_embed.html (Chenruishuo/posterly poster)."
+            )
+
+    concl_node = _node_for_slug(manifest, "conclusion")
+    if concl_node is None:
+        errors.append('Missing page "Conclusion".')
+    else:
+        concl_cells = _parse_cells_from_text(
+            (root / concl_node["file"]).read_text(encoding="utf-8"),
+            concl_node["slug"],
+            concl_node["title"],
+        )
+        bundle_cells = [c for c in concl_cells if c["type"] == "artifact"]
+        if not bundle_cells:
+            errors.append(
+                'Conclusion page needs a reproduction bundle artifact cell '
+                "(trackio logbook cell artifact … --page Conclusion)."
+            )
+
+    all_text = []
+    for node in _walk(manifest["root"]):
+        all_text.append((root / node["file"]).read_text(encoding="utf-8"))
+    combined = "\n".join(all_text)
+    has_hub, has_github = _collect_hub_resources(combined)
+    has_bucket_artifact = any(
+        c["type"] == "artifact"
+        for node in _walk(manifest["root"])
+        for c in _parse_cells_from_text(
+            (root / node["file"]).read_text(encoding="utf-8"),
+            node["slug"],
+            node["title"],
+        )
+    )
+    if not has_hub and not has_github and not has_bucket_artifact:
+        warnings.append(
+            "No Hugging Face asset URLs, GitHub repos, or artifact cells found "
+            "logbook-wide — the index summary will be empty until you link them."
+        )
+
+    return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def scaffold_icml_logbook(
+    *,
+    title: str,
+    orid: str,
+    claims: list[str] | None = None,
+    arxiv_id: str | None = None,
+    openreview_url: str | None = None,
+    hf_indexed: bool = False,
+    username: str | None = None,
+) -> dict:
+    paper_title = re.sub(r"^Reproduction:\s*", "", title.strip(), flags=re.I).strip()
+    logbook_title = f"Reproduction: {paper_title}"
+    slug = repro_slug_from_title(paper_title)
+    space_id = f"{username}/{slug}" if username else None
+
+    if find_project_dir() and (logbook_root(find_project_dir()) / "pages" / "index.md").exists():
+        raise LogbookError(
+            "A logbook already exists in this directory. Remove .trackio/logbook first."
+        )
+
+    proj = create_logbook(title=logbook_title, space_id=space_id)
+    orid = orid.strip()
+    if not orid:
+        raise LogbookError("OpenReview id (--orid) is required.")
+
+    paper_link = (
+        f"[HF paper page](https://huggingface.co/papers/{arxiv_id.strip()})"
+        if hf_indexed and arxiv_id
+        else f"[OpenReview paper]({(openreview_url or f'https://openreview.net/forum?id={orid}').strip()})"
+    )
+    claim_specs: list[tuple[str, str]] = []
+    for i, claim in enumerate(claims or [], start=1):
+        claim_text = str(claim).strip()
+        if not claim_text:
+            continue
+        if not re.match(r"^Claim\s+\d+\s*:", claim_text, re.I):
+            claim_text = f"Claim {i}: {claim_text}"
+        claim_specs.append((claim_text, ensure_page(proj, claim_text)))
+
+    index_lines = [
+        f"# {logbook_title}",
+        "",
+        paper_link,
+        "",
+        TOC_HEADING,
+        "",
+        TOC_HEADER,
+        TOC_SEP,
+    ]
+    exec_slug = ensure_page(proj, "Executive summary")
+    index_lines.append(f"| [Executive summary](#/{exec_slug}) |")
+    for claim_title, claim_slug in claim_specs:
+        index_lines.append(f"| [{claim_title}](#/{claim_slug}) |")
+    concl_slug = ensure_page(proj, "Conclusion")
+    index_lines.append(f"| [Conclusion](#/{concl_slug}) |")
+    index_lines.append("")
+    (_pages_dir(proj) / "index.md").write_text("\n".join(index_lines), encoding="utf-8")
+
+    metadata = read_metadata(proj)
+    metadata["tags"] = ["icml2026-repro", f"paper-{orid}"]
+    paper_meta = {}
+    if arxiv_id:
+        paper_meta["arxiv_id"] = arxiv_id.strip()
+    if paper_meta:
+        metadata["paper"] = paper_meta
+    if space_id:
+        metadata["space_id"] = space_id
+    write_metadata(proj, metadata)
+
+    summary_body = (
+        "Write a 3–5 sentence outcome-first summary here.\n\n"
+        "## Scope & cost\n\n"
+        "| Item | Value |\n"
+        "| --- | --- |\n"
+        "| GPU / compute | |\n"
+        "| Wall time | |\n"
+        "| Feasibility | |\n"
+    )
+    add_markdown_cell(proj, exec_slug, summary_body, title="Executive summary")
+    exec_summary_id = last_cell_id(proj, page=exec_slug)
+    if exec_summary_id:
+        set_cell_pinned(proj, exec_summary_id, pinned=True, page=exec_slug)
+
+    add_figure_cell(
+        proj,
+        exec_slug,
+        html=(
+            "<p>Build a reproduction poster with "
+            '<a href="https://github.com/Chenruishuo/posterly">Chenruishuo/posterly</a> '
+            "and replace this cell with <code>poster_embed.html</code>.</p>"
+        ),
+        title="Reproduction poster (poster_embed.html)",
+    )
+    poster_id = last_cell_id(proj, page=exec_slug)
+    if poster_id:
+        set_cell_pinned(proj, poster_id, pinned=True, page=exec_slug)
+
+    add_markdown_cell(
+        proj,
+        concl_slug,
+        (
+            "Add a reproduction bundle artifact cell here after running:\n\n"
+            "```bash\n"
+            f"trackio.log_artifact(\"./repro_{_slugify(paper_title)}/\", "
+            f'name="repro-bundle", type="dataset")\n'
+            f"trackio logbook cell artifact {slug}/repro-bundle:v0 "
+            '--page "Conclusion" --title "Reproduction bundle" --type dataset\n'
+            "```"
+        ),
+        title="Reproduction bundle",
+    )
+
+    for claim_title, claim_slug in claim_specs:
+        add_markdown_cell(
+            proj,
+            claim_slug,
+            f"Document setup, runs, and results for **{claim_title}**.",
+            title=claim_title,
+        )
+
+    write_site_files(proj)
+    publish_target = space_id or f"<username>/{slug}"
+    return {
+        "proj": str(proj),
+        "title": logbook_title,
+        "slug": slug,
+        "space_id": publish_target,
+        "pages": [exec_slug] + [s for _, s in claim_specs] + [concl_slug],
+    }
+
+
 def publish(
-    space_id: str | None = None, hf_token: str | None = None, private: bool = False
+    space_id: str | None = None,
+    hf_token: str | None = None,
+    private: bool = False,
+    *,
+    force: bool = False,
 ) -> str:
     proj = require_project_dir()
     metadata = read_metadata(proj)
@@ -2113,6 +2473,18 @@ def publish(
         raise LogbookError(
             "No Space id. Provide one: trackio logbook publish <username/space>"
         )
+    tags = metadata.get("tags") or []
+    if "icml2026-repro" in tags and not force:
+        result = validate_logbook(proj, profile="icml2026", space_id=space_id)
+        for warning in result["warnings"]:
+            print(f"  · warning: {warning}", file=sys.stderr)
+        if not result["ok"]:
+            for err in result["errors"]:
+                print(f"  · error: {err}", file=sys.stderr)
+            raise LogbookError(
+                "ICML logbook validation failed. Fix the errors above or "
+                "publish with --force to override."
+            )
     prior = {key: metadata.get(key) for key in ("space_id", "autosync", "private")}
     metadata["space_id"] = space_id
     metadata["autosync"] = True
