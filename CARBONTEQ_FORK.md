@@ -18,6 +18,9 @@ have a separate `/verifiers` workspace because a rollout is a graph with
 branches, rewards, model calls, tools, phase timing, and environment errors—not
 just a conversation. The Verifiers UI renders structured projections and links
 each rollout to its producing experiment; it never displays the raw payload.
+For an evaluation run, it also joins the selected rollout to the run's aggregate
+`eval/*` metrics so per-rollout evidence and overall results remain distinct but
+visible together.
 
 ## Storage engine
 

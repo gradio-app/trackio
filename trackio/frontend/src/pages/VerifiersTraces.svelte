@@ -1,6 +1,6 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getTraces, getTraceSteps } from "../lib/api.js";
+  import { getLogs, getTraces, getTraceSteps } from "../lib/api.js";
   import { openRunDetail } from "../lib/router.js";
 
   let { project = null, selectedRuns = [] } = $props();
@@ -10,6 +10,7 @@
   let search = $state("");
   let page = $state(0);
   let traces = $state([]);
+  let evalResults = $state({});
   let selectedId = $state(null);
   let activeBranchIndex = $state(0);
   let totalCount = $state(0);
@@ -17,6 +18,20 @@
 
   function runsKey(runs) {
     return runs.map((run) => `${run.id || ""}:${run.name || ""}`).join("|");
+  }
+
+  function runKey(run) {
+    return run?.id || run?.name || String(run || "");
+  }
+
+  function summarizeEvalLogs(logs) {
+    const result = {};
+    for (const row of logs || []) {
+      for (const [key, value] of Object.entries(row)) {
+        if (key.startsWith("eval/") && typeof value === "number") result[key] = value;
+      }
+    }
+    return result;
   }
 
   function textContent(content) {
@@ -63,17 +78,28 @@
     const requestId = ++loadId;
     if (!project || selectedRuns.length === 0) {
       traces = [];
+      evalResults = {};
       selectedId = null;
       totalCount = 0;
       return;
     }
     loading = true;
     try {
-      const counts = await Promise.all(
+      const [counts, runLogs] = await Promise.all([
+        Promise.all(
         selectedRuns.map((run) =>
           getTraceSteps(project, run, { trace_type: "verifiers" }),
         ),
-      );
+        ),
+        Promise.all(
+          selectedRuns.map(async (run) => ({
+            key: runKey(run),
+            metrics: summarizeEvalLogs(
+              await getLogs(project, run, { scalar_only: true }),
+            ),
+          })),
+        ),
+      ]);
       const offset = page * PAGE_SIZE;
       const singleRun = selectedRuns.length === 1;
       const batches = await Promise.all(
@@ -89,6 +115,9 @@
         }),
       );
       if (requestId !== loadId) return;
+      evalResults = Object.fromEntries(
+        runLogs.map(({ key, metrics }) => [key, metrics]),
+      );
       totalCount = counts.reduce((sum, result) => sum + (result?.total || 0), 0);
       let merged = batches
         .flat()
@@ -123,6 +152,12 @@
   });
 
   let selected = $derived(traces.find((trace) => trace.id === selectedId) || null);
+  let selectedEvalResult = $derived(
+    selected
+      ? (evalResults[selected.run_id] || evalResults[selected.run] || {})
+      : {},
+  );
+  let hasEvalResult = $derived(Object.keys(selectedEvalResult).length > 0);
   let totalPages = $derived(Math.max(1, Math.ceil(totalCount / PAGE_SIZE)));
 
   function traceBranches(payload) {
@@ -190,6 +225,24 @@
 
   function formatNumber(value) {
     return typeof value === "number" ? value.toLocaleString() : "—";
+  }
+
+  function formatDecimal(value, digits = 3) {
+    return typeof value === "number" ? value.toFixed(digits) : "—";
+  }
+
+  function formatPercent(value) {
+    return typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
+  }
+
+  function formatCost(value) {
+    return typeof value === "number" ? `$${value.toFixed(4)}` : "—";
+  }
+
+  function prefixedMetrics(result, prefix) {
+    return Object.entries(result)
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, value]) => [key.slice(prefix.length), value]);
   }
 
   function entries(value) {
@@ -279,6 +332,46 @@
               <div><span>Model calls</span><strong>{selected.payload.calls?.length || 0}</strong></div>
               <div><span>Model</span><strong>{selected.model}</strong></div>
             </section>
+
+            {#if hasEvalResult}
+              <section class="eval-result">
+                <div class="section-heading">
+                  <div>
+                    <div class="eyebrow">Producing run</div>
+                    <h3>Evaluation result</h3>
+                  </div>
+                  <span class="result-scope">aggregate across {formatNumber(selectedEvalResult["eval/rollouts"])} rollouts</span>
+                </div>
+                <div class="result-grid">
+                  <div><span>Mean reward</span><strong>{formatDecimal(selectedEvalResult["eval/mean_reward"])}</strong></div>
+                  <div><span>Completed</span><strong>{formatNumber(selectedEvalResult["eval/completed"])} / {formatNumber(selectedEvalResult["eval/rollouts"])}</strong></div>
+                  <div><span>Error rate</span><strong>{formatPercent(selectedEvalResult["eval/error_rate"])}</strong></div>
+                  <div><span>Truncated</span><strong>{formatPercent(selectedEvalResult["eval/truncated_rollout_rate"])}</strong></div>
+                  <div><span>Call p95</span><strong>{formatDecimal(selectedEvalResult["eval/model_call_latency_p95_seconds"], 2)} s</strong></div>
+                  <div><span>Total tokens</span><strong>{formatNumber((selectedEvalResult["eval/input_tokens"] || 0) + (selectedEvalResult["eval/output_tokens"] || 0))}</strong></div>
+                  <div><span>Provider cost</span><strong>{formatCost(selectedEvalResult["eval/provider_cost"])}</strong></div>
+                  <div><span>Trace sync</span><strong>{selectedEvalResult["eval/trace_sync_complete"] === 1 ? "complete" : "partial"}</strong></div>
+                </div>
+                <div class="two-column result-components">
+                  <div>
+                    <h4>Average verifier rewards</h4>
+                    <div class="kv-list">
+                      {#each prefixedMetrics(selectedEvalResult, "eval/reward/") as [name, value]}
+                        <div><span>{name}</span><strong>{formatDecimal(value)}</strong></div>
+                      {:else}<p class="muted">No aggregate reward components.</p>{/each}
+                    </div>
+                  </div>
+                  <div>
+                    <h4>Average environment metrics</h4>
+                    <div class="kv-list">
+                      {#each prefixedMetrics(selectedEvalResult, "eval/environment_metric/") as [name, value]}
+                        <div><span>{name}</span><strong>{formatDecimal(value)}</strong></div>
+                      {:else}<p class="muted">No aggregate environment metrics.</p>{/each}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            {/if}
 
             <section>
               <div class="section-heading">
@@ -434,9 +527,15 @@
   .branch-tabs { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
   .branch-tabs button { border: 1px solid var(--border-color-primary, #d9dee7); border-radius: 999px; padding: 5px 10px; background: transparent; color: inherit; cursor: pointer; font-size: 12px; }
   .branch-tabs button.active { border-color: var(--color-accent, #6d5efc); background: color-mix(in srgb, var(--color-accent, #6d5efc) 12%, transparent); }
-  .summary-grid, .phase-grid, .call-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
-  .summary-grid > div, .phase-grid > div, .call-grid > div { border: 1px solid var(--border-color-primary, #e2e6ec); border-radius: 7px; padding: 10px; display: flex; flex-direction: column; gap: 5px; }
-  .summary-grid span, .phase-grid span, .call-grid span { color: var(--body-text-color-subdued, #667085); font-size: 11px; text-transform: uppercase; }
+  .summary-grid, .phase-grid, .call-grid, .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  .summary-grid > div, .phase-grid > div, .call-grid > div, .result-grid > div { border: 1px solid var(--border-color-primary, #e2e6ec); border-radius: 7px; padding: 10px; display: flex; flex-direction: column; gap: 5px; }
+  .summary-grid span, .phase-grid span, .call-grid span, .result-grid span { color: var(--body-text-color-subdued, #667085); font-size: 11px; text-transform: uppercase; }
+  .eval-result { padding: 16px; border: 1px solid color-mix(in srgb, var(--color-accent, #6d5efc) 35%, var(--border-color-primary, #e2e6ec)); border-radius: 10px; background: color-mix(in srgb, var(--color-accent, #6d5efc) 4%, var(--background-fill-primary, white)); }
+  .eval-result .section-heading { margin-bottom: 12px; }
+  .eval-result h3 { margin: 3px 0 0; }
+  .result-scope { color: var(--body-text-color-subdued, #667085); font-size: 12px; }
+  .result-components { margin-top: 14px; }
+  .result-components h4 { margin: 0 0 6px; font-size: 13px; }
   .trajectory, .calls { display: flex; flex-direction: column; gap: 10px; }
   .message, .call-card { border: 1px solid var(--border-color-primary, #e2e6ec); border-radius: 8px; padding: 12px; }
   .message-role { color: var(--body-text-color-subdued, #667085); font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 7px; }

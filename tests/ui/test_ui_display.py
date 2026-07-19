@@ -208,6 +208,22 @@ def test_verifiers_rollouts_have_a_dedicated_branch_aware_ui(temp_dir):
             )
         }
     )
+    trackio.log(
+        {
+            "eval/rollouts": 4,
+            "eval/completed": 4,
+            "eval/mean_reward": 0.75,
+            "eval/error_rate": 0.0,
+            "eval/truncated_rollout_rate": 0.25,
+            "eval/model_call_latency_p95_seconds": 1.5,
+            "eval/input_tokens": 100,
+            "eval/output_tokens": 20,
+            "eval/provider_cost": 0.0123,
+            "eval/trace_sync_complete": 1,
+            "eval/reward/correct": 0.75,
+            "eval/environment_metric/tool_success": 0.5,
+        }
+    )
     trackio.finish()
     app, _, _, full_url = trackio.show(
         project=project, block_thread=False, open_browser=False
@@ -228,6 +244,10 @@ def test_verifiers_rollouts_have_a_dedicated_branch_aware_ui(temp_dir):
             ).to_be_visible()
             expect(page.get_by_role("button", name="Final", exact=True)).to_be_visible()
             expect(page.get_by_text("final answer", exact=True)).to_be_visible()
+            expect(page.get_by_text("Evaluation result", exact=True)).to_be_visible()
+            expect(page.get_by_text("aggregate across 4 rollouts", exact=True)).to_be_visible()
+            expect(page.get_by_text("0.750", exact=True).first).to_be_visible()
+            expect(page.get_by_text("$0.0123", exact=True)).to_be_visible()
             expect(page.get_by_text("must-not-render", exact=True)).to_have_count(0)
             expect(
                 page.get_by_role("button", name="Open experiment ↗", exact=True)
