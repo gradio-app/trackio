@@ -122,13 +122,9 @@ def test_logbook_index_hub_summary(tmp_path, monkeypatch):
     )
     executive = logbook.ensure_page(proj, "Executive summary")
     logbook.add_markdown_cell(proj, executive, "Pinned reproduction summary.")
-    logbook.set_cell_pinned(
-        proj, logbook.last_cell_id(proj, executive), page=executive
-    )
+    logbook.set_cell_pinned(proj, logbook.last_cell_id(proj, executive), page=executive)
     logbook.add_markdown_cell(proj, executive, "Pinned reproduction poster.")
-    logbook.set_cell_pinned(
-        proj, logbook.last_cell_id(proj, executive), page=executive
-    )
+    logbook.set_cell_pinned(proj, logbook.last_cell_id(proj, executive), page=executive)
     claim = logbook.ensure_page(proj, "Claim 1: Demo")
     logbook.add_markdown_cell(
         proj,
@@ -188,7 +184,9 @@ def test_logbook_index_hub_summary(tmp_path, monkeypatch):
                     0
                 )
                 expect(intro.locator(".logbook-hub-summary")).to_have_count(0)
-                expect(executive_body.locator(":scope > .pinned-notes")).to_have_count(1)
+                expect(executive_body.locator(":scope > .pinned-notes")).to_have_count(
+                    1
+                )
                 expect(
                     executive_body.locator(":scope > .logbook-hub-summary")
                 ).to_have_count(1)
@@ -205,19 +203,23 @@ def test_logbook_index_hub_summary(tmp_path, monkeypatch):
                 expect(counts).to_have_text(
                     ["3 models", "2 datasets", "1 job", "1 bucket"]
                 )
-                expect(summary.get_by_role("link", name="org/model-a")).to_have_attribute(
-                    "href", "https://huggingface.co/org/model-a"
-                )
-                expect(summary.get_by_role("link", name="org/model-b")).to_have_attribute(
-                    "href", "https://huggingface.co/org/model-b"
-                )
-                expect(summary.get_by_role("link", name="org/model-c")).to_have_attribute(
-                    "href", "https://huggingface.co/org/model-c"
-                )
-                expect(summary.get_by_role("link", name="org/data-a")).to_have_attribute(
+                expect(
+                    summary.get_by_role("link", name="org/model-a")
+                ).to_have_attribute("href", "https://huggingface.co/org/model-a")
+                expect(
+                    summary.get_by_role("link", name="org/model-b")
+                ).to_have_attribute("href", "https://huggingface.co/org/model-b")
+                expect(
+                    summary.get_by_role("link", name="org/model-c")
+                ).to_have_attribute("href", "https://huggingface.co/org/model-c")
+                expect(
+                    summary.get_by_role("link", name="org/data-a")
+                ).to_have_attribute(
                     "href", "https://huggingface.co/datasets/org/data-a"
                 )
-                expect(summary.get_by_role("link", name="org/data-b")).to_have_attribute(
+                expect(
+                    summary.get_by_role("link", name="org/data-b")
+                ).to_have_attribute(
                     "href", "https://huggingface.co/datasets/org/data-b"
                 )
                 expect(
