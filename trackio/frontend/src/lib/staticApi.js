@@ -296,6 +296,10 @@ export async function getTraces(_project, run, options = {}) {
       timestamp: row.timestamp,
       messages: parseTraceJsonField(row.messages, []),
       metadata: parseTraceJsonField(row.metadata, {}),
+      trace_type: row.trace_type || "trackio",
+      external_id: row.external_id || null,
+      schema_version: row.schema_version ?? null,
+      payload: parseTraceJsonField(row.payload, null),
     };
     trace._search_text = (row.search_text || `${trace.id} ${trace.key} ${flattenTraceSearchText(trace)}`).toLowerCase();
     return trace;
@@ -304,6 +308,9 @@ export async function getTraces(_project, run, options = {}) {
   let filtered = traces;
   if (options.step != null) {
     filtered = filtered.filter((trace) => trace.step === options.step);
+  }
+  if (options.trace_type) {
+    filtered = filtered.filter((trace) => trace.trace_type === options.trace_type);
   }
   if (options.search && options.search.trim()) {
     const needle = options.search.trim().toLowerCase();

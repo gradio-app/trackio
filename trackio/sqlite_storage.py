@@ -524,7 +524,11 @@ class SQLiteStorage:
                         metadata TEXT NOT NULL,
                         search_text TEXT NOT NULL,
                         log_id TEXT,
-                        space_id TEXT
+                        space_id TEXT,
+                        trace_type TEXT NOT NULL DEFAULT 'trackio',
+                        external_id TEXT,
+                        schema_version INTEGER,
+                        payload TEXT
                     )
                     """
                 )
@@ -696,6 +700,21 @@ class SQLiteStorage:
                     CREATE INDEX IF NOT EXISTS idx_traces_search
                     ON traces(search_text)
                     """
+                )
+                for col in (
+                    "trace_type TEXT NOT NULL DEFAULT 'trackio'",
+                    "external_id TEXT",
+                    "schema_version INTEGER",
+                    "payload TEXT",
+                ):
+                    try:
+                        cursor.execute(f"ALTER TABLE traces ADD COLUMN {col}")
+                    except sqlite3.OperationalError:
+                        pass
+                cursor.execute(
+                    """CREATE UNIQUE INDEX IF NOT EXISTS idx_traces_external_id
+                    ON traces(run_id, trace_type, external_id)
+                    WHERE external_id IS NOT NULL"""
                 )
                 alerts_cols = SQLiteStorage._table_columns(conn, "alerts")
                 alerts_run_key = "run_id" if "run_id" in alerts_cols else "run_name"
@@ -953,7 +972,7 @@ class SQLiteStorage:
         normalized: list[dict[str, object]] = []
         for row in rows:
             new_row = dict(row)
-            for col in ("messages", "metadata"):
+            for col in ("messages", "metadata", "payload"):
                 value = new_row.get(col)
                 if value is None:
                     continue
@@ -1431,6 +1450,11 @@ class SQLiteStorage:
                 continue
 
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
+            for row in rows:
+                row.setdefault("trace_type", "trackio")
+                row.setdefault("external_id", None)
+                row.setdefault("schema_version", None)
+                row.setdefault("payload", None)
             SQLiteStorage.init_db(project_name)
             SQLiteStorage._replace_table_rows(
                 db_path,
@@ -1449,6 +1473,10 @@ class SQLiteStorage:
                     "search_text",
                     "log_id",
                     "space_id",
+                    "trace_type",
+                    "external_id",
+                    "schema_version",
+                    "payload",
                 ],
             )
 
@@ -2385,7 +2413,10 @@ class SQLiteStorage:
 
     @staticmethod
     def _is_trace_payload(value: Any) -> bool:
-        return isinstance(value, dict) and value.get("_type") == "trackio.trace"
+        return isinstance(value, dict) and value.get("_type") in {
+            "trackio.trace",
+            "trackio.verifiers_trace",
+        }
 
     @staticmethod
     def _split_trace_metrics(
@@ -2423,9 +2454,18 @@ class SQLiteStorage:
                     clean_metrics[key] = non_trace_items
 
             for trace_index, trace in traces_for_key:
-                trace_id_parts = [run_id or run, log_id or uuid.uuid4().hex, key]
-                if trace_index is not None:
-                    trace_id_parts.append(str(trace_index))
+                trace_type = (
+                    "verifiers"
+                    if trace.get("_type") == "trackio.verifiers_trace"
+                    else "trackio"
+                )
+                external_id = trace.get("external_id")
+                if trace_type == "verifiers" and external_id:
+                    trace_id_parts = [run_id or run, trace_type, external_id]
+                else:
+                    trace_id_parts = [run_id or run, log_id or uuid.uuid4().hex, key]
+                    if trace_index is not None:
+                        trace_id_parts.append(str(trace_index))
                 trace_record = {
                     "id": ":".join(str(part) for part in trace_id_parts),
                     "run_id": run_id,
@@ -2438,6 +2478,10 @@ class SQLiteStorage:
                     "metadata": trace.get("metadata", {}),
                     "log_id": log_id,
                     "space_id": space_id,
+                    "trace_type": trace_type,
+                    "external_id": external_id,
+                    "schema_version": trace.get("schema_version"),
+                    "payload": trace.get("payload"),
                 }
                 trace_record["search_text"] = (
                     f"{trace_record['id']} {key} "
@@ -2454,8 +2498,8 @@ class SQLiteStorage:
         cursor.executemany(
             """
             INSERT OR IGNORE INTO traces
-            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id, trace_type, external_id, schema_version, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -2471,6 +2515,12 @@ class SQLiteStorage:
                     row["search_text"],
                     row["log_id"],
                     row["space_id"],
+                    row["trace_type"],
+                    row["external_id"],
+                    row["schema_version"],
+                    orjson.dumps(serialize_values(row["payload"]))
+                    if row["payload"] is not None
+                    else None,
                 )
                 for row in trace_rows
             ],
@@ -2515,8 +2565,7 @@ class SQLiteStorage:
                 candidates = value if isinstance(value, list) else [value]
                 for index, candidate in enumerate(candidates):
                     if (
-                        not isinstance(candidate, dict)
-                        or candidate.get("_type") != "trackio.trace"
+                        not SQLiteStorage._is_trace_payload(candidate)
                     ):
                         continue
 
@@ -2535,6 +2584,14 @@ class SQLiteStorage:
                         "timestamp": timestamp,
                         "messages": candidate.get("messages", []),
                         "metadata": candidate.get("metadata", {}),
+                        "trace_type": (
+                            "verifiers"
+                            if candidate.get("_type") == "trackio.verifiers_trace"
+                            else "trackio"
+                        ),
+                        "external_id": candidate.get("external_id"),
+                        "schema_version": candidate.get("schema_version"),
+                        "payload": candidate.get("payload"),
                     }
                     trace_record["_search_text"] = (
                         f"{trace_record['id']} {key} "
@@ -2571,6 +2628,7 @@ class SQLiteStorage:
         offset: int = 0,
         run_id: str | None = None,
         step: int | None = None,
+        trace_type: str | None = None,
     ) -> list[dict[str, Any]]:
         try:
             offset = max(0, int(offset or 0))
@@ -2606,6 +2664,9 @@ class SQLiteStorage:
                 if step is not None:
                     where.append("step = ?")
                     params.append(step)
+                if trace_type:
+                    where.append("trace_type = ?")
+                    params.append(trace_type)
                 if search:
                     needle = search.strip().lower()
                     if needle:
@@ -2613,7 +2674,9 @@ class SQLiteStorage:
                         params.append(f"%{needle}%")
 
                 query = f"""
-                    SELECT id, key, trace_index, run_name, run_id, step, timestamp, messages, metadata
+                    SELECT id, key, trace_index, run_name, run_id, step, timestamp,
+                           messages, metadata, trace_type, external_id,
+                           schema_version, payload
                     FROM traces
                     WHERE {" AND ".join(where)}
                     ORDER BY {order_by}
@@ -2646,6 +2709,12 @@ class SQLiteStorage:
                 "timestamp": row["timestamp"],
                 "messages": deserialize_values(orjson.loads(row["messages"])),
                 "metadata": deserialize_values(orjson.loads(row["metadata"])),
+                "trace_type": row["trace_type"],
+                "external_id": row["external_id"],
+                "schema_version": row["schema_version"],
+                "payload": deserialize_values(orjson.loads(row["payload"]))
+                if row["payload"] is not None
+                else None,
             }
             for row in rows
         ]
