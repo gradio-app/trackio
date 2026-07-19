@@ -1130,6 +1130,7 @@ def get_traces(
     limit: int | None = None,
     offset: int | None = 0,
     step: int | None = None,
+    trace_type: str | None = None,
 ) -> list[dict[str, Any]]:
     try:
         normalized_offset = max(0, int(offset)) if offset is not None else 0
@@ -1161,6 +1162,7 @@ def get_traces(
         offset=normalized_offset,
         run_id=run_id,
         step=normalized_step,
+        trace_type=trace_type,
     )
 
 
