@@ -1162,7 +1162,14 @@ table.board tr.linked-row:hover a {
   line-height: 1.5;
 }
 .index-paper-link {
-  margin: 0 0 12px;
+  margin: 14px 0 30px;
+  font-size: 19px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+.index-paper-link a {
+  text-underline-offset: 4px;
+  text-decoration-thickness: 2px;
 }
 .art-ico {
   width: 1em;

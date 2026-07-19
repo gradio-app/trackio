@@ -1625,9 +1625,11 @@
     deck.appendChild(list);
     const anchor =
       container.querySelector(".logbook-hub-summary") ||
-      container.querySelector(".agent-hint");
+      container.querySelector(".agent-hint") ||
+      Array.from(container.children).find((el) => el.tagName === "H1");
     container.insertBefore(deck, anchor ? anchor.nextSibling : container.firstChild);
-    container.closest(".book-intro").classList.add("has-pinned-notes");
+    const owner = container.closest(".page-section");
+    if (owner) owner.classList.add("has-pinned-notes");
   }
 
   function isIndexPaperLink(el) {
@@ -1716,7 +1718,6 @@
         } else {
           body.prepend(hint);
         }
-        hint.after(buildLogbookHubSummary(markdown));
         bookIntroBody = body;
       }
       layout.appendChild(body);
@@ -1731,7 +1732,25 @@
         RAIL_OBSERVERS.push(observer);
       }
     });
-    if (bookIntroBody) renderPinnedNotes(pinnedCells, bookIntroBody);
+    const pinnedSlugs = Array.from(
+      new Set(pinnedCells.map((cell) => cell.node && cell.node.slug).filter(Boolean))
+    );
+    const pinnedTarget =
+      pinnedSlugs.length === 1
+        ? Array.from(page.querySelectorAll(".page-section"))
+            .find((section) => section.dataset.slug === pinnedSlugs[0])
+            ?.querySelector(".page-body")
+        : bookIntroBody;
+    if (pinnedTarget) renderPinnedNotes(pinnedCells, pinnedTarget);
+    // Pinned cells are promoted into one deck. Remove their source render so
+    // summaries, posters, and notes do not appear twice in the continuous view.
+    page
+      .querySelectorAll(".pinned-source:not(.pinned-copy)")
+      .forEach((cell) => cell.remove());
+    const hubSummaryTarget = pinnedTarget || bookIntroBody;
+    if (hubSummaryTarget) {
+      hubSummaryTarget.appendChild(buildLogbookHubSummary(markdown));
+    }
     if (bookIntroBody) {
       const section = bookIntroBody.closest(".book-intro");
       const hasExtra = Array.from(bookIntroBody.children).some(

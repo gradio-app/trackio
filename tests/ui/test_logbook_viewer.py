@@ -120,6 +120,15 @@ def test_logbook_index_hub_summary(tmp_path, monkeypatch):
         "## Pages\n\n| Page |\n| --- |\n",
         encoding="utf-8",
     )
+    executive = logbook.ensure_page(proj, "Executive summary")
+    logbook.add_markdown_cell(proj, executive, "Pinned reproduction summary.")
+    logbook.set_cell_pinned(
+        proj, logbook.last_cell_id(proj, executive), page=executive
+    )
+    logbook.add_markdown_cell(proj, executive, "Pinned reproduction poster.")
+    logbook.set_cell_pinned(
+        proj, logbook.last_cell_id(proj, executive), page=executive
+    )
     claim = logbook.ensure_page(proj, "Claim 1: Demo")
     logbook.add_markdown_cell(
         proj,
@@ -163,9 +172,31 @@ def test_logbook_index_hub_summary(tmp_path, monkeypatch):
                 expect(intro.locator(".index-paper-link a")).to_have_attribute(
                     "href", "https://openreview.net/forum?id=abc123XYZ1"
                 )
+                assert (
+                    intro.locator(".index-paper-link").evaluate(
+                        "el => parseFloat(getComputedStyle(el).fontSize)"
+                    )
+                    >= 19
+                )
                 expect(intro.locator(".agent-hint")).to_have_count(1)
 
-                summary = page.locator(".logbook-hub-summary")
+                executive_body = page.locator(
+                    '[data-slug="executive-summary"] .page-body'
+                )
+                expect(executive_body.locator(".pinned-copy")).to_have_count(2)
+                expect(page.locator(".pinned-source:not(.pinned-copy)")).to_have_count(
+                    0
+                )
+                expect(intro.locator(".logbook-hub-summary")).to_have_count(0)
+                expect(executive_body.locator(":scope > .pinned-notes")).to_have_count(1)
+                expect(
+                    executive_body.locator(":scope > .logbook-hub-summary")
+                ).to_have_count(1)
+                assert executive_body.locator(":scope > *").evaluate_all(
+                    "els => els.map(el => el.className || el.tagName)"
+                ) == ["H1", "pinned-notes", "logbook-hub-summary"]
+
+                summary = executive_body.locator(".logbook-hub-summary")
                 expect(summary).to_have_count(1)
                 expect(summary.locator(".hub-summary-heading").nth(0)).to_have_text(
                     "Hugging Face artifacts"
