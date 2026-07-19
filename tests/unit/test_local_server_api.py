@@ -356,6 +356,7 @@ def test_get_tab_availability_reflects_data(temp_dir):
         "metrics": False,
         "system": False,
         "traces": False,
+        "verifiers-traces": False,
         "media": False,
         "reports": False,
         "files": False,
@@ -382,6 +383,7 @@ def test_get_tab_availability_reflects_data(temp_dir):
     assert result["media"] is False
     assert result["system"] is False
     assert result["traces"] is False
+    assert result["verifiers-traces"] is False
 
 
 def test_local_dashboard_supports_mcp(temp_dir):

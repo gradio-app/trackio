@@ -3,7 +3,6 @@ import hashlib
 import json as json_mod
 import os
 import shutil
-import sqlite3
 import time
 import uuid
 from collections.abc import Iterator
@@ -27,6 +26,7 @@ import huggingface_hub as hf
 import orjson
 
 from trackio import cas, references
+from trackio import database as sqlite3
 from trackio.commit_scheduler import CommitScheduler
 from trackio.dummy_commit_scheduler import DummyCommitScheduler
 from trackio.typehints import (
@@ -2193,6 +2193,7 @@ class SQLiteStorage:
             "metrics": False,
             "system": False,
             "traces": False,
+            "verifiers_traces": False,
             "media": False,
             "reports": False,
             "alerts": False,
@@ -2239,7 +2240,12 @@ class SQLiteStorage:
                 ('*"_type":"trackio.markdown"*',),
             )
             flags["system"] = _exists(conn, "SELECT 1 FROM system_metrics LIMIT 1")
-            flags["traces"] = _exists(conn, "SELECT 1 FROM traces LIMIT 1")
+            flags["traces"] = _exists(
+                conn, "SELECT 1 FROM traces WHERE trace_type = 'trackio' LIMIT 1"
+            )
+            flags["verifiers_traces"] = _exists(
+                conn, "SELECT 1 FROM traces WHERE trace_type = 'verifiers' LIMIT 1"
+            )
             flags["alerts"] = _exists(conn, "SELECT 1 FROM alerts LIMIT 1")
             flags["artifacts"] = _exists(
                 conn, "SELECT 1 FROM artifact_versions LIMIT 1"
@@ -2564,9 +2570,7 @@ class SQLiteStorage:
 
                 candidates = value if isinstance(value, list) else [value]
                 for index, candidate in enumerate(candidates):
-                    if (
-                        not SQLiteStorage._is_trace_payload(candidate)
-                    ):
+                    if not SQLiteStorage._is_trace_payload(candidate):
                         continue
 
                     trace_index = index if isinstance(value, list) else None
@@ -2724,6 +2728,7 @@ class SQLiteStorage:
         project: str,
         run: str | None = None,
         run_id: str | None = None,
+        trace_type: str | None = None,
     ) -> dict[str, Any]:
         """Return per-step trace counts and total for a run.
 
@@ -2742,15 +2747,20 @@ class SQLiteStorage:
                 if run_identity is None:
                     return {"total": 0, "steps": []}
                 cursor = conn.cursor()
+                where = [f"{run_identity[0]} = ?"]
+                params: list[Any] = [run_identity[1]]
+                if trace_type:
+                    where.append("trace_type = ?")
+                    params.append(trace_type)
                 cursor.execute(
                     f"""
                     SELECT step, COUNT(*) AS c
                     FROM traces
-                    WHERE {run_identity[0]} = ?
+                    WHERE {" AND ".join(where)}
                     GROUP BY step
                     ORDER BY step ASC
                     """,
-                    (run_identity[1],),
+                    params,
                 )
                 rows = cursor.fetchall()
         except sqlite3.OperationalError as e:
@@ -2900,17 +2910,17 @@ class SQLiteStorage:
     ) -> int:
         del arg2, db_name, source
         if action_code in {
-            sqlite3.SQLITE_SELECT,
-            sqlite3.SQLITE_READ,
-            sqlite3.SQLITE_FUNCTION,
+            sqlite3.sqlite_authorizer.SQLITE_SELECT,
+            sqlite3.sqlite_authorizer.SQLITE_READ,
+            sqlite3.sqlite_authorizer.SQLITE_FUNCTION,
         }:
-            return sqlite3.SQLITE_OK
-        pragma_code = getattr(sqlite3, "SQLITE_PRAGMA", None)
+            return sqlite3.sqlite_authorizer.SQLITE_OK
+        pragma_code = getattr(sqlite3.sqlite_authorizer, "SQLITE_PRAGMA", None)
         if action_code == pragma_code:
             pragma_name = (arg1 or "").lower()
             if pragma_name in _READ_ONLY_PRAGMAS:
-                return sqlite3.SQLITE_OK
-        return sqlite3.SQLITE_DENY
+                return sqlite3.sqlite_authorizer.SQLITE_OK
+        return sqlite3.sqlite_authorizer.SQLITE_DENY
 
     @staticmethod
     def _normalize_query_value(value: Any) -> Any:
@@ -2928,7 +2938,7 @@ class SQLiteStorage:
             raise FileNotFoundError(f"Project '{project}' not found.")
 
         normalized_query = SQLiteStorage._validate_read_only_query(query)
-        with SQLiteStorage._get_connection(db_path) as conn:
+        with sqlite3.readonly_sqlite_connect(str(db_path)) as conn:
             conn.set_authorizer(SQLiteStorage._query_authorizer)
             try:
                 cursor = conn.cursor()
@@ -2948,7 +2958,7 @@ class SQLiteStorage:
                     }
                     for row in fetched
                 ]
-            except sqlite3.DatabaseError as e:
+            except (sqlite3.DatabaseError, sqlite3.ReadonlyDatabaseError) as e:
                 raise ValueError(str(e)) from e
             finally:
                 conn.set_authorizer(None)
@@ -4537,12 +4547,15 @@ class SQLiteStorage:
             (artifact_id, manifest_digest),
         ).fetchone()
         if existing is not None:
+            existing_id = int(existing["id"])
+            existing_version = int(existing["version"])
             if metadata:
                 cursor.execute(
                     "UPDATE artifact_versions SET metadata = ? WHERE id = ?",
-                    (metadata_json, int(existing["id"])),
+                    (metadata_json, existing_id),
                 )
-            return int(existing["id"]), int(existing["version"]), False
+            cursor.close()
+            return existing_id, existing_version, False
         row = cursor.execute(
             "SELECT MAX(version) AS m FROM artifact_versions WHERE artifact_id = ?",
             (artifact_id,),
@@ -4565,7 +4578,9 @@ class SQLiteStorage:
                 now,
             ),
         )
-        return int(cursor.lastrowid), next_version, True
+        version_id = int(cursor.lastrowid)
+        cursor.close()
+        return version_id, next_version, True
 
     @staticmethod
     def insert_artifact_version(
@@ -4606,11 +4621,17 @@ class SQLiteStorage:
             raise ValueError(
                 f"Alias '{alias}' is reserved for version pointers (vN); choose another."
             )
+        # Replace the pointer inside the surrounding transaction. pyturso can
+        # retain the old target for an UPDATE/UPSERT issued immediately after a
+        # content-dedup lookup; delete+insert has consistent semantics on both
+        # supported engines and keeps the composite uniqueness invariant.
         conn.execute(
-            """INSERT INTO artifact_aliases (artifact_id, alias, artifact_version_id)
-            VALUES (?, ?, ?)
-            ON CONFLICT(artifact_id, alias) DO UPDATE SET
-                artifact_version_id = excluded.artifact_version_id""",
+            "DELETE FROM artifact_aliases WHERE artifact_id = ? AND alias = ?",
+            (artifact_id, alias),
+        )
+        conn.execute(
+            """INSERT INTO artifact_aliases
+            (artifact_id, alias, artifact_version_id) VALUES (?, ?, ?)""",
             (artifact_id, alias, version_id),
         )
 
@@ -4623,12 +4644,14 @@ class SQLiteStorage:
         version_int: int,
     ) -> None:
         """Reassign `alias` only when it does not move backward."""
-        current = conn.execute(
+        cursor = conn.execute(
             """SELECT av.version FROM artifact_aliases aa
             JOIN artifact_versions av ON av.id = aa.artifact_version_id
             WHERE aa.artifact_id = ? AND aa.alias = ?""",
             (artifact_id, alias),
-        ).fetchone()
+        )
+        current = cursor.fetchone()
+        cursor.close()
         if current is not None and int(current["version"]) > version_int:
             return
         SQLiteStorage._reassign_alias_cursor(conn, artifact_id, alias, version_id)

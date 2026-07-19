@@ -5,6 +5,7 @@
   import AlertPanel from "./components/AlertPanel.svelte";
   import Metrics from "./pages/Metrics.svelte";
   import Traces from "./pages/Traces.svelte";
+  import VerifiersTraces from "./pages/VerifiersTraces.svelte";
   import SystemMetrics from "./pages/SystemMetrics.svelte";
   import Media from "./pages/Media.svelte";
   import Reports from "./pages/Reports.svelte";
@@ -115,6 +116,7 @@
   const OPTIONAL_EMPTY_TABS = new Set([
     "system",
     "traces",
+    "verifiers-traces",
     "media",
     "reports",
     "files",
@@ -124,6 +126,7 @@
     "metrics",
     "system",
     "traces",
+    "verifiers-traces",
     "media",
     "reports",
     "runs",
@@ -251,6 +254,7 @@
       metrics: false,
       system: false,
       traces: false,
+      "verifiers-traces": false,
       media: false,
       reports: false,
       runs: false,
@@ -540,6 +544,7 @@
   let showSidebar = $derived(
     currentPage === "metrics" ||
       currentPage === "traces" ||
+      currentPage === "verifiers-traces" ||
       currentPage === "system" ||
       currentPage === "media" ||
       currentPage === "reports" ||
@@ -628,6 +633,11 @@
         />
       {:else if currentPage === "traces"}
         <Traces
+          project={selectedProject}
+          selectedRuns={selectedRunRecords}
+        />
+      {:else if currentPage === "verifiers-traces"}
+        <VerifiersTraces
           project={selectedProject}
           selectedRuns={selectedRunRecords}
         />

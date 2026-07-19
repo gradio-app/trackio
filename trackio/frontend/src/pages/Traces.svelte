@@ -80,7 +80,9 @@
     }
     try {
       const results = await Promise.all(
-        selectedRuns.map((run) => getTraceSteps(project, run)),
+        selectedRuns.map((run) =>
+          getTraceSteps(project, run, { trace_type: "trackio" }),
+        ),
       );
       if (requestId !== summaryRequestId) return;
       const merged = new Map();
@@ -127,6 +129,7 @@
             step: stepNum,
             limit: perRunLimit,
             offset: perRunOffset,
+            trace_type: "trackio",
           });
           return runTraces.map((trace) => normalizeTrace(trace, run.name));
         }),

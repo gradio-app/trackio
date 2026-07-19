@@ -117,9 +117,9 @@ export async function getTraces(project, run, options = {}) {
   return await callApi("/get_traces", params);
 }
 
-export async function getTraceSteps(project, run) {
-  const params = { project, ...normalizeRun(run) };
-  if (await isStaticMode()) return staticApi.getTraceSteps(project, run);
+export async function getTraceSteps(project, run, options = {}) {
+  const params = { project, ...normalizeRun(run), ...options };
+  if (await isStaticMode()) return staticApi.getTraceSteps(project, run, options);
   return await callApi("/get_trace_steps", params);
 }
 

@@ -6,7 +6,6 @@ import os
 import re
 import secrets
 import shutil
-import sqlite3
 import threading
 import time
 import warnings
@@ -26,6 +25,7 @@ from starlette.routing import Route
 import trackio.cas as cas
 import trackio.references as references
 import trackio.utils as utils
+from trackio import database as sqlite3
 from trackio.asgi_app import (
     cleanup_uploaded_temp_file,
     consume_uploaded_temp_file,
@@ -1170,8 +1170,11 @@ def get_trace_steps(
     project: str,
     run: str | None = None,
     run_id: str | None = None,
+    trace_type: str | None = None,
 ) -> dict[str, Any]:
-    return SQLiteStorage.get_trace_steps(project, run, run_id=run_id)
+    return SQLiteStorage.get_trace_steps(
+        project, run, run_id=run_id, trace_type=trace_type
+    )
 
 
 def query_project(project: str, query: str) -> dict[str, Any]:
@@ -1229,6 +1232,7 @@ def get_tab_availability(project: str) -> dict[str, bool]:
         "metrics": flags["metrics"],
         "system": flags["system"],
         "traces": flags["traces"],
+        "verifiers-traces": flags["verifiers_traces"],
         "media": flags["media"],
         "reports": flags["reports"] or flags["alerts"],
         "files": _project_has_files(project),

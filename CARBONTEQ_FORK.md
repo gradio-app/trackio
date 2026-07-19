@@ -2,8 +2,9 @@
 
 This repository is an additive fork of
 [`gradio-app/trackio`](https://github.com/gradio-app/trackio). It preserves the
-Trackio Python package, HTTP API, SQLite and Parquet persistence, artifacts, and
-the existing UI while adding platform-specific observability integrations.
+Trackio Python package, HTTP API, SQLite-compatible and Parquet persistence,
+artifacts, and the existing UI while adding platform-specific observability
+integrations.
 
 ## Current extension
 
@@ -12,8 +13,23 @@ complete JSON-safe Verifiers trace record. Native Verifiers `traces.jsonl`
 remains authoritative. Trackio is an idempotent, query-optimized copy keyed by
 `(run_id, trace_type, external_id)`.
 
-The existing `trackio.Trace` type is unchanged. The existing UI renders the
-projected messages; there is no fork-specific trace UI in this phase.
+The existing `trackio.Trace` type and trace UI are unchanged. Verifiers traces
+have a separate `/verifiers` workspace because a rollout is a graph with
+branches, rewards, model calls, tools, phase timing, and environment errors—not
+just a conversation. The Verifiers UI renders structured projections and links
+each rollout to its producing experiment; it never displays the raw payload.
+
+## Storage engine
+
+Turso is the default SQL metadata engine through the `pyturso` embedded driver.
+It retains Trackio's SQLite-compatible database-per-project model and local-first
+operation. Set `TRACKIO_DATABASE_ENGINE=sqlite` for the stdlib SQLite fallback.
+
+Turso stores run, metric, trace, artifact-manifest, and lineage metadata. It is
+not the object store: media, model bytes, and native evaluation bundles remain
+under Trackio's existing artifact/file storage boundary. A hosted Hugging Face
+Space is optional and is not required for local operation. Remote sync can be
+added later without changing the Trackio SDK contract.
 
 ## Upstream baseline
 
@@ -39,8 +55,9 @@ git push -u origin maintenance/upstream-YYYY-MM-DD
 
 Open a pull request into `carbonteq-ai/trackio:main`. Resolve conflicts by
 keeping upstream behavior intact and reapplying only the additive Verifiers
-fields. Before merging, verify standard traces, metrics, artifacts, API queries,
-SQLite migrations, and Parquet round trips as well as the Verifiers tests.
+fields. Before merging, verify both Turso and SQLite modes, standard traces,
+metrics, artifacts, API queries, SQLite-compatible migrations, Parquet round
+trips, and both trace UIs as well as the Verifiers tests.
 
 The repository should keep these remotes:
 
@@ -49,5 +66,5 @@ origin    git@github.com:carbonteq-ai/trackio.git
 upstream  https://github.com/gradio-app/trackio.git
 ```
 
-Rust, Tokio, Doris, object-storage redesign, and a custom frontend are deferred
-and are not part of this fork contract.
+Rust, Tokio, Doris, and object-storage redesign are deferred and are not part of
+this fork contract.

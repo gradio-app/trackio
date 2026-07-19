@@ -267,11 +267,13 @@ function parseTraceJsonField(value, fallback) {
   }
 }
 
-export async function getTraceSteps(_project, run) {
+export async function getTraceSteps(_project, run, options = {}) {
   const raw = await getTracesData();
   const counts = new Map();
   for (const row of raw) {
     if (!matchesRun(row, run)) continue;
+    const traceType = row.trace_type || "trackio";
+    if (options.trace_type && traceType !== options.trace_type) continue;
     const step = row.step;
     counts.set(step, (counts.get(step) || 0) + 1);
   }
@@ -547,7 +549,8 @@ export async function getTabAvailability() {
     media,
     reports,
     system: (systemRaw || []).length > 0,
-    traces: (tracesRaw || []).length > 0,
+    traces: (tracesRaw || []).some((row) => (row.trace_type || "trackio") === "trackio"),
+    "verifiers-traces": (tracesRaw || []).some((row) => row.trace_type === "verifiers"),
     files: (files || []).length > 0,
     artifacts: (artifactVersions || []).length > 0,
   };

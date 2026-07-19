@@ -35,6 +35,9 @@ describe("getPageFromPath without a base prefix", () => {
     expect(getPageFromPath()).toBe("metrics");
     setLocation("/traces");
     expect(getPageFromPath()).toBe("traces");
+
+    setLocation("/verifiers");
+    expect(getPageFromPath()).toBe("verifiers-traces");
     setLocation("/system");
     expect(getPageFromPath()).toBe("system");
   });
@@ -62,6 +65,9 @@ describe("navigateTo", () => {
     setLocation("/");
     navigateTo("traces");
     expect(globalThis.window.location.pathname).toBe("/traces");
+
+    navigateTo("verifiers-traces");
+    expect(globalThis.window.location.pathname).toBe("/verifiers");
   });
 
   test("with a base prefix pushes a prefixed path", () => {

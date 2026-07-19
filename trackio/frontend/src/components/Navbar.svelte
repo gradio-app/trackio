@@ -11,6 +11,7 @@
     { id: "metrics", label: "Metrics" },
     { id: "system", label: "System Metrics" },
     { id: "traces", label: "Traces" },
+    { id: "verifiers-traces", label: "Verifiers" },
     { id: "media", label: "Media & Tables" },
     { id: "reports", label: "Alerts & Reports" },
     { id: "runs", label: "Runs" },

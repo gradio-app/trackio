@@ -1716,6 +1716,21 @@ wheels = [
 ]
 
 [[package]]
+name = "pyturso"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5f/9d/c75ce150bf6a8afb4146fc95a52176de3e1fcb661bed547ccb4949a4edd4/pyturso-0.7.0.tar.gz", hash = "sha256:bf599d3416980c6989bd430f108c2515cb9e61e80acdc4abedbf83e93b8dcef8", size = 2847665, upload-time = "2026-07-14T09:18:44.504Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/44/f7b258a20e75ec4b037c934b6efdf74f16d2109328b73a9adc40b21e9cba/pyturso-0.7.0-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ccaeb088663c90ea90d33beab29986d5591ed05637dd49cae97ebb946bdf6b9b", size = 8752762, upload-time = "2026-07-14T09:18:34.348Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/ca/ebe06f759494984a0db261f287b0d8d9bd7c533f118f3df636d605e04605/pyturso-0.7.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:d6207c7629448a2b1fc51bc554668ec39a04ccf02b410cbb8dd0a2a23614874e", size = 7757877, upload-time = "2026-07-14T09:18:37.077Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/65/d65256b9952b85676475e7f1b785d9bf837c9273a984e7e2837846b88677/pyturso-0.7.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8649b23b7329a8f92f76efb014e0ca03180b9b8a16705667fa5f3836cfdf02a4", size = 25969316, upload-time = "2026-07-14T09:18:39.483Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/f2/fdb8d7692b6c8468b8ef8151a79c68822214b42e569e678fc6fc57c2abd1/pyturso-0.7.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0d79040fa12992b7f4449f95a3d7ea248d8cffeebec52fd838fa263179f1f84c", size = 26483677, upload-time = "2026-07-14T09:18:42.242Z" },
+]
+
+[[package]]
 name = "pytz"
 version = "2026.1.post1"
 source = { registry = "https://pypi.org/simple" }
@@ -2198,6 +2213,7 @@ dependencies = [
     { name = "orjson" },
     { name = "pillow" },
     { name = "python-multipart" },
+    { name = "pyturso" },
     { name = "starlette" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "uvicorn", extra = ["standard"] },
@@ -2249,6 +2265,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0,<9.0.0" },
     { name = "pytest-playwright", marker = "extra == 'dev'", specifier = ">=0.7.0,<1.0.0" },
     { name = "python-multipart", specifier = ">=0.0.9,<1.0.0" },
+    { name = "pyturso", specifier = ">=0.7.0,<1.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.9.3" },
     { name = "starlette", specifier = "<2.0.0" },
     { name = "tbparse", marker = "extra == 'tensorboard'", specifier = "==0.0.9" },
