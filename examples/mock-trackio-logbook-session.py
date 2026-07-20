@@ -222,6 +222,25 @@ def write_mock_trace(workspace: Path) -> Path:
     """Write a compact Codex-style rollout about building this demo logbook."""
     trace_path = workspace / "mock-codex-session.jsonl"
     session_id = "019b8f62-5a61-72d0-915f-cot-reproduction-demo"
+    first_turn_id = "019b8f62-5a62-72d0-915f-c07ae0d00001"
+    second_turn_id = "019b8f62-5a63-72d0-915f-c07ae0d00002"
+    first_prompt = (
+        "Build a Trackio logbook that reproduces the main chain-of-thought "
+        "and self-consistency results on a small GSM8K-style evaluation slice."
+    )
+    second_prompt = (
+        "Now run self-consistency and identify the most useful next experiment "
+        "from the errors."
+    )
+    first_answer = (
+        "I’ll establish the single-sample CoT baseline, then compare it with "
+        "majority-vote sampling."
+    )
+    final_answer = (
+        "The logbook now captures the baseline, the sampling tradeoff, the error "
+        "analysis, and the verifier-rerank decision. The generated prediction "
+        "and error files are available in Workspace."
+    )
 
     def record(timestamp: str, kind: str, payload: dict) -> dict:
         return {"timestamp": timestamp, "type": kind, "payload": payload}
@@ -248,7 +267,7 @@ def write_mock_trace(workspace: Path) -> Path:
         record(
             "2026-07-20T17:03:10.100Z",
             "event_msg",
-            {"type": "task_started"},
+            {"type": "task_started", "turn_id": first_turn_id},
         ),
         record(
             "2026-07-20T17:03:10.120Z",
@@ -259,13 +278,20 @@ def write_mock_trace(workspace: Path) -> Path:
                 "content": [
                     {
                         "type": "input_text",
-                        "text": (
-                            "Build a Trackio logbook that reproduces the main "
-                            "chain-of-thought and self-consistency results on a "
-                            "small GSM8K-style evaluation slice."
-                        ),
+                        "text": first_prompt,
                     }
                 ],
+            },
+        ),
+        record(
+            "2026-07-20T17:03:10.130Z",
+            "event_msg",
+            {
+                "type": "user_message",
+                "message": first_prompt,
+                "images": [],
+                "local_images": [],
+                "text_elements": [],
             },
         ),
         record(
@@ -295,13 +321,15 @@ def write_mock_trace(workspace: Path) -> Path:
                 "content": [
                     {
                         "type": "output_text",
-                        "text": (
-                            "I’ll establish the single-sample CoT baseline, "
-                            "then compare it with majority-vote sampling."
-                        ),
+                        "text": first_answer,
                     }
                 ],
             },
+        ),
+        record(
+            "2026-07-20T17:03:13.060Z",
+            "event_msg",
+            {"type": "agent_message", "message": first_answer, "phase": "commentary"},
         ),
         record(
             "2026-07-20T17:03:13.300Z",
@@ -351,12 +379,16 @@ def write_mock_trace(workspace: Path) -> Path:
         record(
             "2026-07-20T17:03:17.100Z",
             "event_msg",
-            {"type": "task_complete"},
+            {
+                "type": "task_complete",
+                "turn_id": first_turn_id,
+                "last_agent_message": first_answer,
+            },
         ),
         record(
             "2026-07-20T17:04:02.000Z",
             "event_msg",
-            {"type": "task_started"},
+            {"type": "task_started", "turn_id": second_turn_id},
         ),
         record(
             "2026-07-20T17:04:02.050Z",
@@ -367,12 +399,20 @@ def write_mock_trace(workspace: Path) -> Path:
                 "content": [
                     {
                         "type": "input_text",
-                        "text": (
-                            "Now run self-consistency and identify the most useful "
-                            "next experiment from the errors."
-                        ),
+                        "text": second_prompt,
                     }
                 ],
+            },
+        ),
+        record(
+            "2026-07-20T17:04:02.060Z",
+            "event_msg",
+            {
+                "type": "user_message",
+                "message": second_prompt,
+                "images": [],
+                "local_images": [],
+                "text_elements": [],
             },
         ),
         record(
@@ -460,20 +500,24 @@ def write_mock_trace(workspace: Path) -> Path:
                 "content": [
                     {
                         "type": "output_text",
-                        "text": (
-                            "The logbook now captures the baseline, the sampling "
-                            "tradeoff, the error analysis, and the verifier-rerank "
-                            "decision. The generated prediction and error files "
-                            "are available in Workspace."
-                        ),
+                        "text": final_answer,
                     }
                 ],
             },
         ),
         record(
+            "2026-07-20T17:04:12.010Z",
+            "event_msg",
+            {"type": "agent_message", "message": final_answer, "phase": "final"},
+        ),
+        record(
             "2026-07-20T17:04:12.200Z",
             "event_msg",
-            {"type": "task_complete"},
+            {
+                "type": "task_complete",
+                "turn_id": second_turn_id,
+                "last_agent_message": final_answer,
+            },
         ),
     ]
     trace_path.write_text(
@@ -487,6 +531,16 @@ def write_mock_trace_verifier(workspace: Path) -> Path:
     """Write a shorter follow-up Codex session for the verifier-rerank ablation."""
     trace_path = workspace / "mock-codex-verifier.jsonl"
     session_id = "019b8f77-2c40-71a4-88ee-verifier-rerank-ablation"
+    turn_id = "019b8f77-2c41-71a4-88ee-a811a7100001"
+    prompt = (
+        "Run the calculator-style verifier rerank ablation we queued and record "
+        "whether it beats more sampling."
+    )
+    answer = (
+        "Verifier rerank reaches 61.1% exact match at 2.1x cost — a better "
+        "tradeoff than 20-sample self-consistency. The reranker checkpoint is "
+        "saved under checkpoints/verifier."
+    )
 
     def record(timestamp: str, kind: str, payload: dict) -> dict:
         return {"timestamp": timestamp, "type": kind, "payload": payload}
@@ -510,7 +564,11 @@ def write_mock_trace_verifier(workspace: Path) -> Path:
             "turn_context",
             {"type": "turn_context", "model": "gpt-5-codex"},
         ),
-        record("2026-07-20T18:12:04.100Z", "event_msg", {"type": "task_started"}),
+        record(
+            "2026-07-20T18:12:04.100Z",
+            "event_msg",
+            {"type": "task_started", "turn_id": turn_id},
+        ),
         record(
             "2026-07-20T18:12:04.120Z",
             "response_item",
@@ -520,12 +578,20 @@ def write_mock_trace_verifier(workspace: Path) -> Path:
                 "content": [
                     {
                         "type": "input_text",
-                        "text": (
-                            "Run the calculator-style verifier rerank ablation we "
-                            "queued and record whether it beats more sampling."
-                        ),
+                        "text": prompt,
                     }
                 ],
+            },
+        ),
+        record(
+            "2026-07-20T18:12:04.130Z",
+            "event_msg",
+            {
+                "type": "user_message",
+                "message": prompt,
+                "images": [],
+                "local_images": [],
+                "text_elements": [],
             },
         ),
         record(
@@ -581,16 +647,25 @@ def write_mock_trace_verifier(workspace: Path) -> Path:
                 "content": [
                     {
                         "type": "output_text",
-                        "text": (
-                            "Verifier rerank reaches 61.1% exact match at 2.1x cost — "
-                            "a better tradeoff than 20-sample self-consistency. The "
-                            "reranker checkpoint is saved under checkpoints/verifier."
-                        ),
+                        "text": answer,
                     }
                 ],
             },
         ),
-        record("2026-07-20T18:12:12.400Z", "event_msg", {"type": "task_complete"}),
+        record(
+            "2026-07-20T18:12:12.110Z",
+            "event_msg",
+            {"type": "agent_message", "message": answer, "phase": "final"},
+        ),
+        record(
+            "2026-07-20T18:12:12.400Z",
+            "event_msg",
+            {
+                "type": "task_complete",
+                "turn_id": turn_id,
+                "last_agent_message": answer,
+            },
+        ),
     ]
     trace_path.write_text(
         "\n".join(json.dumps(item, ensure_ascii=False) for item in records) + "\n",

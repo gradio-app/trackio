@@ -1228,7 +1228,7 @@ def prepare_agent_trace_dataset(proj: Path) -> tuple[Path, int]:
         "---\n"
         "viewer_mode: traces\n"
         "pretty_name: Trackio Agent Traces\n"
-        "tags:\n- agent-traces\n- traces\n- trackio\n"
+        "tags:\n- agent-traces\n- format:agent-traces\n- traces\n- trackio\n"
         "configs:\n"
         "- config_name: default\n"
         "  default: true\n"
