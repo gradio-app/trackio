@@ -289,6 +289,10 @@
         /(trackio-artifact:\/\/\S+|trackio-local-path:\/\/\S+|https:\/\/huggingface\.co\/buckets\/[^\s<)]+#\S+)/
       );
       if (chip && uri) chip.dataset.resUrl = uri[1];
+      if (chip && meta.path) {
+        const ico = chip.querySelector(".art-ico");
+        if (ico) ico.outerHTML = FILE_ICON;
+      }
     } else if (meta.type === "dashboard") {
       const sp = body.match(/https:\/\/huggingface\.co\/spaces\/[^\s<>)"'`]+/);
       cell.dataset.resUrl = sp
@@ -510,6 +514,15 @@
     '<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>' +
     '<path d="M3 8 8 3M16 3l5 5M21 16l-5 5M8 21l-5-5"/></svg>';
 
+  const PIN_ICON =
+    '<svg class="pin-ico" viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 ' +
+    '1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg>';
+
+  const FILE_ICON =
+    '<svg class="art-file-ico" viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path d="M6 3.5h8l4 4V20H6zM14 3.5V8h4"/></svg>';
+
   // Figures are rendered in same-origin iframes, so fullscreen the fitted
   // wrapper rather than the iframe document. This uses the browser's native
   // fullscreen UI and preserves the figure's existing responsive sizing.
@@ -638,8 +651,9 @@
       ? `<span class="out-artifact-state open">Open ↗</span>`
       : `<span class="out-artifact-state">publish to share</span>`;
     const meta = parts.length ? `${parts.join(" · ")} · ${state}` : state;
+    const icon = info.isPathRef ? FILE_ICON : ARTIFACT_ICON_IMG;
     el.innerHTML =
-      `<span class="out-artifact-ico">${ARTIFACT_ICON_IMG}</span>` +
+      `<span class="out-artifact-ico">${icon}</span>` +
       `<span class="out-artifact-name">${esc(info.name)}</span>` +
       `<span class="out-artifact-meta">${meta}</span>`;
     return el;
@@ -1390,6 +1404,8 @@
     cells.forEach(({ meta, body }) => {
       const cell = renderCell(meta, body, list);
       cell.classList.add("pinned-copy");
+      const title = cell.querySelector(".cell-title");
+      if (title) title.insertAdjacentHTML("afterbegin", PIN_ICON);
     });
     deck.appendChild(list);
     const anchor =
@@ -1579,6 +1595,62 @@
     if (!cli) return;
     cli.innerHTML = "";
     cli.appendChild(buildAgentHint(view));
+    const destination = buildHubDestinationLink(view);
+    if (destination) cli.appendChild(destination);
+  }
+
+  function hubDestination(view) {
+    if (view === "trace" && MANIFEST.trace_dataset) {
+      return {
+        label: "View Hugging Face dataset:",
+        url: MANIFEST.trace_dataset,
+        fallback: "Agent Traces dataset",
+      };
+    }
+    if (view === "workspace") {
+      const bucketId = (MANIFEST.workspace || {}).bucket_id;
+      const url =
+        MANIFEST.workspace_bucket ||
+        (bucketId ? `https://huggingface.co/buckets/${bucketId}` : "");
+      if (url) {
+        return {
+          label: "View Hugging Face Bucket:",
+          url,
+          fallback: "Workspace Bucket",
+        };
+      }
+    }
+    return null;
+  }
+
+  function buildHubDestinationLink(view) {
+    const destination = hubDestination(view);
+    if (!destination || !destination.url.startsWith("https://huggingface.co/")) {
+      return null;
+    }
+    const row = document.createElement("div");
+    row.className = "hub-destination";
+    const label = document.createElement("span");
+    label.textContent = destination.label;
+    const link = document.createElement("a");
+    link.href = destination.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent =
+      destination.url
+        .replace(/^https:\/\/huggingface\.co\/(?:datasets|buckets)\//, "")
+        .replace(/\/$/, "") || destination.fallback;
+    link.title = destination.url;
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M14 5h5v5M19 5l-8 8M19 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5");
+    icon.appendChild(path);
+    link.appendChild(icon);
+    row.appendChild(label);
+    row.appendChild(link);
+    return row;
   }
 
   function buildAgentHint(view) {
@@ -1956,16 +2028,17 @@
     row.appendChild(type);
     row.appendChild(size);
     row.appendChild(modified);
-    const url = isLocalPreview()
-      ? file.local_url
-      : file.download_url || file.bucket_url;
+    const url =
+      isLocalPreview() && file.local_url
+        ? file.local_url
+        : file.download_url || file.bucket_url;
     if (url) {
       const download = document.createElement("a");
       download.className = "workspace-download";
       download.href = url;
       download.title = "Download";
       download.setAttribute("aria-label", `Download ${file.name}`);
-      if (isLocalPreview()) download.download = file.name;
+      if (isLocalPreview() && file.local_url) download.download = file.name;
       download.appendChild(svgIcon("download"));
       row.appendChild(download);
     } else {

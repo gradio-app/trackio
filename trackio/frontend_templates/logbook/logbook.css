@@ -31,6 +31,7 @@ body {
 
 html {
   scroll-behavior: smooth;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -182,6 +183,10 @@ body[data-view="workspace"] #sidebar-foot {
   margin: 0 0 10px;
   overflow-wrap: anywhere;
 }
+#logbook-cli {
+  display: grid;
+  gap: 7px;
+}
 
 #page {
   width: 100%;
@@ -216,25 +221,22 @@ body[data-view="workspace"] #sidebar-foot {
 
 /* ---- pinned notes ---- */
 .pinned-notes {
-  margin: 30px 0 0;
+  margin: 30px 0 32px;
 }
 .pinned-notes-list .cell {
   margin: 0;
-  border: 1px solid rgba(249, 115, 22, 0.55);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.86);
-  overflow: hidden;
 }
-.pinned-notes-list .cell .cell-head {
-  padding: 14px 18px;
-  background: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid var(--line);
+.pinned-notes-list .cell-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
-.pinned-notes-list .cell .cell-head.no-title {
-  padding: 10px 18px;
-}
-.pinned-notes-list .cell .cell-body {
-  padding: 14px 18px 18px;
+.pin-ico {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  fill: var(--accent);
+  stroke: none;
 }
 .pinned-notes-list .cell + .cell {
   margin-top: 12px;
@@ -415,7 +417,7 @@ body[data-view="workspace"] #sidebar-foot {
 /* ---- notebook-style cells ---- */
 .cell {
   max-width: 100%;
-  margin: 0 0 22px;
+  margin: 0 0 32px;
   background: none;
   border: none;
   border-radius: 0;
@@ -1160,6 +1162,47 @@ table.board tr.linked-row:hover a {
   font-size: 12px;
   color: var(--muted);
 }
+.hub-destination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.hub-destination a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.hub-destination a:hover {
+  border-color: var(--accent);
+  background: #ffedd5;
+  color: #c2410c;
+}
+.hub-destination svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 .index-paper-link {
   margin: 14px 0 30px;
@@ -1176,6 +1219,20 @@ table.board tr.linked-row:hover a {
   height: 1em;
   object-fit: contain;
   vertical-align: -0.15em;
+}
+.art-file-ico {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -0.2em;
+}
+.out-artifact-ico .art-file-ico {
+  color: var(--muted);
 }
 
 /* ---- scroll-to-resource highlight ---- */
@@ -1403,14 +1460,19 @@ table.board tr.linked-row:hover a {
 
 /* ---- top-level logbook views ---- */
 #view-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   width: 100%;
   max-width: 1080px;
   margin: 0 auto 24px;
+  padding-top: 10px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 26px;
   border-bottom: 1px solid var(--line);
+  background: var(--paper);
 }
 #view-tabs a {
   display: inline-flex;
@@ -1742,7 +1804,6 @@ table.board tr.linked-row:hover a {
   gap: 8px;
   min-height: 39px;
   padding: 8px 13px;
-  border-bottom: 1px solid #eceef1;
   background: #fafafa;
   cursor: pointer;
   font-weight: 650;
@@ -1762,7 +1823,6 @@ table.board tr.linked-row:hover a {
 }
 .workspace-folder-children {
   padding-left: 20px;
-  border-left: 1px solid #eceef1;
 }
 .workspace-file {
   display: grid;
@@ -1770,13 +1830,9 @@ table.board tr.linked-row:hover a {
   align-items: center;
   min-height: 44px;
   padding: 7px 10px 7px 13px;
-  border-bottom: 1px solid #f0f1f3;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 10.5px;
-}
-.workspace-file:last-child {
-  border-bottom: 0;
 }
 .workspace-file-name {
   display: flex;

@@ -118,15 +118,21 @@ def seed_repro_files(workspace: Path) -> None:
         print("mean_tokens=184")
         print("job=https://huggingface.co/jobs/mock-org/cot-baseline-001")
 
-        Path("results").mkdir(exist_ok=True)
+        out = Path("results/baseline/predictions.jsonl")
+        out.parent.mkdir(parents=True, exist_ok=True)
         predictions = [
             {"id": "gsm8k-0007", "predicted": 18, "gold": 18, "correct": True},
             {"id": "gsm8k-0042", "predicted": 5, "gold": 7, "correct": False},
             {"id": "gsm8k-0113", "predicted": 120, "gold": 120, "correct": True},
         ]
-        out = Path("results/baseline_predictions.jsonl")
         out.write_text("\\n".join(json.dumps(row) for row in predictions) + "\\n")
         print(f"wrote {out}")
+
+        metrics = Path("results/baseline/metrics.csv")
+        metrics.write_text(
+            "metric,value\\nexact_match,0.414\\nrationale_parse_rate,0.922\\nmean_tokens,184\\n"
+        )
+        print(f"wrote {metrics}")
         """,
     )
     write_file(
@@ -145,15 +151,21 @@ def seed_repro_files(workspace: Path) -> None:
         print("cost_multiplier=18.6")
         print("dashboard=https://huggingface.co/spaces/mock-org/cot-trackio-dashboard")
 
-        Path("results").mkdir(exist_ok=True)
+        out = Path("results/self_consistency/generations.jsonl")
+        out.parent.mkdir(parents=True, exist_ok=True)
         generations = [
             {"id": "gsm8k-0007", "samples": 20, "votes": {"18": 13, "16": 5, "20": 2}, "final": 18},
             {"id": "gsm8k-0042", "samples": 20, "votes": {"7": 11, "5": 9}, "final": 7},
             {"id": "gsm8k-0113", "samples": 20, "votes": {"120": 17, "60": 3}, "final": 120},
         ]
-        out = Path("results/self_consistency_generations.jsonl")
         out.write_text("\\n".join(json.dumps(row) for row in generations) + "\\n")
         print(f"wrote {out}")
+
+        margins = Path("results/self_consistency/vote_margins.csv")
+        margins.write_text(
+            "id,margin\\ngsm8k-0007,0.65\\ngsm8k-0042,0.10\\ngsm8k-0113,0.85\\n"
+        )
+        print(f"wrote {margins}")
         """,
     )
     write_file(
@@ -171,11 +183,37 @@ def seed_repro_files(workspace: Path) -> None:
             print(f"{name}: {count}")
         print("dominant_failure=arithmetic slip")
 
-        Path("results").mkdir(exist_ok=True)
+        out = Path("results/error_analysis/buckets.csv")
+        out.parent.mkdir(parents=True, exist_ok=True)
         rows = ["bucket,count"] + [f"{name},{count}" for name, count in buckets.items()]
-        out = Path("results/error_buckets.csv")
         out.write_text("\\n".join(rows) + "\\n")
         print(f"wrote {out}")
+        """,
+    )
+    write_file(
+        workspace / "scripts" / "run_verifier_rerank.py",
+        """
+        import json
+        from pathlib import Path
+
+        print("ablation=verifier_rerank base=self_consistency")
+        print("exact_match=0.611")
+        print("cost_multiplier=2.1")
+
+        preds = Path("results/verifier/rerank_predictions.jsonl")
+        preds.parent.mkdir(parents=True, exist_ok=True)
+        reranked = [
+            {"id": "gsm8k-0007", "before": 18, "after": 18, "verifier_score": 0.97},
+            {"id": "gsm8k-0042", "before": 7, "after": 12, "verifier_score": 0.71},
+            {"id": "gsm8k-0113", "before": 120, "after": 120, "verifier_score": 0.99},
+        ]
+        preds.write_text("\\n".join(json.dumps(row) for row in reranked) + "\\n")
+        print(f"wrote {preds}")
+
+        ckpt = Path("checkpoints/verifier/reranker.pt")
+        ckpt.parent.mkdir(parents=True, exist_ok=True)
+        ckpt.write_bytes(b"mock-verifier-weights\\n" * 512)
+        print(f"wrote {ckpt}")
         """,
     )
 
@@ -288,7 +326,7 @@ def write_mock_trace(workspace: Path) -> Path:
                     "exact_match=0.414\n"
                     "rationale_parse_rate=0.922\n"
                     "mean_tokens=184\n"
-                    "wrote results/baseline_predictions.jsonl"
+                    "wrote results/baseline/predictions.jsonl"
                 ),
             },
         ),
@@ -363,7 +401,7 @@ def write_mock_trace(workspace: Path) -> Path:
                     "exact_match=0.563\n"
                     "majority_margin_mean=0.31\n"
                     "cost_multiplier=18.6\n"
-                    "wrote results/self_consistency_generations.jsonl"
+                    "wrote results/self_consistency/generations.jsonl"
                 ),
             },
         ),
@@ -391,7 +429,7 @@ def write_mock_trace(workspace: Path) -> Path:
                     "answer extraction: 7\n"
                     "ambiguous question: 3\n"
                     "dominant_failure=arithmetic slip\n"
-                    "wrote results/error_buckets.csv"
+                    "wrote results/error_analysis/buckets.csv"
                 ),
             },
         ),
@@ -445,6 +483,122 @@ def write_mock_trace(workspace: Path) -> Path:
     return trace_path
 
 
+def write_mock_trace_verifier(workspace: Path) -> Path:
+    """Write a shorter follow-up Codex session for the verifier-rerank ablation."""
+    trace_path = workspace / "mock-codex-verifier.jsonl"
+    session_id = "019b8f77-2c40-71a4-88ee-verifier-rerank-ablation"
+
+    def record(timestamp: str, kind: str, payload: dict) -> dict:
+        return {"timestamp": timestamp, "type": kind, "payload": payload}
+
+    records = [
+        record(
+            "2026-07-20T18:12:04.000Z",
+            "session_meta",
+            {
+                "id": session_id,
+                "timestamp": "2026-07-20T18:12:04.000Z",
+                "cwd": str(workspace),
+                "originator": "codex_cli_rs",
+                "cli_version": "0.106.0",
+                "source": "cli",
+                "model_provider": "openai",
+            },
+        ),
+        record(
+            "2026-07-20T18:12:04.050Z",
+            "turn_context",
+            {"type": "turn_context", "model": "gpt-5-codex"},
+        ),
+        record("2026-07-20T18:12:04.100Z", "event_msg", {"type": "task_started"}),
+        record(
+            "2026-07-20T18:12:04.120Z",
+            "response_item",
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Run the calculator-style verifier rerank ablation we "
+                            "queued and record whether it beats more sampling."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T18:12:06.300Z",
+            "response_item",
+            {
+                "type": "reasoning",
+                "summary": [
+                    {
+                        "type": "summary_text",
+                        "text": (
+                            "Arithmetic slips were the dominant error, so a verifier "
+                            "that rescopes the final answer should help more than "
+                            "extra samples. I'll rerank the self-consistency outputs."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T18:12:07.400Z",
+            "response_item",
+            {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call_verifier",
+                "arguments": json.dumps(
+                    {"cmd": "python scripts/run_verifier_rerank.py", "yield_time_ms": 10000}
+                ),
+            },
+        ),
+        record(
+            "2026-07-20T18:12:09.900Z",
+            "response_item",
+            {
+                "type": "function_call_output",
+                "call_id": "call_verifier",
+                "output": (
+                    "ablation=verifier_rerank base=self_consistency\n"
+                    "exact_match=0.611\n"
+                    "cost_multiplier=2.1\n"
+                    "wrote results/verifier/rerank_predictions.jsonl\n"
+                    "wrote checkpoints/verifier/reranker.pt"
+                ),
+            },
+        ),
+        record(
+            "2026-07-20T18:12:12.100Z",
+            "response_item",
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": (
+                            "Verifier rerank reaches 61.1% exact match at 2.1x cost — "
+                            "a better tradeoff than 20-sample self-consistency. The "
+                            "reranker checkpoint is saved under checkpoints/verifier."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record("2026-07-20T18:12:12.400Z", "event_msg", {"type": "task_complete"}),
+    ]
+    trace_path.write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in records) + "\n",
+        encoding="utf-8",
+    )
+    return trace_path
+
+
 def build_logbook(workspace: Path) -> None:
     py = sys.executable
     cwd = Path.cwd()
@@ -456,6 +610,12 @@ def build_logbook(workspace: Path) -> None:
             proj,
             trace_path,
             title="CoT reproduction session",
+        )
+        verifier_trace_path = write_mock_trace_verifier(workspace)
+        logbook.attach_trace(
+            proj,
+            verifier_trace_path,
+            title="Verifier rerank ablation",
         )
 
         baselines = logbook.ensure_page(proj, "Baselines")
@@ -470,6 +630,9 @@ def build_logbook(workspace: Path) -> None:
             "without a clean final answer marker. Evaluated on a slice of "
             "https://huggingface.co/datasets/openai/gsm8k.",
             title="Baseline result",
+        )
+        logbook.set_cell_pinned(
+            proj, logbook.last_cell_id(proj, baselines), page=baselines
         )
         logbook.run_and_log(
             proj,
@@ -540,6 +703,12 @@ def build_logbook(workspace: Path) -> None:
             ),
             language="python",
         )
+        logbook.run_and_log(
+            proj,
+            [py, "scripts/run_verifier_rerank.py"],
+            page="Ablations",
+            title="Verifier rerank ablation",
+        )
         logbook.write_site_files(proj)
     finally:
         os.chdir(cwd)
@@ -556,7 +725,8 @@ def main() -> None:
     print("\nMock logbook created.")
     print(f"Workspace: {workspace}")
     print(f"Logbook files: {logbook_dir}")
-    print(f"Mock trace: {workspace / 'mock-codex-session.jsonl'}")
+    print(f"Mock traces: {workspace / 'mock-codex-session.jsonl'}")
+    print(f"             {workspace / 'mock-codex-verifier.jsonl'}")
     read_command = f"trackio logbook read --path {_shell_quote(str(workspace))}"
     open_command = f"trackio logbook serve {_shell_quote(str(workspace))}"
     print(f"Read logbook with: {read_command}")

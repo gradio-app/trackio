@@ -1031,7 +1031,7 @@ def main():
     logbook_sub = logbook_parser.add_subparsers(
         dest="logbook_action",
         required=True,
-        metavar="{open,cell,run,page,attach,remove,read,serve,publish,sync}",
+        metavar="{open,cell,run,page,attach,remove,read,serve,publish}",
     )
 
     lb_open = logbook_sub.add_parser(
@@ -1207,13 +1207,31 @@ def main():
     lb_serve.add_argument("--no-browser", action="store_true")
 
     lb_pub = logbook_sub.add_parser(
-        "publish", help="Publish to a static HF Space (first publish enables auto-sync)"
+        "publish", help="Publish the current logbook state to Hugging Face"
     )
     lb_pub.add_argument("space_id", nargs="?", help="HF Space id (username/space)")
     lb_pub.add_argument(
         "--private",
         action="store_true",
-        help="Make the logbook and any promoted dashboards/buckets private",
+        help=(
+            "Make the logbook and promoted dashboards/artifacts private "
+            "(Traces and Workspace are selected separately)"
+        ),
+    )
+    lb_pub.add_argument(
+        "--traces",
+        choices=("public", "private", "none"),
+        help="Trace publication policy (otherwise prompted; default none)",
+    )
+    lb_pub.add_argument(
+        "--workspace",
+        choices=("public", "private", "none"),
+        help="Workspace publication policy (otherwise prompted; default none)",
+    )
+    lb_pub.add_argument(
+        "--review-publication",
+        action="store_true",
+        help="Ask the Traces and Workspace publication questions again",
     )
 
     lb_pin = logbook_sub.add_parser(
@@ -1233,11 +1251,6 @@ def main():
         "--unpin", action="store_true", help="Unpin the cell instead of pinning it"
     )
 
-    logbook_sub.add_parser(
-        "sync", help="Push local edits to the Space now (after the first publish)"
-    )
-
-    logbook_sub.add_parser("_sync")
     logbook_sub.add_parser("sync-todos")
 
     args, unknown_args = parser.parse_known_args()
@@ -1820,13 +1833,6 @@ def main():
         parser.print_help()
 
 
-def _sync_suffix(lb, proj):
-    if lb.is_autosync(proj):
-        space = lb.read_metadata(proj).get("space_id")
-        return f" · syncing to {space}…"
-    return ""
-
-
 def _logbook_cell_target(lb, proj, args):
     return lb.resolve_page(proj, getattr(args, "page", None))
 
@@ -1894,6 +1900,35 @@ def _read_logbook_payload(path_or_text, inline_text):
     return path_or_text
 
 
+def _prompt_logbook_publication(
+    *,
+    subject: str,
+    destination: str,
+    count: int,
+    unit: str,
+    warning: str,
+) -> str:
+    noun = unit if count == 1 else f"{unit}s"
+    print(f"\n{subject}: {count} {noun}.")
+    print(warning)
+    prompt = (
+        f"Publish to a [p]ublic {destination} / p[r]ivate {destination} / "
+        "[N]ot published? [N]: "
+    )
+    while True:
+        try:
+            answer = input(prompt).strip().lower()
+        except EOFError:
+            answer = ""
+        if answer in {"", "n", "none", "no"}:
+            return "none"
+        if answer in {"p", "public"}:
+            return "public"
+        if answer in {"r", "private"}:
+            return "private"
+        print("Enter p for public, r for private, or press Enter for not published.")
+
+
 def _handle_logbook(args):
     from trackio import logbook as lb
 
@@ -1945,7 +1980,7 @@ def _handle_logbook(args):
                 capture_artifacts=not getattr(args, "no_artifacts", False),
             )
             slug = lb.read_metadata(proj).get("last_page", "?")
-            print(f"Logged run to page '{slug}'.{_sync_suffix(lb, proj)}")
+            print(f"Logged run to page '{slug}'.")
             sys.exit(rc)
         elif action == "cell":
             proj = lb.require_project_dir()
@@ -2004,16 +2039,11 @@ def _handle_logbook(args):
                     space_id=args.space_id,
                     title=args.title,
                 )
-            print(
-                f"Logged {args.cell_type} cell to page "
-                f"'{slug}'.{_sync_suffix(lb, proj)}"
-            )
-            lb.trigger_autosync(proj)
+            print(f"Logged {args.cell_type} cell to page '{slug}'.")
         elif action == "page":
             proj = lb.require_project_dir()
             page_slug = lb.ensure_page(proj, args.title)
-            print(f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}")
-            lb.trigger_autosync(proj)
+            print(f"Selected page '{page_slug}' as default.")
         elif action == "attach":
             proj = lb.require_project_dir()
             if args.attach_type == "trace":
@@ -2021,18 +2051,12 @@ def _handle_logbook(args):
                 print(
                     f"Attached {trace.get('provider', 'agent')} trace "
                     f"'{trace['id']}' ({trace.get('event_count', 0)} events)."
-                    f"{_sync_suffix(lb, proj)}"
                 )
-                lb.trigger_autosync(proj)
         elif action == "remove":
             proj = lb.require_project_dir()
             if args.remove_type == "trace":
                 lb.remove_trace(proj, args.session_id)
-                print(
-                    f"Removed attached trace '{args.session_id}'."
-                    f"{_sync_suffix(lb, proj)}"
-                )
-                lb.trigger_autosync(proj)
+                print(f"Removed attached trace '{args.session_id}'.")
         elif action == "pin":
             proj = lb.require_project_dir()
             cell_id = args.cell_id or lb.last_cell_id(proj, page=args.page)
@@ -2047,9 +2071,8 @@ def _handle_logbook(args):
             verb = "Unpinned" if args.unpin else "Pinned"
             print(
                 f"{verb} cell {cell_id} on page "
-                f"'{res['page']}'.{_sync_suffix(lb, proj)}"
+                f"'{res['page']}'."
             )
-            lb.trigger_autosync(proj)
         elif action == "read":
             source, view = lb.split_read_view(args.path)
             proj = lb.resolve_read_source(source)
@@ -2103,25 +2126,118 @@ def _handle_logbook(args):
                     print(format_json(cell))
                 else:
                     _print_logbook_cell(cell)
-        elif action == "_sync":
-            lb.sync_worker()
         elif action == "sync-todos":
             lb.sync_todos_from_stdin()
         elif action == "serve":
             lb.serve(path=args.path, port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
-            url = lb.publish(space_id=args.space_id, private=args.private)
+            proj = lb.require_project_dir()
+            if args.review_publication and (args.traces or args.workspace):
+                raise lb.LogbookError(
+                    "--review-publication cannot be combined with --traces or "
+                    "--workspace."
+                )
+            inventory = lb.publication_inventory(proj)
+            metadata = lb.read_metadata(proj)
+            if not (args.space_id or metadata.get("space_id")):
+                raise lb.LogbookError(
+                    "No Space id. Provide one: trackio logbook publish <username/space>"
+                )
+            saved_trace = metadata.get("trace_publication")
+            saved_workspace = metadata.get("workspace_publication")
+            trace_publication = args.traces
+            reused_preference = False
+            if (
+                inventory["trace_count"]
+                and args.traces is None
+                and (args.review_publication or saved_trace is None)
+            ):
+                trace_publication = _prompt_logbook_publication(
+                    subject="Attached traces",
+                    destination="Dataset",
+                    count=inventory["trace_count"],
+                    unit="session",
+                    warning=(
+                        "Review Traces locally before publishing. Agent traces can "
+                        "contain prompts, tool inputs, command output, local paths, "
+                        "screenshots, secrets, private code, and personal data."
+                        + (
+                            " Choosing Not published will retract the previously "
+                            "published dedicated Dataset."
+                            if saved_trace in {"public", "private"}
+                            else ""
+                        )
+                    ),
+                )
+            elif args.traces is None and saved_trace in {"public", "private", "none"}:
+                trace_publication = saved_trace
+                if inventory["trace_count"]:
+                    reused_preference = True
+                    description = (
+                        f"{saved_trace} Dataset"
+                        if saved_trace != "none"
+                        else "not published"
+                    )
+                    print(
+                        "Using saved Traces publication preference: "
+                        f"{description}."
+                    )
+            workspace_publication = args.workspace
+            if (
+                inventory["workspace_file_count"]
+                and args.workspace is None
+                and (args.review_publication or saved_workspace is None)
+            ):
+                workspace_publication = _prompt_logbook_publication(
+                    subject="Tracked Workspace files",
+                    destination="HF Bucket",
+                    count=inventory["workspace_file_count"],
+                    unit="file",
+                    warning=(
+                        "Review the Workspace locally before publishing and make "
+                        "sure these files are safe to share."
+                        + (
+                            " Choosing Not published will retract the previously "
+                            "published dedicated HF Bucket."
+                            if saved_workspace in {"public", "private"}
+                            else ""
+                        )
+                    ),
+                )
+            elif args.workspace is None and saved_workspace in {
+                "public",
+                "private",
+                "none",
+            }:
+                workspace_publication = saved_workspace
+                if inventory["workspace_file_count"]:
+                    reused_preference = True
+                    description = (
+                        f"{saved_workspace} HF Bucket"
+                        if saved_workspace != "none"
+                        else "not published"
+                    )
+                    print(
+                        "Using saved Workspace publication preference: "
+                        f"{description}."
+                    )
+            if reused_preference:
+                print(
+                    "Run `trackio logbook publish --review-publication` to choose "
+                    "again."
+                )
+            url = lb.publish(
+                space_id=args.space_id,
+                hf_token=args.hf_token,
+                private=args.private,
+                trace_publication=trace_publication,
+                workspace_publication=workspace_publication,
+            )
             print(f"Published: {url}")
             space_id = lb.read_metadata(lb.require_project_dir()).get("space_id")
             if space_id:
                 subdomain = re.sub(r"[^a-z0-9]+", "-", space_id.lower()).strip("-")
                 print(f"Rendered at: https://{subdomain}.static.hf.space/")
-        elif action == "sync":
-            proj = lb.require_project_dir()
-            if not lb.is_autosync(proj):
-                error_exit("Publish first: trackio logbook publish <username/space>")
-            lb.trigger_autosync(proj)
-            print(f"Syncing to {lb.read_metadata(proj).get('space_id')}…")
     except lb.LogbookError as e:
         error_exit(str(e))
 

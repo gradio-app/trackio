@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -29,6 +30,16 @@ VIEWER_FILES = [
     "trackio-wordmark-dark.png",
     "bucket-icon.svg",
 ]
+PRIVATE_STATE_IGNORE_PATTERNS = (
+    "/trace_sources.json",
+    "/traces/",
+    "/workspace_baselines/",
+    "/workspace_bucket_state.json",
+    "/trace_dataset/",
+    "/imported_workspace.json",
+    "/logbook/traces/",
+    "/logbook/workspace.json",
+)
 
 TOC_HEADING = "## Pages"
 TOC_HEADER = "| Page |"
@@ -148,18 +159,44 @@ def _project_from_url(url: str) -> Path:
     proj = Path(tempfile.mkdtemp(prefix="trackio-logbook-")) / PROJECT_DIR_NAME
     root = logbook_root(proj)
     root_resolved = root.resolve()
-    for node in _walk(manifest.get("root") or {}):
-        file = node.get("file")
-        if not file:
-            continue
+
+    def fetch_to_project(file: str) -> bool:
         dest = (root / file).resolve()
         if not dest.is_relative_to(root_resolved):
-            continue
+            return False
         dest.parent.mkdir(parents=True, exist_ok=True)
         try:
             dest.write_text(fetch(file), encoding="utf-8")
         except Exception:
+            return False
+        return True
+
+    files = {
+        node.get("file")
+        for node in _walk(manifest.get("root") or {})
+        if node.get("file")
+    }
+    workspace_file = (manifest.get("workspace") or {}).get("file")
+    if workspace_file:
+        files.add(workspace_file)
+    trace_sessions = manifest.get("traces") or []
+    for session in trace_sessions:
+        index_file = session.get("index_file")
+        if not index_file or not fetch_to_project(index_file):
             continue
+        trace_index = _read_json_file(root / index_file)
+        files.update(
+            chunk.get("file")
+            for chunk in trace_index.get("chunks") or []
+            if chunk.get("file")
+        )
+    for file in sorted(files):
+        if not (root / file).is_file():
+            fetch_to_project(file)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "logbook.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     if not (root / "pages" / "index.md").is_file():
         raise LogbookError(f"No logbook pages found at {url}")
     return proj
@@ -206,6 +243,12 @@ def write_metadata(proj: Path, metadata: dict) -> None:
     _metadata_path(proj).write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+
+
+def _workspace_bucket(metadata: dict) -> str | None:
+    if metadata.get("workspace_publication") not in {"public", "private"}:
+        return None
+    return metadata.get("workspace_bucket")
 
 
 def _remember_page(proj: Path, slug: str) -> None:
@@ -526,18 +569,34 @@ def _ensure_viewer_files(proj: Path) -> None:
             shutil.copy2(src, dest)
 
 
+def _ensure_project_gitignore(proj: Path) -> None:
+    path = proj / ".gitignore"
+    existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+    lines = existing.splitlines()
+    known = {line.strip() for line in lines}
+    missing = [item for item in PRIVATE_STATE_IGNORE_PATTERNS if item not in known]
+    if not missing:
+        return
+    if lines and lines[-1].strip():
+        lines.append("")
+    header = "# Agent traces and Workspace state may contain sensitive data."
+    if header not in known:
+        lines.append(header)
+    lines.extend(missing)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _estimate_tokens(text: str) -> int:
     return max(1, int(len(text) / 3.3))
 
 
 def write_site_files(proj: Path) -> dict:
+    _ensure_project_gitignore(proj)
     _ensure_viewer_files(proj)
     try:
         from trackio import logbook_trace  # noqa: PLC0415
 
-        logbook_trace.refresh_all(
-            proj, bucket_id=read_metadata(proj).get("artifacts_bucket")
-        )
+        logbook_trace.refresh_all(proj, bucket_id=_workspace_bucket(read_metadata(proj)))
     except logbook_trace.TraceCaptureError as e:
         print(f"Warning: could not refresh attached trace: {e}", file=sys.stderr)
     manifest = build_manifest(proj)
@@ -588,12 +647,22 @@ def remove_trace(proj: Path, session_id: str) -> None:
 
     try:
         logbook_trace.remove_trace(proj, session_id)
-        logbook_trace.refresh_all(
-            proj, bucket_id=read_metadata(proj).get("artifacts_bucket")
-        )
+        logbook_trace.refresh_all(proj, bucket_id=_workspace_bucket(read_metadata(proj)))
     except logbook_trace.TraceCaptureError as e:
         raise LogbookError(str(e)) from e
     write_site_files(proj)
+
+
+def publication_inventory(proj: Path) -> dict:
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    generated = logbook_trace.refresh_all(
+        proj, bucket_id=_workspace_bucket(read_metadata(proj))
+    )
+    return {
+        "trace_count": len(generated.get("traces", {}).get("sessions") or []),
+        "workspace_file_count": generated.get("workspace", {}).get("file_count", 0),
+    }
 
 
 # ---- creation ----
@@ -619,10 +688,6 @@ def create_logbook(
     )
     write_metadata(
         proj, {"space_id": space_id, "emoji": emoji, "created_at": _now_iso()}
-    )
-    (proj / ".gitignore").write_text(
-        "logbook/.sync_lock\nlogbook/.sync_pending\nlogbook/.sync.log\n",
-        encoding="utf-8",
     )
     write_site_files(proj)
     return proj
@@ -651,15 +716,15 @@ def clone_logbook(space_id: str) -> Path | None:
     for fname in VIEWER_FILES:
         if (snap / fname).is_file():
             shutil.copy2(snap / fname, root / fname)
-    if (snap / "media").is_dir():
-        shutil.copytree(snap / "media", root / "media")
-    write_metadata(
-        proj, {"space_id": space_id, "autosync": True, "created_at": _now_iso()}
-    )
-    (proj / ".gitignore").write_text(
-        "logbook/.sync_lock\nlogbook/.sync_pending\nlogbook/.sync.log\n",
-        encoding="utf-8",
-    )
+    for dirname in ("media", "traces"):
+        if (snap / dirname).is_dir():
+            shutil.copytree(snap / dirname, root / dirname)
+    if (snap / "workspace.json").is_file():
+        shutil.copy2(snap / "workspace.json", root / "workspace.json")
+    write_metadata(proj, {"space_id": space_id, "created_at": _now_iso()})
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    logbook_trace.adopt_published_state(proj)
     write_site_files(proj)
     return proj
 
@@ -845,7 +910,7 @@ def sync_todos_from_stdin() -> None:
         except Exception:
             continue
     if changed:
-        trigger_autosync(proj)
+        write_site_files(proj)
 
 
 def ensure_page(
@@ -1687,7 +1752,6 @@ def auto_note_dashboard(project: str, space_id: str | None = None) -> None:
         if _page_has_dashboard_cell(proj, slug, project):
             return
         add_dashboard_cell(proj, slug, project, space_id=space_id)
-        trigger_autosync(proj)
     except Exception:
         pass
 
@@ -1708,7 +1772,6 @@ def auto_note_artifact(
         add_artifact_cell(
             proj, slug, qualified_name, size=size, artifact_type=artifact_type
         )
-        trigger_autosync(proj)
     except Exception:
         pass
 
@@ -1970,7 +2033,6 @@ def run_and_log(
             )
         except Exception:
             pass
-    trigger_autosync(proj)
     return 130 if interrupted else exit_code
 
 
@@ -1982,8 +2044,7 @@ def status_text(proj: Path) -> str:
         f"    dir     {logbook_root(proj)}",
     ]
     if metadata.get("space_id"):
-        state = "auto-syncing" if metadata.get("autosync") else "not published"
-        lines.append(f"    space   {metadata['space_id']}  ({state})")
+        lines.append(f"    space   {metadata['space_id']}  (publish manually)")
 
     def render(node, depth):
         marker = "•" if depth else "▸"
@@ -1997,7 +2058,7 @@ def status_text(proj: Path) -> str:
     return "\n".join(lines)
 
 
-# ---- serve / publish / sync ----
+# ---- serve / publish ----
 
 
 def _highlight_command(text: str) -> str:
@@ -2141,7 +2202,7 @@ def serve(
     for candidate_port in candidates:
         try:
             _name, actual_port, _url, server = start_server(
-                app, server_name="0.0.0.0", server_port=candidate_port
+                app, server_name="127.0.0.1", server_port=candidate_port
             )
             break
         except OSError as e:
@@ -2186,18 +2247,49 @@ def _push(
     proj: Path,
     hf_token: str | None = None,
     private: bool = False,
-    workspace_prepared: bool = False,
 ) -> str:
     import huggingface_hub  # noqa: PLC0415
+
+    from trackio import logbook_trace  # noqa: PLC0415
 
     metadata = read_metadata(proj)
     space_id = metadata["space_id"]
     private = bool(metadata.get("private", private))
-    bucket = metadata.get("artifacts_bucket")
-    if bucket and not workspace_prepared:
-        from trackio import logbook_trace  # noqa: PLC0415
-
-        logbook_trace.sync_workspace_bucket(proj, bucket, private=private)
+    trace_policy = metadata.get("trace_publication", "none")
+    trace_dataset = metadata.get("trace_dataset")
+    generated = logbook_trace.refresh_all(
+        proj, bucket_id=_workspace_bucket(metadata)
+    )
+    trace_count = len(generated.get("traces", {}).get("sessions") or [])
+    workspace_file_count = generated.get("workspace", {}).get("file_count", 0)
+    if trace_count and trace_policy in {"public", "private"} and trace_dataset:
+        print(f"  · pushing agent traces → dataset {trace_dataset}")
+        try:
+            logbook_trace.sync_trace_dataset(
+                proj,
+                trace_dataset,
+                private=trace_policy == "private",
+                token=hf_token,
+            )
+        except logbook_trace.TraceCaptureError as e:
+            raise LogbookError(str(e)) from e
+    workspace_policy = metadata.get("workspace_publication", "none")
+    workspace_bucket = metadata.get("workspace_bucket")
+    if (
+        workspace_file_count
+        and workspace_policy in {"public", "private"}
+        and workspace_bucket
+    ):
+        print(f"  · pushing Workspace files → bucket {workspace_bucket}")
+        try:
+            logbook_trace.sync_workspace_bucket(
+                proj,
+                workspace_bucket,
+                private=workspace_policy == "private",
+                token=hf_token,
+            )
+        except logbook_trace.TraceCaptureError as e:
+            raise LogbookError(str(e)) from e
     manifest = write_site_files(proj)
     (logbook_root(proj) / "README.md").write_text(_readme(manifest), encoding="utf-8")
     api = huggingface_hub.HfApi(token=hf_token)
@@ -2209,13 +2301,67 @@ def _push(
         private=private,
         token=hf_token,
     )
-    api.upload_folder(
-        repo_id=space_id,
-        repo_type="space",
-        folder_path=str(logbook_root(proj)),
-        commit_message=f"Update logbook: {manifest['title']}",
-        ignore_patterns=[".sync_lock", ".sync_pending", ".sync.log"],
-    )
+    with tempfile.TemporaryDirectory(prefix="trackio-logbook-publish-") as tmp:
+        upload_root = Path(tmp) / "logbook"
+        shutil.copytree(logbook_root(proj), upload_root)
+        published_manifest = json.loads(json.dumps(manifest))
+        can_embed_traces = trace_policy == "public" or (
+            trace_policy == "private" and private
+        )
+        if trace_policy == "private" and not private:
+            print(
+                "  · private traces are not embedded in the public logbook Space"
+            )
+        if not can_embed_traces:
+            published_manifest["traces"] = []
+            shutil.rmtree(upload_root / "traces", ignore_errors=True)
+        if trace_dataset and trace_policy in {"public", "private"}:
+            published_manifest["trace_dataset"] = (
+                f"https://huggingface.co/datasets/{trace_dataset}"
+            )
+        if workspace_bucket and workspace_policy in {"public", "private"}:
+            published_manifest["workspace_bucket"] = (
+                f"https://huggingface.co/buckets/{workspace_bucket}"
+            )
+        can_embed_workspace = workspace_policy == "public" or (
+            workspace_policy == "private" and private
+        )
+        if workspace_policy == "private" and not private:
+            print(
+                "  · private Workspace inventory is not embedded in the public "
+                "logbook Space"
+            )
+        if not can_embed_workspace:
+            published_manifest["workspace"] = {
+                "file": "workspace.json",
+                "file_count": 0,
+                "total_size": 0,
+                "bucket_id": None,
+            }
+            (upload_root / "workspace.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "file_count": 0,
+                        "total_size": 0,
+                        "files": [],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+        (upload_root / "logbook.json").write_text(
+            json.dumps(published_manifest, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        api.upload_folder(
+            repo_id=space_id,
+            repo_type="space",
+            folder_path=str(upload_root),
+            commit_message=f"Update logbook: {manifest['title']}",
+            ignore_patterns=[".sync_lock", ".sync_pending", ".sync.log"],
+            delete_patterns=["traces/**", "workspace.json"],
+        )
     return f"https://huggingface.co/spaces/{space_id}"
 
 
@@ -2249,15 +2395,8 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
     metadata["local_dashboards"] = dashboards
 
     arts = metadata.get("local_artifacts", [])
-    path_arts = metadata.get("local_path_artifacts", [])
-    from trackio import logbook_trace  # noqa: PLC0415
-
-    generated = logbook_trace.refresh_all(
-        proj, bucket_id=metadata.get("artifacts_bucket")
-    )
-    workspace_files = generated.get("workspace", {}).get("files") or []
     bucket = metadata.get("artifacts_bucket")
-    if arts or path_arts or workspace_files:
+    if arts:
         owner, _, name = metadata["space_id"].partition("/")
         bucket = bucket or f"{owner}/{name}-artifacts"
         metadata["artifacts_bucket"] = bucket
@@ -2276,117 +2415,173 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
                     f"https://huggingface.co/buckets/{bucket}#{art}",
                 )
 
-            if path_arts:
-                print(
-                    f"  · pushing {len(path_arts)} local file artifact(s) → bucket {bucket}"
-                )
-                uploaded = bucket_storage.upload_logbook_path_artifacts_to_bucket(
-                    bucket, path_arts
-                )
-                for rel in uploaded:
-                    _rewrite_in_pages(
-                        proj,
-                        f"{PATH_ARTIFACT_URI_PREFIX}{rel}",
-                        f"https://huggingface.co/buckets/{bucket}#"
-                        f"{bucket_storage.LOGBOOK_FILES_BUCKET_PREFIX}/{rel}",
-                    )
-                missing = [e["path"] for e in path_arts if e["path"] not in uploaded]
-                for rel in missing:
-                    print(f"  · skipped local file artifact (missing on disk): {rel}")
         except Exception as e:
             print(f"  · could not push artifacts to bucket: {e}")
 
     write_metadata(proj, metadata)
-    if bucket:
-        logbook_trace.sync_workspace_bucket(proj, bucket, private=private)
+
+
+def _retract_retired_publications(proj: Path, hf_token: str | None) -> None:
+    import huggingface_hub  # noqa: PLC0415
+
+    metadata = read_metadata(proj)
+    dataset_id = metadata.get("trace_retraction_pending")
+    bucket_id = metadata.get("workspace_retraction_pending")
+    if not dataset_id and not bucket_id:
+        return
+    api = huggingface_hub.HfApi(token=hf_token)
+    if dataset_id:
+        print(f"  · retracting prior agent traces Dataset {dataset_id}")
+        api.delete_repo(
+            dataset_id,
+            repo_type="dataset",
+            missing_ok=True,
+            token=hf_token,
+        )
+        metadata.pop("trace_retraction_pending", None)
+        if (
+            metadata.get("trace_publication") == "none"
+            and metadata.get("trace_dataset") == dataset_id
+        ):
+            metadata.pop("trace_dataset", None)
+    if bucket_id:
+        print(f"  · retracting prior Workspace Bucket {bucket_id}")
+        api.delete_bucket(bucket_id, missing_ok=True, token=hf_token)
+        metadata.pop("workspace_retraction_pending", None)
+        if (
+            metadata.get("workspace_publication") == "none"
+            and metadata.get("workspace_bucket") == bucket_id
+        ):
+            metadata.pop("workspace_bucket", None)
+    write_metadata(proj, metadata)
 
 
 def publish(
-    space_id: str | None = None, hf_token: str | None = None, private: bool = False
+    space_id: str | None = None,
+    hf_token: str | None = None,
+    private: bool = False,
+    trace_publication: str | None = None,
+    workspace_publication: str | None = None,
 ) -> str:
     proj = require_project_dir()
     metadata = read_metadata(proj)
+    previous_space = metadata.get("space_id")
+    previous_trace_policy = metadata.get("trace_publication")
+    previous_workspace_policy = metadata.get("workspace_publication")
+    remember_trace_policy = (
+        trace_publication is not None or previous_trace_policy is not None
+    )
+    remember_workspace_policy = (
+        workspace_publication is not None or previous_workspace_policy is not None
+    )
     space_id = space_id or metadata.get("space_id")
     if not space_id:
         raise LogbookError(
             "No Space id. Provide one: trackio logbook publish <username/space>"
         )
-    prior = {key: metadata.get(key) for key in ("space_id", "autosync", "private")}
+    trace_publication = trace_publication or previous_trace_policy or "none"
+    workspace_publication = (
+        workspace_publication or previous_workspace_policy or "none"
+    )
+    valid_publication = {"public", "private", "none"}
+    if trace_publication not in valid_publication:
+        raise LogbookError(f"Unknown trace publication policy: {trace_publication}")
+    if workspace_publication not in valid_publication:
+        raise LogbookError(
+            f"Unknown Workspace publication policy: {workspace_publication}"
+        )
+    owner, _, name = space_id.partition("/")
+    old_owner, _, old_name = (previous_space or "").partition("/")
+    old_trace_default = (
+        f"{old_owner}/{old_name}-traces" if old_owner and old_name else None
+    )
+    old_workspace_defaults = (
+        {
+            f"{old_owner}/{old_name}-workspace",
+            f"{old_owner}/{old_name}-workspace-public",
+            f"{old_owner}/{old_name}-workspace-private",
+        }
+        if old_owner and old_name
+        else set()
+    )
+    if previous_space and previous_space != space_id:
+        if not metadata.get("trace_dataset") or metadata.get(
+            "trace_dataset"
+        ) == old_trace_default:
+            metadata["trace_dataset"] = f"{owner}/{name}-traces"
+        if not metadata.get("workspace_bucket") or metadata.get(
+            "workspace_bucket"
+        ) in old_workspace_defaults:
+            metadata["workspace_bucket"] = f"{owner}/{name}-workspace"
     metadata["space_id"] = space_id
-    metadata["autosync"] = True
+    metadata.pop("autosync", None)
     metadata["private"] = private
+    if remember_trace_policy:
+        metadata["trace_publication"] = trace_publication
+    if remember_workspace_policy:
+        metadata["workspace_publication"] = workspace_publication
+    if trace_publication in {"public", "private"}:
+        metadata["trace_dataset"] = metadata.get("trace_dataset") or (
+            f"{owner}/{name}-traces"
+        )
+        if metadata.get("trace_retraction_pending") == metadata["trace_dataset"]:
+            metadata.pop("trace_retraction_pending", None)
+    if workspace_publication in {"public", "private"}:
+        workspace_bucket = metadata.get("workspace_bucket")
+        if (
+            workspace_bucket
+            and previous_workspace_policy in {"public", "private"}
+            and previous_workspace_policy != workspace_publication
+        ):
+            print(
+                "  · Workspace visibility changed; using a new Bucket because "
+                "existing HF Buckets cannot change visibility. The previous "
+                f"Bucket {workspace_bucket} will be retracted after publishing."
+            )
+            metadata["workspace_retraction_pending"] = workspace_bucket
+            workspace_bucket = f"{owner}/{name}-workspace-{workspace_publication}"
+        metadata["workspace_bucket"] = workspace_bucket or f"{owner}/{name}-workspace"
+        if (
+            metadata.get("workspace_retraction_pending")
+            == metadata["workspace_bucket"]
+        ):
+            metadata.pop("workspace_retraction_pending", None)
+    if previous_trace_policy in {"public", "private"} and trace_publication == "none":
+        print(
+            "  · Traces are not included in this publish. The prior Dataset "
+            f"{metadata.get('trace_dataset')} will be retracted after publishing."
+        )
+        metadata["trace_retraction_pending"] = metadata.get("trace_dataset")
+    if (
+        previous_workspace_policy in {"public", "private"}
+        and workspace_publication == "none"
+    ):
+        print(
+            "  · Workspace files are not included in this publish. The prior "
+            f"Bucket {metadata.get('workspace_bucket')} will be retracted after "
+            "publishing."
+        )
+        metadata["workspace_retraction_pending"] = metadata.get("workspace_bucket")
     write_metadata(proj, metadata)
     try:
         _promote_local_deps(proj, space_id.split("/")[0], private=private)
-        return _push(
-            proj,
-            hf_token=hf_token,
-            private=private,
-            workspace_prepared=True,
-        )
-    except Exception:
-        metadata = read_metadata(proj)
-        metadata.update(prior)
-        write_metadata(proj, metadata)
-        raise
-
-
-def is_autosync(proj: Path) -> bool:
-    metadata = read_metadata(proj)
-    return bool(metadata.get("autosync") and metadata.get("space_id"))
-
-
-def trigger_autosync(proj: Path) -> None:
-    import subprocess  # noqa: PLC0415
-    import sys  # noqa: PLC0415
-
-    if not is_autosync(proj):
-        return
-    (logbook_root(proj) / ".sync_pending").write_text("1", encoding="utf-8")
+        url = _push(proj, hf_token=hf_token, private=private)
+    except Exception as e:
+        destinations = [f"Space {space_id}"]
+        if trace_publication in {"public", "private"}:
+            destinations.append(f"Dataset {metadata.get('trace_dataset')}")
+        if workspace_publication in {"public", "private"}:
+            destinations.append(f"Bucket {metadata.get('workspace_bucket')}")
+        raise LogbookError(
+            "Publish failed. One or more remote uploads may already have succeeded; "
+            f"inspect {', '.join(destinations)} before retrying. Original error: {e}"
+        ) from e
     try:
-        with open(logbook_root(proj) / ".sync.log", "a", encoding="utf-8") as log:
-            subprocess.Popen(
-                [sys.executable, "-m", "trackio.cli", "logbook", "_sync"],
-                cwd=str(proj.parent),
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-    except Exception:
-        pass
-
-
-def sync_worker(debounce: float = 2.5) -> None:
-    import time  # noqa: PLC0415
-
-    try:
-        import fcntl  # noqa: PLC0415
-    except ImportError:
-        fcntl = None
-
-    proj = find_project_dir()
-    if proj is None:
-        return
-    root = logbook_root(proj)
-    lock = open(root / ".sync_lock", "w")
-    try:
-        if fcntl is not None:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                return
-        pending = root / ".sync_pending"
-        while pending.exists():
-            pending.unlink()
-            time.sleep(debounce)
-            try:
-                _push(proj)
-            except Exception:
-                pass
-    finally:
-        if fcntl is not None:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_UN)
-            except OSError:
-                pass
-        lock.close()
+        _retract_retired_publications(proj, hf_token)
+    except Exception as e:
+        raise LogbookError(
+            "The new logbook was published, but Trackio could not retract a prior "
+            "Trace Dataset or Workspace Bucket. The pending retraction was saved "
+            f"and will be retried on the next publish. Original error: {e}"
+        ) from e
+    return url

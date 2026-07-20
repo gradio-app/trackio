@@ -18,6 +18,8 @@ TRACE_STATE_DIR = "traces"
 WORKSPACE_BASELINE_DIR = "workspace_baselines"
 WORKSPACE_SYNC_STATE_FILE = "workspace_bucket_state.json"
 WORKSPACE_BUCKET_PREFIX = "workspace"
+TRACE_DATASET_EXPORT_DIR = "trace_dataset"
+IMPORTED_WORKSPACE_FILE = "imported_workspace.json"
 MAX_WORKSPACE_ENTRIES = 50_000
 
 WORKSPACE_TYPE_BY_EXT = {
@@ -162,6 +164,8 @@ def _timestamp(record: dict) -> str | None:
     value = record.get("timestamp")
     if value is None and isinstance(record.get("payload"), dict):
         value = record["payload"].get("timestamp")
+    if value is None and isinstance(record.get("message"), dict):
+        value = record["message"].get("timestamp")
     return str(value) if value else None
 
 
@@ -200,6 +204,12 @@ def _detect_provider(records: list[dict]) -> str:
             record.get("payload"), dict
         ):
             return "codex"
+        if (
+            record.get("type") == "session"
+            and record.get("id")
+            and record.get("version") is not None
+        ):
+            return "pi"
         if "sessionId" in record or (
             record.get("type") in {"assistant", "user"}
             and isinstance(record.get("message"), dict)
@@ -217,6 +227,8 @@ def _session_id(records: list[dict], provider: str, source: Path) -> str:
                 return _safe_id(str(value))
         if provider == "claude" and record.get("sessionId"):
             return _safe_id(str(record["sessionId"]))
+        if provider == "pi" and record.get("type") == "session" and record.get("id"):
+            return _safe_id(str(record["id"]))
         value = record.get("session_id") or record.get("sessionId")
         if value:
             return _safe_id(str(value))
@@ -448,6 +460,153 @@ def _normalize_generic(records: list[dict]) -> tuple[dict, list[dict]]:
         depth = record.get("depth", record.get("subagent_depth", 0))
         role = str(record.get("role") or "").lower()
         event_type = str(record.get("type") or record.get("event") or "event")
+        if event_type == "session":
+            meta.update(
+                {
+                    "id": record.get("id"),
+                    "provider": (
+                        "Pi"
+                        if record.get("version") is not None
+                        else record.get("harness") or meta["provider"]
+                    ),
+                    "started_at": ts or record.get("started_at"),
+                    "cwd": record.get("cwd"),
+                }
+            )
+            continue
+        if event_type in {"model_change", "model"}:
+            meta["model"] = (
+                record.get("model")
+                or record.get("modelId")
+                or record.get("model_id")
+                or meta.get("model")
+            )
+            continue
+        message = record.get("message")
+        if isinstance(message, dict):
+            message_role = str(message.get("role") or role).lower()
+            if message.get("model"):
+                meta["model"] = message["model"]
+            blocks = _content_blocks(message.get("content"))
+            has_user_text = message_role == "user" and any(
+                block.get("type", "text") == "text" for block in blocks
+            )
+            if has_user_text:
+                turn += 1
+            reasoning = _text(
+                message.get("reasoningContent") or message.get("reasoning_content")
+            )
+            if reasoning:
+                events.append(
+                    _event(
+                        "reasoning",
+                        timestamp=ts,
+                        turn=turn or None,
+                        text=reasoning,
+                        title="Thought",
+                        depth=depth,
+                    )
+                )
+            for block in blocks:
+                block_type = str(block.get("type") or "text")
+                if block_type == "text" and message_role in {
+                    "user",
+                    "assistant",
+                    "system",
+                    "developer",
+                }:
+                    text = _text(block.get("text") or block.get("content"))
+                    if text:
+                        kind = (
+                            message_role
+                            if message_role in {"user", "assistant"}
+                            else "status"
+                        )
+                        events.append(
+                            _event(
+                                kind,
+                                timestamp=ts,
+                                turn=turn or None,
+                                text=text,
+                                title=message_role.title(),
+                                depth=depth,
+                            )
+                        )
+                elif block_type in {"thinking", "reasoning"}:
+                    text = _text(block.get("thinking") or block.get("text"))
+                    if text:
+                        events.append(
+                            _event(
+                                "reasoning",
+                                timestamp=ts,
+                                turn=turn or None,
+                                text=text,
+                                title="Thought",
+                                depth=depth,
+                            )
+                        )
+                elif block_type in {"toolCall", "tool_call", "tool_use"}:
+                    events.append(
+                        _event(
+                            "tool_call",
+                            timestamp=ts,
+                            turn=turn or None,
+                            title=str(block.get("name") or "Tool"),
+                            tool_name=block.get("name"),
+                            call_id=block.get("id") or block.get("toolCallId"),
+                            input=_json_text(
+                                block.get("arguments", block.get("input"))
+                            ),
+                            depth=depth,
+                        )
+                    )
+                elif block_type in {"toolResult", "tool_result"}:
+                    events.append(
+                        _event(
+                            "tool_result",
+                            timestamp=ts,
+                            turn=turn or None,
+                            title="Output",
+                            call_id=block.get("toolCallId")
+                            or block.get("tool_use_id"),
+                            output=_text(block.get("content") or block.get("output")),
+                            status="error" if block.get("isError") else "success",
+                            depth=depth,
+                        )
+                    )
+            for call in message.get("toolCalls") or []:
+                if not isinstance(call, dict):
+                    continue
+                function = call.get("function") or {}
+                events.append(
+                    _event(
+                        "tool_call",
+                        timestamp=ts,
+                        turn=turn or None,
+                        title=str(function.get("name") or call.get("name") or "Tool"),
+                        tool_name=function.get("name") or call.get("name"),
+                        call_id=call.get("id"),
+                        input=_json_text(
+                            function.get("arguments", call.get("arguments"))
+                        ),
+                        depth=depth,
+                    )
+                )
+            if message_role in {"tool", "toolresult", "tool_result"}:
+                events.append(
+                    _event(
+                        "tool_result",
+                        timestamp=ts,
+                        turn=turn or None,
+                        title="Output",
+                        call_id=message.get("toolCallId")
+                        or message.get("tool_call_id"),
+                        output=_text(message.get("content")),
+                        status="error" if message.get("isError") else "success",
+                        depth=depth,
+                    )
+                )
+            continue
         if role == "user" or event_type in {"user", "user_message"}:
             turn += 1
             value = _text(record.get("content", record.get("message")))
@@ -533,11 +692,21 @@ def _normalize_generic(records: list[dict]) -> tuple[dict, list[dict]]:
     return meta, events
 
 
-def _parse_time(value: str | None) -> datetime | None:
-    if not value:
+def _parse_time(value: str | int | float | None) -> datetime | None:
+    if value in (None, ""):
         return None
+    if isinstance(value, (int, float)) or (
+        isinstance(value, str) and re.fullmatch(r"\d+(?:\.\d+)?", value)
+    ):
+        numeric = float(value)
+        if numeric > 10_000_000_000:
+            numeric /= 1000
+        try:
+            return datetime.fromtimestamp(numeric, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
 
@@ -551,6 +720,8 @@ def normalize_trace(path: Path) -> dict:
         meta, events = _normalize_claude(records)
     else:
         meta, events = _normalize_generic(records)
+        if provider == "pi":
+            meta["provider"] = "Pi"
 
     session_id = _session_id(records, provider, path)
     timestamps = [_parse_time(event.get("timestamp")) for event in events]
@@ -744,6 +915,73 @@ def remove_trace(proj: Path, session_id: str) -> None:
     output_dir = _trace_output_dir(proj, session_id)
     if output_dir.exists():
         shutil.rmtree(output_dir)
+    imported = _read_json(proj / IMPORTED_WORKSPACE_FILE, {})
+    if isinstance(imported, dict):
+        for item in imported.get("files") or []:
+            if isinstance(item.get("sessions"), list):
+                item["sessions"] = [
+                    value for value in item["sessions"] if value != session_id
+                ]
+        imported["files"] = [
+            item
+            for item in imported.get("files") or []
+            if item.get("sessions") or "sessions" not in item
+        ]
+        _write_json(proj / IMPORTED_WORKSPACE_FILE, imported)
+
+
+def adopt_published_state(proj: Path) -> None:
+    """Adopt published Trace/Workspace views when cloning a logbook Space."""
+    traces = _read_json(proj / "logbook" / "traces" / "index.json", {})
+    registry = _load_registry(proj)
+    known = {item.get("id") for item in registry["sessions"]}
+    current_snapshot: dict[str, dict] | None = None
+    for session in traces.get("sessions") or []:
+        session_id = session.get("id")
+        if not session_id or session_id in known:
+            continue
+        registry["sessions"].append(
+            {
+                "id": session_id,
+                "title": session.get("title") or session_id,
+                "source_path": "",
+                "provider": session.get("provider") or "Agent",
+                "attached_at": session.get("attached_at") or _now_iso(),
+                "imported": True,
+            }
+        )
+        if current_snapshot is None:
+            current_snapshot = _workspace_snapshot(proj.parent.resolve())
+        _write_json(
+            _baseline_path(proj, session_id),
+            {
+                "schema_version": 1,
+                "session_id": session_id,
+                "root": str(proj.parent.resolve()),
+                "files": current_snapshot,
+            },
+        )
+        known.add(session_id)
+    _save_registry(proj, registry)
+
+    workspace = _read_json(proj / "logbook" / "workspace.json", {})
+    if isinstance(workspace, dict) and workspace.get("files"):
+        imported_files = []
+        for item in workspace["files"]:
+            if not isinstance(item, dict) or not item.get("path"):
+                continue
+            imported_files.append(
+                {
+                    **item,
+                    "local_url": None,
+                    "imported": True,
+                    "bucket_id": workspace.get("bucket_id"),
+                }
+            )
+        _write_json(
+            proj / IMPORTED_WORKSPACE_FILE,
+            {**workspace, "files": imported_files},
+        )
 
 
 def _trace_summary(index: dict) -> dict:
@@ -773,7 +1011,13 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
         for entry in registry["sessions"]
         if entry.get("source_path")
     }
-    files = []
+    imported = _read_json(proj / IMPORTED_WORKSPACE_FILE, {})
+    imported_files = {
+        item["path"]: {**item, "local_url": None, "imported": True}
+        for item in imported.get("files") or []
+        if isinstance(item, dict) and item.get("path")
+    }
+    files_by_path = dict(imported_files)
     for relative, info in sorted(current.items()):
         if (root / relative).resolve() in trace_sources:
             continue
@@ -790,34 +1034,33 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
             continue
         encoded = quote(relative, safe="/")
         bucket_path = f"{WORKSPACE_BUCKET_PREFIX}/{relative}"
-        files.append(
-            {
-                "path": relative,
-                "name": Path(relative).name,
-                "type": info["type"],
-                "size": info["size"],
-                "modified_at": info["modified_at"],
-                "sessions": sessions,
-                "local_url": f"/__trackio_workspace__/{encoded}",
-                "bucket_url": (
-                    f"https://huggingface.co/buckets/{bucket_id}#"
-                    f"{WORKSPACE_BUCKET_PREFIX}/{encoded}"
-                    if bucket_id
-                    else None
-                ),
-                "download_url": (
-                    f"https://huggingface.co/buckets/{bucket_id}/resolve/"
-                    f"{quote(bucket_path, safe='')}"
-                    if bucket_id
-                    else None
-                ),
-            }
-        )
+        files_by_path[relative] = {
+            "path": relative,
+            "name": Path(relative).name,
+            "type": info["type"],
+            "size": info["size"],
+            "modified_at": info["modified_at"],
+            "sessions": sessions,
+            "local_url": f"/__trackio_workspace__/{encoded}",
+            "bucket_url": (
+                f"https://huggingface.co/buckets/{bucket_id}#"
+                f"{WORKSPACE_BUCKET_PREFIX}/{encoded}"
+                if bucket_id
+                else None
+            ),
+            "download_url": (
+                f"https://huggingface.co/buckets/{bucket_id}/resolve/"
+                f"{quote(bucket_path, safe='')}"
+                if bucket_id
+                else None
+            ),
+        }
+    files = [files_by_path[path] for path in sorted(files_by_path)]
     return {
         "schema_version": 1,
         "generated_at": _now_iso(),
         "root_name": root.name,
-        "bucket_id": bucket_id,
+        "bucket_id": bucket_id or imported.get("bucket_id"),
         "file_count": len(files),
         "total_size": sum(item["size"] for item in files),
         "files": files,
@@ -859,17 +1102,213 @@ def read_generated(proj: Path) -> dict:
     }
 
 
-def sync_workspace_bucket(proj: Path, bucket_id: str, private: bool) -> dict:
+def _sts_timestamp(value: str | None) -> int | None:
+    parsed = _parse_time(value)
+    return int(parsed.timestamp() * 1000) if parsed else None
+
+
+def _sts_arguments(value: Any) -> str:
+    if not isinstance(value, str):
+        return json.dumps(value if value is not None else {})
+    try:
+        json.loads(value)
+        return value
+    except json.JSONDecodeError:
+        return json.dumps({"input": value}, ensure_ascii=False)
+
+
+def _is_hub_native_jsonl(path: Path, provider: str | None) -> bool:
+    """Whether Hub's Agent Traces viewer accepts this JSONL without conversion."""
+    if path.suffix.lower() != ".jsonl":
+        return False
+    if provider in {"Codex", "Claude Code", "Pi"}:
+        return True
+    try:
+        with path.open(encoding="utf-8") as handle:
+            first_line = next((line for line in handle if line.strip()), "")
+        header = json.loads(first_line)
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(header, dict) or header.get("type") != "session":
+        return False
+    # Session Trace Simple Format requires harness + id. Pi's native format uses
+    # a versioned session header and is also supported directly by the Hub.
+    return bool(
+        header.get("id")
+        and (header.get("harness") or header.get("version") is not None)
+    )
+
+
+def _write_sts_trace(path: Path, index: dict, events: list[dict]) -> None:
+    records = [
+        {
+            "type": "session",
+            "harness": "trackio",
+            "id": index["id"],
+            "name": index.get("title") or index["id"],
+        }
+    ]
+    for event in events:
+        timestamp = _sts_timestamp(event.get("timestamp"))
+        if event.get("kind") in {"user", "assistant"}:
+            message = {
+                "role": event["kind"],
+                "content": event.get("text") or "",
+            }
+        elif event.get("kind") == "reasoning":
+            message = {
+                "role": "assistant",
+                "content": "",
+                "reasoningContent": event.get("text") or "",
+            }
+        elif event.get("kind") == "tool_call":
+            message = {
+                "role": "assistant",
+                "content": "",
+                "toolCalls": [
+                    {
+                        "id": event.get("call_id") or event.get("id"),
+                        "function": {
+                            "name": event.get("tool_name") or event.get("title") or "tool",
+                            "arguments": _sts_arguments(event.get("input")),
+                        },
+                    }
+                ],
+            }
+        elif event.get("kind") == "tool_result":
+            message = {
+                "role": "tool",
+                "content": event.get("output") or event.get("text") or "",
+            }
+            if event.get("call_id"):
+                message["toolCallId"] = event["call_id"]
+        else:
+            message = {
+                "role": "system",
+                "content": event.get("title") or event.get("status") or "Status",
+            }
+        if timestamp is not None:
+            message["timestamp"] = timestamp
+        if message["role"] == "assistant" and index.get("model"):
+            message["model"] = index["model"]
+        records.append({"type": "message", "message": message})
+    path.write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+
+def prepare_agent_trace_dataset(proj: Path) -> tuple[Path, int]:
+    """Build a Hub Agent Traces dataset directory from attached sessions."""
+    refresh_all(proj)
+    export_dir = proj / TRACE_DATASET_EXPORT_DIR
+    if export_dir.exists():
+        shutil.rmtree(export_dir)
+    export_dir.mkdir(parents=True)
+    registry = _load_registry(proj)
+    exported = 0
+    for entry in registry["sessions"]:
+        session_id = entry["id"]
+        index = _read_json(_trace_output_dir(proj, session_id) / "index.json", {})
+        if not index:
+            continue
+        raw_files = list((proj / TRACE_STATE_DIR / "raw").glob(f"{_safe_id(session_id)}.*"))
+        raw = raw_files[0] if raw_files else None
+        destination = export_dir / f"{_safe_id(session_id)}.jsonl"
+        if raw is not None and _is_hub_native_jsonl(raw, index.get("provider")):
+            shutil.copy2(raw, destination)
+        else:
+            events = []
+            for chunk in index.get("chunks") or []:
+                chunk_data = _read_json(proj / "logbook" / chunk["file"], {})
+                events.extend(chunk_data.get("events") or [])
+            _write_sts_trace(destination, index, events)
+        exported += 1
+    (export_dir / "README.md").write_text(
+        "---\n"
+        "pretty_name: Trackio Agent Traces\n"
+        "tags:\n- agent-traces\n- traces\n- trackio\n"
+        "configs:\n"
+        "- config_name: default\n"
+        "  data_files:\n"
+        "  - split: train\n"
+        "    path: '*.jsonl'\n"
+        "task_categories:\n- text-generation\n"
+        "---\n\n"
+        "# Agent traces\n\nAgent sessions published from a Trackio Logbook.\n",
+        encoding="utf-8",
+    )
+    return export_dir, exported
+
+
+def sync_trace_dataset(
+    proj: Path,
+    dataset_id: str,
+    *,
+    private: bool,
+    token: str | None = None,
+) -> str:
+    import huggingface_hub  # noqa: PLC0415
+
+    export_dir, count = prepare_agent_trace_dataset(proj)
+    if not count:
+        raise TraceCaptureError("No attached traces are available to publish.")
+    huggingface_hub.create_repo(
+        dataset_id,
+        repo_type="dataset",
+        private=private,
+        exist_ok=True,
+        token=token,
+    )
+    huggingface_hub.update_repo_settings(
+        dataset_id,
+        repo_type="dataset",
+        private=private,
+        token=token,
+    )
+    huggingface_hub.upload_folder(
+        repo_id=dataset_id,
+        repo_type="dataset",
+        folder_path=export_dir,
+        commit_message="Update Trackio agent traces",
+        delete_patterns="*.jsonl",
+        token=token,
+    )
+    return f"https://huggingface.co/datasets/{dataset_id}"
+
+
+def sync_workspace_bucket(
+    proj: Path,
+    bucket_id: str,
+    private: bool,
+    token: str | None = None,
+) -> dict:
     import huggingface_hub  # noqa: PLC0415
 
     state = refresh_all(proj, bucket_id=bucket_id)
     workspace = state["workspace"]
-    huggingface_hub.create_bucket(bucket_id, private=private, exist_ok=True)
+    huggingface_hub.create_bucket(
+        bucket_id, private=private, exist_ok=True, token=token
+    )
+    bucket_info = huggingface_hub.HfApi(token=token).bucket_info(bucket_id)
+    if bucket_info.private != private:
+        visibility = "private" if bucket_info.private else "public"
+        requested = "private" if private else "public"
+        raise TraceCaptureError(
+            f"Workspace bucket '{bucket_id}' is already {visibility}; "
+            f"it cannot be republished as {requested}."
+        )
     desired = {
         f"{WORKSPACE_BUCKET_PREFIX}/{item['path']}": str(
             (proj.parent / item["path"]).resolve()
         )
         for item in workspace["files"]
+        if item.get("local_url")
+    }
+    retained_remote = {
+        f"{WORKSPACE_BUCKET_PREFIX}/{item['path']}"
+        for item in workspace["files"]
+        if item.get("imported") and item.get("bucket_id") == bucket_id
     }
     fingerprints = {
         remote_path: {
@@ -886,7 +1325,10 @@ def sync_workspace_bucket(proj: Path, bucket_id: str, private: bool) -> dict:
     remote = {
         item.path
         for item in huggingface_hub.list_bucket_tree(
-            bucket_id, prefix=WORKSPACE_BUCKET_PREFIX, recursive=True
+            bucket_id,
+            prefix=WORKSPACE_BUCKET_PREFIX,
+            recursive=True,
+            token=token,
         )
         if getattr(item, "type", None) == "file" and getattr(item, "path", None)
     }
@@ -896,13 +1338,13 @@ def sync_workspace_bucket(proj: Path, bucket_id: str, private: bool) -> dict:
         if remote_path not in remote
         or previous_files.get(remote_path) != fingerprints[remote_path]
     ]
-    deletions = sorted(remote - set(desired))
+    deletions = sorted(remote - set(desired) - retained_remote)
     if additions or deletions:
         huggingface_hub.batch_bucket_files(
             bucket_id,
             add=additions or None,
             delete=deletions or None,
-            token=huggingface_hub.utils.get_token(),
+            token=token or huggingface_hub.utils.get_token(),
         )
     _write_json(
         sync_state_path,

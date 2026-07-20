@@ -1,6 +1,6 @@
 # Trackio Logbooks — sharing open experiments
 
-A **logbook** is a shareable, Hub-native lab notebook for an experiment campaign, stored in `./.trackio/logbook/` (found by walking up from the cwd, like `.git`). It publishes to a static Hugging Face Space that renders a rich human view — a main page listing pages, nested experiment pages, and a per-page resources sidebar linking the models, datasets, papers, jobs, and repos mentioned on that page — while `trackio logbook read` provides a compact agent view on demand.
+A **logbook** is a shareable, Hub-native lab notebook for an experiment campaign, stored in `./.trackio/logbook/` (found by walking up from the cwd, like `.git`). It publishes to a static Hugging Face Space with three human views: Code & Markdown, Traces, and Workspace. The Code & Markdown sidebar lists Pages, while `trackio logbook read` provides compact agent views on demand.
 
 The logbook is **just files you edit directly**. There are only a few CLI commands; everything else is a normal file edit.
 
@@ -25,11 +25,11 @@ trackio logbook read cell cell_<id> --full              # read full code cell
 trackio logbook read cell cell_<id> --raw               # read figure raw data
 trackio logbook read cell cell_<id> --html              # read figure HTML
 trackio logbook serve [path]                            # preview locally
-trackio logbook publish [username/space]                # first publish immediately creates a PUBLIC Space → enables auto-sync
-trackio logbook sync                                    # push later edits to the Space now
+trackio logbook publish [username/space]                # manually publish the current state
+trackio logbook publish --review-publication            # ask the Traces/Workspace privacy questions again
 ```
 
-`cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Fenced code blocks inside the markdown render with syntax highlighting, so embed short snippets directly in the body. Use `cell code` when the entry is code plus output. Use `cell figure` for HTML figures such as Plotly exports plus raw data. Use `cell artifact` to record a Trackio artifact (usually unnecessary — `trackio.log_artifact()` records one automatically). Use `cell dashboard` to embed a project's live Trackio dashboard (usually unnecessary — `trackio.init()` records one automatically). Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, artifacts, papers, jobs, buckets, and repos are detected from URLs in the markdown/output and collected into the page's resources sidebar by the viewer; images render inline and Trackio-tagged Spaces embed as live dashboards. Everything else is a direct file edit.
+`cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Fenced code blocks inside the markdown render with syntax highlighting, so embed short snippets directly in the body. Use `cell code` when the entry is code plus output. Use `cell figure` for HTML figures such as Plotly exports plus raw data. Use `cell artifact` to record a Trackio artifact (usually unnecessary — `trackio.log_artifact()` records one automatically). Use `cell dashboard` to embed a project's live Trackio dashboard (usually unnecessary — `trackio.init()` records one automatically). Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, artifacts, papers, jobs, buckets, and repos detected from URLs render as inline links or resource chips; images render inline and Trackio-tagged Spaces embed as live dashboards. Everything else is a direct file edit.
 
 `run` is the preferred way to execute experiments from the terminal: it tees output live, stores the exact command, attaches any script/config argv tokens it can see, records exit code and duration, and captures truncated output in one code cell. It also detects model/data files the command created or modified under the working directory (checkpoints like `.pt`/`.safetensors`/`.ckpt`, datasets like `.parquet`/`.csv`/`.jsonl`) and records each as a **path-reference artifact cell**. Disable with `--no-artifacts`. A path-reference cell does not itself upload the file; when a trace is attached, matching post-baseline files are separately mirrored through the Workspace view on publish.
 
@@ -43,9 +43,9 @@ trackio logbook attach trace /absolute/path/to/current-session.jsonl
 
 The agent runtime, not Trackio, determines this path. Find the current session file from the local runtime's own session/config directories and use the file whose timestamps and session metadata match the active conversation. This flow is intentionally vendor-agnostic: do not install a provider hook or wait for Trackio to identify Codex, Claude, or another runtime automatically.
 
-Attaching records the source path, keeps a private raw copy under `.trackio/`, and publishes only Trackio's normalized events. Active JSONL files may be attached before the session ends. Trackio refreshes the capture when attaching, serving the preview, syncing, or publishing. A logbook can retain multiple attached sessions; the Trace view opens the newest by default and lets readers switch sessions.
+Attaching records the source path and keeps a private raw copy under `.trackio/`; nothing is published merely by attaching. Sensitive capture state is added to `.trackio/.gitignore`. Active JSONL files may be attached before the session ends. Trackio refreshes the capture when attaching, serving the preview, or publishing. A logbook can retain multiple attached sessions; the Traces view renders them chronologically with session anchors.
 
-Attaching also establishes the Workspace baseline. The Workspace view lists the final model/data files with Trackio-supported artifact extensions that were created or changed after attachment. On publish or sync, those files are mirrored under `workspace/` in the logbook's artifacts Bucket, including deletion of stale files from that prefix. The rest of the Bucket is left untouched.
+Attaching also establishes the Workspace baseline. The Workspace view lists the final model/data files with Trackio-supported artifact extensions that were created or changed after attachment. Publishing asks separately whether these files may be mirrored to a public or private HF Bucket; the default is not to publish them.
 
 ## The structure
 
@@ -106,10 +106,10 @@ trackio logbook read cell cell_figure1234 --raw --json
 Any page's content, the index table, and the styling (`logbook.css` / `index.html` / `logbook.js`, which live inside the logbook) are plain files — edit them when the CLI verbs aren't enough. `serve` to preview and fix.
 
 - `--title`: an optional short title for the cell; if omitted, Trackio derives one. **Do not repeat the title as a heading at the top of the body** — the viewer already renders the title in the cell header.
-- Body: normal Markdown. Use paragraphs, bullets, headings, and tables as appropriate for the material. Bare Hub model ids mentioned in text or output (e.g. `meta-llama/Llama-3.1-8B-Instruct`) are detected and linked in the resources sidebar automatically.
-- Links: write URLs directly in the markdown body (or let them appear in command output). Resource URLs are collected into the page's **resources sidebar**, grouped by kind: HF models / datasets / Spaces / **Jobs** (`huggingface.co/jobs/...`) / **Buckets** (`huggingface.co/buckets/...`), arXiv / HF papers, and GitHub. **Trackio dashboards embed live** in the page body — in the local preview too: `serve` hosts the local dashboard so embeds are live during training — and image URLs render inline. There is no `--link` flag.
+- Body: normal Markdown. Use paragraphs, bullets, headings, and tables as appropriate for the material. Bare Hub model ids mentioned in text or output (e.g. `meta-llama/Llama-3.1-8B-Instruct`) are detected and linked automatically.
+- Links: write URLs directly in the markdown body (or let them appear in command output). Resource URLs render inline for HF models / datasets / Spaces / **Jobs** (`huggingface.co/jobs/...`) / **Buckets** (`huggingface.co/buckets/...`), arXiv / HF papers, and GitHub. **Trackio dashboards embed live** in the page body — in the local preview too: `serve` hosts the local dashboard so embeds are live during training — and image URLs render inline. There is no `--link` flag.
 - Code: embed fenced code blocks directly in the markdown body — they render with syntax highlighting. For code-plus-output entries use `cell code` (its `--code PATH` includes a file); `logbook run` attaches the scripts it executed automatically.
-- Artifacts: `trackio.log_artifact()` records an **artifact cell** automatically; `trackio logbook cell artifact project/name:vN [--type dataset]` records one manually. Artifact cells also appear in the resources sidebar (marked local until published). **Log datasets you construct locally as artifacts of type `dataset`** (e.g. a hand-curated eval set) so they are captured and pushed to the Bucket on publish.
+- Artifacts: `trackio.log_artifact()` records an **artifact cell** automatically; `trackio logbook cell artifact project/name:vN [--type dataset]` records one manually. Artifact cells render inline and are marked local until published. **Log datasets you construct locally as artifacts of type `dataset`** (e.g. a hand-curated eval set) so they are captured and pushed to the Bucket on publish.
 - It's just Markdown you can also edit by hand — if something renders wrong, `serve` to preview and fix the file directly.
 
 ## Prefer typed cells when the shape is clear
@@ -135,19 +135,22 @@ For each experiment, capture enough that someone could re-run it:
 If a logbook exists in the working directory, trackio **auto-captures itself** — no manual cell needed for these:
 
 - `trackio.init()` immediately records an **embedded dashboard cell** on a page named after the trackio **project** (one per project per page; live in the local preview, promoted to a Space on publish), so anyone watching the logbook sees training metrics in real time. `finish()` no longer writes a run cell. Note: the hook lives in the trackio the script imports — a separate environment with an older trackio won't fire it.
-- `trackio.log_artifact(...)` records the artifact as its own **artifact cell**, which also appears in the resources sidebar. On `publish`, artifacts are pushed to an HF Bucket and the cells link to it.
-- `trackio logbook run` records model/data files the command created or modified as **path-reference artifact cells** (path, size, and type only). The cell itself does not upload the file. With an attached trace, matching post-baseline files are also part of Workspace and are mirrored to its Bucket prefix on publish. Disable per run with `--no-artifacts`.
+- `trackio.log_artifact(...)` records the artifact as its own **artifact cell**. On `publish`, artifacts are pushed to an HF Bucket and the cells link to it.
+- `trackio logbook run` records model/data files the command created or modified as **path-reference artifact cells** (path, size, and type only). The cell itself does not upload the file. With an attached trace, matching post-baseline files are also part of Workspace and are uploaded only if Workspace publication is approved. Disable per run with `--no-artifacts`.
 
 Local runs/artifacts are marked as local until you publish (see below). Set `TRACKIO_LOGBOOK_AUTONOTE=0` to disable (e.g. during large sweeps).
 
 ## Human views
 
-The published logbook has three top-level views: **Code & Markdown**, **Trace**, and **Workspace**. Code & Markdown is the normal continuous logbook. Trace is the normalized chronological agent session. Workspace is the downloadable final-state model/data file inventory associated with attached sessions.
+The published logbook has three top-level views: **Code & Markdown**, **Traces**, and **Workspace**. Code & Markdown is the normal continuous logbook. Traces is the normalized chronological agent session view. Workspace is the downloadable final-state model/data file inventory associated with attached sessions. When those views are published, their headers link to the Agent Traces Dataset and HF Bucket respectively, including private destinations.
 
 ## Publishing & privacy
 
-- **Local until the first `publish`** — nothing leaves the machine, so drafts are safe. Scan for secrets/paths before that first publish; `publish` creates a **public** static Space immediately, with no confirmation prompt.
-- After the first `publish`, `cell`/`run`/`page` auto-sync in the background. After a **direct file edit**, run `trackio logbook sync` to push it.
-- The remote Space is remembered in `./.trackio/metadata.json`, so `publish`/`sync` need no argument after the first time.
-- Extra Space tags (e.g. required by a challenge board) go in `./.trackio/metadata.json` as `"tags": ["some-tag", ...]` — they are written into the published Space README on every publish/sync.
+- **Local until `publish`** — edits never auto-sync. Nothing leaves the machine until you explicitly run `trackio logbook publish`. `publish` creates a public static Space by default, but attached Traces and tracked Workspace files each have a separate default-deny prompt.
+- **Traces require explicit approval** — choose a public Agent Traces Dataset, a private Agent Traces Dataset, or not published (the default). Review the local Trace view first: raw sessions can contain prompts, tool inputs, command output, paths, screenshots, secrets, private code, and personal data. Supported Codex, Claude Code, Pi, and already-valid STS JSONL is uploaded unchanged; other attached formats are exported as Session Trace Simple Format.
+- **Workspace requires explicit approval** — the prompt includes the tracked file count and offers a public HF Bucket, private HF Bucket, or not published (the default). Use `--traces public|private|none` and `--workspace public|private|none` for non-interactive publishing.
+- Trackio remembers both publication choices, including “not published,” and reuses them on later manual publishes. It prints the reused choices each time. Run `trackio logbook publish --review-publication` to answer the questions again.
+- Choosing “not published” after an earlier upload retracts the dedicated Dataset or Bucket after the replacement Space is published. Failed retractions are saved and retried on the next publish.
+- The remote Space is remembered in `./.trackio/metadata.json`, so later `publish` commands need no Space argument.
+- Extra Space tags (e.g. required by a challenge board) go in `./.trackio/metadata.json` as `"tags": ["some-tag", ...]` — they are written into the published Space README on every publish.
 - **Publishing promotes local resources**: `publish` deploys any local trackio dashboards it captured as Spaces under the logbook's namespace and pushes local artifacts to a Bucket, then rewrites the links. Add `--private` to make the logbook, dashboards, and bucket all private (for team/internal logbooks); default is public.
