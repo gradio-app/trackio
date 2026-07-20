@@ -619,7 +619,10 @@ def write_mock_trace_verifier(workspace: Path) -> Path:
                 "name": "exec_command",
                 "call_id": "call_verifier",
                 "arguments": json.dumps(
-                    {"cmd": "python scripts/run_verifier_rerank.py", "yield_time_ms": 10000}
+                    {
+                        "cmd": "python scripts/run_verifier_rerank.py",
+                        "yield_time_ms": 10000,
+                    }
                 ),
             },
         ),

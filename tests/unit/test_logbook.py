@@ -226,7 +226,7 @@ def test_publish_failure_reverts_metadata(proj, monkeypatch):
         raise RuntimeError("upload failed")
 
     monkeypatch.setattr(logbook, "_push", boom)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(logbook.LogbookError):
         logbook.publish("user/space")
     metadata = logbook.read_metadata(proj)
     assert metadata.get("space_id") is None

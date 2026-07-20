@@ -111,7 +111,9 @@ def _records(path: Path) -> list[dict]:
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
-        raise TraceCaptureError(f"Trace file must be UTF-8 JSON or JSONL: {path}") from exc
+        raise TraceCaptureError(
+            f"Trace file must be UTF-8 JSON or JSONL: {path}"
+        ) from exc
     stripped = text.strip()
     if not stripped:
         return []
@@ -133,7 +135,9 @@ def _records(path: Path) -> list[dict]:
         except json.JSONDecodeError as exc:
             raise TraceCaptureError(f"Could not parse trace JSON: {path}") from exc
         if not isinstance(value, list):
-            raise TraceCaptureError("Trace JSON must contain an array of event objects.")
+            raise TraceCaptureError(
+                "Trace JSON must contain an array of event objects."
+            )
         return [item for item in value if isinstance(item, dict)]
 
     records = []
@@ -567,8 +571,7 @@ def _normalize_generic(records: list[dict]) -> tuple[dict, list[dict]]:
                             timestamp=ts,
                             turn=turn or None,
                             title="Output",
-                            call_id=block.get("toolCallId")
-                            or block.get("tool_use_id"),
+                            call_id=block.get("toolCallId") or block.get("tool_use_id"),
                             output=_text(block.get("content") or block.get("output")),
                             status="error" if block.get("isError") else "success",
                             depth=depth,
@@ -726,14 +729,18 @@ def normalize_trace(path: Path) -> dict:
     session_id = _session_id(records, provider, path)
     timestamps = [_parse_time(event.get("timestamp")) for event in events]
     timestamps = [value for value in timestamps if value is not None]
-    started = _parse_time(meta.get("started_at")) or (timestamps[0] if timestamps else None)
+    started = _parse_time(meta.get("started_at")) or (
+        timestamps[0] if timestamps else None
+    )
     ended = timestamps[-1] if timestamps else started
     for sequence, event in enumerate(events, start=1):
         event["id"] = f"event-{sequence}"
         event["sequence"] = sequence
         current = _parse_time(event.get("timestamp"))
         if started and current:
-            event["elapsed_ms"] = max(0, int((current - started).total_seconds() * 1000))
+            event["elapsed_ms"] = max(
+                0, int((current - started).total_seconds() * 1000)
+            )
     duration_ms = (
         max(0, int((ended - started).total_seconds() * 1000))
         if started and ended
@@ -892,7 +899,9 @@ def refresh_trace(proj: Path, session_id: str) -> dict:
     normalized = normalize_trace(source)
     raw_dir = proj / TRACE_STATE_DIR / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    raw_suffix = source.suffix if source.suffix.lower() in {".json", ".jsonl"} else ".jsonl"
+    raw_suffix = (
+        source.suffix if source.suffix.lower() in {".json", ".jsonl"} else ".jsonl"
+    )
     shutil.copy2(source, raw_dir / f"{_safe_id(session_id)}{raw_suffix}")
     return _write_normalized_trace(proj, entry, normalized)
 
@@ -1005,12 +1014,7 @@ def _trace_summary(index: dict) -> dict:
 
 def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> dict:
     root = proj.parent.resolve()
-    current = _workspace_snapshot(root)
-    trace_sources = {
-        Path(entry["source_path"]).resolve()
-        for entry in registry["sessions"]
-        if entry.get("source_path")
-    }
+    entries = registry["sessions"]
     imported = _read_json(proj / IMPORTED_WORKSPACE_FILE, {})
     imported_files = {
         item["path"]: {**item, "local_url": None, "imported": True}
@@ -1018,19 +1022,28 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
         if isinstance(item, dict) and item.get("path")
     }
     files_by_path = dict(imported_files)
+    current = _workspace_snapshot(root) if entries else {}
+    trace_sources = {
+        Path(entry["source_path"]).resolve()
+        for entry in entries
+        if entry.get("source_path")
+    }
+    baselines = {
+        entry["id"]: _read_json(_baseline_path(proj, entry["id"]), {}).get("files", {})
+        for entry in entries
+    }
     for relative, info in sorted(current.items()):
         if (root / relative).resolve() in trace_sources:
             continue
-        sessions = []
-        for entry in registry["sessions"]:
-            baseline = _read_json(_baseline_path(proj, entry["id"]), {}).get("files", {})
-            old = baseline.get(relative)
+        touched = []
+        for entry in entries:
+            old = baselines[entry["id"]].get(relative)
             if old is None or (old.get("size"), old.get("mtime_ns")) != (
                 info["size"],
                 info["mtime_ns"],
             ):
-                sessions.append(entry["id"])
-        if not sessions:
+                touched.append(entry["id"])
+        if not touched:
             continue
         encoded = quote(relative, safe="/")
         bucket_path = f"{WORKSPACE_BUCKET_PREFIX}/{relative}"
@@ -1040,7 +1053,7 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
             "type": info["type"],
             "size": info["size"],
             "modified_at": info["modified_at"],
-            "sessions": sessions,
+            "sessions": touched,
             "local_url": f"/__trackio_workspace__/{encoded}",
             "bucket_url": (
                 f"https://huggingface.co/buckets/{bucket_id}#"
@@ -1169,7 +1182,9 @@ def _write_sts_trace(path: Path, index: dict, events: list[dict]) -> None:
                     {
                         "id": event.get("call_id") or event.get("id"),
                         "function": {
-                            "name": event.get("tool_name") or event.get("title") or "tool",
+                            "name": event.get("tool_name")
+                            or event.get("title")
+                            or "tool",
                             "arguments": _sts_arguments(event.get("input")),
                         },
                     }
@@ -1212,7 +1227,9 @@ def prepare_agent_trace_dataset(proj: Path) -> tuple[Path, int]:
         index = _read_json(_trace_output_dir(proj, session_id) / "index.json", {})
         if not index:
             continue
-        raw_files = list((proj / TRACE_STATE_DIR / "raw").glob(f"{_safe_id(session_id)}.*"))
+        raw_files = list(
+            (proj / TRACE_STATE_DIR / "raw").glob(f"{_safe_id(session_id)}.*")
+        )
         raw = raw_files[0] if raw_files else None
         destination = export_dir / f"{_safe_id(session_id)}.jsonl"
         if raw is not None and _is_hub_native_jsonl(raw, index.get("provider")):

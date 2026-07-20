@@ -1031,7 +1031,7 @@ def main():
     logbook_sub = logbook_parser.add_subparsers(
         dest="logbook_action",
         required=True,
-        metavar="{open,cell,run,page,attach,remove,read,serve,publish}",
+        metavar="{open,cell,run,page,attach,remove,read,serve,publish,pin,sync-todos}",
     )
 
     lb_open = logbook_sub.add_parser(
@@ -2069,10 +2069,7 @@ def _handle_logbook(args):
                 proj, cell_id, pinned=not args.unpin, page=args.page
             )
             verb = "Unpinned" if args.unpin else "Pinned"
-            print(
-                f"{verb} cell {cell_id} on page "
-                f"'{res['page']}'."
-            )
+            print(f"{verb} cell {cell_id} on page '{res['page']}'.")
         elif action == "read":
             source, view = lb.split_read_view(args.path)
             proj = lb.resolve_read_source(source)
@@ -2089,7 +2086,9 @@ def _handle_logbook(args):
             }
             if args.read_target is None and view == "trace":
                 text = lb.read_traces(proj)
-                print(format_json({"view": "trace", "text": text}) if args.json else text)
+                print(
+                    format_json({"view": "trace", "text": text}) if args.json else text
+                )
             elif args.read_target is None and view == "workspace":
                 text = lb.read_workspace_tree(proj)
                 print(
@@ -2178,10 +2177,7 @@ def _handle_logbook(args):
                         if saved_trace != "none"
                         else "not published"
                     )
-                    print(
-                        "Using saved Traces publication preference: "
-                        f"{description}."
-                    )
+                    print(f"Using saved Traces publication preference: {description}.")
             workspace_publication = args.workspace
             if (
                 inventory["workspace_file_count"]
@@ -2218,8 +2214,7 @@ def _handle_logbook(args):
                         else "not published"
                     )
                     print(
-                        "Using saved Workspace publication preference: "
-                        f"{description}."
+                        f"Using saved Workspace publication preference: {description}."
                     )
             if reused_preference:
                 print(

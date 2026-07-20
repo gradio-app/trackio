@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import html
 import json
 import os
@@ -462,7 +463,8 @@ def read_traces(proj: Path, manifest: dict | None = None) -> str:
     root = logbook_root(proj)
     out = ["# Agent session traces", ""]
     for session in sessions:
-        index = _read_json_file(root / session["index_file"])
+        index_file = session.get("index_file")
+        index = _read_json_file(root / index_file) if index_file else {}
         title = index.get("title") or session.get("title") or session.get("id", "")
         out.append(f"## {title} · `{session.get('id', '')}`")
         bits = []
@@ -475,7 +477,10 @@ def read_traces(proj: Path, manifest: dict | None = None) -> str:
         out += [" · ".join(bits), ""]
         events = []
         for chunk in index.get("chunks", []):
-            events += _read_json_file(root / chunk["file"]).get("events", [])
+            chunk_file = chunk.get("file")
+            if not chunk_file:
+                continue
+            events += _read_json_file(root / chunk_file).get("events", [])
         out += [_trace_event_line(event) for event in events]
         out.append("")
     return "\n".join(out).strip() + "\n"
@@ -593,10 +598,12 @@ def _estimate_tokens(text: str) -> int:
 def write_site_files(proj: Path) -> dict:
     _ensure_project_gitignore(proj)
     _ensure_viewer_files(proj)
-    try:
-        from trackio import logbook_trace  # noqa: PLC0415
+    from trackio import logbook_trace  # noqa: PLC0415
 
-        logbook_trace.refresh_all(proj, bucket_id=_workspace_bucket(read_metadata(proj)))
+    try:
+        logbook_trace.refresh_all(
+            proj, bucket_id=_workspace_bucket(read_metadata(proj))
+        )
     except logbook_trace.TraceCaptureError as e:
         print(f"Warning: could not refresh attached trace: {e}", file=sys.stderr)
     manifest = build_manifest(proj)
@@ -629,9 +636,7 @@ def write_site_files(proj: Path) -> dict:
     return manifest
 
 
-def attach_trace(
-    proj: Path, source_path: str | Path, title: str | None = None
-) -> dict:
+def attach_trace(proj: Path, source_path: str | Path, title: str | None = None) -> dict:
     from trackio import logbook_trace  # noqa: PLC0415
 
     try:
@@ -647,7 +652,9 @@ def remove_trace(proj: Path, session_id: str) -> None:
 
     try:
         logbook_trace.remove_trace(proj, session_id)
-        logbook_trace.refresh_all(proj, bucket_id=_workspace_bucket(read_metadata(proj)))
+        logbook_trace.refresh_all(
+            proj, bucket_id=_workspace_bucket(read_metadata(proj))
+        )
     except logbook_trace.TraceCaptureError as e:
         raise LogbookError(str(e)) from e
     write_site_files(proj)
@@ -2257,9 +2264,7 @@ def _push(
     private = bool(metadata.get("private", private))
     trace_policy = metadata.get("trace_publication", "none")
     trace_dataset = metadata.get("trace_dataset")
-    generated = logbook_trace.refresh_all(
-        proj, bucket_id=_workspace_bucket(metadata)
-    )
+    generated = logbook_trace.refresh_all(proj, bucket_id=_workspace_bucket(metadata))
     trace_count = len(generated.get("traces", {}).get("sessions") or [])
     workspace_file_count = generated.get("workspace", {}).get("file_count", 0)
     if trace_count and trace_policy in {"public", "private"} and trace_dataset:
@@ -2309,9 +2314,7 @@ def _push(
             trace_policy == "private" and private
         )
         if trace_policy == "private" and not private:
-            print(
-                "  · private traces are not embedded in the public logbook Space"
-            )
+            print("  · private traces are not embedded in the public logbook Space")
         if not can_embed_traces:
             published_manifest["traces"] = []
             shutil.rmtree(upload_root / "traces", ignore_errors=True)
@@ -2395,8 +2398,9 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
     metadata["local_dashboards"] = dashboards
 
     arts = metadata.get("local_artifacts", [])
+    path_arts = metadata.get("local_path_artifacts", [])
     bucket = metadata.get("artifacts_bucket")
-    if arts:
+    if arts or path_arts:
         owner, _, name = metadata["space_id"].partition("/")
         bucket = bucket or f"{owner}/{name}-artifacts"
         metadata["artifacts_bucket"] = bucket
@@ -2414,6 +2418,25 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
                     f"{ARTIFACT_URI_PREFIX}{art}",
                     f"https://huggingface.co/buckets/{bucket}#{art}",
                 )
+
+            if path_arts:
+                print(
+                    f"  · pushing {len(path_arts)} local file artifact(s) → "
+                    f"bucket {bucket}"
+                )
+                uploaded = bucket_storage.upload_logbook_path_artifacts_to_bucket(
+                    bucket, path_arts
+                )
+                for rel in uploaded:
+                    _rewrite_in_pages(
+                        proj,
+                        f"{PATH_ARTIFACT_URI_PREFIX}{rel}",
+                        f"https://huggingface.co/buckets/{bucket}#"
+                        f"{bucket_storage.LOGBOOK_FILES_BUCKET_PREFIX}/{rel}",
+                    )
+                missing = [e["path"] for e in path_arts if e["path"] not in uploaded]
+                for rel in missing:
+                    print(f"  · skipped local file artifact (missing on disk): {rel}")
 
         except Exception as e:
             print(f"  · could not push artifacts to bucket: {e}")
@@ -2465,6 +2488,7 @@ def publish(
 ) -> str:
     proj = require_project_dir()
     metadata = read_metadata(proj)
+    metadata_before_publish = copy.deepcopy(metadata)
     previous_space = metadata.get("space_id")
     previous_trace_policy = metadata.get("trace_publication")
     previous_workspace_policy = metadata.get("workspace_publication")
@@ -2480,9 +2504,7 @@ def publish(
             "No Space id. Provide one: trackio logbook publish <username/space>"
         )
     trace_publication = trace_publication or previous_trace_policy or "none"
-    workspace_publication = (
-        workspace_publication or previous_workspace_policy or "none"
-    )
+    workspace_publication = workspace_publication or previous_workspace_policy or "none"
     valid_publication = {"public", "private", "none"}
     if trace_publication not in valid_publication:
         raise LogbookError(f"Unknown trace publication policy: {trace_publication}")
@@ -2505,13 +2527,15 @@ def publish(
         else set()
     )
     if previous_space and previous_space != space_id:
-        if not metadata.get("trace_dataset") or metadata.get(
-            "trace_dataset"
-        ) == old_trace_default:
+        if (
+            not metadata.get("trace_dataset")
+            or metadata.get("trace_dataset") == old_trace_default
+        ):
             metadata["trace_dataset"] = f"{owner}/{name}-traces"
-        if not metadata.get("workspace_bucket") or metadata.get(
-            "workspace_bucket"
-        ) in old_workspace_defaults:
+        if (
+            not metadata.get("workspace_bucket")
+            or metadata.get("workspace_bucket") in old_workspace_defaults
+        ):
             metadata["workspace_bucket"] = f"{owner}/{name}-workspace"
     metadata["space_id"] = space_id
     metadata.pop("autosync", None)
@@ -2541,10 +2565,7 @@ def publish(
             metadata["workspace_retraction_pending"] = workspace_bucket
             workspace_bucket = f"{owner}/{name}-workspace-{workspace_publication}"
         metadata["workspace_bucket"] = workspace_bucket or f"{owner}/{name}-workspace"
-        if (
-            metadata.get("workspace_retraction_pending")
-            == metadata["workspace_bucket"]
-        ):
+        if metadata.get("workspace_retraction_pending") == metadata["workspace_bucket"]:
             metadata.pop("workspace_retraction_pending", None)
     if previous_trace_policy in {"public", "private"} and trace_publication == "none":
         print(
@@ -2567,6 +2588,7 @@ def publish(
         _promote_local_deps(proj, space_id.split("/")[0], private=private)
         url = _push(proj, hf_token=hf_token, private=private)
     except Exception as e:
+        write_metadata(proj, metadata_before_publish)
         destinations = [f"Space {space_id}"]
         if trace_publication in {"public", "private"}:
             destinations.append(f"Dataset {metadata.get('trace_dataset')}")
