@@ -19,10 +19,10 @@ def test_settings_theme_switching_and_persistence(temp_dir):
             page.set_default_timeout(5000)
             base_url = full_url
             page.goto(base_url)
-            page.wait_for_load_state("networkidle")
 
-            page.get_by_role("button", name="Settings", exact=True).click()
-            page.wait_for_load_state("networkidle")
+            settings_button = page.get_by_role("button", name="Settings", exact=True)
+            expect(settings_button).to_be_visible()
+            settings_button.click()
             expect(page.locator(".settings-page")).to_be_visible()
 
             page.get_by_role("button", name="Dark", exact=True).click()
@@ -33,8 +33,7 @@ def test_settings_theme_switching_and_persistence(temp_dir):
 
             page.get_by_role("button", name="Dark", exact=True).click()
             page.goto(base_url)
-            page.wait_for_load_state("networkidle")
-            assert page.locator("html").get_attribute("data-theme") == "dark"
+            expect(page.locator("html")).to_have_attribute("data-theme", "dark")
 
             browser.close()
     finally:

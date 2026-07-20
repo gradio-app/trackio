@@ -1619,6 +1619,37 @@ table.board tr.linked-row:hover a {
   width: 1px;
   background: #dedfe3;
 }
+.trace-load-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 22px 0 0 100px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.trace-load-progress {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.trace-load-more {
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  font: 650 12px/1.2 var(--sans);
+}
+.trace-load-more:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.trace-load-more:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
 .trace-entry {
   --trace-depth: 0;
   position: relative;

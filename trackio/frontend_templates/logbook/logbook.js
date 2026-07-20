@@ -1349,15 +1349,16 @@
     return PAGE_CACHE[node.file];
   }
 
-  async function fetchData(file) {
-    if (DATA_CACHE[file]) return DATA_CACHE[file];
+  async function fetchData(file, cacheResult = true) {
+    if (cacheResult && DATA_CACHE[file]) return DATA_CACHE[file];
     const suffix = isLocalPreview()
       ? `?rev=${encodeURIComponent(MANIFEST.revision || "")}`
       : "";
     const response = await fetch("./" + file + suffix, { cache: "no-store" });
     if (!response.ok) throw new Error(`Could not load ${file}`);
-    DATA_CACHE[file] = await response.json();
-    return DATA_CACHE[file];
+    const data = await response.json();
+    if (cacheResult) DATA_CACHE[file] = data;
+    return data;
   }
 
   function allNodes() {
@@ -1771,6 +1772,21 @@
     return event.title || event.kind || "Event";
   }
 
+  function appendTraceResult(entry, result) {
+    if (!entry || !result || !result.output) return;
+    const card = entry.querySelector(".trace-card");
+    if (!card) return;
+    const details = document.createElement("details");
+    details.className = "trace-output";
+    const summary = document.createElement("summary");
+    summary.textContent = result.status === "error" ? "Error output" : "Output";
+    const output = document.createElement("pre");
+    output.textContent = result.output;
+    details.appendChild(summary);
+    details.appendChild(output);
+    card.appendChild(details);
+  }
+
   function traceEventCard(event, result) {
     const entry = document.createElement("div");
     entry.className = `trace-entry trace-${event.kind || "status"}`;
@@ -1820,19 +1836,9 @@
       status.textContent = String(event.status).replace(/_/g, " ");
       head.appendChild(status);
     }
-    if (result && result.output) {
-      const details = document.createElement("details");
-      details.className = "trace-output";
-      const summary = document.createElement("summary");
-      summary.textContent = result.status === "error" ? "Error output" : "Output";
-      const output = document.createElement("pre");
-      output.textContent = result.output;
-      details.appendChild(summary);
-      details.appendChild(output);
-      card.appendChild(details);
-    }
     entry.appendChild(rail);
     entry.appendChild(card);
+    appendTraceResult(entry, result);
     return entry;
   }
 
@@ -1840,7 +1846,7 @@
     return "/view/trace/" + id;
   }
 
-  function buildTraceSession(session, index, chunks) {
+  function buildTraceSession(session, index) {
     const sec = document.createElement("section");
     sec.className = "trace-session";
     sec.id = traceSessionAnchor(session.id);
@@ -1882,31 +1888,107 @@
     }
     sec.appendChild(meta);
 
-    const events = chunks.flatMap((chunk) => chunk.events || []);
-    const results = new Map();
-    events.forEach((event) => {
-      if (event.kind === "tool_result" && event.call_id) {
-        if (!results.has(event.call_id)) results.set(event.call_id, []);
-        results.get(event.call_id).push(event);
-      }
-    });
     const timeline = document.createElement("section");
     timeline.className = "trace-timeline";
-    events.forEach((event) => {
-      if (event.kind === "tool_result" && event.call_id) return;
-      const result =
-        event.kind === "tool_call" && event.call_id
-          ? (results.get(event.call_id) || []).shift()
-          : null;
-      timeline.appendChild(traceEventCard(event, result));
-    });
-    if (!events.length) {
+    sec.appendChild(timeline);
+
+    const chunks = index.chunks || [];
+    if (!chunks.length) {
       timeline.appendChild(
         emptyView("Empty trace", "No displayable events were found in this session.")
       );
+      return sec;
     }
-    sec.appendChild(timeline);
+
+    const controls = document.createElement("div");
+    controls.className = "trace-load-controls";
+    const progress = document.createElement("span");
+    progress.className = "trace-load-progress";
+    const loadMore = document.createElement("button");
+    loadMore.type = "button";
+    loadMore.className = "trace-load-more";
+    controls.appendChild(progress);
+    controls.appendChild(loadMore);
+    sec.appendChild(controls);
+
+    let nextChunk = 0;
+    let loadedEvents = 0;
+    let loading = false;
+    const pendingCalls = new Map();
+
+    function updateLoadControls() {
+      const total = Number(index.event_count) || chunks.reduce(
+        (sum, chunk) => sum + (Number(chunk.count) || 0),
+        0
+      );
+      progress.textContent = `${Math.min(loadedEvents, total)} of ${total} events loaded`;
+      if (nextChunk >= chunks.length) {
+        loadMore.textContent = "All events loaded";
+        loadMore.disabled = true;
+        return;
+      }
+      const count = Number(chunks[nextChunk].count) || "next";
+      loadMore.textContent = `Load ${count} more events`;
+      loadMore.disabled = false;
+    }
+
+    async function loadNextTraceChunk() {
+      if (loading || nextChunk >= chunks.length) return;
+      loading = true;
+      loadMore.disabled = true;
+      loadMore.textContent = "Loading…";
+      const descriptor = chunks[nextChunk];
+      try {
+        // Event chunks can be large. Do not retain the parsed JSON in DATA_CACHE;
+        // the rendered DOM is the only long-lived copy.
+        const chunk = await fetchData(descriptor.file, false);
+        const events = chunk.events || [];
+        events.forEach((event) => {
+          if (
+            event.kind === "tool_result" &&
+            event.call_id &&
+            pendingCalls.has(event.call_id)
+          ) {
+            appendTraceResult(pendingCalls.get(event.call_id), event);
+            pendingCalls.delete(event.call_id);
+            return;
+          }
+          const entry = traceEventCard(event);
+          timeline.appendChild(entry);
+          if (event.kind === "tool_call" && event.call_id) {
+            pendingCalls.set(event.call_id, entry);
+          }
+        });
+        loadedEvents += events.length;
+        nextChunk += 1;
+        sec.dataset.loadedChunks = String(nextChunk);
+        updateLoadControls();
+      } catch (error) {
+        progress.textContent = "Could not load the next trace segment.";
+        loadMore.textContent = "Retry";
+        loadMore.disabled = false;
+      } finally {
+        loading = false;
+      }
+    }
+
+    sec.dataset.loadedChunks = "0";
+    sec.loadNextTraceChunk = loadNextTraceChunk;
+    loadMore.addEventListener("click", loadNextTraceChunk);
+    updateLoadControls();
     return sec;
+  }
+
+  function ensureTraceSessionLoaded(sessionId) {
+    const target = document.getElementById(traceSessionAnchor(sessionId));
+    if (
+      target &&
+      target.dataset.loadedChunks === "0" &&
+      typeof target.loadNextTraceChunk === "function"
+    ) {
+      return target.loadNextTraceChunk();
+    }
+    return Promise.resolve();
   }
 
   function scrollToTraceSession(sessionId) {
@@ -1945,10 +2027,7 @@
       loaded = await Promise.all(
         sessions.map(async (session) => {
           const index = await fetchData(session.index_file);
-          const chunks = await Promise.all(
-            (index.chunks || []).map((chunk) => fetchData(chunk.file))
-          );
-          return { session, index, chunks };
+          return { session, index };
         })
       );
     } catch (error) {
@@ -1964,11 +2043,14 @@
 
     const shell = document.createElement("div");
     shell.className = "trace-shell";
-    loaded.forEach(({ session, index, chunks }) => {
-      shell.appendChild(buildTraceSession(session, index, chunks));
+    loaded.forEach(({ session, index }) => {
+      shell.appendChild(buildTraceSession(session, index));
     });
     page.appendChild(shell);
-    scrollToTraceSession(route.sessionId);
+    const activeSessionId = route.sessionId || sessions[0].id;
+    await ensureTraceSessionLoaded(activeSessionId);
+    if (renderId !== RENDER_SEQUENCE) return;
+    scrollToTraceSession(activeSessionId);
   }
 
   function svgIcon(kind) {
@@ -2149,7 +2231,10 @@
       document.querySelector("#page .trace-session")
     ) {
       setActiveView(route);
-      scrollToTraceSession(route.sessionId);
+      const sessions = MANIFEST.traces || [];
+      const activeSessionId = route.sessionId || (sessions[0] || {}).id;
+      ensureTraceSessionLoaded(activeSessionId);
+      scrollToTraceSession(activeSessionId);
       return;
     }
     renderCurrentView();
