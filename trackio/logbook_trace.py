@@ -1226,14 +1226,16 @@ def prepare_agent_trace_dataset(proj: Path) -> tuple[Path, int]:
         exported += 1
     (export_dir / "README.md").write_text(
         "---\n"
+        "viewer_mode: traces\n"
         "pretty_name: Trackio Agent Traces\n"
         "tags:\n- agent-traces\n- traces\n- trackio\n"
         "configs:\n"
         "- config_name: default\n"
+        "  default: true\n"
         "  data_files:\n"
         "  - split: train\n"
-        "    path: '*.jsonl'\n"
-        "task_categories:\n- text-generation\n"
+        "    path:\n"
+        "    - '*.jsonl'\n"
         "---\n\n"
         "# Agent traces\n\nAgent sessions published from a Trackio Logbook.\n",
         encoding="utf-8",
