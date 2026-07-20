@@ -17,7 +17,7 @@ from pathlib import Path
 PROJECT_DIR_NAME = ".trackio"
 LOGBOOK_SUBDIR = "logbook"
 METADATA_FILE = "metadata.json"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ROOT_SLUG = "index"
 VIEWER_DIR = Path(__file__).parent / "frontend_templates" / "logbook"
 VIEWER_FILES = [
@@ -268,7 +268,7 @@ def _scan_children(dir_path: Path, rel_prefix: str, parent_md: Path) -> list[dic
 def build_manifest(proj: Path) -> dict:
     pages = _pages_dir(proj)
     metadata = read_metadata(proj)
-    return {
+    manifest = {
         "schema_version": SCHEMA_VERSION,
         "title": _title_of(pages / "index.md", "Logbook"),
         "emoji": metadata.get("emoji", "🎯"),
@@ -283,6 +283,28 @@ def build_manifest(proj: Path) -> dict:
             "children": _scan_children(pages, "pages", pages / "index.md"),
         },
     }
+    try:
+        from trackio import logbook_trace  # noqa: PLC0415
+
+        generated = logbook_trace.read_generated(proj)
+        sessions = generated.get("traces", {}).get("sessions") or []
+        workspace = generated.get("workspace") or {}
+        manifest["traces"] = sessions
+        manifest["workspace"] = {
+            "file": "workspace.json",
+            "file_count": workspace.get("file_count", 0),
+            "total_size": workspace.get("total_size", 0),
+            "bucket_id": workspace.get("bucket_id"),
+        }
+    except Exception:
+        manifest["traces"] = []
+        manifest["workspace"] = {
+            "file": "workspace.json",
+            "file_count": 0,
+            "total_size": 0,
+            "bucket_id": None,
+        }
+    return manifest
 
 
 def _walk(node: dict):
@@ -327,6 +349,108 @@ def read_logbook(
         out.append(_page_outline_markdown(node, text, head, tail, raw_limit).strip())
         out.append("")
     return "\n".join(out)
+
+
+READ_VIEWS = ("code", "trace", "workspace")
+
+
+def split_read_view(source: str | None) -> tuple[str | None, str]:
+    if not source:
+        return source, "code"
+    base, _, fragment = source.partition("#")
+    view = "code"
+    match = re.match(r"/?view/(trace|traces|workspace|tree)", fragment)
+    if match:
+        view = "trace" if match.group(1).startswith("trace") else "workspace"
+    return (base or None), view
+
+
+def _read_json_file(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _format_ms(ms: int | None) -> str:
+    if not ms:
+        return "0s"
+    seconds = int(ms // 1000)
+    if seconds >= 3600:
+        return f"{seconds // 3600}h {seconds % 3600 // 60}m"
+    if seconds >= 60:
+        return f"{seconds // 60}m {seconds % 60}s"
+    return f"{seconds}s"
+
+
+def _trace_event_line(event: dict) -> str:
+    kind = event.get("kind") or "event"
+    if kind == "reasoning":
+        label = "thought"
+    elif kind == "tool_call":
+        label = f"tool {event.get('tool_name') or event.get('title') or ''}".strip()
+    elif kind == "tool_result":
+        label = "output"
+    elif kind == "message":
+        label = event.get("role") or "message"
+    else:
+        label = event.get("title") or kind
+    text = (
+        event.get("text")
+        or event.get("output")
+        or event.get("command")
+        or event.get("input")
+        or ""
+    )
+    text = " ".join(str(text).split())
+    if len(text) > 240:
+        text = text[:239] + "…"
+    seq = event.get("sequence")
+    prefix = f"[{seq}] " if seq else ""
+    return f"- {prefix}{label}: {text}" if text else f"- {prefix}{label}"
+
+
+def read_traces(proj: Path, manifest: dict | None = None) -> str:
+    manifest = manifest or build_manifest(proj)
+    sessions = manifest.get("traces") or []
+    if not sessions:
+        return "No agent session traces attached.\n"
+    root = logbook_root(proj)
+    out = ["# Agent session traces", ""]
+    for session in sessions:
+        index = _read_json_file(root / session["index_file"])
+        title = index.get("title") or session.get("title") or session.get("id", "")
+        out.append(f"## {title} · `{session.get('id', '')}`")
+        bits = []
+        if index.get("model"):
+            bits.append(f"model {index['model']}")
+        if index.get("started_at"):
+            bits.append(f"started {_short_time(index['started_at'])}")
+        bits.append(f"duration {_format_ms(index.get('duration_ms'))}")
+        bits.append(f"{index.get('event_count', 0)} events")
+        out += [" · ".join(bits), ""]
+        events = []
+        for chunk in index.get("chunks", []):
+            events += _read_json_file(root / chunk["file"]).get("events", [])
+        out += [_trace_event_line(event) for event in events]
+        out.append("")
+    return "\n".join(out).strip() + "\n"
+
+
+def read_workspace_tree(proj: Path, manifest: dict | None = None) -> str:
+    manifest = manifest or build_manifest(proj)
+    root = logbook_root(proj)
+    workspace_file = (manifest.get("workspace") or {}).get("file") or "workspace.json"
+    files = _read_json_file(root / workspace_file).get("files") or []
+    if not files:
+        return "No workspace files captured.\n"
+    out = [f"# Workspace files ({len(files)})", ""]
+    for item in sorted(files, key=lambda entry: entry.get("path", "")):
+        size = _format_size(item.get("size")).replace(" · ", "", 1).strip()
+        line = item.get("path", "")
+        out.append(f"{line} · {size}" if size else line)
+    return "\n".join(out).strip() + "\n"
 
 
 def _cell_agent_lines(cell: dict, head: int, tail: int, raw_limit: int) -> list[str]:
@@ -408,8 +532,20 @@ def _estimate_tokens(text: str) -> int:
 
 def write_site_files(proj: Path) -> dict:
     _ensure_viewer_files(proj)
+    try:
+        from trackio import logbook_trace  # noqa: PLC0415
+
+        logbook_trace.refresh_all(
+            proj, bucket_id=read_metadata(proj).get("artifacts_bucket")
+        )
+    except logbook_trace.TraceCaptureError as e:
+        print(f"Warning: could not refresh attached trace: {e}", file=sys.stderr)
     manifest = build_manifest(proj)
     manifest["agent_view_tokens"] = _estimate_tokens(read_logbook(proj, manifest))
+    manifest["trace_view_tokens"] = _estimate_tokens(read_traces(proj, manifest))
+    manifest["workspace_view_tokens"] = _estimate_tokens(
+        read_workspace_tree(proj, manifest)
+    )
     manifest["revision"] = str(time.time_ns())
     manifest["updated_at"] = _now_iso()
     root = logbook_root(proj)
@@ -432,6 +568,32 @@ def write_site_files(proj: Path) -> dict:
     if stale_agent_view.exists():
         stale_agent_view.unlink()
     return manifest
+
+
+def attach_trace(
+    proj: Path, source_path: str | Path, title: str | None = None
+) -> dict:
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    try:
+        result = logbook_trace.attach_trace(proj, source_path, title=title)
+    except logbook_trace.TraceCaptureError as e:
+        raise LogbookError(str(e)) from e
+    write_site_files(proj)
+    return result
+
+
+def remove_trace(proj: Path, session_id: str) -> None:
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    try:
+        logbook_trace.remove_trace(proj, session_id)
+        logbook_trace.refresh_all(
+            proj, bucket_id=read_metadata(proj).get("artifacts_bucket")
+        )
+    except logbook_trace.TraceCaptureError as e:
+        raise LogbookError(str(e)) from e
+    write_site_files(proj)
 
 
 # ---- creation ----
@@ -1924,7 +2086,8 @@ def _logbook_static_app(root: Path):
 
 def _build_preview_app(proj: Path):
     from starlette.applications import Starlette  # noqa: PLC0415
-    from starlette.routing import Mount  # noqa: PLC0415
+    from starlette.responses import FileResponse, PlainTextResponse  # noqa: PLC0415
+    from starlette.routing import Mount, Route  # noqa: PLC0415
 
     from trackio.frontend_config import resolve_frontend_dir  # noqa: PLC0415
     from trackio.server import build_starlette_app_only  # noqa: PLC0415
@@ -1934,8 +2097,23 @@ def _build_preview_app(proj: Path):
         frontend_dir=str(resolve_frontend_dir(None).path),
     )
     static_app = _logbook_static_app(logbook_root(proj))
+
+    async def workspace_file(request):
+        from trackio import logbook_trace  # noqa: PLC0415
+
+        relative = request.path_params.get("path", "")
+        candidate = logbook_trace.resolve_workspace_file(proj, relative)
+        if candidate is None:
+            return PlainTextResponse("Not found", status_code=404)
+        return FileResponse(
+            candidate,
+            filename=candidate.name,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
     return Starlette(
         routes=[
+            Route("/__trackio_workspace__/{path:path}", workspace_file),
             Mount("/dashboard", app=dashboard_app),
             Mount("/", app=static_app),
         ]
@@ -2004,11 +2182,22 @@ def _readme(manifest: dict) -> str:
     )
 
 
-def _push(proj: Path, hf_token: str | None = None, private: bool = False) -> str:
+def _push(
+    proj: Path,
+    hf_token: str | None = None,
+    private: bool = False,
+    workspace_prepared: bool = False,
+) -> str:
     import huggingface_hub  # noqa: PLC0415
 
     metadata = read_metadata(proj)
     space_id = metadata["space_id"]
+    private = bool(metadata.get("private", private))
+    bucket = metadata.get("artifacts_bucket")
+    if bucket and not workspace_prepared:
+        from trackio import logbook_trace  # noqa: PLC0415
+
+        logbook_trace.sync_workspace_bucket(proj, bucket, private=private)
     manifest = write_site_files(proj)
     (logbook_root(proj) / "README.md").write_text(_readme(manifest), encoding="utf-8")
     api = huggingface_hub.HfApi(token=hf_token)
@@ -2061,14 +2250,21 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
 
     arts = metadata.get("local_artifacts", [])
     path_arts = metadata.get("local_path_artifacts", [])
-    if arts or path_arts:
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    generated = logbook_trace.refresh_all(
+        proj, bucket_id=metadata.get("artifacts_bucket")
+    )
+    workspace_files = generated.get("workspace", {}).get("files") or []
+    bucket = metadata.get("artifacts_bucket")
+    if arts or path_arts or workspace_files:
         owner, _, name = metadata["space_id"].partition("/")
-        bucket = metadata.get("artifacts_bucket") or f"{owner}/{name}-artifacts"
+        bucket = bucket or f"{owner}/{name}-artifacts"
+        metadata["artifacts_bucket"] = bucket
         try:
             from trackio import bucket_storage  # noqa: PLC0415
 
             bucket_storage.create_bucket_if_not_exists(bucket, private=private)
-            metadata["artifacts_bucket"] = bucket
 
             for project in sorted({a.split("/")[0] for a in arts if "/" in a}):
                 print(f"  · pushing artifacts for '{project}' → bucket {bucket}")
@@ -2101,6 +2297,8 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
             print(f"  · could not push artifacts to bucket: {e}")
 
     write_metadata(proj, metadata)
+    if bucket:
+        logbook_trace.sync_workspace_bucket(proj, bucket, private=private)
 
 
 def publish(
@@ -2120,7 +2318,12 @@ def publish(
     write_metadata(proj, metadata)
     try:
         _promote_local_deps(proj, space_id.split("/")[0], private=private)
-        return _push(proj, hf_token=hf_token, private=private)
+        return _push(
+            proj,
+            hf_token=hf_token,
+            private=private,
+            workspace_prepared=True,
+        )
     except Exception:
         metadata = read_metadata(proj)
         metadata.update(prior)

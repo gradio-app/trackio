@@ -2,9 +2,9 @@
 """Create a realistic local Trackio logbook example.
 
 The script builds a fresh mock reproduction workspace, creates a logbook, and
-adds notebook-style markdown, code, figure, and command-run cells. It is meant
-to execute immediately as a demo of what an agent-maintained paper reproduction
-logbook might look like.
+adds notebook-style markdown, code, command-run cells, a Codex-style session
+trace, and generated Workspace files. It is meant to execute immediately as a
+demo of what an agent-maintained paper reproduction logbook might look like.
 """
 
 from __future__ import annotations
@@ -67,23 +67,6 @@ def _highlight_command(text: str) -> str:
     return f"\033[1m\033[38;5;208m{text}\033[0m"
 
 
-def plotly_figure_html(data: list[dict], layout: dict) -> str:
-    spec = json.dumps({"data": data, "layout": layout})
-    return (
-        "<!DOCTYPE html>\n<html>\n<head>\n"
-        '<meta charset="utf-8" />\n'
-        '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>\n'
-        "<style>html, body { margin: 0; padding: 0; }</style>\n"
-        "</head>\n<body>\n"
-        '<div id="figure"></div>\n'
-        "<script>\n"
-        f"const spec = {spec};\n"
-        'Plotly.newPlot("figure", spec.data, spec.layout, '
-        "{displayModeBar: false, responsive: true});\n"
-        "</script>\n</body>\n</html>"
-    )
-
-
 def write_file(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(text).strip() + "\n", encoding="utf-8")
@@ -134,6 +117,16 @@ def seed_repro_files(workspace: Path) -> None:
         print("rationale_parse_rate=0.922")
         print("mean_tokens=184")
         print("job=https://huggingface.co/jobs/mock-org/cot-baseline-001")
+
+        Path("results").mkdir(exist_ok=True)
+        predictions = [
+            {"id": "gsm8k-0007", "predicted": 18, "gold": 18, "correct": True},
+            {"id": "gsm8k-0042", "predicted": 5, "gold": 7, "correct": False},
+            {"id": "gsm8k-0113", "predicted": 120, "gold": 120, "correct": True},
+        ]
+        out = Path("results/baseline_predictions.jsonl")
+        out.write_text("\\n".join(json.dumps(row) for row in predictions) + "\\n")
+        print(f"wrote {out}")
         """,
     )
     write_file(
@@ -151,11 +144,23 @@ def seed_repro_files(workspace: Path) -> None:
         print("majority_margin_mean=0.31")
         print("cost_multiplier=18.6")
         print("dashboard=https://huggingface.co/spaces/mock-org/cot-trackio-dashboard")
+
+        Path("results").mkdir(exist_ok=True)
+        generations = [
+            {"id": "gsm8k-0007", "samples": 20, "votes": {"18": 13, "16": 5, "20": 2}, "final": 18},
+            {"id": "gsm8k-0042", "samples": 20, "votes": {"7": 11, "5": 9}, "final": 7},
+            {"id": "gsm8k-0113", "samples": 20, "votes": {"120": 17, "60": 3}, "final": 120},
+        ]
+        out = Path("results/self_consistency_generations.jsonl")
+        out.write_text("\\n".join(json.dumps(row) for row in generations) + "\\n")
+        print(f"wrote {out}")
         """,
     )
     write_file(
         workspace / "scripts" / "eval_error_buckets.py",
         """
+        from pathlib import Path
+
         buckets = {
             "arithmetic slip": 18,
             "wrong equation": 11,
@@ -165,41 +170,279 @@ def seed_repro_files(workspace: Path) -> None:
         for name, count in buckets.items():
             print(f"{name}: {count}")
         print("dominant_failure=arithmetic slip")
+
+        Path("results").mkdir(exist_ok=True)
+        rows = ["bucket,count"] + [f"{name},{count}" for name, count in buckets.items()]
+        out = Path("results/error_buckets.csv")
+        out.write_text("\\n".join(rows) + "\\n")
+        print(f"wrote {out}")
         """,
     )
-    write_file(
-        workspace / "results" / "accuracy_by_condition.csv",
-        """
-        condition,exact_match,parse_rate,cost_multiplier
-        direct,0.297,0.981,1.0
-        cot,0.414,0.922,1.4
-        cot_self_consistency,0.563,0.917,18.6
-        cot_no_rationales_in_context,0.351,0.944,1.2
-        """,
-    )
-    write_file(
-        workspace / "figures" / "accuracy_bars.html",
-        plotly_figure_html(
-            data=[
-                {
-                    "type": "bar",
-                    "orientation": "h",
-                    "y": ["Direct", "CoT", "Self-consistency"],
-                    "x": [29.7, 41.4, 56.3],
-                    "marker": {"color": ["#64748b", "#2563eb", "#16a34a"]},
-                    "text": ["29.7%", "41.4%", "56.3%"],
-                    "textposition": "outside",
-                    "hovertemplate": "%{y}: %{x}%<extra></extra>",
-                }
-            ],
-            layout={
-                "title": {"text": "GSM8K-mini exact match by prompting condition"},
-                "xaxis": {"range": [0, 70], "ticksuffix": "%"},
-                "margin": {"l": 130, "r": 30, "t": 55, "b": 40},
-                "height": 340,
+
+
+def write_mock_trace(workspace: Path) -> Path:
+    """Write a compact Codex-style rollout about building this demo logbook."""
+    trace_path = workspace / "mock-codex-session.jsonl"
+    session_id = "019b8f62-5a61-72d0-915f-cot-reproduction-demo"
+
+    def record(timestamp: str, kind: str, payload: dict) -> dict:
+        return {"timestamp": timestamp, "type": kind, "payload": payload}
+
+    records = [
+        record(
+            "2026-07-20T17:03:10.000Z",
+            "session_meta",
+            {
+                "id": session_id,
+                "timestamp": "2026-07-20T17:03:10.000Z",
+                "cwd": str(workspace),
+                "originator": "codex_cli_rs",
+                "cli_version": "0.106.0",
+                "source": "cli",
+                "model_provider": "openai",
             },
         ),
+        record(
+            "2026-07-20T17:03:10.050Z",
+            "turn_context",
+            {"type": "turn_context", "model": "gpt-5-codex"},
+        ),
+        record(
+            "2026-07-20T17:03:10.100Z",
+            "event_msg",
+            {"type": "task_started"},
+        ),
+        record(
+            "2026-07-20T17:03:10.120Z",
+            "response_item",
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Build a Trackio logbook that reproduces the main "
+                            "chain-of-thought and self-consistency results on a "
+                            "small GSM8K-style evaluation slice."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T17:03:12.400Z",
+            "response_item",
+            {
+                "type": "reasoning",
+                "summary": [
+                    {
+                        "type": "summary_text",
+                        "text": (
+                            "I should organize the work into Baselines, "
+                            "Self-consistency, Error analysis, and Ablations. "
+                            "First I will run the deterministic baseline and "
+                            "record both the command and its interpretation."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T17:03:13.050Z",
+            "response_item",
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": (
+                            "I’ll establish the single-sample CoT baseline, "
+                            "then compare it with majority-vote sampling."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T17:03:13.300Z",
+            "response_item",
+            {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call_baseline",
+                "arguments": json.dumps(
+                    {"cmd": "python scripts/run_baseline.py", "yield_time_ms": 10000}
+                ),
+            },
+        ),
+        record(
+            "2026-07-20T17:03:14.020Z",
+            "response_item",
+            {
+                "type": "function_call_output",
+                "call_id": "call_baseline",
+                "output": (
+                    "model=mock-7b-instruct dataset=gsm8k-mini shots=8\n"
+                    "exact_match=0.414\n"
+                    "rationale_parse_rate=0.922\n"
+                    "mean_tokens=184\n"
+                    "wrote results/baseline_predictions.jsonl"
+                ),
+            },
+        ),
+        record(
+            "2026-07-20T17:03:16.200Z",
+            "response_item",
+            {
+                "type": "reasoning",
+                "summary": [
+                    {
+                        "type": "summary_text",
+                        "text": (
+                            "The baseline reaches 41.4% exact match but loses "
+                            "some answers during final-answer parsing. I’ll log "
+                            "that result in Markdown and preserve the extraction "
+                            "helper as a code cell."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T17:03:17.100Z",
+            "event_msg",
+            {"type": "task_complete"},
+        ),
+        record(
+            "2026-07-20T17:04:02.000Z",
+            "event_msg",
+            {"type": "task_started"},
+        ),
+        record(
+            "2026-07-20T17:04:02.050Z",
+            "response_item",
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Now run self-consistency and identify the most useful "
+                            "next experiment from the errors."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T17:04:04.600Z",
+            "response_item",
+            {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call_self_consistency",
+                "arguments": json.dumps(
+                    {
+                        "cmd": "python scripts/run_self_consistency.py",
+                        "yield_time_ms": 10000,
+                    }
+                ),
+            },
+        ),
+        record(
+            "2026-07-20T17:04:05.440Z",
+            "response_item",
+            {
+                "type": "function_call_output",
+                "call_id": "call_self_consistency",
+                "output": (
+                    "samples=20 temperature=0.7 vote=majority\n"
+                    "exact_match=0.563\n"
+                    "majority_margin_mean=0.31\n"
+                    "cost_multiplier=18.6\n"
+                    "wrote results/self_consistency_generations.jsonl"
+                ),
+            },
+        ),
+        record(
+            "2026-07-20T17:04:07.000Z",
+            "response_item",
+            {
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": "call_errors",
+                "arguments": json.dumps(
+                    {"cmd": "python scripts/eval_error_buckets.py"}
+                ),
+            },
+        ),
+        record(
+            "2026-07-20T17:04:07.510Z",
+            "response_item",
+            {
+                "type": "function_call_output",
+                "call_id": "call_errors",
+                "output": (
+                    "arithmetic slip: 18\n"
+                    "wrong equation: 11\n"
+                    "answer extraction: 7\n"
+                    "ambiguous question: 3\n"
+                    "dominant_failure=arithmetic slip\n"
+                    "wrote results/error_buckets.csv"
+                ),
+            },
+        ),
+        record(
+            "2026-07-20T17:04:10.800Z",
+            "response_item",
+            {
+                "type": "reasoning",
+                "summary": [
+                    {
+                        "type": "summary_text",
+                        "text": (
+                            "Self-consistency improves exact match by 14.9 points "
+                            "but costs 18.6x more tokens. Arithmetic slips remain "
+                            "the largest error bucket, so a calculator-style "
+                            "verifier is a better next ablation than more samples."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T17:04:12.000Z",
+            "response_item",
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": (
+                            "The logbook now captures the baseline, the sampling "
+                            "tradeoff, the error analysis, and the verifier-rerank "
+                            "decision. The generated prediction and error files "
+                            "are available in Workspace."
+                        ),
+                    }
+                ],
+            },
+        ),
+        record(
+            "2026-07-20T17:04:12.200Z",
+            "event_msg",
+            {"type": "task_complete"},
+        ),
+    ]
+    trace_path.write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in records) + "\n",
+        encoding="utf-8",
     )
+    return trace_path
 
 
 def build_logbook(workspace: Path) -> None:
@@ -208,6 +451,12 @@ def build_logbook(workspace: Path) -> None:
     os.chdir(workspace)
     try:
         proj = logbook.create_logbook("Mock CoT Reproduction Logbook")
+        trace_path = write_mock_trace(workspace)
+        logbook.attach_trace(
+            proj,
+            trace_path,
+            title="CoT reproduction session",
+        )
 
         baselines = logbook.ensure_page(proj, "Baselines")
         logbook.add_markdown_cell(
@@ -261,19 +510,6 @@ def build_logbook(workspace: Path) -> None:
             "````",
             title="Sampling tradeoff",
         )
-        logbook.add_artifact_cell(
-            proj,
-            self_consistency,
-            "cot-repro/self-consistency-generations:v2",
-            size=734_000_000,
-        )
-        logbook.add_figure_cell(
-            proj,
-            self_consistency,
-            html=Path("figures/accuracy_bars.html").read_text(encoding="utf-8"),
-            raw=Path("results/accuracy_by_condition.csv").read_text(encoding="utf-8"),
-            title="Accuracy comparison",
-        )
 
         error_analysis = logbook.ensure_page(proj, "Error analysis")
         logbook.run_and_log(
@@ -281,42 +517,6 @@ def build_logbook(workspace: Path) -> None:
             [py, "scripts/eval_error_buckets.py"],
             page="Error analysis",
             title="Bucket failed CoT generations",
-        )
-        logbook.add_figure_cell(
-            proj,
-            error_analysis,
-            html=plotly_figure_html(
-                data=[
-                    {
-                        "type": "bar",
-                        "x": [
-                            "Arithmetic slip",
-                            "Wrong equation",
-                            "Answer extraction",
-                            "Ambiguous question",
-                        ],
-                        "y": [18, 11, 7, 3],
-                        "marker": {"color": "#f97316"},
-                        "hovertemplate": "%{x}: %{y}<extra></extra>",
-                    }
-                ],
-                layout={
-                    "title": {"text": "Failure buckets across 39 misses"},
-                    "yaxis": {"title": {"text": "count"}},
-                    "margin": {"l": 60, "r": 30, "t": 55, "b": 70},
-                    "height": 360,
-                },
-            ),
-            raw=json.dumps(
-                {
-                    "arithmetic slip": 18,
-                    "wrong equation": 11,
-                    "answer extraction": 7,
-                    "ambiguous question": 3,
-                },
-                indent=2,
-            ),
-            title="Failure bucket sketch",
         )
         logbook.add_markdown_cell(
             proj,
@@ -327,9 +527,7 @@ def build_logbook(workspace: Path) -> None:
             title="Next experiment decision",
         )
 
-        ablations = logbook.ensure_page(
-            proj, "Ablations", parent_slug="self-consistency"
-        )
+        ablations = logbook.ensure_page(proj, "Ablations")
         logbook.add_code_cell(
             proj,
             ablations,
@@ -358,6 +556,7 @@ def main() -> None:
     print("\nMock logbook created.")
     print(f"Workspace: {workspace}")
     print(f"Logbook files: {logbook_dir}")
+    print(f"Mock trace: {workspace / 'mock-codex-session.jsonl'}")
     read_command = f"trackio logbook read --path {_shell_quote(str(workspace))}"
     open_command = f"trackio logbook serve {_shell_quote(str(workspace))}"
     print(f"Read logbook with: {read_command}")

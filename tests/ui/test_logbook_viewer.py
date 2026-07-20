@@ -51,16 +51,7 @@ def test_logbook_renders_pages_as_single_document(tmp_path, monkeypatch):
                 ).to_be_visible()
                 expect(page.locator("#tree a")).to_have_count(2)
 
-                sections_with_resources = page.locator(
-                    ".page-section:has(.context-rail .rail-item)"
-                )
-                expect(sections_with_resources).to_have_count(2)
-                expect(
-                    page.locator('[data-slug="first-experiment"] .rail-item')
-                ).to_have_count(1)
-                expect(
-                    page.locator('[data-slug="second-experiment"] .rail-item')
-                ).to_have_count(1)
+                expect(page.locator(".context-rail")).to_have_count(0)
 
                 page.get_by_role("link", name="Second experiment").first.click()
                 expect(page).to_have_url(re.compile(r"#/second-experiment$"))
@@ -110,7 +101,7 @@ def test_dashboard_cell_uses_the_main_cell_header(tmp_path, monkeypatch):
             thread.join()
 
 
-def test_logbook_index_hub_summary(tmp_path, monkeypatch):
+def test_logbook_index_omits_hub_summary(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     proj = logbook.create_logbook("Reproduction: Hub summary test")
     index = logbook.logbook_root(proj) / "pages" / "index.md"
@@ -183,67 +174,16 @@ def test_logbook_index_hub_summary(tmp_path, monkeypatch):
                 expect(page.locator(".pinned-source:not(.pinned-copy)")).to_have_count(
                     0
                 )
-                expect(intro.locator(".logbook-hub-summary")).to_have_count(0)
                 expect(executive_body.locator(":scope > .pinned-notes")).to_have_count(
                     1
                 )
-                expect(
-                    executive_body.locator(":scope > .logbook-hub-summary")
-                ).to_have_count(1)
                 assert executive_body.locator(":scope > *").evaluate_all(
                     "els => els.map(el => el.className || el.tagName)"
-                ) == ["H1", "pinned-notes", "logbook-hub-summary"]
+                ) == ["H1", "pinned-notes"]
 
-                summary = executive_body.locator(".logbook-hub-summary")
-                expect(summary).to_have_count(1)
-                expect(summary.locator(".hub-summary-heading").nth(0)).to_have_text(
-                    "Hugging Face artifacts"
-                )
-                counts = summary.locator(".hub-summary-count")
-                expect(counts).to_have_text(
-                    ["3 models", "2 datasets", "1 job", "1 bucket"]
-                )
-                expect(
-                    summary.get_by_role("link", name="org/model-a")
-                ).to_have_attribute("href", "https://huggingface.co/org/model-a")
-                expect(
-                    summary.get_by_role("link", name="org/model-b")
-                ).to_have_attribute("href", "https://huggingface.co/org/model-b")
-                expect(
-                    summary.get_by_role("link", name="org/model-c")
-                ).to_have_attribute("href", "https://huggingface.co/org/model-c")
-                expect(
-                    summary.get_by_role("link", name="org/data-a")
-                ).to_have_attribute(
-                    "href", "https://huggingface.co/datasets/org/data-a"
-                )
-                expect(
-                    summary.get_by_role("link", name="org/data-b")
-                ).to_have_attribute(
-                    "href", "https://huggingface.co/datasets/org/data-b"
-                )
-                expect(
-                    summary.get_by_role("link", name="org · abc123def456…")
-                ).to_have_attribute(
-                    "href", "https://huggingface.co/jobs/org/abc123def4567890"
-                )
-                expect(
-                    summary.get_by_role("link", name="org/bundle:v1")
-                ).to_have_attribute(
-                    "href",
-                    "https://huggingface.co/buckets/org/my-bucket-artifacts#org/bundle:v1",
-                )
-                expect(summary.locator(".hub-summary-heading").nth(1)).to_have_text(
-                    "Code"
-                )
-                expect(
-                    summary.get_by_role("link", name="github.com/org/repro-repo")
-                ).to_have_attribute("href", "https://github.com/org/repro-repo")
+                expect(page.locator(".logbook-hub-summary")).to_have_count(0)
                 expect(page.locator(".logbook-stats")).to_have_count(0)
-
-                expect(
-                    page.locator('[data-slug="claim-1-demo"] .context-rail .rail-item')
-                ).to_have_count(7)
+                expect(page.locator(".context-rail")).to_have_count(0)
                 browser.close()
         finally:
             server.shutdown()

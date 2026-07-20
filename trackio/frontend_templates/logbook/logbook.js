@@ -4,9 +4,12 @@
   let MANIFEST = null;
   const PAGE_CACHE = {};
   const UNFURL_CACHE = {};
+  const DATA_CACHE = {};
   const LIVE_RELOAD_MS = 1500;
   const FIGURE_FRAME_WINDOWS = new Set();
   let FIGURE_NAVIGATION_READY = false;
+  let CURRENT_VIEW = null;
+  let RENDER_SEQUENCE = 0;
 
   function esc(s) {
     return String(s)
@@ -495,7 +498,7 @@
       if (!message || message.type !== "trackio-logbook:navigate") return;
       const target = String(message.target || "").replace(/^#?\//, "");
       if (!target || !MANIFEST || !findNode(MANIFEST.root, target)) return;
-      const hash = "#/" + target;
+      const hash = "#/view/code/" + target;
       if (location.hash === hash) scrollToHash();
       else location.hash = hash;
     });
@@ -642,6 +645,30 @@
     return el;
   }
 
+  function isShellCommand(part) {
+    return (
+      part.kind === "code" &&
+      part.lang === "bash" &&
+      !part.title &&
+      /^\s*\$\s/.test(part.text)
+    );
+  }
+
+  function renderCommandLine(text) {
+    const command = text.trim().replace(/^\$\s*/, "");
+    const el = document.createElement("div");
+    el.className = "jp-cmd";
+    const prompt = document.createElement("span");
+    prompt.className = "jp-cmd-prompt";
+    prompt.textContent = "$";
+    const code = document.createElement("code");
+    code.textContent = command;
+    el.appendChild(prompt);
+    el.appendChild(code);
+    el.appendChild(copySnippetBtn(command));
+    return el;
+  }
+
   function renderCodeCell(body, container, artifacts) {
     const parts = parseFences(body);
     const block = document.createElement("div");
@@ -694,7 +721,13 @@
         embedTexts.push(part.text);
         return;
       }
-      inputBody.appendChild(renderCode(part.text, part.lang, part.title));
+      if (isShellCommand(part)) {
+        inputBody.appendChild(renderCommandLine(part.text));
+      } else {
+        inputBody.appendChild(
+          renderCode(part.text, part.lang, part.title, Boolean(part.title))
+        );
+      }
     });
     if (artifacts && artifacts.length) {
       ensureOut();
@@ -913,13 +946,13 @@
     return btn;
   }
 
-  function renderCode(code, lang, title) {
+  function renderCode(code, lang, title, open) {
     const pre = document.createElement("pre");
     pre.className = "hl";
     const c = document.createElement("code");
     c.innerHTML = highlightCode(code, lang);
     pre.appendChild(c);
-    if (!title) {
+    if (!title || open) {
       const wrap = document.createElement("div");
       wrap.className = "snippet";
       wrap.appendChild(pre);
@@ -983,7 +1016,7 @@
     });
   }
 
-  /* -------------------- resources rail -------------------- */
+  /* -------------------- resource classification -------------------- */
 
   function fmt(n) {
     if (n == null) return null;
@@ -1010,18 +1043,6 @@
 
   const ARTIFACT_ICON_IMG = `<img class="art-ico" src="./bucket-icon.svg" alt="" />`;
   const DASHBOARD_ICON_IMG = `<img class="art-ico" src="./trackio-logo-light.png" alt="" />`;
-
-  const RESOURCE_DESC = {
-    dashboard: "Dashboard",
-    model: "Model",
-    dataset: "Dataset",
-    space: "Space",
-    artifact: "Artifact — in Bucket",
-    paper: "Paper",
-    repo: "Repository",
-    job: "Job — status & logs",
-    bucket: "Bucket — artifacts & data",
-  };
 
   const HF_NON_MODEL_PREFIX =
     /^(datasets|spaces|jobs|buckets|papers|blog|docs|api|posts|collections|organizations|settings|new|join|login|pricing|tasks|learn|chat|models)(\/|$)/;
@@ -1096,317 +1117,6 @@
       }
     }
     return null;
-  }
-
-  async function fillRailMeta(item, el) {
-    if (item.local) return;
-    const meta = el.querySelector(".rail-meta");
-    const set = (parts) => {
-      const text = parts.filter(Boolean).join(" · ");
-      if (text) meta.textContent = text;
-    };
-    if (item.kind === "model") {
-      const d = await getJSON(`https://huggingface.co/api/models/${item.id}`);
-      if (d) set([d.pipeline_tag, `↓ ${fmt(d.downloads)}`, `♥ ${fmt(d.likes)}`]);
-    } else if (item.kind === "dataset") {
-      const d = await getJSON(`https://huggingface.co/api/datasets/${item.id}`);
-      if (d) set([`↓ ${fmt(d.downloads)}`, `♥ ${fmt(d.likes)}`]);
-    } else if (item.kind === "space" || item.kind === "dashboard") {
-      const d = await getJSON(`https://huggingface.co/api/spaces/${item.id}`);
-      if (d) set([d.sdk, `♥ ${fmt(d.likes)}`]);
-    } else if (item.kind === "repo") {
-      const d = await getJSON(`https://api.github.com/repos/${item.id}`);
-      if (d) set([`★ ${fmt(d.stargazers_count)}`, d.language]);
-    } else if (item.kind === "paper") {
-      const m = item.id.match(/^(?:arXiv:|Paper )(.+)$/);
-      if (!m) return;
-      const arxivId = m[1].replace(/v\d+$/, "");
-      const d = await getJSON(`https://huggingface.co/api/papers/${arxivId}`);
-      if (d && d.id) {
-        if (el.href) el.href = `https://huggingface.co/papers/${d.id}`;
-        const title =
-          d.title && d.title.length > 70 ? `${d.title.slice(0, 69)}…` : d.title;
-        set([title, d.upvotes ? `▲ ${fmt(d.upvotes)}` : null]);
-      }
-    }
-  }
-
-  const BARE_ID_SKIP_DIRS = new Set([
-    "scripts",
-    "configs",
-    "config",
-    "results",
-    "figures",
-    "data",
-    "datasets",
-    "src",
-    "tests",
-    "test",
-    "examples",
-    "pages",
-    "assets",
-    "docs",
-    "outputs",
-    "output",
-    "checkpoints",
-    "models",
-    "utils",
-    "lib",
-    "bin",
-    "tmp",
-    "node_modules",
-    "dist",
-    "build",
-  ]);
-  const FILE_EXT_RE =
-    /\.(py|pyc|js|ts|jsx|tsx|json|jsonl|yaml|yml|csv|tsv|md|txt|sh|bash|html|css|png|jpe?g|svg|gif|webp|ipynb|toml|cfg|ini|lock|pdf|whl|gz|zip|tar|pt|pth|bin|safetensors|db|sqlite)$/i;
-
-  async function detectBareModelIds(text, groups) {
-    const stripped = text.replace(DETECTED_URL, " ");
-    DETECTED_URL.lastIndex = 0;
-    const seen = new Set();
-    const candidates = [];
-    const re = /(^|[\s"'`(=[])([A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*)/g;
-    let m;
-    while ((m = re.exec(stripped)) && candidates.length < 15) {
-      const id = m[2].replace(/[.:,]+$/, "");
-      if (seen.has(id)) continue;
-      seen.add(id);
-      if (FILE_EXT_RE.test(id)) continue;
-      if (BARE_ID_SKIP_DIRS.has(id.split("/")[0].toLowerCase())) continue;
-      candidates.push(id);
-    }
-    const results = await Promise.all(
-      candidates.map((id) => getJSON(`https://huggingface.co/api/models/${id}`))
-    );
-    let added = false;
-    const confirmed = [];
-    results.forEach((d, i) => {
-      if (!d || !d.id) return;
-      const id = candidates[i];
-      confirmed.push(id);
-      const url = `https://huggingface.co/${id}`;
-      if (!groups.has("model")) groups.set("model", new Map());
-      if (!groups.get("model").has(url)) {
-        groups.get("model").set(url, { kind: "model", id, url });
-        added = true;
-      }
-    });
-    return { added, confirmed };
-  }
-
-  function chipifyBareIds(ids, container) {
-    if (!ids.length) return;
-    const escaped = ids.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    const pattern = new RegExp("(" + escaped.join("|") + ")");
-    const splitter = new RegExp(pattern.source, "g");
-    container
-      .querySelectorAll(".cell.markdown .cell-body")
-      .forEach((body) => {
-        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
-          acceptNode(node) {
-            if (!pattern.test(node.nodeValue)) return NodeFilter.FILTER_REJECT;
-            for (
-              let el = node.parentElement;
-              el && el !== body;
-              el = el.parentElement
-            ) {
-              if (["A", "CODE", "PRE", "BUTTON"].indexOf(el.tagName) !== -1) {
-                return NodeFilter.FILTER_REJECT;
-              }
-            }
-            return NodeFilter.FILTER_ACCEPT;
-          },
-        });
-        const nodes = [];
-        while (walker.nextNode()) nodes.push(walker.currentNode);
-        nodes.forEach((node) => {
-          const frag = document.createDocumentFragment();
-          node.nodeValue.split(splitter).forEach((part) => {
-            if (ids.indexOf(part) !== -1) {
-              const holder = document.createElement("span");
-              holder.innerHTML = resChipHtml({
-                kind: "model",
-                id: part,
-                url: `https://huggingface.co/${part}`,
-              });
-              frag.appendChild(holder.firstChild);
-            } else if (part) {
-              frag.appendChild(document.createTextNode(part));
-            }
-          });
-          node.parentNode.replaceChild(frag, node);
-        });
-      });
-  }
-
-  let RAIL_TOKEN = 0;
-  const RAIL_EXCLUDE_KINDS = new Set(["paper", "repo", "artifact", "dashboard"]);
-
-  function railDashboardItem(it) {
-    return {
-      kind: "dashboard",
-      id: it.id,
-      url: it.local ? it.resUrl : it.url || it.resUrl,
-      local: it.local,
-      railLabel: "Dashboard",
-    };
-  }
-
-  function promoteTrackioSpacesInRail(groups, dashResUrls, body, rail, token) {
-    const spaceGroup = groups.get("space");
-    if (!spaceGroup || !spaceGroup.size) return;
-    spaceGroup.forEach((item, url) => {
-      getJSON(`https://huggingface.co/api/spaces/${item.id}`)
-        .then((d) => {
-          if (rail.dataset.renderToken !== token) return;
-          const tags = (d && d.tags) || [];
-          if (!tags.some((t) => String(t).toLowerCase() === "trackio")) return;
-          if (dashResUrls.has(url)) return;
-          spaceGroup.delete(url);
-          if (!spaceGroup.size) groups.delete("space");
-          if (!groups.has("dashboard")) groups.set("dashboard", new Map());
-          groups.get("dashboard").set(url, {
-            kind: "dashboard",
-            id: item.id,
-            url: item.url,
-            local: false,
-            railLabel: "Dashboard",
-          });
-          dashResUrls.add(url);
-          paintRail(groups, body, rail);
-        })
-        .catch(() => {});
-    });
-  }
-
-  function renderRail(md, body, rail) {
-    const token = String(++RAIL_TOKEN);
-    rail.dataset.renderToken = token;
-    const scanText = md.replace(
-      /(`{3,4}|~{3,4})(html|raw)[^\n]*\n[\s\S]*?\n\1/g,
-      " "
-    );
-    const groups = new Map();
-    const dashMap = new Map();
-    const dashResUrls = new Set();
-    cellDashboardItems(md).forEach((it) => {
-      if (dashMap.has(it.resUrl)) return;
-      dashMap.set(it.resUrl, railDashboardItem(it));
-      dashResUrls.add(it.resUrl);
-    });
-    if (dashMap.size) groups.set("dashboard", dashMap);
-    extractUrls(scanText).forEach((url) => {
-      const item = classifyResource(url);
-      if (!item) return;
-      if (RAIL_EXCLUDE_KINDS.has(item.kind)) return;
-      if (dashResUrls.has(url)) return;
-      if (!groups.has(item.kind)) groups.set(item.kind, new Map());
-      groups.get(item.kind).set(item.url, item);
-    });
-    const artMap = new Map();
-    cellArtifactItems(md).forEach((it) => {
-      if (artMap.has(it.resUrl)) return;
-      const label = it.type
-        ? it.type.charAt(0).toUpperCase() + it.type.slice(1)
-        : "Artifact";
-      artMap.set(it.resUrl, {
-        kind: "artifact",
-        id: it.name,
-        url: it.local ? it.resUrl : it.url || it.resUrl,
-        local: it.local,
-        railLabel: label,
-        size: it.size,
-      });
-    });
-    if (artMap.size) groups.set("artifact", artMap);
-    paintRail(groups, body, rail);
-    promoteTrackioSpacesInRail(groups, dashResUrls, body, rail, token);
-    detectBareModelIds(scanText, groups)
-      .then((result) => {
-        if (rail.dataset.renderToken !== token) return;
-        chipifyBareIds(result.confirmed, body);
-        if (result.added) paintRail(groups, body, rail);
-      })
-      .catch(() => {});
-  }
-
-  function paintRail(groups, body, rail) {
-    rail.innerHTML = "";
-    RESOURCE_SECTIONS.forEach(([kind, label, icon]) => {
-      const group = groups.get(kind);
-      if (!group || !group.size) return;
-      group.forEach((item) => {
-        const el = document.createElement(item.local ? "div" : "a");
-        el.className = item.local ? "rail-item rail-local" : "rail-item";
-        if (!item.local) {
-          el.href = item.url;
-          el.target = "_blank";
-          el.rel = "noopener";
-        }
-        el.dataset.resUrl = item.url;
-        let desc;
-        if (kind === "artifact") {
-          const state = item.local ? "publish to share" : "Open ↗";
-          desc = item.size ? `${item.size} · ${state}` : state;
-        } else if (kind === "dashboard") {
-          desc = item.local ? "publish to share" : "Open ↗";
-        } else {
-          desc = item.local ? "publish to share" : RESOURCE_DESC[kind];
-        }
-        const kindLabel = item.railLabel || label.replace(/s$/, "");
-        const iconHtml =
-          kind === "artifact"
-            ? ARTIFACT_ICON_IMG
-            : kind === "dashboard"
-              ? DASHBOARD_ICON_IMG
-              : `<span>${icon}</span>`;
-        el.innerHTML =
-          `<div class="rail-kind">${iconHtml}${esc(kindLabel)}</div>` +
-          `<div class="rail-title">${esc(item.id)}</div>` +
-          `<div class="rail-meta">${esc(desc)}</div>`;
-        rail.appendChild(el);
-        fillRailMeta(item, el)
-          .catch(() => {})
-          .finally(() => scheduleRailPosition(body, rail));
-      });
-    });
-    rail.hidden = !rail.childElementCount;
-    scheduleRailPosition(body, rail);
-  }
-
-  function resourceAnchor(body, url) {
-    return body.querySelector(`[data-res-url="${CSS.escape(url)}"]`);
-  }
-
-  function positionRail(body, rail) {
-    if (rail.hidden || !rail.isConnected) return;
-    const bodyRect = body.getBoundingClientRect();
-    const items = Array.from(rail.querySelectorAll(".rail-item")).map((el, index) => {
-      const anchor = resourceAnchor(body, el.dataset.resUrl);
-      return {
-        el,
-        index,
-        desired: anchor
-          ? Math.max(0, anchor.getBoundingClientRect().top - bodyRect.top)
-          : 0,
-      };
-    });
-    items.sort((a, b) => a.desired - b.desired || a.index - b.index);
-    let cursor = 0;
-    items.forEach(({ el, desired }) => {
-      const top = Math.max(desired, cursor);
-      el.style.top = `${top}px`;
-      cursor = top + el.offsetHeight + 10;
-    });
-    rail.style.minHeight = `${Math.max(body.offsetHeight, cursor)}px`;
-  }
-
-  function scheduleRailPosition(body, rail) {
-    cancelAnimationFrame(Number(rail.dataset.positionFrame || 0));
-    rail.dataset.positionFrame = String(
-      requestAnimationFrame(() => positionRail(body, rail))
-    );
   }
 
   function dashboardSubdomainFromUrl(url) {
@@ -1523,11 +1233,15 @@
   function buildTree() {
     const tree = document.getElementById("tree");
     tree.innerHTML = "";
+    const label = document.createElement("div");
+    label.className = "tree-label";
+    label.textContent = "Pages";
+    tree.appendChild(label);
     const nodes = [];
     (MANIFEST.root.children || []).forEach((c) => flattenTree(c, 0, nodes));
     nodes.forEach(({ node, depth }) => {
       const a = document.createElement("a");
-      a.href = "#/" + node.slug;
+      a.href = "#/view/code/" + node.slug;
       a.className = "depth-" + depth;
       a.dataset.slug = node.slug;
       const mark = document.createElement("span");
@@ -1537,6 +1251,47 @@
       a.appendChild(document.createTextNode(" " + node.title));
       tree.appendChild(a);
     });
+  }
+
+  function highlightTraceSession(sessionId) {
+    document.querySelectorAll("#tree a").forEach((link) => {
+      link.classList.toggle("active", link.dataset.sessionId === sessionId);
+    });
+  }
+
+  function buildTraceTree(activeSessionId) {
+    const tree = document.getElementById("tree");
+    tree.innerHTML = "";
+    const sessions = MANIFEST.traces || [];
+    if (!sessions.length) return;
+    const label = document.createElement("div");
+    label.className = "tree-label";
+    label.textContent = "Sessions";
+    tree.appendChild(label);
+    sessions.forEach((session) => {
+      const link = document.createElement("a");
+      link.href = "#" + traceSessionAnchor(session.id);
+      link.dataset.sessionId = session.id;
+      link.textContent = session.title || session.id;
+      link.title = session.title || session.id;
+      tree.appendChild(link);
+    });
+    highlightTraceSession(activeSessionId || sessions[0].id);
+  }
+
+  function renderSidebar(route) {
+    if (route.view === "trace") {
+      highlight(null);
+      buildTraceTree(route.sessionId);
+      return;
+    }
+    if (route.view === "workspace") {
+      document.getElementById("tree").innerHTML = "";
+      highlight(null);
+      return;
+    }
+    buildTree();
+    highlight(route.slug);
   }
 
   function highlight(slug) {
@@ -1551,6 +1306,9 @@
   function clearPageCache() {
     Object.keys(PAGE_CACHE).forEach((key) => {
       delete PAGE_CACHE[key];
+    });
+    Object.keys(DATA_CACHE).forEach((key) => {
+      delete DATA_CACHE[key];
     });
   }
 
@@ -1575,6 +1333,17 @@
       PAGE_CACHE[node.file] = "# " + node.title + "\n\n_Could not load section._";
     }
     return PAGE_CACHE[node.file];
+  }
+
+  async function fetchData(file) {
+    if (DATA_CACHE[file]) return DATA_CACHE[file];
+    const suffix = isLocalPreview()
+      ? `?rev=${encodeURIComponent(MANIFEST.revision || "")}`
+      : "";
+    const response = await fetch("./" + file + suffix, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Could not load ${file}`);
+    DATA_CACHE[file] = await response.json();
+    return DATA_CACHE[file];
   }
 
   function allNodes() {
@@ -1624,7 +1393,6 @@
     });
     deck.appendChild(list);
     const anchor =
-      container.querySelector(".logbook-hub-summary") ||
       container.querySelector(".agent-hint") ||
       Array.from(container.children).find((el) => el.tagName === "H1");
     container.insertBefore(deck, anchor ? anchor.nextSibling : container.firstChild);
@@ -1673,15 +1441,13 @@
     }
   }
 
-  const RAIL_OBSERVERS = [];
-
   async function renderLogbook(opts = {}) {
     const scrollY = window.scrollY;
     const page = document.getElementById("page");
-    RAIL_OBSERVERS.splice(0).forEach((observer) => observer.disconnect());
     page.innerHTML = "";
     const nodes = allNodes();
     const markdown = await Promise.all(nodes.map(fetchPage));
+    if (opts.renderId && opts.renderId !== RENDER_SEQUENCE) return;
     const pinnedCells = collectPinnedCells(markdown, nodes);
     let bookIntroBody = null;
     nodes.forEach((node, index) => {
@@ -1694,43 +1460,19 @@
       layout.className = "page-layout";
       const body = document.createElement("div");
       body.className = "page-body";
-      const rail = document.createElement("aside");
-      rail.className = "context-rail";
-      rail.setAttribute("aria-label", `Resources for ${node.title}`);
 
       renderMarkdown(markdown[index], body);
       if (node.slug === MANIFEST.root.slug) {
         section.classList.add("book-intro");
         removeIndexProse(body);
         removePageDirectory(body);
-        const hint = buildAgentHint();
         const h1 = body.querySelector("h1");
-        let insertAfter = h1 && h1.parentNode === body ? h1 : null;
-        if (insertAfter) {
-          let el = insertAfter.nextElementSibling;
-          while (el && el.classList.contains("index-paper-link")) {
-            insertAfter = el;
-            el = el.nextElementSibling;
-          }
-        }
-        if (insertAfter) {
-          insertAfter.after(hint);
-        } else {
-          body.prepend(hint);
-        }
+        if (h1 && h1.parentNode === body) h1.remove();
         bookIntroBody = body;
       }
       layout.appendChild(body);
-      layout.appendChild(rail);
       section.appendChild(layout);
       page.appendChild(section);
-      renderRail(markdown[index], body, rail);
-      if (window.ResizeObserver) {
-        const observer = new ResizeObserver(() => scheduleRailPosition(body, rail));
-        observer.observe(body);
-        observer.observe(rail);
-        RAIL_OBSERVERS.push(observer);
-      }
     });
     const pinnedSlugs = Array.from(
       new Set(pinnedCells.map((cell) => cell.node && cell.node.slug).filter(Boolean))
@@ -1747,17 +1489,12 @@
     page
       .querySelectorAll(".pinned-source:not(.pinned-copy)")
       .forEach((cell) => cell.remove());
-    const hubSummaryTarget = pinnedTarget || bookIntroBody;
-    if (hubSummaryTarget) {
-      hubSummaryTarget.appendChild(buildLogbookHubSummary(markdown));
-    }
     if (bookIntroBody) {
       const section = bookIntroBody.closest(".book-intro");
       const hasExtra = Array.from(bookIntroBody.children).some(
         (el) =>
           el.tagName !== "H1" &&
           !el.classList.contains("agent-hint") &&
-          !el.classList.contains("logbook-hub-summary") &&
           !el.classList.contains("index-paper-link") &&
           !el.classList.contains("pinned-notes")
       );
@@ -1772,26 +1509,6 @@
         scrollToHash({ behavior: "auto" });
       }
       updateActiveSection();
-    });
-  }
-
-  function setupResourceHover() {
-    document.addEventListener("mouseover", (e) => {
-      const el = e.target.closest && e.target.closest("[data-res-url]");
-      if (!el || el.classList.contains("rail-item")) return;
-      const url = el.getAttribute("data-res-url");
-      const section = el.closest(".page-section");
-      const scope = section || document;
-      scope.querySelectorAll(".context-rail [data-res-url]").forEach((n) => {
-        n.classList.toggle("res-hl", n.getAttribute("data-res-url") === url);
-      });
-    });
-    document.addEventListener("mouseout", (e) => {
-      const el = e.target.closest && e.target.closest("[data-res-url]");
-      if (!el || el.classList.contains("rail-item")) return;
-      document.querySelectorAll(".context-rail .res-hl").forEach((n) => {
-        n.classList.remove("res-hl");
-      });
     });
   }
 
@@ -1810,31 +1527,6 @@
 
   function spaceIdFromUrl(url) {
     return url.split("/spaces/")[1].split(/[?#]/)[0].replace(/\/$/, "");
-  }
-
-  const LB_CELL_RE = /(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)/g;
-
-  function cellDashboardItems(md) {
-    const re = new RegExp(LB_CELL_RE.source, "g");
-    const items = [];
-    let m;
-    while ((m = re.exec(md))) {
-      const meta = parseCellMeta(m[2]);
-      if (meta.type !== "dashboard") continue;
-      const body = m[3];
-      const project = meta.dashboard_project || "";
-      const sp = body.match(/https:\/\/huggingface\.co\/spaces\/[^\s<>)"'`]+/);
-      const local = !sp;
-      const url = sp ? sp[0] : "";
-      const resUrl = local ? `trackio-local-dashboard://${project}` : url;
-      items.push({
-        id: local ? project : spaceIdFromUrl(url),
-        local,
-        url,
-        resUrl,
-      });
-    }
-    return items;
   }
 
   function artifactInfoFromCell(meta, body) {
@@ -1861,197 +1553,38 @@
     };
   }
 
-  function cellArtifactItems(md) {
-    const re = new RegExp(LB_CELL_RE.source, "g");
-    const items = [];
-    let m;
-    while ((m = re.exec(md))) {
-      const meta = parseCellMeta(m[2]);
-      const body = m[3];
-      const order = meta.created_at || "";
-      if (meta.type === "artifact") {
-        const info = artifactInfoFromCell(meta, body);
-        if (info.name) items.push({ ...info, order });
-      }
-    }
-    return items;
-  }
+  const VIEW_ROUTE = { trace: "#/view/trace", workspace: "#/view/workspace" };
+  const VIEW_TOKENS = {
+    code: "agent_view_tokens",
+    trace: "trace_view_tokens",
+    workspace: "workspace_view_tokens",
+  };
 
-  function scanMarkdownUrls(md) {
-    return extractUrls(
-      md.replace(/(`{3,4}|~{3,4})(html|raw)[^\n]*\n[\s\S]*?\n\1/g, " ")
-    );
-  }
-
-  function collectAllLogbookResources(markdownList) {
-    const groups = {
-      model: new Map(),
-      dataset: new Map(),
-      space: new Map(),
-      job: new Map(),
-      bucket: new Map(),
-      repo: new Map(),
-    };
-    markdownList.forEach((md) => {
-      scanMarkdownUrls(md).forEach((url) => {
-        const item = classifyResource(url);
-        if (!item || item.kind === "paper" || item.kind === "dashboard") return;
-        if (item.kind === "repo") {
-          if (!groups.repo.has(item.url)) groups.repo.set(item.url, item);
-          return;
-        }
-        if (item.kind === "artifact") {
-          if (!groups.bucket.has(url)) {
-            groups.bucket.set(url, { id: item.id, url, local: false });
-          }
-          return;
-        }
-        const group = groups[item.kind];
-        if (group && !group.has(item.url)) group.set(item.url, item);
-      });
-      cellDashboardItems(md).forEach((it) => {
-        if (!it.url || groups.space.has(it.url)) return;
-        groups.space.set(it.url, {
-          kind: "space",
-          id: spaceIdFromUrl(it.url),
-          url: it.url,
-          local: false,
-        });
-      });
-      const re = new RegExp(LB_CELL_RE.source, "g");
-      let m;
-      while ((m = re.exec(md))) {
-        if (parseCellMeta(m[2]).type !== "artifact") continue;
-        const body = m[3];
-        const info = artifactInfoFromCell(parseCellMeta(m[2]), body);
-        if (!info.name || groups.bucket.has(info.resUrl)) continue;
-        const full =
-          body.match(
-            /https:\/\/huggingface\.co\/buckets\/[^\s<>)"'`]+(?:#\S+)?/
-          )?.[0] ||
-          info.url ||
-          info.resUrl;
-        groups.bucket.set(info.resUrl, {
-          id: info.name,
-          url: full,
-          local: info.local,
-        });
-      }
-    });
-    return groups;
-  }
-
-  function hubCountLabel(count, singular, plural) {
-    return `${count} ${count === 1 ? singular : plural}`;
-  }
-
-  function hubSummaryRow(countLabel, items) {
-    const row = document.createElement("div");
-    row.className = "hub-summary-row";
-    const label = document.createElement("span");
-    label.className = "hub-summary-count";
-    label.textContent = countLabel;
-    const links = document.createElement("span");
-    links.className = "hub-summary-links";
-    items.forEach((item, index) => {
-      if (index) links.appendChild(document.createTextNode(" · "));
-      if (item.local) {
-        const span = document.createElement("span");
-        span.className = "hub-summary-local";
-        span.textContent = item.id;
-        links.appendChild(span);
-      } else {
-        const a = document.createElement("a");
-        a.href = item.url;
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.textContent = item.id;
-        links.appendChild(a);
-      }
-    });
-    row.appendChild(label);
-    row.appendChild(links);
-    return row;
-  }
-
-  function buildLogbookHubSummary(markdownList) {
-    const groups = collectAllLogbookResources(markdownList);
-    const el = document.createElement("div");
-    el.className = "logbook-hub-summary";
-
-    const hfKinds = [
-      ["model", "model", "models"],
-      ["dataset", "dataset", "datasets"],
-      ["space", "space", "spaces"],
-      ["job", "job", "jobs"],
-      ["bucket", "bucket", "buckets"],
-    ];
-    let hfHasAny = false;
-    const hfBlock = document.createElement("div");
-    hfBlock.className = "hub-summary-block";
-    const hfTitle = document.createElement("h2");
-    hfTitle.className = "hub-summary-heading";
-    hfTitle.textContent = "Hugging Face artifacts";
-    hfBlock.appendChild(hfTitle);
-
-    hfKinds.forEach(([key, singular, plural]) => {
-      const map = groups[key];
-      if (!map || !map.size) return;
-      hfHasAny = true;
-      hfBlock.appendChild(
-        hubSummaryRow(
-          hubCountLabel(map.size, singular, plural),
-          Array.from(map.values())
-        )
-      );
-    });
-
-    if (hfHasAny) el.appendChild(hfBlock);
-
-    if (groups.repo.size) {
-      const codeBlock = document.createElement("div");
-      codeBlock.className = "hub-summary-block";
-      const codeTitle = document.createElement("h2");
-      codeTitle.className = "hub-summary-heading";
-      codeTitle.textContent = "Code";
-      codeBlock.appendChild(codeTitle);
-      const row = document.createElement("div");
-      row.className = "hub-summary-row hub-summary-code";
-      groups.repo.forEach((item) => {
-        const a = document.createElement("a");
-        a.href = item.url;
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.textContent = `github.com/${item.id}`;
-        row.appendChild(a);
-      });
-      codeBlock.appendChild(row);
-      el.appendChild(codeBlock);
-    }
-
-    if (!hfHasAny && !groups.repo.size) {
-      const hint = document.createElement("p");
-      hint.className = "hub-summary-empty";
-      hint.textContent =
-        "Link Hugging Face models, datasets, Jobs, Buckets, and GitHub repos in logbook cells — they appear here automatically.";
-      el.appendChild(hint);
-    }
-
-    return el;
-  }
-
-  function buildAgentHint() {
+  function readTarget(view) {
     const onSpaces =
       /\.hf\.space$/.test(location.hostname) ||
       /(^|\.)huggingface\.co$/.test(location.hostname);
-    let source = "";
-    if (onSpaces && MANIFEST.space_id) {
-      source = ` ${MANIFEST.space_id}`;
-    } else if (/^https?:$/.test(location.protocol)) {
-      source = ` ${location.origin}/`;
-    }
-    const command = `trackio logbook read${source}`;
-    const tokens = MANIFEST.agent_view_tokens;
+    let base = "";
+    if (onSpaces && MANIFEST.space_id) base = MANIFEST.space_id;
+    else if (/^https?:$/.test(location.protocol))
+      base = `${location.origin}${location.pathname}`;
+    if (!base) return "";
+    return base + (VIEW_ROUTE[view] || "");
+  }
+
+  function renderLogbookHeader(view) {
+    const title = document.getElementById("logbook-title");
+    if (title) title.textContent = MANIFEST.title;
+    const cli = document.getElementById("logbook-cli");
+    if (!cli) return;
+    cli.innerHTML = "";
+    cli.appendChild(buildAgentHint(view));
+  }
+
+  function buildAgentHint(view) {
+    const target = readTarget(view);
+    const command = `trackio logbook read${target ? ` ${target}` : ""}`;
+    const tokens = MANIFEST[VIEW_TOKENS[view] || VIEW_TOKENS.code];
     const div = document.createElement("div");
     div.className = "agent-hint";
     const label = document.createElement("span");
@@ -2076,14 +1609,488 @@
     return div;
   }
 
+  function routeState() {
+    const raw = (location.hash || "").replace(/^#\/?/, "");
+    if (!raw) return { view: "code", slug: MANIFEST.root.slug };
+    const parts = raw.split("/");
+    if (parts[0] !== "view") {
+      const slug = findNode(MANIFEST.root, raw) ? raw : MANIFEST.root.slug;
+      return { view: "code", slug };
+    }
+    if (parts[1] === "trace") {
+      return { view: "trace", sessionId: parts.slice(2).join("/") || null };
+    }
+    if (parts[1] === "workspace") return { view: "workspace" };
+    const candidate = parts.slice(2).join("/") || MANIFEST.root.slug;
+    return {
+      view: "code",
+      slug: findNode(MANIFEST.root, candidate) ? candidate : MANIFEST.root.slug,
+    };
+  }
+
+  function updateViewTabs(route = routeState()) {
+    document.querySelectorAll("#view-tabs a").forEach((tab) => {
+      const view = tab.dataset.view;
+      tab.classList.toggle("active", view === route.view);
+      tab.setAttribute("aria-current", view === route.view ? "page" : "false");
+      if (view === "code") {
+        const slug = route.view === "code" ? route.slug : MANIFEST.root.slug;
+        tab.href = `#/view/code/${slug}`;
+      } else if (view === "trace") {
+        tab.href = "#/view/trace";
+      }
+    });
+  }
+
+  function setActiveView(route) {
+    CURRENT_VIEW = route.view;
+    document.body.dataset.view = route.view;
+    updateViewTabs(route);
+    renderLogbookHeader(route.view);
+    renderSidebar(route);
+  }
+
+  function formatDuration(ms) {
+    if (ms == null || isNaN(ms)) return "—";
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    if (hours) return `${hours}h ${minutes}m ${seconds}s`;
+    if (minutes) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  }
+
+  function formatDate(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return value;
+    return date.toLocaleString([], {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+
+  function emptyView(title, text, command) {
+    const empty = document.createElement("div");
+    empty.className = "view-empty";
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    const body = document.createElement("p");
+    body.textContent = text;
+    empty.appendChild(heading);
+    empty.appendChild(body);
+    if (command) {
+      const code = document.createElement("code");
+      code.textContent = command;
+      empty.appendChild(code);
+    }
+    return empty;
+  }
+
+  function traceEventLabel(event) {
+    if (event.kind === "reasoning") return "Thought";
+    if (event.kind === "tool_call") return event.tool_name || event.title || "Tool";
+    if (event.kind === "tool_result") return "Tool output";
+    return event.title || event.kind || "Event";
+  }
+
+  function traceEventCard(event, result) {
+    const entry = document.createElement("div");
+    entry.className = `trace-entry trace-${event.kind || "status"}`;
+    entry.style.setProperty("--trace-depth", Math.min(Number(event.depth) || 0, 4));
+
+    const rail = document.createElement("div");
+    rail.className = "trace-rail";
+    const number = document.createElement("span");
+    number.className = "trace-number";
+    number.textContent = `#${event.sequence || ""}`;
+    const dot = document.createElement("span");
+    dot.className = "trace-dot";
+    const elapsed = document.createElement("span");
+    elapsed.className = "trace-elapsed";
+    elapsed.textContent = formatDuration(event.elapsed_ms);
+    rail.appendChild(number);
+    rail.appendChild(dot);
+    rail.appendChild(elapsed);
+
+    const card = document.createElement("article");
+    card.className = "trace-card";
+    const head = document.createElement("header");
+    const kind = document.createElement("span");
+    kind.className = "trace-kind";
+    kind.textContent = traceEventLabel(event);
+    head.appendChild(kind);
+    if (event.turn) {
+      const turn = document.createElement("span");
+      turn.className = "trace-turn";
+      turn.textContent = `turn ${event.turn}`;
+      head.appendChild(turn);
+    }
+    card.appendChild(head);
+
+    const bodyText = event.text || event.input || event.output;
+    if (bodyText) {
+      const body = document.createElement(
+        event.kind === "tool_call" || event.kind === "tool_result" ? "pre" : "div"
+      );
+      body.className = "trace-body";
+      body.textContent = bodyText;
+      card.appendChild(body);
+    }
+    if (event.status) {
+      const status = document.createElement("span");
+      status.className = `trace-status-badge trace-status-badge-${event.status}`;
+      status.textContent = String(event.status).replace(/_/g, " ");
+      head.appendChild(status);
+    }
+    if (result && result.output) {
+      const details = document.createElement("details");
+      details.className = "trace-output";
+      const summary = document.createElement("summary");
+      summary.textContent = result.status === "error" ? "Error output" : "Output";
+      const output = document.createElement("pre");
+      output.textContent = result.output;
+      details.appendChild(summary);
+      details.appendChild(output);
+      card.appendChild(details);
+    }
+    entry.appendChild(rail);
+    entry.appendChild(card);
+    return entry;
+  }
+
+  function traceSessionAnchor(id) {
+    return "/view/trace/" + id;
+  }
+
+  function buildTraceSession(session, index, chunks) {
+    const sec = document.createElement("section");
+    sec.className = "trace-session";
+    sec.id = traceSessionAnchor(session.id);
+    sec.dataset.sessionId = session.id;
+
+    const title = document.createElement("h2");
+    title.className = "trace-session-title";
+    title.textContent = session.title || session.id;
+    sec.appendChild(title);
+
+    const meta = document.createElement("div");
+    meta.className = "trace-meta";
+    [
+      ["Started", formatDate(index.started_at)],
+      ["Ended", formatDate(index.ended_at)],
+      ["Duration", formatDuration(index.duration_ms)],
+      ["Events", String(index.event_count || 0)],
+    ].forEach(([label, value]) => {
+      const item = document.createElement("span");
+      const strong = document.createElement("strong");
+      strong.textContent = label;
+      item.appendChild(strong);
+      item.appendChild(document.createTextNode(` ${value}`));
+      meta.appendChild(item);
+    });
+    if (index.model) {
+      const model = document.createElement("span");
+      const strong = document.createElement("strong");
+      strong.textContent = "Model";
+      model.appendChild(strong);
+      model.appendChild(document.createTextNode(` ${index.model}`));
+      meta.appendChild(model);
+    }
+    if (index.source_available === false) {
+      const missing = document.createElement("span");
+      missing.className = "trace-source-missing";
+      missing.textContent = "Source file unavailable · showing last capture";
+      meta.appendChild(missing);
+    }
+    sec.appendChild(meta);
+
+    const events = chunks.flatMap((chunk) => chunk.events || []);
+    const results = new Map();
+    events.forEach((event) => {
+      if (event.kind === "tool_result" && event.call_id) {
+        if (!results.has(event.call_id)) results.set(event.call_id, []);
+        results.get(event.call_id).push(event);
+      }
+    });
+    const timeline = document.createElement("section");
+    timeline.className = "trace-timeline";
+    events.forEach((event) => {
+      if (event.kind === "tool_result" && event.call_id) return;
+      const result =
+        event.kind === "tool_call" && event.call_id
+          ? (results.get(event.call_id) || []).shift()
+          : null;
+      timeline.appendChild(traceEventCard(event, result));
+    });
+    if (!events.length) {
+      timeline.appendChild(
+        emptyView("Empty trace", "No displayable events were found in this session.")
+      );
+    }
+    sec.appendChild(timeline);
+    return sec;
+  }
+
+  function scrollToTraceSession(sessionId) {
+    if (!sessionId) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return;
+    }
+    const target = document.getElementById(traceSessionAnchor(sessionId));
+    if (target) target.scrollIntoView({ behavior: "auto" });
+    else window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  async function renderTrace(route, renderId) {
+    const page = document.getElementById("page");
+    page.innerHTML = "";
+    page.className = "trace-page";
+    const sessions = MANIFEST.traces || [];
+    if (!sessions.length) {
+      page.appendChild(
+        emptyView(
+          "No trace attached",
+          "Attach an agent session file to add its chronological trace to this logbook.",
+          "trackio logbook attach trace <filepath>"
+        )
+      );
+      return;
+    }
+    updateViewTabs({ view: "trace" });
+
+    const loading = document.createElement("div");
+    loading.className = "view-loading";
+    loading.textContent = "Loading traces…";
+    page.appendChild(loading);
+    let loaded;
+    try {
+      loaded = await Promise.all(
+        sessions.map(async (session) => {
+          const index = await fetchData(session.index_file);
+          const chunks = await Promise.all(
+            (index.chunks || []).map((chunk) => fetchData(chunk.file))
+          );
+          return { session, index, chunks };
+        })
+      );
+    } catch (error) {
+      if (renderId !== RENDER_SEQUENCE) return;
+      page.innerHTML = "";
+      page.appendChild(
+        emptyView("Trace unavailable", "The normalized traces could not be loaded.")
+      );
+      return;
+    }
+    if (renderId !== RENDER_SEQUENCE) return;
+    page.innerHTML = "";
+
+    const shell = document.createElement("div");
+    shell.className = "trace-shell";
+    loaded.forEach(({ session, index, chunks }) => {
+      shell.appendChild(buildTraceSession(session, index, chunks));
+    });
+    page.appendChild(shell);
+    scrollToTraceSession(route.sessionId);
+  }
+
+  function svgIcon(kind) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute(
+      "d",
+      kind === "folder"
+        ? "M3.5 6.5h6l2 2h9v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"
+        : kind === "download"
+          ? "M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"
+          : "M6 3.5h8l4 4V20H6zM14 3.5V8h4"
+    );
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function workspaceTree(files) {
+    const root = { directories: new Map(), files: [] };
+    files.forEach((file) => {
+      const parts = file.path.split("/");
+      let cursor = root;
+      parts.slice(0, -1).forEach((name) => {
+        if (!cursor.directories.has(name)) {
+          cursor.directories.set(name, { directories: new Map(), files: [] });
+        }
+        cursor = cursor.directories.get(name);
+      });
+      cursor.files.push(file);
+    });
+    return root;
+  }
+
+  function workspaceFileRow(file) {
+    const row = document.createElement("div");
+    row.className = "workspace-file";
+    const name = document.createElement("div");
+    name.className = "workspace-file-name";
+    name.appendChild(svgIcon("file"));
+    const label = document.createElement("span");
+    label.textContent = file.name;
+    label.title = file.path;
+    name.appendChild(label);
+    const type = document.createElement("span");
+    type.className = "workspace-file-type";
+    type.textContent = file.type || "file";
+    const size = document.createElement("span");
+    size.className = "workspace-file-size";
+    size.textContent = fmtBytes(file.size) || "—";
+    const modified = document.createElement("time");
+    modified.className = "workspace-file-time";
+    modified.dateTime = file.modified_at || "";
+    modified.textContent = formatDate(file.modified_at);
+    row.appendChild(name);
+    row.appendChild(type);
+    row.appendChild(size);
+    row.appendChild(modified);
+    const url = isLocalPreview()
+      ? file.local_url
+      : file.download_url || file.bucket_url;
+    if (url) {
+      const download = document.createElement("a");
+      download.className = "workspace-download";
+      download.href = url;
+      download.title = "Download";
+      download.setAttribute("aria-label", `Download ${file.name}`);
+      if (isLocalPreview()) download.download = file.name;
+      download.appendChild(svgIcon("download"));
+      row.appendChild(download);
+    } else {
+      const pending = document.createElement("span");
+      pending.className = "workspace-unpublished";
+      pending.textContent = "Local";
+      row.appendChild(pending);
+    }
+    return row;
+  }
+
+  function renderWorkspaceNode(node, container) {
+    Array.from(node.directories.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([name, child]) => {
+        const details = document.createElement("details");
+        details.className = "workspace-folder";
+        details.open = true;
+        const summary = document.createElement("summary");
+        summary.appendChild(svgIcon("folder"));
+        const label = document.createElement("span");
+        label.textContent = name;
+        summary.appendChild(label);
+        details.appendChild(summary);
+        const children = document.createElement("div");
+        children.className = "workspace-folder-children";
+        renderWorkspaceNode(child, children);
+        details.appendChild(children);
+        container.appendChild(details);
+      });
+    node.files
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach((file) => container.appendChild(workspaceFileRow(file)));
+  }
+
+  async function renderWorkspace(renderId) {
+    const page = document.getElementById("page");
+    page.innerHTML = "";
+    page.className = "workspace-page";
+    const loading = document.createElement("div");
+    loading.className = "view-loading";
+    loading.textContent = "Loading workspace…";
+    page.appendChild(loading);
+    let workspace;
+    try {
+      workspace = await fetchData((MANIFEST.workspace || {}).file || "workspace.json");
+    } catch (error) {
+      if (renderId !== RENDER_SEQUENCE) return;
+      page.innerHTML = "";
+      page.appendChild(emptyView("Workspace unavailable", "The workspace inventory could not be loaded."));
+      return;
+    }
+    if (renderId !== RENDER_SEQUENCE) return;
+    page.innerHTML = "";
+    const shell = document.createElement("div");
+    shell.className = "workspace-shell";
+    const header = document.createElement("header");
+    header.className = "workspace-header";
+    const summary = document.createElement("p");
+    summary.textContent = `${workspace.file_count || 0} files · ${fmtBytes(workspace.total_size || 0)}`;
+    header.appendChild(summary);
+    shell.appendChild(header);
+    if (!(workspace.files || []).length) {
+      shell.appendChild(
+        emptyView(
+          "No workspace files yet",
+          "Supported model and data files created or changed after a trace was attached will appear here."
+        )
+      );
+    } else {
+      const inventory = document.createElement("section");
+      inventory.className = "workspace-inventory";
+      renderWorkspaceNode(workspaceTree(workspace.files), inventory);
+      shell.appendChild(inventory);
+    }
+    page.appendChild(shell);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  async function renderCurrentView(opts = {}) {
+    const route = routeState();
+    const renderId = ++RENDER_SEQUENCE;
+    setActiveView(route);
+    if (route.view === "trace") {
+      await renderTrace(route, renderId);
+    } else if (route.view === "workspace") {
+      await renderWorkspace(renderId);
+    } else {
+      document.getElementById("page").className = "code-page";
+      await renderLogbook({ ...opts, renderId });
+    }
+  }
+
+  function handleRouteChange() {
+    const route = routeState();
+    if (
+      route.view === "code" &&
+      CURRENT_VIEW === "code" &&
+      document.querySelector("#page .page-section")
+    ) {
+      updateViewTabs(route);
+      scrollToHash();
+      return;
+    }
+    if (
+      route.view === "trace" &&
+      CURRENT_VIEW === "trace" &&
+      document.querySelector("#page .trace-session")
+    ) {
+      setActiveView(route);
+      scrollToTraceSession(route.sessionId);
+      return;
+    }
+    renderCurrentView();
+  }
+
   function currentSlug() {
-    const slug = (location.hash || "").replace(/^#\//, "") || MANIFEST.root.slug;
-    return findNode(MANIFEST.root, slug) ? slug : MANIFEST.root.slug;
+    const route = routeState();
+    return route.view === "code" ? route.slug : MANIFEST.root.slug;
   }
 
   function scrollToHash(opts = {}) {
+    if (routeState().view !== "code") return;
     const slug = currentSlug();
-    if (!location.hash) {
+    if (!location.hash || slug === MANIFEST.root.slug) {
       window.scrollTo({ top: 0, behavior: opts.behavior || "auto" });
       highlight(slug);
       return;
@@ -2096,7 +2103,7 @@
   function navigateToLogbookSlug(target) {
     const slug = String(target || "").replace(/^#?\//, "").trim();
     if (!slug || !findNode(MANIFEST.root, slug)) return;
-    const hash = "#/" + slug;
+    const hash = "#/view/code/" + slug;
     if (location.hash === hash) {
       scrollToHash({ behavior: "smooth" });
     } else {
@@ -2120,9 +2127,12 @@
 
   let SCROLL_FRAME = 0;
   function updateActiveSection() {
+    if (CURRENT_VIEW !== "code" && CURRENT_VIEW !== "trace") return;
     cancelAnimationFrame(SCROLL_FRAME);
     SCROLL_FRAME = requestAnimationFrame(() => {
-      const sections = Array.from(document.querySelectorAll(".page-section"));
+      const selector =
+        CURRENT_VIEW === "trace" ? ".trace-session" : ".page-section";
+      const sections = Array.from(document.querySelectorAll(selector));
       if (!sections.length) return;
       const marker = Math.min(window.innerHeight * 0.28, 180);
       let active = sections[0];
@@ -2135,7 +2145,11 @@
       ) {
         active = sections[sections.length - 1];
       }
-      highlight(active.dataset.slug);
+      if (CURRENT_VIEW === "trace") {
+        highlightTraceSession(active.dataset.sessionId);
+      } else {
+        highlight(active.dataset.slug);
+      }
     });
   }
 
@@ -2151,7 +2165,7 @@
         document.getElementById("book-title").textContent = MANIFEST.title;
         document.getElementById("book-head").setAttribute("aria-label", MANIFEST.title);
         buildTree();
-        renderLogbook({ preserveScroll: true });
+        renderCurrentView({ preserveScroll: true });
       } catch (e) {}
     }, LIVE_RELOAD_MS);
   }
@@ -2247,17 +2261,16 @@
     document.getElementById("book-title").textContent = MANIFEST.title;
     document.getElementById("book-head").setAttribute("aria-label", MANIFEST.title);
     document.getElementById("book-head").addEventListener("click", () => {
-      const target = "#/" + MANIFEST.root.slug;
+      const target = "#/view/code/" + MANIFEST.root.slug;
       if (location.hash === target) scrollToHash();
       else location.hash = target;
     });
     buildTree();
     setupConnect();
-    setupResourceHover();
     setupFigureNavigation();
-    window.addEventListener("hashchange", () => scrollToHash());
+    window.addEventListener("hashchange", handleRouteChange);
     window.addEventListener("scroll", updateActiveSection, { passive: true });
-    await renderLogbook();
+    await renderCurrentView();
     startLiveReload();
   }
 

@@ -21,6 +21,36 @@
         </div>
       </aside>
       <main id="content">
+        <nav id="view-tabs" aria-label="Logbook views">
+          <a data-view="code" href="#/view/code/index">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m18 16 4-4-4-4" />
+              <path d="m6 8-4 4 4 4" />
+              <path d="m14.5 4-5 16" />
+            </svg>
+            <span>Code &amp; Markdown</span>
+          </a>
+          <a data-view="trace" href="#/view/trace">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5h13" />
+              <path d="M13 12h8" />
+              <path d="M13 19h8" />
+              <path d="M3 10a2 2 0 0 0 2 2h3" />
+              <path d="M3 5v12a2 2 0 0 0 2 2h3" />
+            </svg>
+            <span>Traces</span>
+          </a>
+          <a data-view="workspace" href="#/view/workspace">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+            </svg>
+            <span>Workspace</span>
+          </a>
+        </nav>
+        <header id="logbook-header">
+          <h1 id="logbook-title"></h1>
+          <div id="logbook-cli"></div>
+        </header>
         <div id="page"></div>
       </main>
     </div>

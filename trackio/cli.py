@@ -1031,7 +1031,7 @@ def main():
     logbook_sub = logbook_parser.add_subparsers(
         dest="logbook_action",
         required=True,
-        metavar="{open,cell,run,page,read,serve,publish,sync}",
+        metavar="{open,cell,run,page,attach,remove,read,serve,publish,sync}",
     )
 
     lb_open = logbook_sub.add_parser(
@@ -1125,6 +1125,25 @@ def main():
         "page", help="Create or select a page and make it the default target"
     )
     lb_page.add_argument("title", help="Page title")
+
+    lb_attach = logbook_sub.add_parser(
+        "attach", help="Attach external data to this logbook"
+    )
+    lb_attach_sub = lb_attach.add_subparsers(dest="attach_type", required=True)
+    lb_attach_trace = lb_attach_sub.add_parser(
+        "trace", help="Attach an agent session JSON or JSONL trace"
+    )
+    lb_attach_trace.add_argument("filepath", help="Path to the agent session file")
+    lb_attach_trace.add_argument("--title", help="Display title for this session")
+
+    lb_remove = logbook_sub.add_parser(
+        "remove", help="Remove attached data from this logbook"
+    )
+    lb_remove_sub = lb_remove.add_subparsers(dest="remove_type", required=True)
+    lb_remove_trace = lb_remove_sub.add_parser(
+        "trace", help="Remove an attached agent session"
+    )
+    lb_remove_trace.add_argument("session_id", help="Attached session id")
 
     lb_read = logbook_sub.add_parser(
         "read", help="Read logbook pages/cells in an agent-friendly form"
@@ -1995,6 +2014,25 @@ def _handle_logbook(args):
             page_slug = lb.ensure_page(proj, args.title)
             print(f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}")
             lb.trigger_autosync(proj)
+        elif action == "attach":
+            proj = lb.require_project_dir()
+            if args.attach_type == "trace":
+                trace = lb.attach_trace(proj, args.filepath, title=args.title)
+                print(
+                    f"Attached {trace.get('provider', 'agent')} trace "
+                    f"'{trace['id']}' ({trace.get('event_count', 0)} events)."
+                    f"{_sync_suffix(lb, proj)}"
+                )
+                lb.trigger_autosync(proj)
+        elif action == "remove":
+            proj = lb.require_project_dir()
+            if args.remove_type == "trace":
+                lb.remove_trace(proj, args.session_id)
+                print(
+                    f"Removed attached trace '{args.session_id}'."
+                    f"{_sync_suffix(lb, proj)}"
+                )
+                lb.trigger_autosync(proj)
         elif action == "pin":
             proj = lb.require_project_dir()
             cell_id = args.cell_id or lb.last_cell_id(proj, page=args.page)
@@ -2013,7 +2051,8 @@ def _handle_logbook(args):
             )
             lb.trigger_autosync(proj)
         elif action == "read":
-            proj = lb.resolve_read_source(args.path)
+            source, view = lb.split_read_view(args.path)
+            proj = lb.resolve_read_source(source)
             preview_opts = {
                 "head": lb.DEFAULT_HEAD
                 if getattr(args, "head", None) is None
@@ -2025,7 +2064,17 @@ def _handle_logbook(args):
                 if getattr(args, "raw_limit", None) is None
                 else args.raw_limit,
             }
-            if args.read_target is None:
+            if args.read_target is None and view == "trace":
+                text = lb.read_traces(proj)
+                print(format_json({"view": "trace", "text": text}) if args.json else text)
+            elif args.read_target is None and view == "workspace":
+                text = lb.read_workspace_tree(proj)
+                print(
+                    format_json({"view": "workspace", "text": text})
+                    if args.json
+                    else text
+                )
+            elif args.read_target is None:
                 if args.json:
                     print(format_json(lb.read_logbook_data(proj, **preview_opts)))
                 else:

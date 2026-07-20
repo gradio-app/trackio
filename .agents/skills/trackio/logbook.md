@@ -15,6 +15,8 @@ trackio logbook cell figure --page "..." --html plot.html --raw data.json
 trackio logbook cell artifact project/name:vN            # record a Trackio artifact as its own cell
 trackio logbook cell dashboard <project> [--space owner/name]  # embed a live Trackio dashboard
 trackio logbook run --page "..." -- python train.py --lr 3e-4  # run + capture command, scripts, output, output files
+trackio logbook attach trace <filepath> [--title "..."] # attach this agent session's JSON/JSONL trace
+trackio logbook remove trace <session-id>                # remove an attached session
 trackio logbook read                                    # compact agent view of the whole logbook
 trackio logbook read <username/space | url>             # read a remote logbook (Space id, Space URL, or serve URL)
 trackio logbook read pages                              # list pages
@@ -29,7 +31,21 @@ trackio logbook sync                                    # push later edits to th
 
 `cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Fenced code blocks inside the markdown render with syntax highlighting, so embed short snippets directly in the body. Use `cell code` when the entry is code plus output. Use `cell figure` for HTML figures such as Plotly exports plus raw data. Use `cell artifact` to record a Trackio artifact (usually unnecessary — `trackio.log_artifact()` records one automatically). Use `cell dashboard` to embed a project's live Trackio dashboard (usually unnecessary — `trackio.init()` records one automatically). Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, artifacts, papers, jobs, buckets, and repos are detected from URLs in the markdown/output and collected into the page's resources sidebar by the viewer; images render inline and Trackio-tagged Spaces embed as live dashboards. Everything else is a direct file edit.
 
-`run` is the preferred way to execute experiments from the terminal: it tees output live, stores the exact command, attaches any script/config argv tokens it can see, records exit code and duration, and captures truncated output in one code cell. It also detects model/data files the command created or modified under the working directory (checkpoints like `.pt`/`.safetensors`/`.ckpt`, datasets like `.parquet`/`.csv`/`.jsonl`) and records each as a **path-reference artifact cell** — only the path, size, and type are logged; the file itself stays on disk and is not pushed anywhere on publish. Disable with `--no-artifacts`.
+`run` is the preferred way to execute experiments from the terminal: it tees output live, stores the exact command, attaches any script/config argv tokens it can see, records exit code and duration, and captures truncated output in one code cell. It also detects model/data files the command created or modified under the working directory (checkpoints like `.pt`/`.safetensors`/`.ckpt`, datasets like `.parquet`/`.csv`/`.jsonl`) and records each as a **path-reference artifact cell**. Disable with `--no-artifacts`. A path-reference cell does not itself upload the file; when a trace is attached, matching post-baseline files are separately mirrored through the Workspace view on publish.
+
+## Attach the current agent session
+
+Near the beginning of an agent session, locate the JSON or JSONL file where the current agent runtime is recording its session, then attach it:
+
+```bash
+trackio logbook attach trace /absolute/path/to/current-session.jsonl
+```
+
+The agent runtime, not Trackio, determines this path. Find the current session file from the local runtime's own session/config directories and use the file whose timestamps and session metadata match the active conversation. This flow is intentionally vendor-agnostic: do not install a provider hook or wait for Trackio to identify Codex, Claude, or another runtime automatically.
+
+Attaching records the source path, keeps a private raw copy under `.trackio/`, and publishes only Trackio's normalized events. Active JSONL files may be attached before the session ends. Trackio refreshes the capture when attaching, serving the preview, syncing, or publishing. A logbook can retain multiple attached sessions; the Trace view opens the newest by default and lets readers switch sessions.
+
+Attaching also establishes the Workspace baseline. The Workspace view lists the final model/data files with Trackio-supported artifact extensions that were created or changed after attachment. On publish or sync, those files are mirrored under `workspace/` in the logbook's artifacts Bucket, including deletion of stale files from that prefix. The rest of the Bucket is left untouched.
 
 ## The structure
 
@@ -120,9 +136,13 @@ If a logbook exists in the working directory, trackio **auto-captures itself** �
 
 - `trackio.init()` immediately records an **embedded dashboard cell** on a page named after the trackio **project** (one per project per page; live in the local preview, promoted to a Space on publish), so anyone watching the logbook sees training metrics in real time. `finish()` no longer writes a run cell. Note: the hook lives in the trackio the script imports — a separate environment with an older trackio won't fire it.
 - `trackio.log_artifact(...)` records the artifact as its own **artifact cell**, which also appears in the resources sidebar. On `publish`, artifacts are pushed to an HF Bucket and the cells link to it.
-- `trackio logbook run` records model/data files the command created or modified as **path-reference artifact cells** (path, size, and type only). Unlike `log_artifact` cells, these are **not** pushed to a Bucket on publish — use `trackio.log_artifact()` for files that must travel with the logbook. Disable per run with `--no-artifacts`.
+- `trackio logbook run` records model/data files the command created or modified as **path-reference artifact cells** (path, size, and type only). The cell itself does not upload the file. With an attached trace, matching post-baseline files are also part of Workspace and are mirrored to its Bucket prefix on publish. Disable per run with `--no-artifacts`.
 
 Local runs/artifacts are marked as local until you publish (see below). Set `TRACKIO_LOGBOOK_AUTONOTE=0` to disable (e.g. during large sweeps).
+
+## Human views
+
+The published logbook has three top-level views: **Code & Markdown**, **Trace**, and **Workspace**. Code & Markdown is the normal continuous logbook. Trace is the normalized chronological agent session. Workspace is the downloadable final-state model/data file inventory associated with attached sessions.
 
 ## Publishing & privacy
 
