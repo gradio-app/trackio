@@ -1499,6 +1499,34 @@ def sync_trace_dataset(
     return f"https://huggingface.co/datasets/{dataset_id}"
 
 
+def set_bucket_visibility(bucket_id: str, private: bool, token: str | None = None) -> None:
+    """Flip an existing bucket's visibility.
+
+    ``create_bucket(exist_ok=True)`` reuses a pre-existing bucket without changing
+    its visibility, so re-publishing over an old *public* bucket would silently
+    leave it public. Bucket visibility is mutable via the settings endpoint
+    (``PUT /api/buckets/{namespace}/{name}/settings``), so enforce the intended
+    value here.
+    """
+    import huggingface_hub  # noqa: PLC0415
+    from huggingface_hub.utils import (  # noqa: PLC0415
+        build_hf_headers,
+        get_session,
+        hf_raise_for_status,
+    )
+
+    api = huggingface_hub.HfApi(token=token)
+    namespace, _, name = bucket_id.partition("/")
+    if not name:  # no namespace given → current user's namespace
+        namespace, name = api.whoami()["name"], namespace
+    resp = get_session().put(
+        f"{api.endpoint}/api/buckets/{namespace}/{name}/settings",
+        headers=build_hf_headers(token=token),
+        json={"private": private},
+    )
+    hf_raise_for_status(resp)
+
+
 def sync_workspace_bucket(
     proj: Path,
     bucket_id: str,
@@ -1514,12 +1542,9 @@ def sync_workspace_bucket(
     )
     bucket_info = huggingface_hub.HfApi(token=token).bucket_info(bucket_id)
     if bucket_info.private != private:
-        visibility = "private" if bucket_info.private else "public"
-        requested = "private" if private else "public"
-        raise TraceCaptureError(
-            f"Workspace bucket '{bucket_id}' is already {visibility}; "
-            f"it cannot be republished as {requested}."
-        )
+        # Reused a pre-existing bucket whose visibility differs from what was
+        # requested; flip it so the intended visibility is always enforced.
+        set_bucket_visibility(bucket_id, private, token=token)
     desired = {
         f"{WORKSPACE_BUCKET_PREFIX}/{item['path']}": str(
             (proj.parent / item["path"]).resolve()
