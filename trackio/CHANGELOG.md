@@ -1,5 +1,11 @@
 # trackio
 
+## 0.32.0
+
+### Features
+
+- [#635](https://github.com/gradio-app/trackio/pull/635) [`b4587b0`](https://github.com/gradio-app/trackio/commit/b4587b0ebce18756a0f38e3721ed2880a7307137) - Add Code & Markdown, Traces, and Workspace logbook views with live local refresh, guided empty states, and privacy-aware manual publishing to Agent Traces Datasets and HF Buckets.  Thanks @NielsRogge!
+
 ## 0.31.5
 
 ### Features
