@@ -2503,7 +2503,16 @@ def serve(
 def _readme(manifest: dict) -> str:
     emoji = manifest.get("emoji", "🎯")
     title = json.dumps(manifest["title"], ensure_ascii=False)
-    extra_tags = "".join(f" - {tag}\n" for tag in manifest.get("tags") or [])
+    tags = list(manifest.get("tags") or [])
+    # Surface the logbook on the paper's Hugging Face page (hf.co/papers/<id>):
+    # HF links any repo whose tags include `arxiv:<id>`. Derive it from the
+    # logbook's recorded arXiv id so published logbooks appear alongside the paper.
+    arxiv_id = (manifest.get("paper") or {}).get("arxiv_id")
+    if arxiv_id:
+        arxiv_tag = f"arxiv:{str(arxiv_id).strip()}"
+        if arxiv_tag not in tags:
+            tags.append(arxiv_tag)
+    extra_tags = "".join(f" - {tag}\n" for tag in tags)
     return (
         f"---\ntitle: {title}\nemoji: {emoji}\ncolorFrom: yellow\ncolorTo: red\n"
         "sdk: static\npinned: false\ntags:\n - trackio\n - trackio-logbook\n"
