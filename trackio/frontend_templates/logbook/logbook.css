@@ -2014,6 +2014,38 @@ table.board tr.linked-row:hover a {
   text-decoration: underline;
 }
 
+/* --- UI nits --- */
+/* Flush group headers: #page h3/h2 (ID selectors) otherwise inject a top margin
+   that, with overflow:hidden on the card, shows as whitespace above "Jobs" etc. */
+#page .workspace-hub-title {
+  margin: 0 0 14px;
+}
+#page .workspace-hub-group-head,
+#page .workspace-group-head {
+  margin: 0;
+}
+/* HF brand logo before the "Hugging Face artifacts" heading */
+.workspace-hub-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.workspace-hub-logo {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+/* Center empty-state placeholders (heading, body, command) */
+.view-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+#page .view-empty h2,
+#page .view-empty p {
+  text-align: center;
+}
+
 @media (max-width: 720px) {
   #app {
     flex-direction: column;
