@@ -2,8 +2,10 @@ import base64
 import json
 import re
 import sys
+from pathlib import Path
 
 import pytest
+from starlette.testclient import TestClient
 
 from trackio import logbook
 
@@ -56,6 +58,61 @@ def test_write_site_files_updates_revision_after_logbook_changes(proj):
         (logbook.logbook_root(proj) / "logbook.json").read_text(encoding="utf-8")
     )
     assert updated["revision"] != manifest["revision"]
+
+
+def test_write_site_files_keeps_revision_stable_without_changes(proj):
+    first = logbook.write_site_files(proj)
+    second = logbook.write_site_files(proj)
+    assert second["revision"] == first["revision"]
+    assert second["updated_at"] == first["updated_at"]
+
+
+def test_preview_manifest_refreshes_active_trace_and_workspace(proj, tmp_path):
+    trace_path = tmp_path / "active-session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": "Start the experiment"}) + "\n",
+        encoding="utf-8",
+    )
+    logbook.attach_trace(proj, trace_path)
+    before = logbook.write_site_files(proj)
+
+    with trace_path.open("a", encoding="utf-8") as trace:
+        trace.write(json.dumps({"role": "assistant", "content": "Training now"}) + "\n")
+    checkpoint = tmp_path / "checkpoint.safetensors"
+    checkpoint.write_bytes(b"weights")
+
+    with TestClient(logbook._build_preview_app(proj)) as client:
+        response = client.get("/logbook.json")
+
+    assert response.status_code == 200
+    manifest = response.json()
+    assert manifest["revision"] != before["revision"]
+    assert manifest["traces"][0]["event_count"] == 2
+    assert manifest["workspace"]["file_count"] == 1
+    workspace = json.loads(
+        (logbook.logbook_root(proj) / "workspace.json").read_text(encoding="utf-8")
+    )
+    assert workspace["files"][0]["path"] == "checkpoint.safetensors"
+
+
+def test_logbook_run_path_artifact_appears_without_trace(proj, tmp_path):
+    checkpoint = tmp_path / "run-output.ckpt"
+    checkpoint.write_bytes(b"checkpoint")
+    logbook.add_path_artifact_cell(
+        proj,
+        "index",
+        str(checkpoint),
+        checkpoint.stat().st_size,
+        artifact_type="model",
+    )
+
+    manifest = logbook.write_site_files(proj)
+    workspace = json.loads(
+        (logbook.logbook_root(proj) / "workspace.json").read_text(encoding="utf-8")
+    )
+    assert manifest["workspace"]["file_count"] == 1
+    assert workspace["files"][0]["path"] == "run-output.ckpt"
+    assert workspace["files"][0]["captured_by"] == "logbook-run"
 
 
 def test_ensure_page_adds_toc_row(proj):
@@ -226,7 +283,7 @@ def test_publish_failure_reverts_metadata(proj, monkeypatch):
         raise RuntimeError("upload failed")
 
     monkeypatch.setattr(logbook, "_push", boom)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(logbook.LogbookError):
         logbook.publish("user/space")
     metadata = logbook.read_metadata(proj)
     assert metadata.get("space_id") is None
@@ -432,19 +489,47 @@ def test_auto_note_dashboard_disabled_or_no_logbook(proj, monkeypatch, tmp_path)
     logbook.auto_note_dashboard("mnist")
 
 
-def test_init_creates_dashboard_cell_immediately(temp_dir, proj):
+def test_init_does_not_mutate_logbook_pages(temp_dir, proj):
+    """trackio.init() must be side-effect-free on a logbook in the cwd.
+
+    Regression test: init() used to auto-note a dashboard cell on the active
+    page, corrupting curated logbooks. It must not add cells or pages now.
+    """
     import trackio
 
     page = logbook.ensure_page(proj, "Training results")
+    before = logbook.read_page_outline(proj, page)["cells"]
     trackio.init(project="p1", name="r1")
-    assert len(_dashboard_cells(proj, page)) == 1
     trackio.finish()
     trackio.init(project="p1", name="r2")
     trackio.finish()
-    outline = logbook.read_page_outline(proj, page)
-    assert len([c for c in outline["cells"] if c["type"] == "dashboard"]) == 1
-    assert not [c for c in outline["cells"] if (c["title"] or "").startswith("Run:")]
+    after = logbook.read_page_outline(proj, page)["cells"]
+    assert len(after) == len(before)
+    assert not [c for c in after if c["type"] == "dashboard"]
+    # No stray sidebar page named after the project.
     assert logbook._page_file_for_slug(proj, "p1") is None
+
+
+def test_log_artifact_does_not_create_logbook_page(temp_dir, proj, tmp_path):
+    """Regression: log_artifact() used to inject a sidebar page named after the
+    project (via auto_note_artifact -> ensure_page), appended after the last
+    page and breaking logbook structure. It must not touch the page tree."""
+    import trackio
+
+    logbook.ensure_page(proj, "Conclusion")
+    slugs_before = logbook._all_slugs(proj)
+
+    weights = tmp_path / "model.bin"
+    weights.write_bytes(b"\x00" * 2048)
+
+    trackio.init(project="capacity-sweep", name="r1")
+    art = trackio.Artifact(name="ckpt", type="model")
+    art.add_file(weights)
+    trackio.log_artifact(art)
+    trackio.finish()
+
+    assert logbook._all_slugs(proj) == slugs_before
+    assert logbook._page_file_for_slug(proj, "capacity-sweep") is None
 
 
 def test_promote_pushes_path_artifact_to_bucket_preserving_relative_path(
@@ -667,3 +752,352 @@ def test_project_from_url_blocks_path_traversal(monkeypatch):
     assert (root / "pages" / "index.md").is_file()
     escaped = (root / ".." / ".." / "trackio-evil-traversal.md").resolve()
     assert not escaped.exists()
+
+
+def test_cli_logbook_sync_regenerates_site(proj, monkeypatch):
+    from trackio import cli
+
+    logbook.ensure_page(proj, "Sweep")
+    logbook_json = logbook.logbook_root(proj) / "logbook.json"
+    logbook_json.unlink()
+    monkeypatch.setattr(sys, "argv", ["trackio", "logbook", "sync"])
+    cli.main()
+    assert logbook_json.is_file()
+    manifest = json.loads(logbook_json.read_text(encoding="utf-8"))
+    assert any(node["title"] == "Sweep" for node in logbook._walk(manifest["root"]))
+
+
+def test_cli_cell_remove_deletes_cell(proj, monkeypatch):
+    from trackio import cli
+
+    slug = logbook.ensure_page(proj, "Notes")
+    logbook.add_markdown_cell(proj, slug, "keep me", title="Keep")
+    logbook.add_markdown_cell(proj, slug, "drop me", title="Drop")
+    cell_id = logbook.last_cell_id(proj, page="Notes")
+    assert len(logbook.read_page_outline(proj, slug)["cells"]) == 2
+
+    monkeypatch.setattr(sys, "argv", ["trackio", "logbook", "cell", "remove", cell_id])
+    cli.main()
+
+    cells = logbook.read_page_outline(proj, slug)["cells"]
+    assert len(cells) == 1
+    assert cells[0]["title"] == "Keep"
+    assert "drop me" not in _page_text(proj, slug)
+
+
+def test_remove_cell_missing_id_raises(proj):
+    logbook.ensure_page(proj, "Notes")
+    with pytest.raises(logbook.LogbookError):
+        logbook.remove_cell(proj, "cell_doesnotexist")
+
+
+def test_cli_cell_code_output_is_optional(proj, monkeypatch):
+    from trackio import cli
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "trackio",
+            "logbook",
+            "cell",
+            "code",
+            "--page",
+            "Runs",
+            "--code-text",
+            "print('hi')",
+            "--language",
+            "python",
+        ],
+    )
+    cli.main()
+    text = _page_text(proj, "Runs")
+    assert "print('hi')" in text
+    assert "````output" not in text
+
+
+def test_add_code_cell_includes_output_when_provided(proj):
+    slug = logbook.ensure_page(proj, "Runs")
+    logbook.add_code_cell(proj, slug, "the output", code_text="cmd")
+    text = _page_text(proj, "Runs")
+    assert "````output" in text
+    assert "the output" in text
+
+
+def test_rewrite_plotly_cdn_replaces_inline_library():
+    version = "2.27.0"
+    big_library = "Plotly=" + "x" * 300_000 + f"/* plotly.js v{version} */"
+    html = (
+        "<div id='plot'></div>\n"
+        f'<script charset="utf-8">{big_library}</script>\n'
+        "<script>Plotly.newPlot('plot', data);</script>"
+    )
+    rewritten, changed = logbook._rewrite_plotly_cdn(html)
+    assert changed is True
+    assert big_library not in rewritten
+    assert f"https://cdn.plot.ly/plotly-{version}.min.js" in rewritten
+    # The small per-figure newPlot call is preserved.
+    assert "Plotly.newPlot('plot', data);" in rewritten
+    assert len(rewritten) < len(html)
+
+
+def test_rewrite_plotly_cdn_ignores_non_plotly_html():
+    html = "<div>hello</div><script>console.log(1)</script>"
+    rewritten, changed = logbook._rewrite_plotly_cdn(html)
+    assert changed is False
+    assert rewritten == html
+
+
+def test_add_figure_cell_rewrites_plotly_by_default(proj):
+    slug = logbook.ensure_page(proj, "Figs")
+    big_library = "Plotly=" + "x" * 300_000 + "/* plotly.js v2.30.0 */"
+    html = (
+        f'<div id="p"></div><script charset="utf-8">{big_library}</script>'
+        "<script>Plotly.newPlot('p', []);</script>"
+    )
+    logbook.add_figure_cell(proj, slug, html=html)
+    text = _page_text(proj, "Figs")
+    assert "cdn.plot.ly/plotly-2.30.0.min.js" in text
+    assert big_library not in text
+
+    logbook.add_figure_cell(proj, slug, html=html, inline_plotlyjs=True)
+    text = _page_text(proj, "Figs")
+    assert big_library in text
+
+
+def test_scan_hub_refs_classifies_urls(proj):
+    slug = logbook.ensure_page(proj, "Links")
+    body = (
+        "See the run at https://huggingface.co/jobs/me/abc123 and dataset "
+        "https://huggingface.co/datasets/me/data plus the space "
+        "https://huggingface.co/spaces/me/demo, bucket "
+        "https://huggingface.co/buckets/me/store#logbook-files/a.csv and again "
+        "https://huggingface.co/buckets/me/store#logbook-files/b.csv, model "
+        "https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct. Ignore the "
+        "profile https://huggingface.co/me and docs "
+        "https://huggingface.co/docs/hub/index."
+    )
+    logbook.add_markdown_cell(proj, slug, body)
+    refs = logbook.scan_hub_refs(proj)
+    by_type = {}
+    for ref in refs:
+        by_type.setdefault(ref["type"], []).append(ref["label"])
+    assert by_type["Jobs"] == ["me/abc123"]
+    assert by_type["Datasets"] == ["me/data"]
+    assert by_type["Spaces"] == ["me/demo"]
+    assert by_type["Models"] == ["Qwen/Qwen2.5-Coder-32B-Instruct"]
+    # Two file links into the same bucket collapse to one reference.
+    assert by_type["Buckets"] == ["me/store"]
+    # Bare profile and docs links are not classified as artifacts.
+    labels = [ref["label"] for ref in refs]
+    assert "me" not in labels
+    assert not any(ref["type"] == "Models" and ref["label"] == "me" for ref in refs)
+
+
+def test_scrub_text_redacts_common_secrets():
+    from trackio import logbook_trace
+
+    hf = "hf_" + "a" * 30
+    text = (
+        f"token {hf}\n"
+        "export HF_TOKEN=hf_SECRETSECRETSECRETSECRET1\n"
+        "Authorization: Bearer sk-abc123def456ghi789jkl\n"
+        "aws AKIAIOSFODNN7EXAMPLE key\n"
+        '{"api_key": "sk-proj-1234567890abcdefghij"}\n'
+        "password=hunter2pass\n"
+    )
+    scrubbed, count = logbook_trace.scrub_text(text)
+    assert count >= 6
+    assert hf not in scrubbed
+    assert "AKIAIOSFODNN7EXAMPLE" not in scrubbed
+    assert "hunter2pass" not in scrubbed
+    assert "sk-proj-1234567890abcdefghij" not in scrubbed
+    assert logbook_trace.REDACTION_PLACEHOLDER in scrubbed
+
+
+def test_scrub_text_keeps_non_secret_mentions():
+    from trackio import logbook_trace
+
+    # A bare env-var NAME (no value) and an hf_ word that is too short must be
+    # left untouched.
+    text = "run with --secrets HF_TOKEN and note hf_indexed here"
+    scrubbed, count = logbook_trace.scrub_text(text)
+    assert count == 0
+    assert scrubbed == text
+
+
+def test_scrub_file_streams_and_counts(tmp_path):
+    from trackio import logbook_trace
+
+    src = tmp_path / "in.jsonl"
+    dst = tmp_path / "out.jsonl"
+    hf = "hf_" + "z" * 25
+    src.write_text(
+        json.dumps({"role": "user", "content": f"here is {hf}"})
+        + "\n"
+        + json.dumps({"role": "assistant", "content": "clean line"})
+        + "\n",
+        encoding="utf-8",
+    )
+    count = logbook_trace.scrub_file(src, dst)
+    out = dst.read_text(encoding="utf-8")
+    assert count == 1
+    assert hf not in out
+    assert "clean line" in out
+
+
+def test_attach_trace_scrubs_by_default(proj, tmp_path):
+    hf = "hf_" + "b" * 30
+    trace_path = tmp_path / "secret-session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": f"my token is {hf}"})
+        + "\n"
+        + json.dumps({"role": "assistant", "content": "ok"})
+        + "\n",
+        encoding="utf-8",
+    )
+    result = logbook.attach_trace(proj, trace_path)
+    assert result["scrub_redactions"] >= 1
+
+    # Neither the normalized chunk nor the stored raw copy may contain the token.
+    session_id = result["id"]
+    stored = list((proj / "logbook" / "traces").rglob("*.json"))
+    raw = list((proj / "traces" / "raw").glob("*"))
+    for path in stored + raw:
+        assert hf not in path.read_text(encoding="utf-8"), path
+    assert session_id  # sanity
+
+
+def test_attach_trace_no_scrub_keeps_content(proj, tmp_path):
+    hf = "hf_" + "c" * 30
+    trace_path = tmp_path / "raw-session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": f"token {hf}"}) + "\n",
+        encoding="utf-8",
+    )
+    result = logbook.attach_trace(proj, trace_path, scrub=False)
+    assert result.get("scrub_redactions", 0) == 0
+    raw = list((proj / "traces" / "raw").glob("*"))
+    assert any(hf in path.read_text(encoding="utf-8") for path in raw)
+
+
+def test_publish_default_is_private_reference_only(proj, tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from trackio import logbook_trace
+
+    hf = "hf_" + "d" * 30
+    trace_path = tmp_path / "session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": f"secret {hf}"}) + "\n",
+        encoding="utf-8",
+    )
+    logbook.attach_trace(proj, trace_path, title="My secret session")
+    checkpoint = tmp_path / "model.safetensors"
+    checkpoint.write_bytes(b"weights")
+    logbook.add_path_artifact_cell(
+        proj, "index", str(checkpoint), size=7, artifact_type="model"
+    )
+
+    monkeypatch.setattr(logbook, "_promote_local_deps", lambda *a, **k: None)
+    monkeypatch.setattr(logbook_trace, "sync_trace_dataset", lambda *a, **k: "url")
+    monkeypatch.setattr(logbook_trace, "sync_workspace_bucket", lambda *a, **k: {})
+    monkeypatch.setattr(huggingface_hub, "create_repo", lambda *a, **k: None)
+
+    captured = {}
+
+    class FakeApi:
+        def __init__(self, *a, **k):
+            pass
+
+        def upload_folder(self, *, folder_path, **k):
+            root = Path(folder_path)
+            captured["manifest"] = json.loads(
+                (root / "logbook.json").read_text(encoding="utf-8")
+            )
+            captured["has_traces_dir"] = (root / "traces").exists()
+            captured["files"] = {
+                p.relative_to(root).as_posix(): p.read_text(
+                    encoding="utf-8", errors="ignore"
+                )
+                for p in root.rglob("*")
+                if p.is_file()
+            }
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
+
+    logbook.publish("me/space")
+
+    manifest = captured["manifest"]
+    # References only: no embedded trace content or names, private flag set.
+    assert manifest["traces"] == []
+    assert manifest["traces_ref"]["private"] is True
+    assert manifest["traces_ref"]["repo_id"] == "me/space-traces"
+    assert manifest["workspace_ref"]["private"] is True
+    assert manifest["workspace_ref"]["repo_id"] == "me/space-artifacts"
+    assert captured["has_traces_dir"] is False
+    ws = json.loads(captured["files"]["workspace.json"])
+    # The auto-generated workspace inventory carries no file names/sizes.
+    assert ws["files"] == []
+    # No scrubbed secret and no trace title/session content anywhere in the
+    # static Space (author-curated page cells are a separate, intentional path).
+    blob = "\n".join(captured["files"].values())
+    assert hf not in blob
+    assert "My secret session" not in blob
+
+
+def test_publish_public_embeds_content(proj, tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from trackio import logbook_trace
+
+    trace_path = tmp_path / "session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": "hello world"}) + "\n",
+        encoding="utf-8",
+    )
+    logbook.attach_trace(proj, trace_path, title="Public session")
+
+    monkeypatch.setattr(logbook, "_promote_local_deps", lambda *a, **k: None)
+    monkeypatch.setattr(logbook_trace, "sync_trace_dataset", lambda *a, **k: "url")
+    monkeypatch.setattr(logbook_trace, "sync_workspace_bucket", lambda *a, **k: {})
+    monkeypatch.setattr(huggingface_hub, "create_repo", lambda *a, **k: None)
+
+    captured = {}
+
+    class FakeApi:
+        def __init__(self, *a, **k):
+            pass
+
+        def upload_folder(self, *, folder_path, **k):
+            root = Path(folder_path)
+            captured["manifest"] = json.loads(
+                (root / "logbook.json").read_text(encoding="utf-8")
+            )
+            captured["has_traces_dir"] = (root / "traces").exists()
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
+
+    logbook.publish("me/space", public=True)
+
+    manifest = captured["manifest"]
+    # --public embeds trace content inline and marks the repo reference public.
+    assert manifest["traces"], "public publish should embed trace summaries"
+    assert manifest["traces_ref"]["private"] is False
+    assert captured["has_traces_dir"] is True
+
+
+def test_scan_hub_refs_written_into_workspace_manifest(proj):
+    slug = logbook.ensure_page(proj, "Links")
+    logbook.add_markdown_cell(proj, slug, "job https://huggingface.co/jobs/me/xyz789")
+    logbook.write_site_files(proj)
+    workspace = json.loads(
+        (logbook.logbook_root(proj) / "workspace.json").read_text(encoding="utf-8")
+    )
+    assert workspace["hub_refs"] == [
+        {
+            "url": "https://huggingface.co/jobs/me/xyz789",
+            "type": "Jobs",
+            "label": "me/xyz789",
+        }
+    ]

@@ -10,3 +10,5 @@ You were invoked as `/logbook $ARGUMENTS`. Interpret the arguments and act:
 - **`--cell <text>`** → the user is manually recording a finding that may have been missed. Run `trackio logbook cell markdown "<text>"`, adding `--page` / `--code` if appropriate (put any URLs directly in the body text). Confirm what you logged and to which page.
 
 In every case, keep following the **trackio logbook** skill: add pages to the table of contents as they become relevant, log findings onto pages (never the index), and keep the main page a clean table of contents.
+
+When working locally in a logbook, locate the current agent runtime's JSON/JSONL session file and attach it once with `trackio logbook attach trace <filepath>`. The runtime owns that path; do not add a vendor-specific hook. Attaching early establishes the baseline for the Trace and Workspace views.

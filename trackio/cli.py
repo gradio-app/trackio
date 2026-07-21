@@ -1031,7 +1031,7 @@ def main():
     logbook_sub = logbook_parser.add_subparsers(
         dest="logbook_action",
         required=True,
-        metavar="{open,cell,run,page,read,serve,publish,sync}",
+        metavar="{open,cell,run,page,attach,remove,read,serve,publish,pin,sync,sync-todos}",
     )
 
     lb_open = logbook_sub.add_parser(
@@ -1081,7 +1081,11 @@ def main():
     )
     lb_cell_code.add_argument("--code-text", help="Inline code to include")
     lb_cell_code.add_argument("--language", help="Language for --code-text")
-    lb_cell_code.add_argument("--output", required=True, help="Output text")
+    lb_cell_code.add_argument(
+        "--output",
+        default="",
+        help="Output text (optional; omit for a command-only code cell)",
+    )
 
     lb_cell_figure = lb_cell_sub.add_parser("figure", help="Append a figure cell")
     lb_cell_figure.add_argument("--title", help="Cell title")
@@ -1095,6 +1099,15 @@ def main():
     )
     lb_cell_figure.add_argument("--raw", help="Path/URL/text for raw data")
     lb_cell_figure.add_argument("--raw-text", help="Inline raw data")
+    lb_cell_figure.add_argument(
+        "--inline-plotlyjs",
+        action="store_true",
+        help=(
+            "Embed the full Plotly.js library in the page (can be several MB). "
+            "By default an inlined Plotly.js bundle is rewritten to a CDN "
+            "reference to keep pages small."
+        ),
+    )
 
     lb_cell_dash = lb_cell_sub.add_parser(
         "dashboard", help="Embed a Trackio dashboard for a project"
@@ -1107,6 +1120,12 @@ def main():
     )
     lb_cell_dash.add_argument("--title", help="Cell title")
     lb_cell_dash.add_argument("--page", help="Page title or slug")
+
+    lb_cell_remove = lb_cell_sub.add_parser(
+        "remove", help="Remove a cell from a page by its cell id"
+    )
+    lb_cell_remove.add_argument("cell_id", help="Cell id to remove")
+    lb_cell_remove.add_argument("--page", help="Page title or slug to scope the search")
 
     lb_run = logbook_sub.add_parser(
         "run",
@@ -1125,6 +1144,33 @@ def main():
         "page", help="Create or select a page and make it the default target"
     )
     lb_page.add_argument("title", help="Page title")
+
+    lb_attach = logbook_sub.add_parser(
+        "attach", help="Attach external data to this logbook"
+    )
+    lb_attach_sub = lb_attach.add_subparsers(dest="attach_type", required=True)
+    lb_attach_trace = lb_attach_sub.add_parser(
+        "trace", help="Attach an agent session JSON or JSONL trace"
+    )
+    lb_attach_trace.add_argument("filepath", help="Path to the agent session file")
+    lb_attach_trace.add_argument("--title", help="Display title for this session")
+    lb_attach_trace.add_argument(
+        "--no-scrub",
+        action="store_true",
+        help=(
+            "Do not scrub secrets from the trace before storing it. By default "
+            "tokens, keys and passwords are redacted."
+        ),
+    )
+
+    lb_remove = logbook_sub.add_parser(
+        "remove", help="Remove attached data from this logbook"
+    )
+    lb_remove_sub = lb_remove.add_subparsers(dest="remove_type", required=True)
+    lb_remove_trace = lb_remove_sub.add_parser(
+        "trace", help="Remove an attached agent session"
+    )
+    lb_remove_trace.add_argument("session_id", help="Attached session id")
 
     lb_read = logbook_sub.add_parser(
         "read", help="Read logbook pages/cells in an agent-friendly form"
@@ -1188,13 +1234,22 @@ def main():
     lb_serve.add_argument("--no-browser", action="store_true")
 
     lb_pub = logbook_sub.add_parser(
-        "publish", help="Publish to a static HF Space (first publish enables auto-sync)"
+        "publish", help="Publish the current logbook state to Hugging Face"
     )
     lb_pub.add_argument("space_id", nargs="?", help="HF Space id (username/space)")
     lb_pub.add_argument(
         "--private",
         action="store_true",
-        help="Make the logbook and any promoted dashboards/buckets private",
+        help="Make the published logbook Space itself private.",
+    )
+    lb_pub.add_argument(
+        "--public",
+        action="store_true",
+        help=(
+            "Publish the trace Dataset and artifacts Bucket as PUBLIC (they are "
+            "private by default) and embed trace/workspace content inline in the "
+            "static Space. By default the Space stores references only."
+        ),
     )
 
     lb_pin = logbook_sub.add_parser(
@@ -1215,10 +1270,10 @@ def main():
     )
 
     logbook_sub.add_parser(
-        "sync", help="Push local edits to the Space now (after the first publish)"
+        "sync",
+        help="Regenerate the logbook site files from the current page sources",
     )
 
-    logbook_sub.add_parser("_sync")
     logbook_sub.add_parser("sync-todos")
 
     args, unknown_args = parser.parse_known_args()
@@ -1801,13 +1856,6 @@ def main():
         parser.print_help()
 
 
-def _sync_suffix(lb, proj):
-    if lb.is_autosync(proj):
-        space = lb.read_metadata(proj).get("space_id")
-        return f" · syncing to {space}…"
-    return ""
-
-
 def _logbook_cell_target(lb, proj, args):
     return lb.resolve_page(proj, getattr(args, "page", None))
 
@@ -1926,8 +1974,15 @@ def _handle_logbook(args):
                 capture_artifacts=not getattr(args, "no_artifacts", False),
             )
             slug = lb.read_metadata(proj).get("last_page", "?")
-            print(f"Logged run to page '{slug}'.{_sync_suffix(lb, proj)}")
+            print(f"Logged run to page '{slug}'.")
             sys.exit(rc)
+        elif action == "cell" and args.cell_type == "remove":
+            proj = lb.require_project_dir()
+            result = lb.remove_cell(proj, args.cell_id, page=args.page)
+            print(
+                f"Removed {result['type']} cell {args.cell_id} "
+                f"from page '{result['page']}'."
+            )
         elif action == "cell":
             proj = lb.require_project_dir()
             slug = _logbook_cell_target(lb, proj, args)
@@ -1976,6 +2031,7 @@ def _handle_logbook(args):
                     html=html,
                     raw=raw,
                     title=args.title,
+                    inline_plotlyjs=args.inline_plotlyjs,
                 )
             elif args.cell_type == "dashboard":
                 lb.add_dashboard_cell(
@@ -1985,16 +2041,38 @@ def _handle_logbook(args):
                     space_id=args.space_id,
                     title=args.title,
                 )
-            print(
-                f"Logged {args.cell_type} cell to page "
-                f"'{slug}'.{_sync_suffix(lb, proj)}"
-            )
-            lb.trigger_autosync(proj)
+            print(f"Logged {args.cell_type} cell to page '{slug}'.")
         elif action == "page":
             proj = lb.require_project_dir()
             page_slug = lb.ensure_page(proj, args.title)
-            print(f"Selected page '{page_slug}' as default.{_sync_suffix(lb, proj)}")
-            lb.trigger_autosync(proj)
+            print(f"Selected page '{page_slug}' as default.")
+        elif action == "attach":
+            proj = lb.require_project_dir()
+            if args.attach_type == "trace":
+                scrub = not args.no_scrub
+                trace = lb.attach_trace(
+                    proj, args.filepath, title=args.title, scrub=scrub
+                )
+                print(
+                    f"Attached {trace.get('provider', 'agent')} trace "
+                    f"'{trace['id']}' ({trace.get('event_count', 0)} events)."
+                )
+                if scrub:
+                    redactions = trace.get("scrub_redactions", 0)
+                    print(
+                        f"Scrubbed secrets before storing: {redactions} "
+                        f"redaction{'' if redactions == 1 else 's'}."
+                    )
+                else:
+                    print(
+                        "Warning: --no-scrub set; secrets were NOT redacted from "
+                        "this trace."
+                    )
+        elif action == "remove":
+            proj = lb.require_project_dir()
+            if args.remove_type == "trace":
+                lb.remove_trace(proj, args.session_id)
+                print(f"Removed attached trace '{args.session_id}'.")
         elif action == "pin":
             proj = lb.require_project_dir()
             cell_id = args.cell_id or lb.last_cell_id(proj, page=args.page)
@@ -2007,13 +2085,10 @@ def _handle_logbook(args):
                 proj, cell_id, pinned=not args.unpin, page=args.page
             )
             verb = "Unpinned" if args.unpin else "Pinned"
-            print(
-                f"{verb} cell {cell_id} on page "
-                f"'{res['page']}'.{_sync_suffix(lb, proj)}"
-            )
-            lb.trigger_autosync(proj)
+            print(f"{verb} cell {cell_id} on page '{res['page']}'.")
         elif action == "read":
-            proj = lb.resolve_read_source(args.path)
+            source, view = lb.split_read_view(args.path)
+            proj = lb.resolve_read_source(source)
             preview_opts = {
                 "head": lb.DEFAULT_HEAD
                 if getattr(args, "head", None) is None
@@ -2025,7 +2100,19 @@ def _handle_logbook(args):
                 if getattr(args, "raw_limit", None) is None
                 else args.raw_limit,
             }
-            if args.read_target is None:
+            if args.read_target is None and view == "trace":
+                text = lb.read_traces(proj)
+                print(
+                    format_json({"view": "trace", "text": text}) if args.json else text
+                )
+            elif args.read_target is None and view == "workspace":
+                text = lb.read_workspace_tree(proj)
+                print(
+                    format_json({"view": "workspace", "text": text})
+                    if args.json
+                    else text
+                )
+            elif args.read_target is None:
                 if args.json:
                     print(format_json(lb.read_logbook_data(proj, **preview_opts)))
                 else:
@@ -2054,25 +2141,50 @@ def _handle_logbook(args):
                     print(format_json(cell))
                 else:
                     _print_logbook_cell(cell)
-        elif action == "_sync":
-            lb.sync_worker()
+        elif action == "sync":
+            proj = lb.require_project_dir()
+            lb.write_site_files(proj)
+            print(f"Synced logbook site files at {lb.logbook_root(proj)}.")
         elif action == "sync-todos":
             lb.sync_todos_from_stdin()
         elif action == "serve":
             lb.serve(path=args.path, port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
-            url = lb.publish(space_id=args.space_id, private=args.private)
+            proj = lb.require_project_dir()
+            metadata = lb.read_metadata(proj)
+            if not (args.space_id or metadata.get("space_id")):
+                raise lb.LogbookError(
+                    "No Space id. Provide one: trackio logbook publish <username/space>"
+                )
+            inventory = lb.publication_inventory(proj)
+            visibility = "PUBLIC" if args.public else "PRIVATE"
+            if inventory["trace_count"] or inventory["workspace_file_count"]:
+                print(
+                    f"Attached traces ({inventory['trace_count']}) and Workspace "
+                    f"files ({inventory['workspace_file_count']}) will be published "
+                    f"to {visibility} repos."
+                )
+                if args.public:
+                    print(
+                        "  --public: trace/workspace content will also be embedded "
+                        "inline in the static Space."
+                    )
+                else:
+                    print(
+                        "  The static Space will store references only "
+                        "(no trace/workspace content or names)."
+                    )
+            url = lb.publish(
+                space_id=args.space_id,
+                hf_token=args.hf_token,
+                private=args.private,
+                public=args.public,
+            )
             print(f"Published: {url}")
             space_id = lb.read_metadata(lb.require_project_dir()).get("space_id")
             if space_id:
                 subdomain = re.sub(r"[^a-z0-9]+", "-", space_id.lower()).strip("-")
                 print(f"Rendered at: https://{subdomain}.static.hf.space/")
-        elif action == "sync":
-            proj = lb.require_project_dir()
-            if not lb.is_autosync(proj):
-                error_exit("Publish first: trackio logbook publish <username/space>")
-            lb.trigger_autosync(proj)
-            print(f"Syncing to {lb.read_metadata(proj).get('space_id')}…")
     except lb.LogbookError as e:
         error_exit(str(e))
 

@@ -658,13 +658,10 @@ def init(
     context_vars.current_run.set(run)
     globals()["config"] = run.config
 
-    if space_id is not None or server_url is None:
-        try:
-            from trackio import logbook as _logbook  # noqa: PLC0415
-
-            _logbook.auto_note_dashboard(project, space_id=space_id)
-        except Exception:
-            pass
+    # NOTE: trackio.init() deliberately does NOT mutate any logbook that happens
+    # to live in the current directory. Auto-noting a dashboard cell here used to
+    # corrupt curated logbooks (e.g. injecting a stray cell / page). Cells are
+    # added explicitly via the `trackio logbook` CLI instead.
 
     if _should_embed_local:
         try:

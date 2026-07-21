@@ -1,5 +1,6 @@
 import functools
 import http.server
+import json
 import re
 import socketserver
 import threading
@@ -50,20 +51,10 @@ def test_logbook_renders_pages_as_single_document(tmp_path, monkeypatch):
                     page.get_by_role("heading", name="Second experiment")
                 ).to_be_visible()
                 expect(page.locator("#tree a")).to_have_count(2)
-
-                sections_with_resources = page.locator(
-                    ".page-section:has(.context-rail .rail-item)"
-                )
-                expect(sections_with_resources).to_have_count(2)
-                expect(
-                    page.locator('[data-slug="first-experiment"] .rail-item')
-                ).to_have_count(1)
-                expect(
-                    page.locator('[data-slug="second-experiment"] .rail-item')
-                ).to_have_count(1)
+                expect(page.locator(".context-rail")).to_have_count(0)
 
                 page.get_by_role("link", name="Second experiment").first.click()
-                expect(page).to_have_url(re.compile(r"#/second-experiment$"))
+                expect(page).to_have_url(re.compile(r"#/view/code/second-experiment$"))
                 expect(page.locator("#tree a.active")).to_have_text(
                     "§ Second experiment"
                 )
@@ -141,7 +132,96 @@ def test_figure_hotspot_navigates_to_its_logbook_page(tmp_path, monkeypatch):
                 page.frame_locator("iframe.figure-frame").get_by_role(
                     "button", name="Open details"
                 ).click()
-                expect(page).to_have_url(re.compile(r"#/claim-evidence$"))
+                expect(page).to_have_url(re.compile(r"#/view/code/claim-evidence$"))
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+def test_trace_events_are_loaded_one_chunk_at_a_time(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Large trace logbook")
+    trace_path = tmp_path / "large-trace.json"
+    trace_path.write_text(
+        json.dumps(
+            [
+                {"role": "assistant", "content": f"Trace event {index}"}
+                for index in range(401)
+            ]
+        ),
+        encoding="utf-8",
+    )
+    logbook.attach_trace(proj, trace_path, title="Large trace")
+    logbook.write_site_files(proj)
+
+    handler = functools.partial(
+        _QuietHandler, directory=str(logbook.logbook_root(proj))
+    )
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                requests = []
+                page.on("request", lambda request: requests.append(request.url))
+                page.goto(f"http://127.0.0.1:{server.server_address[1]}/#/view/trace")
+
+                expect(page.locator(".trace-entry")).to_have_count(200)
+                expect(page.locator(".trace-load-progress")).to_have_text(
+                    "200 of 401 events loaded"
+                )
+                assert any("events-0000.json" in url for url in requests)
+                assert not any("events-0001.json" in url for url in requests)
+
+                page.get_by_role("button", name="Load 200 more events").click()
+                expect(page.locator(".trace-entry")).to_have_count(400)
+                expect(page.locator(".trace-load-progress")).to_have_text(
+                    "400 of 401 events loaded"
+                )
+                assert any("events-0001.json" in url for url in requests)
+                assert not any("events-0002.json" in url for url in requests)
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+def test_empty_trace_and_workspace_views_explain_how_they_fill(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Empty views logbook")
+
+    handler = functools.partial(
+        _QuietHandler, directory=str(logbook.logbook_root(proj))
+    )
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/"
+
+                page.goto(base_url + "#/view/trace")
+                expect(
+                    page.get_by_role("heading", name="No agent sessions attached yet")
+                ).to_be_visible()
+                expect(page.locator(".view-empty code")).to_have_text(
+                    "trackio logbook attach trace <session.jsonl>"
+                )
+
+                page.goto(base_url + "#/view/workspace")
+                expect(
+                    page.get_by_role("heading", name="No workspace files captured yet")
+                ).to_be_visible()
+                expect(page.locator(".view-empty")).to_contain_text(
+                    "Files stay local until you choose to publish."
+                )
                 browser.close()
         finally:
             server.shutdown()
