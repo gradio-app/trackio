@@ -188,3 +188,41 @@ def test_trace_events_are_loaded_one_chunk_at_a_time(tmp_path, monkeypatch):
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_empty_trace_and_workspace_views_explain_how_they_fill(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Empty views logbook")
+
+    handler = functools.partial(
+        _QuietHandler, directory=str(logbook.logbook_root(proj))
+    )
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/"
+
+                page.goto(base_url + "#/view/trace")
+                expect(
+                    page.get_by_role("heading", name="No agent sessions attached yet")
+                ).to_be_visible()
+                expect(page.locator(".view-empty code")).to_have_text(
+                    "trackio logbook attach trace <session.jsonl>"
+                )
+
+                page.goto(base_url + "#/view/workspace")
+                expect(
+                    page.get_by_role("heading", name="No workspace files captured yet")
+                ).to_be_visible()
+                expect(page.locator(".view-empty")).to_contain_text(
+                    "Files stay local until you choose to publish."
+                )
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()

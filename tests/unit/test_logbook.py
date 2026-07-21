@@ -4,6 +4,7 @@ import re
 import sys
 
 import pytest
+from starlette.testclient import TestClient
 
 from trackio import logbook
 
@@ -56,6 +57,61 @@ def test_write_site_files_updates_revision_after_logbook_changes(proj):
         (logbook.logbook_root(proj) / "logbook.json").read_text(encoding="utf-8")
     )
     assert updated["revision"] != manifest["revision"]
+
+
+def test_write_site_files_keeps_revision_stable_without_changes(proj):
+    first = logbook.write_site_files(proj)
+    second = logbook.write_site_files(proj)
+    assert second["revision"] == first["revision"]
+    assert second["updated_at"] == first["updated_at"]
+
+
+def test_preview_manifest_refreshes_active_trace_and_workspace(proj, tmp_path):
+    trace_path = tmp_path / "active-session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": "Start the experiment"}) + "\n",
+        encoding="utf-8",
+    )
+    logbook.attach_trace(proj, trace_path)
+    before = logbook.write_site_files(proj)
+
+    with trace_path.open("a", encoding="utf-8") as trace:
+        trace.write(json.dumps({"role": "assistant", "content": "Training now"}) + "\n")
+    checkpoint = tmp_path / "checkpoint.safetensors"
+    checkpoint.write_bytes(b"weights")
+
+    with TestClient(logbook._build_preview_app(proj)) as client:
+        response = client.get("/logbook.json")
+
+    assert response.status_code == 200
+    manifest = response.json()
+    assert manifest["revision"] != before["revision"]
+    assert manifest["traces"][0]["event_count"] == 2
+    assert manifest["workspace"]["file_count"] == 1
+    workspace = json.loads(
+        (logbook.logbook_root(proj) / "workspace.json").read_text(encoding="utf-8")
+    )
+    assert workspace["files"][0]["path"] == "checkpoint.safetensors"
+
+
+def test_logbook_run_path_artifact_appears_without_trace(proj, tmp_path):
+    checkpoint = tmp_path / "run-output.ckpt"
+    checkpoint.write_bytes(b"checkpoint")
+    logbook.add_path_artifact_cell(
+        proj,
+        "index",
+        str(checkpoint),
+        checkpoint.stat().st_size,
+        artifact_type="model",
+    )
+
+    manifest = logbook.write_site_files(proj)
+    workspace = json.loads(
+        (logbook.logbook_root(proj) / "workspace.json").read_text(encoding="utf-8")
+    )
+    assert manifest["workspace"]["file_count"] == 1
+    assert workspace["files"][0]["path"] == "run-output.ckpt"
+    assert workspace["files"][0]["captured_by"] == "logbook-run"
 
 
 def test_ensure_page_adds_toc_row(proj):

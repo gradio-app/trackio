@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import html
 import json
 import os
@@ -595,6 +596,30 @@ def _estimate_tokens(text: str) -> int:
     return max(1, int(len(text) / 3.3))
 
 
+def _site_revision(proj: Path, manifest: dict) -> str:
+    """Return a stable revision for content visible in the local viewer."""
+    digest = hashlib.sha256()
+    stable_manifest = {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"revision", "updated_at"}
+    }
+    digest.update(
+        json.dumps(stable_manifest, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
+    root = logbook_root(proj)
+    paths = list((root / "pages").rglob("*.md"))
+    paths += list((root / "traces").rglob("*.json"))
+    workspace = root / "workspace.json"
+    if workspace.is_file():
+        paths.append(workspace)
+    for path in sorted(paths):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        stat = path.stat()
+        digest.update(f"{stat.st_mtime_ns}:{stat.st_size}".encode("ascii"))
+    return digest.hexdigest()[:20]
+
+
 def write_site_files(proj: Path) -> dict:
     _ensure_project_gitignore(proj)
     _ensure_viewer_files(proj)
@@ -612,9 +637,14 @@ def write_site_files(proj: Path) -> dict:
     manifest["workspace_view_tokens"] = _estimate_tokens(
         read_workspace_tree(proj, manifest)
     )
-    manifest["revision"] = str(time.time_ns())
-    manifest["updated_at"] = _now_iso()
     root = logbook_root(proj)
+    previous = _read_json_file(root / "logbook.json")
+    manifest["revision"] = _site_revision(proj, manifest)
+    manifest["updated_at"] = (
+        previous.get("updated_at")
+        if previous.get("revision") == manifest["revision"]
+        else _now_iso()
+    )
     index_html = root / "index.html"
     if index_html.is_file():
         text = index_html.read_text(encoding="utf-8")
@@ -2153,7 +2183,10 @@ def _logbook_static_app(root: Path):
 
 
 def _build_preview_app(proj: Path):
+    import threading  # noqa: PLC0415
+
     from starlette.applications import Starlette  # noqa: PLC0415
+    from starlette.concurrency import run_in_threadpool  # noqa: PLC0415
     from starlette.responses import FileResponse, PlainTextResponse  # noqa: PLC0415
     from starlette.routing import Mount, Route  # noqa: PLC0415
 
@@ -2165,6 +2198,26 @@ def _build_preview_app(proj: Path):
         frontend_dir=str(resolve_frontend_dir(None).path),
     )
     static_app = _logbook_static_app(logbook_root(proj))
+    refresh_lock = threading.Lock()
+    refresh_state = {"last": 0.0}
+
+    def refresh_live_files() -> None:
+        with refresh_lock:
+            now = time.monotonic()
+            if now - refresh_state["last"] < 2.0:
+                return
+            write_site_files(proj)
+            refresh_state["last"] = now
+
+    async def live_manifest(_request):
+        # The frontend polls this file every 1.5 seconds. Refreshing here keeps
+        # explicitly attached active traces and their Workspace view current
+        # without a background process or any remote upload.
+        await run_in_threadpool(refresh_live_files)
+        return FileResponse(
+            _manifest_path(proj),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     async def workspace_file(request):
         from trackio import logbook_trace  # noqa: PLC0415
@@ -2181,6 +2234,7 @@ def _build_preview_app(proj: Path):
 
     return Starlette(
         routes=[
+            Route("/logbook.json", live_manifest),
             Route("/__trackio_workspace__/{path:path}", workspace_file),
             Mount("/dashboard", app=dashboard_app),
             Mount("/", app=static_app),

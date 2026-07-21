@@ -2009,9 +2009,9 @@
     if (!sessions.length) {
       page.appendChild(
         emptyView(
-          "No trace attached",
-          "Attach an agent session file to add its chronological trace to this logbook.",
-          "trackio logbook attach trace <filepath>"
+          "No agent sessions attached yet",
+          "Attach the active session once and Trackio will keep its trace refreshed here while you work. The session stays local until you explicitly publish it.",
+          "trackio logbook attach trace <session.jsonl>"
         )
       );
       return;
@@ -2186,8 +2186,8 @@
     if (!(workspace.files || []).length) {
       shell.appendChild(
         emptyView(
-          "No workspace files yet",
-          "Supported model and data files created or changed after a trace was attached will appear here."
+          "No workspace files captured yet",
+          "Supported model and data files appear here as they are created or changed after a trace is attached. Outputs captured by trackio logbook run appear when the run finishes; logged Trackio artifacts appear immediately in Code & Markdown. Files stay local until you choose to publish."
         )
       );
     } else {

@@ -71,10 +71,16 @@ def _read_json(path: Path, default: Any) -> Any:
 
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    rendered = json.dumps(value, indent=2, ensure_ascii=False)
+    try:
+        if path.read_text(encoding="utf-8") == rendered:
+            return
+    except OSError:
+        pass
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, indent=2, ensure_ascii=False)
+            handle.write(rendered)
         os.replace(tmp_name, path)
     except Exception:
         try:
@@ -896,13 +902,26 @@ def refresh_trace(proj: Path, session_id: str) -> dict:
             _write_json(output_dir / "index.json", index)
             return index
         raise TraceCaptureError(f"Attached trace source is missing: {source}")
-    normalized = normalize_trace(source)
     raw_dir = proj / TRACE_STATE_DIR / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     raw_suffix = (
         source.suffix if source.suffix.lower() in {".json", ".jsonl"} else ".jsonl"
     )
-    shutil.copy2(source, raw_dir / f"{_safe_id(session_id)}{raw_suffix}")
+    raw_path = raw_dir / f"{_safe_id(session_id)}{raw_suffix}"
+    existing = _read_json(output_dir / "index.json", {})
+    try:
+        source_stat = source.stat()
+        raw_stat = raw_path.stat()
+        if (
+            existing
+            and source_stat.st_size == raw_stat.st_size
+            and source_stat.st_mtime_ns == raw_stat.st_mtime_ns
+        ):
+            return existing
+    except OSError:
+        pass
+    normalized = normalize_trace(source)
+    shutil.copy2(source, raw_path)
     return _write_normalized_trace(proj, entry, normalized)
 
 
@@ -1022,6 +1041,45 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
         if isinstance(item, dict) and item.get("path")
     }
     files_by_path = dict(imported_files)
+    metadata = _read_json(proj / "metadata.json", {})
+    for tracked in metadata.get("local_path_artifacts") or []:
+        try:
+            source = Path(tracked["abs_path"]).resolve()
+            relative = source.relative_to(root).as_posix()
+            stat = source.stat()
+        except (KeyError, OSError, ValueError):
+            continue
+        kind = tracked.get("artifact_type") or WORKSPACE_TYPE_BY_EXT.get(
+            source.suffix.lower()
+        )
+        if not kind or not source.is_file():
+            continue
+        encoded = quote(relative, safe="/")
+        bucket_path = f"{WORKSPACE_BUCKET_PREFIX}/{relative}"
+        files_by_path[relative] = {
+            "path": relative,
+            "name": source.name,
+            "type": kind,
+            "size": stat.st_size,
+            "modified_at": datetime.fromtimestamp(
+                stat.st_mtime, tz=timezone.utc
+            ).isoformat(),
+            "sessions": [],
+            "captured_by": "logbook-run",
+            "local_url": f"/__trackio_workspace__/{encoded}",
+            "bucket_url": (
+                f"https://huggingface.co/buckets/{bucket_id}#"
+                f"{WORKSPACE_BUCKET_PREFIX}/{encoded}"
+                if bucket_id
+                else None
+            ),
+            "download_url": (
+                f"https://huggingface.co/buckets/{bucket_id}/resolve/"
+                f"{quote(bucket_path, safe='')}"
+                if bucket_id
+                else None
+            ),
+        }
     current = _workspace_snapshot(root) if entries else {}
     trace_sources = {
         Path(entry["source_path"]).resolve()
@@ -1069,7 +1127,7 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
             ),
         }
     files = [files_by_path[path] for path in sorted(files_by_path)]
-    return {
+    manifest = {
         "schema_version": 1,
         "generated_at": _now_iso(),
         "root_name": root.name,
@@ -1078,6 +1136,16 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
         "total_size": sum(item["size"] for item in files),
         "files": files,
     }
+    previous = _read_json(proj / "logbook" / "workspace.json", {})
+    comparable = {
+        key: value for key, value in manifest.items() if key != "generated_at"
+    }
+    previous_comparable = {
+        key: value for key, value in previous.items() if key != "generated_at"
+    }
+    if comparable == previous_comparable and previous.get("generated_at"):
+        manifest["generated_at"] = previous["generated_at"]
+    return manifest
 
 
 def refresh_all(proj: Path, bucket_id: str | None = None) -> dict:
