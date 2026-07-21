@@ -1906,6 +1906,114 @@ table.board tr.linked-row:hover a {
   text-align: center;
 }
 
+.workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.workspace-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fafafa;
+}
+.workspace-toggle-btn {
+  padding: 4px 13px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.workspace-toggle-btn:hover {
+  color: var(--accent-strong);
+}
+.workspace-toggle-btn.is-active {
+  background: var(--accent);
+  color: #ffffff;
+}
+.workspace-group + .workspace-group {
+  margin-top: 18px;
+}
+.workspace-group-head,
+.workspace-hub-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 13px;
+  background: #fafafa;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: capitalize;
+}
+.workspace-group-count,
+.workspace-hub-count {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.workspace-group {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.workspace-hub {
+  margin-top: 28px;
+}
+.workspace-hub-title {
+  margin: 0 0 14px;
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.workspace-hub-group {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.92);
+}
+.workspace-hub-group + .workspace-hub-group {
+  margin-top: 14px;
+}
+.workspace-hub-list {
+  display: flex;
+  flex-direction: column;
+}
+.workspace-hub-link {
+  padding: 9px 13px;
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-hub-link + .workspace-hub-link {
+  border-top: 1px solid var(--line);
+}
+.workspace-hub-link:hover {
+  background: var(--accent-soft);
+  text-decoration: underline;
+}
+
 @media (max-width: 720px) {
   #app {
     flex-direction: column;

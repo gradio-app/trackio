@@ -1031,7 +1031,7 @@ def main():
     logbook_sub = logbook_parser.add_subparsers(
         dest="logbook_action",
         required=True,
-        metavar="{open,cell,run,page,attach,remove,read,serve,publish,pin,sync-todos}",
+        metavar="{open,cell,run,page,attach,remove,read,serve,publish,pin,sync,sync-todos}",
     )
 
     lb_open = logbook_sub.add_parser(
@@ -1081,7 +1081,11 @@ def main():
     )
     lb_cell_code.add_argument("--code-text", help="Inline code to include")
     lb_cell_code.add_argument("--language", help="Language for --code-text")
-    lb_cell_code.add_argument("--output", required=True, help="Output text")
+    lb_cell_code.add_argument(
+        "--output",
+        default="",
+        help="Output text (optional; omit for a command-only code cell)",
+    )
 
     lb_cell_figure = lb_cell_sub.add_parser("figure", help="Append a figure cell")
     lb_cell_figure.add_argument("--title", help="Cell title")
@@ -1095,6 +1099,15 @@ def main():
     )
     lb_cell_figure.add_argument("--raw", help="Path/URL/text for raw data")
     lb_cell_figure.add_argument("--raw-text", help="Inline raw data")
+    lb_cell_figure.add_argument(
+        "--inline-plotlyjs",
+        action="store_true",
+        help=(
+            "Embed the full Plotly.js library in the page (can be several MB). "
+            "By default an inlined Plotly.js bundle is rewritten to a CDN "
+            "reference to keep pages small."
+        ),
+    )
 
     lb_cell_dash = lb_cell_sub.add_parser(
         "dashboard", help="Embed a Trackio dashboard for a project"
@@ -1107,6 +1120,12 @@ def main():
     )
     lb_cell_dash.add_argument("--title", help="Cell title")
     lb_cell_dash.add_argument("--page", help="Page title or slug")
+
+    lb_cell_remove = lb_cell_sub.add_parser(
+        "remove", help="Remove a cell from a page by its cell id"
+    )
+    lb_cell_remove.add_argument("cell_id", help="Cell id to remove")
+    lb_cell_remove.add_argument("--page", help="Page title or slug to scope the search")
 
     lb_run = logbook_sub.add_parser(
         "run",
@@ -1249,6 +1268,11 @@ def main():
     )
     lb_pin.add_argument(
         "--unpin", action="store_true", help="Unpin the cell instead of pinning it"
+    )
+
+    logbook_sub.add_parser(
+        "sync",
+        help="Regenerate the logbook site files from the current page sources",
     )
 
     logbook_sub.add_parser("sync-todos")
@@ -1982,6 +2006,13 @@ def _handle_logbook(args):
             slug = lb.read_metadata(proj).get("last_page", "?")
             print(f"Logged run to page '{slug}'.")
             sys.exit(rc)
+        elif action == "cell" and args.cell_type == "remove":
+            proj = lb.require_project_dir()
+            result = lb.remove_cell(proj, args.cell_id, page=args.page)
+            print(
+                f"Removed {result['type']} cell {args.cell_id} "
+                f"from page '{result['page']}'."
+            )
         elif action == "cell":
             proj = lb.require_project_dir()
             slug = _logbook_cell_target(lb, proj, args)
@@ -2030,6 +2061,7 @@ def _handle_logbook(args):
                     html=html,
                     raw=raw,
                     title=args.title,
+                    inline_plotlyjs=args.inline_plotlyjs,
                 )
             elif args.cell_type == "dashboard":
                 lb.add_dashboard_cell(
@@ -2125,6 +2157,10 @@ def _handle_logbook(args):
                     print(format_json(cell))
                 else:
                     _print_logbook_cell(cell)
+        elif action == "sync":
+            proj = lb.require_project_dir()
+            lb.write_site_files(proj)
+            print(f"Synced logbook site files at {lb.logbook_root(proj)}.")
         elif action == "sync-todos":
             lb.sync_todos_from_stdin()
         elif action == "serve":

@@ -1031,7 +1031,12 @@ def _trace_summary(index: dict) -> dict:
     } | {"index_file": f"traces/{_safe_id(str(index.get('id', '')))}/index.json"}
 
 
-def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> dict:
+def _workspace_manifest(
+    proj: Path,
+    registry: dict,
+    bucket_id: str | None,
+    hub_refs: list[dict] | None = None,
+) -> dict:
     root = proj.parent.resolve()
     entries = registry["sessions"]
     imported = _read_json(proj / IMPORTED_WORKSPACE_FILE, {})
@@ -1135,6 +1140,7 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
         "file_count": len(files),
         "total_size": sum(item["size"] for item in files),
         "files": files,
+        "hub_refs": hub_refs or [],
     }
     previous = _read_json(proj / "logbook" / "workspace.json", {})
     comparable = {
@@ -1148,7 +1154,11 @@ def _workspace_manifest(proj: Path, registry: dict, bucket_id: str | None) -> di
     return manifest
 
 
-def refresh_all(proj: Path, bucket_id: str | None = None) -> dict:
+def refresh_all(
+    proj: Path,
+    bucket_id: str | None = None,
+    hub_refs: list[dict] | None = None,
+) -> dict:
     registry = _load_registry(proj)
     summaries = []
     for entry in registry["sessions"]:
@@ -1169,7 +1179,7 @@ def refresh_all(proj: Path, bucket_id: str | None = None) -> dict:
         "sessions": summaries,
     }
     _write_json(proj / "logbook" / "traces" / "index.json", traces_index)
-    workspace = _workspace_manifest(proj, registry, bucket_id)
+    workspace = _workspace_manifest(proj, registry, bucket_id, hub_refs)
     _write_json(proj / "logbook" / "workspace.json", workspace)
     return {"traces": traces_index, "workspace": workspace}
 

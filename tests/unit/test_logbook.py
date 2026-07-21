@@ -488,19 +488,47 @@ def test_auto_note_dashboard_disabled_or_no_logbook(proj, monkeypatch, tmp_path)
     logbook.auto_note_dashboard("mnist")
 
 
-def test_init_creates_dashboard_cell_immediately(temp_dir, proj):
+def test_init_does_not_mutate_logbook_pages(temp_dir, proj):
+    """trackio.init() must be side-effect-free on a logbook in the cwd.
+
+    Regression test: init() used to auto-note a dashboard cell on the active
+    page, corrupting curated logbooks. It must not add cells or pages now.
+    """
     import trackio
 
     page = logbook.ensure_page(proj, "Training results")
+    before = logbook.read_page_outline(proj, page)["cells"]
     trackio.init(project="p1", name="r1")
-    assert len(_dashboard_cells(proj, page)) == 1
     trackio.finish()
     trackio.init(project="p1", name="r2")
     trackio.finish()
-    outline = logbook.read_page_outline(proj, page)
-    assert len([c for c in outline["cells"] if c["type"] == "dashboard"]) == 1
-    assert not [c for c in outline["cells"] if (c["title"] or "").startswith("Run:")]
+    after = logbook.read_page_outline(proj, page)["cells"]
+    assert len(after) == len(before)
+    assert not [c for c in after if c["type"] == "dashboard"]
+    # No stray sidebar page named after the project.
     assert logbook._page_file_for_slug(proj, "p1") is None
+
+
+def test_log_artifact_does_not_create_logbook_page(temp_dir, proj, tmp_path):
+    """Regression: log_artifact() used to inject a sidebar page named after the
+    project (via auto_note_artifact -> ensure_page), appended after the last
+    page and breaking logbook structure. It must not touch the page tree."""
+    import trackio
+
+    logbook.ensure_page(proj, "Conclusion")
+    slugs_before = logbook._all_slugs(proj)
+
+    weights = tmp_path / "model.bin"
+    weights.write_bytes(b"\x00" * 2048)
+
+    trackio.init(project="capacity-sweep", name="r1")
+    art = trackio.Artifact(name="ckpt", type="model")
+    art.add_file(weights)
+    trackio.log_artifact(art)
+    trackio.finish()
+
+    assert logbook._all_slugs(proj) == slugs_before
+    assert logbook._page_file_for_slug(proj, "capacity-sweep") is None
 
 
 def test_promote_pushes_path_artifact_to_bucket_preserving_relative_path(
@@ -723,3 +751,159 @@ def test_project_from_url_blocks_path_traversal(monkeypatch):
     assert (root / "pages" / "index.md").is_file()
     escaped = (root / ".." / ".." / "trackio-evil-traversal.md").resolve()
     assert not escaped.exists()
+
+
+def test_cli_logbook_sync_regenerates_site(proj, monkeypatch):
+    from trackio import cli
+
+    logbook.ensure_page(proj, "Sweep")
+    logbook_json = logbook.logbook_root(proj) / "logbook.json"
+    logbook_json.unlink()
+    monkeypatch.setattr(sys, "argv", ["trackio", "logbook", "sync"])
+    cli.main()
+    assert logbook_json.is_file()
+    manifest = json.loads(logbook_json.read_text(encoding="utf-8"))
+    assert any(node["title"] == "Sweep" for node in logbook._walk(manifest["root"]))
+
+
+def test_cli_cell_remove_deletes_cell(proj, monkeypatch):
+    from trackio import cli
+
+    slug = logbook.ensure_page(proj, "Notes")
+    logbook.add_markdown_cell(proj, slug, "keep me", title="Keep")
+    logbook.add_markdown_cell(proj, slug, "drop me", title="Drop")
+    cell_id = logbook.last_cell_id(proj, page="Notes")
+    assert len(logbook.read_page_outline(proj, slug)["cells"]) == 2
+
+    monkeypatch.setattr(sys, "argv", ["trackio", "logbook", "cell", "remove", cell_id])
+    cli.main()
+
+    cells = logbook.read_page_outline(proj, slug)["cells"]
+    assert len(cells) == 1
+    assert cells[0]["title"] == "Keep"
+    assert "drop me" not in _page_text(proj, slug)
+
+
+def test_remove_cell_missing_id_raises(proj):
+    logbook.ensure_page(proj, "Notes")
+    with pytest.raises(logbook.LogbookError):
+        logbook.remove_cell(proj, "cell_doesnotexist")
+
+
+def test_cli_cell_code_output_is_optional(proj, monkeypatch):
+    from trackio import cli
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "trackio",
+            "logbook",
+            "cell",
+            "code",
+            "--page",
+            "Runs",
+            "--code-text",
+            "print('hi')",
+            "--language",
+            "python",
+        ],
+    )
+    cli.main()
+    text = _page_text(proj, "Runs")
+    assert "print('hi')" in text
+    assert "````output" not in text
+
+
+def test_add_code_cell_includes_output_when_provided(proj):
+    slug = logbook.ensure_page(proj, "Runs")
+    logbook.add_code_cell(proj, slug, "the output", code_text="cmd")
+    text = _page_text(proj, "Runs")
+    assert "````output" in text
+    assert "the output" in text
+
+
+def test_rewrite_plotly_cdn_replaces_inline_library():
+    version = "2.27.0"
+    big_library = "Plotly=" + "x" * 300_000 + f"/* plotly.js v{version} */"
+    html = (
+        "<div id='plot'></div>\n"
+        f'<script charset="utf-8">{big_library}</script>\n'
+        "<script>Plotly.newPlot('plot', data);</script>"
+    )
+    rewritten, changed = logbook._rewrite_plotly_cdn(html)
+    assert changed is True
+    assert big_library not in rewritten
+    assert f"https://cdn.plot.ly/plotly-{version}.min.js" in rewritten
+    # The small per-figure newPlot call is preserved.
+    assert "Plotly.newPlot('plot', data);" in rewritten
+    assert len(rewritten) < len(html)
+
+
+def test_rewrite_plotly_cdn_ignores_non_plotly_html():
+    html = "<div>hello</div><script>console.log(1)</script>"
+    rewritten, changed = logbook._rewrite_plotly_cdn(html)
+    assert changed is False
+    assert rewritten == html
+
+
+def test_add_figure_cell_rewrites_plotly_by_default(proj):
+    slug = logbook.ensure_page(proj, "Figs")
+    big_library = "Plotly=" + "x" * 300_000 + "/* plotly.js v2.30.0 */"
+    html = (
+        f'<div id="p"></div><script charset="utf-8">{big_library}</script>'
+        "<script>Plotly.newPlot('p', []);</script>"
+    )
+    logbook.add_figure_cell(proj, slug, html=html)
+    text = _page_text(proj, "Figs")
+    assert "cdn.plot.ly/plotly-2.30.0.min.js" in text
+    assert big_library not in text
+
+    logbook.add_figure_cell(proj, slug, html=html, inline_plotlyjs=True)
+    text = _page_text(proj, "Figs")
+    assert big_library in text
+
+
+def test_scan_hub_refs_classifies_urls(proj):
+    slug = logbook.ensure_page(proj, "Links")
+    body = (
+        "See the run at https://huggingface.co/jobs/me/abc123 and dataset "
+        "https://huggingface.co/datasets/me/data plus the space "
+        "https://huggingface.co/spaces/me/demo, bucket "
+        "https://huggingface.co/buckets/me/store#logbook-files/a.csv and again "
+        "https://huggingface.co/buckets/me/store#logbook-files/b.csv, model "
+        "https://huggingface.co/Qwen/Qwen2.5-Coder-32B-Instruct. Ignore the "
+        "profile https://huggingface.co/me and docs "
+        "https://huggingface.co/docs/hub/index."
+    )
+    logbook.add_markdown_cell(proj, slug, body)
+    refs = logbook.scan_hub_refs(proj)
+    by_type = {}
+    for ref in refs:
+        by_type.setdefault(ref["type"], []).append(ref["label"])
+    assert by_type["Jobs"] == ["me/abc123"]
+    assert by_type["Datasets"] == ["me/data"]
+    assert by_type["Spaces"] == ["me/demo"]
+    assert by_type["Models"] == ["Qwen/Qwen2.5-Coder-32B-Instruct"]
+    # Two file links into the same bucket collapse to one reference.
+    assert by_type["Buckets"] == ["me/store"]
+    # Bare profile and docs links are not classified as artifacts.
+    labels = [ref["label"] for ref in refs]
+    assert "me" not in labels
+    assert not any(ref["type"] == "Models" and ref["label"] == "me" for ref in refs)
+
+
+def test_scan_hub_refs_written_into_workspace_manifest(proj):
+    slug = logbook.ensure_page(proj, "Links")
+    logbook.add_markdown_cell(proj, slug, "job https://huggingface.co/jobs/me/xyz789")
+    logbook.write_site_files(proj)
+    workspace = json.loads(
+        (logbook.logbook_root(proj) / "workspace.json").read_text(encoding="utf-8")
+    )
+    assert workspace["hub_refs"] == [
+        {
+            "url": "https://huggingface.co/jobs/me/xyz789",
+            "type": "Jobs",
+            "label": "me/xyz789",
+        }
+    ]

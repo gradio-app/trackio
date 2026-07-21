@@ -67,6 +67,37 @@ CELL_RE = re.compile(
     r"(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)"
 )
 
+# ---- Hugging Face artifact detection (workspace "Hugging Face artifacts") ----
+_HF_URL_RE = re.compile(r"https://huggingface\.co/[^\s)\"'`<>\]]+")
+# Path prefixes on huggingface.co that are NOT bare model repos.
+_HF_RESERVED_PREFIXES = {
+    "datasets",
+    "spaces",
+    "jobs",
+    "buckets",
+    "api",
+    "collections",
+    "papers",
+    "models",
+    "docs",
+    "blog",
+    "settings",
+    "organizations",
+    "join",
+    "login",
+    "pricing",
+    "chat",
+    "posts",
+    "new",
+    "notifications",
+    "changelog",
+    "tasks",
+    "learn",
+    "enterprise",
+    "welcome",
+    "search",
+}
+
 
 class LogbookError(Exception):
     pass
@@ -358,6 +389,80 @@ def _walk(node: dict):
         yield from _walk(child)
 
 
+def _classify_hf_url(url: str) -> dict | None:
+    """Classify a huggingface.co URL into a Hugging Face artifact reference.
+
+    Returns ``{"url", "type", "label"}`` or ``None`` if the URL is not a
+    recognized artifact (e.g. a bare user profile link).
+    """
+    clean = url.rstrip(".,;:!?")
+    prefix = "https://huggingface.co/"
+    if not clean.startswith(prefix):
+        return None
+    path = clean[len(prefix) :]
+    core = path.split("#", 1)[0].split("?", 1)[0]
+    segments = [s for s in core.split("/") if s]
+    if not segments:
+        return None
+    head = segments[0].lower()
+    if head == "jobs":
+        typ, label = "Jobs", "/".join(segments[1:]) or core
+    elif head == "datasets":
+        typ, label = "Datasets", "/".join(segments[1:3]) or core
+    elif head == "spaces":
+        typ, label = "Spaces", "/".join(segments[1:3]) or core
+    elif head == "buckets" or (
+        head == "api" and len(segments) > 1 and segments[1].lower() == "buckets"
+    ):
+        rest = segments[2:] if head == "api" else segments[1:]
+        typ, label = "Buckets", "/".join(rest[:2]) or core
+    elif head == "collections":
+        typ, label = "Collections", "/".join(segments[1:3]) or core
+    elif head == "papers":
+        typ, label = "Papers", "/".join(segments[1:]) or core
+    elif head in _HF_RESERVED_PREFIXES:
+        return None
+    elif len(segments) == 2:
+        # Conservative: only a bare `owner/name` path is treated as a model.
+        typ, label = "Models", "/".join(segments)
+    else:
+        return None
+    return {"url": clean, "type": typ, "label": label}
+
+
+def scan_hub_refs(proj: Path) -> list[dict]:
+    """Scan every logbook page (markdown, code commands and captured output)
+    for huggingface.co URLs and return deduped, classified references.
+
+    Robust to logbooks without cells: returns ``[]`` on any read failure.
+    """
+    root = logbook_root(proj)
+    try:
+        manifest = build_manifest(proj)
+    except Exception:
+        return []
+    seen: set[tuple[str, str]] = set()
+    refs: list[dict] = []
+    for node in _walk(manifest["root"]):
+        path = root / node["file"]
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for match in _HF_URL_RE.finditer(text):
+            ref = _classify_hf_url(match.group(0))
+            if ref is None:
+                continue
+            # Dedupe by identity (type + label) so e.g. several file links into
+            # the same bucket collapse to a single artifact reference.
+            key = (ref["type"], ref["label"])
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(ref)
+    return refs
+
+
 AGENT_VIEW_NOTE = (
     "> Agent view: markdown bodies are inline; code cells show the command, a "
     "code head, and an output tail; figures inline small raw data. Fetch full "
@@ -626,8 +731,14 @@ def write_site_files(proj: Path) -> dict:
     from trackio import logbook_trace  # noqa: PLC0415
 
     try:
+        hub_refs = scan_hub_refs(proj)
+    except Exception:
+        hub_refs = []
+    try:
         logbook_trace.refresh_all(
-            proj, bucket_id=_workspace_bucket(read_metadata(proj))
+            proj,
+            bucket_id=_workspace_bucket(read_metadata(proj)),
+            hub_refs=hub_refs,
         )
     except logbook_trace.TraceCaptureError as e:
         print(f"Warning: could not refresh attached trace: {e}", file=sys.stderr)
@@ -1397,7 +1508,51 @@ def set_cell_pinned(
     raise LogbookError(f"No cell with id '{cell_id}' in this logbook.")
 
 
-# ---- auto-note (called from trackio.finish / log_artifact) ----
+def remove_cell(proj: Path, cell_id: str, page: str | None = None) -> dict:
+    """Delete a cell by id from its owning page and rewrite site files.
+
+    Searches every page (or only ``page`` when given). Removes the whole cell
+    block (marker + body) from the source ``page.md`` in place.
+    """
+    root = logbook_root(proj)
+    scope = _resolve_slug(proj, page) if page else None
+    for node in _walk(build_manifest(proj)["root"]):
+        if scope and node["slug"] != scope:
+            continue
+        path = root / node["file"]
+        text = path.read_text(encoding="utf-8")
+        state = {"hit": False, "title": None, "type": None}
+
+        def _repl(m):
+            try:
+                meta = json.loads(m.group(2))
+            except json.JSONDecodeError:
+                return m.group(0)
+            if meta.get("id") != cell_id:
+                return m.group(0)
+            state["hit"] = True
+            state["title"] = meta.get("title")
+            state["type"] = meta.get("type")
+            return ""
+
+        new_text = CELL_RE.sub(_repl, text)
+        if state["hit"]:
+            path.write_text(new_text.rstrip() + "\n", encoding="utf-8")
+            write_site_files(proj)
+            return {
+                "page": node["slug"],
+                "page_title": node["title"],
+                "title": state["title"],
+                "type": state["type"],
+            }
+    raise LogbookError(f"No cell with id '{cell_id}' in this logbook.")
+
+
+# ---- auto-note helpers ----
+# NOTE: these helpers are intentionally NOT invoked automatically from
+# trackio.init() / run.log_artifact() anymore. Doing so mutated (and corrupted)
+# curated logbooks that merely happened to sit in the current directory. They
+# remain as explicit, opt-in building blocks for logbook tooling/tests.
 
 
 def _autonote_enabled() -> bool:
@@ -1548,7 +1703,8 @@ def add_code_cell(
     if code_text:
         lang = language or ""
         lines += ["", f"````{lang}".rstrip(), *code_text.split("\n"), "````", ""]
-    lines += ["", "````output", *output.split("\n"), "````", ""]
+    if output:
+        lines += ["", "````output", *output.split("\n"), "````", ""]
     _append_cell(
         proj,
         page_slug,
@@ -1717,6 +1873,43 @@ def figure_html_from_image(path: str | Path) -> str:
     )
 
 
+PLOTLY_CDN_FALLBACK_VERSION = "2.35.2"
+_PLOTLY_VERSION_RE = re.compile(r"plotly(?:\.js|\.min\.js)?\s+v?(\d+\.\d+\.\d+)", re.I)
+_SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.I | re.S)
+# The vendored Plotly bundle emitted by fig.write_html(include_plotlyjs=True) is
+# several MB; anything this large that also defines Plotly is the library block
+# (not the small per-figure Plotly.newPlot(...) call).
+_PLOTLY_INLINE_MIN_BYTES = 200_000
+
+
+def _rewrite_plotly_cdn(html: str) -> tuple[str, bool]:
+    """Replace an inlined Plotly.js library block with a CDN ``<script src>``.
+
+    Returns ``(html, rewrote)``. Leaves non-Plotly HTML and the small per-figure
+    ``Plotly.newPlot`` call untouched.
+    """
+    if "plotly" not in html.lower():
+        return html, False
+    rewrote = False
+
+    def _repl(match: re.Match) -> str:
+        nonlocal rewrote
+        content = match.group(1)
+        if len(content) < _PLOTLY_INLINE_MIN_BYTES or "Plotly" not in content:
+            return match.group(0)
+        ver = _PLOTLY_VERSION_RE.search(content[:8000]) or _PLOTLY_VERSION_RE.search(
+            content
+        )
+        version = ver.group(1) if ver else PLOTLY_CDN_FALLBACK_VERSION
+        rewrote = True
+        return (
+            '<script charset="utf-8" '
+            f'src="https://cdn.plot.ly/plotly-{version}.min.js"></script>'
+        )
+
+    return _SCRIPT_BLOCK_RE.sub(_repl, html), rewrote
+
+
 def add_figure_cell(
     proj: Path,
     page_slug: str,
@@ -1724,11 +1917,20 @@ def add_figure_cell(
     raw: str | None = None,
     title: str | None = None,
     image: str | Path | None = None,
+    inline_plotlyjs: bool = False,
 ) -> None:
     if image:
         html = figure_html_from_image(image)
     if not html:
         raise LogbookError("Figure cells require HTML content or an image.")
+    if not inline_plotlyjs:
+        html, rewrote = _rewrite_plotly_cdn(html)
+        if rewrote:
+            print(
+                "Note: rewrote inlined Plotly.js to a CDN <script src> to keep "
+                "the page small. Pass --inline-plotlyjs to embed it instead.",
+                file=sys.stderr,
+            )
     if len(html) > 1_000_000:
         print(
             f"Note: figure HTML is {len(html) / 1_000_000:.1f} MB and is stored "

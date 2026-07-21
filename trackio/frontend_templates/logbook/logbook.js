@@ -2156,6 +2156,153 @@
       .forEach((file) => container.appendChild(workspaceFileRow(file)));
   }
 
+  const WORKSPACE_MODE_KEY = "trackio-logbook:workspace-mode";
+
+  function getWorkspaceMode() {
+    try {
+      return localStorage.getItem(WORKSPACE_MODE_KEY) === "type" ? "type" : "tree";
+    } catch (error) {
+      return "tree";
+    }
+  }
+
+  function setWorkspaceMode(mode) {
+    try {
+      localStorage.setItem(WORKSPACE_MODE_KEY, mode);
+    } catch (error) {
+      /* ignore storage failures (private mode, etc.) */
+    }
+  }
+
+  function fileGroupKey(file) {
+    if (file.type) return file.type;
+    const name = file.name || file.path || "";
+    const dot = name.lastIndexOf(".");
+    if (dot > 0 && dot < name.length - 1) return name.slice(dot + 1).toLowerCase();
+    return "other";
+  }
+
+  function renderWorkspaceByType(files, container) {
+    const groups = new Map();
+    files.forEach((file) => {
+      const key = fileGroupKey(file);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(file);
+    });
+    Array.from(groups.keys())
+      .sort((a, b) => a.localeCompare(b))
+      .forEach((key) => {
+        const items = groups
+          .get(key)
+          .sort((a, b) => a.name.localeCompare(b.name));
+        const section = document.createElement("div");
+        section.className = "workspace-group";
+        const heading = document.createElement("h3");
+        heading.className = "workspace-group-head";
+        const label = document.createElement("span");
+        label.textContent = key;
+        const count = document.createElement("span");
+        count.className = "workspace-group-count";
+        count.textContent = String(items.length);
+        heading.appendChild(label);
+        heading.appendChild(count);
+        section.appendChild(heading);
+        items.forEach((file) => section.appendChild(workspaceFileRow(file)));
+        container.appendChild(section);
+      });
+  }
+
+  function buildWorkspaceToggle(current, onChange) {
+    const toggle = document.createElement("div");
+    toggle.className = "workspace-toggle";
+    toggle.setAttribute("role", "group");
+    toggle.setAttribute("aria-label", "Workspace layout");
+    const buttons = [];
+    [
+      ["tree", "Tree"],
+      ["type", "By type"],
+    ].forEach(([mode, text]) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "workspace-toggle-btn";
+      btn.textContent = text;
+      const setActive = (active) => {
+        btn.classList.toggle("is-active", active);
+        btn.setAttribute("aria-pressed", active ? "true" : "false");
+      };
+      setActive(mode === current);
+      btn.addEventListener("click", () => {
+        buttons.forEach((entry) => entry.setActive(entry.mode === mode));
+        onChange(mode);
+      });
+      buttons.push({ mode, setActive });
+      toggle.appendChild(btn);
+    });
+    return toggle;
+  }
+
+  const HUB_REF_GROUP_ORDER = [
+    "Jobs",
+    "Datasets",
+    "Models",
+    "Spaces",
+    "Buckets",
+    "Collections",
+    "Papers",
+  ];
+
+  function renderHubRefs(refs) {
+    if (!Array.isArray(refs) || !refs.length) return null;
+    const section = document.createElement("section");
+    section.className = "workspace-hub";
+    const heading = document.createElement("h2");
+    heading.className = "workspace-hub-title";
+    heading.textContent = "Hugging Face artifacts";
+    section.appendChild(heading);
+    const byType = new Map();
+    refs.forEach((ref) => {
+      if (!ref || !ref.url) return;
+      const type = ref.type || "Other";
+      if (!byType.has(type)) byType.set(type, []);
+      byType.get(type).push(ref);
+    });
+    const order = [
+      ...HUB_REF_GROUP_ORDER,
+      ...Array.from(byType.keys()).filter((t) => !HUB_REF_GROUP_ORDER.includes(t)),
+    ];
+    order.forEach((type) => {
+      const items = byType.get(type);
+      if (!items || !items.length) return;
+      const group = document.createElement("div");
+      group.className = "workspace-hub-group";
+      const gh = document.createElement("h3");
+      gh.className = "workspace-hub-group-head";
+      const label = document.createElement("span");
+      label.textContent = type;
+      const count = document.createElement("span");
+      count.className = "workspace-hub-count";
+      count.textContent = String(items.length);
+      gh.appendChild(label);
+      gh.appendChild(count);
+      group.appendChild(gh);
+      const list = document.createElement("div");
+      list.className = "workspace-hub-list";
+      items.forEach((ref) => {
+        const link = document.createElement("a");
+        link.className = "workspace-hub-link";
+        link.href = ref.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = ref.label || ref.url;
+        link.title = ref.url;
+        list.appendChild(link);
+      });
+      group.appendChild(list);
+      section.appendChild(group);
+    });
+    return section;
+  }
+
   async function renderWorkspace(renderId) {
     const page = document.getElementById("page");
     page.innerHTML = "";
@@ -2182,20 +2329,34 @@
     const summary = document.createElement("p");
     summary.textContent = `${workspace.file_count || 0} files · ${fmtBytes(workspace.total_size || 0)}`;
     header.appendChild(summary);
-    shell.appendChild(header);
-    if (!(workspace.files || []).length) {
+    const files = workspace.files || [];
+    if (files.length) {
+      const inventory = document.createElement("section");
+      inventory.className = "workspace-inventory";
+      const renderInventory = (mode) => {
+        inventory.innerHTML = "";
+        if (mode === "type") renderWorkspaceByType(files, inventory);
+        else renderWorkspaceNode(workspaceTree(files), inventory);
+      };
+      const toggle = buildWorkspaceToggle(getWorkspaceMode(), (mode) => {
+        setWorkspaceMode(mode);
+        renderInventory(mode);
+      });
+      header.appendChild(toggle);
+      shell.appendChild(header);
+      shell.appendChild(inventory);
+      renderInventory(getWorkspaceMode());
+    } else {
+      shell.appendChild(header);
       shell.appendChild(
         emptyView(
           "No workspace files captured yet",
-          "Supported model and data files appear here as they are created or changed after a trace is attached. Outputs captured by trackio logbook run appear when the run finishes; logged Trackio artifacts appear immediately in Code & Markdown. Files stay local until you choose to publish."
+          "Supported model and data files appear here as they are created or changed after a trace is attached. Outputs captured by trackio logbook run appear when the run finishes; logged Trackio artifacts appear immediately in the Logbook tab. Files stay local until you choose to publish."
         )
       );
-    } else {
-      const inventory = document.createElement("section");
-      inventory.className = "workspace-inventory";
-      renderWorkspaceNode(workspaceTree(workspace.files), inventory);
-      shell.appendChild(inventory);
     }
+    const hub = renderHubRefs(workspace.hub_refs);
+    if (hub) shell.appendChild(hub);
     page.appendChild(shell);
     window.scrollTo({ top: 0, behavior: "auto" });
   }
