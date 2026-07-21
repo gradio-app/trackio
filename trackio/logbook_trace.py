@@ -81,9 +81,7 @@ _SCRUB_KV_PATTERNS = (
         r"(?i)\b(HF_TOKEN|HUGGING_FACE_HUB_TOKEN|HUGGINGFACEHUB_API_TOKEN"
         r"|HUGGINGFACE_TOKEN)\b(\s*[=:]\s*\"?)([^\s\"'&,}]+)"
     ),
-    re.compile(
-        r"(?i)\b(aws_secret_access_key)\b(\s*[=:]\s*\"?)([A-Za-z0-9/+=]{16,})"
-    ),
+    re.compile(r"(?i)\b(aws_secret_access_key)\b(\s*[=:]\s*\"?)([A-Za-z0-9/+=]{16,})"),
     re.compile(
         r"(?i)\b(api[_-]?key|apikey|access[_-]?token|auth[_-]?token|token"
         r"|password|passwd|secret)\b(\"?\s*[=:]\s*\"?)([^\s\"'&,}]{4,})"
@@ -1499,7 +1497,9 @@ def sync_trace_dataset(
     return f"https://huggingface.co/datasets/{dataset_id}"
 
 
-def set_bucket_visibility(bucket_id: str, private: bool, token: str | None = None) -> None:
+def set_bucket_visibility(
+    bucket_id: str, private: bool, token: str | None = None
+) -> None:
     """Flip an existing bucket's visibility.
 
     ``create_bucket(exist_ok=True)`` reuses a pre-existing bucket without changing

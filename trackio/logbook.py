@@ -786,9 +786,7 @@ def attach_trace(
     from trackio import logbook_trace  # noqa: PLC0415
 
     try:
-        result = logbook_trace.attach_trace(
-            proj, source_path, title=title, scrub=scrub
-        )
+        result = logbook_trace.attach_trace(proj, source_path, title=title, scrub=scrub)
     except logbook_trace.TraceCaptureError as e:
         raise LogbookError(str(e)) from e
     write_site_files(proj)
@@ -2594,9 +2592,7 @@ def _push(
 
     workspace_ref = None
     if workspace_file_count and artifacts_bucket:
-        print(
-            f"  · pushing Workspace files → {visibility} bucket {artifacts_bucket}"
-        )
+        print(f"  · pushing Workspace files → {visibility} bucket {artifacts_bucket}")
         try:
             logbook_trace.sync_workspace_bucket(
                 proj,
@@ -2653,7 +2649,9 @@ def _push(
             published_manifest["traces"] = []
             shutil.rmtree(upload_root / "traces", ignore_errors=True)
             ws_path = upload_root / "workspace.json"
-            previous_text = ws_path.read_text(encoding="utf-8") if ws_path.is_file() else None
+            previous_text = (
+                ws_path.read_text(encoding="utf-8") if ws_path.is_file() else None
+            )
             published_manifest["workspace"] = {
                 "file": "workspace.json",
                 "file_count": 0,
@@ -2720,9 +2718,7 @@ def _promote_local_deps(
             from trackio import bucket_storage  # noqa: PLC0415
 
             # Artifacts bucket is private by default; --public opts it out.
-            bucket_storage.create_bucket_if_not_exists(
-                bucket, private=not repos_public
-            )
+            bucket_storage.create_bucket_if_not_exists(bucket, private=not repos_public)
 
             for project in sorted({a.split("/")[0] for a in arts if "/" in a}):
                 print(f"  · pushing artifacts for '{project}' → bucket {bucket}")
@@ -2782,8 +2778,10 @@ def publish(
     # New model: trace dataset + artifacts bucket are PRIVATE by default and the
     # static Space stores references only. `--public` opts BOTH repos out to
     # public AND restores the legacy inline-embed behavior.
-    repos_public = bool(public) or trace_publication == "public" or (
-        workspace_publication == "public"
+    repos_public = (
+        bool(public)
+        or trace_publication == "public"
+        or (workspace_publication == "public")
     )
 
     metadata["space_id"] = space_id
@@ -2802,9 +2800,7 @@ def publish(
     metadata["workspace_publication"] = "public" if repos_public else "private"
     write_metadata(proj, metadata)
     try:
-        _promote_local_deps(
-            proj, owner, private=private, repos_public=repos_public
-        )
+        _promote_local_deps(proj, owner, private=private, repos_public=repos_public)
         url = _push(proj, hf_token=hf_token, private=private)
     except Exception as e:
         write_metadata(proj, metadata_before_publish)

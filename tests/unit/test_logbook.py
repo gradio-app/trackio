@@ -933,8 +933,10 @@ def test_scrub_file_streams_and_counts(tmp_path):
     dst = tmp_path / "out.jsonl"
     hf = "hf_" + "z" * 25
     src.write_text(
-        json.dumps({"role": "user", "content": f"here is {hf}"}) + "\n"
-        + json.dumps({"role": "assistant", "content": "clean line"}) + "\n",
+        json.dumps({"role": "user", "content": f"here is {hf}"})
+        + "\n"
+        + json.dumps({"role": "assistant", "content": "clean line"})
+        + "\n",
         encoding="utf-8",
     )
     count = logbook_trace.scrub_file(src, dst)
@@ -948,8 +950,10 @@ def test_attach_trace_scrubs_by_default(proj, tmp_path):
     hf = "hf_" + "b" * 30
     trace_path = tmp_path / "secret-session.jsonl"
     trace_path.write_text(
-        json.dumps({"role": "user", "content": f"my token is {hf}"}) + "\n"
-        + json.dumps({"role": "assistant", "content": "ok"}) + "\n",
+        json.dumps({"role": "user", "content": f"my token is {hf}"})
+        + "\n"
+        + json.dumps({"role": "assistant", "content": "ok"})
+        + "\n",
         encoding="utf-8",
     )
     result = logbook.attach_trace(proj, trace_path)
@@ -996,12 +1000,8 @@ def test_publish_default_is_private_reference_only(proj, tmp_path, monkeypatch):
     )
 
     monkeypatch.setattr(logbook, "_promote_local_deps", lambda *a, **k: None)
-    monkeypatch.setattr(
-        logbook_trace, "sync_trace_dataset", lambda *a, **k: "url"
-    )
-    monkeypatch.setattr(
-        logbook_trace, "sync_workspace_bucket", lambda *a, **k: {}
-    )
+    monkeypatch.setattr(logbook_trace, "sync_trace_dataset", lambda *a, **k: "url")
+    monkeypatch.setattr(logbook_trace, "sync_workspace_bucket", lambda *a, **k: {})
     monkeypatch.setattr(huggingface_hub, "create_repo", lambda *a, **k: None)
 
     captured = {}
