@@ -777,11 +777,18 @@ def write_site_files(proj: Path) -> dict:
     return manifest
 
 
-def attach_trace(proj: Path, source_path: str | Path, title: str | None = None) -> dict:
+def attach_trace(
+    proj: Path,
+    source_path: str | Path,
+    title: str | None = None,
+    scrub: bool = True,
+) -> dict:
     from trackio import logbook_trace  # noqa: PLC0415
 
     try:
-        result = logbook_trace.attach_trace(proj, source_path, title=title)
+        result = logbook_trace.attach_trace(
+            proj, source_path, title=title, scrub=scrub
+        )
     except logbook_trace.TraceCaptureError as e:
         raise LogbookError(str(e)) from e
     write_site_files(proj)
@@ -2506,6 +2513,32 @@ def _readme(manifest: dict) -> str:
     )
 
 
+def _reference_only_workspace_json(previous_text: str | None) -> str:
+    """A workspace.json that carries only the (already public) hub_refs.
+
+    File names, sizes and per-file inventory are dropped so a private artifacts
+    bucket leaks nothing into the static Space.
+    """
+    hub_refs = []
+    if previous_text:
+        try:
+            hub_refs = (json.loads(previous_text) or {}).get("hub_refs") or []
+        except (ValueError, TypeError):
+            hub_refs = []
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "file_count": 0,
+            "total_size": 0,
+            "files": [],
+            "hub_refs": hub_refs,
+            "reference_only": True,
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
+
+
 def _push(
     proj: Path,
     hf_token: str | None = None,
@@ -2518,39 +2551,65 @@ def _push(
     metadata = read_metadata(proj)
     space_id = metadata["space_id"]
     private = bool(metadata.get("private", private))
-    trace_policy = metadata.get("trace_publication", "none")
+    repos_public = bool(metadata.get("repos_public", False))
+    # --public restores the legacy behavior of embedding trace/workspace content
+    # inline in the static Space. Otherwise the Space stores references only.
+    embed_content = bool(metadata.get("embed_content", repos_public))
     trace_dataset = metadata.get("trace_dataset")
-    generated = logbook_trace.refresh_all(proj, bucket_id=_workspace_bucket(metadata))
+    artifacts_bucket = metadata.get("workspace_bucket") or metadata.get(
+        "artifacts_bucket"
+    )
+    generated = logbook_trace.refresh_all(proj, bucket_id=artifacts_bucket)
     trace_count = len(generated.get("traces", {}).get("sessions") or [])
     workspace_file_count = generated.get("workspace", {}).get("file_count", 0)
-    if trace_count and trace_policy in {"public", "private"} and trace_dataset:
-        print(f"  · pushing agent traces → dataset {trace_dataset}")
+
+    visibility = "public" if repos_public else "private"
+    trace_ref = None
+    if trace_count and trace_dataset:
+        print(f"  · pushing agent traces → {visibility} dataset {trace_dataset}")
         try:
             logbook_trace.sync_trace_dataset(
                 proj,
                 trace_dataset,
-                private=trace_policy == "private",
+                private=not repos_public,
                 token=hf_token,
             )
         except logbook_trace.TraceCaptureError as e:
             raise LogbookError(str(e)) from e
-    workspace_policy = metadata.get("workspace_publication", "none")
-    workspace_bucket = metadata.get("workspace_bucket")
-    if (
-        workspace_file_count
-        and workspace_policy in {"public", "private"}
-        and workspace_bucket
-    ):
-        print(f"  · pushing Workspace files → bucket {workspace_bucket}")
+        trace_ref = {
+            "repo_id": trace_dataset,
+            "repo_type": "dataset",
+            "repo_url": f"https://huggingface.co/datasets/{trace_dataset}",
+            "private": not repos_public,
+        }
+
+    workspace_ref = None
+    if workspace_file_count and artifacts_bucket:
+        print(
+            f"  · pushing Workspace files → {visibility} bucket {artifacts_bucket}"
+        )
         try:
             logbook_trace.sync_workspace_bucket(
                 proj,
-                workspace_bucket,
-                private=workspace_policy == "private",
+                artifacts_bucket,
+                private=not repos_public,
                 token=hf_token,
             )
         except logbook_trace.TraceCaptureError as e:
             raise LogbookError(str(e)) from e
+    has_bucket_content = bool(
+        workspace_file_count
+        or metadata.get("local_artifacts")
+        or metadata.get("local_path_artifacts")
+    )
+    if artifacts_bucket and has_bucket_content:
+        workspace_ref = {
+            "repo_id": artifacts_bucket,
+            "repo_type": "bucket",
+            "repo_url": f"https://huggingface.co/buckets/{artifacts_bucket}",
+            "private": not repos_public,
+        }
+
     manifest = write_site_files(proj)
     (logbook_root(proj) / "README.md").write_text(_readme(manifest), encoding="utf-8")
     api = huggingface_hub.HfApi(token=hf_token)
@@ -2566,48 +2625,34 @@ def _push(
         upload_root = Path(tmp) / "logbook"
         shutil.copytree(logbook_root(proj), upload_root)
         published_manifest = json.loads(json.dumps(manifest))
-        can_embed_traces = trace_policy == "public" or (
-            trace_policy == "private" and private
-        )
-        if trace_policy == "private" and not private:
-            print("  · private traces are not embedded in the public logbook Space")
-        if not can_embed_traces:
+        if trace_ref:
+            published_manifest["traces_ref"] = trace_ref
+            published_manifest["trace_dataset"] = trace_ref["repo_url"]
+        if workspace_ref:
+            published_manifest["workspace_ref"] = workspace_ref
+            published_manifest["workspace_bucket"] = workspace_ref["repo_url"]
+
+        if not embed_content:
+            # Reference-only static Space: never embed trace event bodies or
+            # workspace file contents. For a private repo we also strip file
+            # names, sizes and trace titles — the manifest carries only the
+            # repo reference + a `private: true` flag.
+            print(
+                "  · static Space stores references only "
+                f"({visibility} trace/artifacts repos; no content embedded)"
+            )
             published_manifest["traces"] = []
             shutil.rmtree(upload_root / "traces", ignore_errors=True)
-        if trace_dataset and trace_policy in {"public", "private"}:
-            published_manifest["trace_dataset"] = (
-                f"https://huggingface.co/datasets/{trace_dataset}"
-            )
-        if workspace_bucket and workspace_policy in {"public", "private"}:
-            published_manifest["workspace_bucket"] = (
-                f"https://huggingface.co/buckets/{workspace_bucket}"
-            )
-        can_embed_workspace = workspace_policy == "public" or (
-            workspace_policy == "private" and private
-        )
-        if workspace_policy == "private" and not private:
-            print(
-                "  · private Workspace inventory is not embedded in the public "
-                "logbook Space"
-            )
-        if not can_embed_workspace:
+            ws_path = upload_root / "workspace.json"
+            previous_text = ws_path.read_text(encoding="utf-8") if ws_path.is_file() else None
             published_manifest["workspace"] = {
                 "file": "workspace.json",
                 "file_count": 0,
                 "total_size": 0,
                 "bucket_id": None,
             }
-            (upload_root / "workspace.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "file_count": 0,
-                        "total_size": 0,
-                        "files": [],
-                    },
-                    indent=2,
-                ),
-                encoding="utf-8",
+            ws_path.write_text(
+                _reference_only_workspace_json(previous_text), encoding="utf-8"
             )
         (upload_root / "logbook.json").write_text(
             json.dumps(published_manifest, indent=2, ensure_ascii=False),
@@ -2631,7 +2676,9 @@ def _rewrite_in_pages(proj: Path, old: str, new: str) -> None:
             md.write_text(text.replace(old, new), encoding="utf-8")
 
 
-def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
+def _promote_local_deps(
+    proj: Path, ns: str, private: bool, repos_public: bool = False
+) -> None:
     metadata = read_metadata(proj)
     dashboards = metadata.get("local_dashboards", {})
     for project, published in list(dashboards.items()):
@@ -2663,7 +2710,10 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
         try:
             from trackio import bucket_storage  # noqa: PLC0415
 
-            bucket_storage.create_bucket_if_not_exists(bucket, private=private)
+            # Artifacts bucket is private by default; --public opts it out.
+            bucket_storage.create_bucket_if_not_exists(
+                bucket, private=not repos_public
+            )
 
             for project in sorted({a.split("/")[0] for a in arts if "/" in a}):
                 print(f"  · pushing artifacts for '{project}' → bucket {bucket}")
@@ -2700,166 +2750,60 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
     write_metadata(proj, metadata)
 
 
-def _retract_retired_publications(proj: Path, hf_token: str | None) -> None:
-    import huggingface_hub  # noqa: PLC0415
-
-    metadata = read_metadata(proj)
-    dataset_id = metadata.get("trace_retraction_pending")
-    bucket_id = metadata.get("workspace_retraction_pending")
-    if not dataset_id and not bucket_id:
-        return
-    api = huggingface_hub.HfApi(token=hf_token)
-    if dataset_id:
-        print(f"  · retracting prior agent traces Dataset {dataset_id}")
-        api.delete_repo(
-            dataset_id,
-            repo_type="dataset",
-            missing_ok=True,
-            token=hf_token,
-        )
-        metadata.pop("trace_retraction_pending", None)
-        if (
-            metadata.get("trace_publication") == "none"
-            and metadata.get("trace_dataset") == dataset_id
-        ):
-            metadata.pop("trace_dataset", None)
-    if bucket_id:
-        print(f"  · retracting prior Workspace Bucket {bucket_id}")
-        api.delete_bucket(bucket_id, missing_ok=True, token=hf_token)
-        metadata.pop("workspace_retraction_pending", None)
-        if (
-            metadata.get("workspace_publication") == "none"
-            and metadata.get("workspace_bucket") == bucket_id
-        ):
-            metadata.pop("workspace_bucket", None)
-    write_metadata(proj, metadata)
-
-
 def publish(
     space_id: str | None = None,
     hf_token: str | None = None,
     private: bool = False,
+    public: bool = False,
+    # Legacy kwargs, retained for backward compatibility. When either is set to
+    # "public" it is treated as an explicit opt-in to public repos.
     trace_publication: str | None = None,
     workspace_publication: str | None = None,
 ) -> str:
     proj = require_project_dir()
     metadata = read_metadata(proj)
     metadata_before_publish = copy.deepcopy(metadata)
-    previous_space = metadata.get("space_id")
-    previous_trace_policy = metadata.get("trace_publication")
-    previous_workspace_policy = metadata.get("workspace_publication")
-    remember_trace_policy = (
-        trace_publication is not None or previous_trace_policy is not None
-    )
-    remember_workspace_policy = (
-        workspace_publication is not None or previous_workspace_policy is not None
-    )
     space_id = space_id or metadata.get("space_id")
     if not space_id:
         raise LogbookError(
             "No Space id. Provide one: trackio logbook publish <username/space>"
         )
-    trace_publication = trace_publication or previous_trace_policy or "none"
-    workspace_publication = workspace_publication or previous_workspace_policy or "none"
-    valid_publication = {"public", "private", "none"}
-    if trace_publication not in valid_publication:
-        raise LogbookError(f"Unknown trace publication policy: {trace_publication}")
-    if workspace_publication not in valid_publication:
-        raise LogbookError(
-            f"Unknown Workspace publication policy: {workspace_publication}"
-        )
     owner, _, name = space_id.partition("/")
-    old_owner, _, old_name = (previous_space or "").partition("/")
-    old_trace_default = (
-        f"{old_owner}/{old_name}-traces" if old_owner and old_name else None
+
+    # New model: trace dataset + artifacts bucket are PRIVATE by default and the
+    # static Space stores references only. `--public` opts BOTH repos out to
+    # public AND restores the legacy inline-embed behavior.
+    repos_public = bool(public) or trace_publication == "public" or (
+        workspace_publication == "public"
     )
-    old_workspace_defaults = (
-        {
-            f"{old_owner}/{old_name}-workspace",
-            f"{old_owner}/{old_name}-workspace-public",
-            f"{old_owner}/{old_name}-workspace-private",
-        }
-        if old_owner and old_name
-        else set()
-    )
-    if previous_space and previous_space != space_id:
-        if (
-            not metadata.get("trace_dataset")
-            or metadata.get("trace_dataset") == old_trace_default
-        ):
-            metadata["trace_dataset"] = f"{owner}/{name}-traces"
-        if (
-            not metadata.get("workspace_bucket")
-            or metadata.get("workspace_bucket") in old_workspace_defaults
-        ):
-            metadata["workspace_bucket"] = f"{owner}/{name}-workspace"
+
     metadata["space_id"] = space_id
     metadata.pop("autosync", None)
     metadata["private"] = private
-    if remember_trace_policy:
-        metadata["trace_publication"] = trace_publication
-    if remember_workspace_policy:
-        metadata["workspace_publication"] = workspace_publication
-    if trace_publication in {"public", "private"}:
-        metadata["trace_dataset"] = metadata.get("trace_dataset") or (
-            f"{owner}/{name}-traces"
-        )
-        if metadata.get("trace_retraction_pending") == metadata["trace_dataset"]:
-            metadata.pop("trace_retraction_pending", None)
-    if workspace_publication in {"public", "private"}:
-        workspace_bucket = metadata.get("workspace_bucket")
-        if (
-            workspace_bucket
-            and previous_workspace_policy in {"public", "private"}
-            and previous_workspace_policy != workspace_publication
-        ):
-            print(
-                "  · Workspace visibility changed; using a new Bucket because "
-                "existing HF Buckets cannot change visibility. The previous "
-                f"Bucket {workspace_bucket} will be retracted after publishing."
-            )
-            metadata["workspace_retraction_pending"] = workspace_bucket
-            workspace_bucket = f"{owner}/{name}-workspace-{workspace_publication}"
-        metadata["workspace_bucket"] = workspace_bucket or f"{owner}/{name}-workspace"
-        if metadata.get("workspace_retraction_pending") == metadata["workspace_bucket"]:
-            metadata.pop("workspace_retraction_pending", None)
-    if previous_trace_policy in {"public", "private"} and trace_publication == "none":
-        print(
-            "  · Traces are not included in this publish. The prior Dataset "
-            f"{metadata.get('trace_dataset')} will be retracted after publishing."
-        )
-        metadata["trace_retraction_pending"] = metadata.get("trace_dataset")
-    if (
-        previous_workspace_policy in {"public", "private"}
-        and workspace_publication == "none"
-    ):
-        print(
-            "  · Workspace files are not included in this publish. The prior "
-            f"Bucket {metadata.get('workspace_bucket')} will be retracted after "
-            "publishing."
-        )
-        metadata["workspace_retraction_pending"] = metadata.get("workspace_bucket")
+    metadata["repos_public"] = repos_public
+    metadata["embed_content"] = repos_public
+    metadata["trace_dataset"] = f"{owner}/{name}-traces"
+    metadata["artifacts_bucket"] = (
+        metadata.get("artifacts_bucket") or f"{owner}/{name}-artifacts"
+    )
+    # Workspace files now share the single artifacts bucket.
+    metadata["workspace_bucket"] = metadata["artifacts_bucket"]
+    # Reflect the effective policy for older manifest readers / the CLI summary.
+    metadata["trace_publication"] = "public" if repos_public else "private"
+    metadata["workspace_publication"] = "public" if repos_public else "private"
     write_metadata(proj, metadata)
     try:
-        _promote_local_deps(proj, space_id.split("/")[0], private=private)
+        _promote_local_deps(
+            proj, owner, private=private, repos_public=repos_public
+        )
         url = _push(proj, hf_token=hf_token, private=private)
     except Exception as e:
         write_metadata(proj, metadata_before_publish)
-        destinations = [f"Space {space_id}"]
-        if trace_publication in {"public", "private"}:
-            destinations.append(f"Dataset {metadata.get('trace_dataset')}")
-        if workspace_publication in {"public", "private"}:
-            destinations.append(f"Bucket {metadata.get('workspace_bucket')}")
         raise LogbookError(
-            "Publish failed. One or more remote uploads may already have succeeded; "
-            f"inspect {', '.join(destinations)} before retrying. Original error: {e}"
-        ) from e
-    try:
-        _retract_retired_publications(proj, hf_token)
-    except Exception as e:
-        raise LogbookError(
-            "The new logbook was published, but Trackio could not retract a prior "
-            "Trace Dataset or Workspace Bucket. The pending retraction was saved "
-            f"and will be retried on the next publish. Original error: {e}"
+            "Publish failed. One or more remote uploads may already have "
+            f"succeeded; inspect Space {space_id}, Dataset "
+            f"{metadata.get('trace_dataset')} and Bucket "
+            f"{metadata.get('artifacts_bucket')} before retrying. "
+            f"Original error: {e}"
         ) from e
     return url

@@ -2,6 +2,7 @@ import base64
 import json
 import re
 import sys
+from pathlib import Path
 
 import pytest
 from starlette.testclient import TestClient
@@ -891,6 +892,199 @@ def test_scan_hub_refs_classifies_urls(proj):
     labels = [ref["label"] for ref in refs]
     assert "me" not in labels
     assert not any(ref["type"] == "Models" and ref["label"] == "me" for ref in refs)
+
+
+def test_scrub_text_redacts_common_secrets():
+    from trackio import logbook_trace
+
+    hf = "hf_" + "a" * 30
+    text = (
+        f"token {hf}\n"
+        "export HF_TOKEN=hf_SECRETSECRETSECRETSECRET1\n"
+        "Authorization: Bearer sk-abc123def456ghi789jkl\n"
+        "aws AKIAIOSFODNN7EXAMPLE key\n"
+        '{"api_key": "sk-proj-1234567890abcdefghij"}\n'
+        "password=hunter2pass\n"
+    )
+    scrubbed, count = logbook_trace.scrub_text(text)
+    assert count >= 6
+    assert hf not in scrubbed
+    assert "AKIAIOSFODNN7EXAMPLE" not in scrubbed
+    assert "hunter2pass" not in scrubbed
+    assert "sk-proj-1234567890abcdefghij" not in scrubbed
+    assert logbook_trace.REDACTION_PLACEHOLDER in scrubbed
+
+
+def test_scrub_text_keeps_non_secret_mentions():
+    from trackio import logbook_trace
+
+    # A bare env-var NAME (no value) and an hf_ word that is too short must be
+    # left untouched.
+    text = "run with --secrets HF_TOKEN and note hf_indexed here"
+    scrubbed, count = logbook_trace.scrub_text(text)
+    assert count == 0
+    assert scrubbed == text
+
+
+def test_scrub_file_streams_and_counts(tmp_path):
+    from trackio import logbook_trace
+
+    src = tmp_path / "in.jsonl"
+    dst = tmp_path / "out.jsonl"
+    hf = "hf_" + "z" * 25
+    src.write_text(
+        json.dumps({"role": "user", "content": f"here is {hf}"}) + "\n"
+        + json.dumps({"role": "assistant", "content": "clean line"}) + "\n",
+        encoding="utf-8",
+    )
+    count = logbook_trace.scrub_file(src, dst)
+    out = dst.read_text(encoding="utf-8")
+    assert count == 1
+    assert hf not in out
+    assert "clean line" in out
+
+
+def test_attach_trace_scrubs_by_default(proj, tmp_path):
+    hf = "hf_" + "b" * 30
+    trace_path = tmp_path / "secret-session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": f"my token is {hf}"}) + "\n"
+        + json.dumps({"role": "assistant", "content": "ok"}) + "\n",
+        encoding="utf-8",
+    )
+    result = logbook.attach_trace(proj, trace_path)
+    assert result["scrub_redactions"] >= 1
+
+    # Neither the normalized chunk nor the stored raw copy may contain the token.
+    session_id = result["id"]
+    stored = list((proj / "logbook" / "traces").rglob("*.json"))
+    raw = list((proj / "traces" / "raw").glob("*"))
+    for path in stored + raw:
+        assert hf not in path.read_text(encoding="utf-8"), path
+    assert session_id  # sanity
+
+
+def test_attach_trace_no_scrub_keeps_content(proj, tmp_path):
+    hf = "hf_" + "c" * 30
+    trace_path = tmp_path / "raw-session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": f"token {hf}"}) + "\n",
+        encoding="utf-8",
+    )
+    result = logbook.attach_trace(proj, trace_path, scrub=False)
+    assert result.get("scrub_redactions", 0) == 0
+    raw = list((proj / "traces" / "raw").glob("*"))
+    assert any(hf in path.read_text(encoding="utf-8") for path in raw)
+
+
+def test_publish_default_is_private_reference_only(proj, tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from trackio import logbook_trace
+
+    hf = "hf_" + "d" * 30
+    trace_path = tmp_path / "session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": f"secret {hf}"}) + "\n",
+        encoding="utf-8",
+    )
+    logbook.attach_trace(proj, trace_path, title="My secret session")
+    checkpoint = tmp_path / "model.safetensors"
+    checkpoint.write_bytes(b"weights")
+    logbook.add_path_artifact_cell(
+        proj, "index", str(checkpoint), size=7, artifact_type="model"
+    )
+
+    monkeypatch.setattr(logbook, "_promote_local_deps", lambda *a, **k: None)
+    monkeypatch.setattr(
+        logbook_trace, "sync_trace_dataset", lambda *a, **k: "url"
+    )
+    monkeypatch.setattr(
+        logbook_trace, "sync_workspace_bucket", lambda *a, **k: {}
+    )
+    monkeypatch.setattr(huggingface_hub, "create_repo", lambda *a, **k: None)
+
+    captured = {}
+
+    class FakeApi:
+        def __init__(self, *a, **k):
+            pass
+
+        def upload_folder(self, *, folder_path, **k):
+            root = Path(folder_path)
+            captured["manifest"] = json.loads(
+                (root / "logbook.json").read_text(encoding="utf-8")
+            )
+            captured["has_traces_dir"] = (root / "traces").exists()
+            captured["files"] = {
+                p.relative_to(root).as_posix(): p.read_text(
+                    encoding="utf-8", errors="ignore"
+                )
+                for p in root.rglob("*")
+                if p.is_file()
+            }
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
+
+    logbook.publish("me/space")
+
+    manifest = captured["manifest"]
+    # References only: no embedded trace content or names, private flag set.
+    assert manifest["traces"] == []
+    assert manifest["traces_ref"]["private"] is True
+    assert manifest["traces_ref"]["repo_id"] == "me/space-traces"
+    assert manifest["workspace_ref"]["private"] is True
+    assert manifest["workspace_ref"]["repo_id"] == "me/space-artifacts"
+    assert captured["has_traces_dir"] is False
+    ws = json.loads(captured["files"]["workspace.json"])
+    # The auto-generated workspace inventory carries no file names/sizes.
+    assert ws["files"] == []
+    # No scrubbed secret and no trace title/session content anywhere in the
+    # static Space (author-curated page cells are a separate, intentional path).
+    blob = "\n".join(captured["files"].values())
+    assert hf not in blob
+    assert "My secret session" not in blob
+
+
+def test_publish_public_embeds_content(proj, tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from trackio import logbook_trace
+
+    trace_path = tmp_path / "session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": "hello world"}) + "\n",
+        encoding="utf-8",
+    )
+    logbook.attach_trace(proj, trace_path, title="Public session")
+
+    monkeypatch.setattr(logbook, "_promote_local_deps", lambda *a, **k: None)
+    monkeypatch.setattr(logbook_trace, "sync_trace_dataset", lambda *a, **k: "url")
+    monkeypatch.setattr(logbook_trace, "sync_workspace_bucket", lambda *a, **k: {})
+    monkeypatch.setattr(huggingface_hub, "create_repo", lambda *a, **k: None)
+
+    captured = {}
+
+    class FakeApi:
+        def __init__(self, *a, **k):
+            pass
+
+        def upload_folder(self, *, folder_path, **k):
+            root = Path(folder_path)
+            captured["manifest"] = json.loads(
+                (root / "logbook.json").read_text(encoding="utf-8")
+            )
+            captured["has_traces_dir"] = (root / "traces").exists()
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
+
+    logbook.publish("me/space", public=True)
+
+    manifest = captured["manifest"]
+    # --public embeds trace content inline and marks the repo reference public.
+    assert manifest["traces"], "public publish should embed trace summaries"
+    assert manifest["traces_ref"]["private"] is False
+    assert captured["has_traces_dir"] is True
 
 
 def test_scan_hub_refs_written_into_workspace_manifest(proj):

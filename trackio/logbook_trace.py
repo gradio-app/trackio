@@ -58,6 +58,93 @@ class TraceCaptureError(Exception):
     pass
 
 
+# ---- secret scrubbing (applied to attached traces by default) ----
+
+REDACTION_PLACEHOLDER = "«redacted»"
+
+# High-confidence standalone secret tokens: the whole match is replaced.
+_SCRUB_TOKEN_PATTERNS = (
+    re.compile(r"hf_[A-Za-z0-9]{20,}"),  # Hugging Face user access token
+    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key id
+    re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}"),  # OpenAI-style secret key
+    re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),  # GitHub token
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),  # Slack token
+)
+
+# ``Authorization: Bearer <token>`` / bare ``Bearer <token>``: redact the token.
+_SCRUB_BEARER_PATTERN = re.compile(r"(?i)(bearer\s+)([A-Za-z0-9._~+/=-]{8,})")
+
+# ``key = value`` / ``"key": "value"`` shaped secrets: redact only the value so
+# the surrounding structure (and any JSON quoting) stays intact.
+_SCRUB_KV_PATTERNS = (
+    re.compile(
+        r"(?i)\b(HF_TOKEN|HUGGING_FACE_HUB_TOKEN|HUGGINGFACEHUB_API_TOKEN"
+        r"|HUGGINGFACE_TOKEN)\b(\s*[=:]\s*\"?)([^\s\"'&,}]+)"
+    ),
+    re.compile(
+        r"(?i)\b(aws_secret_access_key)\b(\s*[=:]\s*\"?)([A-Za-z0-9/+=]{16,})"
+    ),
+    re.compile(
+        r"(?i)\b(api[_-]?key|apikey|access[_-]?token|auth[_-]?token|token"
+        r"|password|passwd|secret)\b(\"?\s*[=:]\s*\"?)([^\s\"'&,}]{4,})"
+    ),
+)
+
+
+def scrub_text(text: str) -> tuple[str, int]:
+    """Redact common secrets from ``text``.
+
+    Returns the scrubbed text and the number of redactions performed. Patterns
+    are line-safe (no multi-line spans) so this composes with line streaming.
+    """
+    count = 0
+
+    def _full(match: "re.Match[str]") -> str:
+        nonlocal count
+        count += 1
+        return REDACTION_PLACEHOLDER
+
+    def _bearer(match: "re.Match[str]") -> str:
+        nonlocal count
+        if match.group(2) == REDACTION_PLACEHOLDER:
+            return match.group(0)
+        count += 1
+        return match.group(1) + REDACTION_PLACEHOLDER
+
+    def _value(match: "re.Match[str]") -> str:
+        nonlocal count
+        if match.group(3) == REDACTION_PLACEHOLDER:
+            return match.group(0)
+        count += 1
+        return match.group(1) + match.group(2) + REDACTION_PLACEHOLDER
+
+    for pattern in _SCRUB_TOKEN_PATTERNS:
+        text = pattern.sub(_full, text)
+    text = _SCRUB_BEARER_PATTERN.sub(_bearer, text)
+    for pattern in _SCRUB_KV_PATTERNS:
+        text = pattern.sub(_value, text)
+    return text, count
+
+
+def scrub_file(source: Path, dest: Path) -> int:
+    """Stream ``source`` line-by-line into ``dest``, scrubbing secrets.
+
+    Returns the total number of redactions. Streaming keeps memory bounded for
+    large JSONL transcripts.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    total = 0
+    with (
+        source.open("r", encoding="utf-8", errors="surrogatepass") as reader,
+        dest.open("w", encoding="utf-8", errors="surrogatepass") as writer,
+    ):
+        for line in reader:
+            scrubbed, count = scrub_text(line)
+            total += count
+            writer.write(scrubbed)
+    return total
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -807,7 +894,12 @@ def _baseline_path(proj: Path, session_id: str) -> Path:
     return proj / WORKSPACE_BASELINE_DIR / f"{_safe_id(session_id)}.json"
 
 
-def attach_trace(proj: Path, source_path: str | Path, title: str | None = None) -> dict:
+def attach_trace(
+    proj: Path,
+    source_path: str | Path,
+    title: str | None = None,
+    scrub: bool = True,
+) -> dict:
     source = Path(source_path).expanduser().resolve()
     if not source.is_file():
         raise TraceCaptureError(f"Trace file not found: {source}")
@@ -826,6 +918,10 @@ def attach_trace(proj: Path, source_path: str | Path, title: str | None = None) 
         session_id = existing["id"]
         existing["title"] = title or existing.get("title") or source.stem
         existing["provider"] = normalized["provider"]
+        existing["scrub"] = scrub
+        # Force a re-scrub/re-normalize even if the source is unchanged, so an
+        # explicit re-attach with a different --scrub choice takes effect.
+        _invalidate_trace_cache(proj, session_id)
     else:
         used = {item.get("id") for item in registry["sessions"]}
         base_id = session_id
@@ -839,6 +935,7 @@ def attach_trace(proj: Path, source_path: str | Path, title: str | None = None) 
             "source_path": str(source),
             "provider": normalized["provider"],
             "attached_at": _now_iso(),
+            "scrub": scrub,
         }
         registry["sessions"].append(entry)
         baseline = {
@@ -856,11 +953,31 @@ def _trace_output_dir(proj: Path, session_id: str) -> Path:
     return proj / "logbook" / "traces" / _safe_id(session_id)
 
 
-def _write_normalized_trace(proj: Path, entry: dict, normalized: dict) -> dict:
+def _invalidate_trace_cache(proj: Path, session_id: str) -> None:
+    """Drop the cached source fingerprint so the next refresh recomputes."""
+    index_path = _trace_output_dir(proj, session_id) / "index.json"
+    index = _read_json(index_path, {})
+    if isinstance(index, dict) and (
+        "source_size" in index or "source_mtime_ns" in index
+    ):
+        index.pop("source_size", None)
+        index.pop("source_mtime_ns", None)
+        _write_json(index_path, index)
+
+
+def _write_normalized_trace(
+    proj: Path,
+    entry: dict,
+    normalized: dict,
+    source_stat: os.stat_result | None = None,
+) -> dict:
     session_id = entry["id"]
     normalized["id"] = session_id
     normalized["title"] = entry.get("title") or session_id
     normalized["attached_at"] = entry.get("attached_at")
+    if source_stat is not None:
+        normalized["source_size"] = source_stat.st_size
+        normalized["source_mtime_ns"] = source_stat.st_mtime_ns
     output_dir = _trace_output_dir(proj, session_id)
     output_dir.mkdir(parents=True, exist_ok=True)
     chunks = []
@@ -908,21 +1025,29 @@ def refresh_trace(proj: Path, session_id: str) -> dict:
         source.suffix if source.suffix.lower() in {".json", ".jsonl"} else ".jsonl"
     )
     raw_path = raw_dir / f"{_safe_id(session_id)}{raw_suffix}"
+    scrub = bool(entry.get("scrub", True))
     existing = _read_json(output_dir / "index.json", {})
-    try:
-        source_stat = source.stat()
-        raw_stat = raw_path.stat()
-        if (
-            existing
-            and source_stat.st_size == raw_stat.st_size
-            and source_stat.st_mtime_ns == raw_stat.st_mtime_ns
-        ):
-            return existing
-    except OSError:
-        pass
-    normalized = normalize_trace(source)
-    shutil.copy2(source, raw_path)
-    return _write_normalized_trace(proj, entry, normalized)
+    source_stat = source.stat()
+    if (
+        existing
+        and raw_path.is_file()
+        and existing.get("source_size") == source_stat.st_size
+        and existing.get("source_mtime_ns") == source_stat.st_mtime_ns
+    ):
+        return existing
+    # The stored raw copy is what gets exported to the published trace dataset,
+    # so scrubbing here guarantees secrets never leave in either the normalized
+    # view or the raw JSONL.
+    if scrub:
+        redactions = scrub_file(source, raw_path)
+        normalized = normalize_trace(raw_path)
+    else:
+        shutil.copy2(source, raw_path)
+        normalized = normalize_trace(source)
+        redactions = 0
+    normalized["scrub"] = scrub
+    normalized["scrub_redactions"] = redactions
+    return _write_normalized_trace(proj, entry, normalized, source_stat=source_stat)
 
 
 def remove_trace(proj: Path, session_id: str) -> None:

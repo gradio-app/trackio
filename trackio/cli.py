@@ -1154,6 +1154,14 @@ def main():
     )
     lb_attach_trace.add_argument("filepath", help="Path to the agent session file")
     lb_attach_trace.add_argument("--title", help="Display title for this session")
+    lb_attach_trace.add_argument(
+        "--no-scrub",
+        action="store_true",
+        help=(
+            "Do not scrub secrets from the trace before storing it. By default "
+            "tokens, keys and passwords are redacted."
+        ),
+    )
 
     lb_remove = logbook_sub.add_parser(
         "remove", help="Remove attached data from this logbook"
@@ -1232,25 +1240,16 @@ def main():
     lb_pub.add_argument(
         "--private",
         action="store_true",
-        help=(
-            "Make the logbook and promoted dashboards/artifacts private "
-            "(Traces and Workspace are selected separately)"
-        ),
+        help="Make the published logbook Space itself private.",
     )
     lb_pub.add_argument(
-        "--traces",
-        choices=("public", "private", "none"),
-        help="Trace publication policy (otherwise prompted; default none)",
-    )
-    lb_pub.add_argument(
-        "--workspace",
-        choices=("public", "private", "none"),
-        help="Workspace publication policy (otherwise prompted; default none)",
-    )
-    lb_pub.add_argument(
-        "--review-publication",
+        "--public",
         action="store_true",
-        help="Ask the Traces and Workspace publication questions again",
+        help=(
+            "Publish the trace Dataset and artifacts Bucket as PUBLIC (they are "
+            "private by default) and embed trace/workspace content inline in the "
+            "static Space. By default the Space stores references only."
+        ),
     )
 
     lb_pin = logbook_sub.add_parser(
@@ -1924,35 +1923,6 @@ def _read_logbook_payload(path_or_text, inline_text):
     return path_or_text
 
 
-def _prompt_logbook_publication(
-    *,
-    subject: str,
-    destination: str,
-    count: int,
-    unit: str,
-    warning: str,
-) -> str:
-    noun = unit if count == 1 else f"{unit}s"
-    print(f"\n{subject}: {count} {noun}.")
-    print(warning)
-    prompt = (
-        f"Publish to a [p]ublic {destination} / p[r]ivate {destination} / "
-        "[N]ot published? [N]: "
-    )
-    while True:
-        try:
-            answer = input(prompt).strip().lower()
-        except EOFError:
-            answer = ""
-        if answer in {"", "n", "none", "no"}:
-            return "none"
-        if answer in {"p", "public"}:
-            return "public"
-        if answer in {"r", "private"}:
-            return "private"
-        print("Enter p for public, r for private, or press Enter for not published.")
-
-
 def _handle_logbook(args):
     from trackio import logbook as lb
 
@@ -2079,11 +2049,25 @@ def _handle_logbook(args):
         elif action == "attach":
             proj = lb.require_project_dir()
             if args.attach_type == "trace":
-                trace = lb.attach_trace(proj, args.filepath, title=args.title)
+                scrub = not args.no_scrub
+                trace = lb.attach_trace(
+                    proj, args.filepath, title=args.title, scrub=scrub
+                )
                 print(
                     f"Attached {trace.get('provider', 'agent')} trace "
                     f"'{trace['id']}' ({trace.get('event_count', 0)} events)."
                 )
+                if scrub:
+                    redactions = trace.get("scrub_redactions", 0)
+                    print(
+                        f"Scrubbed secrets before storing: {redactions} "
+                        f"redaction{'' if redactions == 1 else 's'}."
+                    )
+                else:
+                    print(
+                        "Warning: --no-scrub set; secrets were NOT redacted from "
+                        "this trace."
+                    )
         elif action == "remove":
             proj = lb.require_project_dir()
             if args.remove_type == "trace":
@@ -2167,102 +2151,34 @@ def _handle_logbook(args):
             lb.serve(path=args.path, port=args.port, open_browser=not args.no_browser)
         elif action == "publish":
             proj = lb.require_project_dir()
-            if args.review_publication and (args.traces or args.workspace):
-                raise lb.LogbookError(
-                    "--review-publication cannot be combined with --traces or "
-                    "--workspace."
-                )
-            inventory = lb.publication_inventory(proj)
             metadata = lb.read_metadata(proj)
             if not (args.space_id or metadata.get("space_id")):
                 raise lb.LogbookError(
                     "No Space id. Provide one: trackio logbook publish <username/space>"
                 )
-            saved_trace = metadata.get("trace_publication")
-            saved_workspace = metadata.get("workspace_publication")
-            trace_publication = args.traces
-            reused_preference = False
-            if (
-                inventory["trace_count"]
-                and args.traces is None
-                and (args.review_publication or saved_trace is None)
-            ):
-                trace_publication = _prompt_logbook_publication(
-                    subject="Attached traces",
-                    destination="Dataset",
-                    count=inventory["trace_count"],
-                    unit="session",
-                    warning=(
-                        "Review Traces locally before publishing. Agent traces can "
-                        "contain prompts, tool inputs, command output, local paths, "
-                        "screenshots, secrets, private code, and personal data."
-                        + (
-                            " Choosing Not published will retract the previously "
-                            "published dedicated Dataset."
-                            if saved_trace in {"public", "private"}
-                            else ""
-                        )
-                    ),
-                )
-            elif args.traces is None and saved_trace in {"public", "private", "none"}:
-                trace_publication = saved_trace
-                if inventory["trace_count"]:
-                    reused_preference = True
-                    description = (
-                        f"{saved_trace} Dataset"
-                        if saved_trace != "none"
-                        else "not published"
-                    )
-                    print(f"Using saved Traces publication preference: {description}.")
-            workspace_publication = args.workspace
-            if (
-                inventory["workspace_file_count"]
-                and args.workspace is None
-                and (args.review_publication or saved_workspace is None)
-            ):
-                workspace_publication = _prompt_logbook_publication(
-                    subject="Tracked Workspace files",
-                    destination="HF Bucket",
-                    count=inventory["workspace_file_count"],
-                    unit="file",
-                    warning=(
-                        "Review the Workspace locally before publishing and make "
-                        "sure these files are safe to share."
-                        + (
-                            " Choosing Not published will retract the previously "
-                            "published dedicated HF Bucket."
-                            if saved_workspace in {"public", "private"}
-                            else ""
-                        )
-                    ),
-                )
-            elif args.workspace is None and saved_workspace in {
-                "public",
-                "private",
-                "none",
-            }:
-                workspace_publication = saved_workspace
-                if inventory["workspace_file_count"]:
-                    reused_preference = True
-                    description = (
-                        f"{saved_workspace} HF Bucket"
-                        if saved_workspace != "none"
-                        else "not published"
-                    )
-                    print(
-                        f"Using saved Workspace publication preference: {description}."
-                    )
-            if reused_preference:
+            inventory = lb.publication_inventory(proj)
+            visibility = "PUBLIC" if args.public else "PRIVATE"
+            if inventory["trace_count"] or inventory["workspace_file_count"]:
                 print(
-                    "Run `trackio logbook publish --review-publication` to choose "
-                    "again."
+                    f"Attached traces ({inventory['trace_count']}) and Workspace "
+                    f"files ({inventory['workspace_file_count']}) will be published "
+                    f"to {visibility} repos."
                 )
+                if args.public:
+                    print(
+                        "  --public: trace/workspace content will also be embedded "
+                        "inline in the static Space."
+                    )
+                else:
+                    print(
+                        "  The static Space will store references only "
+                        "(no trace/workspace content or names)."
+                    )
             url = lb.publish(
                 space_id=args.space_id,
                 hf_token=args.hf_token,
                 private=args.private,
-                trace_publication=trace_publication,
-                workspace_publication=workspace_publication,
+                public=args.public,
             )
             print(f"Published: {url}")
             space_id = lb.read_metadata(lb.require_project_dir()).get("space_id")

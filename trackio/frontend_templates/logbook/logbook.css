@@ -1552,6 +1552,19 @@ table.board tr.linked-row:hover a {
   font-family: var(--mono);
   font-size: 12px;
 }
+.repo-ref-link {
+  display: inline-block;
+  margin-top: 18px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--accent-strong, #2158d0);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.repo-ref-link:hover {
+  filter: brightness(0.95);
+}
 .view-eyebrow {
   margin-bottom: 4px;
   color: var(--accent-strong);

@@ -2001,12 +2001,84 @@
     else window.scrollTo({ top: 0, behavior: "auto" });
   }
 
+  // A published static Space may store only a reference to a private (or
+  // public) repository instead of embedding trace/workspace content. These
+  // helpers render that reference: link-only for private/inaccessible repos,
+  // and a probe-then-render path for public ones.
+  function repoRefCard(ref, opts) {
+    const wrap = document.createElement("div");
+    wrap.className = "view-empty repo-ref-card";
+    const h = document.createElement("h2");
+    h.textContent = opts.title;
+    wrap.appendChild(h);
+    const p = document.createElement("p");
+    p.textContent = opts.message;
+    wrap.appendChild(p);
+    if (ref && ref.repo_url) {
+      const a = document.createElement("a");
+      a.className = "repo-ref-link";
+      a.href = ref.repo_url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = "Open on the Hub ↗";
+      wrap.appendChild(a);
+    }
+    return wrap;
+  }
+
+  async function probeRepoAccessible(ref) {
+    if (!ref) return false;
+    if (ref.private === true) return false;
+    if (ref.repo_type === "dataset" && ref.repo_id) {
+      const meta = await getJSON(
+        "https://huggingface.co/api/datasets/" + ref.repo_id
+      );
+      return meta !== null;
+    }
+    // HF Buckets have no simple anonymous listing API; trust the manifest flag.
+    return ref.private === false;
+  }
+
+  async function renderRepoReference(ref, kind, page, renderId) {
+    const isTraces = kind === "traces";
+    const noun = isTraces ? "agent traces" : "workspace files";
+    const linkOnly = () =>
+      repoRefCard(ref, {
+        title: isTraces ? "Agent traces" : "Workspace",
+        message:
+          `These ${noun} live in a private repository. ` +
+          "Open it on the Hub to view them.",
+      });
+    if (ref.private === true) {
+      page.appendChild(linkOnly());
+      return;
+    }
+    const accessible = await probeRepoAccessible(ref);
+    if (renderId !== RENDER_SEQUENCE) return;
+    if (!accessible) {
+      page.appendChild(linkOnly());
+      return;
+    }
+    page.appendChild(
+      repoRefCard(ref, {
+        title: isTraces ? "Agent traces" : "Workspace",
+        message:
+          `These ${noun} are published to a public repository on the Hub.`,
+      })
+    );
+  }
+
   async function renderTrace(route, renderId) {
     const page = document.getElementById("page");
     page.innerHTML = "";
     page.className = "trace-page";
     const sessions = MANIFEST.traces || [];
     if (!sessions.length) {
+      updateViewTabs({ view: "trace" });
+      if (MANIFEST.traces_ref && MANIFEST.traces_ref.repo_url) {
+        await renderRepoReference(MANIFEST.traces_ref, "traces", page, renderId);
+        return;
+      }
       page.appendChild(
         emptyView(
           "No agent sessions attached yet",
@@ -2410,6 +2482,15 @@
       shell.appendChild(header);
       shell.appendChild(inventory);
       renderInventory(getWorkspaceMode());
+    } else if (MANIFEST.workspace_ref && MANIFEST.workspace_ref.repo_url) {
+      shell.appendChild(header);
+      await renderRepoReference(
+        MANIFEST.workspace_ref,
+        "workspace",
+        shell,
+        renderId
+      );
+      if (renderId !== RENDER_SEQUENCE) return;
     } else {
       shell.appendChild(header);
       shell.appendChild(
