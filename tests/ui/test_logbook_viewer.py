@@ -498,6 +498,7 @@ def test_public_repo_visibility_and_hub_ref_filtering(tmp_path, monkeypatch):
                 expect(page.locator("#tree a")).to_have_text(
                     "Published reproduction session"
                 )
+                assert page.evaluate("window.scrollY") == 0
                 browser.close()
         finally:
             server.shutdown()

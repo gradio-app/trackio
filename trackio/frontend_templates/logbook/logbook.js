@@ -2218,7 +2218,7 @@
     const activeSessionId = route.sessionId || sessions[0].id;
     await ensureTraceSessionLoaded(activeSessionId);
     if (renderId !== RENDER_SEQUENCE) return;
-    scrollToTraceSession(activeSessionId);
+    scrollToTraceSession(route.sessionId);
   }
 
   function svgIcon(kind) {
@@ -2773,7 +2773,7 @@
       const sessions = MANIFEST.traces || [];
       const activeSessionId = route.sessionId || (sessions[0] || {}).id;
       ensureTraceSessionLoaded(activeSessionId);
-      scrollToTraceSession(activeSessionId);
+      scrollToTraceSession(route.sessionId);
       return;
     }
     renderCurrentView();
