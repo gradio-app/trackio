@@ -1442,6 +1442,20 @@ def prepare_agent_trace_dataset(proj: Path) -> tuple[Path, int]:
                 events.extend(chunk_data.get("events") or [])
             _write_sts_trace(destination, index, events)
         exported += 1
+
+    # Keep the Hub-native JSONL files at the dataset root for the Agent Traces
+    # viewer, and publish Trackio's normalized/chunked representation alongside
+    # them. A public logbook Space can load this bundle directly and render the
+    # same timeline as the local viewer without exposing it in the Space itself.
+    trace_source = proj / "logbook" / "traces"
+    trace_bundle = export_dir / "trackio"
+    trace_bundle.mkdir()
+    shutil.copy2(trace_source / "index.json", trace_bundle / "index.json")
+    bundled_sessions = trace_bundle / "traces"
+    bundled_sessions.mkdir()
+    for session_dir in trace_source.iterdir():
+        if session_dir.is_dir():
+            shutil.copytree(session_dir, bundled_sessions / session_dir.name)
     (export_dir / "README.md").write_text(
         "---\n"
         "viewer_mode: traces\n"
