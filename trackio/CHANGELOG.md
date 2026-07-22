@@ -1,5 +1,12 @@
 # trackio
 
+## 0.32.2
+
+### Features
+
+- [#641](https://github.com/gradio-app/trackio/pull/641) [`2d1c01a`](https://github.com/gradio-app/trackio/commit/2d1c01a5ce0307ec5c81660c512bf6f25dd3120a) - Improve logbook layout and public repository views.  Thanks @abidlabs!
+- [#643](https://github.com/gradio-app/trackio/pull/643) [`e8292c5`](https://github.com/gradio-app/trackio/commit/e8292c5c26baa0e7e806144fa1bbf5ecfb492f3d) - docs: document the artifact tables in the storage schema page.  Thanks @adrien-grl!
+
 ## 0.32.1
 
 ### Features
