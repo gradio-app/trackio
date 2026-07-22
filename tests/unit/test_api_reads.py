@@ -95,7 +95,9 @@ def test_api_exposes_stable_run_reads(temp_dir):
     traces = run.traces(sort="step_asc")
     assert {trace["trace_type"] for trace in traces} == {"trackio", "verifiers"}
     assert run.traces(trace_type="verifiers")[0]["external_id"] == "vf-api-1"
-    assert run.artifacts()["output"][0]["name"] == "trained-model"
+    output_link = run.artifacts()["output"][0]
+    assert output_link["name"] == "trained-model"
+    assert output_link["digest"] == output.digest
     assert runs[consumer_id].artifacts()["input"][0]["name"] == "trained-model"
 
     with pytest.raises(ValueError, match="does not exist"):

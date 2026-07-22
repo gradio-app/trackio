@@ -143,9 +143,20 @@ class Run:
     def artifacts(self) -> dict[str, list[dict[str, Any]]]:
         """Return this run's input and output artifact edges."""
 
-        return SQLiteStorage.get_run_artifacts(
+        links = SQLiteStorage.get_run_artifacts(
             self.project, run_name=self.name, run_id=self.id
         )
+        for records in links.values():
+            for record in records:
+                manifest = SQLiteStorage.get_artifact_manifest(
+                    self.project, record["name"], f"v{record['version']}"
+                )
+                if manifest is None:
+                    continue
+                record["description"] = manifest.get("description")
+                record["metadata"] = manifest.get("metadata") or {}
+                record["digest"] = manifest.get("manifest_digest")
+        return links
 
     def delete(self) -> bool:
         return SQLiteStorage.delete_run(self.project, self.name, run_id=self.id)
