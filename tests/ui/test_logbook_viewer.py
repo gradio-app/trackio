@@ -53,6 +53,11 @@ def test_logbook_renders_pages_as_single_document(tmp_path, monkeypatch):
                 expect(page.locator("#tree a")).to_have_count(2)
                 expect(page.locator(".context-rail")).to_have_count(0)
 
+                content_box = page.locator("#page").bounding_box()
+                assert content_box is not None
+                assert content_box["x"] == 320
+                assert 1440 - content_box["x"] - content_box["width"] == 320
+
                 page.get_by_role("link", name="Second experiment").first.click()
                 expect(page).to_have_url(re.compile(r"#/view/code/second-experiment$"))
                 expect(page.locator("#tree a.active")).to_have_text(
@@ -310,6 +315,7 @@ def test_public_repo_visibility_and_hub_ref_filtering(tmp_path, monkeypatch):
         "repo_type": "dataset",
         "repo_url": "https://huggingface.co/datasets/me/trace-data",
         "private": True,
+        "viewer_path": "trackio/index.json",
     }
     manifest["workspace_ref"] = {
         "repo_id": "me/workspace-files",
@@ -366,12 +372,107 @@ def test_public_repo_visibility_and_hub_ref_filtering(tmp_path, monkeypatch):
                         body=public_metadata,
                     ),
                 )
+                page.route(
+                    "https://huggingface.co/api/buckets/me/workspace-files/tree",
+                    lambda route: route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=json.dumps(
+                            [
+                                {
+                                    "type": "file",
+                                    "path": "workspace/results/metrics.csv",
+                                    "size": 128,
+                                    "mtime": "2026-07-21T10:00:00Z",
+                                },
+                                {
+                                    "type": "file",
+                                    "path": "logbook-files/results/metrics.csv",
+                                    "size": 128,
+                                    "mtime": "2026-07-21T10:00:00Z",
+                                },
+                            ]
+                        ),
+                    ),
+                )
+                page.route(
+                    "https://huggingface.co/datasets/me/trace-data/resolve/main/trackio/index.json",
+                    lambda route: route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=json.dumps(
+                            {
+                                "schema_version": 1,
+                                "sessions": [
+                                    {
+                                        "id": "remote-session",
+                                        "title": "Published reproduction session",
+                                        "index_file": "traces/remote-session/index.json",
+                                    }
+                                ],
+                            }
+                        ),
+                    ),
+                )
+                page.route(
+                    "https://huggingface.co/datasets/me/trace-data/resolve/main/trackio/traces/remote-session/index.json",
+                    lambda route: route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=json.dumps(
+                            {
+                                "id": "remote-session",
+                                "title": "Published reproduction session",
+                                "event_count": 1,
+                                "started_at": "2026-07-21T10:00:00Z",
+                                "ended_at": "2026-07-21T10:00:01Z",
+                                "duration_ms": 1000,
+                                "chunks": [
+                                    {
+                                        "file": "traces/remote-session/events-0000.json",
+                                        "count": 1,
+                                    }
+                                ],
+                            }
+                        ),
+                    ),
+                )
+                page.route(
+                    "https://huggingface.co/datasets/me/trace-data/resolve/main/trackio/traces/remote-session/events-0000.json",
+                    lambda route: route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=json.dumps(
+                            {
+                                "events": [
+                                    {
+                                        "kind": "message",
+                                        "sequence": 1,
+                                        "title": "Assistant",
+                                        "text": "Loaded from the public trace dataset.",
+                                    }
+                                ]
+                            }
+                        ),
+                    ),
+                )
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/"
 
                 page.goto(base_url + "#/view/workspace")
-                expect(page.locator(".repo-ref-card")).to_contain_text(
-                    "published to a public repository"
+                expect(page.locator(".repo-ref-card")).to_have_count(0)
+                expect(page.locator(".workspace-file")).to_have_count(1)
+                expect(page.locator(".workspace-file")).to_contain_text("metrics.csv")
+                expect(page.locator(".workspace-header")).to_contain_text(
+                    "1 files · 128 B"
                 )
+                expect(page.locator("#tree .tree-label")).to_have_text("Artifacts")
+                expect(page.locator("#tree a").first).to_have_text("Workspace files")
+                expect(page.locator("#tree")).not_to_contain_text("§")
+                expect(
+                    page.get_by_role(
+                        "heading", name="Linked Hugging Face artifacts", exact=True
+                    )
+                ).to_be_visible()
                 expect(
                     page.locator('.workspace-hub-link[href$="/datasets/me/trace-data"]')
                 ).to_have_count(1)
@@ -385,14 +486,16 @@ def test_public_repo_visibility_and_hub_ref_filtering(tmp_path, monkeypatch):
                 )
 
                 page.goto(base_url + "#/view/trace")
-                expect(page.locator(".repo-ref-card")).to_contain_text(
-                    "published to a public repository"
+                expect(page.locator(".repo-ref-card")).to_have_count(0)
+                expect(page.locator(".trace-session-title")).to_have_text(
+                    "Published reproduction session"
                 )
-                hub_link = page.get_by_role("link", name="Open on the Hub")
-                expect(hub_link).to_be_visible()
-                assert (
-                    hub_link.evaluate("el => getComputedStyle(el).color")
-                    == "rgb(255, 255, 255)"
+                expect(page.locator(".trace-entry")).to_contain_text(
+                    "Loaded from the public trace dataset."
+                )
+                expect(page.locator("#tree .tree-label")).to_have_text("Sessions")
+                expect(page.locator("#tree a")).to_have_text(
+                    "Published reproduction session"
                 )
                 browser.close()
         finally:
