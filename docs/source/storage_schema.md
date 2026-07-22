@@ -123,6 +123,70 @@ Indexes:
 - `idx_alerts_timestamp` on `(timestamp)`
 - `idx_alerts_alert_id` unique partial index on `alert_id`
 
+### `artifacts`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `INTEGER` | Primary key |
+| `name` | `TEXT` | Artifact name |
+| `type` | `TEXT` | Free-form category such as `model` or `dataset` |
+| `description` | `TEXT` | Optional description |
+| `created_at` | `TEXT` | ISO timestamp |
+
+Indexes and constraints:
+
+- `UNIQUE(name)`
+
+### `artifact_versions`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `INTEGER` | Primary key |
+| `artifact_id` | `INTEGER` | References `artifacts.id` |
+| `version` | `INTEGER` | Sequential version number starting at 0 |
+| `manifest_digest` | `TEXT` | SHA-256 hex digest of the canonical manifest JSON |
+| `manifest` | `TEXT` | JSON blob listing file entries with `path`, `digest`, `size`, and optional `ref` |
+| `metadata` | `TEXT` | Optional JSON metadata |
+| `size_bytes` | `INTEGER` | Total size of the version's files in bytes |
+| `producer_run_id` | `TEXT` | Optional identifier of the producing run |
+| `producer_run_name` | `TEXT` | Optional name of the producing run |
+| `created_at` | `TEXT` | ISO timestamp |
+
+Indexes and constraints:
+
+- `UNIQUE(artifact_id, version)`
+- `UNIQUE(artifact_id, manifest_digest)`
+
+### `artifact_aliases`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `artifact_id` | `INTEGER` | References `artifacts.id` |
+| `alias` | `TEXT` | Alias name such as `latest` |
+| `artifact_version_id` | `INTEGER` | References `artifact_versions.id` |
+
+Indexes and constraints:
+
+- `PRIMARY KEY (artifact_id, alias)`
+
+### `run_artifact_links`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `INTEGER` | Primary key |
+| `run_id` | `TEXT` | Optional run identifier |
+| `run_name` | `TEXT` | Optional run name |
+| `artifact_version_id` | `INTEGER` | References `artifact_versions.id` |
+| `direction` | `TEXT` | `input` or `output` |
+| `created_at` | `TEXT` | ISO timestamp |
+
+Indexes and constraints:
+
+- `CHECK(direction IN ('input', 'output'))`
+- `idx_run_artifact_links_run` on `(run_id, run_name)`
+- `idx_run_artifact_links_version` on `(artifact_version_id)`
+- `idx_run_artifact_links_unique` unique index on `(run_id, artifact_version_id, direction)`
+
 ## How Metric Payloads Are Stored
 
 - User metrics are stored as JSON text in `metrics.metrics`.
