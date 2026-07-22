@@ -1,5 +1,11 @@
 # trackio
 
+## 0.32.1
+
+### Features
+
+- [#639](https://github.com/gradio-app/trackio/pull/639) [`73971e6`](https://github.com/gradio-app/trackio/commit/73971e66a4f1daf5c42341727349e6f82ab4e887) - Fix logbook code overflow, CLI command truncation, Hub link contrast, resource ID validation, and live visibility detection for referenced trace datasets and Buckets.  Thanks @abidlabs!
+
 ## 0.32.0
 
 ### Features
