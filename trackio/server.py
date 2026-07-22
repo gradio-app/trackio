@@ -1097,6 +1097,23 @@ def get_logs(
     )
 
 
+def get_run_history(
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+    scalar_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Return unsampled run history for provider-neutral API consumers."""
+
+    return SQLiteStorage.get_logs(
+        project,
+        run,
+        max_points=None,
+        run_id=run_id,
+        scalar_only=_normalize_bool_param(scalar_only, "scalar_only"),
+    )
+
+
 def get_logs_batch(
     project: str,
     runs: list[dict[str, Any]],
@@ -1312,6 +1329,7 @@ def _api_registry() -> dict[str, Any]:
         "get_system_logs_batch": get_system_logs_batch,
         "get_snapshot": get_snapshot,
         "get_logs": get_logs,
+        "get_run_history": get_run_history,
         "get_logs_batch": get_logs_batch,
         "get_traces": get_traces,
         "get_trace_steps": get_trace_steps,

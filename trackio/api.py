@@ -1,5 +1,6 @@
 from typing import Any, Iterator, Sequence
 
+from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -10,12 +11,19 @@ class Run:
         name: str,
         run_id: str | None = None,
         created_at: str | None = None,
+        remote_client: RemoteClient | None = None,
     ):
         self.project = project
         self.name = name
         self._id = run_id or name
         self.created_at = created_at
+        self._remote_client = remote_client
         self._config = None
+
+    def _remote(self, api_name: str, **kwargs: Any) -> Any:
+        if self._remote_client is None:
+            raise RuntimeError("run is not backed by a remote Trackio server")
+        return self._remote_client.predict(api_name=api_name, **kwargs)
 
     @property
     def id(self) -> str:
@@ -24,12 +32,30 @@ class Run:
     @property
     def config(self) -> dict | None:
         if self._config is None:
-            self._config = SQLiteStorage.get_run_config(
-                self.project, self.name, run_id=self.id
-            )
+            if self._remote_client is not None:
+                summary = self._remote(
+                    "/get_run_summary",
+                    project=self.project,
+                    run=self.name,
+                    run_id=self.id,
+                )
+                self._config = summary.get("config")
+            else:
+                self._config = SQLiteStorage.get_run_config(
+                    self.project, self.name, run_id=self.id
+                )
         return self._config
 
     def alerts(self, level: str | None = None, since: str | None = None) -> list[dict]:
+        if self._remote_client is not None:
+            return self._remote(
+                "/get_alerts",
+                project=self.project,
+                run=self.name,
+                run_id=self.id,
+                level=level,
+                since=since,
+            )
         return SQLiteStorage.get_alerts(
             self.project, run_name=self.name, run_id=self.id, level=level, since=since
         )
@@ -37,9 +63,25 @@ class Run:
     def summary(self) -> dict[str, Any]:
         """Return stable metadata describing the run's stored evidence."""
 
-        summary = SQLiteStorage.get_run_config(
-            self.project, self.name, run_id=self.id
-        )
+        if self._remote_client is not None:
+            remote_summary = self._remote(
+                "/get_run_summary",
+                project=self.project,
+                run=self.name,
+                run_id=self.id,
+            )
+            return {
+                "project": self.project,
+                "name": self.name,
+                "id": self.id,
+                "created_at": self.created_at,
+                "config": remote_summary.get("config"),
+                "num_logs": remote_summary.get("num_logs", 0),
+                "last_step": remote_summary.get("last_step"),
+                "metrics": remote_summary.get("metrics", []),
+            }
+
+        summary = SQLiteStorage.get_run_config(self.project, self.name, run_id=self.id)
         return {
             "project": self.project,
             "name": self.name,
@@ -70,13 +112,22 @@ class Run:
         fields and do not expose Trackio's physical storage schema.
         """
 
-        rows = SQLiteStorage.get_logs(
-            self.project,
-            self.name,
-            max_points=None,
-            run_id=self.id,
-            scalar_only=scalar_only,
-        )
+        if self._remote_client is not None:
+            rows = self._remote(
+                "/get_run_history",
+                project=self.project,
+                run=self.name,
+                run_id=self.id,
+                scalar_only=scalar_only,
+            )
+        else:
+            rows = SQLiteStorage.get_logs(
+                self.project,
+                self.name,
+                max_points=None,
+                run_id=self.id,
+                scalar_only=scalar_only,
+            )
         if keys is None:
             return rows
         selected = set(keys)
@@ -98,7 +149,9 @@ class Run:
             tuple(names)
             if names is not None
             else tuple(
-                SQLiteStorage.get_all_metrics_for_run(
+                self.summary()["metrics"]
+                if self._remote_client is not None
+                else SQLiteStorage.get_all_metrics_for_run(
                     self.project, self.name, run_id=self.id
                 )
             )
@@ -128,6 +181,19 @@ class Run:
     ) -> list[dict[str, Any]]:
         """Return standard or Verifiers traces for this run."""
 
+        kwargs = {
+            "project": self.project,
+            "run": self.name,
+            "search": search,
+            "sort": sort,
+            "limit": limit,
+            "offset": offset,
+            "run_id": self.id,
+            "step": step,
+            "trace_type": trace_type,
+        }
+        if self._remote_client is not None:
+            return self._remote("/get_traces", **kwargs)
         return SQLiteStorage.get_traces(
             self.project,
             self.name,
@@ -143,14 +209,30 @@ class Run:
     def artifacts(self) -> dict[str, list[dict[str, Any]]]:
         """Return this run's input and output artifact edges."""
 
-        links = SQLiteStorage.get_run_artifacts(
-            self.project, run_name=self.name, run_id=self.id
-        )
+        if self._remote_client is not None:
+            links = self._remote(
+                "/get_run_artifacts",
+                project=self.project,
+                run=self.name,
+                run_id=self.id,
+            )
+        else:
+            links = SQLiteStorage.get_run_artifacts(
+                self.project, run_name=self.name, run_id=self.id
+            )
         for records in links.values():
             for record in records:
-                manifest = SQLiteStorage.get_artifact_manifest(
-                    self.project, record["name"], f"v{record['version']}"
-                )
+                if self._remote_client is not None:
+                    manifest = self._remote(
+                        "/get_artifact_manifest",
+                        project=self.project,
+                        name=record["name"],
+                        spec=f"v{record['version']}",
+                    )
+                else:
+                    manifest = SQLiteStorage.get_artifact_manifest(
+                        self.project, record["name"], f"v{record['version']}"
+                    )
                 if manifest is None:
                     continue
                 record["description"] = manifest.get("description")
@@ -159,9 +241,13 @@ class Run:
         return links
 
     def delete(self) -> bool:
+        if self._remote_client is not None:
+            raise RuntimeError("trackio.Api remote runs are read-only")
         return SQLiteStorage.delete_run(self.project, self.name, run_id=self.id)
 
     def move(self, new_project: str) -> bool:
+        if self._remote_client is not None:
+            raise RuntimeError("trackio.Api remote runs are read-only")
         success = SQLiteStorage.move_run(
             self.project, self.name, new_project, run_id=self.id
         )
@@ -170,6 +256,8 @@ class Run:
         return success
 
     def rename(self, new_name: str) -> "Run":
+        if self._remote_client is not None:
+            raise RuntimeError("trackio.Api remote runs are read-only")
         SQLiteStorage.rename_run(self.project, self.name, new_name, run_id=self.id)
         self.name = new_name
         return self
@@ -179,13 +267,20 @@ class Run:
 
 
 class Runs:
-    def __init__(self, project: str):
+    def __init__(self, project: str, remote_client: RemoteClient | None = None):
         self.project = project
+        self._remote_client = remote_client
         self._runs = None
 
     def _load_runs(self):
         if self._runs is None:
-            records = SQLiteStorage.get_run_records(self.project)
+            records = (
+                self._remote_client.predict(
+                    project=self.project, api_name="/get_runs_for_project"
+                )
+                if self._remote_client is not None
+                else SQLiteStorage.get_run_records(self.project)
+            )
             self._runs = [
                 Run(
                     self.project,
@@ -196,6 +291,7 @@ class Runs:
                         if record.get("created_at") is not None
                         else None
                     ),
+                    remote_client=self._remote_client,
                 )
                 for record in records
             ]
@@ -218,6 +314,13 @@ class Runs:
 
 
 class Api:
+    def __init__(
+        self, server_url: str | None = None, *, hf_token: str | None = None
+    ) -> None:
+        self._remote_client = (
+            RemoteClient(server_url, hf_token=hf_token) if server_url is not None else None
+        )
+
     def capabilities(self) -> dict[str, bool]:
         """Return stable read capabilities implemented by this API."""
 
@@ -233,6 +336,8 @@ class Api:
         }
 
     def runs(self, project: str) -> Runs:
+        if self._remote_client is not None:
+            return Runs(project, self._remote_client)
         if not SQLiteStorage.get_project_db_path(project).exists():
             raise ValueError(f"Project '{project}' does not exist")
         return Runs(project)
@@ -252,6 +357,14 @@ class Api:
         level: str | None = None,
         since: str | None = None,
     ) -> list[dict]:
+        if self._remote_client is not None:
+            return self._remote_client.predict(
+                project=project,
+                run=run,
+                level=level,
+                since=since,
+                api_name="/get_alerts",
+            )
         if not SQLiteStorage.get_project_db_path(project).exists():
             raise ValueError(f"Project '{project}' does not exist")
         return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)

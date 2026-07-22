@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 import trackio
+import trackio.api as api_module
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -150,3 +151,41 @@ def test_api_read_only_mode_sees_new_runs_without_reopening_storage(temp_dir, mo
     monkeypatch.setenv("TRACKIO_READ_ONLY", "1")
 
     assert {run.name for run in api.runs(project)} == {"first", "second"}
+
+
+def test_api_remote_reader_uses_live_server_queries(monkeypatch):
+    class FakeRemoteClient:
+        runs = [
+            {"id": "run-1", "name": "first", "created_at": "2026-01-01T00:00:00+00:00"}
+        ]
+
+        def __init__(self, server_url, hf_token=None):
+            assert server_url == "http://trackio:7860"
+            assert hf_token is None
+
+        def predict(self, *, api_name, **kwargs):
+            assert kwargs["project"] == "live-project"
+            if api_name == "/get_runs_for_project":
+                return list(self.runs)
+            if api_name == "/get_run_summary":
+                return {
+                    "config": {"schema_version": 4},
+                    "num_logs": 1,
+                    "last_step": 7,
+                    "metrics": ["train/loss"],
+                }
+            if api_name == "/get_run_history":
+                return [{"step": 7, "timestamp": "now", "train/loss": 0.5}]
+            raise AssertionError(f"unexpected API call {api_name}")
+
+    monkeypatch.setattr(api_module, "RemoteClient", FakeRemoteClient)
+    api = trackio.Api(server_url="http://trackio:7860")
+
+    first = api.run("live-project", "run-1")
+    assert first.summary()["last_step"] == 7
+    assert first.metric_series()["train/loss"][0]["value"] == 0.5
+
+    FakeRemoteClient.runs.append(
+        {"id": "run-2", "name": "second", "created_at": "2026-01-02T00:00:00+00:00"}
+    )
+    assert {run.id for run in api.runs("live-project")} == {"run-1", "run-2"}
