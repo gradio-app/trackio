@@ -1065,6 +1065,23 @@
     return url.split(marker)[1].split(/[?#]/)[0].replace(/\/$/, "");
   }
 
+  function validHfSegment(value) {
+    return Boolean(
+      value &&
+      value.length <= 96 &&
+      /^[A-Za-z0-9_.-]+$/.test(value) &&
+      !/^[.-]|[.-]$|--|\.\./.test(value)
+    );
+  }
+
+  function validHfRepoId(parts) {
+    return (
+      parts.length === 2 &&
+      parts.join("/").length <= 96 &&
+      parts.every(validHfSegment)
+    );
+  }
+
   function classifyResource(url) {
     if (IMG_URL.test(url)) {
       return null;
@@ -1094,29 +1111,39 @@
         local: true,
       };
     }
-    if ((m = url.match(/huggingface\.co\/buckets\/[^#\s]+#(.+)/))) {
-      return { kind: "artifact", id: decodeURIComponent(m[1]), url };
+    if ((m = url.match(/huggingface\.co\/buckets\/([^/#\s]+\/[^/#\s]+)#(.+)/))) {
+      if (!validHfRepoId(m[1].split("/"))) return null;
+      return { kind: "artifact", id: decodeURIComponent(m[2]), url };
     }
-    if (/huggingface\.co\/datasets\/[^/]+\/[^/]+/.test(url)) {
-      return { kind: "dataset", id: hfId(url, "/datasets/"), url };
+    if (/huggingface\.co\/datasets\//.test(url)) {
+      const parts = hfId(url, "/datasets/").split("/").slice(0, 2);
+      if (!validHfRepoId(parts)) return null;
+      return { kind: "dataset", id: parts.join("/"), url };
     }
-    if (/huggingface\.co\/spaces\/[^/]+\/[^/]+/.test(url)) {
-      return { kind: "space", id: hfId(url, "/spaces/"), url };
+    if (/huggingface\.co\/spaces\//.test(url)) {
+      const parts = hfId(url, "/spaces/").split("/").slice(0, 2);
+      if (!validHfRepoId(parts)) return null;
+      return { kind: "space", id: parts.join("/"), url };
     }
     if (/huggingface\.co\/jobs\//.test(url)) {
-      const parts = hfId(url, "/jobs/").split("/");
-      const jid = parts[1] || "";
+      const parts = hfId(url, "/jobs/").split("/").slice(0, 2);
+      if (!validHfRepoId(parts)) return null;
+      const jid = parts[1];
       return {
         kind: "job",
-        id: parts[0] + (jid ? ` · ${jid.slice(0, 12)}${jid.length > 12 ? "…" : ""}` : ""),
+        id: parts[0] + ` · ${jid.slice(0, 12)}${jid.length > 12 ? "…" : ""}`,
         url,
       };
     }
     if (/huggingface\.co\/buckets\//.test(url)) {
-      return { kind: "bucket", id: hfId(url, "/buckets/"), url };
+      const parts = hfId(url, "/buckets/").split("/").slice(0, 2);
+      if (!validHfRepoId(parts)) return null;
+      return { kind: "bucket", id: parts.join("/"), url };
     }
     if (/huggingface\.co\/papers\//.test(url)) {
-      return { kind: "paper", id: `Paper ${hfId(url, "/papers/")}`, url };
+      const id = hfId(url, "/papers/").split("/")[0];
+      if (!validHfSegment(id)) return null;
+      return { kind: "paper", id: `Paper ${id}`, url };
     }
     if ((m = url.match(/arxiv\.org\/(?:abs|pdf)\/([^?#\s]+)/))) {
       return { kind: "paper", id: `arXiv:${m[1].replace(/\.pdf$/, "")}`, url };
@@ -1126,7 +1153,7 @@
     }
     if ((m = url.match(/huggingface\.co\/([^?#]+)/))) {
       const rest = m[1].replace(/\/$/, "");
-      if (/^[^/]+\/[^/]+$/.test(rest) && !HF_NON_MODEL_PREFIX.test(rest)) {
+      if (validHfRepoId(rest.split("/")) && !HF_NON_MODEL_PREFIX.test(rest)) {
         return { kind: "model", id: rest, url };
       }
     }
@@ -2027,16 +2054,22 @@
   }
 
   async function probeRepoAccessible(ref) {
-    if (!ref) return false;
-    if (ref.private === true) return false;
-    if (ref.repo_type === "dataset" && ref.repo_id) {
-      const meta = await getJSON(
-        "https://huggingface.co/api/datasets/" + ref.repo_id
-      );
-      return meta !== null;
+    if (!ref || !ref.repo_id) return false;
+    let url = "";
+    if (ref.repo_type === "dataset") {
+      url = "https://huggingface.co/api/datasets/" + ref.repo_id;
+    } else if (ref.repo_type === "bucket") {
+      url = "https://huggingface.co/api/buckets/" + ref.repo_id;
     }
-    // HF Buckets have no simple anonymous listing API; trust the manifest flag.
-    return ref.private === false;
+    if (!url) return ref.private === false;
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) return false;
+      const metadata = await response.json();
+      return metadata.private !== true;
+    } catch (error) {
+      return false;
+    }
   }
 
   async function renderRepoReference(ref, kind, page, renderId) {
@@ -2049,10 +2082,6 @@
           `These ${noun} live in a private repository. ` +
           "Open it on the Hub to view them.",
       });
-    if (ref.private === true) {
-      page.appendChild(linkOnly());
-      return;
-    }
     const accessible = await probeRepoAccessible(ref);
     if (renderId !== RENDER_SEQUENCE) return;
     if (!accessible) {
@@ -2329,8 +2358,49 @@
     "Papers",
   ];
 
+  function hubRefFromRepoRef(ref) {
+    if (!ref || !ref.repo_id || !ref.repo_url) return null;
+    if (ref.repo_type === "dataset") {
+      return { url: ref.repo_url, type: "Datasets", label: ref.repo_id };
+    }
+    if (ref.repo_type === "bucket") {
+      return { url: ref.repo_url, type: "Buckets", label: ref.repo_id };
+    }
+    return null;
+  }
+
+  async function publicAssociatedHubRefs() {
+    const refs = [MANIFEST.traces_ref, MANIFEST.workspace_ref].filter(Boolean);
+    const publicStates = await Promise.all(refs.map(probeRepoAccessible));
+    return refs
+      .filter((ref, index) => publicStates[index])
+      .map(hubRefFromRepoRef)
+      .filter(Boolean);
+  }
+
+  function mergeHubRefs(...groups) {
+    const merged = [];
+    const seen = new Set();
+    groups.flat().forEach((ref) => {
+      if (!validHubRef(ref)) return;
+      const key = `${ref.type || "Other"}:${ref.label || ref.url}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(ref);
+    });
+    return merged;
+  }
+
+  function validHubRef(ref) {
+    if (!ref || !ref.url) return false;
+    if (classifyResource(ref.url)) return true;
+    const match = ref.url.match(/huggingface\.co\/collections\/([^/?#]+\/[^/?#]+)/);
+    return Boolean(match && validHfRepoId(match[1].split("/")));
+  }
+
   function renderHubRefs(refs) {
-    if (!Array.isArray(refs) || !refs.length) return null;
+    const validRefs = Array.isArray(refs) ? refs.filter(validHubRef) : [];
+    if (!validRefs.length) return null;
     const section = document.createElement("section");
     section.className = "workspace-hub";
     const heading = document.createElement("h2");
@@ -2344,8 +2414,7 @@
     heading.appendChild(document.createTextNode("Hugging Face artifacts"));
     section.appendChild(heading);
     const byType = new Map();
-    refs.forEach((ref) => {
-      if (!ref || !ref.url) return;
+    validRefs.forEach((ref) => {
       const type = ref.type || "Other";
       if (!byType.has(type)) byType.set(type, []);
       byType.get(type).push(ref);
@@ -2392,8 +2461,7 @@
     const entries = [];
     if (files && files.length) entries.push({ id: "ws-files", label: "Files" });
     const counts = new Map();
-    (Array.isArray(hubRefs) ? hubRefs : []).forEach((ref) => {
-      if (!ref || !ref.url) return;
+    (Array.isArray(hubRefs) ? hubRefs : []).filter(validHubRef).forEach((ref) => {
       const type = ref.type || "Other";
       counts.set(type, (counts.get(type) || 0) + 1);
     });
@@ -2457,6 +2525,9 @@
     }
     if (renderId !== RENDER_SEQUENCE) return;
     page.innerHTML = "";
+    const associatedHubRefs = await publicAssociatedHubRefs();
+    if (renderId !== RENDER_SEQUENCE) return;
+    const hubRefs = mergeHubRefs(workspace.hub_refs || [], associatedHubRefs);
     const shell = document.createElement("div");
     shell.className = "workspace-shell";
     const header = document.createElement("header");
@@ -2500,10 +2571,10 @@
         )
       );
     }
-    const hub = renderHubRefs(workspace.hub_refs);
+    const hub = renderHubRefs(hubRefs);
     if (hub) shell.appendChild(hub);
     page.appendChild(shell);
-    buildWorkspaceSidebar(workspaceSidebarEntries(files, workspace.hub_refs));
+    buildWorkspaceSidebar(workspaceSidebarEntries(files, hubRefs));
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 

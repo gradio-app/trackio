@@ -720,6 +720,8 @@ body[data-view="workspace"] #sidebar-foot {
   border-radius: 0;
   background: none;
   padding: 12px 16px 12px 0;
+  overflow-y: auto;
+  max-height: 26em;
 }
 .jp-in-body .code-accordion {
   margin: 0;
@@ -1128,6 +1130,8 @@ table.board tr.linked-row:hover a {
   color: var(--muted);
 }
 .agent-hint code {
+  flex: 1 1 18rem;
+  min-width: 0;
   background: var(--code-bg);
   padding: 2px 9px;
   border-radius: 6px;
@@ -1135,6 +1139,9 @@ table.board tr.linked-row:hover a {
   font-size: 12px;
   font-weight: 500;
   color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .agent-hint .copy {
   flex: 0 0 auto;
@@ -1552,7 +1559,7 @@ table.board tr.linked-row:hover a {
   font-family: var(--mono);
   font-size: 12px;
 }
-.repo-ref-link {
+#page .repo-ref-link {
   display: inline-block;
   margin-top: 18px;
   padding: 8px 14px;
@@ -1562,7 +1569,9 @@ table.board tr.linked-row:hover a {
   font-weight: 600;
   text-decoration: none;
 }
-.repo-ref-link:hover {
+#page .repo-ref-link:hover,
+#page .repo-ref-link:focus-visible {
+  color: #fff;
   filter: brightness(0.95);
 }
 .view-eyebrow {

@@ -226,3 +226,175 @@ def test_empty_trace_and_workspace_views_explain_how_they_fill(tmp_path, monkeyp
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_logbook_code_overflow_cli_ellipsis_and_copy(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Overflow logbook")
+    slug = logbook.ensure_page(proj, "Long code")
+    code_text = "\n".join(f"print({index})" for index in range(120))
+    logbook.add_code_cell(proj, slug, "", code_text=code_text, language="python")
+    logbook.write_site_files(proj)
+
+    handler = functools.partial(
+        _QuietHandler, directory=str(logbook.logbook_root(proj))
+    )
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": 430, "height": 900})
+                page.add_init_script(
+                    """
+                    Object.defineProperty(navigator, "clipboard", {
+                      configurable: true,
+                      value: { writeText: async (text) => { window.__copied = text; } }
+                    });
+                    """
+                )
+                page.goto(
+                    f"http://127.0.0.1:{server.server_address[1]}/#/view/code/{slug}"
+                )
+
+                input_code = page.locator(".jp-in-body pre.hl")
+                expect(input_code).to_be_visible()
+                overflow = input_code.evaluate(
+                    """el => ({
+                      scrollHeight: el.scrollHeight,
+                      clientHeight: el.clientHeight,
+                      overflowY: getComputedStyle(el).overflowY
+                    })"""
+                )
+                assert overflow["scrollHeight"] > overflow["clientHeight"]
+                assert overflow["overflowY"] == "auto"
+
+                command = page.locator(".agent-hint code")
+                full_command = command.text_content()
+                page.locator(".agent-hint .copy").click()
+                expect(page.locator(".agent-hint .copy")).to_have_text("✓")
+                assert page.evaluate("window.__copied") == full_command
+
+                command.evaluate("(el) => { el.textContent += 'x'.repeat(240); }")
+                truncation = command.evaluate(
+                    """el => ({
+                      scrollWidth: el.scrollWidth,
+                      clientWidth: el.clientWidth,
+                      overflow: getComputedStyle(el).overflow,
+                      textOverflow: getComputedStyle(el).textOverflow,
+                      whiteSpace: getComputedStyle(el).whiteSpace
+                    })"""
+                )
+                assert truncation["scrollWidth"] > truncation["clientWidth"]
+                assert truncation["overflow"] == "hidden"
+                assert truncation["textOverflow"] == "ellipsis"
+                assert truncation["whiteSpace"] == "nowrap"
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+def test_public_repo_visibility_and_hub_ref_filtering(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    proj = logbook.create_logbook("Referenced stores")
+    logbook.write_site_files(proj)
+    root = logbook.logbook_root(proj)
+
+    manifest_path = root / "logbook.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["traces_ref"] = {
+        "repo_id": "me/trace-data",
+        "repo_type": "dataset",
+        "repo_url": "https://huggingface.co/datasets/me/trace-data",
+        "private": True,
+    }
+    manifest["workspace_ref"] = {
+        "repo_id": "me/workspace-files",
+        "repo_type": "bucket",
+        "repo_url": "https://huggingface.co/buckets/me/workspace-files",
+        "private": True,
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    workspace_path = root / "workspace.json"
+    workspace = json.loads(workspace_path.read_text(encoding="utf-8"))
+    workspace["hub_refs"] = [
+        {
+            "url": "https://huggingface.co/jobs/me/{job_id}",
+            "type": "Jobs",
+            "label": "me/{job_id}",
+        },
+        {
+            "url": "https://huggingface.co/datasets/{DATASET_ID}",
+            "type": "Datasets",
+            "label": "{DATASET_ID}",
+        },
+        {
+            "url": "https://huggingface.co/spaces/{args.trackio_space}",
+            "type": "Spaces",
+            "label": "{args.trackio_space}",
+        },
+    ]
+    workspace_path.write_text(json.dumps(workspace), encoding="utf-8")
+
+    handler = functools.partial(_QuietHandler, directory=str(root))
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                public_metadata = json.dumps({"private": False})
+                page.route(
+                    "https://huggingface.co/api/datasets/me/trace-data",
+                    lambda route: route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=public_metadata,
+                    ),
+                )
+                page.route(
+                    "https://huggingface.co/api/buckets/me/workspace-files",
+                    lambda route: route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=public_metadata,
+                    ),
+                )
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/"
+
+                page.goto(base_url + "#/view/workspace")
+                expect(page.locator(".repo-ref-card")).to_contain_text(
+                    "published to a public repository"
+                )
+                expect(
+                    page.locator('.workspace-hub-link[href$="/datasets/me/trace-data"]')
+                ).to_have_count(1)
+                expect(
+                    page.locator(
+                        '.workspace-hub-link[href$="/buckets/me/workspace-files"]'
+                    )
+                ).to_have_count(1)
+                expect(page.locator(".workspace-hub-link", has_text="{")).to_have_count(
+                    0
+                )
+
+                page.goto(base_url + "#/view/trace")
+                expect(page.locator(".repo-ref-card")).to_contain_text(
+                    "published to a public repository"
+                )
+                hub_link = page.get_by_role("link", name="Open on the Hub")
+                expect(hub_link).to_be_visible()
+                assert (
+                    hub_link.evaluate("el => getComputedStyle(el).color")
+                    == "rgb(255, 255, 255)"
+                )
+                browser.close()
+        finally:
+            server.shutdown()
+            thread.join()
