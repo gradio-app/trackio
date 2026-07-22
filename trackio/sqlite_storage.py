@@ -78,6 +78,23 @@ def _env_pragma_int(name: str) -> int | None:
         return None
 
 
+def _read_only() -> bool:
+    return os.environ.get("TRACKIO_READ_ONLY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _configure_read_only_pragmas(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA query_only = ON")
+    conn.execute("PRAGMA temp_store = MEMORY")
+    conn.execute("PRAGMA cache_size = -20000")
+    mmap_size = _env_pragma_int("TRACKIO_SQLITE_MMAP_SIZE")
+    conn.execute(f"PRAGMA mmap_size = {0 if mmap_size is None else mmap_size}")
+
+
 def _configure_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     override = os.environ.get("TRACKIO_SQLITE_JOURNAL_MODE", "").strip().lower()
     if override in _JOURNAL_MODE_WHITELIST:
@@ -393,6 +410,17 @@ class SQLiteStorage:
         configure_pragmas: bool = True,
         row_factory=sqlite3.Row,
     ) -> Iterator[sqlite3.Connection]:
+        if _read_only():
+            conn = sqlite3.readonly_sqlite_connect(str(db_path.resolve()))
+            try:
+                _configure_read_only_pragmas(conn)
+                if row_factory is not None:
+                    conn.row_factory = row_factory
+                with conn:
+                    yield conn
+            finally:
+                conn.close()
+            return
         if on_spaces():
             # On Spaces, all callers share a single persistent connection
             # that is pragma-configured at creation time. The `configure_pragmas`
@@ -468,6 +496,13 @@ class SQLiteStorage:
         Initialize the SQLite database with required tables.
         Returns the database path.
         """
+        if _read_only():
+            db_path = SQLiteStorage.get_project_db_path(project)
+            if not db_path.is_file():
+                raise FileNotFoundError(
+                    f"Trackio project database does not exist: {db_path}"
+                )
+            return db_path
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2865,6 +2900,8 @@ class SQLiteStorage:
 
     @staticmethod
     def _ensure_hub_loaded():
+        if _read_only():
+            return
         if not SQLiteStorage._dataset_import_attempted:
             SQLiteStorage.load_from_dataset()
 

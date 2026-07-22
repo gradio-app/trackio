@@ -14,6 +14,24 @@ export TRACKIO_DIR="/path/to/trackio/data"
 
 Note: This environment variable applies as long as Trackio is not running in a Space with persistent storage enabled. If Trackio is running in a Space with persistent storage enabled (which is detected with the `PERSISTANT_STORAGE_ENABLED` env variable), then the Trackio data will be stored in `/data/trackio`.
 
+### `TRACKIO_READ_ONLY`
+
+Opens project databases in SQLite read-only mode and disables dataset imports or
+schema initialization. Use this for dashboards, APIs, and other consumers that
+must observe a live `TRACKIO_DIR` without being able to change its evidence.
+New commits made by a separate writer are visible on the consumer's next query;
+the consumer does not need to copy the database or restart.
+
+Mount the directory read-only as a second layer of protection:
+
+```bash
+export TRACKIO_DIR="/evidence/trackio"
+export TRACKIO_READ_ONLY="1"
+```
+
+The project database must already exist. This mode is for readers only; logging,
+artifact writes, schema migrations, and remote dataset imports are disabled.
+
 ### `TRACKIO_SERVER_URL`
 
 Base URL of a self-hosted Trackio server (`http://` or `https://`). You may include `write_token` in the query string (as in the `full_url` from `trackio.show()`), or keep the URL bare and set `TRACKIO_WRITE_TOKEN` instead. When set, `trackio.init()` sends metrics to that server. Equivalent to passing `server_url=` to `trackio.init()`.

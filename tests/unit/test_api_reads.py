@@ -1,8 +1,10 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 import trackio
+from trackio.sqlite_storage import SQLiteStorage
 
 
 def _verifiers_record() -> dict:
@@ -123,3 +125,28 @@ def test_api_reads_empty_run_created_by_artifact_link(temp_dir):
     assert run.metric_series() == {}
     assert run.traces() == []
     assert run.artifacts()["input"][0]["version"] == 0
+
+
+def test_api_read_only_mode_sees_new_runs_without_reopening_storage(temp_dir, monkeypatch):
+    project = "api-live-read-only"
+    first = trackio.init(project=project, name="first")
+    first.log({"loss": 2.0}, step=0)
+    first.finish()
+
+    api = trackio.Api()
+    monkeypatch.setenv("TRACKIO_READ_ONLY", "1")
+    assert [run.name for run in api.runs(project)] == ["first"]
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        SQLiteStorage.bulk_log(
+            project,
+            "blocked",
+            [{"loss": 1.0}],
+        )
+
+    monkeypatch.delenv("TRACKIO_READ_ONLY")
+    second = trackio.init(project=project, name="second")
+    second.log({"loss": 1.0}, step=1)
+    second.finish()
+    monkeypatch.setenv("TRACKIO_READ_ONLY", "1")
+
+    assert {run.name for run in api.runs(project)} == {"first", "second"}
