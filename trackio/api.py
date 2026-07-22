@@ -186,7 +186,7 @@ class Run:
         )
 
     def system_history(self) -> list[dict[str, Any]]:
-        """Return host telemetry in timestamp order without resampling."""
+        """Return provider-bounded host telemetry in timestamp order."""
 
         if self._remote_client is not None:
             return self._remote(
