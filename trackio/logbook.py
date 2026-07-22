@@ -69,6 +69,7 @@ CELL_RE = re.compile(
 
 # ---- Hugging Face artifact detection (workspace "Hugging Face artifacts") ----
 _HF_URL_RE = re.compile(r"https://huggingface\.co/[^\s)\"'`<>\]]+")
+_HF_ID_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 # Path prefixes on huggingface.co that are NOT bare model repos.
 _HF_RESERVED_PREFIXES = {
     "datasets",
@@ -389,6 +390,26 @@ def _walk(node: dict):
         yield from _walk(child)
 
 
+def _valid_hf_segment(value: str) -> bool:
+    return bool(
+        value
+        and len(value) <= 96
+        and _HF_ID_SEGMENT_RE.fullmatch(value)
+        and not value.startswith(("-", "."))
+        and not value.endswith(("-", "."))
+        and "--" not in value
+        and ".." not in value
+    )
+
+
+def _valid_hf_repo_id(segments: list[str]) -> bool:
+    return (
+        len(segments) == 2
+        and len("/".join(segments)) <= 96
+        and all(_valid_hf_segment(segment) for segment in segments)
+    )
+
+
 def _classify_hf_url(url: str) -> dict | None:
     """Classify a huggingface.co URL into a Hugging Face artifact reference.
 
@@ -406,24 +427,41 @@ def _classify_hf_url(url: str) -> dict | None:
         return None
     head = segments[0].lower()
     if head == "jobs":
-        typ, label = "Jobs", "/".join(segments[1:]) or core
+        identity = segments[1:3]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Jobs", "/".join(identity)
     elif head == "datasets":
-        typ, label = "Datasets", "/".join(segments[1:3]) or core
+        identity = segments[1:3]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Datasets", "/".join(identity)
     elif head == "spaces":
-        typ, label = "Spaces", "/".join(segments[1:3]) or core
+        identity = segments[1:3]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Spaces", "/".join(identity)
     elif head == "buckets" or (
         head == "api" and len(segments) > 1 and segments[1].lower() == "buckets"
     ):
         rest = segments[2:] if head == "api" else segments[1:]
-        typ, label = "Buckets", "/".join(rest[:2]) or core
+        identity = rest[:2]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Buckets", "/".join(identity)
     elif head == "collections":
-        typ, label = "Collections", "/".join(segments[1:3]) or core
+        identity = segments[1:3]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Collections", "/".join(identity)
     elif head == "papers":
-        typ, label = "Papers", "/".join(segments[1:]) or core
+        identity = segments[1:2]
+        if not _valid_hf_segment(identity[0] if identity else ""):
+            return None
+        typ, label = "Papers", identity[0]
     elif head in _HF_RESERVED_PREFIXES:
         return None
-    elif len(segments) == 2:
-        # Conservative: only a bare `owner/name` path is treated as a model.
+    elif len(segments) == 2 and _valid_hf_repo_id(segments):
         typ, label = "Models", "/".join(segments)
     else:
         return None

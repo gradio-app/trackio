@@ -894,6 +894,31 @@ def test_scan_hub_refs_classifies_urls(proj):
     assert not any(ref["type"] == "Models" and ref["label"] == "me" for ref in refs)
 
 
+def test_scan_hub_refs_rejects_template_placeholders(proj):
+    slug = logbook.ensure_page(proj, "Template links")
+    logbook.add_markdown_cell(
+        proj,
+        slug,
+        " ".join(
+            [
+                "https://huggingface.co/jobs/me/{job_id}",
+                "https://huggingface.co/datasets/{DATASET_ID}",
+                "https://huggingface.co/datasets/{args.results_repo}",
+                "https://huggingface.co/spaces/{args.trackio_space}",
+                "https://huggingface.co/datasets/me/valid_data",
+            ]
+        ),
+    )
+
+    assert logbook.scan_hub_refs(proj) == [
+        {
+            "url": "https://huggingface.co/datasets/me/valid_data",
+            "type": "Datasets",
+            "label": "me/valid_data",
+        }
+    ]
+
+
 def test_scrub_text_redacts_common_secrets():
     from trackio import logbook_trace
 
