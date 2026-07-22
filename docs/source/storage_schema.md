@@ -145,9 +145,9 @@ Indexes and constraints:
 | `artifact_id` | `INTEGER` | References `artifacts.id` |
 | `version` | `INTEGER` | Sequential version number starting at 0 |
 | `manifest_digest` | `TEXT` | SHA-256 hex digest of the canonical manifest JSON |
-| `manifest` | `TEXT` | JSON blob listing file entries with `path`, `digest`, `size`, and optional `ref` |
+| `manifest` | `TEXT` | JSON blob listing manifest entries with `path`, `digest`, `size`, and optional `ref` |
 | `metadata` | `TEXT` | Optional JSON metadata |
-| `size_bytes` | `INTEGER` | Total size of the version's files in bytes |
+| `size_bytes` | `INTEGER` | Total size of the version's manifest entries (sum of `size`) in bytes |
 | `producer_run_id` | `TEXT` | Optional identifier of the producing run |
 | `producer_run_name` | `TEXT` | Optional name of the producing run |
 | `created_at` | `TEXT` | ISO timestamp |
