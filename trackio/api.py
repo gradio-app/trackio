@@ -1,13 +1,20 @@
-from typing import Iterator
+from typing import Any, Iterator, Sequence
 
 from trackio.sqlite_storage import SQLiteStorage
 
 
 class Run:
-    def __init__(self, project: str, name: str, run_id: str | None = None):
+    def __init__(
+        self,
+        project: str,
+        name: str,
+        run_id: str | None = None,
+        created_at: str | None = None,
+    ):
         self.project = project
         self.name = name
         self._id = run_id or name
+        self.created_at = created_at
         self._config = None
 
     @property
@@ -25,6 +32,119 @@ class Run:
     def alerts(self, level: str | None = None, since: str | None = None) -> list[dict]:
         return SQLiteStorage.get_alerts(
             self.project, run_name=self.name, run_id=self.id, level=level, since=since
+        )
+
+    def summary(self) -> dict[str, Any]:
+        """Return stable metadata describing the run's stored evidence."""
+
+        summary = SQLiteStorage.get_run_config(
+            self.project, self.name, run_id=self.id
+        )
+        return {
+            "project": self.project,
+            "name": self.name,
+            "id": self.id,
+            "created_at": self.created_at,
+            "config": summary,
+            "num_logs": SQLiteStorage.get_log_count(
+                self.project, self.name, run_id=self.id
+            ),
+            "last_step": SQLiteStorage.get_last_step(
+                self.project, self.name, run_id=self.id
+            ),
+            "metrics": SQLiteStorage.get_all_metrics_for_run(
+                self.project, self.name, run_id=self.id
+            ),
+        }
+
+    def history(
+        self,
+        keys: Sequence[str] | None = None,
+        *,
+        scalar_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return unsampled run history in occurrence order.
+
+        ``keys`` projects the result while always retaining ``step`` and
+        ``timestamp``. The returned dictionaries contain only public logical
+        fields and do not expose Trackio's physical storage schema.
+        """
+
+        rows = SQLiteStorage.get_logs(
+            self.project,
+            self.name,
+            max_points=None,
+            run_id=self.id,
+            scalar_only=scalar_only,
+        )
+        if keys is None:
+            return rows
+        selected = set(keys)
+        return [
+            {
+                key: value
+                for key, value in row.items()
+                if key in selected or key in {"step", "timestamp"}
+            }
+            for row in rows
+        ]
+
+    def metric_series(
+        self, names: Sequence[str] | None = None
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return metric values grouped by name with explicit steps."""
+
+        metric_names = (
+            tuple(names)
+            if names is not None
+            else tuple(
+                SQLiteStorage.get_all_metrics_for_run(
+                    self.project, self.name, run_id=self.id
+                )
+            )
+        )
+        series = {name: [] for name in metric_names}
+        for row in self.history(metric_names):
+            for name in metric_names:
+                if name in row:
+                    series[name].append(
+                        {
+                            "step": row.get("step"),
+                            "timestamp": row.get("timestamp"),
+                            "value": row[name],
+                        }
+                    )
+        return series
+
+    def traces(
+        self,
+        *,
+        search: str | None = None,
+        sort: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+        step: int | None = None,
+        trace_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return standard or Verifiers traces for this run."""
+
+        return SQLiteStorage.get_traces(
+            self.project,
+            self.name,
+            search=search,
+            sort=sort,
+            limit=limit,
+            offset=offset,
+            run_id=self.id,
+            step=step,
+            trace_type=trace_type,
+        )
+
+    def artifacts(self) -> dict[str, list[dict[str, Any]]]:
+        """Return this run's input and output artifact edges."""
+
+        return SQLiteStorage.get_run_artifacts(
+            self.project, run_name=self.name, run_id=self.id
         )
 
     def delete(self) -> bool:
@@ -60,6 +180,11 @@ class Runs:
                     self.project,
                     str(record["name"]),
                     run_id=str(record["id"]) if record["id"] is not None else None,
+                    created_at=(
+                        str(record["created_at"])
+                        if record.get("created_at") is not None
+                        else None
+                    ),
                 )
                 for record in records
             ]
@@ -82,10 +207,32 @@ class Runs:
 
 
 class Api:
+    def capabilities(self) -> dict[str, bool]:
+        """Return stable read capabilities implemented by this API."""
+
+        return {
+            "run_summaries": True,
+            "full_history": True,
+            "explicit_metric_steps": True,
+            "standard_traces": True,
+            "verifiers_traces": True,
+            "live_traces": True,
+            "artifact_lineage": True,
+            "alerts": True,
+        }
+
     def runs(self, project: str) -> Runs:
         if not SQLiteStorage.get_project_db_path(project).exists():
             raise ValueError(f"Project '{project}' does not exist")
         return Runs(project)
+
+    def run(self, project: str, run_id: str) -> Run:
+        """Return one run by immutable ID."""
+
+        for run in self.runs(project):
+            if run.id == run_id:
+                return run
+        raise ValueError(f"Run '{run_id}' does not exist in project '{project}'")
 
     def alerts(
         self,
