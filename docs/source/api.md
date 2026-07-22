@@ -64,6 +64,14 @@
 
 [[autodoc]] Artifact
 
+## Registry
+
+[[autodoc]] Registry
+
+## Collection
+
+[[autodoc]] Collection
+
 ## Image
 
 [[autodoc]] Image

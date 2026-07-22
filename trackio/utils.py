@@ -171,6 +171,7 @@ def _get_trackio_dir() -> Path:
 TRACKIO_DIR = _get_trackio_dir()
 MEDIA_DIR = TRACKIO_DIR / "media"
 ARTIFACTS_DIR = TRACKIO_DIR / "artifacts"
+REGISTRY_PROJECT_PREFIX = "registry-"
 
 
 def canonical_project_name(project: str) -> str:

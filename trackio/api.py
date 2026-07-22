@@ -1,5 +1,7 @@
 from typing import Iterator
 
+from trackio.registry import Registry
+from trackio.registry_storage import RegistryStorage
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -97,3 +99,31 @@ class Api:
         if not SQLiteStorage.get_project_db_path(project).exists():
             raise ValueError(f"Project '{project}' does not exist")
         return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
+
+    def create_registry(self, name: str, description: str | None = None) -> Registry:
+        """Create a new registry and return a handle on it.
+
+        Raises `ValueError` if a registry with this name already exists.
+        Registries are never created implicitly: linking into a registry
+        that does not exist raises an error.
+
+        Args:
+            name (`str`):
+                Registry name, e.g. `"models"`. Must match
+                `^[A-Za-z0-9_-]+$`.
+            description (`str`, *optional*):
+                Human-readable description of the registry.
+
+        Returns:
+            A [`Registry`] handle on the new registry.
+        """
+        RegistryStorage.create_registry(name, description=description)
+        return Registry(name)
+
+    def registry(self, name: str) -> Registry:
+        """Fetch a handle on an existing registry.
+
+        Raises `ValueError` if no registry with this name exists."""
+        if not RegistryStorage.registry_exists(name):
+            raise ValueError(f"Registry '{name}' does not exist")
+        return Registry(name)
