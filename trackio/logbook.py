@@ -2626,6 +2626,7 @@ def _push(
             "repo_type": "dataset",
             "repo_url": f"https://huggingface.co/datasets/{trace_dataset}",
             "private": not repos_public,
+            "viewer_path": "trackio/index.json",
         }
 
     workspace_ref = None

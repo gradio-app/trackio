@@ -95,6 +95,29 @@ def test_preview_manifest_refreshes_active_trace_and_workspace(proj, tmp_path):
     assert workspace["files"][0]["path"] == "checkpoint.safetensors"
 
 
+def test_trace_dataset_export_includes_web_viewer_bundle(proj, tmp_path):
+    from trackio import logbook_trace
+
+    trace_path = tmp_path / "public-session.jsonl"
+    trace_path.write_text(
+        json.dumps({"role": "user", "content": "Published trace"}) + "\n",
+        encoding="utf-8",
+    )
+    logbook.attach_trace(proj, trace_path, title="Public session")
+
+    export_dir, count = logbook_trace.prepare_agent_trace_dataset(proj)
+
+    assert count == 1
+    viewer_index = json.loads(
+        (export_dir / "trackio" / "index.json").read_text(encoding="utf-8")
+    )
+    assert viewer_index["sessions"][0]["title"] == "Public session"
+    session_index = export_dir / "trackio" / viewer_index["sessions"][0]["index_file"]
+    assert session_index.is_file()
+    session = json.loads(session_index.read_text(encoding="utf-8"))
+    assert (export_dir / "trackio" / session["chunks"][0]["file"]).is_file()
+
+
 def test_logbook_run_path_artifact_appears_without_trace(proj, tmp_path):
     checkpoint = tmp_path / "run-output.ckpt"
     checkpoint.write_bytes(b"checkpoint")

@@ -1300,10 +1300,10 @@
     });
   }
 
-  function buildTraceTree(activeSessionId) {
+  function buildTraceTree(activeSessionId, traceSessions = MANIFEST.traces || []) {
     const tree = document.getElementById("tree");
     tree.innerHTML = "";
-    const sessions = MANIFEST.traces || [];
+    const sessions = traceSessions;
     if (!sessions.length) return;
     const label = document.createElement("div");
     label.className = "tree-label";
@@ -1386,6 +1386,34 @@
     const data = await response.json();
     if (cacheResult) DATA_CACHE[file] = data;
     return data;
+  }
+
+  async function fetchRemoteData(url, cacheResult = true) {
+    if (cacheResult && DATA_CACHE[url]) return DATA_CACHE[url];
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Could not load ${url}`);
+    const data = await response.json();
+    if (cacheResult) DATA_CACHE[url] = data;
+    return data;
+  }
+
+  function encodeRepoPath(path) {
+    return String(path || "")
+      .split("/")
+      .map((part) => encodeURIComponent(part))
+      .join("/");
+  }
+
+  function repoFileUrl(ref, path) {
+    const revision = encodeURIComponent(ref.revision || "main");
+    const encodedPath = encodeRepoPath(path);
+    if (ref.repo_type === "dataset") {
+      return `https://huggingface.co/datasets/${ref.repo_id}/resolve/${revision}/${encodedPath}`;
+    }
+    if (ref.repo_type === "bucket") {
+      return `https://huggingface.co/buckets/${ref.repo_id}/resolve/${encodedPath}`;
+    }
+    return "";
   }
 
   function allNodes() {
@@ -1873,7 +1901,7 @@
     return "/view/trace/" + id;
   }
 
-  function buildTraceSession(session, index) {
+  function buildTraceSession(session, index, loadTraceData = fetchData) {
     const sec = document.createElement("section");
     sec.className = "trace-session";
     sec.id = traceSessionAnchor(session.id);
@@ -1968,7 +1996,7 @@
       try {
         // Event chunks can be large. Do not retain the parsed JSON in DATA_CACHE;
         // the rendered DOM is the only long-lived copy.
-        const chunk = await fetchData(descriptor.file, false);
+        const chunk = await loadTraceData(descriptor.file, false);
         const events = chunk.events || [];
         events.forEach((event) => {
           if (
@@ -2097,25 +2125,64 @@
     );
   }
 
+  async function loadPublicTraceSource(ref) {
+    const viewerPath = String(ref.viewer_path || "trackio/index.json")
+      .split("/")
+      .filter((part) => part && part !== "." && part !== "..")
+      .join("/");
+    const slash = viewerPath.lastIndexOf("/");
+    const root = slash >= 0 ? viewerPath.slice(0, slash + 1) : "";
+    const index = await fetchRemoteData(repoFileUrl(ref, viewerPath));
+    const sessions = Array.isArray(index.sessions) ? index.sessions : [];
+    if (!sessions.length) throw new Error("The trace dataset has no sessions");
+    return {
+      sessions,
+      loadData: (file, cacheResult = true) =>
+        fetchRemoteData(repoFileUrl(ref, root + file), cacheResult),
+    };
+  }
+
   async function renderTrace(route, renderId) {
     const page = document.getElementById("page");
     page.innerHTML = "";
     page.className = "trace-page";
-    const sessions = MANIFEST.traces || [];
+    let sessions = MANIFEST.traces || [];
+    let loadTraceData = fetchData;
     if (!sessions.length) {
       updateViewTabs({ view: "trace" });
       if (MANIFEST.traces_ref && MANIFEST.traces_ref.repo_url) {
-        await renderRepoReference(MANIFEST.traces_ref, "traces", page, renderId);
+        const accessible = await probeRepoAccessible(MANIFEST.traces_ref);
+        if (renderId !== RENDER_SEQUENCE) return;
+        if (accessible) {
+          try {
+            const remote = await loadPublicTraceSource(MANIFEST.traces_ref);
+            sessions = remote.sessions;
+            loadTraceData = remote.loadData;
+            buildTraceTree(route.sessionId, sessions);
+          } catch (error) {
+            page.appendChild(
+              repoRefCard(MANIFEST.traces_ref, {
+                title: "Agent traces",
+                message:
+                  "These agent traces are published to a public repository on the Hub, but the web timeline could not be loaded.",
+              })
+            );
+            return;
+          }
+        } else {
+          await renderRepoReference(MANIFEST.traces_ref, "traces", page, renderId);
+          return;
+        }
+      } else {
+        page.appendChild(
+          emptyView(
+            "No agent sessions attached yet",
+            "Attach the active session once and Trackio will keep its trace refreshed here while you work. The session stays local until you explicitly publish it.",
+            "trackio logbook attach trace <session.jsonl>"
+          )
+        );
         return;
       }
-      page.appendChild(
-        emptyView(
-          "No agent sessions attached yet",
-          "Attach the active session once and Trackio will keep its trace refreshed here while you work. The session stays local until you explicitly publish it.",
-          "trackio logbook attach trace <session.jsonl>"
-        )
-      );
-      return;
     }
     updateViewTabs({ view: "trace" });
 
@@ -2127,7 +2194,7 @@
     try {
       loaded = await Promise.all(
         sessions.map(async (session) => {
-          const index = await fetchData(session.index_file);
+          const index = await loadTraceData(session.index_file);
           return { session, index };
         })
       );
@@ -2145,13 +2212,13 @@
     const shell = document.createElement("div");
     shell.className = "trace-shell";
     loaded.forEach(({ session, index }) => {
-      shell.appendChild(buildTraceSession(session, index));
+      shell.appendChild(buildTraceSession(session, index, loadTraceData));
     });
     page.appendChild(shell);
     const activeSessionId = route.sessionId || sessions[0].id;
     await ensureTraceSessionLoaded(activeSessionId);
     if (renderId !== RENDER_SEQUENCE) return;
-    scrollToTraceSession(activeSessionId);
+    scrollToTraceSession(route.sessionId);
   }
 
   function svgIcon(kind) {
@@ -2411,7 +2478,7 @@
     hubLogo.alt = "";
     hubLogo.setAttribute("aria-hidden", "true");
     heading.appendChild(hubLogo);
-    heading.appendChild(document.createTextNode("Hugging Face artifacts"));
+    heading.appendChild(document.createTextNode("Linked Hugging Face artifacts"));
     section.appendChild(heading);
     const byType = new Map();
     validRefs.forEach((ref) => {
@@ -2459,7 +2526,9 @@
 
   function workspaceSidebarEntries(files, hubRefs) {
     const entries = [];
-    if (files && files.length) entries.push({ id: "ws-files", label: "Files" });
+    if (files && files.length) {
+      entries.push({ id: "ws-files", label: "Workspace files" });
+    }
     const counts = new Map();
     (Array.isArray(hubRefs) ? hubRefs : []).filter(validHubRef).forEach((ref) => {
       const type = ref.type || "Other";
@@ -2481,18 +2550,14 @@
     if (!entries || !entries.length) return;
     const label = document.createElement("div");
     label.className = "tree-label";
-    label.textContent = "Sections";
+    label.textContent = "Artifacts";
     tree.appendChild(label);
     entries.forEach((entry) => {
       const a = document.createElement("a");
       a.href = "#/view/workspace";
       a.className = "depth-0";
       a.dataset.section = entry.id;
-      const mark = document.createElement("span");
-      mark.className = "tree-mark";
-      mark.textContent = "§";
-      a.appendChild(mark);
-      a.appendChild(document.createTextNode(" " + entry.label));
+      a.textContent = entry.label;
       a.addEventListener("click", (event) => {
         event.preventDefault();
         const target = document.getElementById(entry.id);
@@ -2504,6 +2569,83 @@
       });
       tree.appendChild(a);
     });
+  }
+
+  function workspaceTypeFromPath(path) {
+    const dot = path.lastIndexOf(".");
+    const ext = dot >= 0 ? path.slice(dot).toLowerCase() : "";
+    if (
+      [
+        ".pt",
+        ".pth",
+        ".ckpt",
+        ".safetensors",
+        ".gguf",
+        ".onnx",
+        ".pkl",
+        ".joblib",
+        ".h5",
+        ".tflite",
+        ".pb",
+      ].includes(ext)
+    ) {
+      return "model";
+    }
+    if (
+      [
+        ".npz",
+        ".npy",
+        ".parquet",
+        ".csv",
+        ".tsv",
+        ".arrow",
+        ".jsonl",
+        ".feather",
+        ".msgpack",
+      ].includes(ext)
+    ) {
+      return "dataset";
+    }
+    return ext.replace(/^\./, "") || "file";
+  }
+
+  async function loadPublicWorkspace(ref) {
+    if (!(await probeRepoAccessible(ref))) return null;
+    const response = await fetch(
+      `https://huggingface.co/api/buckets/${ref.repo_id}/tree`,
+      { cache: "no-store" }
+    );
+    if (!response.ok) throw new Error("Could not load the public Bucket");
+    const entries = await response.json();
+    const prefix = "workspace/";
+    const files = (Array.isArray(entries) ? entries : [])
+      .filter(
+        (item) =>
+          item &&
+          item.type === "file" &&
+          typeof item.path === "string" &&
+          item.path.startsWith(prefix)
+      )
+      .map((item) => {
+        const path = item.path.slice(prefix.length);
+        return {
+          path,
+          name: path.split("/").pop() || path,
+          type: workspaceTypeFromPath(path),
+          size: Number(item.size) || 0,
+          modified_at: item.mtime || item.uploadedAt || "",
+          sessions: [],
+          bucket_url: `${ref.repo_url}#${encodeRepoPath(item.path)}`,
+          download_url: repoFileUrl(ref, item.path),
+        };
+      });
+    return {
+      schema_version: 1,
+      bucket_id: ref.repo_id,
+      file_count: files.length,
+      total_size: files.reduce((sum, file) => sum + file.size, 0),
+      files,
+    };
   }
 
   async function renderWorkspace(renderId) {
@@ -2522,6 +2664,25 @@
       page.innerHTML = "";
       page.appendChild(emptyView("Workspace unavailable", "The workspace inventory could not be loaded."));
       return;
+    }
+    if (renderId !== RENDER_SEQUENCE) return;
+    if (
+      !(workspace.files || []).length &&
+      MANIFEST.workspace_ref &&
+      MANIFEST.workspace_ref.repo_url
+    ) {
+      try {
+        const remoteWorkspace = await loadPublicWorkspace(MANIFEST.workspace_ref);
+        if (remoteWorkspace && remoteWorkspace.files.length) {
+          workspace = {
+            ...workspace,
+            ...remoteWorkspace,
+            hub_refs: workspace.hub_refs || [],
+          };
+        }
+      } catch (error) {
+        // Keep the repository card below as a graceful fallback.
+      }
     }
     if (renderId !== RENDER_SEQUENCE) return;
     page.innerHTML = "";
@@ -2612,7 +2773,7 @@
       const sessions = MANIFEST.traces || [];
       const activeSessionId = route.sessionId || (sessions[0] || {}).id;
       ensureTraceSessionLoaded(activeSessionId);
-      scrollToTraceSession(activeSessionId);
+      scrollToTraceSession(route.sessionId);
       return;
     }
     renderCurrentView();

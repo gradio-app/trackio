@@ -72,6 +72,49 @@ def write_file(path: Path, text: str) -> None:
     path.write_text(textwrap.dedent(text).strip() + "\n", encoding="utf-8")
 
 
+def accuracy_comparison_figure() -> tuple[str, str]:
+    """Return a dependency-free SVG figure and its underlying data."""
+    data = [
+        {"method": "Direct answer", "exact_match": 29.7},
+        {"method": "Chain of thought", "exact_match": 41.4},
+        {"method": "Self-consistency", "exact_match": 56.3},
+    ]
+    html = """
+    <figure style="margin:0;padding:8px 4px;font-family:system-ui,sans-serif;color:#1f2937">
+      <figcaption style="margin:0 0 12px;font-size:14px;font-weight:650">
+        Exact-match accuracy by prompting method
+      </figcaption>
+      <svg viewBox="0 0 760 280" role="img"
+           aria-label="Horizontal bar chart comparing exact-match accuracy"
+           style="display:block;width:100%;height:auto">
+        <g fill="none" stroke="#e5e7eb" stroke-width="1">
+          <path d="M190 28V238M350 28V238M510 28V238M670 28V238" />
+        </g>
+        <g fill="#6b7280" font-size="12" text-anchor="middle">
+          <text x="190" y="260">0%</text>
+          <text x="350" y="260">20%</text>
+          <text x="510" y="260">40%</text>
+          <text x="670" y="260">60%</text>
+        </g>
+        <g font-size="14">
+          <text x="174" y="69" text-anchor="end" fill="#4b5563">Direct answer</text>
+          <rect x="190" y="45" width="237.6" height="36" rx="6" fill="#fed7aa" />
+          <text x="438" y="69" fill="#9a3412" font-weight="650">29.7%</text>
+
+          <text x="174" y="139" text-anchor="end" fill="#4b5563">Chain of thought</text>
+          <rect x="190" y="115" width="331.2" height="36" rx="6" fill="#fb923c" />
+          <text x="532" y="139" fill="#9a3412" font-weight="650">41.4%</text>
+
+          <text x="174" y="209" text-anchor="end" fill="#4b5563">Self-consistency</text>
+          <rect x="190" y="185" width="450.4" height="36" rx="6" fill="#ea580c" />
+          <text x="651" y="209" fill="#9a3412" font-weight="650">56.3%</text>
+        </g>
+      </svg>
+    </figure>
+    """
+    return textwrap.dedent(html).strip(), json.dumps(data, indent=2)
+
+
 def seed_repro_files(workspace: Path) -> None:
     write_file(
         workspace / "configs" / "baseline.json",
@@ -750,6 +793,14 @@ def build_logbook(workspace: Path) -> None:
             '{"samples_per_problem": 20, "temperature": 0.7, "vote": "majority"}\n'
             "````",
             title="Sampling tradeoff",
+        )
+        figure_html, figure_data = accuracy_comparison_figure()
+        logbook.add_figure_cell(
+            proj,
+            self_consistency,
+            html=figure_html,
+            raw=figure_data,
+            title="Accuracy comparison",
         )
 
         error_analysis = logbook.ensure_page(proj, "Error analysis")
