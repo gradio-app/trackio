@@ -55,9 +55,11 @@ def test_logbook_renders_pages_as_single_document(tmp_path, monkeypatch):
 
                 content_box = page.locator("#page").bounding_box()
                 assert content_box is not None
-                client_width = page.evaluate("document.documentElement.clientWidth")
+                paper_box = page.locator("#content").bounding_box()
+                assert paper_box is not None
+                paper_right = paper_box["x"] + paper_box["width"]
                 assert content_box["x"] == 320
-                assert client_width - content_box["x"] - content_box["width"] == 320
+                assert paper_right - content_box["x"] - content_box["width"] == 320
 
                 page.get_by_role("link", name="Second experiment").first.click()
                 expect(page).to_have_url(re.compile(r"#/view/code/second-experiment$"))
