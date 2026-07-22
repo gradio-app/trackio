@@ -169,6 +169,39 @@ class Run:
                     )
         return series
 
+    def system_metric_names(self) -> list[str]:
+        """Return the names of host metrics recorded for this run."""
+
+        if self._remote_client is not None:
+            return self._remote(
+                "/get_system_metrics_for_run",
+                project=self.project,
+                run=self.name,
+                run_id=self.id,
+            )
+        return SQLiteStorage.get_all_system_metrics_for_run(
+            self.project,
+            self.name,
+            run_id=self.id,
+        )
+
+    def system_history(self) -> list[dict[str, Any]]:
+        """Return host telemetry in timestamp order without resampling."""
+
+        if self._remote_client is not None:
+            return self._remote(
+                "/get_system_logs",
+                project=self.project,
+                run=self.name,
+                run_id=self.id,
+            )
+        return SQLiteStorage.get_system_logs(
+            self.project,
+            self.name,
+            run_id=self.id,
+            max_points=None,
+        )
+
     def traces(
         self,
         *,
@@ -333,6 +366,7 @@ class Api:
             "live_traces": True,
             "artifact_lineage": True,
             "alerts": True,
+            "system_metrics": True,
         }
 
     def runs(self, project: str) -> Runs:

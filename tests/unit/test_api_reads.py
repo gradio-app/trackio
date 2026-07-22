@@ -41,6 +41,16 @@ def test_api_exposes_stable_run_reads(temp_dir):
     run_id = writer.id
     writer.log({"train/loss": 2.0, "event/name": "started"}, step=0)
     writer.log({"train/loss": 1.0}, step=1)
+    SQLiteStorage.bulk_log_system(
+        project,
+        "train-run",
+        [{"cpu/utilization": 42.0}, {"cpu/utilization": 51.0}],
+        timestamps=[
+            "2026-01-01T00:00:00+00:00",
+            "2026-01-01T00:00:05+00:00",
+        ],
+        run_id=run_id,
+    )
     writer.log(
         {
             "trace": trackio.Trace(
@@ -76,6 +86,7 @@ def test_api_exposes_stable_run_reads(temp_dir):
         "live_traces": True,
         "artifact_lineage": True,
         "alerts": True,
+        "system_metrics": True,
     }
     assert run.created_at is not None
     assert run.summary()["config"]["model"] == {"id": "org/model"}
@@ -94,6 +105,8 @@ def test_api_exposes_stable_run_reads(temp_dir):
         {"timestamp": run.history()[2]["timestamp"], "step": 2},
     ]
     assert [point["value"] for point in run.metric_series(["train/loss"])["train/loss"]] == [2.0, 1.0]
+    assert run.system_metric_names() == ["cpu/utilization"]
+    assert [row["cpu/utilization"] for row in run.system_history()] == [42.0, 51.0]
 
     traces = run.traces(sort="step_asc")
     assert {trace["trace_type"] for trace in traces} == {"trackio", "verifiers"}
@@ -176,6 +189,15 @@ def test_api_remote_reader_uses_live_server_queries(monkeypatch):
                 }
             if api_name == "/get_run_history":
                 return [{"step": 7, "timestamp": "now", "train/loss": 0.5}]
+            if api_name == "/get_system_metrics_for_run":
+                return ["cpu/utilization"]
+            if api_name == "/get_system_logs":
+                return [
+                    {
+                        "timestamp": "2026-01-01T00:00:01+00:00",
+                        "cpu/utilization": 33.0,
+                    }
+                ]
             raise AssertionError(f"unexpected API call {api_name}")
 
     monkeypatch.setattr(api_module, "RemoteClient", FakeRemoteClient)
@@ -184,6 +206,8 @@ def test_api_remote_reader_uses_live_server_queries(monkeypatch):
     first = api.run("live-project", "run-1")
     assert first.summary()["last_step"] == 7
     assert first.metric_series()["train/loss"][0]["value"] == 0.5
+    assert first.system_metric_names() == ["cpu/utilization"]
+    assert first.system_history()[0]["cpu/utilization"] == 33.0
 
     FakeRemoteClient.runs.append(
         {"id": "run-2", "name": "second", "created_at": "2026-01-02T00:00:00+00:00"}
