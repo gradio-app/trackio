@@ -23,6 +23,8 @@ export function getPageFromPath() {
       return "system";
     case "traces":
       return "traces";
+    case "verifiers":
+      return "verifiers-traces";
     case "media":
       return "media";
     case "reports":
@@ -47,6 +49,7 @@ export function navigateTo(page) {
   const pathMap = {
     metrics: "/",
     traces: "/traces",
+    "verifiers-traces": "/verifiers",
     system: "/system",
     media: "/media",
     reports: "/reports",

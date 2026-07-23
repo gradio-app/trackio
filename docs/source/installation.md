@@ -12,14 +12,14 @@ Install the library with pip or [uv](https://docs.astral.sh/uv/):
 uv is a fast Rust-based Python package and project manager. Refer to [Installation](https://docs.astral.sh/uv/getting-started/installation/) for installation instructions.
 
 ```bash
-uv pip install trackio
+uv pip install carbonteq-trackio
 ```
 
 </hfoption>
 <hfoption id="pip">
 
 ```bash
-pip install trackio
+pip install carbonteq-trackio
 ```
 
 </hfoption>
@@ -30,7 +30,7 @@ pip install trackio
 You can also install the latest version from source. First clone the repo and then run the installation with `pip`:
 
 ```bash
-git clone https://github.com/gradio-app/trackio.git
+git clone https://github.com/carbonteq-ai/trackio.git
 cd trackio/
 ```
 
@@ -77,17 +77,17 @@ Trackio has optional dependencies for additional features:
 **GPU Monitoring (NVIDIA)** - For logging NVIDIA GPU metrics (utilization, memory, temperature, etc.):
 
 ```bash
-pip install trackio[gpu]
+pip install carbonteq-trackio[gpu]
 ```
 
 **System Monitoring (Apple Silicon)** - For logging CPU, memory, and system metrics on Apple M-series Macs:
 
 ```bash
-pip install trackio[apple-gpu]
+pip install carbonteq-trackio[apple-gpu]
 ```
 
 **TensorBoard Import** - For importing TensorBoard event files:
 
 ```bash
-pip install trackio[tensorboard]
+pip install carbonteq-trackio[tensorboard]
 ```

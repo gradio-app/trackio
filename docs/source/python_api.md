@@ -1,8 +1,8 @@
 # Python API for Managing Runs
 
-Trackio provides a Python API class (`trackio.Api()`) that allows you to programmatically manage runs in your projects. This API is similar to `wandb.Api()` and provides methods to delete runs, move runs between projects, and access run information.
+Trackio provides a Python API class (`trackio.Api()`) that allows you to programmatically read runs from a local database or a live Trackio server. The local API also provides methods to delete and move runs.
 
-**Note:** This is different from [Trackio as an API Server](api_mcp_server.md), which runs the Trackio dashboard as a web server with API endpoints. The Python API (`trackio.Api()`) is a client-side interface for managing runs in your local Trackio database.
+The remote form is a read-only client for [Trackio as an API Server](api_mcp_server.md). It returns the same logical run summaries, unsampled history, metric series, traces, alerts, and artifact lineage as the local form. Mutations remain local-only.
 
 ## Basic Usage
 
@@ -23,6 +23,17 @@ for run in runs:
 # Or access by index
 first_run = runs[0]
 ```
+
+To read a live self-hosted server without mounting its storage:
+
+```python
+api = trackio.Api(server_url="http://trackio:7860")
+runs = api.runs("my_project")
+```
+
+Each `api.runs()` call queries the server again, so newly committed runs appear
+without recreating the client. A `Runs` collection itself is a bounded result
+and does not change after it has loaded.
 
 ## Deleting Runs
 
@@ -66,6 +77,9 @@ Main entry point for the Trackio Python API.
 ```python
 api = trackio.Api()
 ```
+
+Pass `server_url=` to construct a read-only live server client. Omit it to read
+and manage local Trackio storage.
 
 #### Methods
 

@@ -212,10 +212,10 @@ Trackio can automatically log system metrics in the background. It supports both
 
 ```bash
 # NVIDIA GPU monitoring
-pip install trackio[gpu]
+pip install carbonteq-trackio[gpu]
 
 # Apple Silicon system monitoring
-pip install trackio[apple-gpu]
+pip install carbonteq-trackio[apple-gpu]
 ```
 
 **Automatic logging (default):**

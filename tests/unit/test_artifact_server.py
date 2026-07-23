@@ -3,6 +3,7 @@
 import hashlib
 import sqlite3
 
+from trackio import database as trackio_database
 from trackio import server
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -40,7 +41,7 @@ def _commit(
 
 def _insert_metrics_row(project, run_name, run_id):
     db_path = SQLiteStorage.init_db(project)
-    with sqlite3.connect(db_path) as conn:
+    with trackio_database.connect(str(db_path)) as conn:
         conn.execute(
             "INSERT INTO metrics (timestamp, run_id, run_name, step, metrics) "
             "VALUES (?, ?, ?, ?, ?)",

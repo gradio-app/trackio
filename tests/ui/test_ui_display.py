@@ -28,7 +28,7 @@ def test_runs_plots_images_are_displayed(temp_dir):
             page.goto(full_url)
             page.wait_for_load_state("networkidle")
             nav_links = page.locator(".nav-link")
-            expect(nav_links).to_have_count(9)
+            expect(nav_links).to_have_count(10)
 
             run_label = page.locator(".run-name", has_text="test_run")
             expect(run_label).to_be_visible()
@@ -112,7 +112,7 @@ def test_navbar_page_navigation(temp_dir):
             page.goto(full_url)
             page.wait_for_load_state("networkidle")
             nav_links = page.locator(".nav-link")
-            expect(nav_links).to_have_count(9)
+            expect(nav_links).to_have_count(10)
 
             expect(page.locator(".metrics-page")).to_be_visible()
 
@@ -153,7 +153,7 @@ def test_runs_table_shows_run_data(temp_dir):
             page.wait_for_load_state("networkidle")
 
             nav_links = page.locator(".nav-link")
-            expect(nav_links).to_have_count(9)
+            expect(nav_links).to_have_count(10)
             page.get_by_role("button", name="Runs", exact=True).click()
             page.wait_for_load_state("networkidle")
 
@@ -167,6 +167,94 @@ def test_runs_table_shows_run_data(temp_dir):
             browser.close()
     finally:
         trackio.delete_project("test_runs_table", force=True)
+        app.close()
+
+
+def test_verifiers_rollouts_have_a_dedicated_branch_aware_ui(temp_dir):
+    project = "test_verifiers_ui"
+    trackio.init(project=project, name="eval-run")
+    trackio.log(
+        {
+            "rollout": trackio.VerifiersTrace(
+                {
+                    "id": "rollout-branching-1",
+                    "version": 2,
+                    "agent": {"model": "org/reasoning-model"},
+                    "task": {"type": "ToolTask", "data": {"prompt": "Solve it"}},
+                    "nodes": [
+                        {"message": {"role": "user", "content": "Solve it"}},
+                        {
+                            "parent": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": "discarded answer",
+                            },
+                        },
+                        {
+                            "parent": 0,
+                            "message": {"role": "assistant", "content": "final answer"},
+                        },
+                    ],
+                    "calls": [
+                        {"finish_reason": "stop", "usage": {"completion_tokens": 4}}
+                    ],
+                    "rewards": {"correct": 1.0},
+                    "metrics": {"tool_success": 1.0},
+                    "errors": [],
+                    "stop_condition": "agent_completed",
+                    "is_completed": True,
+                    "private_runtime_detail": "must-not-render",
+                }
+            )
+        }
+    )
+    trackio.log(
+        {
+            "eval/rollouts": 4,
+            "eval/completed": 4,
+            "eval/mean_reward": 0.75,
+            "eval/error_rate": 0.0,
+            "eval/truncated_rollout_rate": 0.25,
+            "eval/model_call_latency_p95_seconds": 1.5,
+            "eval/input_tokens": 100,
+            "eval/output_tokens": 20,
+            "eval/provider_cost": 0.0123,
+            "eval/trace_sync_complete": 1,
+            "eval/reward/correct": 0.75,
+            "eval/environment_metric/tool_success": 0.5,
+        }
+    )
+    trackio.finish()
+    app, _, _, full_url = trackio.show(
+        project=project, block_thread=False, open_browser=False
+    )
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            page.set_default_timeout(5000)
+            page.goto(full_url)
+            page.wait_for_load_state("networkidle")
+            page.get_by_role("button", name="Verifiers", exact=True).click()
+            expect(page.locator(".verifiers-page")).to_be_visible()
+            expect(page.get_by_text("rollout-branching-1", exact=True)).to_be_visible()
+            expect(
+                page.get_by_role("button", name="Branch 1", exact=True)
+            ).to_be_visible()
+            expect(page.get_by_role("button", name="Final", exact=True)).to_be_visible()
+            expect(page.get_by_text("final answer", exact=True)).to_be_visible()
+            expect(page.get_by_text("Evaluation result", exact=True)).to_be_visible()
+            expect(page.get_by_text("aggregate across 4 rollouts", exact=True)).to_be_visible()
+            expect(page.get_by_text("0.750", exact=True).first).to_be_visible()
+            expect(page.get_by_text("$0.0123", exact=True)).to_be_visible()
+            expect(page.get_by_text("must-not-render", exact=True)).to_have_count(0)
+            expect(
+                page.get_by_role("button", name="Open experiment ↗", exact=True)
+            ).to_be_visible()
+            browser.close()
+    finally:
+        trackio.delete_project(project, force=True)
         app.close()
 
 

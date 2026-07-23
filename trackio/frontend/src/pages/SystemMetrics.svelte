@@ -512,9 +512,9 @@
       <pre><code>{'import trackio\n\n# CPU/system metrics auto-enable when psutil is installed:\nrun = trackio.init(project="my-project")\n\n# Or explicitly enable/disable them:\nrun = trackio.init(project="my-project", auto_log_cpu=True)\n\n# Manually log at any time:\ntrackio.log_cpu()\ntrackio.log_gpu()'}</code></pre>
       <p><strong>Setup:</strong></p>
       <ul>
-        <li><strong>CPU/system metrics:</strong> <code>pip install trackio[cpu]</code> (requires <code>psutil</code>)</li>
-        <li><strong>NVIDIA GPU:</strong> <code>pip install trackio[gpu]</code> (requires <code>nvidia-ml-py</code>)</li>
-        <li><strong>Apple Silicon:</strong> <code>pip install trackio[apple-gpu]</code> (requires <code>psutil</code>)</li>
+        <li><strong>CPU/system metrics:</strong> <code>pip install carbonteq-trackio[cpu]</code> (requires <code>psutil</code>)</li>
+        <li><strong>NVIDIA GPU:</strong> <code>pip install carbonteq-trackio[gpu]</code> (requires <code>nvidia-ml-py</code>)</li>
+        <li><strong>Apple Silicon:</strong> <code>pip install carbonteq-trackio[apple-gpu]</code> (requires <code>psutil</code>)</li>
       </ul>
     </div>
   {:else}

@@ -20,7 +20,7 @@ def test_get_source_install_dependencies_includes_mcp():
 def test_get_space_install_requirement_includes_mcp_extra():
     requirement = deploy._get_space_install_requirement()
 
-    assert requirement == f"trackio[spaces,mcp]=={deploy.trackio.__version__}"
+    assert requirement == f"carbonteq-trackio[spaces,mcp]=={deploy.trackio.__version__}"
 
 
 @patch("trackio.bucket_storage.huggingface_hub.list_bucket_tree")
