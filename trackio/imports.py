@@ -41,7 +41,9 @@ def import_csv(
             Space does not exist, it will be created. If the Space already exists, the
             project will be logged to it.
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         private (`bool`, *optional*):
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored
@@ -188,7 +190,9 @@ def import_tf_events(
             Space does not exist, it will be created. If the Space already exists, the
             project will be logged to it.
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         private (`bool`, *optional*):
             Whether to make the Space private. If None (default), the repo will be
             public unless the organization's default is private. This value is ignored

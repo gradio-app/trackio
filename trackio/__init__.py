@@ -287,7 +287,9 @@ def init(
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         bucket_id (`str`, *optional*):
             The ID of the Hugging Face Bucket to use for metric persistence. By default,
             when a `space_id` is provided and `bucket_id` is not explicitly set, a
