@@ -169,6 +169,29 @@ function isScalarMetricValue(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function parseHistogramValue(value) {
+  let parsed = value;
+  if (
+    typeof parsed === "string" &&
+    parsed.startsWith("{") &&
+    parsed.includes("_type")
+  ) {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    parsed._type === "trackio.histogram"
+  ) {
+    return parsed;
+  }
+  return null;
+}
+
 export async function getLogs(_project, run, options = {}) {
   const raw = await getMetricsData();
   const { rows } = parseRows(raw);
@@ -181,7 +204,12 @@ export async function getLogs(_project, run, options = {}) {
       if (STRUCTURAL_KEYS.has(key)) continue;
       if (value === null || value === undefined) continue;
       if (scalarOnly) {
-        if (isScalarMetricValue(value)) entry[key] = value;
+        if (isScalarMetricValue(value)) {
+          entry[key] = value;
+        } else {
+          const histogram = parseHistogramValue(value);
+          if (histogram) entry[key] = histogram;
+        }
         continue;
       }
       if (
@@ -486,6 +514,8 @@ const MEDIA_TYPES = new Set([
 
 const MARKDOWN_TYPES = new Set(["trackio.markdown"]);
 
+const HISTOGRAM_TYPES = new Set(["trackio.histogram"]);
+
 function rowHasScalarMetric(row) {
   for (const [key, value] of Object.entries(row)) {
     if (STRUCTURAL_KEYS.has(key)) continue;
@@ -529,7 +559,11 @@ export async function getTabAvailability() {
   let media = false;
   let reports = false;
   for (const row of metricsRows) {
-    if (!metrics && rowHasScalarMetric(row)) metrics = true;
+    if (
+      !metrics &&
+      (rowHasScalarMetric(row) || rowHasTypedValue(row, HISTOGRAM_TYPES))
+    )
+      metrics = true;
     if (!media && rowHasTypedValue(row, MEDIA_TYPES)) media = true;
     if (!reports && rowHasTypedValue(row, MARKDOWN_TYPES)) reports = true;
     if (metrics && media && reports) break;

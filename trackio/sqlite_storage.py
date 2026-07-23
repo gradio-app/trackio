@@ -2188,7 +2188,9 @@ class SQLiteStorage:
                 "SELECT 1 FROM metrics "
                 "WHERE CAST(metrics AS TEXT) GLOB '*:[0-9]*' "
                 "OR CAST(metrics AS TEXT) GLOB '*:-[0-9]*' "
+                "OR CAST(metrics AS TEXT) GLOB ? "
                 "LIMIT 1",
+                ('*"_type":"trackio.histogram"*',),
             )
             flags["media"] = _exists(
                 conn,
@@ -2242,7 +2244,11 @@ class SQLiteStorage:
                 metrics = {
                     key: value
                     for key, value in metrics.items()
-                    if isinstance(value, int | float) and not isinstance(value, bool)
+                    if (isinstance(value, int | float) and not isinstance(value, bool))
+                    or (
+                        isinstance(value, dict)
+                        and value.get("_type") == "trackio.histogram"
+                    )
                 }
             else:
                 metrics = deserialize_values(metrics)
