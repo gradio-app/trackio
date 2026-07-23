@@ -13,12 +13,17 @@
 
   
 [![trackio-backend](https://github.com/gradio-app/trackio/actions/workflows/test.yml/badge.svg)](https://github.com/gradio-app/trackio/actions/workflows/test.yml)
-[![PyPI downloads](https://img.shields.io/pypi/dm/trackio)](https://pypi.org/project/trackio/)
-[![PyPI](https://img.shields.io/pypi/v/trackio)](https://pypi.org/project/trackio/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/carbonteq-trackio)](https://pypi.org/project/carbonteq-trackio/)
+[![PyPI](https://img.shields.io/pypi/v/carbonteq-trackio)](https://pypi.org/project/carbonteq-trackio/)
 ![Python version](https://img.shields.io/badge/python-3.10+-important)
 [![Twitter follow](https://img.shields.io/twitter/follow/trackioapp?style=social&label=follow)](https://twitter.com/trackioapp)
 
 </div>
+
+This is CarbonTeq's additive Trackio fork. Install it as
+`carbonteq-trackio`; it preserves the `trackio` Python import and command-line
+interface. See [`CARBONTEQ_FORK.md`](./CARBONTEQ_FORK.md) for the maintained
+delta and upstream baseline.
 
 Welcome to `trackio`: a lightweight, <u>free</u> experiment tracking library built by Hugging Face for humans and AI agents 🤗. 
 
@@ -58,13 +63,13 @@ https://github.com/user-attachments/assets/2683cf27-7520-4fff-9ee9-bdc08a8ca404
 Trackio requires [Python 3.10 or higher](https://www.python.org/downloads/). Install with `pip`:
 
 ```bash
-pip install trackio
+pip install carbonteq-trackio
 ```
 
 or with `uv`:
 
 ```bash
-uv pip install trackio
+uv pip install carbonteq-trackio
 ```
 
 ## Usage

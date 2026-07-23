@@ -1,47 +1,85 @@
-# safe runs from main
+name: Publish CarbonTeq Trackio
 
-name: publish
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
+    tags:
+      - "carbonteq-v*"
+
+permissions:
+  contents: read
 
 jobs:
-  version_or_publish:
-    runs-on: ubuntu-22.04
-    environment: publish
-    permissions:
-      contents: read
-      id-token: write
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - name: checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Install pnpm
-        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # @v4
+
+      - uses: astral-sh/setup-uv@v6
         with:
-          version: 9.1.x
+          python-version: "3.12"
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install changesets
-        run: pnpm i --frozen-lockfile
-      - name: create and publish versions
-        id: changesets
-        uses: changesets/action@aba318e9165b45b7948c60273e0b72fce0a64eb9 # @v1
-        with:
-          version: pnpm ci:version
-          commit: "chore: update versions"
-          title: "chore: update versions"
-          publish: pnpm ci:tag
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: trackio/frontend/package-lock.json
+
+      - name: Build dashboard
+        working-directory: trackio/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Python artifacts
         env:
-          GITHUB_TOKEN: ${{ secrets.GRADIO_PAT }}
-      - name: publish to pypi
-        if: steps.changesets.outputs.hasChangesets != 'true'
-        uses: "gradio-app/github/actions/publish-pypi@main"
+          SKIP_FRONTEND_BUILD: "1"
+        run: uv build --wheel --sdist
+
+      - name: Verify artifacts
+        run: |
+          uvx twine check dist/*
+          uv run --no-project python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          wheels = list(Path("dist").glob(f"carbonteq_trackio-{version}-*.whl"))
+          sdists = list(Path("dist").glob(f"carbonteq_trackio-{version}.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              raise SystemExit(
+                  f"expected one wheel and one sdist for {version}, "
+                  f"got wheels={wheels}, sdists={sdists}"
+              )
+          tag = os.environ.get("GITHUB_REF_NAME", "")
+          if os.environ.get("GITHUB_REF_TYPE") == "tag" and tag != f"carbonteq-v{version}":
+              raise SystemExit(
+                  f"release tag {tag!r} does not match carbonteq-v{version}"
+              )
+          PY
+
+      - uses: actions/upload-artifact@v4
         with:
-          use-oidc: true
+          name: carbonteq-trackio-python
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/carbonteq-v')
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/carbonteq-trackio/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: carbonteq-trackio-python
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

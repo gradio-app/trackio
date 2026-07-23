@@ -6,6 +6,19 @@ Trackio Python package, HTTP API, SQLite-compatible and Parquet persistence,
 artifacts, and the existing UI while adding platform-specific observability
 integrations.
 
+## Python distribution
+
+CarbonTeq publishes the fork as `carbonteq-trackio` while preserving the
+`trackio` import package and `trackio` console command. The first fork release
+is `0.31.5.post1`, derived from upstream Trackio `0.31.5`. Post-release numbers
+advance when CarbonTeq publishes additional fork changes without moving the
+upstream base.
+
+Framework packages must depend on `carbonteq-trackio`, not the upstream-owned
+`trackio` distribution and not a transitive Git URL. Self-deployed Trackio
+Spaces use the same CarbonTeq distribution identity so the deployed runtime
+retains the fork's storage, trace, and query behavior.
+
 ## Current extension
 
 `trackio.VerifiersTrace` stores a queryable display projection alongside the
@@ -38,7 +51,7 @@ added later without changing the Trackio SDK contract.
 
 | CarbonTeq release | Upstream repository | Upstream commit |
 | --- | --- | --- |
-| Unreleased | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
+| `0.31.5.post1` (release candidate) | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
 
 Every CarbonTeq release must add a row before it is tagged. Platform consumers
 must pin an immutable CarbonTeq commit rather than a branch or tag.

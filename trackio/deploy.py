@@ -306,7 +306,7 @@ def _get_source_install_dependencies() -> str:
 
 
 def _get_space_install_requirement() -> str:
-    return f"trackio[spaces,mcp]=={trackio.__version__}"
+    return f"carbonteq-trackio[spaces,mcp]=={trackio.__version__}"
 
 
 def _is_trackio_installed_from_source() -> bool:
@@ -316,7 +316,7 @@ def _is_trackio_installed_from_source() -> bool:
         if "site-packages" not in trackio_file and "dist-packages" not in trackio_file:
             return True
 
-        dist = importlib.metadata.distribution("trackio")
+        dist = importlib.metadata.distribution("carbonteq-trackio")
         if dist.files:
             files = list(dist.files)
             has_pth = any(".pth" in str(f) for f in files)

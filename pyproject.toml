@@ -3,12 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "trackio"
-description = "A lightweight, local-first, and free experiment tracking library built on top of Hugging Face Datasets and Spaces."
+name = "carbonteq-trackio"
+version = "0.31.5.post1"
+description = "CarbonTeq-maintained Trackio fork with post-training trace and storage extensions."
 authors = [
     { name = "Abubakar Abid", email = "abubakar@huggingface.co" },
     { name = "Zach Nation", email = "zach@huggingface.co" },
     { name = "Saba Noorassa", email = "saba@huggingface.co" },
+]
+maintainers = [
+    { name = "CarbonTeq AI" },
 ]
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,11 +34,11 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dynamic = ["version"]
 
 [project.urls]
-homepage = "https://github.com/gradio-app/trackio"
-repository = "https://github.com/gradio-app/trackio"
+homepage = "https://github.com/carbonteq-ai/trackio"
+repository = "https://github.com/carbonteq-ai/trackio"
+upstream = "https://github.com/gradio-app/trackio"
 
 [project.optional-dependencies]
 dev = [
@@ -72,10 +76,6 @@ trackio = "trackio.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["trackio"]
 artifacts = ["trackio/frontend/dist/**", "trackio/frontend_templates/**"]
-
-[tool.hatch.version]
-path = "trackio/package.json"
-pattern = ".*\"version\":\\s*\"(?P<version>[^\"]+)\""
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.

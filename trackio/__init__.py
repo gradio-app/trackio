@@ -1,6 +1,5 @@
 import atexit
 import glob
-import json
 import logging
 import os
 import shutil
@@ -15,6 +14,7 @@ from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
+from trackio._version import __version__ as __version__
 from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
@@ -51,10 +51,6 @@ from trackio.typehints import UploadEntry
 from trackio.utils import TRACKIO_DIR, TRACKIO_LOGO_DIR, _emit_nonfatal_warning
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
-
-__version__ = json.loads(Path(__file__).parent.joinpath("package.json").read_text())[
-    "version"
-]
 
 
 class _TupleNoPrint(tuple):

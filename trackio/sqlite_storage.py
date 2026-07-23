@@ -797,7 +797,7 @@ class SQLiteStorage:
             import pyarrow.parquet as pq
         except ImportError as e:
             raise ImportError(
-                "Parquet import/export requires `trackio[spaces]`."
+                "Parquet import/export requires `carbonteq-trackio[spaces]`."
             ) from e
         return pa, pq
 

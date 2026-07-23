@@ -293,7 +293,8 @@ def log_cpu(run: "Run | None" = None) -> dict:
         _ensure_psutil()
     except ImportError:
         warnings.warn(
-            "trackio.log_cpu() requires psutil. Install it with: pip install trackio[cpu]"
+            "trackio.log_cpu() requires psutil. Install it with: "
+            "pip install carbonteq-trackio[cpu]"
         )
         return {}
 
