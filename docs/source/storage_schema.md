@@ -148,7 +148,6 @@ Indexes:
 | `source_project` | `TEXT` | Project the linked artifact version was logged in |
 | `source_artifact` | `TEXT` | Name of the linked artifact |
 | `source_version` | `INTEGER` | Version of the linked artifact |
-| `manifest_digest` | `TEXT` | Snapshot of the source version's manifest digest; `NULL` when the source manifest contains reference entries without a content checksum |
 | `created_at` | `TEXT` | ISO timestamp |
 
 Constraints:

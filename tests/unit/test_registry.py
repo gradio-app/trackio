@@ -26,7 +26,6 @@ def _link(
     source_project="proj-a",
     source_artifact="resnet",
     source_version=0,
-    manifest_digest="a" * 64,
     aliases=None,
 ):
     _ensure_registry(registry)
@@ -37,7 +36,6 @@ def _link(
         source_project=source_project,
         source_artifact=source_artifact,
         source_version=source_version,
-        manifest_digest=manifest_digest,
         aliases=aliases,
         run_name="run-1",
         run_id="id-1",
@@ -58,7 +56,6 @@ def test_link_round_trip(temp_dir):
     assert link["source_project"] == "proj-a"
     assert link["source_artifact"] == "resnet"
     assert link["source_version"] == 0
-    assert link["manifest_digest"] == "a" * 64
     assert link["aliases"] == ["latest", "staging"]
 
 
@@ -144,7 +141,6 @@ def test_registry_must_be_created_explicitly(temp_dir):
             source_project="p",
             source_artifact="m",
             source_version=0,
-            manifest_digest="a" * 64,
             aliases=None,
         )
     with pytest.raises(ValueError, match="does not exist"):
@@ -399,7 +395,6 @@ def test_link_artifact_e2e_round_trip(temp_dir, tmp_path):
     assert link["source_project"] == "churn-experiments"
     assert link["source_artifact"] == "resnet"
     assert link["source_version"] == 0
-    assert link["manifest_digest"] == artifact.manifest_digest
     kinds = [event["kind"] for event in registry.events()]
     assert kinds == ["create", "create", "link", "promote"]
 
@@ -565,7 +560,7 @@ def test_link_artifact_auto_creates_typed_collection(temp_dir, tmp_path):
     assert trackio.Api().registry("models").collection("churn").type == "model"
 
 
-def test_digest_less_reference_link_records_null_digest(temp_dir, tmp_path):
+def test_reference_artifact_links_regardless_of_checksum(temp_dir, tmp_path):
     data = tmp_path / "data.csv"
     data.write_text("a,b\n1,2\n")
 
@@ -582,13 +577,9 @@ def test_digest_less_reference_link_records_null_digest(temp_dir, tmp_path):
     run.link_artifact(logged_checksummed, "registry-datasets/hashed")
     trackio.finish()
 
-    assert logged_unchecksummed.manifest_digest is not None
     registry = trackio.Api().registry("datasets")
-    assert registry.collection("raw").links[0]["manifest_digest"] is None
-    assert (
-        registry.collection("hashed").links[0]["manifest_digest"]
-        == logged_checksummed.manifest_digest
-    )
+    assert registry.collection("raw").links[0]["source_artifact"] == "raw"
+    assert registry.collection("hashed").links[0]["source_artifact"] == "hashed"
 
 
 def test_link_artifact_auto_logs_unlogged_instance(temp_dir, tmp_path):

@@ -175,7 +175,6 @@ class RegistryStorage:
                         source_project TEXT NOT NULL,
                         source_artifact TEXT NOT NULL,
                         source_version INTEGER NOT NULL,
-                        manifest_digest TEXT,
                         created_at TEXT NOT NULL,
                         UNIQUE(collection_id, source_project, source_artifact,
                                source_version),
@@ -352,7 +351,6 @@ class RegistryStorage:
         source_project: str,
         source_artifact: str,
         source_version: int,
-        manifest_digest: str | None,
         run_name: str | None,
         run_id: str | None,
         now: str,
@@ -379,15 +377,14 @@ class RegistryStorage:
         cursor.execute(
             """INSERT INTO collection_links
             (collection_id, collection_version, source_project, source_artifact,
-             source_version, manifest_digest, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+             source_version, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 collection_id,
                 collection_version,
                 source_project,
                 source_artifact,
                 source_version,
-                manifest_digest,
                 now,
             ),
         )
@@ -409,7 +406,6 @@ class RegistryStorage:
                 "source_project": source_project,
                 "source_artifact": source_artifact,
                 "source_version": source_version,
-                "manifest_digest": manifest_digest,
                 "run_name": run_name,
                 "run_id": run_id,
             },
@@ -425,7 +421,6 @@ class RegistryStorage:
         source_project: str,
         source_artifact: str,
         source_version: int,
-        manifest_digest: str | None,
         aliases: list[str] | None,
         run_name: str | None = None,
         run_id: str | None = None,
@@ -462,7 +457,6 @@ class RegistryStorage:
                         source_project,
                         source_artifact,
                         source_version,
-                        manifest_digest,
                         run_name,
                         run_id,
                         now,
@@ -483,7 +477,7 @@ class RegistryStorage:
                     )
                 link_row = conn.execute(
                     """SELECT collection_version, source_project, source_artifact,
-                       source_version, manifest_digest, created_at
+                       source_version, created_at
                     FROM collection_links WHERE id = ?""",
                     (link_id,),
                 ).fetchone()
@@ -500,7 +494,6 @@ class RegistryStorage:
                     "source_project": link_row["source_project"],
                     "source_artifact": link_row["source_artifact"],
                     "source_version": int(link_row["source_version"]),
-                    "manifest_digest": link_row["manifest_digest"],
                     "aliases": sorted(r["alias"] for r in alias_rows),
                     "created_at": link_row["created_at"],
                     "created": created,
@@ -646,7 +639,7 @@ class RegistryStorage:
         params = (collection_id,) if collection_id is not None else ()
         link_rows = conn.execute(
             f"""SELECT id, collection_id, collection_version, source_project,
-               source_artifact, source_version, manifest_digest, created_at
+               source_artifact, source_version, created_at
             FROM collection_links {where}
             ORDER BY collection_id, collection_version DESC""",
             params,
@@ -668,7 +661,6 @@ class RegistryStorage:
                     "source_project": link["source_project"],
                     "source_artifact": link["source_artifact"],
                     "source_version": int(link["source_version"]),
-                    "manifest_digest": link["manifest_digest"],
                     "aliases": sorted(aliases_by_link.get(int(link["id"]), [])),
                     "created_at": link["created_at"],
                 }

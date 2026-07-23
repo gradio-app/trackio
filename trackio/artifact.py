@@ -645,9 +645,7 @@ class Artifact:
         run_id: str | None,
     ) -> "Artifact":
         """Link this logged artifact version into `registry`/`collection` and
-        return the linked artifact hydrated at its registry location. The
-        link's `manifest_digest` snapshot is NULL when the manifest contains
-        reference entries without a content checksum."""
+        return the linked artifact hydrated at its registry location."""
         source_project, source_artifact, source_version = self._resolve_link_source()
         if self._remote_source is not None:
             raise NotImplementedError(
@@ -663,11 +661,6 @@ class Artifact:
             source_project=source_project,
             source_artifact=source_artifact,
             source_version=source_version,
-            manifest_digest=(
-                None
-                if references.has_unchecksummed_reference(manifest)
-                else self._manifest_digest
-            ),
             aliases=aliases,
             run_name=run_name,
             run_id=run_id,

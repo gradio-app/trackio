@@ -95,15 +95,6 @@ def is_reference_entry(entry: dict) -> bool:
     return "ref" in entry
 
 
-def has_unchecksummed_reference(manifest: list[dict]) -> bool:
-    """True if any reference entry in `manifest` was recorded without a
-    content checksum, i.e. its `digest` is the URI itself."""
-    return any(
-        is_reference_entry(entry) and entry.get("digest") == entry.get("ref")
-        for entry in manifest
-    )
-
-
 _SIGNED_QUERY_KEYS = frozenset(
     {"x-amz-signature", "x-goog-signature", "sig", "token", "signature"}
 )

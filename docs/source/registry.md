@@ -148,10 +148,10 @@ registry.collections()
 registry.collection("my-model").links
 # [{"collection_version": 1, "source_project": "my-experiments",
 #   "source_artifact": "resnet", "source_version": 4,
-#   "manifest_digest": "...", "aliases": ["latest", "production"], ...}]
+#   "aliases": ["latest", "production"], ...}]
 ```
 
-Each link records where the version came from (`source_project`, `source_artifact`, `source_version`) and a snapshot of its `manifest_digest` taken at link time. The snapshot is `None` when the source manifest contains [reference entries](./artifacts#referencing-external-data) recorded without a content checksum.
+Each link records where the version came from (`source_project`, `source_artifact`, `source_version`) and the aliases currently on it. A link is a pure pointer to that source version; resolving it (a follow-up) reads the source version directly.
 
 ## Audit history
 

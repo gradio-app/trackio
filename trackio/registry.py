@@ -32,8 +32,7 @@ class Collection:
     links: list[dict]
     """The linked versions, newest first. Each is a dict with the
     `collection_version`, the source coordinates (`source_project`,
-    `source_artifact`, `source_version`), the `manifest_digest` snapshot,
-    and the current `aliases`."""
+    `source_artifact`, `source_version`), and the current `aliases`."""
 
 
 class Registry:
