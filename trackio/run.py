@@ -1357,17 +1357,11 @@ class Run:
         if not self._is_local:
             artifact._remote_source = self._remote_source_dict()
 
-        try:
-            from trackio import logbook as _logbook
-
-            _logbook.auto_note_artifact(
-                self.project,
-                artifact.qualified_name,
-                artifact.size,
-                artifact_type=artifact.type,
-            )
-        except Exception:
-            pass
+        # NOTE: log_artifact() deliberately does NOT mutate any logbook in the
+        # current directory. Auto-noting an artifact cell here used to create a
+        # stray sidebar page named after the project, corrupting curated
+        # logbooks. Artifacts are recorded in a logbook explicitly, e.g. via
+        # `trackio logbook cell artifact` / logbook.add_path_artifact_cell().
 
         return artifact
 

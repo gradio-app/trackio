@@ -26,7 +26,6 @@ def test_runs_plots_images_are_displayed(temp_dir):
             page = browser.new_page()
             page.set_default_timeout(5000)
             page.goto(full_url)
-            page.wait_for_load_state("networkidle")
             nav_links = page.locator(".nav-link")
             expect(nav_links).to_have_count(9)
 
@@ -47,7 +46,6 @@ def test_runs_plots_images_are_displayed(temp_dir):
 
             checkbox.check()
             page.get_by_role("button", name="Media & Tables", exact=True).click()
-            page.wait_for_load_state("networkidle")
             gallery = page.locator(".gallery")
             expect(gallery).to_be_visible()
             gallery_images = gallery.locator("img")
@@ -75,7 +73,6 @@ def test_latest_only_selects_last_run(temp_dir):
             page = browser.new_page()
             page.set_default_timeout(5000)
             page.goto(full_url)
-            page.wait_for_load_state("networkidle")
 
             checkboxes = page.locator(".checkbox-item input[type='checkbox']")
             expect(checkboxes).to_have_count(3)
@@ -110,22 +107,18 @@ def test_navbar_page_navigation(temp_dir):
             page = browser.new_page()
             page.set_default_timeout(5000)
             page.goto(full_url)
-            page.wait_for_load_state("networkidle")
             nav_links = page.locator(".nav-link")
             expect(nav_links).to_have_count(9)
 
             expect(page.locator(".metrics-page")).to_be_visible()
 
             page.get_by_role("button", name="System Metrics", exact=True).click()
-            page.wait_for_load_state("networkidle")
             expect(page.locator(".system-page")).to_be_visible()
 
             page.get_by_role("button", name="Runs", exact=True).click()
-            page.wait_for_load_state("networkidle")
             expect(page.locator(".runs-page")).to_be_visible()
 
             page.get_by_role("button", name="Alerts & Reports", exact=True).click()
-            page.wait_for_load_state("networkidle")
             expect(page.locator(".reports-page")).to_be_visible()
 
             browser.close()
@@ -150,12 +143,10 @@ def test_runs_table_shows_run_data(temp_dir):
             page = browser.new_page()
             page.set_default_timeout(5000)
             page.goto(full_url)
-            page.wait_for_load_state("networkidle")
 
             nav_links = page.locator(".nav-link")
             expect(nav_links).to_have_count(9)
             page.get_by_role("button", name="Runs", exact=True).click()
-            page.wait_for_load_state("networkidle")
 
             table = page.locator(".runs-table")
             expect(table).to_be_visible()
@@ -188,7 +179,6 @@ def test_multiple_runs_display_multiple_plots(temp_dir):
             page = browser.new_page()
             page.set_default_timeout(5000)
             page.goto(full_url)
-            page.wait_for_load_state("networkidle")
 
             run_items = page.locator(".checkbox-item")
             expect(run_items).to_have_count(2)

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import copy
+import hashlib
 import html
 import json
 import os
@@ -8,6 +11,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -16,7 +20,7 @@ from pathlib import Path
 PROJECT_DIR_NAME = ".trackio"
 LOGBOOK_SUBDIR = "logbook"
 METADATA_FILE = "metadata.json"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ROOT_SLUG = "index"
 VIEWER_DIR = Path(__file__).parent / "frontend_templates" / "logbook"
 VIEWER_FILES = [
@@ -28,6 +32,16 @@ VIEWER_FILES = [
     "trackio-wordmark-dark.png",
     "bucket-icon.svg",
 ]
+PRIVATE_STATE_IGNORE_PATTERNS = (
+    "/trace_sources.json",
+    "/traces/",
+    "/workspace_baselines/",
+    "/workspace_bucket_state.json",
+    "/trace_dataset/",
+    "/imported_workspace.json",
+    "/logbook/traces/",
+    "/logbook/workspace.json",
+)
 
 TOC_HEADING = "## Pages"
 TOC_HEADER = "| Page |"
@@ -52,6 +66,38 @@ TRY_NUM_PORTS = int(os.getenv("GRADIO_NUM_PORTS", "100"))
 CELL_RE = re.compile(
     r"(^|\n)---\n<!-- trackio-cell\n([\s\S]*?)\n-->\n([\s\S]*?)(?=\n---\n<!-- trackio-cell\n|\s*$)"
 )
+
+# ---- Hugging Face artifact detection (workspace "Hugging Face artifacts") ----
+_HF_URL_RE = re.compile(r"https://huggingface\.co/[^\s)\"'`<>\]]+")
+_HF_ID_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+# Path prefixes on huggingface.co that are NOT bare model repos.
+_HF_RESERVED_PREFIXES = {
+    "datasets",
+    "spaces",
+    "jobs",
+    "buckets",
+    "api",
+    "collections",
+    "papers",
+    "models",
+    "docs",
+    "blog",
+    "settings",
+    "organizations",
+    "join",
+    "login",
+    "pricing",
+    "chat",
+    "posts",
+    "new",
+    "notifications",
+    "changelog",
+    "tasks",
+    "learn",
+    "enterprise",
+    "welcome",
+    "search",
+}
 
 
 class LogbookError(Exception):
@@ -147,18 +193,44 @@ def _project_from_url(url: str) -> Path:
     proj = Path(tempfile.mkdtemp(prefix="trackio-logbook-")) / PROJECT_DIR_NAME
     root = logbook_root(proj)
     root_resolved = root.resolve()
-    for node in _walk(manifest.get("root") or {}):
-        file = node.get("file")
-        if not file:
-            continue
+
+    def fetch_to_project(file: str) -> bool:
         dest = (root / file).resolve()
         if not dest.is_relative_to(root_resolved):
-            continue
+            return False
         dest.parent.mkdir(parents=True, exist_ok=True)
         try:
             dest.write_text(fetch(file), encoding="utf-8")
         except Exception:
+            return False
+        return True
+
+    files = {
+        node.get("file")
+        for node in _walk(manifest.get("root") or {})
+        if node.get("file")
+    }
+    workspace_file = (manifest.get("workspace") or {}).get("file")
+    if workspace_file:
+        files.add(workspace_file)
+    trace_sessions = manifest.get("traces") or []
+    for session in trace_sessions:
+        index_file = session.get("index_file")
+        if not index_file or not fetch_to_project(index_file):
             continue
+        trace_index = _read_json_file(root / index_file)
+        files.update(
+            chunk.get("file")
+            for chunk in trace_index.get("chunks") or []
+            if chunk.get("file")
+        )
+    for file in sorted(files):
+        if not (root / file).is_file():
+            fetch_to_project(file)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "logbook.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     if not (root / "pages" / "index.md").is_file():
         raise LogbookError(f"No logbook pages found at {url}")
     return proj
@@ -205,6 +277,12 @@ def write_metadata(proj: Path, metadata: dict) -> None:
     _metadata_path(proj).write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+
+
+def _workspace_bucket(metadata: dict) -> str | None:
+    if metadata.get("workspace_publication") not in {"public", "private"}:
+        return None
+    return metadata.get("workspace_bucket")
 
 
 def _remember_page(proj: Path, slug: str) -> None:
@@ -267,7 +345,7 @@ def _scan_children(dir_path: Path, rel_prefix: str, parent_md: Path) -> list[dic
 def build_manifest(proj: Path) -> dict:
     pages = _pages_dir(proj)
     metadata = read_metadata(proj)
-    return {
+    manifest = {
         "schema_version": SCHEMA_VERSION,
         "title": _title_of(pages / "index.md", "Logbook"),
         "emoji": metadata.get("emoji", "🎯"),
@@ -282,12 +360,145 @@ def build_manifest(proj: Path) -> dict:
             "children": _scan_children(pages, "pages", pages / "index.md"),
         },
     }
+    try:
+        from trackio import logbook_trace  # noqa: PLC0415
+
+        generated = logbook_trace.read_generated(proj)
+        sessions = generated.get("traces", {}).get("sessions") or []
+        workspace = generated.get("workspace") or {}
+        manifest["traces"] = sessions
+        manifest["workspace"] = {
+            "file": "workspace.json",
+            "file_count": workspace.get("file_count", 0),
+            "total_size": workspace.get("total_size", 0),
+            "bucket_id": workspace.get("bucket_id"),
+        }
+    except Exception:
+        manifest["traces"] = []
+        manifest["workspace"] = {
+            "file": "workspace.json",
+            "file_count": 0,
+            "total_size": 0,
+            "bucket_id": None,
+        }
+    return manifest
 
 
 def _walk(node: dict):
     yield node
     for child in node.get("children", []):
         yield from _walk(child)
+
+
+def _valid_hf_segment(value: str) -> bool:
+    return bool(
+        value
+        and len(value) <= 96
+        and _HF_ID_SEGMENT_RE.fullmatch(value)
+        and not value.startswith(("-", "."))
+        and not value.endswith(("-", "."))
+        and "--" not in value
+        and ".." not in value
+    )
+
+
+def _valid_hf_repo_id(segments: list[str]) -> bool:
+    return (
+        len(segments) == 2
+        and len("/".join(segments)) <= 96
+        and all(_valid_hf_segment(segment) for segment in segments)
+    )
+
+
+def _classify_hf_url(url: str) -> dict | None:
+    """Classify a huggingface.co URL into a Hugging Face artifact reference.
+
+    Returns ``{"url", "type", "label"}`` or ``None`` if the URL is not a
+    recognized artifact (e.g. a bare user profile link).
+    """
+    clean = url.rstrip(".,;:!?")
+    prefix = "https://huggingface.co/"
+    if not clean.startswith(prefix):
+        return None
+    path = clean[len(prefix) :]
+    core = path.split("#", 1)[0].split("?", 1)[0]
+    segments = [s for s in core.split("/") if s]
+    if not segments:
+        return None
+    head = segments[0].lower()
+    if head == "jobs":
+        identity = segments[1:3]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Jobs", "/".join(identity)
+    elif head == "datasets":
+        identity = segments[1:3]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Datasets", "/".join(identity)
+    elif head == "spaces":
+        identity = segments[1:3]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Spaces", "/".join(identity)
+    elif head == "buckets" or (
+        head == "api" and len(segments) > 1 and segments[1].lower() == "buckets"
+    ):
+        rest = segments[2:] if head == "api" else segments[1:]
+        identity = rest[:2]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Buckets", "/".join(identity)
+    elif head == "collections":
+        identity = segments[1:3]
+        if not _valid_hf_repo_id(identity):
+            return None
+        typ, label = "Collections", "/".join(identity)
+    elif head == "papers":
+        identity = segments[1:2]
+        if not _valid_hf_segment(identity[0] if identity else ""):
+            return None
+        typ, label = "Papers", identity[0]
+    elif head in _HF_RESERVED_PREFIXES:
+        return None
+    elif len(segments) == 2 and _valid_hf_repo_id(segments):
+        typ, label = "Models", "/".join(segments)
+    else:
+        return None
+    return {"url": clean, "type": typ, "label": label}
+
+
+def scan_hub_refs(proj: Path) -> list[dict]:
+    """Scan every logbook page (markdown, code commands and captured output)
+    for huggingface.co URLs and return deduped, classified references.
+
+    Robust to logbooks without cells: returns ``[]`` on any read failure.
+    """
+    root = logbook_root(proj)
+    try:
+        manifest = build_manifest(proj)
+    except Exception:
+        return []
+    seen: set[tuple[str, str]] = set()
+    refs: list[dict] = []
+    for node in _walk(manifest["root"]):
+        path = root / node["file"]
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for match in _HF_URL_RE.finditer(text):
+            ref = _classify_hf_url(match.group(0))
+            if ref is None:
+                continue
+            # Dedupe by identity (type + label) so e.g. several file links into
+            # the same bucket collapse to a single artifact reference.
+            key = (ref["type"], ref["label"])
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(ref)
+    return refs
 
 
 AGENT_VIEW_NOTE = (
@@ -326,6 +537,112 @@ def read_logbook(
         out.append(_page_outline_markdown(node, text, head, tail, raw_limit).strip())
         out.append("")
     return "\n".join(out)
+
+
+READ_VIEWS = ("code", "trace", "workspace")
+
+
+def split_read_view(source: str | None) -> tuple[str | None, str]:
+    if not source:
+        return source, "code"
+    base, _, fragment = source.partition("#")
+    view = "code"
+    match = re.match(r"/?view/(trace|traces|workspace|tree)", fragment)
+    if match:
+        view = "trace" if match.group(1).startswith("trace") else "workspace"
+    return (base or None), view
+
+
+def _read_json_file(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _format_ms(ms: int | None) -> str:
+    if not ms:
+        return "0s"
+    seconds = int(ms // 1000)
+    if seconds >= 3600:
+        return f"{seconds // 3600}h {seconds % 3600 // 60}m"
+    if seconds >= 60:
+        return f"{seconds // 60}m {seconds % 60}s"
+    return f"{seconds}s"
+
+
+def _trace_event_line(event: dict) -> str:
+    kind = event.get("kind") or "event"
+    if kind == "reasoning":
+        label = "thought"
+    elif kind == "tool_call":
+        label = f"tool {event.get('tool_name') or event.get('title') or ''}".strip()
+    elif kind == "tool_result":
+        label = "output"
+    elif kind == "message":
+        label = event.get("role") or "message"
+    else:
+        label = event.get("title") or kind
+    text = (
+        event.get("text")
+        or event.get("output")
+        or event.get("command")
+        or event.get("input")
+        or ""
+    )
+    text = " ".join(str(text).split())
+    if len(text) > 240:
+        text = text[:239] + "…"
+    seq = event.get("sequence")
+    prefix = f"[{seq}] " if seq else ""
+    return f"- {prefix}{label}: {text}" if text else f"- {prefix}{label}"
+
+
+def read_traces(proj: Path, manifest: dict | None = None) -> str:
+    manifest = manifest or build_manifest(proj)
+    sessions = manifest.get("traces") or []
+    if not sessions:
+        return "No agent session traces attached.\n"
+    root = logbook_root(proj)
+    out = ["# Agent session traces", ""]
+    for session in sessions:
+        index_file = session.get("index_file")
+        index = _read_json_file(root / index_file) if index_file else {}
+        title = index.get("title") or session.get("title") or session.get("id", "")
+        out.append(f"## {title} · `{session.get('id', '')}`")
+        bits = []
+        if index.get("model"):
+            bits.append(f"model {index['model']}")
+        if index.get("started_at"):
+            bits.append(f"started {_short_time(index['started_at'])}")
+        bits.append(f"duration {_format_ms(index.get('duration_ms'))}")
+        bits.append(f"{index.get('event_count', 0)} events")
+        out += [" · ".join(bits), ""]
+        events = []
+        for chunk in index.get("chunks", []):
+            chunk_file = chunk.get("file")
+            if not chunk_file:
+                continue
+            events += _read_json_file(root / chunk_file).get("events", [])
+        out += [_trace_event_line(event) for event in events]
+        out.append("")
+    return "\n".join(out).strip() + "\n"
+
+
+def read_workspace_tree(proj: Path, manifest: dict | None = None) -> str:
+    manifest = manifest or build_manifest(proj)
+    root = logbook_root(proj)
+    workspace_file = (manifest.get("workspace") or {}).get("file") or "workspace.json"
+    files = _read_json_file(root / workspace_file).get("files") or []
+    if not files:
+        return "No workspace files captured.\n"
+    out = [f"# Workspace files ({len(files)})", ""]
+    for item in sorted(files, key=lambda entry: entry.get("path", "")):
+        size = _format_size(item.get("size")).replace(" · ", "", 1).strip()
+        line = item.get("path", "")
+        out.append(f"{line} · {size}" if size else line)
+    return "\n".join(out).strip() + "\n"
 
 
 def _cell_agent_lines(cell: dict, head: int, tail: int, raw_limit: int) -> list[str]:
@@ -401,17 +718,82 @@ def _ensure_viewer_files(proj: Path) -> None:
             shutil.copy2(src, dest)
 
 
+def _ensure_project_gitignore(proj: Path) -> None:
+    path = proj / ".gitignore"
+    existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+    lines = existing.splitlines()
+    known = {line.strip() for line in lines}
+    missing = [item for item in PRIVATE_STATE_IGNORE_PATTERNS if item not in known]
+    if not missing:
+        return
+    if lines and lines[-1].strip():
+        lines.append("")
+    header = "# Agent traces and Workspace state may contain sensitive data."
+    if header not in known:
+        lines.append(header)
+    lines.extend(missing)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _estimate_tokens(text: str) -> int:
     return max(1, int(len(text) / 3.3))
 
 
+def _site_revision(proj: Path, manifest: dict) -> str:
+    """Return a stable revision for content visible in the local viewer."""
+    digest = hashlib.sha256()
+    stable_manifest = {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"revision", "updated_at"}
+    }
+    digest.update(
+        json.dumps(stable_manifest, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
+    root = logbook_root(proj)
+    paths = list((root / "pages").rglob("*.md"))
+    paths += list((root / "traces").rglob("*.json"))
+    workspace = root / "workspace.json"
+    if workspace.is_file():
+        paths.append(workspace)
+    for path in sorted(paths):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        stat = path.stat()
+        digest.update(f"{stat.st_mtime_ns}:{stat.st_size}".encode("ascii"))
+    return digest.hexdigest()[:20]
+
+
 def write_site_files(proj: Path) -> dict:
+    _ensure_project_gitignore(proj)
     _ensure_viewer_files(proj)
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    try:
+        hub_refs = scan_hub_refs(proj)
+    except Exception:
+        hub_refs = []
+    try:
+        logbook_trace.refresh_all(
+            proj,
+            bucket_id=_workspace_bucket(read_metadata(proj)),
+            hub_refs=hub_refs,
+        )
+    except logbook_trace.TraceCaptureError as e:
+        print(f"Warning: could not refresh attached trace: {e}", file=sys.stderr)
     manifest = build_manifest(proj)
     manifest["agent_view_tokens"] = _estimate_tokens(read_logbook(proj, manifest))
-    manifest["revision"] = str(time.time_ns())
-    manifest["updated_at"] = _now_iso()
+    manifest["trace_view_tokens"] = _estimate_tokens(read_traces(proj, manifest))
+    manifest["workspace_view_tokens"] = _estimate_tokens(
+        read_workspace_tree(proj, manifest)
+    )
     root = logbook_root(proj)
+    previous = _read_json_file(root / "logbook.json")
+    manifest["revision"] = _site_revision(proj, manifest)
+    manifest["updated_at"] = (
+        previous.get("updated_at")
+        if previous.get("revision") == manifest["revision"]
+        else _now_iso()
+    )
     index_html = root / "index.html"
     if index_html.is_file():
         text = index_html.read_text(encoding="utf-8")
@@ -431,6 +813,47 @@ def write_site_files(proj: Path) -> dict:
     if stale_agent_view.exists():
         stale_agent_view.unlink()
     return manifest
+
+
+def attach_trace(
+    proj: Path,
+    source_path: str | Path,
+    title: str | None = None,
+    scrub: bool = True,
+) -> dict:
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    try:
+        result = logbook_trace.attach_trace(proj, source_path, title=title, scrub=scrub)
+    except logbook_trace.TraceCaptureError as e:
+        raise LogbookError(str(e)) from e
+    write_site_files(proj)
+    return result
+
+
+def remove_trace(proj: Path, session_id: str) -> None:
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    try:
+        logbook_trace.remove_trace(proj, session_id)
+        logbook_trace.refresh_all(
+            proj, bucket_id=_workspace_bucket(read_metadata(proj))
+        )
+    except logbook_trace.TraceCaptureError as e:
+        raise LogbookError(str(e)) from e
+    write_site_files(proj)
+
+
+def publication_inventory(proj: Path) -> dict:
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    generated = logbook_trace.refresh_all(
+        proj, bucket_id=_workspace_bucket(read_metadata(proj))
+    )
+    return {
+        "trace_count": len(generated.get("traces", {}).get("sessions") or []),
+        "workspace_file_count": generated.get("workspace", {}).get("file_count", 0),
+    }
 
 
 # ---- creation ----
@@ -456,10 +879,6 @@ def create_logbook(
     )
     write_metadata(
         proj, {"space_id": space_id, "emoji": emoji, "created_at": _now_iso()}
-    )
-    (proj / ".gitignore").write_text(
-        "logbook/.sync_lock\nlogbook/.sync_pending\nlogbook/.sync.log\n",
-        encoding="utf-8",
     )
     write_site_files(proj)
     return proj
@@ -488,15 +907,15 @@ def clone_logbook(space_id: str) -> Path | None:
     for fname in VIEWER_FILES:
         if (snap / fname).is_file():
             shutil.copy2(snap / fname, root / fname)
-    if (snap / "media").is_dir():
-        shutil.copytree(snap / "media", root / "media")
-    write_metadata(
-        proj, {"space_id": space_id, "autosync": True, "created_at": _now_iso()}
-    )
-    (proj / ".gitignore").write_text(
-        "logbook/.sync_lock\nlogbook/.sync_pending\nlogbook/.sync.log\n",
-        encoding="utf-8",
-    )
+    for dirname in ("media", "traces"):
+        if (snap / dirname).is_dir():
+            shutil.copytree(snap / dirname, root / dirname)
+    if (snap / "workspace.json").is_file():
+        shutil.copy2(snap / "workspace.json", root / "workspace.json")
+    write_metadata(proj, {"space_id": space_id, "created_at": _now_iso()})
+    from trackio import logbook_trace  # noqa: PLC0415
+
+    logbook_trace.adopt_published_state(proj)
     write_site_files(proj)
     return proj
 
@@ -682,7 +1101,7 @@ def sync_todos_from_stdin() -> None:
         except Exception:
             continue
     if changed:
-        trigger_autosync(proj)
+        write_site_files(proj)
 
 
 def ensure_page(
@@ -1132,7 +1551,51 @@ def set_cell_pinned(
     raise LogbookError(f"No cell with id '{cell_id}' in this logbook.")
 
 
-# ---- auto-note (called from trackio.finish / log_artifact) ----
+def remove_cell(proj: Path, cell_id: str, page: str | None = None) -> dict:
+    """Delete a cell by id from its owning page and rewrite site files.
+
+    Searches every page (or only ``page`` when given). Removes the whole cell
+    block (marker + body) from the source ``page.md`` in place.
+    """
+    root = logbook_root(proj)
+    scope = _resolve_slug(proj, page) if page else None
+    for node in _walk(build_manifest(proj)["root"]):
+        if scope and node["slug"] != scope:
+            continue
+        path = root / node["file"]
+        text = path.read_text(encoding="utf-8")
+        state = {"hit": False, "title": None, "type": None}
+
+        def _repl(m):
+            try:
+                meta = json.loads(m.group(2))
+            except json.JSONDecodeError:
+                return m.group(0)
+            if meta.get("id") != cell_id:
+                return m.group(0)
+            state["hit"] = True
+            state["title"] = meta.get("title")
+            state["type"] = meta.get("type")
+            return ""
+
+        new_text = CELL_RE.sub(_repl, text)
+        if state["hit"]:
+            path.write_text(new_text.rstrip() + "\n", encoding="utf-8")
+            write_site_files(proj)
+            return {
+                "page": node["slug"],
+                "page_title": node["title"],
+                "title": state["title"],
+                "type": state["type"],
+            }
+    raise LogbookError(f"No cell with id '{cell_id}' in this logbook.")
+
+
+# ---- auto-note helpers ----
+# NOTE: these helpers are intentionally NOT invoked automatically from
+# trackio.init() / run.log_artifact() anymore. Doing so mutated (and corrupted)
+# curated logbooks that merely happened to sit in the current directory. They
+# remain as explicit, opt-in building blocks for logbook tooling/tests.
 
 
 def _autonote_enabled() -> bool:
@@ -1283,7 +1746,8 @@ def add_code_cell(
     if code_text:
         lang = language or ""
         lines += ["", f"````{lang}".rstrip(), *code_text.split("\n"), "````", ""]
-    lines += ["", "````output", *output.split("\n"), "````", ""]
+    if output:
+        lines += ["", "````output", *output.split("\n"), "````", ""]
     _append_cell(
         proj,
         page_slug,
@@ -1411,15 +1875,105 @@ def add_path_artifact_cell(
     )
 
 
+FIGURE_IMAGE_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".avif": "image/avif",
+    ".svg": "image/svg+xml",
+}
+
+
+def is_figure_image_path(path: str | Path) -> bool:
+    """Whether ``path`` points at an image file trackio can embed in a figure."""
+    return Path(path).suffix.lower() in FIGURE_IMAGE_MIME_BY_SUFFIX
+
+
+def figure_html_from_image(path: str | Path) -> str:
+    """Build an ``<img>`` tag with a base64 data URI from a local image file.
+
+    Lets figure cells accept an image path (e.g. a matplotlib PNG) directly,
+    instead of requiring the caller to hand-encode the image into HTML.
+    """
+    path = Path(path)
+    mime = FIGURE_IMAGE_MIME_BY_SUFFIX.get(path.suffix.lower())
+    if mime is None:
+        supported = ", ".join(sorted(FIGURE_IMAGE_MIME_BY_SUFFIX))
+        raise LogbookError(
+            f"Unsupported image type '{path.suffix or path.name}'. "
+            f"Supported image extensions: {supported}."
+        )
+    if not path.is_file():
+        raise LogbookError(f"Image file not found: {path}")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    alt = html.escape(path.stem)
+    return (
+        f'<img src="data:{mime};base64,{encoded}" alt="{alt}" '
+        'style="max-width:100%;height:auto;" />'
+    )
+
+
+PLOTLY_CDN_FALLBACK_VERSION = "2.35.2"
+_PLOTLY_VERSION_RE = re.compile(r"plotly(?:\.js|\.min\.js)?\s+v?(\d+\.\d+\.\d+)", re.I)
+_SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.I | re.S)
+# The vendored Plotly bundle emitted by fig.write_html(include_plotlyjs=True) is
+# several MB; anything this large that also defines Plotly is the library block
+# (not the small per-figure Plotly.newPlot(...) call).
+_PLOTLY_INLINE_MIN_BYTES = 200_000
+
+
+def _rewrite_plotly_cdn(html: str) -> tuple[str, bool]:
+    """Replace an inlined Plotly.js library block with a CDN ``<script src>``.
+
+    Returns ``(html, rewrote)``. Leaves non-Plotly HTML and the small per-figure
+    ``Plotly.newPlot`` call untouched.
+    """
+    if "plotly" not in html.lower():
+        return html, False
+    rewrote = False
+
+    def _repl(match: re.Match) -> str:
+        nonlocal rewrote
+        content = match.group(1)
+        if len(content) < _PLOTLY_INLINE_MIN_BYTES or "Plotly" not in content:
+            return match.group(0)
+        ver = _PLOTLY_VERSION_RE.search(content[:8000]) or _PLOTLY_VERSION_RE.search(
+            content
+        )
+        version = ver.group(1) if ver else PLOTLY_CDN_FALLBACK_VERSION
+        rewrote = True
+        return (
+            '<script charset="utf-8" '
+            f'src="https://cdn.plot.ly/plotly-{version}.min.js"></script>'
+        )
+
+    return _SCRIPT_BLOCK_RE.sub(_repl, html), rewrote
+
+
 def add_figure_cell(
     proj: Path,
     page_slug: str,
     html: str | None = None,
     raw: str | None = None,
     title: str | None = None,
+    image: str | Path | None = None,
+    inline_plotlyjs: bool = False,
 ) -> None:
+    if image:
+        html = figure_html_from_image(image)
     if not html:
-        raise LogbookError("Figure cells require HTML content.")
+        raise LogbookError("Figure cells require HTML content or an image.")
+    if not inline_plotlyjs:
+        html, rewrote = _rewrite_plotly_cdn(html)
+        if rewrote:
+            print(
+                "Note: rewrote inlined Plotly.js to a CDN <script src> to keep "
+                "the page small. Pass --inline-plotlyjs to embed it instead.",
+                file=sys.stderr,
+            )
     if len(html) > 1_000_000:
         print(
             f"Note: figure HTML is {len(html) / 1_000_000:.1f} MB and is stored "
@@ -1476,11 +2030,10 @@ def auto_note_dashboard(project: str, space_id: str | None = None) -> None:
     if proj is None:
         return
     try:
-        slug = ensure_page(proj, project)
+        slug = resolve_page(proj)
         if _page_has_dashboard_cell(proj, slug, project):
             return
         add_dashboard_cell(proj, slug, project, space_id=space_id)
-        trigger_autosync(proj)
     except Exception:
         pass
 
@@ -1501,7 +2054,6 @@ def auto_note_artifact(
         add_artifact_cell(
             proj, slug, qualified_name, size=size, artifact_type=artifact_type
         )
-        trigger_autosync(proj)
     except Exception:
         pass
 
@@ -1763,7 +2315,6 @@ def run_and_log(
             )
         except Exception:
             pass
-    trigger_autosync(proj)
     return 130 if interrupted else exit_code
 
 
@@ -1775,8 +2326,7 @@ def status_text(proj: Path) -> str:
         f"    dir     {logbook_root(proj)}",
     ]
     if metadata.get("space_id"):
-        state = "auto-syncing" if metadata.get("autosync") else "not published"
-        lines.append(f"    space   {metadata['space_id']}  ({state})")
+        lines.append(f"    space   {metadata['space_id']}  (publish manually)")
 
     def render(node, depth):
         marker = "•" if depth else "▸"
@@ -1790,7 +2340,7 @@ def status_text(proj: Path) -> str:
     return "\n".join(lines)
 
 
-# ---- serve / publish / sync ----
+# ---- serve / publish ----
 
 
 def _highlight_command(text: str) -> str:
@@ -1878,8 +2428,12 @@ def _logbook_static_app(root: Path):
 
 
 def _build_preview_app(proj: Path):
+    import threading  # noqa: PLC0415
+
     from starlette.applications import Starlette  # noqa: PLC0415
-    from starlette.routing import Mount  # noqa: PLC0415
+    from starlette.concurrency import run_in_threadpool  # noqa: PLC0415
+    from starlette.responses import FileResponse, PlainTextResponse  # noqa: PLC0415
+    from starlette.routing import Mount, Route  # noqa: PLC0415
 
     from trackio.frontend_config import resolve_frontend_dir  # noqa: PLC0415
     from trackio.server import build_starlette_app_only  # noqa: PLC0415
@@ -1889,8 +2443,44 @@ def _build_preview_app(proj: Path):
         frontend_dir=str(resolve_frontend_dir(None).path),
     )
     static_app = _logbook_static_app(logbook_root(proj))
+    refresh_lock = threading.Lock()
+    refresh_state = {"last": 0.0}
+
+    def refresh_live_files() -> None:
+        with refresh_lock:
+            now = time.monotonic()
+            if now - refresh_state["last"] < 2.0:
+                return
+            write_site_files(proj)
+            refresh_state["last"] = now
+
+    async def live_manifest(_request):
+        # The frontend polls this file every 1.5 seconds. Refreshing here keeps
+        # explicitly attached active traces and their Workspace view current
+        # without a background process or any remote upload.
+        await run_in_threadpool(refresh_live_files)
+        return FileResponse(
+            _manifest_path(proj),
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    async def workspace_file(request):
+        from trackio import logbook_trace  # noqa: PLC0415
+
+        relative = request.path_params.get("path", "")
+        candidate = logbook_trace.resolve_workspace_file(proj, relative)
+        if candidate is None:
+            return PlainTextResponse("Not found", status_code=404)
+        return FileResponse(
+            candidate,
+            filename=candidate.name,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
     return Starlette(
         routes=[
+            Route("/logbook.json", live_manifest),
+            Route("/__trackio_workspace__/{path:path}", workspace_file),
             Mount("/dashboard", app=dashboard_app),
             Mount("/", app=static_app),
         ]
@@ -1918,7 +2508,7 @@ def serve(
     for candidate_port in candidates:
         try:
             _name, actual_port, _url, server = start_server(
-                app, server_name="0.0.0.0", server_port=candidate_port
+                app, server_name="127.0.0.1", server_port=candidate_port
             )
             break
         except OSError as e:
@@ -1949,7 +2539,16 @@ def serve(
 def _readme(manifest: dict) -> str:
     emoji = manifest.get("emoji", "🎯")
     title = json.dumps(manifest["title"], ensure_ascii=False)
-    extra_tags = "".join(f" - {tag}\n" for tag in manifest.get("tags") or [])
+    tags = list(manifest.get("tags") or [])
+    # Surface the logbook on the paper's Hugging Face page (hf.co/papers/<id>):
+    # HF links any repo whose tags include `arxiv:<id>`. Derive it from the
+    # logbook's recorded arXiv id so published logbooks appear alongside the paper.
+    arxiv_id = (manifest.get("paper") or {}).get("arxiv_id")
+    if arxiv_id:
+        arxiv_tag = f"arxiv:{str(arxiv_id).strip()}"
+        if arxiv_tag not in tags:
+            tags.append(arxiv_tag)
+    extra_tags = "".join(f" - {tag}\n" for tag in tags)
     return (
         f"---\ntitle: {title}\nemoji: {emoji}\ncolorFrom: yellow\ncolorTo: red\n"
         "sdk: static\npinned: false\ntags:\n - trackio\n - trackio-logbook\n"
@@ -1959,11 +2558,102 @@ def _readme(manifest: dict) -> str:
     )
 
 
-def _push(proj: Path, hf_token: str | None = None, private: bool = False) -> str:
+def _reference_only_workspace_json(previous_text: str | None) -> str:
+    """A workspace.json that carries only the (already public) hub_refs.
+
+    File names, sizes and per-file inventory are dropped so a private artifacts
+    bucket leaks nothing into the static Space.
+    """
+    hub_refs = []
+    if previous_text:
+        try:
+            hub_refs = (json.loads(previous_text) or {}).get("hub_refs") or []
+        except (ValueError, TypeError):
+            hub_refs = []
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "file_count": 0,
+            "total_size": 0,
+            "files": [],
+            "hub_refs": hub_refs,
+            "reference_only": True,
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
+
+
+def _push(
+    proj: Path,
+    hf_token: str | None = None,
+    private: bool = False,
+) -> str:
     import huggingface_hub  # noqa: PLC0415
+
+    from trackio import logbook_trace  # noqa: PLC0415
 
     metadata = read_metadata(proj)
     space_id = metadata["space_id"]
+    private = bool(metadata.get("private", private))
+    repos_public = bool(metadata.get("repos_public", False))
+    # --public restores the legacy behavior of embedding trace/workspace content
+    # inline in the static Space. Otherwise the Space stores references only.
+    embed_content = bool(metadata.get("embed_content", repos_public))
+    trace_dataset = metadata.get("trace_dataset")
+    artifacts_bucket = metadata.get("workspace_bucket") or metadata.get(
+        "artifacts_bucket"
+    )
+    generated = logbook_trace.refresh_all(proj, bucket_id=artifacts_bucket)
+    trace_count = len(generated.get("traces", {}).get("sessions") or [])
+    workspace_file_count = generated.get("workspace", {}).get("file_count", 0)
+
+    visibility = "public" if repos_public else "private"
+    trace_ref = None
+    if trace_count and trace_dataset:
+        print(f"  · pushing agent traces → {visibility} dataset {trace_dataset}")
+        try:
+            logbook_trace.sync_trace_dataset(
+                proj,
+                trace_dataset,
+                private=not repos_public,
+                token=hf_token,
+            )
+        except logbook_trace.TraceCaptureError as e:
+            raise LogbookError(str(e)) from e
+        trace_ref = {
+            "repo_id": trace_dataset,
+            "repo_type": "dataset",
+            "repo_url": f"https://huggingface.co/datasets/{trace_dataset}",
+            "private": not repos_public,
+            "viewer_path": "trackio/index.json",
+        }
+
+    workspace_ref = None
+    if workspace_file_count and artifacts_bucket:
+        print(f"  · pushing Workspace files → {visibility} bucket {artifacts_bucket}")
+        try:
+            logbook_trace.sync_workspace_bucket(
+                proj,
+                artifacts_bucket,
+                private=not repos_public,
+                token=hf_token,
+            )
+        except logbook_trace.TraceCaptureError as e:
+            raise LogbookError(str(e)) from e
+    has_bucket_content = bool(
+        workspace_file_count
+        or metadata.get("local_artifacts")
+        or metadata.get("local_path_artifacts")
+    )
+    if artifacts_bucket and has_bucket_content:
+        workspace_ref = {
+            "repo_id": artifacts_bucket,
+            "repo_type": "bucket",
+            "repo_url": f"https://huggingface.co/buckets/{artifacts_bucket}",
+            "private": not repos_public,
+        }
+
     manifest = write_site_files(proj)
     (logbook_root(proj) / "README.md").write_text(_readme(manifest), encoding="utf-8")
     api = huggingface_hub.HfApi(token=hf_token)
@@ -1975,13 +2665,53 @@ def _push(proj: Path, hf_token: str | None = None, private: bool = False) -> str
         private=private,
         token=hf_token,
     )
-    api.upload_folder(
-        repo_id=space_id,
-        repo_type="space",
-        folder_path=str(logbook_root(proj)),
-        commit_message=f"Update logbook: {manifest['title']}",
-        ignore_patterns=[".sync_lock", ".sync_pending", ".sync.log"],
-    )
+    with tempfile.TemporaryDirectory(prefix="trackio-logbook-publish-") as tmp:
+        upload_root = Path(tmp) / "logbook"
+        shutil.copytree(logbook_root(proj), upload_root)
+        published_manifest = json.loads(json.dumps(manifest))
+        if trace_ref:
+            published_manifest["traces_ref"] = trace_ref
+            published_manifest["trace_dataset"] = trace_ref["repo_url"]
+        if workspace_ref:
+            published_manifest["workspace_ref"] = workspace_ref
+            published_manifest["workspace_bucket"] = workspace_ref["repo_url"]
+
+        if not embed_content:
+            # Reference-only static Space: never embed trace event bodies or
+            # workspace file contents. For a private repo we also strip file
+            # names, sizes and trace titles — the manifest carries only the
+            # repo reference + a `private: true` flag.
+            print(
+                "  · static Space stores references only "
+                f"({visibility} trace/artifacts repos; no content embedded)"
+            )
+            published_manifest["traces"] = []
+            shutil.rmtree(upload_root / "traces", ignore_errors=True)
+            ws_path = upload_root / "workspace.json"
+            previous_text = (
+                ws_path.read_text(encoding="utf-8") if ws_path.is_file() else None
+            )
+            published_manifest["workspace"] = {
+                "file": "workspace.json",
+                "file_count": 0,
+                "total_size": 0,
+                "bucket_id": None,
+            }
+            ws_path.write_text(
+                _reference_only_workspace_json(previous_text), encoding="utf-8"
+            )
+        (upload_root / "logbook.json").write_text(
+            json.dumps(published_manifest, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        api.upload_folder(
+            repo_id=space_id,
+            repo_type="space",
+            folder_path=str(upload_root),
+            commit_message=f"Update logbook: {manifest['title']}",
+            ignore_patterns=[".sync_lock", ".sync_pending", ".sync.log"],
+            delete_patterns=["traces/**", "workspace.json"],
+        )
     return f"https://huggingface.co/spaces/{space_id}"
 
 
@@ -1992,7 +2722,9 @@ def _rewrite_in_pages(proj: Path, old: str, new: str) -> None:
             md.write_text(text.replace(old, new), encoding="utf-8")
 
 
-def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
+def _promote_local_deps(
+    proj: Path, ns: str, private: bool, repos_public: bool = False
+) -> None:
     metadata = read_metadata(proj)
     dashboards = metadata.get("local_dashboards", {})
     for project, published in list(dashboards.items()):
@@ -2016,14 +2748,16 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
 
     arts = metadata.get("local_artifacts", [])
     path_arts = metadata.get("local_path_artifacts", [])
+    bucket = metadata.get("artifacts_bucket")
     if arts or path_arts:
         owner, _, name = metadata["space_id"].partition("/")
-        bucket = metadata.get("artifacts_bucket") or f"{owner}/{name}-artifacts"
+        bucket = bucket or f"{owner}/{name}-artifacts"
+        metadata["artifacts_bucket"] = bucket
         try:
             from trackio import bucket_storage  # noqa: PLC0415
 
-            bucket_storage.create_bucket_if_not_exists(bucket, private=private)
-            metadata["artifacts_bucket"] = bucket
+            # Artifacts bucket is private by default; --public opts it out.
+            bucket_storage.create_bucket_if_not_exists(bucket, private=not repos_public)
 
             for project in sorted({a.split("/")[0] for a in arts if "/" in a}):
                 print(f"  · pushing artifacts for '{project}' → bucket {bucket}")
@@ -2037,7 +2771,8 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
 
             if path_arts:
                 print(
-                    f"  · pushing {len(path_arts)} local file artifact(s) → bucket {bucket}"
+                    f"  · pushing {len(path_arts)} local file artifact(s) → "
+                    f"bucket {bucket}"
                 )
                 uploaded = bucket_storage.upload_logbook_path_artifacts_to_bucket(
                     bucket, path_arts
@@ -2052,6 +2787,7 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
                 missing = [e["path"] for e in path_arts if e["path"] not in uploaded]
                 for rel in missing:
                     print(f"  · skipped local file artifact (missing on disk): {rel}")
+
         except Exception as e:
             print(f"  · could not push artifacts to bucket: {e}")
 
@@ -2059,86 +2795,59 @@ def _promote_local_deps(proj: Path, ns: str, private: bool) -> None:
 
 
 def publish(
-    space_id: str | None = None, hf_token: str | None = None, private: bool = False
+    space_id: str | None = None,
+    hf_token: str | None = None,
+    private: bool = False,
+    public: bool = False,
+    # Legacy kwargs, retained for backward compatibility. When either is set to
+    # "public" it is treated as an explicit opt-in to public repos.
+    trace_publication: str | None = None,
+    workspace_publication: str | None = None,
 ) -> str:
     proj = require_project_dir()
     metadata = read_metadata(proj)
+    metadata_before_publish = copy.deepcopy(metadata)
     space_id = space_id or metadata.get("space_id")
     if not space_id:
         raise LogbookError(
             "No Space id. Provide one: trackio logbook publish <username/space>"
         )
-    prior = {key: metadata.get(key) for key in ("space_id", "autosync", "private")}
+    owner, _, name = space_id.partition("/")
+
+    # New model: trace dataset + artifacts bucket are PRIVATE by default and the
+    # static Space stores references only. `--public` opts BOTH repos out to
+    # public AND restores the legacy inline-embed behavior.
+    repos_public = (
+        bool(public)
+        or trace_publication == "public"
+        or (workspace_publication == "public")
+    )
+
     metadata["space_id"] = space_id
-    metadata["autosync"] = True
+    metadata.pop("autosync", None)
     metadata["private"] = private
+    metadata["repos_public"] = repos_public
+    metadata["embed_content"] = repos_public
+    metadata["trace_dataset"] = f"{owner}/{name}-traces"
+    metadata["artifacts_bucket"] = (
+        metadata.get("artifacts_bucket") or f"{owner}/{name}-artifacts"
+    )
+    # Workspace files now share the single artifacts bucket.
+    metadata["workspace_bucket"] = metadata["artifacts_bucket"]
+    # Reflect the effective policy for older manifest readers / the CLI summary.
+    metadata["trace_publication"] = "public" if repos_public else "private"
+    metadata["workspace_publication"] = "public" if repos_public else "private"
     write_metadata(proj, metadata)
     try:
-        _promote_local_deps(proj, space_id.split("/")[0], private=private)
-        return _push(proj, hf_token=hf_token, private=private)
-    except Exception:
-        metadata = read_metadata(proj)
-        metadata.update(prior)
-        write_metadata(proj, metadata)
-        raise
-
-
-def is_autosync(proj: Path) -> bool:
-    metadata = read_metadata(proj)
-    return bool(metadata.get("autosync") and metadata.get("space_id"))
-
-
-def trigger_autosync(proj: Path) -> None:
-    import subprocess  # noqa: PLC0415
-    import sys  # noqa: PLC0415
-
-    if not is_autosync(proj):
-        return
-    (logbook_root(proj) / ".sync_pending").write_text("1", encoding="utf-8")
-    try:
-        with open(logbook_root(proj) / ".sync.log", "a", encoding="utf-8") as log:
-            subprocess.Popen(
-                [sys.executable, "-m", "trackio.cli", "logbook", "_sync"],
-                cwd=str(proj.parent),
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-    except Exception:
-        pass
-
-
-def sync_worker(debounce: float = 2.5) -> None:
-    import time  # noqa: PLC0415
-
-    try:
-        import fcntl  # noqa: PLC0415
-    except ImportError:
-        fcntl = None
-
-    proj = find_project_dir()
-    if proj is None:
-        return
-    root = logbook_root(proj)
-    lock = open(root / ".sync_lock", "w")
-    try:
-        if fcntl is not None:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                return
-        pending = root / ".sync_pending"
-        while pending.exists():
-            pending.unlink()
-            time.sleep(debounce)
-            try:
-                _push(proj)
-            except Exception:
-                pass
-    finally:
-        if fcntl is not None:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_UN)
-            except OSError:
-                pass
-        lock.close()
+        _promote_local_deps(proj, owner, private=private, repos_public=repos_public)
+        url = _push(proj, hf_token=hf_token, private=private)
+    except Exception as e:
+        write_metadata(proj, metadata_before_publish)
+        raise LogbookError(
+            "Publish failed. One or more remote uploads may already have "
+            f"succeeded; inspect Space {space_id}, Dataset "
+            f"{metadata.get('trace_dataset')} and Bucket "
+            f"{metadata.get('artifacts_bucket')} before retrying. "
+            f"Original error: {e}"
+        ) from e
+    return url

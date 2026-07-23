@@ -1,5 +1,36 @@
 # trackio
 
+## 0.32.2
+
+### Features
+
+- [#641](https://github.com/gradio-app/trackio/pull/641) [`2d1c01a`](https://github.com/gradio-app/trackio/commit/2d1c01a5ce0307ec5c81660c512bf6f25dd3120a) - Improve logbook layout and public repository views.  Thanks @abidlabs!
+- [#643](https://github.com/gradio-app/trackio/pull/643) [`e8292c5`](https://github.com/gradio-app/trackio/commit/e8292c5c26baa0e7e806144fa1bbf5ecfb492f3d) - docs: document the artifact tables in the storage schema page.  Thanks @adrien-grl!
+
+## 0.32.1
+
+### Features
+
+- [#639](https://github.com/gradio-app/trackio/pull/639) [`73971e6`](https://github.com/gradio-app/trackio/commit/73971e66a4f1daf5c42341727349e6f82ab4e887) - Fix logbook code overflow, CLI command truncation, Hub link contrast, resource ID validation, and live visibility detection for referenced trace datasets and Buckets.  Thanks @abidlabs!
+
+## 0.32.0
+
+### Features
+
+- [#635](https://github.com/gradio-app/trackio/pull/635) [`b4587b0`](https://github.com/gradio-app/trackio/commit/b4587b0ebce18756a0f38e3721ed2880a7307137) - Add Code & Markdown, Traces, and Workspace logbook views with live local refresh, guided empty states, and privacy-aware manual publishing to Agent Traces Datasets and HF Buckets.  Thanks @NielsRogge!
+
+## 0.31.5
+
+### Features
+
+- [#630](https://github.com/gradio-app/trackio/pull/630) [`bed508c`](https://github.com/gradio-app/trackio/commit/bed508c04c487686dea3dea70c67b058dd895f96) - Fix automatic dashboard cells to use the active logbook page instead of creating a page named after the Trackio project.  Thanks @abidlabs!
+
+## 0.31.4
+
+### Features
+
+- [#628](https://github.com/gradio-app/trackio/pull/628) [`3eeaa99`](https://github.com/gradio-app/trackio/commit/3eeaa99bd05bef69053b9a1b5c7af3abf56c360c) - let `logbook cell figure` embed image files directly.  Thanks @abidlabs!/n  `trackio logbook cell figure` now accepts an image path via a new `--image`/n  flag, and `--html <file>` transparently embeds the file when it points at an/n  image. Previously the only way to add a PNG/JPG figure was to hand-encode it/n  into an `<img>` data-URI, and passing an image path to `--html` crashed with a/n  `UnicodeDecodeError` (the binary file was read as UTF-8 text). Images are/n  embedded as responsive base64 data URIs. The Python API `add_figure_cell` gains/n  a matching `image=` parameter.
+
 ## 0.31.3
 
 ### Features
