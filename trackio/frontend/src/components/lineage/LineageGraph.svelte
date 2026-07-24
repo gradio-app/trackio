@@ -239,7 +239,8 @@
     --lineage-artifact: #3b82f6;
     --lineage-selected: #8b5cf6;
     position: relative;
-    height: 400px;
+    height: 100%;
+    min-height: 400px;
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-md, 6px);
     background: var(--background-fill-primary, #ffffff);

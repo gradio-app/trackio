@@ -19,6 +19,7 @@
   } = $props();
 
   let record = $state(null);
+  let activeTab = $state("details");
   let consumers = $state([]);
   let loading = $state(false);
   let error = $state(false);
@@ -220,7 +221,10 @@
   {/if}
 {/snippet}
 
-<div class={variant === "panel" ? "panel" : "version-detail"}>
+<div
+  class={variant === "panel" ? "panel" : "version-detail"}
+  class:fill={variant === "panel" && activeTab === "lineage"}
+>
   {#if loading}
     <div class="status">Loading…</div>
   {:else if error || !record}
@@ -262,7 +266,35 @@
       </div>
     </header>
 
-    <Accordion label="Overview">
+    <div class="detail-tabs" role="tablist">
+      <button
+        role="tab"
+        class="tab-btn"
+        class:active={activeTab === "details"}
+        aria-selected={activeTab === "details"}
+        onclick={() => (activeTab = "details")}>Details</button
+      >
+      {#if record.version_id != null}
+        <button
+          role="tab"
+          class="tab-btn"
+          class:active={activeTab === "lineage"}
+          aria-selected={activeTab === "lineage"}
+          onclick={() => (activeTab = "lineage")}>Lineage</button
+        >
+      {/if}
+    </div>
+
+    {#if activeTab === "lineage" && record.version_id != null}
+      <div class="lineage-tab">
+        <LineageSection
+          {project}
+          versionId={record.version_id}
+          {onOpenVersion}
+        />
+      </div>
+    {:else}
+      <Accordion label="Overview">
       <div class="detail-grid">
         {#if record.description}
           <span class="detail-key">Description</span>
@@ -287,27 +319,18 @@
       </div>
     </Accordion>
 
-    {#if record.version_id != null}
-      <Accordion label="Lineage">
-        <LineageSection
-          {project}
-          versionId={record.version_id}
-          {onOpenVersion}
-        />
+      {#if record.metadata && Object.keys(record.metadata).length}
+        <Accordion label="Metadata ({Object.keys(record.metadata).length})">
+          <div class="meta-grid">
+            {@render metaRows(Object.entries(record.metadata), 0, [])}
+          </div>
+        </Accordion>
+      {/if}
+
+      <Accordion label="Files ({(record.manifest || []).length})">
+        {@render fileTable()}
       </Accordion>
     {/if}
-
-    {#if record.metadata && Object.keys(record.metadata).length}
-      <Accordion label="Metadata ({Object.keys(record.metadata).length})">
-        <div class="meta-grid">
-          {@render metaRows(Object.entries(record.metadata), 0, [])}
-        </div>
-      </Accordion>
-    {/if}
-
-    <Accordion label="Files ({(record.manifest || []).length})">
-      {@render fileTable()}
-    </Accordion>
   {:else}
     <div class="detail-grid">
       {@render lineageRows()}
@@ -338,10 +361,45 @@
   .panel {
     padding: 4px 4px 24px;
   }
+  .panel.fill {
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .lineage-tab {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .panel-header {
+    padding-bottom: 6px;
+  }
+  .detail-tabs {
+    display: flex;
+    gap: 18px;
     border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
-    padding-bottom: 14px;
     margin-bottom: 16px;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    padding: 6px 2px 8px;
+    margin-bottom: -1px;
+    font-size: var(--text-sm, 13px);
+    font-weight: 500;
+    color: var(--body-text-color-subdued, #6b7280);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+  }
+  .tab-btn:hover {
+    color: var(--body-text-color, #1f2937);
+  }
+  .tab-btn.active {
+    color: var(--body-text-color, #1f2937);
+    border-bottom-color: var(--body-text-color, #1f2937);
   }
   .title-row {
     display: flex;

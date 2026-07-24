@@ -102,22 +102,28 @@
         </span>
       {/if}
     </div>
-    <LineageGraph
-      {layout}
-      {focusId}
-      {selectedId}
-      {smooth}
-      onSelect={select}
-    />
-    {#if selectedNode}
-      <LineagePreview
-        node={selectedNode}
-        {focusId}
-        {onOpenVersion}
-        onExtract={extract}
-        onClose={() => (selectedId = null)}
-      />
-    {/if}
+    <div class="graph-row">
+      <div class="graph-cell">
+        <LineageGraph
+          {layout}
+          {focusId}
+          {selectedId}
+          {smooth}
+          onSelect={select}
+        />
+      </div>
+      {#if selectedNode}
+        <div class="side-panel">
+          <LineagePreview
+            node={selectedNode}
+            {focusId}
+            {onOpenVersion}
+            onExtract={extract}
+            onClose={() => (selectedId = null)}
+          />
+        </div>
+      {/if}
+    </div>
     <div class="legend">
       <span class="legend-item"><span class="swatch artifact"></span>Artifact</span>
       <span class="legend-item"><span class="swatch run"></span>Run</span>
@@ -134,9 +140,33 @@
     padding: 6px 0;
   }
   .lineage {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .graph-row {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .graph-cell {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  .side-panel {
+    width: 280px;
+    flex-shrink: 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .side-panel > :global(*) {
+    min-height: 100%;
+    box-sizing: border-box;
   }
   .toolbar {
     display: flex;
