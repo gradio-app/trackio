@@ -235,6 +235,7 @@
   .graph-container {
     --lineage-run: #10b981;
     --lineage-artifact: #3b82f6;
+    --lineage-selected: #8b5cf6;
     position: relative;
     height: 400px;
     border: 1px solid var(--border-color-primary, #e5e7eb);
@@ -290,8 +291,16 @@
   }
   .node.selected .node-box,
   .node:focus-visible .node-box {
-    stroke: var(--color-accent, #f97316);
-    stroke-width: 2;
+    stroke: var(--lineage-selected);
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.65));
+  }
+  .node.selected .node-box {
+    fill: color-mix(
+      in srgb,
+      var(--lineage-selected) 10%,
+      var(--background-fill-primary, #ffffff)
+    );
   }
   .base-badge rect {
     fill: var(--background-fill-secondary, #f3f4f6);
