@@ -1,5 +1,16 @@
 # trackio
 
+## 0.33.0
+
+### Features
+
+- [#647](https://github.com/gradio-app/trackio/pull/647) [`1d25383`](https://github.com/gradio-app/trackio/commit/1d253830e302d4bcd67f3aae5458e6c70c5f5144) - Increase smoothing upper bound to 100.  Thanks @abidlabs!
+- [#648](https://github.com/gradio-app/trackio/pull/648) [`6a1063f`](https://github.com/gradio-app/trackio/commit/6a1063f7c834f850390866b80608ca17c8563199) - Deprecate persisting data to HF Datasets in favor of Buckets.  Thanks @abidlabs!
+
+### Fixes
+
+- [#649](https://github.com/gradio-app/trackio/pull/649) [`8506189`](https://github.com/gradio-app/trackio/commit/8506189b69f6c0361e6420ef545abaad4a773cb3) - render logged histograms in the dashboard's Metrics tab.  Thanks @abidlabs!
+
 ## 0.32.2
 
 ### Features
