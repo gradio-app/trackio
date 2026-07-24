@@ -3,6 +3,27 @@ import * as dagre from "@dagrejs/dagre";
 export const NODE_W = 140;
 export const NODE_H = 44;
 export const SMOOTH_EDGE_LIMIT = 300;
+export const EDGE_NODE_GAP = 4;
+
+function shiftPoint(from, toward, gap) {
+  const dx = toward.x - from.x;
+  const dy = toward.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (!len || len <= gap) return from;
+  return { x: from.x + (dx / len) * gap, y: from.y + (dy / len) * gap };
+}
+
+function trimEdgePoints(points, gap = EDGE_NODE_GAP) {
+  if (!points || points.length < 2) return points ?? [];
+  const out = points.slice();
+  out[0] = shiftPoint(out[0], out[1], gap);
+  out[out.length - 1] = shiftPoint(
+    out[out.length - 1],
+    out[out.length - 2],
+    gap,
+  );
+  return out;
+}
 
 export function mergeBidirectionalEdges(edges) {
   const byPair = new Map();
@@ -64,7 +85,7 @@ export function layoutLineage(nodes, edges) {
       edge.target,
       `${edge.source}|${edge.target}|${edge.direction}`,
     );
-    return { ...edge, points: label?.points ?? [] };
+    return { ...edge, points: trimEdgePoints(label?.points ?? []) };
   });
   const size = graph.graph();
   return {
