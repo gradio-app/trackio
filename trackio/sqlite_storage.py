@@ -44,6 +44,7 @@ from trackio.utils import (
     on_spaces,
     project_media_dir,
     serialize_values,
+    warn_dataset_persistence_deprecated,
 )
 
 DB_EXT = ".db"
@@ -1477,6 +1478,7 @@ class SQLiteStorage:
             dataset_id = os.environ.get("TRACKIO_DATASET_ID")
             space_repo_name = os.environ.get("SPACE_REPO_NAME")
             if dataset_id is not None and space_repo_name is not None:
+                warn_dataset_persistence_deprecated()
                 scheduler = CommitScheduler(
                     repo_id=dataset_id,
                     repo_type="dataset",
@@ -2188,7 +2190,9 @@ class SQLiteStorage:
                 "SELECT 1 FROM metrics "
                 "WHERE CAST(metrics AS TEXT) GLOB '*:[0-9]*' "
                 "OR CAST(metrics AS TEXT) GLOB '*:-[0-9]*' "
+                "OR CAST(metrics AS TEXT) GLOB ? "
                 "LIMIT 1",
+                ('*"_type":"trackio.histogram"*',),
             )
             flags["media"] = _exists(
                 conn,
@@ -2242,7 +2246,11 @@ class SQLiteStorage:
                 metrics = {
                     key: value
                     for key, value in metrics.items()
-                    if isinstance(value, int | float) and not isinstance(value, bool)
+                    if (isinstance(value, int | float) and not isinstance(value, bool))
+                    or (
+                        isinstance(value, dict)
+                        and value.get("_type") == "trackio.histogram"
+                    )
                 }
             else:
                 metrics = deserialize_values(metrics)
@@ -2746,6 +2754,7 @@ class SQLiteStorage:
         dataset_id = os.environ.get("TRACKIO_DATASET_ID")
         space_repo_name = os.environ.get("SPACE_REPO_NAME")
         if dataset_id is not None and space_repo_name is not None:
+            warn_dataset_persistence_deprecated()
             hfapi = hf.HfApi()
             if not TRACKIO_DIR.exists():
                 TRACKIO_DIR.mkdir(parents=True, exist_ok=True)
