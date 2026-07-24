@@ -109,9 +109,6 @@
             ><span class="swatch artifact"></span>Artifact</span
           >
           <span class="legend-item"><span class="swatch run"></span>Run</span>
-          <span class="legend-item"
-            ><span class="swatch cluster"></span>Cluster</span
-          >
           <span class="hint"
             >Drag to pan · Ctrl/Cmd + scroll to zoom · Click a node for details</span
           >
@@ -213,10 +210,6 @@
   }
   .swatch.run {
     border-color: #10b981;
-  }
-  .swatch.cluster {
-    border-color: var(--body-text-color-subdued, #6b7280);
-    border-style: dashed;
   }
   .hint {
     margin-left: auto;

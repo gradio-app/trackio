@@ -208,12 +208,13 @@
     color: var(--body-text-color, #1f2937);
   }
   .ver-badge {
-    font-size: var(--text-xs, 11px);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--text-sm, 12px);
     font-weight: 600;
-    padding: 1px 7px;
-    border-radius: 9px;
-    color: var(--color-accent, #f97316);
-    border: 1px solid var(--color-accent, #f97316);
+    color: var(--body-text-color-subdued, #6b7280);
+    background: var(--background-fill-primary, #ffffff);
+    border-radius: var(--radius-sm, 4px);
+    padding: 2px 7px;
   }
   .alias-pill {
     font-size: var(--text-xs, 11px);
@@ -344,8 +345,6 @@
     overflow-wrap: anywhere;
   }
   .type-chip {
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     font-weight: 600;
   }
   .run-link {

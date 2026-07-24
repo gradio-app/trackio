@@ -306,13 +306,13 @@
     );
   }
   .base-badge rect {
-    fill: var(--background-fill-secondary, #f3f4f6);
-    stroke: var(--border-color-primary, #e5e7eb);
+    fill: transparent;
+    stroke: var(--color-accent, #f97316);
     stroke-width: 1;
   }
   .base-badge text {
     font-size: 9px;
-    fill: var(--body-text-color-subdued, #6b7280);
+    fill: var(--color-accent, #f97316);
   }
   .node-chip {
     font-size: 9px;
