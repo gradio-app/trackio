@@ -23,6 +23,7 @@
     availableSystemDevices = [],
     selectedSystemDevices = $bindable([]),
     smoothing = $bindable(10),
+    panelsPerRow = $bindable(4),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
     logScaleY = $bindable(false),
@@ -505,6 +506,17 @@
               step={1}
             />
           </div>
+
+          {#if currentPage === "metrics"}
+            <div class="section">
+              <Dropdown
+                label="Plots per row"
+                choices={[1, 2, 3, 4, 5, 6]}
+                bind:value={panelsPerRow}
+                filterable={false}
+              />
+            </div>
+          {/if}
 
           <div class="section">
             <Dropdown

@@ -143,6 +143,13 @@
     };
   }
 
+  function syncViewSize() {
+    if (!view || !container) return;
+    view.width(container.clientWidth);
+    if (fullscreen) view.height(container.clientHeight);
+    view.resize().run();
+  }
+
   async function render() {
     await tick();
     if (!container || !data || data.length === 0 || !y) return;
@@ -162,9 +169,7 @@
         renderer: "canvas",
       });
       view = result.view;
-      requestAnimationFrame(() => {
-        result.view.resize();
-      });
+      requestAnimationFrame(syncViewSize);
     } catch (e) {
       console.error("Vega render error:", e);
     }
@@ -246,7 +251,7 @@
       await requestFullscreenEl(fullscreenHost);
       await tick();
       relocateTooltipElement(fullscreenHost);
-      view?.resize();
+      syncViewSize();
     } catch {
       document.body.style.overflow = "";
       fullscreen = false;
@@ -283,7 +288,7 @@
       relocateTooltipElement(document.body);
     }
     if (active && fullscreen) {
-      tick().then(() => view?.resize());
+      tick().then(syncViewSize);
     }
   }
 
@@ -306,9 +311,7 @@
   $effect(() => {
     if (!container) return;
     const ro = new ResizeObserver(() => {
-      queueMicrotask(() => {
-        view?.resize();
-      });
+      queueMicrotask(syncViewSize);
     });
     ro.observe(container);
     return () => ro.disconnect();
