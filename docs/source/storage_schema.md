@@ -187,6 +187,59 @@ Indexes and constraints:
 - `idx_run_artifact_links_version` on `(artifact_version_id)`
 - `idx_run_artifact_links_unique` unique index on `(run_id, artifact_version_id, direction)`
 
+### Registry tables
+
+[Registry](./registry) databases — projects named `registry-<name>`, created by `Api.create_registry` — contain the standard tables above plus the four tables below, defined in `trackio/registry_storage.py` by `RegistryStorage.init_registry_db()`. Collection version numbers come from `collections.next_version`, which only moves forward: a collection version is never reused, even after an unlink. Every registry mutation also appends a row to `registry_events` in the same transaction.
+
+**`collections`**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `INTEGER` | Primary key |
+| `name` | `TEXT` | Collection name, `UNIQUE` |
+| `type` | `TEXT` | The single artifact type the collection accepts |
+| `description` | `TEXT` | Optional description |
+| `next_version` | `INTEGER` | Monotonic counter for collection version numbers |
+| `created_at` | `TEXT` | ISO timestamp |
+
+**`collection_links`**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `INTEGER` | Primary key |
+| `collection_id` | `INTEGER` | References `collections(id)` |
+| `collection_version` | `INTEGER` | Version number within the collection (`v0`, `v1`, ...) |
+| `source_project` | `TEXT` | Project the linked artifact version was logged in |
+| `source_artifact` | `TEXT` | Name of the linked artifact |
+| `source_version` | `INTEGER` | Version of the linked artifact |
+| `created_at` | `TEXT` | ISO timestamp |
+
+Constraints:
+
+- `UNIQUE(collection_id, source_project, source_artifact, source_version)` — a source version is linked at most once per collection
+- `UNIQUE(collection_id, collection_version)`
+
+**`collection_aliases`**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `collection_id` | `INTEGER` | References `collections(id)` |
+| `alias` | `TEXT` | Alias name |
+| `link_id` | `INTEGER` | References `collection_links(id)` |
+
+Constraints:
+
+- `PRIMARY KEY (collection_id, alias)` — one version per alias per collection
+
+**`registry_events`**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `INTEGER` | Primary key |
+| `ts` | `TEXT` | ISO timestamp |
+| `kind` | `TEXT` | `create`, `link`, `promote`, `update`, or `unlink` |
+| `payload` | `TEXT` | JSON blob describing the mutation |
+
 ## How Metric Payloads Are Stored
 
 - User metrics are stored as JSON text in `metrics.metrics`.

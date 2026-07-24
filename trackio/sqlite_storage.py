@@ -36,6 +36,7 @@ from trackio.typehints import (
     Sha256Digest,
 )
 from trackio.utils import (
+    REGISTRY_PROJECT_PREFIX,
     TRACKIO_DIR,
     _emit_nonfatal_warning,
     canonical_project_name,
@@ -438,10 +439,20 @@ class SQLiteStorage:
     @staticmethod
     def validate_project_name(project: str) -> None:
         """Reject project names whose canonical on-disk identity would collide
-        with the parquet sidecar files trackio writes for another project's
-        metrics/artifact tables (e.g. a project ``model_artifacts`` shares the
-        file ``model_artifacts.parquet`` with project ``model``'s artifacts
-        sidecar)."""
+        with another project's files: the ``registry-`` prefix is reserved for
+        registry databases (see `Api.create_registry`), and a name ending
+        with a reserved suffix would share a parquet sidecar file with another
+        project's metrics/artifact tables (e.g. a project ``model_artifacts``
+        shares the file ``model_artifacts.parquet`` with project ``model``'s
+        artifacts sidecar)."""
+        canonical = canonical_project_name(project)
+        if canonical.startswith(REGISTRY_PROJECT_PREFIX):
+            raise ValueError(
+                f"Project name {project!r} is not allowed: names beginning "
+                f"with {REGISTRY_PROJECT_PREFIX!r} are reserved for trackio "
+                "registries (see trackio.Api().create_registry and "
+                "Run.link_artifact)."
+            )
         reserved = tuple(
             f"_{table}"
             for table in (
@@ -451,7 +462,6 @@ class SQLiteStorage:
                 *SQLiteStorage._ARTIFACT_PARQUET_TABLES,
             )
         )
-        canonical = canonical_project_name(project)
         for suffix in reserved:
             if len(canonical) > len(suffix) and canonical.endswith(suffix):
                 sibling = canonical[: -len(suffix)]

@@ -6,6 +6,11 @@ import httpx
 from huggingface_hub.utils import get_token
 
 from trackio import cas, references, utils
+from trackio.registry_storage import (
+    RegistryStorage,
+    parse_collection_target,
+    registry_project_name,
+)
 from trackio.remote_client import _merge_client_headers, _resolve_src_url
 from trackio.typehints import ETag, Manifest, ManifestEntry, Sha256Digest, URIStr
 
@@ -153,6 +158,10 @@ class Artifact:
         self._manifest_digest: Sha256Digest | None = None
         self._project: str | None = None
         self._remote_source: dict | None = None
+        self._registry: str | None = None
+        self._source_project: str | None = None
+        self._source_artifact: str | None = None
+        self._source_version: int | None = None
 
     @property
     def name(self) -> str:
@@ -234,6 +243,44 @@ class Artifact:
     def project(self) -> str | None:
         """Project the artifact belongs to, or None until logged or fetched."""
         return self._project
+
+    @property
+    def is_link(self) -> bool:
+        """True if this artifact is a registry link, i.e. the pointer
+        returned by `Run.link_artifact`, rather than a source artifact
+        version."""
+        return self._registry is not None
+
+    @property
+    def source_name(self) -> str | None:
+        """Name of the source artifact version this artifact's content comes
+        from. Equal to `name` unless this artifact is a registry link."""
+        return self._source_artifact if self.is_link else self._name
+
+    @property
+    def source_version(self) -> str | None:
+        """Version string (`"v<N>"`) of the source artifact version. Equal to
+        `version` unless this artifact is a registry link."""
+        if self.is_link:
+            return f"v{self._source_version}"
+        return self.version
+
+    @property
+    def source_project(self) -> str | None:
+        """Project the source artifact version was logged in. Equal to
+        `project` unless this artifact is a registry link."""
+        return self._source_project if self.is_link else self._project
+
+    @property
+    def source_qualified_name(self) -> str:
+        """`"<project>/<name>:v<N>"` of the source artifact version. Equal to
+        `qualified_name` unless this artifact is a registry link."""
+        if self.is_link:
+            return (
+                f"{self._source_project}/{self._source_artifact}"
+                f":v{self._source_version}"
+            )
+        return self.qualified_name
 
     def wait(self, timeout: int | None = None) -> "Artifact":
         """No-op: trackio logs artifacts synchronously, so the artifact is
@@ -482,6 +529,13 @@ class Artifact:
             raise RuntimeError(
                 "Cannot download an Artifact that has not been logged or fetched."
             )
+        if self.is_link:
+            raise NotImplementedError(
+                "Downloading through a registry location is not supported "
+                "yet; it arrives with registry resolution. Download the "
+                f"source artifact version ({self.source_qualified_name}) "
+                "instead."
+            )
         if self._manifest is None or self._project is None or self._version is None:
             raise RuntimeError("Artifact is missing manifest, project, or version.")
 
@@ -521,6 +575,144 @@ class Artifact:
             _materialize(blob, root_path / logical, entry["size"])
 
         return str(root_path)
+
+    def link(self, target_path: str, aliases: list[str] | None = None) -> "Artifact":
+        """Link this artifact version into a registry collection.
+
+        A link is a pointer to this version: no files are copied. See
+        `Run.link_artifact` for the full semantics (collection versioning,
+        aliases, and the returned linked artifact).
+
+        The artifact must already be logged or fetched; unlike
+        `Run.link_artifact`, this does not log a draft artifact for you, and
+        the link records no publishing run. Linking is local for now: an
+        artifact fetched from a Space or a self-hosted server raises
+        `NotImplementedError`.
+
+        Args:
+            target_path (`str`):
+                The collection to link into, as
+                `"registry-<registry>/<collection>"`. The registry must
+                already exist.
+            aliases (`list[str]`, *optional*):
+                Aliases to place on the linked version. `latest` is managed
+                automatically; passing it is a no-op.
+
+        Returns:
+            The linked artifact at its registry location.
+        """
+        if not self._logged:
+            raise RuntimeError(
+                "Cannot link an Artifact that has not been logged or fetched. "
+                "Log it first with log_artifact, or fetch a version with "
+                "use_artifact, then link the result."
+            )
+        registry, collection = parse_collection_target(target_path)
+        return self._link_version(registry, collection, aliases, None, None)
+
+    def unlink(self) -> None:
+        """Remove this registry link.
+
+        Call this on the linked artifact returned by `link` or
+        `Run.link_artifact`, not on a source artifact version. The source
+        artifact and its files are untouched; only the collection membership
+        is removed. Aliases pointing at the link go with it, and the
+        collection version number is never reused. Unlinking is local for
+        now.
+        """
+        if not self.is_link:
+            raise ValueError(
+                "unlink() removes a registry link; call it on the linked "
+                "artifact returned by link() or Run.link_artifact, not on a "
+                "source artifact version."
+            )
+        RegistryStorage.unlink(self._registry, self._name, self._version)
+
+    def _resolve_link_source(self) -> tuple[str, str, int]:
+        """Coordinates ``(project, artifact, version)`` a link operation
+        records for this artifact. A registry-linked artifact links its
+        source version directly, so links never chain."""
+        if self.is_link:
+            return self._source_project, self._source_artifact, self._source_version
+        return self._project, self._name, self._version
+
+    def _link_version(
+        self,
+        registry: str,
+        collection: str,
+        aliases: list[str] | None,
+        run_name: str | None,
+        run_id: str | None,
+    ) -> "Artifact":
+        """Link this logged artifact version into `registry`/`collection` and
+        return the linked artifact hydrated at its registry location."""
+        source_project, source_artifact, source_version = self._resolve_link_source()
+        if self.is_link:
+            utils._emit_nonfatal_warning(
+                f"Linking a linked artifact links its source version "
+                f"({self.source_qualified_name}) directly; registry links "
+                "never chain."
+            )
+        if self._remote_source is not None:
+            raise NotImplementedError(
+                "Linking an artifact fetched from a Space or a self-hosted "
+                "server is not supported yet; it arrives with the registry "
+                "server endpoints."
+            )
+        manifest = self._manifest or []
+        link = RegistryStorage.link_artifact_version(
+            registry=registry,
+            collection=collection,
+            type=self._type,
+            source_project=source_project,
+            source_artifact=source_artifact,
+            source_version=source_version,
+            aliases=aliases,
+            run_name=run_name,
+            run_id=run_id,
+        )
+        return Artifact._from_registry_link(
+            registry,
+            collection,
+            {
+                **link,
+                "source": {
+                    "type": self._type,
+                    "description": self._description,
+                    "metadata": self._metadata,
+                    "manifest": manifest,
+                    "manifest_digest": self._manifest_digest,
+                    "size_bytes": self._size or 0,
+                },
+            },
+        )
+
+    @classmethod
+    def _from_registry_link(
+        cls, registry: str, collection: str, link: dict
+    ) -> "Artifact":
+        """Build the linked artifact at its registry location from a local
+        link record."""
+        source = link["source"]
+        linked = cls(
+            name=collection,
+            type=source["type"],
+            description=source.get("description"),
+            metadata=source.get("metadata"),
+        )
+        linked._hydrate_from_db(
+            project=registry_project_name(registry),
+            version=int(link["collection_version"]),
+            aliases=link["aliases"],
+            manifest=source["manifest"],
+            manifest_digest=source["manifest_digest"],
+            size_bytes=int(source["size_bytes"]),
+        )
+        linked._registry = registry
+        linked._source_project = link["source_project"]
+        linked._source_artifact = link["source_artifact"]
+        linked._source_version = int(link["source_version"])
+        return linked
 
     @property
     def references(self) -> list[dict]:

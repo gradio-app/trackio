@@ -41,6 +41,8 @@ from trackio.references import (
     ResolvedReference,
     register_reference_handler,
 )
+from trackio.registry import Collection as Collection
+from trackio.registry import Registry as Registry
 from trackio.remote_client import RemoteClient
 from trackio.run import Run
 from trackio.server import TrackioDashboardApp, build_starlette_app_only
