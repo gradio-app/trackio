@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Increase smoothing upper bound to 100
+feat: Increase smoothing upper bound to 100
