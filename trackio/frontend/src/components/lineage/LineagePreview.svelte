@@ -7,8 +7,11 @@
     focusId = null,
     onOpenVersion = null,
     onExtract = () => {},
+    onExtractAll = () => {},
     onClose = () => {},
   } = $props();
+
+  const EXPAND_ALL_LIMIT = 30;
 
   let memberQuery = $state("");
 
@@ -76,30 +79,65 @@
     </div>
     {#if node.kind === "cluster"}
       <div class="cluster-body">
-        <input
-          class="member-search"
-          type="search"
-          placeholder="Search {node.member_kind === 'run'
-            ? 'runs'
-            : 'versions'}…"
-          bind:value={memberQuery}
-        />
+        <div class="search-box">
+          <svg
+            class="search-icon"
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+          >
+            <circle
+              cx="7"
+              cy="7"
+              r="5"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <path
+              d="M11 11l3 3"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search {node.member_kind === 'run'
+              ? 'runs'
+              : 'versions'}…"
+            bind:value={memberQuery}
+          />
+          {#if memberQuery}
+            <button
+              class="clear-search"
+              onclick={() => (memberQuery = "")}
+              title="Clear search">×</button
+            >
+          {/if}
+        </div>
         <ul class="member-list">
           {#each filteredMembers as member (member.id)}
-            <li class="member-row">
-              <span class="member-label">{memberLabel(member)}</span>
+            <li class="member-item">
               <button
-                class="extract-btn"
-                title="Extract into graph"
+                class="member-row"
+                title="Show in graph"
                 onclick={() => onExtract(member.id)}
               >
-                →
+                {memberLabel(member)}
               </button>
             </li>
           {:else}
             <li class="member-empty">No matches.</li>
           {/each}
         </ul>
+        {#if node.count <= EXPAND_ALL_LIMIT}
+          <button
+            class="open-btn"
+            onclick={() => onExtractAll(node.members.map((m) => m.id))}
+            >Show all</button
+          >
+        {/if}
       </div>
     {/if}
     <div class="detail-grid">
@@ -200,60 +238,77 @@
     color: var(--body-text-color-subdued, #6b7280);
   }
   .cluster-body {
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
-  .member-search {
-    font-size: var(--text-sm, 12px);
-    padding: 4px 8px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-sm, 4px);
-    background: var(--background-fill-primary, #ffffff);
-    color: var(--body-text-color, #1f2937);
+  .search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
   }
-  .member-search:focus {
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--body-text-color-subdued, #9ca3af);
+    pointer-events: none;
+  }
+  .search-box input {
+    width: 100%;
+    padding: 6px 26px 6px 30px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    background: var(--background-fill-secondary, #f9fafb);
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-sm, 13px);
     outline: none;
+  }
+  .search-box input:focus {
     border-color: var(--color-accent, #f97316);
+  }
+  .clear-search {
+    position: absolute;
+    right: 8px;
+    border: none;
+    background: none;
+    color: var(--body-text-color-subdued, #9ca3af);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+  }
+  .clear-search:hover {
+    color: var(--body-text-color, #1f2937);
   }
   .member-list {
     list-style: none;
     margin: 0;
     padding: 0;
-    max-height: 180px;
+    min-height: 0;
     overflow-y: auto;
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-sm, 4px);
     background: var(--background-fill-primary, #ffffff);
   }
-  .member-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-  }
-  .member-row + .member-row {
+  .member-item + .member-item {
     border-top: 1px solid var(--border-color-primary, #f3f4f6);
   }
-  .member-label {
-    flex: 1;
+  .member-row {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 5px 8px;
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color, #1f2937);
     overflow-wrap: anywhere;
-  }
-  .extract-btn {
-    background: none;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-sm, 4px);
-    color: var(--body-text-color-subdued, #6b7280);
-    font-size: 12px;
-    line-height: 1;
-    padding: 3px 7px;
     cursor: pointer;
   }
-  .extract-btn:hover {
-    color: var(--color-accent, #f97316);
-    border-color: var(--color-accent, #f97316);
+  .member-row:hover,
+  .member-row:focus-visible {
+    background: var(--background-fill-secondary, #f3f4f6);
   }
   .member-empty {
     padding: 6px 8px;

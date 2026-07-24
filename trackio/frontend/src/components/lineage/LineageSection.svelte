@@ -46,18 +46,6 @@
       ? layoutLineage(clustered.nodes, clustered.edges)
       : null,
   );
-  const clusterCount = $derived(
-    clustered
-      ? clustered.nodes.filter((n) => n.kind === "cluster").length
-      : 0,
-  );
-  const clusteredNodeCount = $derived(
-    clustered
-      ? clustered.nodes
-          .filter((n) => n.kind === "cluster")
-          .reduce((sum, n) => sum + n.count, 0)
-      : 0,
-  );
   const smooth = $derived(
     !clustered || clustered.nodes.length <= SMOOTH_EDGE_LIMIT,
   );
@@ -74,6 +62,13 @@
     selectedId = nodeId;
   }
 
+  function extractAll(nodeIds) {
+    const next = new Set(extracted);
+    for (const id of nodeIds) next.add(id);
+    extracted = next;
+    selectedId = null;
+  }
+
   function select(nodeId) {
     selectedId = selectedId === nodeId ? null : nodeId;
   }
@@ -87,30 +82,40 @@
   <div class="status">No lineage recorded for this version.</div>
 {:else}
   <div class="lineage">
-    <div class="toolbar">
-      <span class="counts">
-        {graph.nodes.length}
-        {graph.nodes.length === 1 ? "node" : "nodes"}{#if clusterCount}
-          · {clusteredNodeCount} grouped into {clusterCount}
-          {clusterCount === 1 ? "cluster" : "clusters"}{/if}
-      </span>
-      {#if graph.truncated}
+    {#if graph.truncated}
+      <div class="toolbar">
         <span class="notice">Large graph — lineage was truncated.</span>
-      {:else if clustered.nodes.length > SMOOTH_EDGE_LIMIT}
+      </div>
+    {:else if clustered.nodes.length > SMOOTH_EDGE_LIMIT}
+      <div class="toolbar">
         <span class="notice">
           Large graph — showing {clustered.nodes.length} nodes.
         </span>
-      {/if}
-    </div>
+      </div>
+    {/if}
     <div class="graph-row">
       <div class="graph-cell">
-        <LineageGraph
-          {layout}
-          {focusId}
-          {selectedId}
-          {smooth}
-          onSelect={select}
-        />
+        <div class="graph-wrap">
+          <LineageGraph
+            {layout}
+            {focusId}
+            {selectedId}
+            {smooth}
+            onSelect={select}
+          />
+        </div>
+        <div class="legend">
+          <span class="legend-item"
+            ><span class="swatch artifact"></span>Artifact</span
+          >
+          <span class="legend-item"><span class="swatch run"></span>Run</span>
+          <span class="legend-item"
+            ><span class="swatch cluster"></span>Cluster</span
+          >
+          <span class="hint"
+            >Drag to pan · Ctrl/Cmd + scroll to zoom · Click a node for details</span
+          >
+        </div>
       </div>
       {#if selectedNode}
         <div class="side-panel">
@@ -119,16 +124,11 @@
             {focusId}
             {onOpenVersion}
             onExtract={extract}
+            onExtractAll={extractAll}
             onClose={() => (selectedId = null)}
           />
         </div>
       {/if}
-    </div>
-    <div class="legend">
-      <span class="legend-item"><span class="swatch artifact"></span>Artifact</span>
-      <span class="legend-item"><span class="swatch run"></span>Run</span>
-      <span class="legend-item"><span class="swatch cluster"></span>Cluster</span>
-      <span class="hint">Drag to pan · Ctrl/Cmd + scroll to zoom · Click a node for details</span>
     </div>
   </div>
 {/if}
@@ -157,15 +157,25 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .graph-wrap {
+    flex: 1;
+    min-height: 0;
   }
   .side-panel {
     width: 280px;
     flex-shrink: 0;
     min-height: 0;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
   }
   .side-panel > :global(*) {
-    min-height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow-y: auto;
     box-sizing: border-box;
   }
   .toolbar {
@@ -173,10 +183,6 @@
     align-items: center;
     gap: 12px;
     min-height: 18px;
-  }
-  .counts {
-    font-size: var(--text-xs, 11px);
-    color: var(--body-text-color-subdued, #6b7280);
   }
   .notice {
     font-size: var(--text-xs, 11px);
