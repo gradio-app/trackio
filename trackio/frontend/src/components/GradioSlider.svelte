@@ -135,6 +135,8 @@
     font-size: 11px;
     color: var(--body-text-color-subdued, #9ca3af);
     min-width: 12px;
+    flex-shrink: 0;
+    white-space: nowrap;
     text-align: center;
   }
 </style>
