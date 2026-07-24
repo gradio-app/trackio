@@ -75,9 +75,10 @@
     expandedArtifacts[name] = !expandedArtifacts[name];
   }
 
-  function selectVersion(artifact, version) {
+  function selectVersion(artifact, version, { push = true } = {}) {
+    if (isSelected(artifact.name, version.version)) return;
     selection = { name: artifact.name, version: version.version };
-    setArtifactSelectionParams(artifact.name, version.version);
+    setArtifactSelectionParams(artifact.name, version.version, { push });
   }
 
   function isSelected(name, version) {
@@ -103,7 +104,7 @@
     if (!version) version = artifact.versions[0];
 
     expandedArtifacts[artifact.name] = true;
-    selectVersion(artifact, version);
+    selectVersion(artifact, version, { push: false });
 
     await tick();
     document

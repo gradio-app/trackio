@@ -67,9 +67,16 @@ export function getQueryParam(key) {
   return new URLSearchParams(window.location.search).get(key);
 }
 
-export function setArtifactSelectionParams(name, version) {
-  setQueryParam("selected_artifact", name);
-  setQueryParam("selected_version", `v${version}`);
+export function setArtifactSelectionParams(name, version, { push = false } = {}) {
+  const params = new URLSearchParams(window.location.search);
+  params.set("selected_artifact", name);
+  params.set("selected_version", `v${version}`);
+  const url = `${window.location.pathname}?${params.toString()}`;
+  if (push) {
+    window.history.pushState({}, "", url);
+  } else {
+    window.history.replaceState({}, "", url);
+  }
 }
 
 export function getArtifactSelectionFromUrl() {
@@ -87,7 +94,7 @@ export function openRunDetail(runName, runId) {
   navigateTo("run-detail");
 }
 
-export function setQueryParam(key, value) {
+export function setQueryParam(key, value, { push = false } = {}) {
   const params = new URLSearchParams(window.location.search);
   if (value != null && value !== "") {
     params.set(key, value);
@@ -98,5 +105,9 @@ export function setQueryParam(key, value) {
   const url = search
     ? `${window.location.pathname}?${search}`
     : window.location.pathname;
-  window.history.replaceState({}, "", url);
+  if (push) {
+    window.history.pushState({}, "", url);
+  } else {
+    window.history.replaceState({}, "", url);
+  }
 }

@@ -7,7 +7,7 @@
     getArtifactConsumers,
     getArtifactBlobUrl,
   } from "../lib/api.js";
-  import { openRunDetail } from "../lib/router.js";
+  import { getQueryParam, openRunDetail, setQueryParam } from "../lib/router.js";
   import { formatSize } from "../lib/format.js";
 
   let {
@@ -19,7 +19,28 @@
   } = $props();
 
   let record = $state(null);
-  let activeTab = $state("details");
+
+  function tabFromUrl() {
+    return getQueryParam("detail_tab") === "lineage" ? "lineage" : "details";
+  }
+
+  let activeTab = $state(tabFromUrl());
+
+  function selectTab(tab) {
+    if (tab === activeTab) return;
+    activeTab = tab;
+    setQueryParam("detail_tab", tab === "lineage" ? "lineage" : null, {
+      push: true,
+    });
+  }
+
+  $effect(() => {
+    const onPop = () => {
+      activeTab = tabFromUrl();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  });
   let consumers = $state([]);
   let loading = $state(false);
   let error = $state(false);
@@ -272,7 +293,7 @@
         class="tab-btn"
         class:active={activeTab === "details"}
         aria-selected={activeTab === "details"}
-        onclick={() => (activeTab = "details")}>Details</button
+        onclick={() => selectTab("details")}>Details</button
       >
       {#if record.version_id != null}
         <button
@@ -280,7 +301,7 @@
           class="tab-btn"
           class:active={activeTab === "lineage"}
           aria-selected={activeTab === "lineage"}
-          onclick={() => (activeTab = "lineage")}>Lineage</button
+          onclick={() => selectTab("lineage")}>Lineage</button
         >
       {/if}
     </div>
