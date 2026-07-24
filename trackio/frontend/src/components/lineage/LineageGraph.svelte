@@ -216,7 +216,9 @@
               </text>
             {/if}
             <text class="node-label" x="10" y="33">
-              {truncate(nodeLabel(node))}
+              {node.kind === "cluster"
+                ? nodeLabel(node)
+                : truncate(nodeLabel(node))}
               <title>{nodeLabel(node)}</title>
             </text>
           </g>
