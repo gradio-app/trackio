@@ -100,13 +100,13 @@ describe("edgePath", () => {
     expect(edgePath([{ x: 0, y: 0 }, { x: 10, y: 5 }])).toBe("M 0 0 L 10 5");
   });
 
-  test("interior points are smoothed with quadratic segments", () => {
+  test("interior points are smoothed with straight lead-in and lead-out", () => {
     const d = edgePath([
       { x: 0, y: 0 },
       { x: 10, y: 10 },
       { x: 20, y: 0 },
     ]);
-    expect(d).toBe("M 0 0 Q 10 10 20 0");
+    expect(d).toBe("M 0 0 L 5 5 Q 10 10 15 5 L 20 0");
   });
 
   test("smoothing can be disabled for large graphs", () => {

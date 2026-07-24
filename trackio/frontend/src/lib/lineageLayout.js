@@ -3,7 +3,7 @@ import * as dagre from "@dagrejs/dagre";
 export const NODE_W = 140;
 export const NODE_H = 44;
 export const SMOOTH_EDGE_LIMIT = 300;
-export const EDGE_NODE_GAP = 4;
+export const EDGE_NODE_GAP = 6;
 
 function shiftPoint(from, toward, gap) {
   const dx = toward.x - from.x;
@@ -104,17 +104,15 @@ export function edgePath(points, smooth = true) {
       `M ${first.x} ${first.y}` + rest.map((p) => ` L ${p.x} ${p.y}`).join("")
     );
   }
-  let d = `M ${first.x} ${first.y}`;
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const start = mid(first, points[1]);
+  let d = `M ${first.x} ${first.y} L ${start.x} ${start.y}`;
   for (let i = 1; i < points.length - 1; i++) {
     const control = points[i];
-    const end =
-      i === points.length - 2
-        ? points[points.length - 1]
-        : {
-            x: (points[i].x + points[i + 1].x) / 2,
-            y: (points[i].y + points[i + 1].y) / 2,
-          };
+    const end = mid(points[i], points[i + 1]);
     d += ` Q ${control.x} ${control.y} ${end.x} ${end.y}`;
   }
+  const last = points[points.length - 1];
+  d += ` L ${last.x} ${last.y}`;
   return d;
 }

@@ -146,7 +146,7 @@
       <marker
         id="lineage-arrow-end"
         viewBox="0 0 10 10"
-        refX="9"
+        refX="6"
         refY="5"
         markerWidth="7"
         markerHeight="7"
@@ -262,7 +262,7 @@
     stroke-width: 1.5;
   }
   .arrow-head {
-    fill: var(--body-text-color-subdued, #6b7280);
+    fill: var(--border-color-primary, #d1d5db);
   }
   .node {
     cursor: pointer;
