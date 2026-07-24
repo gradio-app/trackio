@@ -29,6 +29,28 @@ def _emit_nonfatal_warning(message: str, *args, **kwargs) -> None:
         print(f"* Trackio warning: {message}")
 
 
+DATASET_PERSISTENCE_DEPRECATION_MESSAGE = (
+    "Persisting trackio data to a Hugging Face Dataset (`dataset_id` / "
+    "`TRACKIO_DATASET_ID`) is deprecated and will be removed in a future version "
+    "of trackio. Use a Hugging Face Bucket instead (`bucket_id` / "
+    "`TRACKIO_BUCKET_ID`)."
+)
+
+_dataset_persistence_deprecation_warned = False
+
+
+def warn_dataset_persistence_deprecated(stacklevel: int = 3) -> None:
+    global _dataset_persistence_deprecation_warned
+    if _dataset_persistence_deprecation_warned:
+        return
+    _dataset_persistence_deprecation_warned = True
+    _emit_nonfatal_warning(
+        DATASET_PERSISTENCE_DEPRECATION_MESSAGE,
+        FutureWarning,
+        stacklevel=stacklevel,
+    )
+
+
 def get_logo_urls() -> dict[str, str]:
     """Get logo URLs from environment variables or use defaults."""
     light_url = os.environ.get(
@@ -594,11 +616,7 @@ def preprocess_space_and_dataset_ids(
         username = _get_default_namespace()
         space_id = f"{username}/{space_id}"
     if dataset_id is not None:
-        warnings.warn(
-            "`dataset_id` is deprecated. Use `bucket_id` instead.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
+        warn_dataset_persistence_deprecated(stacklevel=4)
     if dataset_id is not None and "/" not in dataset_id:
         username = _get_default_namespace()
         dataset_id = f"{username}/{dataset_id}"

@@ -44,6 +44,7 @@ from trackio.utils import (
     on_spaces,
     project_media_dir,
     serialize_values,
+    warn_dataset_persistence_deprecated,
 )
 
 DB_EXT = ".db"
@@ -1477,6 +1478,7 @@ class SQLiteStorage:
             dataset_id = os.environ.get("TRACKIO_DATASET_ID")
             space_repo_name = os.environ.get("SPACE_REPO_NAME")
             if dataset_id is not None and space_repo_name is not None:
+                warn_dataset_persistence_deprecated()
                 scheduler = CommitScheduler(
                     repo_id=dataset_id,
                     repo_type="dataset",
@@ -2746,6 +2748,7 @@ class SQLiteStorage:
         dataset_id = os.environ.get("TRACKIO_DATASET_ID")
         space_repo_name = os.environ.get("SPACE_REPO_NAME")
         if dataset_id is not None and space_repo_name is not None:
+            warn_dataset_persistence_deprecated()
             hfapi = hf.HfApi()
             if not TRACKIO_DIR.exists():
                 TRACKIO_DIR.mkdir(parents=True, exist_ok=True)

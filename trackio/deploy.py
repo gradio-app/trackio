@@ -39,6 +39,7 @@ from trackio.utils import (
     preprocess_space_and_dataset_ids,
     project_artifacts_dir,
     project_media_dir,
+    warn_dataset_persistence_deprecated,
 )
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
@@ -349,6 +350,8 @@ def deploy_as_space(
         raise ValueError(
             "Cannot use bucket volume options together with dataset_id; use one persistence mode."
         )
+    if dataset_id is not None:
+        warn_dataset_persistence_deprecated()
 
     trackio_path = files("trackio")
 
@@ -503,7 +506,9 @@ def create_space_if_not_exists(
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier for the Space.
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         bucket_id (`str`, *optional*):
             Full Hub bucket id (`namespace/name`) to attach via the Hub volumes API (platform mount).
             Sets `TRACKIO_DIR` to the mount path.
@@ -524,6 +529,8 @@ def create_space_if_not_exists(
         raise ValueError(
             f"Invalid bucket ID: {bucket_id}. Must be in the format: username/bucketname or orgname/bucketname."
         )
+    if dataset_id is not None:
+        warn_dataset_persistence_deprecated()
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
         print(
@@ -970,6 +977,8 @@ def deploy_as_static_space(
             "run entirely in the browser, so their snapshot data must be public. "
             "Use sdk='gradio' for a private dashboard."
         )
+    if dataset_id is not None:
+        warn_dataset_persistence_deprecated()
     hf_api = huggingface_hub.HfApi()
 
     try:
@@ -1103,7 +1112,9 @@ def sync(
             server. `"static"` freezes the Space: deploys a static Space that reads from an HF Bucket
             (no server needed).
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         bucket_id (`str`, *optional*):
             The ID of the HF Bucket to sync to. By default, a bucket is auto-generated
             from the space_id.

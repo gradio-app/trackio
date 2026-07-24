@@ -1,6 +1,6 @@
 # Environment Variables
 
-Trackio uses environment variables to configure various aspects of its behavior, particularly for deployment to Hugging Face Spaces and dataset persistence. This guide covers the main environment variables and their usage.
+Trackio uses environment variables to configure various aspects of its behavior, particularly for deployment to Hugging Face Spaces and data persistence. This guide covers the main environment variables and their usage.
 
 ## Core Environment Variables
 
@@ -171,6 +171,24 @@ export TRACKIO_WEBHOOK_MIN_LEVEL="warn"
 ```
 
 With `warn`, only `WARN` and `ERROR` alerts are sent to webhook URLs.
+
+### `TRACKIO_BUCKET_ID`
+
+The ID of the Hugging Face Bucket (e.g. `username/bucketname`) used to persist Trackio data when running on a Hugging Face Space. This is normally set automatically on the Space when it is created via `trackio.init(space_id=...)` or `trackio.sync(...)`; a bucket is auto-generated from the Space ID unless an explicit `bucket_id` is provided.
+
+```bash
+export TRACKIO_BUCKET_ID="username/my-trackio-bucket"
+```
+
+### `TRACKIO_DATASET_ID` (deprecated)
+
+> **Deprecated:** Persisting Trackio data to a Hugging Face Dataset (`dataset_id` / `TRACKIO_DATASET_ID`) is deprecated and will be removed in a future version of Trackio. Use a Hugging Face Bucket instead (`bucket_id` / `TRACKIO_BUCKET_ID`).
+
+The ID of the Hugging Face Dataset (e.g. `username/datasetname`) that a Trackio Space syncs its data to via a background commit scheduler. When set on a Space, Trackio emits a deprecation warning and continues to sync to the Dataset for now.
+
+```bash
+export TRACKIO_DATASET_ID="username/my-trackio-dataset"
+```
 
 ### `HF_TOKEN`
 
