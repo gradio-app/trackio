@@ -15,6 +15,7 @@
   } from "../lib/router.js";
 
   let {
+    open = $bindable(true),
     project = $bindable(null),
     projects = [],
     projectLocked = false,
@@ -179,8 +180,37 @@
   >
 {/snippet}
 
-<aside class="artifacts-sidebar">
-  <div class="tree-header">
+<aside class="artifacts-sidebar" class:collapsed={!open}>
+  <button
+    class="toggle-btn"
+    title={open ? "Collapse sidebar" : "Expand sidebar"}
+    onclick={() => (open = !open)}
+  >
+    {#if open}
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path
+          d="M10 12L6 8L10 4"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    {:else}
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path
+          d="M6 4L10 8L6 12"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    {/if}
+  </button>
+
+  {#if open}
+    <div class="tree-header">
     <Logo {logoUrls} {darkMode} />
     <ProjectSelector {projects} bind:selectedProject={project} {projectLocked} />
     <div class="tree-search">
@@ -283,18 +313,50 @@
         </div>
       {/each}
     {/if}
-  </div>
+    </div>
+  {/if}
 </aside>
 
 <style>
   .artifacts-sidebar {
     width: 300px;
+    min-width: 300px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
+    position: relative;
     border-right: 1px solid var(--border-color-primary, #e5e7eb);
     background: var(--background-fill-primary, #fff);
     overflow: hidden;
+    transition:
+      width 0.2s,
+      min-width 0.2s;
+  }
+  .artifacts-sidebar.collapsed {
+    width: 40px;
+    min-width: 40px;
+  }
+  .toggle-btn {
+    position: absolute;
+    top: 12px;
+    right: 8px;
+    z-index: 10;
+    border: none;
+    background: none;
+    color: var(--body-text-color-subdued, #9ca3af);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm, 4px);
+    transition:
+      color 0.15s,
+      background-color 0.15s;
+  }
+  .toggle-btn:hover {
+    color: var(--body-text-color, #1f2937);
+    background-color: var(--background-fill-secondary, #f9fafb);
   }
 
   .tree-header {
