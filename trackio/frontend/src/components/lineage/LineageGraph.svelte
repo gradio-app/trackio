@@ -3,12 +3,10 @@
 
   let {
     layout = null,
-    frontier = new Map(),
     focusId = null,
     selectedId = null,
     smooth = true,
     onSelect = () => {},
-    onExpand = () => {},
   } = $props();
 
   let container = $state(null);
@@ -101,11 +99,16 @@
     if (node.kind === "artifact") {
       return `${node.artifact_name}:v${node.version}`;
     }
+    if (node.kind === "cluster") {
+      return `${node.count} ${node.member_kind === "run" ? "runs" : "artifact versions"}`;
+    }
     return node.run_name ?? node.run_id ?? "run";
   }
 
   function nodeChip(node) {
-    return node.kind === "artifact" ? node.artifact_type : "run";
+    if (node.kind === "artifact") return node.artifact_type;
+    if (node.kind === "cluster") return "cluster";
+    return "run";
   }
 
   let focusChipWidth = $state(0);
@@ -163,9 +166,10 @@
           />
         {/each}
         {#each layout.nodes as node (node.id)}
-          {@const counts = frontier.get(node.id)}
           <g
-            class="node {node.kind}"
+            class="node {node.kind} {node.kind === 'cluster'
+              ? `cluster-${node.member_kind}`
+              : ''}"
             class:focused={node.id === focusId}
             class:selected={node.id === selectedId}
             transform="translate({node.x - NODE_W / 2}, {node.y - NODE_H / 2})"
@@ -176,6 +180,24 @@
             onclick={() => onSelect(node.id)}
             onkeydown={(e) => handleNodeKey(e, node)}
           >
+            {#if node.kind === "cluster"}
+              <rect
+                class="node-box stack"
+                x="8"
+                y="-8"
+                width={NODE_W - 16}
+                height={NODE_H}
+                rx="6"
+              />
+              <rect
+                class="node-box stack"
+                x="4"
+                y="-4"
+                width={NODE_W - 8}
+                height={NODE_H}
+                rx="6"
+              />
+            {/if}
             <rect class="node-box" width={NODE_W} height={NODE_H} rx="6" />
             {#if node.id === focusId}
               <text class="node-chip" x="10" y="16" use:measureChip>
@@ -198,40 +220,6 @@
               <title>{nodeLabel(node)}</title>
             </text>
           </g>
-          {#if counts?.upstream}
-            <g
-              class="expand-chip"
-              transform="translate({node.x - NODE_W / 2 - 14}, {node.y})"
-              role="button"
-              tabindex="0"
-              aria-label="Show {counts.upstream} more upstream"
-              onpointerdown={(e) => e.stopPropagation()}
-              onclick={() => onExpand(node.id)}
-              onkeydown={(e) =>
-                (e.key === "Enter" || e.key === " ") && onExpand(node.id)}
-            >
-              <title>Show {counts.upstream} more upstream</title>
-              <circle r="11" />
-              <text text-anchor="middle" dy="3.5">+{counts.upstream}</text>
-            </g>
-          {/if}
-          {#if counts?.downstream}
-            <g
-              class="expand-chip"
-              transform="translate({node.x + NODE_W / 2 + 14}, {node.y})"
-              role="button"
-              tabindex="0"
-              aria-label="Show {counts.downstream} more downstream"
-              onpointerdown={(e) => e.stopPropagation()}
-              onclick={() => onExpand(node.id)}
-              onkeydown={(e) =>
-                (e.key === "Enter" || e.key === " ") && onExpand(node.id)}
-            >
-              <title>Show {counts.downstream} more downstream</title>
-              <circle r="11" />
-              <text text-anchor="middle" dy="3.5">+{counts.downstream}</text>
-            </g>
-          {/if}
         {/each}
       </g>
     {/if}
@@ -286,6 +274,20 @@
   .node.artifact .node-box {
     stroke: var(--lineage-artifact);
   }
+  .node.cluster .node-box {
+    stroke-dasharray: 4 3;
+  }
+  .node.cluster-artifact .node-box {
+    stroke: var(--lineage-artifact);
+  }
+  .node.cluster-run .node-box {
+    stroke: var(--lineage-run);
+  }
+  .node.cluster .node-box.stack {
+    fill: var(--background-fill-secondary, #f3f4f6);
+    stroke-dasharray: none;
+    opacity: 0.7;
+  }
   .node.selected .node-box,
   .node:focus-visible .node-box {
     stroke: var(--color-accent, #f97316);
@@ -306,33 +308,18 @@
     letter-spacing: 0.05em;
     fill: var(--body-text-color-subdued, #6b7280);
   }
-  .node.run .node-chip {
+  .node.run .node-chip,
+  .node.cluster-run .node-chip {
     fill: var(--lineage-run);
   }
-  .node.artifact .node-chip {
+  .node.artifact .node-chip,
+  .node.cluster-artifact .node-chip {
     fill: var(--lineage-artifact);
   }
   .node-label {
     font-size: 12px;
     font-weight: 500;
     fill: var(--body-text-color, #1f2937);
-  }
-  .expand-chip {
-    cursor: pointer;
-    outline: none;
-  }
-  .expand-chip circle {
-    fill: var(--background-fill-secondary, #f3f4f6);
-    stroke: var(--border-color-primary, #d1d5db);
-  }
-  .expand-chip:hover circle,
-  .expand-chip:focus-visible circle {
-    stroke: var(--color-accent, #f97316);
-  }
-  .expand-chip text {
-    font-size: 10px;
-    font-weight: 600;
-    fill: var(--body-text-color-subdued, #6b7280);
   }
   .zoom-controls {
     position: absolute;

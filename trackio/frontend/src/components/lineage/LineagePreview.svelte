@@ -2,8 +2,35 @@
   import { openRunDetail } from "../../lib/router.js";
   import { formatSize } from "../../lib/format.js";
 
-  let { node = null, focusId = null, onOpenVersion = null, onClose = () => {} } =
-    $props();
+  let {
+    node = null,
+    focusId = null,
+    onOpenVersion = null,
+    onExtract = () => {},
+    onClose = () => {},
+  } = $props();
+
+  let memberQuery = $state("");
+
+  $effect(() => {
+    node?.id;
+    memberQuery = "";
+  });
+
+  function memberLabel(member) {
+    if (member.kind === "artifact") {
+      return `${member.artifact_name}:v${member.version}`;
+    }
+    return member.run_name ?? member.run_id ?? "run";
+  }
+
+  const filteredMembers = $derived(
+    node?.kind === "cluster"
+      ? node.members.filter((m) =>
+          memberLabel(m).toLowerCase().includes(memberQuery.toLowerCase()),
+        )
+      : [],
+  );
 
   function formatDate(iso) {
     if (!iso) return "";
@@ -32,6 +59,12 @@
             >{alias}</span
           >
         {/each}
+      {:else if node.kind === "cluster"}
+        <span class="title">
+          {node.count}
+          {node.member_kind === "run" ? "runs" : "artifact versions"}
+        </span>
+        <span class="kind-chip cluster">cluster</span>
       {:else}
         <span class="title">{node.run_name ?? node.run_id}</span>
         <span class="kind-chip run">run</span>
@@ -41,6 +74,34 @@
         >×</button
       >
     </div>
+    {#if node.kind === "cluster"}
+      <div class="cluster-body">
+        <input
+          class="member-search"
+          type="search"
+          placeholder="Search {node.member_kind === 'run'
+            ? 'runs'
+            : 'versions'}…"
+          bind:value={memberQuery}
+        />
+        <ul class="member-list">
+          {#each filteredMembers as member (member.id)}
+            <li class="member-row">
+              <span class="member-label">{memberLabel(member)}</span>
+              <button
+                class="extract-btn"
+                title="Extract into graph"
+                onclick={() => onExtract(member.id)}
+              >
+                →
+              </button>
+            </li>
+          {:else}
+            <li class="member-empty">No matches.</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
     <div class="detail-grid">
       {#if node.kind === "artifact"}
         <span class="detail-key">Type</span>
@@ -62,7 +123,7 @@
             >
           </span>
         {/if}
-      {:else}
+      {:else if node.kind === "run"}
         <span class="detail-key">First linked</span>
         <span class="detail-val">{formatDate(node.created_at)}</span>
       {/if}
@@ -76,7 +137,7 @@
             >Open version</button
           >
         {/if}
-      {:else}
+      {:else if node.kind === "run"}
         <button
           class="open-btn"
           onclick={() => openRunDetail(node.run_name, node.run_id)}
@@ -134,6 +195,70 @@
     letter-spacing: 0.05em;
     font-weight: 600;
     color: #10b981;
+  }
+  .kind-chip.cluster {
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .cluster-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .member-search {
+    font-size: var(--text-sm, 12px);
+    padding: 4px 8px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--background-fill-primary, #ffffff);
+    color: var(--body-text-color, #1f2937);
+  }
+  .member-search:focus {
+    outline: none;
+    border-color: var(--color-accent, #f97316);
+  }
+  .member-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--background-fill-primary, #ffffff);
+  }
+  .member-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+  }
+  .member-row + .member-row {
+    border-top: 1px solid var(--border-color-primary, #f3f4f6);
+  }
+  .member-label {
+    flex: 1;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color, #1f2937);
+    overflow-wrap: anywhere;
+  }
+  .extract-btn {
+    background: none;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-sm, 4px);
+    color: var(--body-text-color-subdued, #6b7280);
+    font-size: 12px;
+    line-height: 1;
+    padding: 3px 7px;
+    cursor: pointer;
+  }
+  .extract-btn:hover {
+    color: var(--color-accent, #f97316);
+    border-color: var(--color-accent, #f97316);
+  }
+  .member-empty {
+    padding: 6px 8px;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
   }
   .spacer {
     flex: 1;

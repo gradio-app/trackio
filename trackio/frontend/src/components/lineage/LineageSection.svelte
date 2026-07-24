@@ -1,19 +1,16 @@
 <script>
   import { getArtifactLineage } from "../../lib/api.js";
-  import { sliceLineage } from "../../lib/lineage.js";
+  import { clusterLineage } from "../../lib/lineage.js";
   import { layoutLineage, SMOOTH_EDGE_LIMIT } from "../../lib/lineageLayout.js";
   import LineageGraph from "./LineageGraph.svelte";
   import LineagePreview from "./LineagePreview.svelte";
 
   let { project = null, versionId = null, onOpenVersion = null } = $props();
 
-  const REVEAL_STEP = 20;
-  const DEFAULT_DEPTH = 2;
-
   let graph = $state(null);
   let loading = $state(true);
   let error = $state(false);
-  let expanded = $state(new Map());
+  let extracted = $state(new Set());
   let selectedId = $state(null);
 
   const focusId = $derived(`art:${versionId}`);
@@ -29,6 +26,8 @@
     }
     loading = true;
     error = false;
+    extracted = new Set();
+    selectedId = null;
     try {
       graph = await getArtifactLineage(project, versionId);
     } catch {
@@ -38,25 +37,40 @@
     }
   }
 
-  const sliced = $derived(
-    graph ? sliceLineage(graph, focusId, { depth: DEFAULT_DEPTH, expanded }) : null,
+  const clustered = $derived(
+    graph ? clusterLineage(graph, focusId, { extracted }) : null,
   );
   const layout = $derived(
-    sliced && sliced.nodes.length
-      ? layoutLineage(sliced.nodes, sliced.edges)
+    clustered && clustered.nodes.length
+      ? layoutLineage(clustered.nodes, clustered.edges)
       : null,
   );
-  const smooth = $derived(!sliced || sliced.nodes.length <= SMOOTH_EDGE_LIMIT);
+  const clusterCount = $derived(
+    clustered
+      ? clustered.nodes.filter((n) => n.kind === "cluster").length
+      : 0,
+  );
+  const clusteredNodeCount = $derived(
+    clustered
+      ? clustered.nodes
+          .filter((n) => n.kind === "cluster")
+          .reduce((sum, n) => sum + n.count, 0)
+      : 0,
+  );
+  const smooth = $derived(
+    !clustered || clustered.nodes.length <= SMOOTH_EDGE_LIMIT,
+  );
   const selectedNode = $derived(
-    sliced && selectedId
-      ? (sliced.nodes.find((n) => n.id === selectedId) ?? null)
+    clustered && selectedId
+      ? (clustered.nodes.find((n) => n.id === selectedId) ?? null)
       : null,
   );
 
-  function expand(nodeId) {
-    const next = new Map(expanded);
-    next.set(nodeId, (next.get(nodeId) ?? 0) + REVEAL_STEP);
-    expanded = next;
+  function extract(nodeId) {
+    const next = new Set(extracted);
+    next.add(nodeId);
+    extracted = next;
+    selectedId = nodeId;
   }
 
   function select(nodeId) {
@@ -74,37 +88,39 @@
   <div class="lineage">
     <div class="toolbar">
       <span class="counts">
-        {sliced.nodes.length} of {graph.nodes.length}
-        {graph.nodes.length === 1 ? "node" : "nodes"} shown
+        {graph.nodes.length}
+        {graph.nodes.length === 1 ? "node" : "nodes"}{#if clusterCount}
+          · {clusteredNodeCount} grouped into {clusterCount}
+          {clusterCount === 1 ? "cluster" : "clusters"}{/if}
       </span>
       {#if graph.truncated}
         <span class="notice">Large graph — lineage was truncated.</span>
-      {:else if sliced.nodes.length > SMOOTH_EDGE_LIMIT}
+      {:else if clustered.nodes.length > SMOOTH_EDGE_LIMIT}
         <span class="notice">
-          Large graph — showing {sliced.nodes.length} nodes.
+          Large graph — showing {clustered.nodes.length} nodes.
         </span>
       {/if}
     </div>
     <LineageGraph
       {layout}
-      frontier={sliced.frontier}
       {focusId}
       {selectedId}
       {smooth}
       onSelect={select}
-      onExpand={expand}
     />
     {#if selectedNode}
       <LineagePreview
         node={selectedNode}
         {focusId}
         {onOpenVersion}
+        onExtract={extract}
         onClose={() => (selectedId = null)}
       />
     {/if}
     <div class="legend">
       <span class="legend-item"><span class="swatch artifact"></span>Artifact</span>
       <span class="legend-item"><span class="swatch run"></span>Run</span>
+      <span class="legend-item"><span class="swatch cluster"></span>Cluster</span>
       <span class="hint">Drag to pan · Ctrl/Cmd + scroll to zoom · Click a node for details</span>
     </div>
   </div>
@@ -160,6 +176,10 @@
   }
   .swatch.run {
     border-color: #10b981;
+  }
+  .swatch.cluster {
+    border-color: var(--body-text-color-subdued, #6b7280);
+    border-style: dashed;
   }
   .hint {
     margin-left: auto;

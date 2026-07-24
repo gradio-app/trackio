@@ -206,100 +206,87 @@ export function buildLineage(tables, runs, versionId) {
   return { focus, truncated, nodes, edges };
 }
 
-function sortNeighborIds(ids, nodesById) {
-  return [...ids].sort((a, b) => {
-    const na = nodesById.get(a);
-    const nb = nodesById.get(b);
-    const ca = na?.created_at ?? "";
-    const cb = nb?.created_at ?? "";
-    if (ca !== cb) return ca < cb ? -1 : 1;
-    return a < b ? -1 : a > b ? 1 : 0;
-  });
+export const CLUSTER_THRESHOLD = 5;
+
+function compareNodes(a, b) {
+  const ca = a.created_at ?? "";
+  const cb = b.created_at ?? "";
+  if (ca !== cb) return ca < cb ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-export function sliceLineage(graph, focusId, options = {}) {
-  const { depth = 2, expanded = new Map() } = options;
-  const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
-  if (!nodesById.has(focusId)) {
-    return { nodes: [], edges: [], frontier: new Map() };
+function signatureHash(signature) {
+  let hash = 5381;
+  for (let i = 0; i < signature.length; i++) {
+    hash = ((hash << 5) + hash + signature.charCodeAt(i)) >>> 0;
   }
+  return hash.toString(36);
+}
 
-  const adjacency = new Map();
-  const addAdj = (a, b) => {
-    if (!adjacency.has(a)) adjacency.set(a, new Set());
-    adjacency.get(a).add(b);
-  };
+export function clusterLineage(graph, focusId, options = {}) {
+  const { threshold = CLUSTER_THRESHOLD, extracted = new Set() } = options;
+
+  const signatures = new Map();
+  for (const node of graph.nodes) {
+    signatures.set(node.id, []);
+  }
   for (const edge of graph.edges) {
-    addAdj(edge.source, edge.target);
-    addAdj(edge.target, edge.source);
+    signatures.get(edge.source)?.push(`out:${edge.direction}:${edge.target}`);
+    signatures.get(edge.target)?.push(`in:${edge.direction}:${edge.source}`);
   }
 
-  const visible = new Set([focusId]);
-  let level = [focusId];
-  for (let d = 0; d < depth; d++) {
-    const next = [];
-    for (const id of level) {
-      for (const neighbor of sortNeighborIds(
-        adjacency.get(id) ?? [],
-        nodesById,
-      )) {
-        if (visible.has(neighbor)) continue;
-        visible.add(neighbor);
-        next.push(neighbor);
-      }
-    }
-    level = next;
+  const groups = new Map();
+  for (const node of graph.nodes) {
+    if (node.id === focusId) continue;
+    const signature = `${node.kind}#${signatures.get(node.id).sort().join(",")}`;
+    if (!groups.has(signature)) groups.set(signature, []);
+    groups.get(signature).push(node);
   }
 
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const [id, count] of expanded) {
-      if (!visible.has(id) || !count) continue;
-      const neighbors = sortNeighborIds(adjacency.get(id) ?? [], nodesById);
-      for (const neighbor of neighbors.slice(0, count)) {
-        if (!visible.has(neighbor)) {
-          visible.add(neighbor);
-          changed = true;
-        }
-      }
+  const memberOf = new Map();
+  const clusters = [];
+  for (const [signature, group] of groups) {
+    if (group.length < threshold) continue;
+    const members = group
+      .filter((n) => !extracted.has(n.id))
+      .sort(compareNodes);
+    if (members.length < 2) continue;
+    const cluster = {
+      id: `cluster:${signatureHash(signature)}`,
+      kind: "cluster",
+      member_kind: group[0].kind,
+      count: members.length,
+      members,
+      created_at: members[0].created_at,
+    };
+    clusters.push(cluster);
+    for (const member of members) {
+      memberOf.set(member.id, cluster.id);
     }
   }
 
-  const upstreamOf = new Map();
-  const downstreamOf = new Map();
+  const nodes = [
+    ...graph.nodes.filter((n) => !memberOf.has(n.id)),
+    ...clusters.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+  ];
+
+  const edges = [];
+  const seen = new Map();
   for (const edge of graph.edges) {
-    if (!upstreamOf.has(edge.target)) upstreamOf.set(edge.target, new Set());
-    upstreamOf.get(edge.target).add(edge.source);
-    if (!downstreamOf.has(edge.source)) {
-      downstreamOf.set(edge.source, new Set());
+    const source = memberOf.get(edge.source) ?? edge.source;
+    const target = memberOf.get(edge.target) ?? edge.target;
+    const key = `${source}|${target}|${edge.direction}`;
+    const existing = seen.get(key);
+    if (existing) {
+      if ((edge.created_at ?? "") < (existing.created_at ?? "")) {
+        existing.created_at = edge.created_at;
+      }
+      continue;
     }
-    downstreamOf.get(edge.source).add(edge.target);
+    const mapped = { ...edge, source, target };
+    seen.set(key, mapped);
+    edges.push(mapped);
   }
 
-  const frontier = new Map();
-  for (const id of visible) {
-    const hiddenUp = [...(upstreamOf.get(id) ?? [])].filter(
-      (n) => !visible.has(n),
-    );
-    const hiddenDown = [...(downstreamOf.get(id) ?? [])].filter(
-      (n) => !visible.has(n),
-    );
-    const hidden = new Set([...hiddenUp, ...hiddenDown]);
-    if (hidden.size) {
-      frontier.set(id, {
-        upstream: hiddenUp.length,
-        downstream: hiddenDown.length,
-        total: hidden.size,
-      });
-    }
-  }
-
-  return {
-    nodes: graph.nodes.filter((n) => visible.has(n.id)),
-    edges: graph.edges.filter(
-      (e) => visible.has(e.source) && visible.has(e.target),
-    ),
-    frontier,
-  };
+  return { nodes, edges };
 }

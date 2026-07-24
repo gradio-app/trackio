@@ -4,7 +4,7 @@ import {
   buildLineage,
   buildRunOwnership,
   canonicalLinkRunId,
-  sliceLineage,
+  clusterLineage,
 } from "./lineage.js";
 
 function goldenTables() {
@@ -285,72 +285,155 @@ describe("buildRunOwnership / canonicalLinkRunId", () => {
   });
 });
 
-describe("sliceLineage", () => {
-  const graph = buildLineage(
+describe("clusterLineage", () => {
+  const goldenGraph = buildLineage(
     goldenTables(),
     golden.runs,
     golden.focus_version_id,
   );
 
-  test("depth window limits visible nodes", () => {
-    const sliced = sliceLineage(graph, "art:3", { depth: 1 });
-    expect(new Set(sliced.nodes.map((n) => n.id))).toEqual(
-      new Set(["art:3", "run:train-b-1", "run:eval-1"]),
-    );
-    for (const edge of sliced.edges) {
-      expect(sliced.nodes.some((n) => n.id === edge.source)).toBe(true);
-      expect(sliced.nodes.some((n) => n.id === edge.target)).toBe(true);
+  function fanOutGraph(count) {
+    const nodes = [
+      { id: "run:r-1", kind: "run", run_id: "r-1", run_name: "train" },
+    ];
+    const edges = [];
+    for (let i = 1; i <= count; i++) {
+      nodes.push({
+        id: `art:${i}`,
+        kind: "artifact",
+        version_id: i,
+        artifact_name: "ckpt",
+        artifact_type: "checkpoint",
+        version: i,
+        created_at: `2026-01-01T00:00:0${i}+00:00`,
+      });
+      edges.push({
+        source: "run:r-1",
+        target: `art:${i}`,
+        direction: "output",
+        created_at: `2026-01-01T00:00:0${i}+00:00`,
+      });
     }
+    return { focus: "art:1", truncated: false, nodes, edges };
+  }
+
+  test("leaves small graphs untouched", () => {
+    const clustered = clusterLineage(goldenGraph, "art:3");
+    expect(clustered.nodes).toEqual(goldenGraph.nodes);
+    expect(clustered.edges).toEqual(goldenGraph.edges);
   });
 
-  test("frontier reports hidden neighbor counts split by direction", () => {
-    const sliced = sliceLineage(graph, "art:3", { depth: 1 });
-    expect(sliced.frontier.get("run:train-b-1")).toEqual({
-      upstream: 1,
-      downstream: 0,
-      total: 1,
-    });
-    expect(sliced.frontier.get("run:eval-1")).toEqual({
-      upstream: 0,
-      downstream: 1,
-      total: 1,
-    });
-    expect(sliced.frontier.has("art:3")).toBe(false);
+  test("groups five or more similarly-connected nodes into one cluster", () => {
+    const graph = fanOutGraph(6);
+    const clustered = clusterLineage(graph, "art:1");
+    const cluster = clustered.nodes.find((n) => n.kind === "cluster");
+    expect(cluster).toBeTruthy();
+    expect(cluster.member_kind).toBe("artifact");
+    expect(cluster.count).toBe(5);
+    expect(cluster.members.map((m) => m.id)).toEqual([
+      "art:2",
+      "art:3",
+      "art:4",
+      "art:5",
+      "art:6",
+    ]);
+    expect(new Set(clustered.nodes.map((n) => n.id))).toEqual(
+      new Set(["run:r-1", "art:1", cluster.id]),
+    );
   });
 
-  test("expansion reveals exactly one hop from the expanded node", () => {
-    const sliced = sliceLineage(graph, "art:3", {
-      depth: 1,
-      expanded: new Map([["run:train-b-1", 20]]),
+  test("rewrites and dedupes edges into the cluster", () => {
+    const graph = fanOutGraph(6);
+    const clustered = clusterLineage(graph, "art:1");
+    const cluster = clustered.nodes.find((n) => n.kind === "cluster");
+    const clusterEdges = clustered.edges.filter(
+      (e) => e.target === cluster.id,
+    );
+    expect(clusterEdges).toHaveLength(1);
+    expect(clusterEdges[0]).toMatchObject({
+      source: "run:r-1",
+      direction: "output",
+      created_at: "2026-01-01T00:00:02+00:00",
     });
-    const ids = new Set(sliced.nodes.map((n) => n.id));
-    expect(ids.has("art:1")).toBe(true);
-    expect(ids.has("run:prep-1")).toBe(false);
-    expect(ids.has("run:train-a-1")).toBe(false);
+    expect(clustered.edges).toHaveLength(2);
   });
 
-  test("expansion cap reveals a batch and reports the remainder", () => {
-    const sliced = sliceLineage(graph, "art:3", {
-      depth: 0,
-      expanded: new Map([["art:3", 1]]),
-    });
-    const ids = new Set(sliced.nodes.map((n) => n.id));
-    expect(ids.size).toBe(2);
-    expect(ids.has("run:train-b-1")).toBe(true);
-    expect(sliced.frontier.get("art:3").total).toBe(1);
+  test("never clusters the focus node", () => {
+    const graph = fanOutGraph(6);
+    const clustered = clusterLineage(graph, "art:4");
+    const cluster = clustered.nodes.find((n) => n.kind === "cluster");
+    expect(cluster.members.some((m) => m.id === "art:4")).toBe(false);
+    expect(clustered.nodes.some((n) => n.id === "art:4")).toBe(true);
   });
 
-  test("returns empty result when focus is missing", () => {
-    expect(sliceLineage(graph, "art:999", {})).toEqual({
-      nodes: [],
-      edges: [],
-      frontier: new Map(),
+  test("nodes with extra connections stay out of the cluster", () => {
+    const graph = fanOutGraph(7);
+    graph.nodes.push({
+      id: "run:eval",
+      kind: "run",
+      run_id: "eval",
+      run_name: "eval",
     });
+    graph.edges.push({
+      source: "art:7",
+      target: "run:eval",
+      direction: "input",
+      created_at: "2026-01-01T00:01:00+00:00",
+    });
+    const clustered = clusterLineage(graph, "art:1");
+    const cluster = clustered.nodes.find((n) => n.kind === "cluster");
+    expect(cluster.count).toBe(5);
+    expect(cluster.members.some((m) => m.id === "art:7")).toBe(false);
+    expect(clustered.nodes.some((n) => n.id === "art:7")).toBe(true);
+  });
+
+  test("extracted members become individual nodes with their own edges", () => {
+    const graph = fanOutGraph(6);
+    const clustered = clusterLineage(graph, "art:1", {
+      extracted: new Set(["art:3"]),
+    });
+    const cluster = clustered.nodes.find((n) => n.kind === "cluster");
+    expect(cluster.count).toBe(4);
+    expect(clustered.nodes.some((n) => n.id === "art:3")).toBe(true);
+    expect(
+      clustered.edges.some(
+        (e) => e.source === "run:r-1" && e.target === "art:3",
+      ),
+    ).toBe(true);
+  });
+
+  test("cluster id is stable across extractions", () => {
+    const graph = fanOutGraph(6);
+    const before = clusterLineage(graph, "art:1");
+    const after = clusterLineage(graph, "art:1", {
+      extracted: new Set(["art:2"]),
+    });
+    expect(after.nodes.find((n) => n.kind === "cluster").id).toBe(
+      before.nodes.find((n) => n.kind === "cluster").id,
+    );
+  });
+
+  test("dissolves the cluster when fewer than two members remain", () => {
+    const graph = fanOutGraph(6);
+    const clustered = clusterLineage(graph, "art:1", {
+      extracted: new Set(["art:2", "art:3", "art:4", "art:5"]),
+    });
+    expect(clustered.nodes.some((n) => n.kind === "cluster")).toBe(false);
+    expect(clustered.nodes).toHaveLength(graph.nodes.length);
+    expect(clustered.edges).toHaveLength(graph.edges.length);
+  });
+
+  test("threshold is configurable", () => {
+    const graph = fanOutGraph(3);
+    const clustered = clusterLineage(graph, "art:1", { threshold: 2 });
+    const cluster = clustered.nodes.find((n) => n.kind === "cluster");
+    expect(cluster.count).toBe(2);
   });
 
   test("is deterministic", () => {
-    const a = sliceLineage(graph, "art:3", { depth: 2 });
-    const b = sliceLineage(graph, "art:3", { depth: 2 });
+    const graph = fanOutGraph(8);
+    const a = clusterLineage(graph, "art:1");
+    const b = clusterLineage(graph, "art:1");
     expect(a.nodes.map((n) => n.id)).toEqual(b.nodes.map((n) => n.id));
     expect(a.edges).toEqual(b.edges);
   });
