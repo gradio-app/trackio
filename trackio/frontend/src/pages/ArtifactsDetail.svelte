@@ -1,7 +1,12 @@
 <script>
   import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
 
-  let { project = null, selection = null, empty = false } = $props();
+  let {
+    project = null,
+    selection = null,
+    empty = false,
+    onOpenVersion = null,
+  } = $props();
 </script>
 
 <div class="detail-pane">
@@ -12,6 +17,7 @@
         {project}
         name={selection.name}
         version={selection.version}
+        {onOpenVersion}
       />
     {/key}
   {:else if empty}

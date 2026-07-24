@@ -1,0 +1,281 @@
+{
+  "description": "Golden lineage fixture shared by tests/unit/test_artifact_server.py and src/lib/lineage.test.js. Diamond DAG: prepare -> dataset:v0 -> (train-a, train-b) -> model:v0/model:v1 -> evaluate -> report:v0. The evaluate run is artifact-only (absent from runs, known only via links).",
+  "artifacts": [
+    {
+      "id": 1,
+      "name": "dataset",
+      "type": "dataset",
+      "description": null,
+      "created_at": "2026-01-01T00:01:00+00:00"
+    },
+    {
+      "id": 2,
+      "name": "model",
+      "type": "model",
+      "description": null,
+      "created_at": "2026-01-01T00:03:00+00:00"
+    },
+    {
+      "id": 3,
+      "name": "report",
+      "type": "eval",
+      "description": null,
+      "created_at": "2026-01-01T00:05:00+00:00"
+    }
+  ],
+  "artifact_versions": [
+    {
+      "id": 1,
+      "artifact_id": 1,
+      "version": 0,
+      "manifest_digest": "digest-dataset-v0",
+      "manifest": [
+        { "path": "train.csv", "digest": "d1", "size": 4 },
+        { "path": "meta.json", "digest": "d2", "size": 8 }
+      ],
+      "metadata": null,
+      "size_bytes": 12,
+      "producer_run_id": "prep-1",
+      "producer_run_name": "prepare",
+      "created_at": "2026-01-01T00:01:00+00:00"
+    },
+    {
+      "id": 2,
+      "artifact_id": 2,
+      "version": 0,
+      "manifest_digest": "digest-model-v0",
+      "manifest": [{ "path": "weights.bin", "digest": "d3", "size": 100 }],
+      "metadata": null,
+      "size_bytes": 100,
+      "producer_run_id": "train-a-1",
+      "producer_run_name": "train-a",
+      "created_at": "2026-01-01T00:03:00+00:00"
+    },
+    {
+      "id": 3,
+      "artifact_id": 2,
+      "version": 1,
+      "manifest_digest": "digest-model-v1",
+      "manifest": [{ "path": "weights.bin", "digest": "d4", "size": 120 }],
+      "metadata": null,
+      "size_bytes": 120,
+      "producer_run_id": "train-b-1",
+      "producer_run_name": "train-b",
+      "created_at": "2026-01-01T00:03:30+00:00"
+    },
+    {
+      "id": 4,
+      "artifact_id": 3,
+      "version": 0,
+      "manifest_digest": "digest-report-v0",
+      "manifest": [{ "path": "report.md", "digest": "d5", "size": 9 }],
+      "metadata": null,
+      "size_bytes": 9,
+      "producer_run_id": "eval-1",
+      "producer_run_name": "evaluate",
+      "created_at": "2026-01-01T00:05:00+00:00"
+    }
+  ],
+  "artifact_aliases": [
+    { "artifact_id": 2, "alias": "best", "artifact_version_id": 2 },
+    { "artifact_id": 2, "alias": "latest", "artifact_version_id": 3 }
+  ],
+  "run_artifact_links": [
+    {
+      "id": 1,
+      "run_id": "prep-1",
+      "run_name": "prepare",
+      "artifact_version_id": 1,
+      "direction": "output",
+      "created_at": "2026-01-01T00:01:00+00:00"
+    },
+    {
+      "id": 2,
+      "run_id": "train-a-1",
+      "run_name": "train-a",
+      "artifact_version_id": 1,
+      "direction": "input",
+      "created_at": "2026-01-01T00:02:00+00:00"
+    },
+    {
+      "id": 3,
+      "run_id": "train-b-1",
+      "run_name": "train-b",
+      "artifact_version_id": 1,
+      "direction": "input",
+      "created_at": "2026-01-01T00:02:30+00:00"
+    },
+    {
+      "id": 4,
+      "run_id": "train-a-1",
+      "run_name": "train-a",
+      "artifact_version_id": 2,
+      "direction": "output",
+      "created_at": "2026-01-01T00:03:00+00:00"
+    },
+    {
+      "id": 5,
+      "run_id": "train-b-1",
+      "run_name": "train-b",
+      "artifact_version_id": 3,
+      "direction": "output",
+      "created_at": "2026-01-01T00:03:30+00:00"
+    },
+    {
+      "id": 6,
+      "run_id": "eval-1",
+      "run_name": "evaluate",
+      "artifact_version_id": 3,
+      "direction": "input",
+      "created_at": "2026-01-01T00:04:00+00:00"
+    },
+    {
+      "id": 7,
+      "run_id": "eval-1",
+      "run_name": "evaluate",
+      "artifact_version_id": 4,
+      "direction": "output",
+      "created_at": "2026-01-01T00:05:00+00:00"
+    }
+  ],
+  "runs": [
+    { "id": "prep-1", "name": "prepare", "created_at": "2026-01-01T00:00:10+00:00" },
+    { "id": "train-a-1", "name": "train-a", "created_at": "2026-01-01T00:00:20+00:00" },
+    { "id": "train-b-1", "name": "train-b", "created_at": "2026-01-01T00:00:30+00:00" }
+  ],
+  "focus_version_id": 3,
+  "expected": {
+    "focus": "art:3",
+    "truncated": false,
+    "nodes": [
+      {
+        "id": "art:1",
+        "kind": "artifact",
+        "version_id": 1,
+        "artifact_name": "dataset",
+        "artifact_type": "dataset",
+        "version": 0,
+        "aliases": [],
+        "size_bytes": 12,
+        "num_files": 2,
+        "created_at": "2026-01-01T00:01:00+00:00",
+        "producer_run_id": "prep-1",
+        "producer_run_name": "prepare"
+      },
+      {
+        "id": "art:2",
+        "kind": "artifact",
+        "version_id": 2,
+        "artifact_name": "model",
+        "artifact_type": "model",
+        "version": 0,
+        "aliases": ["best"],
+        "size_bytes": 100,
+        "num_files": 1,
+        "created_at": "2026-01-01T00:03:00+00:00",
+        "producer_run_id": "train-a-1",
+        "producer_run_name": "train-a"
+      },
+      {
+        "id": "art:3",
+        "kind": "artifact",
+        "version_id": 3,
+        "artifact_name": "model",
+        "artifact_type": "model",
+        "version": 1,
+        "aliases": ["latest"],
+        "size_bytes": 120,
+        "num_files": 1,
+        "created_at": "2026-01-01T00:03:30+00:00",
+        "producer_run_id": "train-b-1",
+        "producer_run_name": "train-b"
+      },
+      {
+        "id": "art:4",
+        "kind": "artifact",
+        "version_id": 4,
+        "artifact_name": "report",
+        "artifact_type": "eval",
+        "version": 0,
+        "aliases": [],
+        "size_bytes": 9,
+        "num_files": 1,
+        "created_at": "2026-01-01T00:05:00+00:00",
+        "producer_run_id": "eval-1",
+        "producer_run_name": "evaluate"
+      },
+      {
+        "id": "run:eval-1",
+        "kind": "run",
+        "run_id": "eval-1",
+        "run_name": "evaluate",
+        "created_at": "2026-01-01T00:04:00+00:00"
+      },
+      {
+        "id": "run:prep-1",
+        "kind": "run",
+        "run_id": "prep-1",
+        "run_name": "prepare",
+        "created_at": "2026-01-01T00:01:00+00:00"
+      },
+      {
+        "id": "run:train-a-1",
+        "kind": "run",
+        "run_id": "train-a-1",
+        "run_name": "train-a",
+        "created_at": "2026-01-01T00:02:00+00:00"
+      },
+      {
+        "id": "run:train-b-1",
+        "kind": "run",
+        "run_id": "train-b-1",
+        "run_name": "train-b",
+        "created_at": "2026-01-01T00:02:30+00:00"
+      }
+    ],
+    "edges": [
+      {
+        "source": "run:prep-1",
+        "target": "art:1",
+        "direction": "output",
+        "created_at": "2026-01-01T00:01:00+00:00"
+      },
+      {
+        "source": "art:1",
+        "target": "run:train-a-1",
+        "direction": "input",
+        "created_at": "2026-01-01T00:02:00+00:00"
+      },
+      {
+        "source": "art:1",
+        "target": "run:train-b-1",
+        "direction": "input",
+        "created_at": "2026-01-01T00:02:30+00:00"
+      },
+      {
+        "source": "run:train-a-1",
+        "target": "art:2",
+        "direction": "output",
+        "created_at": "2026-01-01T00:03:00+00:00"
+      },
+      {
+        "source": "run:train-b-1",
+        "target": "art:3",
+        "direction": "output",
+        "created_at": "2026-01-01T00:03:30+00:00"
+      },
+      {
+        "source": "art:3",
+        "target": "run:eval-1",
+        "direction": "input",
+        "created_at": "2026-01-01T00:04:00+00:00"
+      },
+      {
+        "source": "run:eval-1",
+        "target": "art:4",
+        "direction": "output",
+        "created_at": "2026-01-01T00:05:00+00:00"
+      }
+    ]
+  }
+}

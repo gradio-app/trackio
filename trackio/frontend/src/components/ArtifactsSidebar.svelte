@@ -84,6 +84,10 @@
     return selection && selection.name === name && selection.version === version;
   }
 
+  $effect(() => {
+    if (selection?.name) expandedArtifacts[selection.name] = true;
+  });
+
   async function applyInitialSelection() {
     const target = getArtifactSelectionFromUrl();
     let artifact = target.name

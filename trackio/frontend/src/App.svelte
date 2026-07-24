@@ -38,6 +38,7 @@
     navigateTo,
     getQueryParam,
     getArtifactSelectionFromUrl,
+    setArtifactSelectionParams,
   } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
@@ -135,6 +136,11 @@
   let runConfigsProject = $state(null);
   let artifactSelection = $state(null);
   let artifactsEmpty = $state(false);
+
+  function openArtifactVersion(name, version) {
+    artifactSelection = { name, version };
+    setArtifactSelectionParams(name, version);
+  }
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -671,6 +677,7 @@
           project={selectedProject}
           selection={artifactSelection}
           empty={artifactsEmpty}
+          onOpenVersion={openArtifactVersion}
         />
       {:else if currentPage === "settings"}
         <Settings {spaceId} selectedProject={selectedProject} {projects} />

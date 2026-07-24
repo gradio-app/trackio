@@ -57,6 +57,7 @@ _LOCKING_MODE_WHITELIST = frozenset({"normal", "exclusive"})
 _TEMP_STORE_WHITELIST = frozenset({"default", "file", "memory"})
 _READ_ONLY_QUERY_PREFIXES = ("select", "with", "pragma")
 _QUERY_MAX_ROWS = 10_000
+_MAX_LINEAGE_NODES = 1000
 _READ_ONLY_PRAGMAS = frozenset(
     {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo"}
 )
@@ -5132,6 +5133,195 @@ class SQLiteStorage:
                 }
                 for r in rows
             ]
+
+    @staticmethod
+    def get_artifact_lineage(project: str, version_id: int) -> dict:
+        """Connected component of the bipartite run/artifact-version lineage
+        graph containing `version_id`, as {focus, truncated, nodes, edges}.
+        Artifact nodes are keyed "art:{version_id}"; run nodes
+        "run:{run_id}", or "run:name:{run_name}" when no canonical run id
+        exists, using the same identity folding as get_run_artifact_counts.
+        Edges point run->artifact for output links and artifact->run for
+        input links. Returns empty nodes/edges when the DB, tables, or the
+        version itself are absent."""
+        focus = f"art:{version_id}"
+        empty = {"focus": focus, "truncated": False, "nodes": [], "edges": []}
+        SQLiteStorage._ensure_hub_loaded()
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return empty
+        with SQLiteStorage._get_connection(db_path) as conn:
+            try:
+                link_rows = conn.execute(
+                    """SELECT run_id, run_name, artifact_version_id,
+                        direction, MIN(created_at) AS created_at
+                    FROM run_artifact_links
+                    GROUP BY run_id, run_name, artifact_version_id, direction
+                    ORDER BY created_at"""
+                ).fetchall()
+            except sqlite3.OperationalError:
+                link_rows = []
+
+            legacy_metrics = not SQLiteStorage._supports_run_ids(conn)
+            records = [] if legacy_metrics else SQLiteStorage.get_run_records(project)
+            record_ids = {r["id"] for r in records if r["id"] is not None}
+            ids_by_name: dict[str, set] = {}
+            for r in records:
+                if r["id"] is not None and r["name"] is not None:
+                    ids_by_name.setdefault(r["name"], set()).add(r["id"])
+
+            links = []
+            run_meta: dict[str, dict] = {}
+            for row in link_rows:
+                run_id, run_name = row["run_id"], row["run_name"]
+                if legacy_metrics:
+                    run_id = None
+                elif run_id is None or run_id not in record_ids:
+                    owners = ids_by_name.get(run_name, ())
+                    run_id = next(iter(owners)) if len(owners) == 1 else None
+                run_key = (
+                    f"run:{run_id}" if run_id is not None else f"run:name:{run_name}"
+                )
+                meta = run_meta.setdefault(
+                    run_key,
+                    {
+                        "run_id": run_id,
+                        "run_name": run_name,
+                        "created_at": row["created_at"],
+                    },
+                )
+                if row["created_at"] < meta["created_at"]:
+                    meta["created_at"] = row["created_at"]
+                links.append(
+                    {
+                        "run_key": run_key,
+                        "version_id": int(row["artifact_version_id"]),
+                        "direction": row["direction"],
+                        "created_at": row["created_at"],
+                    }
+                )
+
+            by_version: dict[int, list[str]] = {}
+            by_run: dict[str, list[int]] = {}
+            for link in links:
+                by_version.setdefault(link["version_id"], []).append(link["run_key"])
+                by_run.setdefault(link["run_key"], []).append(link["version_id"])
+
+            visited = {focus}
+            truncated = False
+            queue = [focus]
+            while queue:
+                node = queue.pop(0)
+                if node.startswith("art:"):
+                    neighbors = by_version.get(int(node[4:]), ())
+                else:
+                    neighbors = (f"art:{v}" for v in by_run.get(node, ()))
+                for neighbor in neighbors:
+                    if neighbor in visited:
+                        continue
+                    if len(visited) >= _MAX_LINEAGE_NODES:
+                        truncated = True
+                        break
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+                if truncated:
+                    break
+
+            version_ids = sorted(int(n[4:]) for n in visited if n.startswith("art:"))
+            placeholders = ",".join("?" * len(version_ids))
+            try:
+                version_rows = conn.execute(
+                    f"""SELECT av.id, av.version, av.size_bytes, av.created_at,
+                        av.producer_run_id, av.producer_run_name,
+                        json_array_length(av.manifest) AS num_files,
+                        a.name, a.type
+                    FROM artifact_versions av
+                    JOIN artifacts a ON a.id = av.artifact_id
+                    WHERE av.id IN ({placeholders})""",
+                    version_ids,
+                ).fetchall()
+                alias_rows = conn.execute(
+                    f"""SELECT artifact_version_id, alias FROM artifact_aliases
+                    WHERE artifact_version_id IN ({placeholders})
+                    ORDER BY alias""",
+                    version_ids,
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return empty
+
+            aliases_by_version: dict[int, list[str]] = {}
+            for row in alias_rows:
+                aliases_by_version.setdefault(
+                    int(row["artifact_version_id"]), []
+                ).append(row["alias"])
+
+            hydrated = {int(row["id"]) for row in version_rows}
+            if version_id not in hydrated:
+                return empty
+            node_ids = {f"art:{v}" for v in hydrated} | (set(run_meta) & visited)
+
+            nodes = []
+            for row in sorted(version_rows, key=lambda r: int(r["id"])):
+                vid = int(row["id"])
+                nodes.append(
+                    {
+                        "id": f"art:{vid}",
+                        "kind": "artifact",
+                        "version_id": vid,
+                        "artifact_name": row["name"],
+                        "artifact_type": row["type"],
+                        "version": int(row["version"]),
+                        "aliases": aliases_by_version.get(vid, []),
+                        "size_bytes": int(row["size_bytes"]),
+                        "num_files": int(row["num_files"]),
+                        "created_at": row["created_at"],
+                        "producer_run_id": row["producer_run_id"],
+                        "producer_run_name": row["producer_run_name"],
+                    }
+                )
+            for run_key in sorted(k for k in node_ids if k.startswith("run:")):
+                meta = run_meta[run_key]
+                nodes.append(
+                    {
+                        "id": run_key,
+                        "kind": "run",
+                        "run_id": meta["run_id"],
+                        "run_name": meta["run_name"],
+                        "created_at": meta["created_at"],
+                    }
+                )
+
+            edges = []
+            seen_edges = set()
+            for link in links:
+                art_key = f"art:{link['version_id']}"
+                if art_key not in node_ids or link["run_key"] not in node_ids:
+                    continue
+                if link["direction"] == "output":
+                    source, target = link["run_key"], art_key
+                elif link["direction"] == "input":
+                    source, target = art_key, link["run_key"]
+                else:
+                    continue
+                dedupe = (source, target, link["direction"])
+                if dedupe in seen_edges:
+                    continue
+                seen_edges.add(dedupe)
+                edges.append(
+                    {
+                        "source": source,
+                        "target": target,
+                        "direction": link["direction"],
+                        "created_at": link["created_at"],
+                    }
+                )
+
+            return {
+                "focus": focus,
+                "truncated": truncated,
+                "nodes": nodes,
+                "edges": edges,
+            }
 
     @staticmethod
     def list_artifacts(project: str) -> list[dict]:

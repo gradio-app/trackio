@@ -768,6 +768,11 @@ def get_artifact_consumers(project: str, version_id: int) -> list[dict]:
     return SQLiteStorage.get_artifact_consumers(project, version_id)
 
 
+def get_artifact_lineage(project: str, version_id: int) -> dict:
+    project = _validate_project_name(project)
+    return SQLiteStorage.get_artifact_lineage(project, version_id)
+
+
 def log_artifact_use(
     request: Request,
     project: str,
@@ -1288,6 +1293,7 @@ def _api_registry() -> dict[str, Any]:
         "get_run_artifacts": get_run_artifacts,
         "get_run_artifact_counts": get_run_artifact_counts,
         "get_artifact_consumers": get_artifact_consumers,
+        "get_artifact_lineage": get_artifact_lineage,
         "log_artifact_use": log_artifact_use,
         "log": log,
         "bulk_log": bulk_log,

@@ -22,6 +22,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "hyparquet": "^1.7.0",
     "vega": "^5.30.0",
     "vega-embed": "^6.26.0",

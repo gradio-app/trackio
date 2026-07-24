@@ -1,3 +1,8 @@
+import {
+  buildLineage,
+  buildRunOwnership,
+  canonicalLinkRunId,
+} from "./lineage.js";
 import { readParquet } from "./parquetReader.js";
 
 let config = null;
@@ -684,25 +689,8 @@ export async function getArtifactManifest(_project, name, spec) {
 
 async function getLinkOwnership() {
   const runs = await getRunsJson();
-  const recordIds = new Set();
-  const ownersByName = new Map();
-  for (const r of runs) {
-    const id = r.id ?? r.run_id ?? r.name ?? null;
-    if (id == null) continue;
-    recordIds.add(id);
-    const name = r.name ?? null;
-    if (name == null) continue;
-    if (!ownersByName.has(name)) ownersByName.set(name, new Set());
-    ownersByName.get(name).add(id);
-  }
-  return { recordIds, ownersByName };
-}
-
-function canonicalLinkRunId(link, { recordIds, ownersByName }) {
-  const runId = link.run_id ?? null;
-  if (runId != null && recordIds.has(runId)) return runId;
-  const owners = ownersByName.get(link.run_name ?? null);
-  return owners && owners.size === 1 ? owners.values().next().value : null;
+  const { links } = await getArtifactTables();
+  return buildRunOwnership(runs, links);
 }
 
 export async function getRunArtifacts(_project, run) {
@@ -780,6 +768,12 @@ export async function getArtifactConsumers(_project, versionId) {
       run_id: l.run_id ?? null,
       created_at: l.created_at,
     }));
+}
+
+export async function getArtifactLineage(_project, versionId) {
+  const tables = await getArtifactTables();
+  const runs = await getRunsJson();
+  return buildLineage(tables, runs, Number(versionId));
 }
 
 export function getArtifactBlobUrl(_project, digest) {

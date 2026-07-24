@@ -232,6 +232,14 @@ export async function getArtifactConsumers(project, versionId) {
   });
 }
 
+export async function getArtifactLineage(project, versionId) {
+  if (await isStaticMode()) return staticApi.getArtifactLineage(project, versionId);
+  return await callApi("/get_artifact_lineage", {
+    project,
+    version_id: versionId,
+  });
+}
+
 export function getArtifactBlobUrl(project, digest) {
   if (_staticMode) return staticApi.getArtifactBlobUrl(project, digest);
   return `${BASE}/artifact_blob/${encodeURIComponent(project)}/${encodeURIComponent(digest)}`;

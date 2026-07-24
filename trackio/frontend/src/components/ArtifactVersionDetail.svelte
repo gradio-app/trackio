@@ -1,6 +1,7 @@
 <script>
   import Accordion from "./Accordion.svelte";
   import IndentGuides from "./IndentGuides.svelte";
+  import LineageSection from "./lineage/LineageSection.svelte";
   import {
     getArtifactManifest,
     getArtifactConsumers,
@@ -9,8 +10,13 @@
   import { openRunDetail } from "../lib/router.js";
   import { formatSize } from "../lib/format.js";
 
-  let { project = null, name = null, version = null, variant = "inline" } =
-    $props();
+  let {
+    project = null,
+    name = null,
+    version = null,
+    variant = "inline",
+    onOpenVersion = null,
+  } = $props();
 
   let record = $state(null);
   let consumers = $state([]);
@@ -280,6 +286,16 @@
         </span>
       </div>
     </Accordion>
+
+    {#if record.version_id != null}
+      <Accordion label="Lineage">
+        <LineageSection
+          {project}
+          versionId={record.version_id}
+          {onOpenVersion}
+        />
+      </Accordion>
+    {/if}
 
     {#if record.metadata && Object.keys(record.metadata).length}
       <Accordion label="Metadata ({Object.keys(record.metadata).length})">
