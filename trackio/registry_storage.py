@@ -103,32 +103,37 @@ class RegistryStorage:
         db_path = RegistryStorage.init_registry_db(registry)
         now = datetime.now(timezone.utc).isoformat()
 
-        payload = {"registry": registry}
+        SQLiteStorage.set_project_metadata(project, "registry_created_at", now)
         if description is not None:
-            payload["description"] = description
+            SQLiteStorage.set_project_metadata(
+                project, "registry_description", description
+            )
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                RegistryStorage._append_event_cursor(conn, "create", payload, now)
+                RegistryStorage._append_event_cursor(
+                    conn, "create", {"registry": registry}, now
+                )
                 conn.commit()
         return {"name": registry, "description": description}
 
     @staticmethod
     def get_registry(registry: str) -> dict | None:
-        """Describe the registry itself: its `name`, `description` (recorded
-        at creation), and `created_at`.
+        """Describe the registry itself: its `name`, `description` (set at
+        creation), and `created_at`. Both are read from `project_metadata`.
         Returns None when the registry does not exist.
         """
-        db_path = SQLiteStorage.get_project_db_path(registry_project_name(registry))
-        if not db_path.exists():
+        project = registry_project_name(registry)
+        if not SQLiteStorage.get_project_db_path(project).exists():
             return None
-        for event in RegistryStorage.get_events(registry):
-            if event["kind"] == "create" and "collection" not in event["payload"]:
-                return {
-                    "name": registry,
-                    "description": event["payload"].get("description"),
-                    "created_at": event["ts"],
-                }
-        return {"name": registry, "description": None, "created_at": None}
+        return {
+            "name": registry,
+            "description": SQLiteStorage.get_project_metadata(
+                project, "registry_description"
+            ),
+            "created_at": SQLiteStorage.get_project_metadata(
+                project, "registry_created_at"
+            ),
+        }
 
     @staticmethod
     def _require_registry(registry: str) -> Path:

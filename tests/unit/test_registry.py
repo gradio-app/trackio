@@ -172,7 +172,7 @@ def test_create_registry_description(temp_dir):
     assert registry.description == "Our models"
     assert trackio.Api().registry("models").description == "Our models"
     create = registry.events()[0]
-    assert create["payload"] == {"registry": "models", "description": "Our models"}
+    assert create["payload"] == {"registry": "models"}
 
 
 def test_create_registry_without_description(temp_dir):

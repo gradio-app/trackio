@@ -449,7 +449,7 @@ class SQLiteStorage:
         if canonical.startswith(REGISTRY_PROJECT_PREFIX):
             raise ValueError(
                 f"Project name {project!r} is not allowed: names beginning "
-                f"with '{REGISTRY_PROJECT_PREFIX!r}' are reserved for trackio "
+                f"with {REGISTRY_PROJECT_PREFIX!r} are reserved for trackio "
                 "registries (see trackio.Api().create_registry and "
                 "Run.link_artifact)."
             )

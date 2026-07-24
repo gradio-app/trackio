@@ -647,6 +647,12 @@ class Artifact:
         """Link this logged artifact version into `registry`/`collection` and
         return the linked artifact hydrated at its registry location."""
         source_project, source_artifact, source_version = self._resolve_link_source()
+        if self.is_link:
+            utils._emit_nonfatal_warning(
+                f"Linking a linked artifact links its source version "
+                f"({self.source_qualified_name}) directly; registry links "
+                "never chain."
+            )
         if self._remote_source is not None:
             raise NotImplementedError(
                 "Linking an artifact fetched from a Space or a self-hosted "
