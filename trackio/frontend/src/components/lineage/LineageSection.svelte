@@ -30,6 +30,7 @@
     selectedId = null;
     try {
       graph = await getArtifactLineage(project, versionId);
+      selectedId = `art:${versionId}`;
     } catch {
       error = true;
     } finally {
