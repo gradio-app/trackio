@@ -93,39 +93,37 @@
         </span>
       </div>
     {/if}
-    <div class="graph-row">
-      <div class="graph-cell">
-        <div class="graph-wrap">
-          <LineageGraph
-            {layout}
-            {focusId}
-            {selectedId}
-            {smooth}
-            onSelect={select}
-          />
-        </div>
+    <div class="graph-cell">
+      <div class="graph-wrap">
+        <LineageGraph
+          {layout}
+          {focusId}
+          {selectedId}
+          {smooth}
+          onSelect={select}
+        />
         <div class="legend">
           <span class="legend-item"
             ><span class="swatch artifact"></span>Artifact</span
           >
           <span class="legend-item"><span class="swatch run"></span>Run</span>
-          <span class="hint"
-            >Drag to pan · Ctrl/Cmd + scroll to zoom · Click a node for details</span
-          >
         </div>
+        <span class="hint"
+          >Drag to pan · Ctrl/Cmd + scroll to zoom · Click a node for details</span
+        >
+        {#if selectedNode}
+          <div class="preview-overlay">
+            <LineagePreview
+              node={selectedNode}
+              {focusId}
+              {onOpenVersion}
+              onExtract={extract}
+              onExtractAll={extractAll}
+              onClose={() => (selectedId = null)}
+            />
+          </div>
+        {/if}
       </div>
-      {#if selectedNode}
-        <div class="side-panel">
-          <LineagePreview
-            node={selectedNode}
-            {focusId}
-            {onOpenVersion}
-            onExtract={extract}
-            onExtractAll={extractAll}
-            onClose={() => (selectedId = null)}
-          />
-        </div>
-      {/if}
     </div>
   </div>
 {/if}
@@ -143,13 +141,6 @@
     flex-direction: column;
     gap: 8px;
   }
-  .graph-row {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    align-items: stretch;
-    gap: 8px;
-  }
   .graph-cell {
     flex: 1;
     min-width: 0;
@@ -161,19 +152,21 @@
   .graph-wrap {
     flex: 1;
     min-height: 0;
+    position: relative;
   }
-  .side-panel {
+  .preview-overlay {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 5;
     width: 280px;
-    flex-shrink: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .side-panel > :global(*) {
-    max-height: 100%;
-    min-height: 0;
+    max-width: calc(100% - 16px);
+    max-height: calc(100% - 16px);
     overflow-y: auto;
+  }
+  .preview-overlay > :global(*) {
     box-sizing: border-box;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   }
   .toolbar {
     display: flex;
@@ -186,10 +179,21 @@
     color: var(--color-accent, #f97316);
   }
   .legend {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 4;
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
     gap: 12px;
+    font-size: var(--text-xs, 11px);
+    color: var(--body-text-color-subdued, #6b7280);
+  }
+  .hint {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    z-index: 4;
     font-size: var(--text-xs, 11px);
     color: var(--body-text-color-subdued, #6b7280);
   }
@@ -210,8 +214,5 @@
   }
   .swatch.run {
     border-color: #10b981;
-  }
-  .hint {
-    margin-left: auto;
   }
 </style>

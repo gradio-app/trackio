@@ -241,8 +241,6 @@
     position: relative;
     height: 100%;
     min-height: 400px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-md, 6px);
     background: var(--background-fill-primary, #ffffff);
     overflow: hidden;
   }
@@ -335,8 +333,8 @@
   }
   .zoom-controls {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    bottom: 8px;
+    left: 8px;
     display: flex;
     gap: 4px;
   }

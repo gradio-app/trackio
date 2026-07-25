@@ -252,38 +252,42 @@
     <div class="status">Failed to load this version.</div>
   {:else if variant === "panel"}
     <header class="panel-header">
-      <div class="title-row">
-        <h2 class="art-name">{record.name}</h2>
-        <span class="ver-badge">v{record.version}</span>
-        {#each record.aliases as alias}
-          <span class="alias-pill" class:latest={alias === "latest"}
-            >{alias}</span
+      <div class="header-row">
+        <div class="header-left">
+          <div class="title-row">
+            <h2 class="art-name">{record.name}</h2>
+            <span class="ver-badge">v{record.version}</span>
+            {#each record.aliases as alias}
+              <span class="alias-pill" class:latest={alias === "latest"}
+                >{alias}</span
+              >
+            {/each}
+          </div>
+          <div class="fact-row">
+            <span class="fact type-chip">{record.type}</span>
+            <span class="dot">·</span>
+            <span class="fact"
+              >{(record.manifest || []).length}
+              {(record.manifest || []).length === 1 ? "file" : "files"}</span
+            >
+            <span class="dot">·</span>
+            <span class="fact">{formatSize(record.size_bytes)}</span>
+          </div>
+        </div>
+        <div class="use-snippet">
+          <code class="snippet"><span class="tok-mod">trackio</span><span
+              class="tok-punc">.</span><span class="tok-fn">use_artifact</span><span
+              class="tok-punc">(</span><span class="tok-str"
+              >"{record.name}:v{record.version}"</span><span class="tok-punc"
+              >)</span></code>
+          <button
+            class="copy-btn"
+            onclick={() => copy(usageSnippet, "use")}
+            title="Copy usage snippet"
           >
-        {/each}
-      </div>
-      <div class="fact-row">
-        <span class="fact type-chip">{record.type}</span>
-        <span class="dot">·</span>
-        <span class="fact"
-          >{(record.manifest || []).length}
-          {(record.manifest || []).length === 1 ? "file" : "files"}</span
-        >
-        <span class="dot">·</span>
-        <span class="fact">{formatSize(record.size_bytes)}</span>
-      </div>
-      <div class="use-snippet">
-        <code class="snippet"><span class="tok-mod">trackio</span><span
-            class="tok-punc">.</span><span class="tok-fn">use_artifact</span><span
-            class="tok-punc">(</span><span class="tok-str"
-            >"{record.name}:v{record.version}"</span><span class="tok-punc"
-            >)</span></code>
-        <button
-          class="copy-btn"
-          onclick={() => copy(usageSnippet, "use")}
-          title="Copy usage snippet"
-        >
-          {copied === "use" ? "Copied" : "Copy"}
-        </button>
+            {copied === "use" ? "Copied" : "Copy"}
+          </button>
+        </div>
       </div>
     </header>
 
@@ -444,6 +448,15 @@
     border-radius: var(--radius-sm, 4px);
     padding: 2px 7px;
   }
+  .header-row {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .header-left {
+    min-width: 0;
+  }
   .fact-row {
     display: flex;
     align-items: center;
@@ -467,7 +480,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 12px;
+    margin-left: auto;
     background: var(--background-fill-secondary, #f9fafb);
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-md, 6px);
