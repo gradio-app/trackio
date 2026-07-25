@@ -25,6 +25,7 @@
   }
 
   let activeTab = $state(tabFromUrl());
+  let lineageMounted = $state(false);
 
   function selectTab(tab) {
     if (tab === activeTab) return;
@@ -40,6 +41,16 @@
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
+  });
+
+  $effect(() => {
+    name;
+    version;
+    activeTab = tabFromUrl();
+  });
+
+  $effect(() => {
+    if (activeTab === "lineage") lineageMounted = true;
   });
   let consumers = $state([]);
   let loading = $state(false);
@@ -310,15 +321,16 @@
       {/if}
     </div>
 
-    {#if activeTab === "lineage" && record.version_id != null}
-      <div class="lineage-tab">
+    {#if lineageMounted && record.version_id != null}
+      <div class="lineage-tab" class:hidden={activeTab !== "lineage"}>
         <LineageSection
           {project}
           versionId={record.version_id}
           {onOpenVersion}
         />
       </div>
-    {:else}
+    {/if}
+    {#if activeTab !== "lineage" || record.version_id == null}
       <Accordion label="Overview">
       <div class="detail-grid">
         {#if record.description}
@@ -398,6 +410,9 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .lineage-tab.hidden {
+    display: none;
   }
   .panel-header {
     padding-bottom: 6px;

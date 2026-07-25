@@ -71,12 +71,25 @@ export function setArtifactSelectionParams(name, version, { push = false } = {})
   const params = new URLSearchParams(window.location.search);
   params.set("selected_artifact", name);
   params.set("selected_version", `v${version}`);
+  params.delete("detail_tab");
   const url = `${window.location.pathname}?${params.toString()}`;
   if (push) {
     window.history.pushState({}, "", url);
   } else {
     window.history.replaceState({}, "", url);
   }
+}
+
+export function clearArtifactSelectionParams() {
+  const params = new URLSearchParams(window.location.search);
+  params.delete("selected_artifact");
+  params.delete("selected_version");
+  params.delete("detail_tab");
+  const search = params.toString();
+  const url = search
+    ? `${window.location.pathname}?${search}`
+    : window.location.pathname;
+  window.history.replaceState({}, "", url);
 }
 
 export function getArtifactSelectionFromUrl() {
@@ -91,6 +104,7 @@ export function getArtifactSelectionFromUrl() {
 export function openRunDetail(runName, runId) {
   setQueryParam("selected_run_id", runId);
   setQueryParam("selected_run", runName);
+  setQueryParam("detail_tab", null);
   navigateTo("run-detail");
 }
 

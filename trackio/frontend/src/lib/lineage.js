@@ -215,14 +215,6 @@ function compareNodes(a, b) {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-function signatureHash(signature) {
-  let hash = 5381;
-  for (let i = 0; i < signature.length; i++) {
-    hash = ((hash << 5) + hash + signature.charCodeAt(i)) >>> 0;
-  }
-  return hash.toString(36);
-}
-
 export function clusterLineage(graph, focusId, options = {}) {
   const { threshold = CLUSTER_THRESHOLD, extracted = new Set() } = options;
 
@@ -252,7 +244,7 @@ export function clusterLineage(graph, focusId, options = {}) {
       .sort(compareNodes);
     if (members.length < 2) continue;
     const cluster = {
-      id: `cluster:${signatureHash(signature)}`,
+      id: `cluster:${signature}`,
       kind: "cluster",
       member_kind: group[0].kind,
       count: members.length,

@@ -233,7 +233,7 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-weight: 600;
-    color: #10b981;
+    color: var(--lineage-run);
   }
   .kind-chip.cluster {
     color: var(--body-text-color-subdued, #6b7280);

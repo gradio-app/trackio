@@ -135,6 +135,9 @@
     padding: 6px 0;
   }
   .lineage {
+    --lineage-run: #10b981;
+    --lineage-artifact: #3b82f6;
+    --lineage-selected: #8b5cf6;
     flex: 1;
     min-height: 0;
     display: flex;
@@ -210,9 +213,9 @@
     border: 1.5px solid;
   }
   .swatch.artifact {
-    border-color: #3b82f6;
+    border-color: var(--lineage-artifact);
   }
   .swatch.run {
-    border-color: #10b981;
+    border-color: var(--lineage-run);
   }
 </style>

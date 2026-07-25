@@ -5049,6 +5049,57 @@ class SQLiteStorage:
             return result
 
     @staticmethod
+    def _link_run_identity_maps(
+        conn: sqlite3.Connection, identities: set[tuple]
+    ) -> tuple[bool, set, dict[str, set]]:
+        """Folding maps for canonicalizing the run identities that appear on
+        artifact link rows, equivalent to deriving them from
+        get_run_records(project) but restricted to the given
+        (run_id, run_name) pairs so no metrics-wide aggregation runs.
+        Returns (legacy_metrics, record_ids, ids_by_name); when
+        legacy_metrics is True link rows are keyed by name and both maps
+        are empty."""
+        legacy_metrics = not SQLiteStorage._supports_run_ids(conn)
+        record_ids: set = set()
+        ids_by_name: dict[str, set] = {}
+        names = sorted({n for _, n in identities if n is not None})
+        ids = sorted({i for i, _ in identities if i is not None})
+        if legacy_metrics or (not names and not ids):
+            return legacy_metrics, record_ids, ids_by_name
+        clauses = []
+        params: list = []
+        if names:
+            clauses.append(f"run_name IN ({','.join('?' * len(names))})")
+            params.extend(names)
+        if ids:
+            clauses.append(f"run_id IN ({','.join('?' * len(ids))})")
+            params.extend(ids)
+        rows = conn.execute(
+            f"""SELECT DISTINCT run_id, run_name FROM metrics
+            WHERE {" OR ".join(clauses)}""",
+            params,
+        ).fetchall()
+        metric_ids = set()
+        metric_names = set()
+        for row in rows:
+            if row["run_name"] is not None:
+                metric_names.add(row["run_name"])
+            if row["run_id"] is None:
+                continue
+            metric_ids.add(row["run_id"])
+            if row["run_name"] is not None:
+                ids_by_name.setdefault(row["run_name"], set()).add(row["run_id"])
+        record_ids |= metric_ids
+        for run_id, run_name in identities:
+            if run_id is None or run_name is None:
+                continue
+            if run_name in metric_names or run_id in metric_ids:
+                continue
+            record_ids.add(run_id)
+            ids_by_name.setdefault(run_name, set()).add(run_id)
+        return legacy_metrics, record_ids, ids_by_name
+
+    @staticmethod
     def get_run_artifact_counts(project: str) -> list[dict]:
         """Input/output artifact link counts for every run in `project`,
         grouped by canonical run identity: name-keyed (run_id None) when the
@@ -5070,13 +5121,11 @@ class SQLiteStorage:
                 ).fetchall()
             except sqlite3.OperationalError:
                 return []
-            legacy_metrics = not SQLiteStorage._supports_run_ids(conn)
-            records = [] if legacy_metrics else SQLiteStorage.get_run_records(project)
-            record_ids = {r["id"] for r in records if r["id"] is not None}
-            ids_by_name: dict[str, set] = {}
-            for r in records:
-                if r["id"] is not None and r["name"] is not None:
-                    ids_by_name.setdefault(r["name"], set()).add(r["id"])
+            legacy_metrics, record_ids, ids_by_name = (
+                SQLiteStorage._link_run_identity_maps(
+                    conn, {(row["run_id"], row["run_name"]) for row in rows}
+                )
+            )
             counts: dict[tuple, dict] = {}
             links_by_key: dict[tuple, set] = {}
             for row in rows:
@@ -5162,13 +5211,11 @@ class SQLiteStorage:
             except sqlite3.OperationalError:
                 link_rows = []
 
-            legacy_metrics = not SQLiteStorage._supports_run_ids(conn)
-            records = [] if legacy_metrics else SQLiteStorage.get_run_records(project)
-            record_ids = {r["id"] for r in records if r["id"] is not None}
-            ids_by_name: dict[str, set] = {}
-            for r in records:
-                if r["id"] is not None and r["name"] is not None:
-                    ids_by_name.setdefault(r["name"], set()).add(r["id"])
+            legacy_metrics, record_ids, ids_by_name = (
+                SQLiteStorage._link_run_identity_maps(
+                    conn, {(row["run_id"], row["run_name"]) for row in link_rows}
+                )
+            )
 
             links = []
             run_meta: dict[str, dict] = {}

@@ -235,9 +235,6 @@
 
 <style>
   .graph-container {
-    --lineage-run: #10b981;
-    --lineage-artifact: #3b82f6;
-    --lineage-selected: #8b5cf6;
     position: relative;
     height: 100%;
     min-height: 400px;
