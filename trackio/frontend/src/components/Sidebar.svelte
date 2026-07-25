@@ -2,8 +2,7 @@
   import { onMount } from "svelte";
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
   import Dropdown from "./Dropdown.svelte";
-  import ProjectSelector from "./ProjectSelector.svelte";
-  import Logo from "./Logo.svelte";
+  import SidebarShell from "./SidebarShell.svelte";
   import GradioCheckbox from "./GradioCheckbox.svelte";
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
@@ -70,10 +69,6 @@
     let axes = ["step", "time", ...metricColumns];
     return axes;
   });
-
-  function toggleSidebar() {
-    open = !open;
-  }
 
   function setIndeterminate(node, value) {
     node.indeterminate = value;
@@ -224,28 +219,15 @@
   }
 </script>
 
-<div class="sidebar" class:collapsed={!open}>
-  <button class="toggle-btn" onclick={toggleSidebar}>
-    {#if open}
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    {:else}
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    {/if}
-  </button>
-
-  {#if open}
-    <div class="sidebar-content">
-      <div class="sidebar-scroll">
-      <Logo {logoUrls} {darkMode} />
-
-      <div class="section">
-        <ProjectSelector {projects} bind:selectedProject {projectLocked} />
-      </div>
-
+<SidebarShell
+  bind:open
+  bind:selectedProject
+  {projects}
+  {projectLocked}
+  {logoUrls}
+  {darkMode}
+>
+  <div class="sidebar-sections">
       {#if variant === "compact" && currentPage === "runs"}
         <div class="section">
           <GradioTextbox
@@ -545,9 +527,10 @@
           </div>
         {/if}
       {/if}
-      </div>
+  </div>
 
-      {#if readOnlySource}
+  {#snippet footer()}
+    {#if readOnlySource}
         <div class="readonly-footer">
           <span class="readonly-badge">READ ONLY</span>
           <a class="readonly-link" href={readOnlySource.url} target="_blank" rel="noopener noreferrer">
@@ -576,68 +559,21 @@
           <a class="oauth-logout" href={`${window.__trackio_base || ""}/oauth/logout`} onclick={() => { sessionStorage.removeItem("trackio_oauth_session"); }}>Logout</a>
         </div>
       {/if}
-    </div>
-  {/if}
-</div>
+  {/snippet}
+</SidebarShell>
 
 <style>
-  .sidebar {
-    width: 290px;
-    min-width: 290px;
-    background: var(--background-fill-primary, white);
-    border-right: 1px solid var(--border-color-primary, #e5e7eb);
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    overflow: hidden;
-    transition: width 0.2s, min-width 0.2s;
-  }
-  .sidebar.collapsed {
-    width: 40px;
-    min-width: 40px;
-  }
-  .toggle-btn {
-    position: absolute;
-    top: 12px;
-    right: 8px;
-    z-index: 10;
-    border: none;
-    background: none;
-    color: var(--body-text-color-subdued, #9ca3af);
-    cursor: pointer;
-    padding: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm, 4px);
-    transition: color 0.15s, background-color 0.15s;
-  }
-  .toggle-btn:hover {
-    color: var(--body-text-color, #1f2937);
-    background-color: var(--background-fill-secondary, #f9fafb);
-  }
-  .sidebar-content {
-    padding: 16px;
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .sidebar-scroll {
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0;
+  .sidebar-sections {
+    padding: 4px 16px 16px;
   }
   .oauth-footer {
     flex-shrink: 0;
-    margin-top: 12px;
-    padding-top: 12px;
+    padding: 12px 16px;
     border-top: 1px solid var(--border-color-primary, #e5e7eb);
   }
   .readonly-footer {
     flex-shrink: 0;
-    margin-top: 12px;
-    padding-top: 12px;
+    padding: 12px 16px;
     border-top: 1px solid var(--border-color-primary, #e5e7eb);
     display: flex;
     align-items: center;

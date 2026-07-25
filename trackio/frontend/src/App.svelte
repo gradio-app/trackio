@@ -88,7 +88,6 @@
   let requestedUrlXAxis = $state(null);
   let urlXAxisApplied = $state(false);
   let sidebarOpen = $state(true);
-  let artifactsSidebarOpen = $state(true);
   let sidebarHidden = $state(false);
   let navbarHidden = $state(false);
   let hideEmptyTabs = $state(false);
@@ -620,7 +619,7 @@
 
   {#if currentPage === "artifacts" && !sidebarHidden}
     <ArtifactsSidebar
-      bind:open={artifactsSidebarOpen}
+      bind:open={sidebarOpen}
       {projects}
       bind:project={selectedProject}
       projectLocked={projectLocked}

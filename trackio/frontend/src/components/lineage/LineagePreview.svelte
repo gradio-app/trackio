@@ -1,4 +1,5 @@
 <script>
+  import AliasPill from "../AliasPill.svelte";
   import { openRunDetail } from "../../lib/router.js";
   import { formatSize } from "../../lib/format.js";
 
@@ -58,9 +59,7 @@
         <span class="title">{node.artifact_name}</span>
         <span class="ver-badge">v{node.version}</span>
         {#each node.aliases as alias}
-          <span class="alias-pill" class:latest={alias === "latest"}
-            >{alias}</span
-          >
+          <AliasPill {alias} />
         {/each}
       {:else if node.kind === "cluster"}
         <span class="title">
@@ -215,18 +214,6 @@
     background: var(--background-fill-primary, #ffffff);
     border-radius: var(--radius-sm, 4px);
     padding: 2px 7px;
-  }
-  .alias-pill {
-    font-size: var(--text-xs, 11px);
-    padding: 1px 7px;
-    border-radius: 9px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    color: var(--body-text-color-subdued, #6b7280);
-    background: var(--background-fill-primary, #ffffff);
-    white-space: nowrap;
-  }
-  .alias-pill.latest {
-    color: var(--color-accent, #f97316);
   }
   .kind-chip {
     font-size: var(--text-xs, 11px);

@@ -1,5 +1,6 @@
 <script>
   import Accordion from "./Accordion.svelte";
+  import AliasPill from "./AliasPill.svelte";
   import IndentGuides from "./IndentGuides.svelte";
   import LineageSection from "./lineage/LineageSection.svelte";
   import {
@@ -269,9 +270,7 @@
             <h2 class="art-name">{record.name}</h2>
             <span class="ver-badge">v{record.version}</span>
             {#each record.aliases as alias}
-              <span class="alias-pill" class:latest={alias === "latest"}
-                >{alias}</span
-              >
+              <AliasPill {alias} />
             {/each}
           </div>
           <div class="fact-row">
@@ -724,18 +723,4 @@
     padding: 4px 0;
   }
 
-  .alias-pill {
-    font-size: var(--text-xs, 11px);
-    padding: 1px 7px;
-    border-radius: 9px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    color: var(--body-text-color-subdued, #6b7280);
-    background: var(--background-fill-secondary, #f3f4f6);
-    white-space: nowrap;
-  }
-  .alias-pill.latest {
-    color: var(--color-accent, #f97316);
-    border-color: var(--color-accent, #f97316);
-    background: transparent;
-  }
 </style>

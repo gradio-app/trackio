@@ -1,7 +1,7 @@
 <script>
   import { tick } from "svelte";
-  import ProjectSelector from "./ProjectSelector.svelte";
-  import Logo from "./Logo.svelte";
+  import SidebarShell from "./SidebarShell.svelte";
+  import AliasPill from "./AliasPill.svelte";
   import IndentGuides from "./IndentGuides.svelte";
   import { listArtifacts } from "../lib/api.js";
   import {
@@ -180,39 +180,15 @@
   >
 {/snippet}
 
-<aside class="artifacts-sidebar" class:collapsed={!open}>
-  <button
-    class="toggle-btn"
-    title={open ? "Collapse sidebar" : "Expand sidebar"}
-    onclick={() => (open = !open)}
-  >
-    {#if open}
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path
-          d="M10 12L6 8L10 4"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    {:else}
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path
-          d="M6 4L10 8L6 12"
-          stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    {/if}
-  </button>
-
-  {#if open}
-    <div class="tree-header">
-    <Logo {logoUrls} {darkMode} />
-    <ProjectSelector {projects} bind:selectedProject={project} {projectLocked} />
+<SidebarShell
+  bind:open
+  bind:selectedProject={project}
+  {projects}
+  {projectLocked}
+  {logoUrls}
+  {darkMode}
+>
+  {#snippet header()}
     <div class="tree-search">
       <span class="search-label">Artifacts</span>
       <div class="search-box">
@@ -241,7 +217,7 @@
         {/if}
       </div>
     </div>
-  </div>
+  {/snippet}
 
   <div class="tree">
     {#if loading}
@@ -300,9 +276,7 @@
                       <span class="tree-chevron-spacer"></span>
                       <span class="version-label">v{version.version}</span>
                       {#each version.aliases as alias}
-                        <span class="alias-pill" class:latest={alias === "latest"}
-                          >{alias}</span
-                        >
+                        <AliasPill {alias} />
                       {/each}
                     </button>
                   {/each}
@@ -313,57 +287,10 @@
         </div>
       {/each}
     {/if}
-    </div>
-  {/if}
-</aside>
+  </div>
+</SidebarShell>
 
 <style>
-  .artifacts-sidebar {
-    width: 300px;
-    min-width: 300px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    border-right: 1px solid var(--border-color-primary, #e5e7eb);
-    background: var(--background-fill-primary, #fff);
-    overflow: hidden;
-    transition:
-      width 0.2s,
-      min-width 0.2s;
-  }
-  .artifacts-sidebar.collapsed {
-    width: 40px;
-    min-width: 40px;
-  }
-  .toggle-btn {
-    position: absolute;
-    top: 12px;
-    right: 8px;
-    z-index: 10;
-    border: none;
-    background: none;
-    color: var(--body-text-color-subdued, #9ca3af);
-    cursor: pointer;
-    padding: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm, 4px);
-    transition:
-      color 0.15s,
-      background-color 0.15s;
-  }
-  .toggle-btn:hover {
-    color: var(--body-text-color, #1f2937);
-    background-color: var(--background-fill-secondary, #f9fafb);
-  }
-
-  .tree-header {
-    padding: 16px 16px 10px;
-    flex-shrink: 0;
-  }
-
   .tree-search {
     margin-top: 14px;
   }
@@ -414,8 +341,6 @@
   }
 
   .tree {
-    flex: 1;
-    overflow-y: auto;
     padding: 6px 0 12px;
   }
   .tree-empty {
@@ -482,7 +407,7 @@
     font-weight: 600;
     flex-shrink: 0;
   }
-  .version-row .alias-pill {
+  .version-row :global(.alias-pill) {
     margin-left: 6px;
   }
 
@@ -509,21 +434,5 @@
   }
   .version-row.selected .version-label {
     color: var(--color-accent, #f97316);
-  }
-
-  .alias-pill {
-    font-size: var(--text-xs, 10px);
-    padding: 0 6px;
-    border-radius: 9px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    color: var(--body-text-color-subdued, #6b7280);
-    background: var(--background-fill-secondary, #f3f4f6);
-    white-space: nowrap;
-    line-height: 16px;
-  }
-  .alias-pill.latest {
-    color: var(--color-accent, #f97316);
-    border-color: var(--color-accent, #f97316);
-    background: transparent;
   }
 </style>
