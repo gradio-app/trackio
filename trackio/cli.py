@@ -2,6 +2,7 @@ import argparse
 import os
 import re
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import huggingface_hub
@@ -31,6 +32,7 @@ from trackio.frontend_config import (
     unset_persisted_frontend_dir,
 )
 from trackio.markdown import Markdown
+from trackio.resumable_uploads import expire_sessions
 from trackio.server import get_project_summary, get_run_summary
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -153,6 +155,28 @@ def _handle_config(args):
         else:
             print("No Trackio default frontend was set.")
         return
+
+
+def _handle_cleanup_uploads(args):
+    if args.older_than_hours <= 0:
+        error_exit("--older-than-hours must be positive.")
+    cutoff = datetime.now(UTC) - timedelta(hours=args.older_than_hours)
+    result = expire_sessions(
+        project=args.project,
+        older_than=cutoff,
+        dry_run=not args.apply,
+    )
+    if args.json:
+        print(format_json(result))
+        return
+    action = "Would reclaim" if result["dry_run"] else "Reclaimed"
+    print(
+        f"{action} {result['reclaimable_bytes']} bytes from "
+        f"{result['session_count']} incomplete upload session(s) "
+        f"in project '{result['project']}'."
+    )
+    if result["dry_run"] and result["session_count"]:
+        print("Run again with --apply to delete only the listed incomplete sessions.")
 
 
 def _extract_reports(
@@ -429,6 +453,24 @@ def main():
         "status",
         help="Show the status of all local Trackio projects, including sync status.",
     )
+
+    cleanup_uploads_parser = subparsers.add_parser(
+        "cleanup-uploads",
+        help="Report or remove expired incomplete artifact-upload staging.",
+    )
+    cleanup_uploads_parser.add_argument("--project", required=True)
+    cleanup_uploads_parser.add_argument(
+        "--older-than-hours",
+        type=float,
+        default=24,
+        help="Only include incomplete sessions not updated within this many hours.",
+    )
+    cleanup_uploads_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Delete the reported incomplete sessions; the default is dry-run.",
+    )
+    cleanup_uploads_parser.add_argument("--json", action="store_true")
 
     sync_parser = subparsers.add_parser(
         "sync",
@@ -1236,7 +1278,14 @@ def main():
         if trailing_globals.hf_token is not None:
             args.hf_token = trailing_globals.hf_token
 
-    if args.command in ("show", "status", "sync", "freeze", "skills") and _get_space(
+    if args.command in (
+        "show",
+        "status",
+        "sync",
+        "freeze",
+        "skills",
+        "cleanup-uploads",
+    ) and _get_space(
         args
     ):
         error_exit(
@@ -1258,6 +1307,8 @@ def main():
         )
     elif args.command == "status":
         _handle_status()
+    elif args.command == "cleanup-uploads":
+        _handle_cleanup_uploads(args)
     elif args.command == "sync":
         _handle_sync(args)
     elif args.command == "freeze":

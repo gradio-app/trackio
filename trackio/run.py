@@ -789,6 +789,11 @@ class Run:
             buffered,
             self.project,
             predict=self._client.predict,
+            artifact_blob_uploader=(
+                self._client.upload_artifact_blob
+                if callable(getattr(type(self._client), "upload_artifact_blob", None))
+                else None
+            ),
             hf_token=self._hf_token_for_remote(),
             warn_missing=self._warn_missing_uploads,
         )

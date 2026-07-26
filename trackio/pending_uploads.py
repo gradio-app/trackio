@@ -70,6 +70,7 @@ def replay_pending_uploads(
     project: str,
     *,
     predict: Callable[..., Any],
+    artifact_blob_uploader: Callable[[str, str, Path], bool] | None = None,
     hf_token: str | None,
     warn_missing: Callable[[int, str], None],
     verbose: bool = False,
@@ -93,14 +94,30 @@ def replay_pending_uploads(
         )
         SQLiteStorage.clear_pending_uploads(project, media["ids"])
     for proj, group in grouped["artifact_blobs"].items():
+        legacy_entries: list[dict] = []
+        legacy_ids: list[int] = []
+        if artifact_blob_uploader is not None:
+            for entry, upload_id in zip(group["entries"], group["ids"]):
+                uploaded_file = entry["uploaded_file"]
+                path = Path(uploaded_file["path"])
+                if artifact_blob_uploader(proj, entry["digest"], path):
+                    SQLiteStorage.clear_pending_uploads(project, [upload_id])
+                else:
+                    legacy_entries.append(entry)
+                    legacy_ids.append(upload_id)
+        else:
+            legacy_entries = group["entries"]
+            legacy_ids = group["ids"]
+        if not legacy_entries:
+            continue
         if verbose:
             print(
-                f"  Syncing {len(group['entries'])} artifact blobs for project '{proj}'..."
+                f"  Syncing {len(legacy_entries)} artifact blobs for project '{proj}'..."
             )
         predict(
             api_name="/bulk_upload_artifact_blob",
             project=proj,
-            uploads=group["entries"],
+            uploads=legacy_entries,
             hf_token=hf_token,
         )
-        SQLiteStorage.clear_pending_uploads(project, group["ids"])
+        SQLiteStorage.clear_pending_uploads(project, legacy_ids)

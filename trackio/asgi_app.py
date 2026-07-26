@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -18,14 +19,21 @@ from starlette.responses import FileResponse, JSONResponse, Response, StreamingR
 from starlette.routing import Route
 
 from trackio import utils
+from trackio._version import __version__
 from trackio.exceptions import TrackioAPIError
 from trackio.remote_client import HTTP_API_VERSION
+from trackio.resumable_uploads import (
+    COMPATIBILITY_MAX_BYTES,
+    DEFAULT_CHUNK_SIZE,
+    UploadSessionError,
+    abort_session,
+    complete_session,
+    create_or_resume_session,
+    get_session,
+    store_chunk,
+)
 
 logger = logging.getLogger("trackio.asgi_app")
-
-_PACKAGE_JSON_PATH = Path(__file__).parent / "package.json"
-_TRACKIO_PACKAGE_VERSION = json.loads(_PACKAGE_JSON_PATH.read_text())["version"]
-
 
 def _normalize_allowed_file_roots(
     allowed_file_roots: list[str | Path] | None,
@@ -140,7 +148,7 @@ async def version_handler(request: Request) -> Response:
     mcp_enabled = bool(getattr(request.app.state, "mcp_enabled", False))
     return JSONResponse(
         {
-            "version": _TRACKIO_PACKAGE_VERSION,
+            "version": __version__,
             "api_version": HTTP_API_VERSION,
             "api_transport": "http",
             "mcp_enabled": mcp_enabled,
@@ -408,6 +416,135 @@ async def upload_handler(request: Request) -> Response:
     return JSONResponse({"paths": saved_paths})
 
 
+def _authorize_artifact_upload(request: Request) -> Response | None:
+    upload_authorizer = getattr(request.app.state, "upload_authorizer", None)
+    if callable(upload_authorizer):
+        try:
+            upload_authorizer(request)
+        except TrackioAPIError as error:
+            return JSONResponse({"error": str(error)}, status_code=401)
+    return None
+
+
+def _upload_error(error: Exception) -> JSONResponse:
+    if isinstance(error, FileNotFoundError):
+        return JSONResponse({"error": str(error)}, status_code=404)
+    if isinstance(error, UploadSessionError):
+        return JSONResponse({"error": str(error)}, status_code=409)
+    if isinstance(error, (TypeError, ValueError, KeyError)):
+        return JSONResponse({"error": str(error)}, status_code=400)
+    logger.exception("Artifact upload request failed")
+    return JSONResponse({"error": "Artifact upload failed."}, status_code=500)
+
+
+def _resumable_session_lock(request: Request, upload_id: str) -> asyncio.Lock:
+    with request.app.state.resumable_upload_locks_guard:
+        return request.app.state.resumable_upload_locks.setdefault(
+            upload_id,
+            asyncio.Lock(),
+        )
+
+
+async def artifact_upload_capabilities_handler(request: Request) -> Response:
+    return JSONResponse(
+        {
+            "resumable": True,
+            "compatibility_max_bytes": COMPATIBILITY_MAX_BYTES,
+            "chunk_size_bytes": DEFAULT_CHUNK_SIZE,
+        }
+    )
+
+
+async def artifact_upload_init_handler(request: Request) -> Response:
+    if unauthorized := _authorize_artifact_upload(request):
+        return unauthorized
+    try:
+        payload = await request.json()
+        with request.app.state.resumable_upload_lock:
+            session = create_or_resume_session(
+                project=request.path_params["project"],
+                digest=payload["digest"],
+                size_bytes=payload["size_bytes"],
+                idempotency_key=payload["idempotency_key"],
+            )
+        return JSONResponse(session)
+    except Exception as error:
+        return _upload_error(error)
+
+
+async def artifact_upload_status_handler(request: Request) -> Response:
+    if unauthorized := _authorize_artifact_upload(request):
+        return unauthorized
+    try:
+        async with _resumable_session_lock(
+            request,
+            request.path_params["upload_id"],
+        ):
+            session = get_session(
+                request.path_params["project"],
+                request.path_params["upload_id"],
+            )
+        return JSONResponse(session)
+    except Exception as error:
+        return _upload_error(error)
+
+
+async def artifact_upload_chunk_handler(request: Request) -> Response:
+    if unauthorized := _authorize_artifact_upload(request):
+        return unauthorized
+    try:
+        claimed_digest = request.headers["x-trackio-chunk-sha256"]
+        index = int(request.path_params["index"])
+        async with _resumable_session_lock(
+            request,
+            request.path_params["upload_id"],
+        ):
+            result = await store_chunk(
+                project=request.path_params["project"],
+                upload_id=request.path_params["upload_id"],
+                index=index,
+                claimed_digest=claimed_digest,
+                chunks=request.stream(),
+            )
+        return JSONResponse(result)
+    except Exception as error:
+        return _upload_error(error)
+
+
+async def artifact_upload_complete_handler(request: Request) -> Response:
+    if unauthorized := _authorize_artifact_upload(request):
+        return unauthorized
+    try:
+        async with _resumable_session_lock(
+            request,
+            request.path_params["upload_id"],
+        ):
+            result = complete_session(
+                request.path_params["project"],
+                request.path_params["upload_id"],
+            )
+        return JSONResponse(result)
+    except Exception as error:
+        return _upload_error(error)
+
+
+async def artifact_upload_abort_handler(request: Request) -> Response:
+    if unauthorized := _authorize_artifact_upload(request):
+        return unauthorized
+    try:
+        async with _resumable_session_lock(
+            request,
+            request.path_params["upload_id"],
+        ):
+            aborted = abort_session(
+                request.path_params["project"],
+                request.path_params["upload_id"],
+            )
+        return JSONResponse({"aborted": aborted})
+    except Exception as error:
+        return _upload_error(error)
+
+
 async def gradio_upload_alias_handler(request: Request) -> Response:
     return await upload_handler(request)
 
@@ -463,6 +600,36 @@ def create_trackio_starlette_app(
         [
             Route("/version", endpoint=version_handler, methods=["GET"]),
             Route("/api/upload", endpoint=upload_handler, methods=["POST"]),
+            Route(
+                "/api/artifact-upload/capabilities",
+                endpoint=artifact_upload_capabilities_handler,
+                methods=["GET"],
+            ),
+            Route(
+                "/api/artifact-upload/{project:str}",
+                endpoint=artifact_upload_init_handler,
+                methods=["POST"],
+            ),
+            Route(
+                "/api/artifact-upload/{project:str}/{upload_id:str}",
+                endpoint=artifact_upload_status_handler,
+                methods=["GET"],
+            ),
+            Route(
+                "/api/artifact-upload/{project:str}/{upload_id:str}",
+                endpoint=artifact_upload_complete_handler,
+                methods=["POST"],
+            ),
+            Route(
+                "/api/artifact-upload/{project:str}/{upload_id:str}",
+                endpoint=artifact_upload_abort_handler,
+                methods=["DELETE"],
+            ),
+            Route(
+                "/api/artifact-upload/{project:str}/{upload_id:str}/chunks/{index:int}",
+                endpoint=artifact_upload_chunk_handler,
+                methods=["PUT"],
+            ),
             Route("/api/{api_name:str}", endpoint=api_handler, methods=["POST"]),
             Route("/file", endpoint=file_handler, methods=["GET"]),
             Route(
@@ -525,6 +692,9 @@ def create_trackio_starlette_app(
     app.state.upload_authorizer = upload_authorizer
     app.state.uploaded_temp_files = set()
     app.state.uploaded_temp_files_lock = threading.Lock()
+    app.state.resumable_upload_lock = threading.Lock()
+    app.state.resumable_upload_locks = {}
+    app.state.resumable_upload_locks_guard = threading.Lock()
     if utils.on_spaces():
         app.state.gradio_call_events = {}
         app.state.gradio_call_events_lock = threading.Lock()

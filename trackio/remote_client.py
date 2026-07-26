@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import huggingface_hub
 from gradio_client import Client as GradioClient
 from huggingface_hub.utils import build_hf_headers
 
+from trackio.resumable_uploads import COMPATIBILITY_MAX_BYTES
 from trackio.utils import parse_trackio_server_url
 
 HTTP_API_VERSION = 1
@@ -108,6 +110,7 @@ class _TrackioHTTPClient:
         if isinstance(extra, dict):
             h.update({str(k): str(v) for k, v in extra.items()})
         self.headers = h
+        self._artifact_upload_capabilities: dict[str, Any] | None = None
 
     def _upload_file(self, file_data: dict[str, Any]) -> dict[str, Any]:
         path = Path(file_data["path"])
@@ -163,6 +166,88 @@ class _TrackioHTTPClient:
             raise RuntimeError(body["error"])
         return body.get("data")
 
+    def _resumable_capabilities(self) -> dict[str, Any] | None:
+        if self._artifact_upload_capabilities is not None:
+            return self._artifact_upload_capabilities
+        response = httpx.get(
+            urljoin(self.src, "api/artifact-upload/capabilities"),
+            headers=self.headers,
+            **self.httpx_kwargs,
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        capabilities = response.json()
+        if capabilities.get("resumable") is not True:
+            return None
+        self._artifact_upload_capabilities = capabilities
+        return capabilities
+
+    def upload_artifact_blob(self, project: str, digest: str, path: Path) -> bool:
+        """Upload one blob through the resumable API.
+
+        Returns ``False`` only when a legacy server can safely handle the small
+        file through the compatibility path.
+        """
+
+        size_bytes = path.stat().st_size
+        capabilities = self._resumable_capabilities()
+        if capabilities is None:
+            if size_bytes > COMPATIBILITY_MAX_BYTES:
+                raise RuntimeError(
+                    "The Trackio server does not support resumable artifact uploads; "
+                    f"refusing to send {size_bytes} bytes through the legacy whole-file endpoint."
+                )
+            return False
+
+        idempotency_key = hashlib.sha256(
+            f"{project}\0{digest}".encode("utf-8")
+        ).hexdigest()
+        init_response = httpx.post(
+            urljoin(self.src, f"api/artifact-upload/{project}"),
+            headers=self.headers,
+            json={
+                "digest": digest,
+                "size_bytes": size_bytes,
+                "idempotency_key": idempotency_key,
+            },
+            **self.httpx_kwargs,
+        )
+        init_response.raise_for_status()
+        session = init_response.json()
+        upload_id = session["upload_id"]
+        chunk_size = int(session["chunk_size_bytes"])
+        acknowledged = {int(index) for index in session["acknowledged_chunks"]}
+        with path.open("rb") as handle:
+            for index in range(int(session["chunk_count"])):
+                chunk = handle.read(chunk_size)
+                if index in acknowledged:
+                    continue
+                chunk_digest = hashlib.sha256(chunk).hexdigest()
+                response = httpx.put(
+                    urljoin(
+                        self.src,
+                        f"api/artifact-upload/{project}/{upload_id}/chunks/{index}",
+                    ),
+                    headers={
+                        **self.headers,
+                        "x-trackio-chunk-sha256": chunk_digest,
+                    },
+                    content=chunk,
+                    **self.httpx_kwargs,
+                )
+                response.raise_for_status()
+        complete_response = httpx.post(
+            urljoin(self.src, f"api/artifact-upload/{project}/{upload_id}"),
+            headers=self.headers,
+            **self.httpx_kwargs,
+        )
+        complete_response.raise_for_status()
+        completed = complete_response.json()
+        if completed.get("digest") != digest or completed.get("size_bytes") != size_bytes:
+            raise RuntimeError("Trackio completed an artifact upload with the wrong identity.")
+        return True
+
 
 class _TrackioGradioCompatClient:
     def __init__(
@@ -207,6 +292,14 @@ class _TrackioGradioCompatClient:
                     "Redeploy with `trackio sync`."
                 ) from e
             raise
+
+    def upload_artifact_blob(self, project: str, digest: str, path: Path) -> bool:
+        if path.stat().st_size > COMPATIBILITY_MAX_BYTES:
+            raise RuntimeError(
+                "The Trackio server does not support resumable artifact uploads; "
+                f"refusing to send {path.stat().st_size} bytes through the legacy whole-file endpoint."
+            )
+        return False
 
 
 def _raise_if_space_is_building(space_id: str) -> None:
@@ -296,3 +389,6 @@ class RemoteClient:
 
     def predict(self, *args, api_name: str, **kwargs) -> Any:
         return self._client.predict(*args, api_name=api_name, **kwargs)
+
+    def upload_artifact_blob(self, project: str, digest: str, path: Path) -> bool:
+        return self._client.upload_artifact_blob(project, digest, path)

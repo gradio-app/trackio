@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import tempfile
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -8,8 +10,9 @@ import pytest
 
 import trackio
 import trackio.context_vars as context_vars
+import trackio.remote_client as remote_client_module
 import trackio.utils as trackio_utils
-from trackio import Api
+from trackio import Api, cas
 from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -171,6 +174,82 @@ def test_server_url_logs_to_self_hosted_server(temp_dir):
         client = Client(url, verbose=False)
         runs = client.predict(project, api_name="/get_runs_for_project")
         assert any(r.get("name") == run_name for r in runs)
+    finally:
+        app.close()
+
+
+def test_server_url_logs_artifact_through_resumable_transport(temp_dir, tmp_path):
+    project = "test_self_hosted_artifact"
+    run_name = "self-hosted-artifact-run"
+    payload = (b"weights-" * (1024 * 1024)) + b"tail"
+    digest = hashlib.sha256(payload).hexdigest()
+    artifact_path = tmp_path / "weights.bin"
+    artifact_path.write_bytes(payload)
+
+    app, _, _, full_url = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        context_vars.current_server.set(None)
+        context_vars.current_project.set(None)
+        context_vars.current_run.set(None)
+
+        trackio.init(project=project, name=run_name, server_url=full_url)
+        logged = trackio.log_artifact(
+            artifact_path,
+            name="model",
+            type="model",
+        )
+        trackio.finish()
+
+        assert logged.version == "v0"
+        manifest = SQLiteStorage.get_artifact_manifest(project, "model", "v0")
+        assert manifest is not None
+        assert manifest["manifest"][0]["digest"] == digest
+        assert cas.blob_path(project, digest).read_bytes() == payload
+    finally:
+        app.close()
+
+
+def test_resumable_client_retries_only_missing_chunks(temp_dir, tmp_path, monkeypatch):
+    project = "test_resumable_retry"
+    payload = b"a" * (8 * 1024 * 1024) + b"tail"
+    digest = hashlib.sha256(payload).hexdigest()
+    source = tmp_path / "weights.bin"
+    source.write_bytes(payload)
+    app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
+    write_token = parse_qs(urlparse(full_url).query).get("write_token", [None])[0]
+    assert write_token
+    client = Client(url, write_token=write_token, verbose=False)
+    real_put = remote_client_module.httpx.put
+    puts = 0
+
+    def fail_second_put(*args, **kwargs):
+        nonlocal puts
+        puts += 1
+        if puts == 2:
+            request = httpx.Request("PUT", str(args[0]))
+            raise httpx.ConnectError("synthetic disconnect", request=request)
+        return real_put(*args, **kwargs)
+
+    try:
+        monkeypatch.setattr(remote_client_module.httpx, "put", fail_second_put)
+        with pytest.raises(httpx.ConnectError, match="synthetic disconnect"):
+            client.upload_artifact_blob(project, digest, source)
+
+        sessions = list(
+            (trackio_utils.project_artifacts_dir(project) / "uploads").glob(
+                "*/session.json"
+            )
+        )
+        assert len(sessions) == 1
+        staged = json.loads(sessions[0].read_text())
+        assert sorted(staged["chunks"]) == ["0"]
+
+        monkeypatch.setattr(remote_client_module.httpx, "put", real_put)
+        assert client.upload_artifact_blob(project, digest, source) is True
+        completed = json.loads(sessions[0].read_text())
+        assert completed["state"] == "completed"
+        assert cas.blob_path(project, digest).read_bytes() == payload
     finally:
         app.close()
 

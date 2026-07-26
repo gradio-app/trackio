@@ -735,6 +735,11 @@ def _replay_pending_uploads(
         pending_uploads,
         project,
         predict=client.predict,
+        artifact_blob_uploader=(
+            client.upload_artifact_blob
+            if callable(getattr(type(client), "upload_artifact_blob", None))
+            else None
+        ),
         hf_token=hf_token,
         warn_missing=_warn_missing,
         verbose=True,

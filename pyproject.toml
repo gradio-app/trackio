@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "carbonteq-trackio"
-version = "0.31.5.post1"
+version = "0.31.5.post2"
 description = "CarbonTeq-maintained Trackio fork with post-training trace and storage extensions."
 authors = [
     { name = "Abubakar Abid", email = "abubakar@huggingface.co" },

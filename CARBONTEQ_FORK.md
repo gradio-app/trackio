@@ -9,10 +9,10 @@ integrations.
 ## Python distribution
 
 CarbonTeq publishes the fork as `carbonteq-trackio` while preserving the
-`trackio` import package and `trackio` console command. The first fork release
-is `0.31.5.post1`, derived from upstream Trackio `0.31.5`. Post-release numbers
-advance when CarbonTeq publishes additional fork changes without moving the
-upstream base.
+`trackio` import package and `trackio` console command. The current fork release
+candidate is `0.31.5.post2`, derived from upstream Trackio `0.31.5`.
+Post-release numbers advance when CarbonTeq publishes additional fork changes
+without moving the upstream base.
 
 Framework packages must depend on `carbonteq-trackio`, not the upstream-owned
 `trackio` distribution and not a transitive Git URL. Self-deployed Trackio
@@ -35,6 +35,19 @@ For an evaluation run, it also joins the selected rollout to the run's aggregate
 `eval/*` metrics so per-rollout evidence and overall results remain distinct but
 visible together.
 
+The self-hosted artifact API supports bounded, resumable uploads for model-sized
+blobs. The client negotiates an 8 MiB chunk size, acknowledges chunks
+idempotently, resumes a deterministic upload session after a client or server
+restart, verifies every chunk and the complete SHA-256, and commits an artifact
+version only after every manifest blob is durable. Servers without this
+capability retain the legacy path for files up to 32 MiB; the client refuses
+larger legacy uploads instead of buffering them in server memory.
+
+Incomplete upload sessions are project-scoped staging state. Cleanup reports
+reclaimable bytes in dry-run mode and expires only incomplete, aged sessions.
+Completed content-addressed blobs and artifact versions are not eligible for
+session cleanup.
+
 ## Storage engine
 
 Turso is the default SQL metadata engine through the `pyturso` embedded driver.
@@ -51,7 +64,8 @@ added later without changing the Trackio SDK contract.
 
 | CarbonTeq release | Upstream repository | Upstream commit |
 | --- | --- | --- |
-| `0.31.5.post1` (release candidate) | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
+| `0.31.5.post1` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
+| `0.31.5.post2` (release candidate) | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
 
 Every CarbonTeq release must add a row before it is tagged. Platform consumers
 must pin an immutable CarbonTeq commit rather than a branch or tag.
@@ -82,5 +96,6 @@ origin    git@github.com:carbonteq-ai/trackio.git
 upstream  https://github.com/gradio-app/trackio.git
 ```
 
-Rust, Tokio, Doris, and object-storage redesign are deferred and are not part of
-this fork contract.
+Rust, Tokio, Doris, and direct worker access to object-storage credentials are
+deferred and are not part of this fork contract. Trackio's existing
+server-managed artifact store remains the byte-storage boundary.
