@@ -25,7 +25,6 @@ from starlette.routing import Route
 import trackio.cas as cas
 import trackio.references as references
 import trackio.utils as utils
-from trackio import database as sqlite3
 from trackio.asgi_app import (
     cleanup_uploaded_temp_file,
     consume_uploaded_temp_file,
@@ -33,7 +32,11 @@ from trackio.asgi_app import (
 )
 from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
-from trackio.sqlite_storage import SQLiteStorage
+from trackio.storage import (
+    Storage,
+    StorageOperationalError,
+    is_retryable_storage_error,
+)
 from trackio.typehints import (
     AlertEntry,
     ArtifactBlobUploadEntry,
@@ -177,16 +180,15 @@ def _flush_loop() -> None:
         kind, payload = _write_queue[0]
         try:
             if kind == "bulk_log":
-                SQLiteStorage.bulk_log(**payload)
+                Storage.bulk_log(**payload)
             elif kind == "bulk_log_system":
-                SQLiteStorage.bulk_log_system(**payload)
+                Storage.bulk_log_system(**payload)
             elif kind == "bulk_alert":
-                SQLiteStorage.bulk_alert(**payload)
+                Storage.bulk_alert(**payload)
             _write_queue.popleft()
             retries = 0
-        except sqlite3.OperationalError as e:
-            msg = str(e).lower()
-            if "disk i/o error" in msg or "readonly" in msg:
+        except StorageOperationalError as e:
+            if is_retryable_storage_error(e):
                 retries += 1
                 logger.warning(
                     "write queue: flush failed (%s), retry %d/%d",
@@ -572,7 +574,7 @@ def upload_db_to_space(
     assert_can_write_metrics(request, hf_token)
     uploaded_path = consume_uploaded_temp_file(request, uploaded_db)
     try:
-        db_project_path = SQLiteStorage.get_project_db_path(project)
+        db_project_path = Storage.get_project_db_path(project)
         os.makedirs(os.path.dirname(db_project_path), exist_ok=True)
         shutil.copy(uploaded_path, db_project_path)
     finally:
@@ -629,7 +631,7 @@ def check_artifact_blobs(
     assert_can_write_metrics(request, hf_token)
     project = _validate_project_name(project)
     validated = [_validate_sha256_digest(d) for d in digests]
-    present = SQLiteStorage.list_artifact_blobs_present(project, validated)
+    present = Storage.list_artifact_blobs_present(project, validated)
     return {"present": [d for d in validated if d in present]}
 
 
@@ -708,7 +710,7 @@ def artifact_log(
         cas.assert_manifest_paths_compatible(paths)
     except ValueError as err:
         raise TrackioAPIError(str(err)) from err
-    present = SQLiteStorage.list_artifact_blobs_present(project, file_digests)
+    present = Storage.list_artifact_blobs_present(project, file_digests)
     missing = [d for d in file_digests if d not in present]
     if missing:
         preview = missing[:5]
@@ -717,7 +719,7 @@ def artifact_log(
             f"Manifest references blobs not on server: {preview}{suffix}"
         )
 
-    return SQLiteStorage.commit_artifact_version(
+    return Storage.commit_artifact_version(
         project=project,
         name=name,
         type=type,
@@ -736,17 +738,17 @@ def get_artifact_manifest(
     spec: str | None,
 ) -> dict | None:
     project = _validate_project_name(project)
-    return SQLiteStorage.get_artifact_manifest(project, name, spec)
+    return Storage.get_artifact_manifest(project, name, spec)
 
 
 def get_artifacts(project: str) -> list[dict]:
     project = _validate_project_name(project)
-    return SQLiteStorage.get_artifacts(project)
+    return Storage.get_artifacts(project)
 
 
 def list_artifacts(project: str) -> list[dict]:
     project = _validate_project_name(project)
-    return SQLiteStorage.list_artifacts(project)
+    return Storage.list_artifacts(project)
 
 
 def get_run_artifacts(
@@ -755,17 +757,17 @@ def get_run_artifacts(
     run_id: str | None = None,
 ) -> dict[str, list[dict]]:
     project = _validate_project_name(project)
-    return SQLiteStorage.get_run_artifacts(project, run_name=run, run_id=run_id)
+    return Storage.get_run_artifacts(project, run_name=run, run_id=run_id)
 
 
 def get_run_artifact_counts(project: str) -> list[dict]:
     project = _validate_project_name(project)
-    return SQLiteStorage.get_run_artifact_counts(project)
+    return Storage.get_run_artifact_counts(project)
 
 
 def get_artifact_consumers(project: str, version_id: int) -> list[dict]:
     project = _validate_project_name(project)
-    return SQLiteStorage.get_artifact_consumers(project, version_id)
+    return Storage.get_artifact_consumers(project, version_id)
 
 
 def log_artifact_use(
@@ -778,7 +780,7 @@ def log_artifact_use(
 ) -> None:
     assert_can_write_metrics(request, hf_token)
     project = _validate_project_name(project)
-    SQLiteStorage.insert_run_artifact_link(
+    Storage.insert_run_artifact_link(
         project=project,
         run_name=run_name,
         run_id=run_id,
@@ -797,9 +799,7 @@ def log(
     run_id: str | None = None,
 ) -> None:
     assert_can_write_metrics(request, hf_token)
-    SQLiteStorage.log(
-        project=project, run=run, run_id=run_id, metrics=metrics, step=step
-    )
+    Storage.log(project=project, run=run, run_id=run_id, metrics=metrics, step=step)
 
 
 def bulk_log(
@@ -837,8 +837,10 @@ def bulk_log(
             log_ids=data["log_ids"] if has_log_ids else None,
         )
         try:
-            SQLiteStorage.bulk_log(**payload)
-        except sqlite3.OperationalError:
+            Storage.bulk_log(**payload)
+        except StorageOperationalError as error:
+            if not is_retryable_storage_error(error):
+                raise
             _enqueue_write("bulk_log", payload)
 
 
@@ -869,8 +871,10 @@ def bulk_log_system(
             log_ids=data["log_ids"] if has_log_ids else None,
         )
         try:
-            SQLiteStorage.bulk_log_system(**payload)
-        except sqlite3.OperationalError:
+            Storage.bulk_log_system(**payload)
+        except StorageOperationalError as error:
+            if not is_retryable_storage_error(error):
+                raise
             _enqueue_write("bulk_log_system", payload)
 
 
@@ -914,8 +918,10 @@ def bulk_alert(
             alert_ids=data["alert_ids"] if has_alert_ids else None,
         )
         try:
-            SQLiteStorage.bulk_alert(**payload)
-        except sqlite3.OperationalError:
+            Storage.bulk_alert(**payload)
+        except StorageOperationalError as error:
+            if not is_retryable_storage_error(error):
+                raise
             _enqueue_write("bulk_alert", payload)
 
 
@@ -926,7 +932,7 @@ def get_alerts(
     level: str | None = None,
     since: str | None = None,
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_alerts(
+    return Storage.get_alerts(
         project, run_name=run, run_id=run_id, level=level, since=since
     )
 
@@ -941,7 +947,7 @@ def get_metric_values(
     window: int | None = None,
     run_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_metric_values(
+    return Storage.get_metric_values(
         project,
         run,
         metric_name,
@@ -954,17 +960,17 @@ def get_metric_values(
 
 
 def get_runs_for_project(project: str) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_run_records(project)
+    return Storage.get_run_records(project)
 
 
 def get_run_configs(project: str) -> dict[str, Any]:
-    return SQLiteStorage.get_all_run_configs(project)
+    return Storage.get_all_run_configs(project)
 
 
 def get_metrics_for_run(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[str]:
-    return SQLiteStorage.get_all_metrics_for_run(project, run, run_id=run_id)
+    return Storage.get_all_metrics_for_run(project, run, run_id=run_id)
 
 
 def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str]:
@@ -980,15 +986,15 @@ def filter_metrics_by_regex(metrics: list[str], filter_pattern: str) -> list[str
 
 
 def get_all_projects() -> list[str]:
-    return SQLiteStorage.get_projects()
+    return Storage.get_projects()
 
 
 def get_project_summary(project: str) -> dict[str, Any]:
-    runs = SQLiteStorage.get_run_records(project)
+    runs = Storage.get_run_records(project)
     if not runs:
         return {"project": project, "num_runs": 0, "runs": [], "last_activity": None}
 
-    last_steps = SQLiteStorage.get_max_steps_for_runs(project)
+    last_steps = Storage.get_max_steps_for_runs(project)
 
     return {
         "project": project,
@@ -1005,7 +1011,7 @@ def get_run_summary(
         record = next(
             (
                 record
-                for record in SQLiteStorage.get_run_records(project)
+                for record in Storage.get_run_records(project)
                 if record["id"] == run_id
             ),
             None,
@@ -1013,7 +1019,7 @@ def get_run_summary(
         if record is not None:
             run = record["name"]
 
-    num_logs = SQLiteStorage.get_log_count(project, run, run_id=run_id)
+    num_logs = Storage.get_log_count(project, run, run_id=run_id)
     if num_logs == 0:
         return {
             "project": project,
@@ -1025,9 +1031,9 @@ def get_run_summary(
             "last_step": None,
         }
 
-    metrics = SQLiteStorage.get_all_metrics_for_run(project, run, run_id=run_id)
-    config = SQLiteStorage.get_run_config(project, run, run_id=run_id)
-    last_step = SQLiteStorage.get_last_step(project, run, run_id=run_id)
+    metrics = Storage.get_all_metrics_for_run(project, run, run_id=run_id)
+    config = Storage.get_run_config(project, run, run_id=run_id)
+    last_step = Storage.get_last_step(project, run, run_id=run_id)
 
     return {
         "project": project,
@@ -1043,13 +1049,13 @@ def get_run_summary(
 def get_system_metrics_for_run(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[str]:
-    return SQLiteStorage.get_all_system_metrics_for_run(project, run, run_id=run_id)
+    return Storage.get_all_system_metrics_for_run(project, run, run_id=run_id)
 
 
 def get_system_logs(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_system_logs(project, run, run_id=run_id, max_points=3000)
+    return Storage.get_system_logs(project, run, run_id=run_id, max_points=3000)
 
 
 def get_system_logs_batch(
@@ -1059,7 +1065,7 @@ def get_system_logs_batch(
 ) -> list[dict[str, Any]]:
     runs_clean = _normalize_logs_batch_runs(runs)
     mp = _normalize_logs_batch_max_points(max_points)
-    return SQLiteStorage.get_system_logs_batch(project, runs_clean, max_points=mp)
+    return Storage.get_system_logs_batch(project, runs_clean, max_points=mp)
 
 
 def get_snapshot(
@@ -1071,7 +1077,7 @@ def get_snapshot(
     at_time: str | None = None,
     window: int | None = None,
 ) -> dict[str, Any]:
-    return SQLiteStorage.get_snapshot(
+    return Storage.get_snapshot(
         project,
         run,
         run_id=run_id,
@@ -1088,7 +1094,7 @@ def get_logs(
     run_id: str | None = None,
     scalar_only: bool = False,
 ) -> list[dict[str, Any]]:
-    return SQLiteStorage.get_logs(
+    return Storage.get_logs(
         project,
         run,
         max_points=3000,
@@ -1105,7 +1111,7 @@ def get_run_history(
 ) -> list[dict[str, Any]]:
     """Return unsampled run history for provider-neutral API consumers."""
 
-    return SQLiteStorage.get_logs(
+    return Storage.get_logs(
         project,
         run,
         max_points=None,
@@ -1122,7 +1128,7 @@ def get_logs_batch(
 ) -> list[dict[str, Any]]:
     runs_clean = _normalize_logs_batch_runs(runs)
     mp = _normalize_logs_batch_max_points(max_points)
-    return SQLiteStorage.get_logs_batch(
+    return Storage.get_logs_batch(
         project,
         runs_clean,
         max_points=mp,
@@ -1170,7 +1176,7 @@ def get_traces(
         except (TypeError, ValueError):
             normalized_step = None
     normalized_sort = sort if sort in _ALLOWED_TRACE_SORTS else None
-    return SQLiteStorage.get_traces(
+    return Storage.get_traces(
         project,
         run,
         search=search,
@@ -1189,13 +1195,11 @@ def get_trace_steps(
     run_id: str | None = None,
     trace_type: str | None = None,
 ) -> dict[str, Any]:
-    return SQLiteStorage.get_trace_steps(
-        project, run, run_id=run_id, trace_type=trace_type
-    )
+    return Storage.get_trace_steps(project, run, run_id=run_id, trace_type=trace_type)
 
 
 def query_project(project: str, query: str) -> dict[str, Any]:
-    return SQLiteStorage.query_project(project, query)
+    return Storage.query_project(project, query)
 
 
 def get_settings() -> dict[str, Any]:
@@ -1244,7 +1248,7 @@ def _project_has_files(project: str) -> bool:
 
 
 def get_tab_availability(project: str) -> dict[str, bool]:
-    flags = SQLiteStorage.get_tab_availability_flags(project)
+    flags = Storage.get_tab_availability_flags(project)
     return {
         "metrics": flags["metrics"],
         "system": flags["system"],
@@ -1264,7 +1268,7 @@ def delete_run(
     run_id: str | None = None,
 ) -> bool:
     assert_can_mutate_runs(request)
-    return SQLiteStorage.delete_run(project, run, run_id=run_id)
+    return Storage.delete_run(project, run, run_id=run_id)
 
 
 def rename_run(
@@ -1275,7 +1279,7 @@ def rename_run(
     run_id: str | None = None,
 ) -> bool:
     assert_can_mutate_runs(request)
-    SQLiteStorage.rename_run(project, old_name, new_name, run_id=run_id)
+    Storage.rename_run(project, old_name, new_name, run_id=run_id)
     return True
 
 
@@ -1286,9 +1290,9 @@ def force_sync() -> bool:
         logger.warning("inbox fragment import during force_sync failed: %s", e)
     if os.environ.get("TRACKIO_BUCKET_ID"):
         return True
-    SQLiteStorage._dataset_import_attempted = True
-    SQLiteStorage.export_to_parquet()
-    scheduler = SQLiteStorage.get_scheduler()
+    Storage._dataset_import_attempted = True
+    Storage.export_to_parquet()
+    scheduler = Storage.get_scheduler()
     scheduler.trigger().result()
     return True
 

@@ -35,6 +35,7 @@ from trackio.resumable_uploads import (
 
 logger = logging.getLogger("trackio.asgi_app")
 
+
 def _normalize_allowed_file_roots(
     allowed_file_roots: list[str | Path] | None,
 ) -> tuple[Path, ...]:

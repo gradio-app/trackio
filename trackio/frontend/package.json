@@ -16,15 +16,15 @@
     "eslint": "^10.1.0",
     "eslint-plugin-svelte": "^3.16.0",
     "globals": "^17.4.0",
-    "svelte": "^5.0.0",
+    "svelte": "^5.56.8",
     "svelte-eslint-parser": "^1.6.0",
-    "vite": "^6.0.0",
-    "vitest": "^3.2.4"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7"
   },
   "dependencies": {
     "hyparquet": "^1.7.0",
-    "vega": "^5.30.0",
-    "vega-embed": "^6.26.0",
-    "vega-lite": "^5.21.0"
+    "vega": "^6.3.1",
+    "vega-embed": "^7.1.0",
+    "vega-lite": "^6.4.3"
   }
 }

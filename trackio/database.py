@@ -9,9 +9,14 @@ from typing import Any
 import turso as _turso
 
 ENGINE = os.environ.get("TRACKIO_DATABASE_ENGINE", "turso").strip().lower()
-if ENGINE not in {"turso", "sqlite"}:
-    raise RuntimeError("TRACKIO_DATABASE_ENGINE must be 'turso' or 'sqlite'")
+if ENGINE not in {"turso", "sqlite", "doris"}:
+    raise RuntimeError("TRACKIO_DATABASE_ENGINE must be 'turso', 'sqlite', or 'doris'")
 
+# This module is deliberately the SQLite-compatible driver boundary. Doris is
+# selected one layer above it through ``trackio.storage``. Keep the sqlite
+# symbols importable so legacy modules can load, but fail closed if a
+# SQLite-specific caller accidentally attempts to open a database in Doris
+# mode.
 _driver = _turso if ENGINE == "turso" else _sqlite
 
 
@@ -79,6 +84,11 @@ def connect(
     **kwargs: Any,
 ) -> Any:
     """Open the configured engine while retaining sqlite3-compatible callers."""
+    if ENGINE == "doris":
+        raise RuntimeError(
+            "SQLite-compatible connect() is unavailable when "
+            "TRACKIO_DATABASE_ENGINE=doris; use the selected Trackio storage provider"
+        )
     if ENGINE == "turso":
         del timeout, check_same_thread
         return _TursoConnection(_turso.connect(database, **kwargs))

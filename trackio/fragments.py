@@ -185,7 +185,7 @@ def _group_by_run(records: list[dict]) -> dict[tuple, list[dict]]:
 
 
 def import_records(records: list[dict]) -> int:
-    from trackio.sqlite_storage import SQLiteStorage  # noqa: PLC0415
+    from trackio.storage import Storage  # noqa: PLC0415
 
     metric_records = [r for r in records if r.get("kind") == METRIC_KIND]
     system_records = [r for r in records if r.get("kind") == SYSTEM_METRIC_KIND]
@@ -197,7 +197,7 @@ def import_records(records: list[dict]) -> int:
             continue
         config = next((r["config"] for r in group if r.get("config")), None)
         has_timestamps = all(r.get("timestamp") for r in group)
-        SQLiteStorage.bulk_log(
+        Storage.bulk_log(
             project=project,
             run=run,
             run_id=run_id,
@@ -213,7 +213,7 @@ def import_records(records: list[dict]) -> int:
         if not project or not run:
             continue
         has_timestamps = all(r.get("timestamp") for r in group)
-        SQLiteStorage.bulk_log_system(
+        Storage.bulk_log_system(
             project=project,
             run=run,
             run_id=run_id,
@@ -227,7 +227,7 @@ def import_records(records: list[dict]) -> int:
         if not project or not run:
             continue
         has_timestamps = all(r.get("timestamp") for r in group)
-        SQLiteStorage.bulk_alert(
+        Storage.bulk_alert(
             project=project,
             run=run,
             run_id=run_id,

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "carbonteq-trackio"
-version = "0.31.5.post2"
+version = "0.31.5.post3"
 description = "CarbonTeq-maintained Trackio fork with post-training trace and storage extensions."
 authors = [
     { name = "Abubakar Abid", email = "abubakar@huggingface.co" },
@@ -27,6 +27,7 @@ dependencies = [
     "orjson>=3.0,<4.0.0",
     "brotli>=1.0.0,<2.0.0",
     "pyturso>=0.7.0,<1.0.0",
+    "pymysql>=1.1.0,<2.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
 ]
 classifiers = [

@@ -179,6 +179,32 @@ def _handle_cleanup_uploads(args):
         print("Run again with --apply to delete only the listed incomplete sessions.")
 
 
+def _handle_storage_migrate(args) -> None:
+    from trackio.doris_migration import migrate_sqlite_to_doris
+
+    try:
+        receipt = migrate_sqlite_to_doris(
+            Path(args.source),
+            Path(args.receipt),
+            dry_run=args.dry_run,
+            verify_only=args.verify_only,
+            projects=tuple(args.project or ()),
+            batch_size=args.batch_size,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        error_exit(str(error))
+    if receipt["dry_run"]:
+        action = "inspected"
+    elif receipt["verify_only"]:
+        action = "verified"
+    else:
+        action = "migrated and verified"
+    print(
+        f"Trackio storage {action}: projects={len(receipt['projects'])} "
+        f"receipt={args.receipt}"
+    )
+
+
 def _extract_reports(
     run: str, logs: list[dict], report_name: str | None = None
 ) -> list[dict]:
@@ -471,6 +497,50 @@ def main():
         help="Delete the reported incomplete sessions; the default is dry-run.",
     )
     cleanup_uploads_parser.add_argument("--json", action="store_true")
+
+    storage_parser = subparsers.add_parser(
+        "storage",
+        help="Inspect or migrate Trackio storage providers.",
+    )
+    storage_subparsers = storage_parser.add_subparsers(
+        dest="storage_command", required=True
+    )
+    storage_migrate_parser = storage_subparsers.add_parser(
+        "migrate",
+        help="Copy SQLite/Turso project databases into Apache Doris.",
+    )
+    storage_migrate_parser.add_argument(
+        "--source",
+        required=True,
+        help="Trackio directory or one project .db file.",
+    )
+    storage_migrate_parser.add_argument(
+        "--receipt",
+        required=True,
+        help="Path for the redacted migration and reconciliation receipt.",
+    )
+    storage_migrate_parser.add_argument(
+        "--project",
+        action="append",
+        help="Migrate only this canonical project name; may be repeated.",
+    )
+    storage_migrate_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=500,
+        help="Maximum evidence rows per Doris write batch.",
+    )
+    mode = storage_migrate_parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Inspect source databases and write a receipt without changing Doris.",
+    )
+    mode.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Compare source and Doris counts without copying records.",
+    )
 
     sync_parser = subparsers.add_parser(
         "sync",
@@ -1285,9 +1355,8 @@ def main():
         "freeze",
         "skills",
         "cleanup-uploads",
-    ) and _get_space(
-        args
-    ):
+        "storage",
+    ) and _get_space(args):
         error_exit(
             f"The '{args.command}' command does not support --space (remote mode)."
         )
@@ -1309,6 +1378,9 @@ def main():
         _handle_status()
     elif args.command == "cleanup-uploads":
         _handle_cleanup_uploads(args)
+    elif args.command == "storage":
+        if args.storage_command == "migrate":
+            _handle_storage_migrate(args)
     elif args.command == "sync":
         _handle_sync(args)
     elif args.command == "freeze":

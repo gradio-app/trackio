@@ -4,6 +4,7 @@
   import * as vega from "vega";
   import { buildColorSpecKey } from "../lib/dataProcessing.js";
   import { visibleLegendEntries } from "../lib/legend.js";
+  import { VEGA_LITE_SCHEMA } from "../lib/vegaSpec.js";
 
   let {
     data = [],
@@ -263,7 +264,7 @@
     }
 
     return {
-      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      $schema: VEGA_LITE_SCHEMA,
       width: "container",
       height: fullscreen ? "container" : 250,
       autosize: { type: "fit", contains: "padding" },

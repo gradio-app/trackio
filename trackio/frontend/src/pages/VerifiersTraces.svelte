@@ -378,7 +378,7 @@
                 <h3>{activeBranchIndex === selectedBranches.length - 1 ? "Final trajectory" : `Branch ${activeBranchIndex + 1}`}</h3>
                 {#if selectedBranches.length > 1}
                   <div class="branch-tabs" aria-label="Rollout branches">
-                    {#each selectedBranches as branch, index}
+                    {#each selectedBranches as _, index}
                       <button
                         class:active={index === activeBranchIndex}
                         onclick={() => (activeBranchIndex = index)}

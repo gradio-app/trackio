@@ -2,6 +2,10 @@
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
   import { buildColorSpecKey } from "../lib/dataProcessing.js";
+  import {
+    buildAxisLabelExpression,
+    VEGA_LITE_SCHEMA,
+  } from "../lib/vegaSpec.js";
 
   let {
     data = [],
@@ -90,7 +94,7 @@
     const yTitle = y.includes("/") ? y.split("/").pop() : y;
 
     return {
-      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+      $schema: VEGA_LITE_SCHEMA,
       width: "container",
       height: fullscreen ? "container" : 250,
       autosize: { type: "fit", contains: "padding" },
@@ -108,7 +112,7 @@
           axis: {
             labelAngle: keys.length > 4 ? -45 : 0,
             labelLimit: 120,
-            labelExpr: `${JSON.stringify(labelByKey)}[datum.value] || datum.value`,
+            labelExpr: buildAxisLabelExpression(labelByKey),
           },
           title: null,
         },
