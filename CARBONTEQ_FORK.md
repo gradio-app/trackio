@@ -78,11 +78,11 @@ system-metric, trace, alert, artifact-metadata, and lineage records; it is not
 a downstream analytical projection. Model and media bytes remain behind
 Trackio's existing server-managed artifact boundary.
 
-This implementation remains an unpublished candidate until its source changes
-are reviewed, committed, pushed, and consumed by immutable commit. The current
-deployment is bound to a source-diff and wheel-digest receipt. Operate one
-Trackio server replica until artifact-version allocation is made safe across
-replicas.
+This implementation is published on the CarbonTeq fork and must be consumed by
+immutable commit. The current deployment is still bound to an older
+source-diff and wheel-digest receipt until the corrected Trackio/Observatory
+services are rebuilt and promoted. Operate one Trackio server replica until
+artifact-version allocation is made safe across replicas.
 
 Raw project SQL remains deliberately unavailable with Doris because its tables
 are shared across projects rather than stored in one project-local database.
