@@ -21,7 +21,13 @@
   }
 
   const PAGE_SIZE = 48;
-  const EMPTY_MEDIA_ITEMS = { images: [], videos: [], audios: [], tables: [] };
+  const EMPTY_MEDIA_ITEMS = {
+    images: [],
+    videos: [],
+    audios: [],
+    tables: [],
+    htmls: [],
+  };
 
   let rawMediaItems = $state(EMPTY_MEDIA_ITEMS);
   let sortOrder = $state("newest");
@@ -38,6 +44,7 @@
       videos: PAGE_SIZE,
       audios: PAGE_SIZE,
       tables: PAGE_SIZE,
+      htmls: PAGE_SIZE,
     };
   }
 
@@ -69,6 +76,7 @@
     videos: sortMediaItems(rawMediaItems.videos),
     audios: sortMediaItems(rawMediaItems.audios),
     tables: sortMediaItems(rawMediaItems.tables.filter(isDisplayableTable)),
+    htmls: sortMediaItems(rawMediaItems.htmls),
   }));
 
   function imageName(img) {
@@ -91,13 +99,15 @@
     videos: mediaItems.videos.slice(0, visibleCounts.videos),
     audios: mediaItems.audios.slice(0, visibleCounts.audios),
     tables: mediaItems.tables.slice(0, visibleCounts.tables),
+    htmls: mediaItems.htmls.slice(0, visibleCounts.htmls),
   }));
 
   let hasMedia = $derived(
     mediaItems.images.length > 0 ||
       mediaItems.videos.length > 0 ||
       mediaItems.audios.length > 0 ||
-      mediaItems.tables.length > 0,
+      mediaItems.tables.length > 0 ||
+      mediaItems.htmls.length > 0,
   );
 
   function showMore(type) {
@@ -137,6 +147,7 @@
       const videos = [];
       const audios = [];
       const tables = [];
+      const htmls = [];
       let mediaIndex = 0;
 
       if (logs) {
@@ -164,13 +175,16 @@
                 case "trackio.table":
                   tables.push(item);
                   break;
+                case "trackio.html":
+                  htmls.push(item);
+                  break;
               }
             }
           });
         });
       }
 
-      rawMediaItems = { images, videos, audios, tables };
+      rawMediaItems = { images, videos, audios, tables, htmls };
     } catch (e) {
       console.error("Failed to load media:", e);
     } finally {
@@ -281,7 +295,7 @@
       {:else}
         <h2>No media or tables in this run</h2>
         <p>Log images, video, audio, and tables by passing Trackio objects to <code>trackio.log()</code>:</p>
-        <pre><code>{'import trackio\n\ntrackio.init(project="my-project")\ntrackio.log({"plot": trackio.Image("figure.png")})\ntrackio.log({"clip": trackio.Video("output.mp4")})\ntrackio.log({"audio": trackio.Audio("speech.wav")})\n\nimport pandas as pd\ndf = pd.DataFrame({"epoch": [0, 1], "acc": [0.9, 0.95]})\ntrackio.log({"samples": trackio.Table(dataframe=df)})'}</code></pre>
+        <pre><code>{'import trackio\n\ntrackio.init(project="my-project")\ntrackio.log({"plot": trackio.Image("figure.png")})\ntrackio.log({"clip": trackio.Video("output.mp4")})\ntrackio.log({"audio": trackio.Audio("speech.wav")})\ntrackio.log({"report": trackio.Html("<h1>Results</h1>")})\n\nimport pandas as pd\ndf = pd.DataFrame({"epoch": [0, 1], "acc": [0.9, 0.95]})\ntrackio.log({"samples": trackio.Table(dataframe=df)})'}</code></pre>
         <p>Each type appears in its own section here once logged.</p>
       {/if}
     </div>
@@ -504,6 +518,41 @@
           <div class="pagination-row">
             <span>Showing {visibleMediaItems.tables.length} of {mediaItems.tables.length}</span>
             <button type="button" class="load-more-button" onclick={() => showMore("tables")}>Load more</button>
+          </div>
+        {/if}
+      </details>
+    {/if}
+
+    {#if mediaItems.htmls.length > 0}
+      <details class="section" open>
+        <summary class="section-summary">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-title">HTML ({mediaItems.htmls.length})</span>
+        </summary>
+        <div class="gallery html-gallery">
+          {#each visibleMediaItems.htmls as item}
+            <div class="gallery-item html-gallery-item">
+              <div class="media-label">{item.key}</div>
+              <iframe
+                class="html-frame"
+                src={getFilePath(item)}
+                title={item.caption || item.key}
+                sandbox="allow-scripts allow-downloads"
+                loading="lazy"
+              ></iframe>
+              {#if item.caption}
+                <div class="caption">{item.caption}</div>
+              {/if}
+              {@render meta(item)}
+            </div>
+          {/each}
+        </div>
+        {#if visibleCounts.htmls < mediaItems.htmls.length}
+          <div class="pagination-row">
+            <span>Showing {visibleMediaItems.htmls.length} of {mediaItems.htmls.length}</span>
+            <button type="button" class="load-more-button" onclick={() => showMore("htmls")}>Load more</button>
           </div>
         {/if}
       </details>
@@ -800,6 +849,16 @@
     width: 100%;
     display: block;
     border-radius: var(--radius-sm, 4px);
+  }
+  .html-gallery {
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  }
+  .html-frame {
+    width: 100%;
+    height: 420px;
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--background-fill-primary, white);
   }
   .audio-gallery-item {
     justify-content: space-between;
