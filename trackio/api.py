@@ -369,6 +369,16 @@ class Api:
             "system_metrics": True,
         }
 
+    def run_configs(self, project: str) -> dict[str, Any]:
+        """Every run's configuration in one request.
+
+        The server has always been able to answer this for a whole project;
+        without it on the client, callers read configurations one run at a time.
+        """
+        if self._remote_client is None:
+            return SQLiteStorage.get_all_run_configs(project)
+        return self._remote_client.predict(project=project, api_name="/get_run_configs")
+
     def run_lifecycles(self, project: str) -> dict[str, Any]:
         """Every run's latest lifecycle values in one request.
 
