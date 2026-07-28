@@ -103,7 +103,20 @@ added later without changing the Trackio SDK contract.
 | --- | --- | --- |
 | `0.31.5.post1` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
 | `0.31.5.post2` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
-| `0.31.5.post3` (release candidate) | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
+| `0.31.5.post3` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
+| `0.31.5.post4` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
+
+`0.31.5.post4` adds project-scoped bulk read APIs so a client can describe every
+run without one configuration request and one history request per run:
+
+- `SQLiteStorage.get_run_lifecycles` / `DorisStorage.get_run_lifecycles` and
+  shared shaping in `trackio/lifecycle.py`
+- server `/get_run_lifecycles`
+- client `Api.run_lifecycles` and `Api.run_configs`
+
+Immutable published commit for this release:
+`7d831e7f3ac1b8f0bbae3d6a6acaf863552257df` (branch `feat/bulk-run-lifecycles`
+until merged to `main`).
 
 Every CarbonTeq release must add a row before it is tagged. Platform consumers
 must pin an immutable CarbonTeq commit rather than a branch or tag.
