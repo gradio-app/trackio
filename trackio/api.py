@@ -369,6 +369,17 @@ class Api:
             "system_metrics": True,
         }
 
+    def run_lifecycles(self, project: str) -> dict[str, Any]:
+        """Every run's latest lifecycle values in one request.
+
+        Reading these per run makes listing a project cost a request per run.
+        """
+        if self._remote_client is None:
+            return SQLiteStorage.get_run_lifecycles(project)
+        return self._remote_client.predict(
+            project=project, api_name="/get_run_lifecycles"
+        )
+
     def runs(self, project: str) -> Runs:
         if self._remote_client is not None:
             return Runs(project, self._remote_client)

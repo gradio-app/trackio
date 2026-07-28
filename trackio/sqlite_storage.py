@@ -25,6 +25,7 @@ except ImportError:
 import huggingface_hub as hf
 import orjson
 
+from trackio.lifecycle import lifecycle_row
 from trackio import cas, references
 from trackio import database as sqlite3
 from trackio.commit_scheduler import CommitScheduler
@@ -4000,6 +4001,48 @@ class SQLiteStorage:
                         source_conn.commit()
 
                         return True
+
+    @staticmethod
+    def get_run_lifecycles(project: str) -> dict[str, dict]:
+        """Return the latest lifecycle row for every run in `project`.
+
+    Lifecycle values are logged as ordinary metric rows, so describing a run
+    otherwise costs a request per run and a listing costs one per run in the
+    project. This answers for every run at once, which is what makes listing a
+    project cost the same whether it holds one run or a thousand.
+    """
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return {}
+        lifecycles: dict[str, dict] = {}
+        try:
+            with SQLiteStorage._get_connection(db_path) as conn:
+                identity = (
+                    "run_id" if SQLiteStorage._supports_run_ids(conn) else "run_name"
+                )
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"""
+                    SELECT {identity} AS run_key, metrics FROM metrics
+                    WHERE metrics LIKE ?
+                    ORDER BY timestamp
+                    """,
+                    ("%run/status%",),
+                )
+                for row in cursor.fetchall():
+                    try:
+                        values = orjson.loads(row["metrics"])
+                    except (TypeError, ValueError, orjson.JSONDecodeError):
+                        continue
+                    if not isinstance(values, dict) or "run/status" not in values:
+                        continue
+                    # Ordered oldest first, so the last row seen for a run wins.
+                    lifecycles[str(row["run_key"])] = lifecycle_row(values)
+        except sqlite3.OperationalError as error:
+            if "no such table: metrics" in str(error):
+                return {}
+            raise
+        return lifecycles
 
     @staticmethod
     def get_all_run_configs(project: str) -> dict[str, dict]:

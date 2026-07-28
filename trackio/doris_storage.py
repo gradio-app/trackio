@@ -16,6 +16,7 @@ from pymysql.cursors import DictCursor
 
 import trackio.cas as cas
 import trackio.references as references
+from trackio.lifecycle import lifecycle_row
 from trackio.doris_schema import (
     MANAGED_TABLES,
     SCHEMA_VERSION,
@@ -1208,6 +1209,33 @@ class DorisStorage:
             return {
                 str(row["run_id"]): int(row["max_step"]) for row in cursor.fetchall()
             }
+
+    @classmethod
+    def get_run_lifecycles(cls, project: str) -> dict[str, dict]:
+        """Return the latest lifecycle row for every run in `project`.
+
+    Lifecycle values are logged as ordinary metric rows, so describing a run
+    otherwise costs a request per run and a listing costs one per run in the
+    project. This answers for every run at once, which is what makes listing a
+    project cost the same whether it holds one run or a thousand.
+    """
+        lifecycles: dict[str, dict] = {}
+        with cls._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT run_id, timestamp, metrics FROM metrics
+                WHERE project_id = %s AND metrics LIKE %s
+                ORDER BY timestamp, event_id
+                """,
+                (project, "%run/status%"),
+            )
+            for row in cursor.fetchall():
+                values = _decode(row["metrics"])
+                if not isinstance(values, dict) or "run/status" not in values:
+                    continue
+                # Ordered oldest first, so the last row seen for a run wins.
+                lifecycles[str(row["run_id"])] = lifecycle_row(values)
+        return lifecycles
 
     @classmethod
     def get_alerts(

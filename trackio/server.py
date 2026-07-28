@@ -967,6 +967,11 @@ def get_run_configs(project: str) -> dict[str, Any]:
     return Storage.get_all_run_configs(project)
 
 
+def get_run_lifecycles(project: str) -> dict[str, Any]:
+    """Every run's latest lifecycle values, so a listing needs one request."""
+    return Storage.get_run_lifecycles(project)
+
+
 def get_metrics_for_run(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[str]:
@@ -1335,6 +1340,7 @@ def _api_registry() -> dict[str, Any]:
         "get_logs": get_logs,
         "get_run_history": get_run_history,
         "get_logs_batch": get_logs_batch,
+        "get_run_lifecycles": get_run_lifecycles,
         "get_traces": get_traces,
         "get_trace_steps": get_trace_steps,
         "query_project": query_project,

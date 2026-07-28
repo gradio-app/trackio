@@ -524,3 +524,41 @@ def test_query_project_normalizes_bytes(temp_dir):
 def test_query_project_missing_project(temp_dir):
     with pytest.raises(FileNotFoundError):
         SQLiteStorage.query_project("nonexistent", "SELECT 1")
+
+
+def test_get_run_lifecycles_answers_for_every_run_at_once(temp_dir):
+    """Listing a project must not cost a request per run.
+
+    Status and timings are logged as ordinary metric rows, so reading them one
+    run at a time made describing a project proportional to how many runs it
+    held. This answers for all of them in a single query.
+    """
+    SQLiteStorage.log(
+        project="lifecycles",
+        run="first",
+        metrics={"run/status": "running", "run/started_at": "t0", "loss": 1.0},
+    )
+    SQLiteStorage.log(
+        project="lifecycles",
+        run="first",
+        metrics={"run/status": "succeeded", "run/started_at": "t0", "run/finished_at": "t1"},
+    )
+    SQLiteStorage.log(
+        project="lifecycles",
+        run="second",
+        metrics={"run/status": "failed", "run/started_at": "t2", "run/error_type": "Boom"},
+    )
+    SQLiteStorage.log(project="lifecycles", run="third", metrics={"loss": 0.5})
+
+    lifecycles = SQLiteStorage.get_run_lifecycles("lifecycles")
+
+    assert len(lifecycles) == 2, "a run that logged no status has no lifecycle to report"
+    statuses = {values["run/status"] for values in lifecycles.values()}
+    assert statuses == {"succeeded", "failed"}, "the latest row for a run wins"
+    assert all("loss" not in values for values in lifecycles.values())
+    failed = next(v for v in lifecycles.values() if v["run/status"] == "failed")
+    assert failed["run/error_type"] == "Boom"
+
+
+def test_get_run_lifecycles_is_empty_for_an_unknown_project(temp_dir):
+    assert SQLiteStorage.get_run_lifecycles("never-created") == {}
