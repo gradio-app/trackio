@@ -10,7 +10,7 @@ integrations.
 
 CarbonTeq publishes the fork as `carbonteq-trackio` while preserving the
 `trackio` import package and `trackio` console command. The current fork release
-candidate is `0.31.5.post3`, derived from upstream Trackio `0.31.5`.
+is `0.31.5.post5`, derived from upstream Trackio `0.31.5`.
 Post-release numbers advance when CarbonTeq publishes additional fork changes
 without moving the upstream base.
 
@@ -105,6 +105,7 @@ added later without changing the Trackio SDK contract.
 | `0.31.5.post2` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
 | `0.31.5.post3` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
 | `0.31.5.post4` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
+| `0.31.5.post5` | `gradio-app/trackio` | `438cb28d2c82c7b7d42431e45d5677a8cc90eb77` |
 
 `0.31.5.post4` adds project-scoped bulk read APIs so a client can describe every
 run without one configuration request and one history request per run:
@@ -114,12 +115,14 @@ run without one configuration request and one history request per run:
 - server `/get_run_lifecycles`
 - client `Api.run_lifecycles` and `Api.run_configs`
 
-Immutable published commit for this release:
-`7d831e7f3ac1b8f0bbae3d6a6acaf863552257df` (branch `feat/bulk-run-lifecycles`
-until merged to `main`).
+`0.31.5.post4` on `carbonteq/stable` was published with distribution metadata
+`post4` while `trackio._version.__version__` still said `post3`. That index is
+non-volatile, so `0.31.5.post5` is the corrected release: same APIs, matching
+import and distribution versions. Do not install `post4` from the index.
 
 Every CarbonTeq release must add a row before it is tagged. Platform consumers
-must pin an immutable CarbonTeq commit rather than a branch or tag.
+should prefer the published `carbonteq-trackio` distribution once it is on the
+configured index; until then they may pin an immutable CarbonTeq commit.
 
 ## Updating from upstream
 
