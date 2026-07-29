@@ -169,8 +169,8 @@
         viewBox="0 0 10 10"
         refX="6"
         refY="5"
-        markerWidth="7"
-        markerHeight="7"
+        markerWidth="4"
+        markerHeight="4"
         orient="auto-start-reverse"
       >
         <path d="M 0 1 L 9 5 L 0 9 Z" class="arrow-head" />
@@ -275,11 +275,19 @@
   }
   .edge {
     fill: none;
-    stroke: var(--border-color-primary, #d1d5db);
+    stroke: color-mix(
+      in srgb,
+      var(--body-text-color-subdued, #6b7280) 55%,
+      var(--border-color-primary, #d1d5db)
+    );
     stroke-width: 1.5;
   }
   .arrow-head {
-    fill: var(--border-color-primary, #d1d5db);
+    fill: color-mix(
+      in srgb,
+      var(--body-text-color-subdued, #6b7280) 55%,
+      var(--border-color-primary, #d1d5db)
+    );
   }
   .node {
     cursor: pointer;
