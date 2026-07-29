@@ -4,6 +4,7 @@ export const NODE_W = 140;
 export const NODE_H = 44;
 export const SMOOTH_EDGE_LIMIT = 300;
 export const EDGE_NODE_GAP = 6;
+export const EDGE_STUB = 12;
 
 function assignSideAnchors(routed) {
   const groups = new Map();
@@ -27,9 +28,9 @@ function assignSideAnchors(routed) {
   }
 }
 
-function anchorPoint(endpoint, gap = EDGE_NODE_GAP) {
+function anchorPoint(endpoint, extra = 0) {
   return {
-    x: endpoint.node.x + endpoint.side * (NODE_W / 2 + gap),
+    x: endpoint.node.x + endpoint.side * (NODE_W / 2 + EDGE_NODE_GAP + extra),
     y: endpoint.y,
   };
 }
@@ -115,7 +116,13 @@ export function layoutLineage(nodes, edges) {
   assignSideAnchors(routed);
   const outEdges = routed.map(({ edge, interior, start, end }) => ({
     ...edge,
-    points: [anchorPoint(start), ...interior, anchorPoint(end)],
+    points: [
+      anchorPoint(start),
+      anchorPoint(start, EDGE_STUB),
+      ...interior,
+      anchorPoint(end, EDGE_STUB),
+      anchorPoint(end),
+    ],
   }));
   const size = graph.graph();
   return {
