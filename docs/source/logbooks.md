@@ -1,33 +1,22 @@
 # Logbooks
 
 Trackio logbooks are shareable experiment notebooks for recording the reasoning,
-commands, results, figures, artifacts, and agent traces behind an experiment.
+commands, results, figures, artifacts (checkpoints, datasets, etc.), and agent traces behind an experiment.
 A logbook is stored locally in the `.trackio/logbook` directory of a workspace
 and can be previewed locally or published as a static Hugging Face Space.
 
-> **Recommended for coding agents:** Start the logbook at the beginning of the
-> agent session. Install the Trackio skill so the agent knows to run experiment
-> commands through the logbook, then attach the active session trace. This
-> creates a complete record that a person or the next agent can continue from.
+**Recommended for coding agents**: The easiest way to use Logbooks with coding agents (e.g. Codex, Claude Code, Pi, OpenCode) is to just give your coding agent these instructions:
 
-Run these commands from the experiment workspace before beginning substantive
-work (replace the placeholders):
+```txt
+trackio skills add
+trackio logbook open
+trackio logbook attach trace <path to current trace>
 
-```sh
-trackio logbook open --title "<experiment title>"
-trackio skills add --codex
-trackio logbook attach trace "/absolute/path/to/current-session.jsonl" --title "Codex session"
+Work in this workspace's Trackio logbook. Before running any experiment or
+script, create or select the relevant page with `trackio logbook page "..."`. Run every experiment command with `trackio logbook run -- <command>` ratherthan invoking it directly, which will log the code and its outputs into the logbook. 
 ```
 
-Give the coding agent these instructions immediately:
-
-> Work in this workspace's Trackio logbook. Before running any experiment or
-> script, create or select the relevant page with `trackio logbook page "..."`.
-> Run every experiment command with `trackio logbook run -- <command>` rather
-> than invoking it directly. Record findings with Markdown, figures, and
-> artifacts as they are produced. Keep the attached session trace in place and
-> review it for sensitive content before publishing. Use `trackio logbook read`
-> to understand the current record before continuing work from another session.
+For more specifics and fine-grained control, keep reading!
 
 ## Start an agent session with a logbook
 
@@ -145,23 +134,5 @@ trackio logbook publish username/learning-rate-logbook
 ```
 
 Published logbooks are static and read-only. The Space stores references to
-trace datasets and artifact buckets by default; use `--public` only when those
-referenced resources should also be public. Use `--private` to make the Space
-private.
+trace datasets and artifact buckets by default; use `--public` only when those referenced resources should also be public. Use `--private` to make the Space private.
 
-## Keep a logbook current
-
-Regenerate the derived site files after editing page sources directly:
-
-```sh
-trackio logbook sync
-```
-
-Use `trackio logbook pin <cell-id>` to surface an important cell on the
-logbook introduction, and `trackio logbook remove trace <session-id>` or
-`trackio logbook cell remove <cell-id>` to remove attached content.
-
-The Python API exposes the same building blocks through `trackio.logbook`,
-including `create_logbook`, `ensure_page`, `add_markdown_cell`,
-`add_code_cell`, `add_figure_cell`, `add_artifact_cell`, `attach_trace`, and
-`publish`.
