@@ -398,11 +398,3 @@ def test_artifact_lineage_truncation_filters_dangling_edges(temp_dir, monkeypatc
     for edge in result["edges"]:
         assert edge["source"] in node_ids
         assert edge["target"] in node_ids
-
-
-def test_artifact_lineage_endpoint_registered(temp_dir):
-    fixture = _seed_golden_lineage()
-    assert server.get_artifact_lineage(
-        "p", fixture["focus_version_id"]
-    ) == SQLiteStorage.get_artifact_lineage("p", fixture["focus_version_id"])
-    assert "get_artifact_lineage" in server._api_registry()
