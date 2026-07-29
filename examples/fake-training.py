@@ -95,8 +95,6 @@ for run in range(5):
                 "train/accuracy": round(train_accuracy, 4),
                 "train/rewards/reward1": random.random(),
                 "train/rewards/reward2": random.random(),
-                "train/rewards/reward3": random.random(),
-                "train/rewards/reward4": random.random(),
                 "val/loss": round(val_loss, 4),
                 "val/accuracy": round(val_accuracy, 4),
                 "grad_norm": grad_norm,
