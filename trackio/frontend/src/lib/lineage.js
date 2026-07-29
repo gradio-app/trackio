@@ -16,11 +16,12 @@ export function buildRunOwnership(runs, links = []) {
     knownNames.add(name);
     if (id != null) addOwner(name, id);
   }
+  const runRecordIds = new Set(recordIds);
   for (const link of links) {
     const name = link.run_name ?? null;
     if (name == null || knownNames.has(name)) continue;
     const id = link.run_id ?? null;
-    if (id == null || recordIds.has(id)) continue;
+    if (id == null || runRecordIds.has(id)) continue;
     recordIds.add(id);
     addOwner(name, id);
   }

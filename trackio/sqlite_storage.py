@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import time
 import uuid
+from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -58,6 +59,7 @@ _TEMP_STORE_WHITELIST = frozenset({"default", "file", "memory"})
 _READ_ONLY_QUERY_PREFIXES = ("select", "with", "pragma")
 _QUERY_MAX_ROWS = 10_000
 _MAX_LINEAGE_NODES = 1000
+_SQL_IN_CHUNK = 500
 _READ_ONLY_PRAGMAS = frozenset(
     {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo"}
 )
@@ -5066,19 +5068,17 @@ class SQLiteStorage:
         ids = sorted({i for i, _ in identities if i is not None})
         if legacy_metrics or (not names and not ids):
             return legacy_metrics, record_ids, ids_by_name
-        clauses = []
-        params: list = []
-        if names:
-            clauses.append(f"run_name IN ({','.join('?' * len(names))})")
-            params.extend(names)
-        if ids:
-            clauses.append(f"run_id IN ({','.join('?' * len(ids))})")
-            params.extend(ids)
-        rows = conn.execute(
-            f"""SELECT DISTINCT run_id, run_name FROM metrics
-            WHERE {" OR ".join(clauses)}""",
-            params,
-        ).fetchall()
+        rows = []
+        for column, values in (("run_name", names), ("run_id", ids)):
+            for start in range(0, len(values), _SQL_IN_CHUNK):
+                chunk = values[start : start + _SQL_IN_CHUNK]
+                rows.extend(
+                    conn.execute(
+                        f"""SELECT DISTINCT run_id, run_name FROM metrics
+                        WHERE {column} IN ({",".join("?" * len(chunk))})""",
+                        chunk,
+                    ).fetchall()
+                )
         metric_ids = set()
         metric_names = set()
         for row in rows:
@@ -5237,7 +5237,7 @@ class SQLiteStorage:
                         "created_at": row["created_at"],
                     },
                 )
-                if row["created_at"] < meta["created_at"]:
+                if (row["created_at"] or "") < (meta["created_at"] or ""):
                     meta["created_at"] = row["created_at"]
                 links.append(
                     {
@@ -5256,9 +5256,9 @@ class SQLiteStorage:
 
             visited = {focus}
             truncated = False
-            queue = [focus]
+            queue = deque([focus])
             while queue:
-                node = queue.pop(0)
+                node = queue.popleft()
                 if node.startswith("art:"):
                     neighbors = by_version.get(int(node[4:]), ())
                 else:

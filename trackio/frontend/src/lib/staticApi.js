@@ -688,8 +688,10 @@ export async function getArtifactManifest(_project, name, spec) {
 }
 
 async function getLinkOwnership() {
-  const runs = await getRunsJson();
-  const { links } = await getArtifactTables();
+  const [runs, { links }] = await Promise.all([
+    getRunsJson(),
+    getArtifactTables(),
+  ]);
   return buildRunOwnership(runs, links);
 }
 
@@ -771,8 +773,10 @@ export async function getArtifactConsumers(_project, versionId) {
 }
 
 export async function getArtifactLineage(_project, versionId) {
-  const tables = await getArtifactTables();
-  const runs = await getRunsJson();
+  const [tables, runs] = await Promise.all([
+    getArtifactTables(),
+    getRunsJson(),
+  ]);
   return buildLineage(tables, runs, Number(versionId));
 }
 
