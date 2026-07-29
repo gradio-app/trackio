@@ -5,24 +5,33 @@ export const NODE_H = 44;
 export const SMOOTH_EDGE_LIMIT = 300;
 export const EDGE_NODE_GAP = 6;
 
-function shiftPoint(from, toward, gap) {
-  const dx = toward.x - from.x;
-  const dy = toward.y - from.y;
-  const len = Math.hypot(dx, dy);
-  if (!len || len <= gap) return from;
-  return { x: from.x + (dx / len) * gap, y: from.y + (dy / len) * gap };
+function assignSideAnchors(routed) {
+  const groups = new Map();
+  const add = (nodeId, endpoint) => {
+    const key = `${nodeId}|${endpoint.side}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(endpoint);
+  };
+  for (const route of routed) {
+    add(route.edge.source, route.start);
+    add(route.edge.target, route.end);
+  }
+  for (const endpoints of groups.values()) {
+    endpoints.sort((a, b) => a.sortY - b.sortY);
+    endpoints.forEach((endpoint, i) => {
+      endpoint.y =
+        endpoint.node.y -
+        NODE_H / 2 +
+        (NODE_H * (i + 1)) / (endpoints.length + 1);
+    });
+  }
 }
 
-function trimEdgePoints(points, gap = EDGE_NODE_GAP) {
-  if (!points || points.length < 2) return points ?? [];
-  const out = points.slice();
-  out[0] = shiftPoint(out[0], out[1], gap);
-  out[out.length - 1] = shiftPoint(
-    out[out.length - 1],
-    out[out.length - 2],
-    gap,
-  );
-  return out;
+function anchorPoint(endpoint, gap = EDGE_NODE_GAP) {
+  return {
+    x: endpoint.node.x + endpoint.side * (NODE_W / 2 + gap),
+    y: endpoint.y,
+  };
 }
 
 export function mergeBidirectionalEdges(edges) {
@@ -50,7 +59,7 @@ export function layoutLineage(nodes, edges) {
   graph.setGraph({
     rankdir: "LR",
     nodesep: 14,
-    ranksep: 40,
+    ranksep: 50,
     edgesep: 8,
     marginx: 20,
     marginy: 20,
@@ -79,14 +88,35 @@ export function layoutLineage(nodes, edges) {
     const pos = graph.node(node.id);
     return { ...node, x: pos.x, y: pos.y, width: NODE_W, height: NODE_H };
   });
-  const outEdges = merged.map((edge) => {
+  const routed = merged.map((edge) => {
     const label = graph.edge(
       edge.source,
       edge.target,
       `${edge.source}|${edge.target}|${edge.direction}`,
     );
-    return { ...edge, points: trimEdgePoints(label?.points ?? []) };
+    const source = graph.node(edge.source);
+    const target = graph.node(edge.target);
+    const interior = (label?.points ?? []).slice(1, -1);
+    return {
+      edge,
+      interior,
+      start: {
+        node: source,
+        side: target.x >= source.x ? 1 : -1,
+        sortY: interior[0]?.y ?? target.y,
+      },
+      end: {
+        node: target,
+        side: source.x >= target.x ? 1 : -1,
+        sortY: interior[interior.length - 1]?.y ?? source.y,
+      },
+    };
   });
+  assignSideAnchors(routed);
+  const outEdges = routed.map(({ edge, interior, start, end }) => ({
+    ...edge,
+    points: [anchorPoint(start), ...interior, anchorPoint(end)],
+  }));
   const size = graph.graph();
   return {
     nodes: outNodes,

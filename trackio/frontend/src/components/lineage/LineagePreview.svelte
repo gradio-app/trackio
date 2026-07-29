@@ -71,7 +71,6 @@
         <span class="title">{node.run_name ?? node.run_id}</span>
         <span class="kind-chip run">run</span>
       {/if}
-      <span class="spacer"></span>
       <button class="close-btn" title="Close preview" onclick={onClose}
         >×</button
       >
@@ -196,10 +195,12 @@
     gap: 10px;
   }
   .preview-header {
+    position: relative;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 6px;
+    padding-right: 24px;
   }
   .title {
     font-size: var(--text-md, 14px);
@@ -303,10 +304,10 @@
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color-subdued, #6b7280);
   }
-  .spacer {
-    flex: 1;
-  }
   .close-btn {
+    position: absolute;
+    top: 0px;
+    right: 0;
     background: none;
     border: none;
     color: var(--body-text-color-subdued, #6b7280);
