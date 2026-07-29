@@ -24,7 +24,7 @@ from trackio.cpu import CpuMonitor
 from trackio.gpu import GpuMonitor, gpu_available
 from trackio.histogram import Histogram
 from trackio.markdown import Markdown
-from trackio.media import TrackioMedia, get_project_media_path
+from trackio.media import TrackioHtml, TrackioMedia, get_project_media_path
 from trackio.pending_uploads import classify_pending_uploads, replay_pending_uploads
 from trackio.remote_client import RemoteClient, is_transient_remote_error
 from trackio.sqlite_storage import SQLiteStorage
@@ -1079,6 +1079,7 @@ class Run:
                 "trackio.image",
                 "trackio.video",
                 "trackio.audio",
+                "trackio.html",
             ]:
                 file_path = value.get("file_path")
                 if file_path:
@@ -1165,6 +1166,8 @@ class Run:
                     metrics[key] = value._to_dict()
                 elif isinstance(value, Markdown):
                     metrics[key] = value._to_dict()
+                elif TrackioHtml.is_loggable_figure(value):
+                    metrics[key] = self._process_media(TrackioHtml(value), media_step)
                 elif isinstance(value, TrackioMedia):
                     metrics[key] = self._process_media(value, media_step)
             metrics = utils.serialize_values(metrics)

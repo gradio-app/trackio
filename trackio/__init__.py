@@ -32,6 +32,7 @@ from trackio.launch import launch_trackio_dashboard
 from trackio.markdown import Markdown
 from trackio.media import (
     TrackioAudio,
+    TrackioHtml,
     TrackioImage,
     TrackioVideo,
     get_project_media_path,
@@ -87,6 +88,7 @@ __all__ = [
     "Image",
     "Video",
     "Audio",
+    "Html",
     "Table",
     "Trace",
     "Histogram",
@@ -98,6 +100,7 @@ __all__ = [
 Audio = TrackioAudio
 Image = TrackioImage
 Video = TrackioVideo
+Html = TrackioHtml
 
 
 config = {}

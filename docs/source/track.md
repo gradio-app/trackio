@@ -204,6 +204,23 @@ Audio can be logged from a file path or a numpy array.
 - Values may be float or integer; floats are peak-normalized and converted to 16-bit PCM
 - `format` can be `"wav"` or `"mp3"` when logging from a numpy array (default `"wav"`)
 
+### Logging HTML and figures
+
+You can log HTML using the [`Html`] class.
+
+```python
+trackio.log({"report": trackio.Html("<h1>Results</h1>")})
+```
+
+Matplotlib and Plotly figures are converted to HTML:
+
+```python
+import plotly.express as px
+
+fig = px.line(x=[1, 2, 3], y=[4, 5, 6])
+trackio.log({"plot": fig})
+```
+
 ### Logging system metrics
 
 Trackio can automatically log system metrics in the background. It supports both NVIDIA GPUs and Apple Silicon (M-series) Macs.
