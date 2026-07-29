@@ -10,6 +10,25 @@ and can be previewed locally or published as a static Hugging Face Space.
 > commands through the logbook, then attach the active session trace. This
 > creates a complete record that a person or the next agent can continue from.
 
+Run these commands from the experiment workspace before beginning substantive
+work (replace the placeholders):
+
+```sh
+trackio logbook open --title "<experiment title>"
+trackio skills add --codex
+trackio logbook attach trace "/absolute/path/to/current-session.jsonl" --title "Codex session"
+```
+
+Give the coding agent these instructions immediately:
+
+> Work in this workspace's Trackio logbook. Before running any experiment or
+> script, create or select the relevant page with `trackio logbook page "..."`.
+> Run every experiment command with `trackio logbook run -- <command>` rather
+> than invoking it directly. Record findings with Markdown, figures, and
+> artifacts as they are produced. Keep the attached session trace in place and
+> review it for sensitive content before publishing. Use `trackio logbook read`
+> to understand the current record before continuing work from another session.
+
 ## Start an agent session with a logbook
 
 The easiest way to use a logbook is to create it before the agent starts making
