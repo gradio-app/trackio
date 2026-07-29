@@ -20,6 +20,11 @@ def test_master_plan_example_runs_verbatim(temp_dir, tmp_path, monkeypatch):
     trackio.finish()
 
     materialized = Path(out) / "weights.bin"
+    assert (
+        Path(out)
+        == tmp_path / ".trackio" / "artifact-downloads" / "art-demo" / "my-model_v0"
+    )
+    assert not (tmp_path / "artifacts").exists()
     assert materialized.is_file()
     assert materialized.read_bytes() == weights.read_bytes()
     assert fetched.metadata == {"acc": 0.91}

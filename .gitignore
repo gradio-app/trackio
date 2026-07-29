@@ -3,6 +3,7 @@ tests/__pycache__/
 .trackio/
 .gradio/
 trackio.db
+/artifacts/
 *.pyc
 *.pyi
 *.claude/
@@ -15,3 +16,4 @@ build/
 tf_test_run/
 test.py
 screenshots/
+examples/mock_logbook_session/

@@ -1,5 +1,108 @@
 # trackio
 
+## 0.33.0
+
+### Features
+
+- [#647](https://github.com/gradio-app/trackio/pull/647) [`1d25383`](https://github.com/gradio-app/trackio/commit/1d253830e302d4bcd67f3aae5458e6c70c5f5144) - Increase smoothing upper bound to 100.  Thanks @abidlabs!
+- [#648](https://github.com/gradio-app/trackio/pull/648) [`6a1063f`](https://github.com/gradio-app/trackio/commit/6a1063f7c834f850390866b80608ca17c8563199) - Deprecate persisting data to HF Datasets in favor of Buckets.  Thanks @abidlabs!
+
+### Fixes
+
+- [#649](https://github.com/gradio-app/trackio/pull/649) [`8506189`](https://github.com/gradio-app/trackio/commit/8506189b69f6c0361e6420ef545abaad4a773cb3) - render logged histograms in the dashboard's Metrics tab.  Thanks @abidlabs!
+
+## 0.32.2
+
+### Features
+
+- [#641](https://github.com/gradio-app/trackio/pull/641) [`2d1c01a`](https://github.com/gradio-app/trackio/commit/2d1c01a5ce0307ec5c81660c512bf6f25dd3120a) - Improve logbook layout and public repository views.  Thanks @abidlabs!
+- [#643](https://github.com/gradio-app/trackio/pull/643) [`e8292c5`](https://github.com/gradio-app/trackio/commit/e8292c5c26baa0e7e806144fa1bbf5ecfb492f3d) - docs: document the artifact tables in the storage schema page.  Thanks @adrien-grl!
+
+## 0.32.1
+
+### Features
+
+- [#639](https://github.com/gradio-app/trackio/pull/639) [`73971e6`](https://github.com/gradio-app/trackio/commit/73971e66a4f1daf5c42341727349e6f82ab4e887) - Fix logbook code overflow, CLI command truncation, Hub link contrast, resource ID validation, and live visibility detection for referenced trace datasets and Buckets.  Thanks @abidlabs!
+
+## 0.32.0
+
+### Features
+
+- [#635](https://github.com/gradio-app/trackio/pull/635) [`b4587b0`](https://github.com/gradio-app/trackio/commit/b4587b0ebce18756a0f38e3721ed2880a7307137) - Add Code & Markdown, Traces, and Workspace logbook views with live local refresh, guided empty states, and privacy-aware manual publishing to Agent Traces Datasets and HF Buckets.  Thanks @NielsRogge!
+
+## 0.31.5
+
+### Features
+
+- [#630](https://github.com/gradio-app/trackio/pull/630) [`bed508c`](https://github.com/gradio-app/trackio/commit/bed508c04c487686dea3dea70c67b058dd895f96) - Fix automatic dashboard cells to use the active logbook page instead of creating a page named after the Trackio project.  Thanks @abidlabs!
+
+## 0.31.4
+
+### Features
+
+- [#628](https://github.com/gradio-app/trackio/pull/628) [`3eeaa99`](https://github.com/gradio-app/trackio/commit/3eeaa99bd05bef69053b9a1b5c7af3abf56c360c) - let `logbook cell figure` embed image files directly.  Thanks @abidlabs!/n  `trackio logbook cell figure` now accepts an image path via a new `--image`/n  flag, and `--html <file>` transparently embeds the file when it points at an/n  image. Previously the only way to add a PNG/JPG figure was to hand-encode it/n  into an `<img>` data-URI, and passing an image path to `--html` crashed with a/n  `UnicodeDecodeError` (the binary file was read as UTF-8 text). Images are/n  embedded as responsive base64 data URIs. The Python API `add_figure_cell` gains/n  a matching `image=` parameter.
+
+## 0.31.3
+
+### Features
+
+- [#626](https://github.com/gradio-app/trackio/pull/626) [`174aecf`](https://github.com/gradio-app/trackio/commit/174aecff33e6d1cc8d71965a73538c0510abed46) - Fix logbook Markdown escaping and figure hotspot navigation.  Thanks @abidlabs!
+
+## 0.31.2
+
+### Features
+
+- [#624](https://github.com/gradio-app/trackio/pull/624) [`a0918ed`](https://github.com/gradio-app/trackio/commit/a0918edc7594bb211f9e6871546b9d36939f0658) - Fix poster hotspot navigation after iframe load.  Thanks @abidlabs!
+
+## 0.31.1
+
+### Features
+
+- [#621](https://github.com/gradio-app/trackio/pull/621) [`a40f1a4`](https://github.com/gradio-app/trackio/commit/a40f1a464c51652ecdeab04d999659d71b76047e) - add native fullscreen mode for logbook figures.  Thanks @abidlabs!
+- [#623](https://github.com/gradio-app/trackio/pull/623) [`31fd4d7`](https://github.com/gradio-app/trackio/commit/31fd4d7b4004f0c511484f089e6a550da1b4d71e) - let interactive logbook figures navigate to logbook pages.  Thanks @abidlabs!
+
+## 0.31.0
+
+### Features
+
+- [#601](https://github.com/gradio-app/trackio/pull/601) [`8c49140`](https://github.com/gradio-app/trackio/commit/8c491406c54685369d43f3a9c4d4a0e99108bc49) - browse artifacts from the UI.  Thanks @Saba9!
+- [#602](https://github.com/gradio-app/trackio/pull/602) [`1ae1558`](https://github.com/gradio-app/trackio/commit/1ae155803b5450b181a47767255421499074c70b) - feat: add Artifact.add_reference to reference external objects without copy.  Thanks @adrien-grl!
+
+## 0.30.4
+
+### Features
+
+- [#618](https://github.com/gradio-app/trackio/pull/618) [`64c18f6`](https://github.com/gradio-app/trackio/commit/64c18f65bf98d6f54040395a1ca0473347ba6a2b) - Logbook: share button on figures + `logbook pin` CLI.  Thanks @abidlabs!
+
+## 0.30.3
+
+### Features
+
+- [#616](https://github.com/gradio-app/trackio/pull/616) [`645498b`](https://github.com/gradio-app/trackio/commit/645498be37bafab28f884a36e80c5bc0eab06cd9) - Logbook single page.  Thanks @abidlabs!
+
+## 0.30.2
+
+### Features
+
+- [#614](https://github.com/gradio-app/trackio/pull/614) [`eba80c7`](https://github.com/gradio-app/trackio/commit/eba80c7464af250519a90b8ac3179ff6652b651a) - Render logbooks as single-page documents with section navigation and contextual resources.  Thanks @abidlabs!
+- [#612](https://github.com/gradio-app/trackio/pull/612) [`2c1b943`](https://github.com/gradio-app/trackio/commit/2c1b9436b093e9f9335c99c10fe4b6afa622e314) - Warn that logbook open is experimental.  Thanks @abidlabs!
+- [#611](https://github.com/gradio-app/trackio/pull/611) [`96b1d94`](https://github.com/gradio-app/trackio/commit/96b1d94def7596aa1302864cbfc57942dd63822b) - Logbook: auto-capture output artifacts and live-embedded dashboard cells.  Thanks @abidlabs!
+
+## 0.30.1
+
+### Features
+
+- [#609](https://github.com/gradio-app/trackio/pull/609) [`2ed1295`](https://github.com/gradio-app/trackio/commit/2ed12959c73aa9c04ca1096cf7a8315ce2886ed1) - Serve live logbook preview from open.  Thanks @abidlabs!
+
+## 0.30.0
+
+### Features
+
+- [#603](https://github.com/gradio-app/trackio/pull/603) [`a793fd8`](https://github.com/gradio-app/trackio/commit/a793fd88827482134bce295c6228e117de64566a) - Move default artifact downloads under `./.trackio/artifact-downloads/` so materialized files stay out of the project root.  Thanks @abidlabs!
+- [#604](https://github.com/gradio-app/trackio/pull/604) [`dd3b8ee`](https://github.com/gradio-app/trackio/commit/dd3b8eeef4e0da8bf0df6238617e20ae81f3e564) - docs: clarify artifact types.  Thanks @abidlabs!
+- [#586](https://github.com/gradio-app/trackio/pull/586) [`7db4c3b`](https://github.com/gradio-app/trackio/commit/7db4c3b6de6ff4903daf7dabed8842f212c8b7fd) - artifact tracking API — `log_artifact`, `use_artifact`, and an `Artifact` class for versioned, named file collections with aliases, content-addressed deduplication, and producer/consumer run lineage; works offline and syncs blobs to Hugging Face Spaces/Datasets.  Thanks @Saba9!
+- [#597](https://github.com/gradio-app/trackio/pull/597) [`5ba561e`](https://github.com/gradio-app/trackio/commit/5ba561e1b4023abdf63624f4fb396367ed6e9e76) - Add experiment logbooks: shareable static-Space lab notebooks.  Thanks @abidlabs!
+
 ## 0.29.0
 
 ### Features

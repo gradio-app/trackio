@@ -2,8 +2,6 @@ import importlib.metadata
 import io
 import json as json_mod
 import os
-import shutil
-import sys
 import tempfile
 import threading
 import time
@@ -11,11 +9,6 @@ import warnings
 from collections import Counter
 from importlib.resources import files
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 import httpx
 import huggingface_hub
@@ -35,6 +28,7 @@ from trackio.bucket_storage import (
     upload_project_to_bucket,
     upload_project_to_bucket_for_static,
 )
+from trackio.cas import PARTIAL_BLOB_GLOB
 from trackio.frontend_config import resolve_frontend_dir
 from trackio.pending_uploads import replay_pending_uploads
 from trackio.remote_client import RemoteClient
@@ -43,7 +37,9 @@ from trackio.utils import (
     get_or_create_project_hash,
     on_spaces,
     preprocess_space_and_dataset_ids,
+    project_artifacts_dir,
     project_media_dir,
+    warn_dataset_persistence_deprecated,
 )
 
 SPACE_HOST_URL = "https://{user_name}-{space_name}.hf.space/"
@@ -293,6 +289,11 @@ def resolve_auto_bucket_id(
 
 def _get_source_install_dependencies() -> str:
     """Get trackio dependencies from pyproject.toml for source installs."""
+    try:
+        import tomllib  # noqa: PLC0415
+    except ModuleNotFoundError:
+        import tomli as tomllib  # noqa: PLC0415
+
     trackio_path = files("trackio")
     pyproject_path = Path(trackio_path).parent / "pyproject.toml"
     with open(pyproject_path, "rb") as f:
@@ -349,6 +350,8 @@ def deploy_as_space(
         raise ValueError(
             "Cannot use bucket volume options together with dataset_id; use one persistence mode."
         )
+    if dataset_id is not None:
+        warn_dataset_persistence_deprecated()
 
     trackio_path = files("trackio")
 
@@ -503,7 +506,9 @@ def create_space_if_not_exists(
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier for the Space.
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         bucket_id (`str`, *optional*):
             Full Hub bucket id (`namespace/name`) to attach via the Hub volumes API (platform mount).
             Sets `TRACKIO_DIR` to the mount path.
@@ -524,6 +529,8 @@ def create_space_if_not_exists(
         raise ValueError(
             f"Invalid bucket ID: {bucket_id}. Must be in the format: username/bucketname or orgname/bucketname."
         )
+    if dataset_id is not None:
+        warn_dataset_persistence_deprecated()
     try:
         huggingface_hub.repo_info(space_id, repo_type="space")
         print(
@@ -838,7 +845,12 @@ def _build_remote_client_with_retry(
     last_error: Exception | None = None
     while time.time() < deadline:
         try:
-            return RemoteClient(space_id, verbose=verbose, httpx_kwargs={"timeout": 90})
+            return RemoteClient(
+                space_id,
+                hf_token=huggingface_hub.utils.get_token(),
+                verbose=verbose,
+                httpx_kwargs={"timeout": 90},
+            )
         except (ValueError, ConnectionError) as e:
             last_error = e
             time.sleep(delay)
@@ -914,14 +926,26 @@ def upload_dataset_for_static(
         else:
             raise ValueError(f"Failed to create Dataset: {e}")
 
+    def _upload_folder(folder: Path, path_in_repo: str, ignore_patterns=None) -> None:
+        if not folder.exists():
+            return
+        _retry_hf_write(
+            f"Dataset {path_in_repo} upload",
+            lambda: hf_api.upload_folder(
+                repo_id=dataset_id,
+                repo_type="dataset",
+                folder_path=str(folder),
+                path_in_repo=path_in_repo,
+                ignore_patterns=ignore_patterns,
+            ),
+        )
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_dir = Path(tmp_dir)
         SQLiteStorage.export_for_static_space(project, output_dir)
 
-        media_dir = project_media_dir(project)
-        if media_dir.exists():
-            dest = output_dir / "media"
-            shutil.copytree(media_dir, dest)
+        _upload_folder(project_media_dir(project), "media")
+        _upload_folder(project_artifacts_dir(project), "artifacts", [PARTIAL_BLOB_GLOB])
 
         _retry_hf_write(
             "Dataset upload",
@@ -953,6 +977,8 @@ def deploy_as_static_space(
             "run entirely in the browser, so their snapshot data must be public. "
             "Use sdk='gradio' for a private dashboard."
         )
+    if dataset_id is not None:
+        warn_dataset_persistence_deprecated()
     hf_api = huggingface_hub.HfApi()
 
     try:
@@ -1086,7 +1112,9 @@ def sync(
             server. `"static"` freezes the Space: deploys a static Space that reads from an HF Bucket
             (no server needed).
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         bucket_id (`str`, *optional*):
             The ID of the HF Bucket to sync to. By default, a bucket is auto-generated
             from the space_id.

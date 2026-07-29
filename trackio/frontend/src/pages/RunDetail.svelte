@@ -1,7 +1,13 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
-  import { getRunSummary } from "../lib/api.js";
-  import { getQueryParam } from "../lib/router.js";
+  import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
+  import { getRunSummary, getRunArtifacts } from "../lib/api.js";
+  import {
+    getQueryParam,
+    navigateTo,
+    setArtifactSelectionParams,
+  } from "../lib/router.js";
+  import { formatSize } from "../lib/format.js";
 
   let { project = null } = $props();
 
@@ -9,33 +15,62 @@
   let runId = $state(null);
   let summary = $state(null);
   let loading = $state(false);
+  let runArtifacts = $state({ input: [], output: [] });
+  let expandedArtifact = $state({});
 
-  $effect(() => {
+  function toggleArtifact(key) {
+    expandedArtifact[key] = !expandedArtifact[key];
+  }
+
+  function openInArtifacts(name, version) {
+    setArtifactSelectionParams(name, version);
+    navigateTo("artifacts");
+  }
+
+  let loadSeq = 0;
+
+  function syncParamsFromUrl() {
     runId = getQueryParam("selected_run_id");
     runName = getQueryParam("selected_run");
+  }
+
+  $effect(() => {
+    syncParamsFromUrl();
+    window.addEventListener("popstate", syncParamsFromUrl);
+    return () => window.removeEventListener("popstate", syncParamsFromUrl);
   });
 
   async function loadDetail() {
+    const seq = ++loadSeq;
+    expandedArtifact = {};
     if (!project || (!runName && !runId)) {
       summary = null;
+      runArtifacts = { input: [], output: [] };
+      loading = false;
       return;
     }
 
     loading = true;
+    const runRef = runId ? { id: runId, name: runName } : runName;
+    const artifactsPromise = getRunArtifacts(project, runRef).catch(() => ({
+      input: [],
+      output: [],
+    }));
     try {
-      const loadedSummary = await getRunSummary(
-        project,
-        runId ? { id: runId, name: runName } : runName,
-      );
+      const loadedSummary = await getRunSummary(project, runRef);
+      if (seq !== loadSeq) return;
       summary = loadedSummary;
       if (loadedSummary?.run) {
         runName = loadedSummary.run;
       }
     } catch (e) {
-      console.error("Failed to load run detail:", e);
+      if (seq === loadSeq) console.error("Failed to load run detail:", e);
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
+    const artifacts = await artifactsPromise;
+    if (seq !== loadSeq) return;
+    runArtifacts = artifacts;
   }
 
   $effect(() => {
@@ -46,7 +81,51 @@
   });
 </script>
 
+{#snippet artifactEntry(art, dir)}
+  {@const key = `${dir}:${art.name}@v${art.version}`}
+  <div class="artifact-entry">
+    <div class="artifact-row">
+      <button class="row-toggle" onclick={() => toggleArtifact(key)}>
+        <span class="chevron" class:open={expandedArtifact[key]}>▾</span>
+        <span class="art-name"
+          >{art.name}<span class="art-ver">:v{art.version}</span></span
+        >
+        <span class="art-type">{art.type}</span>
+        <span class="art-size">{formatSize(art.size_bytes)}</span>
+      </button>
+      <button
+        class="open-btn"
+        onclick={() => openInArtifacts(art.name, art.version)}
+        title="Open in Artifacts"
+        aria-label="Open {art.name} v{art.version} in the Artifacts tab"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          <polyline points="15 3 21 3 21 9" />
+          <line x1="10" y1="14" x2="21" y2="3" />
+        </svg>
+      </button>
+    </div>
+    {#if expandedArtifact[key]}
+      <ArtifactVersionDetail {project} name={art.name} version={art.version} />
+    {/if}
+  </div>
+{/snippet}
+
 <div class="run-detail-page">
+  <button class="back-link" onclick={() => navigateTo("runs")}>
+    <span aria-hidden="true">←</span>
+    All runs
+  </button>
   {#if loading}
     <LoadingTrackio />
   {:else if !summary}
@@ -78,7 +157,9 @@
         <div class="detail-item">
           <span class="detail-label">Metrics</span>
           <span class="detail-value"
-            >{summary.metrics ? summary.metrics.join(", ") : "None"}</span
+            >{summary.metrics && summary.metrics.length
+              ? summary.metrics.join(", ")
+              : "N/A"}</span
           >
         </div>
       </div>
@@ -86,6 +167,24 @@
       {#if summary.config}
         <h3>Configuration</h3>
         <pre class="config-block">{JSON.stringify(summary.config, null, 2)}</pre>
+      {/if}
+
+      {#if runArtifacts.output.length > 0}
+        <h3>Output artifacts</h3>
+        <div class="artifact-links">
+          {#each runArtifacts.output as art}
+            {@render artifactEntry(art, "out")}
+          {/each}
+        </div>
+      {/if}
+
+      {#if runArtifacts.input.length > 0}
+        <h3>Input artifacts</h3>
+        <div class="artifact-links">
+          {#each runArtifacts.input as art}
+            {@render artifactEntry(art, "in")}
+          {/each}
+        </div>
       {/if}
     </div>
   {/if}
@@ -96,6 +195,24 @@
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
+  }
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--body-text-color-subdued, #6b7280);
+    font: inherit;
+    font-size: var(--text-sm, 12px);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .back-link:hover {
+    color: var(--body-text-color, #1f2937);
+    text-decoration: underline;
   }
   .detail-card {
     background: var(--background-fill-primary, white);
@@ -142,6 +259,91 @@
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color, #1f2937);
     overflow-x: auto;
+  }
+  .artifact-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .artifact-entry {
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: var(--radius-md, 6px);
+    overflow: hidden;
+  }
+  .artifact-row {
+    display: flex;
+    align-items: center;
+  }
+  .row-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  .row-toggle:hover {
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .open-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    margin-right: 6px;
+    border: none;
+    background: none;
+    color: var(--body-text-color-subdued, #9ca3af);
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    transition:
+      color 0.15s,
+      background-color 0.15s;
+  }
+  .open-btn:hover {
+    color: var(--color-accent, #f97316);
+    background: var(--background-fill-secondary, #f9fafb);
+  }
+  .chevron {
+    flex-shrink: 0;
+    display: inline-block;
+    color: var(--body-text-color, #1f2937);
+    font-size: 14px;
+    transition: transform 0.15s;
+    transform: rotate(-90deg);
+  }
+  .chevron.open {
+    transform: none;
+  }
+  .art-name {
+    font-weight: 600;
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-md, 14px);
+  }
+  .art-ver {
+    font-weight: 400;
+    color: var(--body-text-color-subdued, #6b7280);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .art-type {
+    font-size: var(--text-xs, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--body-text-color-subdued, #6b7280);
+    border: 1px solid var(--border-color-primary, #e5e7eb);
+    border-radius: 9px;
+    padding: 1px 8px;
+  }
+  .art-size {
+    margin-left: auto;
+    font-size: var(--text-sm, 12px);
+    color: var(--body-text-color-subdued, #6b7280);
   }
   .empty-state {
     max-width: 640px;

@@ -100,21 +100,31 @@ export function processRunData(
 function smoothData(rows, cols, windowSize) {
   const w = Math.max(3, Math.min(windowSize, rows.length));
   const half = Math.floor(w / 2);
+  const prefixSums = {};
+  const prefixCounts = {};
+  cols.forEach((col) => {
+    const sums = new Float64Array(rows.length + 1);
+    const counts = new Uint32Array(rows.length + 1);
+    for (let i = 0; i < rows.length; i++) {
+      const value = rows[i][col];
+      const isNumeric = value != null && typeof value === "number";
+      sums[i + 1] = sums[i] + (isNumeric ? value : 0);
+      counts[i + 1] = counts[i] + (isNumeric ? 1 : 0);
+    }
+    prefixSums[col] = sums;
+    prefixCounts[col] = counts;
+  });
   return rows.map((row, i) => {
     const smoothed = { ...row };
+    const start = Math.max(0, i - half);
+    const end = Math.min(rows.length, i + half + 1);
     cols.forEach((col) => {
       if (row[col] == null || typeof row[col] !== "number") return;
-      const start = Math.max(0, i - half);
-      const end = Math.min(rows.length, i + half + 1);
-      let sum = 0;
-      let count = 0;
-      for (let j = start; j < end; j++) {
-        if (rows[j][col] != null && typeof rows[j][col] === "number") {
-          sum += rows[j][col];
-          count++;
-        }
-      }
-      smoothed[col] = count > 0 ? sum / count : row[col];
+      const count = prefixCounts[col][end] - prefixCounts[col][start];
+      smoothed[col] =
+        count > 0
+          ? (prefixSums[col][end] - prefixSums[col][start]) / count
+          : row[col];
     });
     return smoothed;
   });

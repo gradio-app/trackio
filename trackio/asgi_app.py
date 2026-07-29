@@ -443,10 +443,6 @@ async def artifact_blob_handler(request: Request) -> Response:
         digest = _server._validate_sha256_digest(digest)
     except TrackioAPIError:
         return Response("Not found", status_code=404)
-    try:
-        _server.assert_can_stage_upload(request)
-    except TrackioAPIError:
-        return Response("Forbidden", status_code=403)
     blob = cas.blob_path(project, digest)
     if not blob.is_file():
         return Response("Not found", status_code=404)

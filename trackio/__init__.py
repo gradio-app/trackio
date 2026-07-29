@@ -36,6 +36,11 @@ from trackio.media import (
     TrackioVideo,
     get_project_media_path,
 )
+from trackio.references import (
+    ReferenceHandler,
+    ResolvedReference,
+    register_reference_handler,
+)
 from trackio.remote_client import RemoteClient
 from trackio.run import Run
 from trackio.server import TrackioDashboardApp, build_starlette_app_only
@@ -76,6 +81,9 @@ __all__ = [
     "import_tf_events",
     "save",
     "Artifact",
+    "ReferenceHandler",
+    "ResolvedReference",
+    "register_reference_handler",
     "Image",
     "Video",
     "Audio",
@@ -279,7 +287,9 @@ def init(
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         bucket_id (`str`, *optional*):
             The ID of the Hugging Face Bucket to use for metric persistence. By default,
             when a `space_id` is provided and `bucket_id` is not explicitly set, a
@@ -649,6 +659,11 @@ def init(
 
     context_vars.current_run.set(run)
     globals()["config"] = run.config
+
+    # NOTE: trackio.init() deliberately does NOT mutate any logbook that happens
+    # to live in the current directory. Auto-noting a dashboard cell here used to
+    # corrupt curated logbooks (e.g. injecting a stray cell / page). Cells are
+    # added explicitly via the `trackio logbook` CLI instead.
 
     if _should_embed_local:
         try:

@@ -3,10 +3,11 @@
     currentPage = "metrics",
     tabAvailability = {},
     optionalEmptyTabs = new Set(),
+    hideEmptyTabs = false,
     onNavigate,
   } = $props();
 
-  const links = [
+  const ALL_LINKS = [
     { id: "metrics", label: "Metrics" },
     { id: "system", label: "System Metrics" },
     { id: "traces", label: "Traces" },
@@ -14,6 +15,7 @@
     { id: "reports", label: "Alerts & Reports" },
     { id: "runs", label: "Runs" },
     { id: "files", label: "Files" },
+    { id: "artifacts", label: "Artifacts" },
   ];
 
   function handleClick(id) {
@@ -23,6 +25,18 @@
   function isOptionalEmpty(id) {
     return optionalEmptyTabs.has(id) && tabAvailability[id] === false;
   }
+
+  function isActive(id) {
+    return currentPage === id || (id === "runs" && currentPage === "run-detail");
+  }
+
+  let links = $derived(
+    hideEmptyTabs
+      ? ALL_LINKS.filter(
+          (link) => link.id === currentPage || !isOptionalEmpty(link.id),
+        )
+      : ALL_LINKS,
+  );
 </script>
 
 <nav class="navbar">
@@ -31,7 +45,7 @@
     {#each links as link}
       <button
         class="nav-link"
-        class:active={currentPage === link.id}
+        class:active={isActive(link.id)}
         class:empty={isOptionalEmpty(link.id)}
         onclick={() => handleClick(link.id)}
         title={isOptionalEmpty(link.id) ? `${link.label} is empty for this project` : link.label}

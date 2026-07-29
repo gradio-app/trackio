@@ -11,6 +11,9 @@
   import Runs from "./pages/Runs.svelte";
   import RunDetail from "./pages/RunDetail.svelte";
   import Files from "./pages/Files.svelte";
+  import ArtifactsSidebar from "./components/ArtifactsSidebar.svelte";
+  import { DEFAULT_LOGO_URLS } from "./components/Logo.svelte";
+  import ArtifactsDetail from "./pages/ArtifactsDetail.svelte";
   import {
     getAllProjects,
     getRunsForProject,
@@ -30,7 +33,12 @@
   } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
   import { reconcileSelectedRuns } from "./lib/selection.js";
-  import { getPageFromPath, navigateTo, getQueryParam } from "./lib/router.js";
+  import {
+    getPageFromPath,
+    navigateTo,
+    getQueryParam,
+    getArtifactSelectionFromUrl,
+  } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
 
@@ -80,6 +88,7 @@
   let sidebarOpen = $state(true);
   let sidebarHidden = $state(false);
   let navbarHidden = $state(false);
+  let hideEmptyTabs = $state(false);
   let urlTick = $state(0);
   let alerts = $state([]);
   let pollTimer = $state(null);
@@ -90,7 +99,7 @@
   });
   let mutationPollTimer = $state(null);
   let appBootstrapReady = $state(false);
-  let logoUrls = $state({ light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" });
+  let logoUrls = $state(DEFAULT_LOGO_URLS);
   let plotOrder = $state([]);
   let tableTruncateLength = $state(250);
   let readOnlySource = $state(null);
@@ -110,6 +119,7 @@
     "media",
     "reports",
     "files",
+    "artifacts",
   ]);
   const AUTO_OPEN_TAB_ORDER = [
     "metrics",
@@ -119,9 +129,12 @@
     "reports",
     "runs",
     "files",
+    "artifacts",
   ];
   let runConfigs = $state({});
   let runConfigsProject = $state(null);
+  let artifactSelection = $state(null);
+  let artifactsEmpty = $state(false);
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -142,7 +155,12 @@
   }
 
   function isBareDashboardPath() {
-    const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+    const base = window.__trackio_base || "";
+    let pathname = window.location.pathname;
+    if (base && pathname.startsWith(base)) {
+      pathname = pathname.slice(base.length) || "/";
+    }
+    pathname = pathname.replace(/\/+$/, "") || "/";
     return pathname === "/";
   }
 
@@ -238,6 +256,7 @@
       reports: false,
       runs: false,
       files: false,
+      artifacts: false,
     };
   }
 
@@ -349,6 +368,14 @@
     navbarHidden = getQueryParam("navbar") === "hidden";
   });
 
+  $effect(() => {
+    urlTick;
+    if (currentPage !== "artifacts" || !sidebarHidden) return;
+    const { name, version } = getArtifactSelectionFromUrl();
+    if (!name || version == null) return;
+    artifactSelection = { name, version };
+  });
+
   onMount(() => {
     const sidebarParam = getQueryParam("sidebar");
     if (sidebarParam === "hidden") {
@@ -386,6 +413,8 @@
     if (getQueryParam("accordion") === "hidden") {
       showHeaders = false;
     }
+
+    hideEmptyTabs = getQueryParam("hide_empty_tabs") === "true";
 
     shouldOpenFirstNonEmptyTab = isBareDashboardPath();
     currentPage = getPageFromPath();
@@ -559,12 +588,25 @@
     />
   {/if}
 
+  {#if currentPage === "artifacts" && !sidebarHidden}
+    <ArtifactsSidebar
+      {projects}
+      bind:project={selectedProject}
+      projectLocked={projectLocked}
+      {logoUrls}
+      {darkMode}
+      bind:selection={artifactSelection}
+      bind:empty={artifactsEmpty}
+    />
+  {/if}
+
   <div class="main">
     {#if !navbarHidden}
       <Navbar
         {currentPage}
         {tabAvailability}
         optionalEmptyTabs={OPTIONAL_EMPTY_TABS}
+        {hideEmptyTabs}
         onNavigate={handleNavigate}
       />
     {/if}
@@ -624,6 +666,12 @@
         <RunDetail project={selectedProject} />
       {:else if currentPage === "files"}
         <Files project={selectedProject} />
+      {:else if currentPage === "artifacts"}
+        <ArtifactsDetail
+          project={selectedProject}
+          selection={artifactSelection}
+          empty={artifactsEmpty}
+        />
       {:else if currentPage === "settings"}
         <Settings {spaceId} selectedProject={selectedProject} {projects} />
       {/if}

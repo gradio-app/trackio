@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
   import Dropdown from "./Dropdown.svelte";
+  import ProjectSelector from "./ProjectSelector.svelte";
+  import Logo from "./Logo.svelte";
   import GradioCheckbox from "./GradioCheckbox.svelte";
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
@@ -37,7 +39,7 @@
     readOnlySource = null,
     projectLocked = false,
     spaceId = null,
-    logoUrls = { light: "/static/trackio/trackio_logo_type_light_transparent.png", dark: "/static/trackio/trackio_logo_type_dark_transparent.png" },
+    logoUrls = undefined,
     darkMode = false,
   } = $props();
 
@@ -60,7 +62,7 @@
 
   let loginHref = $derived.by(() => {
     navTick;
-    return `${window.location.origin}/oauth/hf/start`;
+    return `${window.location.origin}${window.__trackio_base || ""}/oauth/hf/start`;
   });
 
 
@@ -238,26 +240,10 @@
   {#if open}
     <div class="sidebar-content">
       <div class="sidebar-scroll">
-      <div class="logo-section">
-        <img
-          src={darkMode ? logoUrls.dark : logoUrls.light}
-          alt="Trackio"
-          class="logo"
-        />
-      </div>
+      <Logo {logoUrls} {darkMode} />
 
       <div class="section">
-        {#if projectLocked}
-          <div class="section-label">Project</div>
-          <div class="locked-project">{selectedProject ?? "—"}</div>
-        {:else}
-          <Dropdown
-            label="Project"
-            choices={projects}
-            bind:value={selectedProject}
-            filterable={true}
-          />
-        {/if}
+        <ProjectSelector {projects} bind:selectedProject {projectLocked} />
       </div>
 
       {#if variant === "compact" && currentPage === "runs"}
@@ -516,7 +502,7 @@
               label="Smoothing Factor (0 = no smoothing)"
               bind:value={smoothing}
               min={0}
-              max={20}
+              max={100}
               step={1}
             />
           </div>
@@ -587,7 +573,7 @@
       {:else if spacesMode && runMutationAllowed && mutationAuth === "oauth"}
         <div class="oauth-footer">
           <p class="oauth-signed-in">Signed in with Hugging Face</p>
-          <a class="oauth-logout" href="/oauth/logout" onclick={() => { sessionStorage.removeItem("trackio_oauth_session"); }}>Logout</a>
+          <a class="oauth-logout" href={`${window.__trackio_base || ""}/oauth/logout`} onclick={() => { sessionStorage.removeItem("trackio_oauth_session"); }}>Logout</a>
         </div>
       {/if}
     </div>
@@ -736,13 +722,6 @@
     text-decoration: underline;
     color: var(--body-text-color, #1f2937);
   }
-  .logo-section {
-    margin-bottom: 20px;
-  }
-  .logo {
-    width: 80%;
-    max-width: 200px;
-  }
   .section {
     margin-top: 2px;
     margin-bottom: 18px;
@@ -818,16 +797,6 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--body-text-color-subdued, #6b7280);
-  }
-  .locked-project {
-    margin-top: 4px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--body-text-color, #1f2937);
-    padding: 8px 10px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-md, 6px);
-    background: var(--background-fill-secondary, #f9fafb);
   }
   .runs-header {
     display: flex;

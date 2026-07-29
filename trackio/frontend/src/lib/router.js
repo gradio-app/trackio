@@ -1,5 +1,18 @@
+function trackioBase() {
+  return window.__trackio_base || "";
+}
+
+function stripBase(pathname) {
+  const base = trackioBase();
+  if (base && pathname.startsWith(base)) {
+    return pathname.slice(base.length) || "/";
+  }
+  return pathname;
+}
+
 export function getPageFromPath() {
-  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const raw = stripBase(window.location.pathname);
+  const pathname = raw.replace(/\/+$/, "") || "/";
   const clean =
     pathname === "/" ? "" : pathname.replace(/^\//, "").split("/")[0];
   switch (clean) {
@@ -20,6 +33,8 @@ export function getPageFromPath() {
       return "run-detail";
     case "files":
       return "files";
+    case "artifacts":
+      return "artifacts";
     case "settings":
       return "settings";
     default:
@@ -38,9 +53,10 @@ export function navigateTo(page) {
     runs: "/runs",
     "run-detail": "/run",
     files: "/files",
+    artifacts: "/artifacts",
     settings: "/settings",
   };
-  const path = pathMap[page] || "/";
+  const path = trackioBase() + (pathMap[page] || "/");
   const search = params.toString();
   const url = search ? `${path}?${search}` : path;
   window.history.pushState({}, "", url);
@@ -49,6 +65,26 @@ export function navigateTo(page) {
 
 export function getQueryParam(key) {
   return new URLSearchParams(window.location.search).get(key);
+}
+
+export function setArtifactSelectionParams(name, version) {
+  setQueryParam("selected_artifact", name);
+  setQueryParam("selected_version", `v${version}`);
+}
+
+export function getArtifactSelectionFromUrl() {
+  const name = getQueryParam("selected_artifact");
+  const verParam = getQueryParam("selected_version");
+  const version = verParam
+    ? parseInt(String(verParam).replace(/^v/i, ""), 10)
+    : NaN;
+  return { name, version: Number.isNaN(version) ? null : version };
+}
+
+export function openRunDetail(runName, runId) {
+  setQueryParam("selected_run_id", runId);
+  setQueryParam("selected_run", runName);
+  navigateTo("run-detail");
 }
 
 export function setQueryParam(key, value) {
