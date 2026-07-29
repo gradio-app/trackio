@@ -251,6 +251,7 @@
     <button title="Zoom in" onclick={() => zoomBy(1.25)}>+</button>
     <button title="Zoom out" onclick={() => zoomBy(0.8)}>−</button>
     <button title="Fit graph" onclick={fit}>Fit</button>
+    <button title="Reset to original view" onclick={centerOnFocus}>Reset</button>
   </div>
 </div>
 
