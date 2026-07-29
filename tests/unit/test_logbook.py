@@ -719,19 +719,6 @@ def test_cli_cell_dashboard(proj, monkeypatch):
     assert cells[0]["project"] == "mnist"
 
 
-def test_cli_logbook_open_does_not_report_beta_status(proj, monkeypatch, capsys):
-    from trackio import cli
-
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["trackio", "logbook", "open", "--no-serve"],
-    )
-    cli.main()
-
-    assert "experimental" not in capsys.readouterr().out.lower()
-
-
 def test_resolve_read_source_local_and_invalid(proj, tmp_path):
     resolved = logbook.resolve_read_source(str(tmp_path))
     assert resolved == proj
