@@ -27,6 +27,7 @@
     selectedRuns = [],
     allRuns = [],
     smoothing = 10,
+    panelsPerRow = 4,
     xAxis = "step",
     logScaleX = false,
     logScaleY = false,
@@ -73,6 +74,10 @@
 
   function getPlotResult(metric) {
     return computeMetricPlotData(masterData, xColumn, metric, xLim);
+  }
+
+  function getGroupCols(items) {
+    return Math.max(1, Math.min(panelsPerRow, items.length || 1));
   }
 
   function getOrderedMetrics(key, items) {
@@ -350,6 +355,7 @@
       {@const group = metricGroups[groupName]}
       {@const directKey = `${groupName}:direct`}
       {@const orderedDirect = getOrderedMetrics(directKey, group.direct)}
+      {@const directCols = getGroupCols(orderedDirect)}
       {@const directCount = group.direct.length}
       {@const subCount = Object.values(group.subgroups).reduce((a, b) => a + b.length, 0)}
       {@const totalCount = directCount + subCount}
@@ -360,7 +366,7 @@
         hidden={!showHeaders}
       >
         {#if orderedDirect.length > 0}
-          <div class="plot-grid">
+          <div class="plot-grid" style="--cols: {directCols}">
             {#each orderedDirect as metric, i}
               {@const plotResult = getPlotResult(metric)}
               {@const plotData = plotResult.data}
@@ -409,12 +415,13 @@
           {#each Object.entries(group.subgroups) as [subName, subMetrics]}
             {@const subKey = `${groupName}:${subName}`}
             {@const orderedSub = getOrderedMetrics(subKey, subMetrics)}
+            {@const subCols = getGroupCols(orderedSub)}
             <Accordion
               label="{subName} ({subMetrics.length})"
               open={true}
               hidden={!showHeaders}
             >
-              <div class="plot-grid">
+              <div class="plot-grid" style="--cols: {subCols}">
                 {#each orderedSub as metric, i}
                   {@const plotResult = getPlotResult(metric)}
                   {@const plotData = plotResult.data}
@@ -492,9 +499,13 @@
     min-height: 0;
   }
   .plot-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
     gap: 16px;
+  }
+  .plot-grid :global(.plot-container) {
+    min-width: 0;
+    width: 100%;
   }
   .subgroup-list {
     margin-top: 16px;
