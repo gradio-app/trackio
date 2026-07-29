@@ -8,6 +8,7 @@ This module contains all media-related functionality including:
 """
 
 from trackio.media.audio import TrackioAudio
+from trackio.media.html import TrackioHtml
 from trackio.media.image import TrackioImage
 from trackio.media.media import TrackioMedia
 from trackio.media.utils import get_project_media_path
@@ -21,6 +22,7 @@ __all__ = [
     "TrackioImage",
     "TrackioVideo",
     "TrackioAudio",
+    "TrackioHtml",
     "get_project_media_path",
     "write_video",
     "write_audio",
