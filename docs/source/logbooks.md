@@ -5,17 +5,73 @@ commands, results, figures, artifacts, and agent traces behind an experiment.
 A logbook is stored locally in the `.trackio/logbook` directory of a workspace
 and can be previewed locally or published as a static Hugging Face Space.
 
-## Create and preview a logbook
+> **Recommended for coding agents:** Start the logbook at the beginning of the
+> agent session. Install the Trackio skill so the agent knows to run experiment
+> commands through the logbook, then attach the active session trace. This
+> creates a complete record that a person or the next agent can continue from.
 
-From an experiment workspace, create a logbook and open its local preview:
+## Start an agent session with a logbook
+
+The easiest way to use a logbook is to create it before the agent starts making
+changes or running experiments:
 
 ```sh
 trackio logbook open --title "Learning-rate sweep"
 ```
 
-Use `--no-serve` when you only want to create or attach to the local logbook.
-Use `--no-browser` to start the preview without opening a browser, or pass
-`--port` to select a different port.
+This creates the local logbook and opens its preview. Use `--no-serve` when
+you only want to create or attach to the local logbook. Use `--no-browser` to
+start the preview without opening a browser, or pass `--port` to select a
+different port.
+
+### Give the agent the Trackio skill
+
+Install the Trackio skill for the coding agent you are using. For Codex:
+
+```sh
+trackio skills add --codex
+```
+
+The command installs the skill in the project and links it for Codex. Start a
+new Codex session after installation when necessary so it can load the skill.
+For another supported agent, replace `--codex` with its flag, such as
+`--claude`, `--cursor`, `--opencode`, or `--pi`.
+
+The skill tells the agent to run code with `trackio logbook run -- ...` rather
+than invoking an experiment command directly. That wrapper records the exact
+command, detected scripts and configuration files, output, exit code, duration,
+and supported output artifacts. For example:
+
+```sh
+trackio logbook page "Baseline"
+trackio logbook run -- python train.py --learning-rate 0.001
+```
+
+The training script should still use `trackio.init()`, `trackio.log()`, and
+`trackio.finish()` normally. With a logbook in the workspace, `trackio.init()`
+can also add a live dashboard cell for the active Trackio project.
+
+### Attach the active session trace
+
+Attach the current coding-agent transcript near the beginning of the session:
+
+```sh
+trackio logbook attach trace /absolute/path/to/current-session.jsonl --title "Agent session"
+```
+
+The agent runtime determines where its transcript is stored. Find the JSON or
+JSONL file for the active conversation using that runtime's session directory,
+then attach the file whose timestamps and metadata match the session. An active
+JSONL file can be attached before the session ends; Trackio refreshes it while
+the local preview is open. Attaching also establishes the Workspace baseline,
+so later supported model and data files can be associated with the session.
+
+Trackio scrubs common secrets from an attached trace by default. Review traces
+before publishing because they can still contain prompts, tool inputs, command
+output, paths, or personal data. Use `--no-scrub` only for an already-sanitized
+source.
+
+### Create pages as the work develops
 
 Opening a workspace that already contains a logbook attaches to it. The
 logbook is made up of pages; create or select a page with:
@@ -60,15 +116,6 @@ trackio logbook read --json
 
 Use `trackio logbook read cell <cell-id> --full` when a cell needs to be
 inspected in full. The JSON form is useful for automation and coding agents.
-
-Agent session traces can be attached explicitly:
-
-```sh
-trackio logbook attach trace session.jsonl --title "Agent run"
-```
-
-By default, secrets are scrubbed from attached traces. Use `--no-scrub` only
-when the source is known to contain no sensitive data.
 
 ## Publish a logbook
 
