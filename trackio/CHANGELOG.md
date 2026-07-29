@@ -1,5 +1,12 @@
 # trackio
 
+## 0.34.0
+
+### Features
+
+- [#656](https://github.com/gradio-app/trackio/pull/656) [`bb888ca`](https://github.com/gradio-app/trackio/commit/bb888ca79dcb1e99572ffb62bdd3b0020d77dc07) - Remove beta status from logbooks.  Thanks @abidlabs!
+- [#652](https://github.com/gradio-app/trackio/pull/652) [`b1e0731`](https://github.com/gradio-app/trackio/commit/b1e07316962fefce71856cafcee7b38e1f477a52) - Log arbitrary HTML and Plotly/Matplotlib figures via `trackio.Html`.  Thanks @greysonlalonde!
+
 ## 0.33.0
 
 ### Features
