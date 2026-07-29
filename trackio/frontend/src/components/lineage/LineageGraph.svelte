@@ -17,6 +17,7 @@
 
   const MIN_ZOOM = 0.25;
   const MAX_ZOOM = 2.5;
+  const DEFAULT_ZOOM = 1;
 
   function fit() {
     if (!layout || !viewWidth || !viewHeight) return;
@@ -32,11 +33,31 @@
     };
   }
 
+  function clampAxis(pos, viewSize, contentSize) {
+    if (contentSize <= viewSize) return (viewSize - contentSize) / 2;
+    return Math.min(0, Math.max(viewSize - contentSize, pos));
+  }
+
+  function centerOnFocus() {
+    if (!layout || !viewWidth || !viewHeight) return;
+    const focus = layout.nodes.find((node) => node.id === focusId);
+    if (!focus) {
+      fit();
+      return;
+    }
+    const k = DEFAULT_ZOOM;
+    view = {
+      k,
+      x: clampAxis(viewWidth / 2 - focus.x * k, viewWidth, layout.width * k),
+      y: clampAxis(viewHeight / 2 - focus.y * k, viewHeight, layout.height * k),
+    };
+  }
+
   $effect(() => {
     if (!layout || !viewWidth || !viewHeight) return;
     if (fittedFor !== focusId) {
       fittedFor = focusId;
-      fit();
+      centerOnFocus();
     }
   });
 
