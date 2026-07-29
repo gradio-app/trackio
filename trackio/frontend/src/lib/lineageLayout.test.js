@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import golden from "./__fixtures__/lineage_golden.json";
+import { golden, goldenTables } from "./__fixtures__/lineageGolden.js";
 import { buildLineage } from "./lineage.js";
 import {
   edgePath,
@@ -10,16 +10,7 @@ import {
 } from "./lineageLayout.js";
 
 function goldenGraph() {
-  const tables = {
-    artifacts: golden.artifacts,
-    versions: golden.artifact_versions.map((v) => ({
-      ...v,
-      manifest: JSON.stringify(v.manifest),
-    })),
-    aliases: golden.artifact_aliases,
-    links: golden.run_artifact_links,
-  };
-  return buildLineage(tables, golden.runs, golden.focus_version_id);
+  return buildLineage(goldenTables(), golden.runs, golden.focus_version_id);
 }
 
 describe("layoutLineage", () => {
@@ -97,7 +88,12 @@ describe("mergeBidirectionalEdges", () => {
 
 describe("edgePath", () => {
   test("two points produce a straight segment", () => {
-    expect(edgePath([{ x: 0, y: 0 }, { x: 10, y: 5 }])).toBe("M 0 0 L 10 5");
+    expect(
+      edgePath([
+        { x: 0, y: 0 },
+        { x: 10, y: 5 },
+      ]),
+    ).toBe("M 0 0 L 10 5");
   });
 
   test("interior points are smoothed with straight lead-in and lead-out", () => {

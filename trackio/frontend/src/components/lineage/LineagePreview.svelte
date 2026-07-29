@@ -1,7 +1,9 @@
 <script>
   import AliasPill from "../AliasPill.svelte";
+  import SearchBox from "../SearchBox.svelte";
   import { openRunDetail } from "../../lib/router.js";
-  import { formatSize } from "../../lib/format.js";
+  import { formatDate, formatSize } from "../../lib/format.js";
+  import { lineageNodeLabel } from "../../lib/lineage.js";
 
   let {
     node = null,
@@ -21,35 +23,13 @@
     memberQuery = "";
   });
 
-  function memberLabel(member) {
-    if (member.kind === "artifact") {
-      return `${member.artifact_name}:v${member.version}`;
-    }
-    return member.run_name ?? member.run_id ?? "run";
-  }
-
-  const filteredMembers = $derived(
-    node?.kind === "cluster"
-      ? node.members.filter((m) =>
-          memberLabel(m).toLowerCase().includes(memberQuery.toLowerCase()),
-        )
-      : [],
-  );
-
-  function formatDate(iso) {
-    if (!iso) return "";
-    try {
-      return new Date(iso).toLocaleString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return iso;
-    }
-  }
+  const filteredMembers = $derived.by(() => {
+    if (node?.kind !== "cluster") return [];
+    const query = memberQuery.toLowerCase();
+    return node.members.filter((m) =>
+      lineageNodeLabel(m).toLowerCase().includes(query),
+    );
+  });
 </script>
 
 {#if node}
@@ -62,10 +42,7 @@
           <AliasPill {alias} />
         {/each}
       {:else if node.kind === "cluster"}
-        <span class="title">
-          {node.count}
-          {node.member_kind === "run" ? "runs" : "artifact versions"}
-        </span>
+        <span class="title">{lineageNodeLabel(node)}</span>
         <span class="kind-chip cluster">cluster</span>
       {:else}
         <span class="title">{node.run_name ?? node.run_id}</span>
@@ -77,43 +54,12 @@
     </div>
     {#if node.kind === "cluster"}
       <div class="cluster-body">
-        <div class="search-box">
-          <svg
-            class="search-icon"
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-          >
-            <circle
-              cx="7"
-              cy="7"
-              r="5"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M11 11l3 3"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search {node.member_kind === 'run'
-              ? 'runs'
-              : 'versions'}…"
-            bind:value={memberQuery}
-          />
-          {#if memberQuery}
-            <button
-              class="clear-search"
-              onclick={() => (memberQuery = "")}
-              title="Clear search">×</button
-            >
-          {/if}
-        </div>
+        <SearchBox
+          bind:value={memberQuery}
+          placeholder="Search {node.member_kind === 'run'
+            ? 'runs'
+            : 'versions'}…"
+        />
         <ul class="member-list">
           {#each filteredMembers as member (member.id)}
             <li class="member-item">
@@ -122,7 +68,7 @@
                 title="Show in graph"
                 onclick={() => onExtract(member.id)}
               >
-                {memberLabel(member)}
+                {lineageNodeLabel(member)}
               </button>
             </li>
           {:else}
@@ -231,44 +177,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-  .search-box {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-  .search-icon {
-    position: absolute;
-    left: 10px;
-    color: var(--body-text-color-subdued, #9ca3af);
-    pointer-events: none;
-  }
-  .search-box input {
-    width: 100%;
-    padding: 6px 26px 6px 30px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    border-radius: var(--radius-md, 6px);
-    background: var(--background-fill-secondary, #f9fafb);
-    color: var(--body-text-color, #1f2937);
-    font-size: var(--text-sm, 13px);
-    outline: none;
-  }
-  .search-box input:focus {
-    border-color: var(--color-accent, #f97316);
-  }
-  .clear-search {
-    position: absolute;
-    right: 8px;
-    border: none;
-    background: none;
-    color: var(--body-text-color-subdued, #9ca3af);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 2px;
-  }
-  .clear-search:hover {
-    color: var(--body-text-color, #1f2937);
   }
   .member-list {
     list-style: none;

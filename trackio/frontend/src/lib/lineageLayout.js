@@ -1,4 +1,5 @@
 import * as dagre from "@dagrejs/dagre";
+import { edgeKey } from "./lineage.js";
 
 export const NODE_W = 140;
 export const NODE_H = 44;
@@ -75,12 +76,7 @@ export function layoutLineage(nodes, edges) {
     edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)),
   );
   for (const edge of merged) {
-    graph.setEdge(
-      edge.source,
-      edge.target,
-      {},
-      `${edge.source}|${edge.target}|${edge.direction}`,
-    );
+    graph.setEdge(edge.source, edge.target, {}, edgeKey(edge));
   }
 
   dagre.layout(graph);
@@ -90,11 +86,7 @@ export function layoutLineage(nodes, edges) {
     return { ...node, x: pos.x, y: pos.y, width: NODE_W, height: NODE_H };
   });
   const routed = merged.map((edge) => {
-    const label = graph.edge(
-      edge.source,
-      edge.target,
-      `${edge.source}|${edge.target}|${edge.direction}`,
-    );
+    const label = graph.edge(edge.source, edge.target, edgeKey(edge));
     const source = graph.node(edge.source);
     const target = graph.node(edge.target);
     const interior = (label?.points ?? []).slice(1, -1);

@@ -5062,12 +5062,11 @@ class SQLiteStorage:
         legacy_metrics is True link rows are keyed by name and both maps
         are empty."""
         legacy_metrics = not SQLiteStorage._supports_run_ids(conn)
-        record_ids: set = set()
         ids_by_name: dict[str, set] = {}
         names = sorted({n for _, n in identities if n is not None})
         ids = sorted({i for i, _ in identities if i is not None})
         if legacy_metrics or (not names and not ids):
-            return legacy_metrics, record_ids, ids_by_name
+            return legacy_metrics, set(), ids_by_name
         rows = []
         for column, values in (("run_name", names), ("run_id", ids)):
             for start in range(0, len(values), _SQL_IN_CHUNK):
@@ -5089,7 +5088,7 @@ class SQLiteStorage:
             metric_ids.add(row["run_id"])
             if row["run_name"] is not None:
                 ids_by_name.setdefault(row["run_name"], set()).add(row["run_id"])
-        record_ids |= metric_ids
+        record_ids = set(metric_ids)
         for run_id, run_name in identities:
             if run_id is None or run_name is None:
                 continue
@@ -5098,6 +5097,21 @@ class SQLiteStorage:
             record_ids.add(run_id)
             ids_by_name.setdefault(run_name, set()).add(run_id)
         return legacy_metrics, record_ids, ids_by_name
+
+    @staticmethod
+    def _canonical_link_run_id(
+        run_id, run_name, legacy_metrics: bool, record_ids: set, ids_by_name: dict
+    ):
+        """Canonical run id for a link row given the maps from
+        _link_run_identity_maps: None when the metrics table is name-keyed,
+        the row's own id when it belongs to a run record, otherwise the sole
+        same-name record id when unambiguous."""
+        if legacy_metrics:
+            return None
+        if run_id is not None and run_id in record_ids:
+            return run_id
+        owners = ids_by_name.get(run_name, ())
+        return next(iter(owners)) if len(owners) == 1 else None
 
     @staticmethod
     def get_run_artifact_counts(project: str) -> list[dict]:
@@ -5129,12 +5143,10 @@ class SQLiteStorage:
             counts: dict[tuple, dict] = {}
             links_by_key: dict[tuple, set] = {}
             for row in rows:
-                run_id, run_name = row["run_id"], row["run_name"]
-                if legacy_metrics:
-                    run_id = None
-                elif run_id is None or run_id not in record_ids:
-                    owners = ids_by_name.get(run_name, ())
-                    run_id = next(iter(owners)) if len(owners) == 1 else None
+                run_name = row["run_name"]
+                run_id = SQLiteStorage._canonical_link_run_id(
+                    row["run_id"], run_name, legacy_metrics, record_ids, ids_by_name
+                )
                 key = (run_id, run_name)
                 entry = counts.setdefault(
                     key,
@@ -5205,6 +5217,7 @@ class SQLiteStorage:
                     """SELECT run_id, run_name, artifact_version_id,
                         direction, MIN(created_at) AS created_at
                     FROM run_artifact_links
+                    WHERE direction IN ('input', 'output')
                     GROUP BY run_id, run_name, artifact_version_id, direction
                     ORDER BY created_at"""
                 ).fetchall()
@@ -5220,16 +5233,14 @@ class SQLiteStorage:
             links = []
             run_meta: dict[str, dict] = {}
             for row in link_rows:
-                run_id, run_name = row["run_id"], row["run_name"]
-                if legacy_metrics:
-                    run_id = None
-                elif run_id is None or run_id not in record_ids:
-                    owners = ids_by_name.get(run_name, ())
-                    run_id = next(iter(owners)) if len(owners) == 1 else None
+                run_name = row["run_name"]
+                run_id = SQLiteStorage._canonical_link_run_id(
+                    row["run_id"], run_name, legacy_metrics, record_ids, ids_by_name
+                )
                 run_key = (
                     f"run:{run_id}" if run_id is not None else f"run:name:{run_name}"
                 )
-                meta = run_meta.setdefault(
+                run_meta.setdefault(
                     run_key,
                     {
                         "run_id": run_id,
@@ -5237,8 +5248,6 @@ class SQLiteStorage:
                         "created_at": row["created_at"],
                     },
                 )
-                if (row["created_at"] or "") < (meta["created_at"] or ""):
-                    meta["created_at"] = row["created_at"]
                 links.append(
                     {
                         "run_key": run_key,
@@ -5305,7 +5314,8 @@ class SQLiteStorage:
             hydrated = {int(row["id"]) for row in version_rows}
             if version_id not in hydrated:
                 return empty
-            node_ids = {f"art:{v}" for v in hydrated} | (set(run_meta) & visited)
+            run_keys = set(run_meta) & visited
+            node_ids = {f"art:{v}" for v in hydrated} | run_keys
 
             nodes = []
             for row in sorted(version_rows, key=lambda r: int(r["id"])):
@@ -5326,7 +5336,7 @@ class SQLiteStorage:
                         "producer_run_name": row["producer_run_name"],
                     }
                 )
-            for run_key in sorted(k for k in node_ids if k.startswith("run:")):
+            for run_key in sorted(run_keys):
                 meta = run_meta[run_key]
                 nodes.append(
                     {
@@ -5346,10 +5356,8 @@ class SQLiteStorage:
                     continue
                 if link["direction"] == "output":
                     source, target = link["run_key"], art_key
-                elif link["direction"] == "input":
-                    source, target = art_key, link["run_key"]
                 else:
-                    continue
+                    source, target = art_key, link["run_key"]
                 dedupe = (source, target, link["direction"])
                 if dedupe in seen_edges:
                     continue

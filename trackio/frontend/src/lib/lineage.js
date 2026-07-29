@@ -1,5 +1,37 @@
 export const MAX_LINEAGE_NODES = 1000;
 
+export function lineageNodeLabel(node) {
+  if (node.kind === "artifact") {
+    return `${node.artifact_name}:v${node.version}`;
+  }
+  if (node.kind === "cluster") {
+    return `${node.count} ${node.member_kind === "run" ? "runs" : "artifact versions"}`;
+  }
+  return node.run_name ?? node.run_id ?? "run";
+}
+
+export function edgeKey(edge) {
+  return `${edge.source}|${edge.target}|${edge.direction}`;
+}
+
+const numFilesByVersion = new WeakMap();
+
+function versionNumFiles(version) {
+  if (numFilesByVersion.has(version)) return numFilesByVersion.get(version);
+  let numFiles = 0;
+  try {
+    const manifest =
+      typeof version.manifest === "string"
+        ? JSON.parse(version.manifest)
+        : version.manifest;
+    if (Array.isArray(manifest)) numFiles = manifest.length;
+  } catch {
+    numFiles = 0;
+  }
+  numFilesByVersion.set(version, numFiles);
+  return numFiles;
+}
+
 export function buildRunOwnership(runs, links = []) {
   const recordIds = new Set();
   const ownersByName = new Map();
@@ -75,15 +107,12 @@ export function buildLineage(tables, runs, versionId) {
   for (const row of linkRows) {
     const runId = canonicalLinkRunId(row, ownership);
     const runKey = runId != null ? `run:${runId}` : `run:name:${row.run_name}`;
-    const meta = runMeta.get(runKey);
-    if (!meta) {
+    if (!runMeta.has(runKey)) {
       runMeta.set(runKey, {
         run_id: runId,
         run_name: row.run_name,
         created_at: row.created_at,
       });
-    } else if ((row.created_at ?? "") < (meta.created_at ?? "")) {
-      meta.created_at = row.created_at;
     }
     canonical.push({ ...row, run_key: runKey });
   }
@@ -100,8 +129,8 @@ export function buildLineage(tables, runs, versionId) {
   const visited = new Set([focus]);
   let truncated = false;
   const queue = [focus];
-  while (queue.length) {
-    const node = queue.shift();
+  for (let head = 0; head < queue.length; head++) {
+    const node = queue[head];
     const neighbors = node.startsWith("art:")
       ? (byVersion.get(Number(node.slice(4))) ?? [])
       : (byRun.get(node) ?? []).map((v) => `art:${v}`);
@@ -141,16 +170,6 @@ export function buildLineage(tables, runs, versionId) {
     const art = artifactsById.get(Number(version.artifact_id));
     if (!art) continue;
     hydrated.add(vid);
-    let numFiles;
-    try {
-      const manifest =
-        typeof version.manifest === "string"
-          ? JSON.parse(version.manifest)
-          : version.manifest;
-      numFiles = Array.isArray(manifest) ? manifest.length : 0;
-    } catch {
-      numFiles = 0;
-    }
     nodes.push({
       id: `art:${vid}`,
       kind: "artifact",
@@ -160,7 +179,7 @@ export function buildLineage(tables, runs, versionId) {
       version: Number(version.version),
       aliases: aliasesByVersion.get(vid) ?? [],
       size_bytes: Number(version.size_bytes),
-      num_files: numFiles,
+      num_files: versionNumFiles(version),
       created_at: version.created_at,
       producer_run_id: version.producer_run_id ?? null,
       producer_run_name: version.producer_run_name ?? null,
@@ -193,15 +212,16 @@ export function buildLineage(tables, runs, versionId) {
       row.direction === "output"
         ? [row.run_key, artKey]
         : [artKey, row.run_key];
-    const dedupe = `${source}|${target}|${row.direction}`;
-    if (seenEdges.has(dedupe)) continue;
-    seenEdges.add(dedupe);
-    edges.push({
+    const edge = {
       source,
       target,
       direction: row.direction,
       created_at: row.created_at,
-    });
+    };
+    const dedupe = edgeKey(edge);
+    if (seenEdges.has(dedupe)) continue;
+    seenEdges.add(dedupe);
+    edges.push(edge);
   }
 
   return { focus, truncated, nodes, edges };
@@ -266,9 +286,12 @@ export function clusterLineage(graph, focusId, options = {}) {
   const edges = [];
   const seen = new Map();
   for (const edge of graph.edges) {
-    const source = memberOf.get(edge.source) ?? edge.source;
-    const target = memberOf.get(edge.target) ?? edge.target;
-    const key = `${source}|${target}|${edge.direction}`;
+    const mapped = {
+      ...edge,
+      source: memberOf.get(edge.source) ?? edge.source,
+      target: memberOf.get(edge.target) ?? edge.target,
+    };
+    const key = edgeKey(mapped);
     const existing = seen.get(key);
     if (existing) {
       if ((edge.created_at ?? "") < (existing.created_at ?? "")) {
@@ -276,7 +299,6 @@ export function clusterLineage(graph, focusId, options = {}) {
       }
       continue;
     }
-    const mapped = { ...edge, source, target };
     seen.set(key, mapped);
     edges.push(mapped);
   }

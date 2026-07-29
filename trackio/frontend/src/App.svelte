@@ -139,13 +139,14 @@
   let artifactsEmpty = $state(false);
   let artifactSelectionProject = $state(null);
 
+  function isSameArtifactSelection(name, version) {
+    return (
+      artifactSelection?.name === name && artifactSelection?.version === version
+    );
+  }
+
   function openArtifactVersion(name, version) {
-    if (
-      artifactSelection?.name === name &&
-      artifactSelection?.version === version
-    ) {
-      return;
-    }
+    if (isSameArtifactSelection(name, version)) return;
     artifactSelection = { name, version };
     setArtifactSelectionParams(name, version, { push: true });
   }
@@ -396,12 +397,7 @@
     if (currentPage !== "artifacts") return;
     const { name, version } = getArtifactSelectionFromUrl();
     if (!name || version == null) return;
-    if (
-      artifactSelection?.name === name &&
-      artifactSelection?.version === version
-    ) {
-      return;
-    }
+    if (isSameArtifactSelection(name, version)) return;
     artifactSelection = { name, version };
   });
 

@@ -1,23 +1,11 @@
 import { describe, expect, test } from "vitest";
-import golden from "./__fixtures__/lineage_golden.json";
+import { golden, goldenTables } from "./__fixtures__/lineageGolden.js";
 import {
   buildLineage,
   buildRunOwnership,
   canonicalLinkRunId,
   clusterLineage,
 } from "./lineage.js";
-
-function goldenTables() {
-  return {
-    artifacts: golden.artifacts,
-    versions: golden.artifact_versions.map((v) => ({
-      ...v,
-      manifest: JSON.stringify(v.manifest),
-    })),
-    aliases: golden.artifact_aliases,
-    links: golden.run_artifact_links,
-  };
-}
 
 describe("buildLineage", () => {
   test("matches the golden fixture shared with the server tests", () => {
@@ -139,11 +127,7 @@ describe("buildLineage", () => {
         created_at: "2026-01-04T00:00:01+00:00",
       },
     ];
-    const result = buildLineage(
-      tables,
-      golden.runs,
-      golden.focus_version_id,
-    );
+    const result = buildLineage(tables, golden.runs, golden.focus_version_id);
     expect(result).toEqual(golden.expected);
   });
 
@@ -248,10 +232,7 @@ describe("buildLineage", () => {
 
 describe("buildRunOwnership / canonicalLinkRunId", () => {
   test("keeps existing runs.json ownership behavior", () => {
-    const ownership = buildRunOwnership(
-      [{ id: "id-1", name: "train" }],
-      [],
-    );
+    const ownership = buildRunOwnership([{ id: "id-1", name: "train" }], []);
     expect(
       canonicalLinkRunId({ run_id: "id-1", run_name: "train" }, ownership),
     ).toBe("id-1");
@@ -346,9 +327,7 @@ describe("clusterLineage", () => {
     const graph = fanOutGraph(6);
     const clustered = clusterLineage(graph, "art:1");
     const cluster = clustered.nodes.find((n) => n.kind === "cluster");
-    const clusterEdges = clustered.edges.filter(
-      (e) => e.target === cluster.id,
-    );
+    const clusterEdges = clustered.edges.filter((e) => e.target === cluster.id);
     expect(clusterEdges).toHaveLength(1);
     expect(clusterEdges[0]).toMatchObject({
       source: "run:r-1",

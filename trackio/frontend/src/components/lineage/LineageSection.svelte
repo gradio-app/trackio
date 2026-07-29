@@ -30,7 +30,7 @@
     selectedId = null;
     try {
       graph = await getArtifactLineage(project, versionId);
-      selectedId = `art:${versionId}`;
+      selectedId = focusId;
     } catch {
       error = true;
     } finally {
@@ -93,8 +93,7 @@
         </span>
       </div>
     {/if}
-    <div class="graph-cell">
-      <div class="graph-wrap">
+    <div class="graph-wrap">
         <LineageGraph
           {layout}
           {focusId}
@@ -123,7 +122,6 @@
             />
           </div>
         {/if}
-      </div>
     </div>
   </div>
 {/if}
@@ -139,14 +137,6 @@
     --lineage-artifact: #3b82f6;
     --lineage-selected: #8b5cf6;
     flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .graph-cell {
-    flex: 1;
-    min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;

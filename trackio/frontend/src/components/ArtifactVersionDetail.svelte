@@ -2,14 +2,13 @@
   import Accordion from "./Accordion.svelte";
   import AliasPill from "./AliasPill.svelte";
   import IndentGuides from "./IndentGuides.svelte";
-  import LineageSection from "./lineage/LineageSection.svelte";
   import {
     getArtifactManifest,
     getArtifactConsumers,
     getArtifactBlobUrl,
   } from "../lib/api.js";
   import { getQueryParam, openRunDetail, setQueryParam } from "../lib/router.js";
-  import { formatSize } from "../lib/format.js";
+  import { formatDate, formatSize } from "../lib/format.js";
 
   let {
     project = null,
@@ -27,6 +26,7 @@
 
   let activeTab = $state(tabFromUrl());
   let lineageMounted = $state(false);
+  let LineageSection = $state(null);
 
   function selectTab(tab) {
     if (tab === activeTab) return;
@@ -47,11 +47,21 @@
   $effect(() => {
     name;
     version;
-    activeTab = tabFromUrl();
+    const tab = tabFromUrl();
+    activeTab = tab;
+    if (tab !== "lineage") lineageMounted = false;
   });
 
   $effect(() => {
     if (activeTab === "lineage") lineageMounted = true;
+  });
+
+  $effect(() => {
+    if (lineageMounted && !LineageSection) {
+      import("./lineage/LineageSection.svelte").then((m) => {
+        LineageSection = m.default;
+      });
+    }
   });
   let consumers = $state([]);
   let loading = $state(false);
@@ -59,21 +69,6 @@
   let copied = $state("");
   let copyTimer = null;
   let metaOverrides = $state({});
-
-  function formatDate(iso) {
-    if (!iso) return "";
-    try {
-      return new Date(iso).toLocaleString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return iso;
-    }
-  }
 
   function isPlainObject(v) {
     return v !== null && typeof v === "object" && !Array.isArray(v);
@@ -256,7 +251,7 @@
 
 <div
   class={variant === "panel" ? "panel" : "version-detail"}
-  class:fill={variant === "panel" && activeTab === "lineage"}
+  class:fill={activeTab === "lineage"}
 >
   {#if loading}
     <div class="status">Loading…</div>
@@ -320,7 +315,7 @@
       {/if}
     </div>
 
-    {#if lineageMounted && record.version_id != null}
+    {#if lineageMounted && LineageSection && record.version_id != null}
       <div class="lineage-tab" class:hidden={activeTab !== "lineage"}>
         <LineageSection
           {project}

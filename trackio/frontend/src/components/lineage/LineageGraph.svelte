@@ -1,5 +1,6 @@
 <script>
   import { edgePath, NODE_H, NODE_W } from "../../lib/lineageLayout.js";
+  import { edgeKey, lineageNodeLabel } from "../../lib/lineage.js";
 
   let {
     layout = null,
@@ -9,7 +10,6 @@
     onSelect = () => {},
   } = $props();
 
-  let container = $state(null);
   let viewWidth = $state(0);
   let viewHeight = $state(0);
   let view = $state({ x: 0, y: 0, k: 1 });
@@ -116,16 +116,6 @@
     return s.length > max ? s.slice(0, max - 1) + "…" : s;
   }
 
-  function nodeLabel(node) {
-    if (node.kind === "artifact") {
-      return `${node.artifact_name}:v${node.version}`;
-    }
-    if (node.kind === "cluster") {
-      return `${node.count} ${node.member_kind === "run" ? "runs" : "artifact versions"}`;
-    }
-    return node.run_name ?? node.run_id ?? "run";
-  }
-
   function nodeChip(node) {
     if (node.kind === "artifact") return node.artifact_type;
     if (node.kind === "cluster") return "cluster";
@@ -148,7 +138,6 @@
 
 <div
   class="graph-container"
-  bind:this={container}
   bind:clientWidth={viewWidth}
   bind:clientHeight={viewHeight}
 >
@@ -178,7 +167,7 @@
     </defs>
     {#if layout}
       <g transform="translate({view.x}, {view.y}) scale({view.k})">
-        {#each layout.edges as edge (`${edge.source}|${edge.target}|${edge.direction}`)}
+        {#each layout.edges as edge (edgeKey(edge))}
           <path
             class="edge"
             d={edgePath(edge.points, smooth)}
@@ -196,7 +185,7 @@
             transform="translate({node.x - NODE_W / 2}, {node.y - NODE_H / 2})"
             role="button"
             tabindex="0"
-            aria-label={nodeLabel(node)}
+            aria-label={lineageNodeLabel(node)}
             onpointerdown={(e) => e.stopPropagation()}
             onclick={() => onSelect(node.id)}
             onkeydown={(e) => handleNodeKey(e, node)}
@@ -238,9 +227,9 @@
             {/if}
             <text class="node-label" x="10" y="33">
               {node.kind === "cluster"
-                ? nodeLabel(node)
-                : truncate(nodeLabel(node))}
-              <title>{nodeLabel(node)}</title>
+                ? lineageNodeLabel(node)
+                : truncate(lineageNodeLabel(node))}
+              <title>{lineageNodeLabel(node)}</title>
             </text>
           </g>
         {/each}
