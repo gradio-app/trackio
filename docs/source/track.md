@@ -215,6 +215,9 @@ trackio.log({"report": trackio.Html("<h1>Results</h1>")})
 Matplotlib and Plotly figures are converted to HTML:
 
 ```python
+import plotly.express as px
+
+fig = px.line(x=[1, 2, 3], y=[4, 5, 6])
 trackio.log({"plot": fig})
 ```
 

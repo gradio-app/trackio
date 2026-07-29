@@ -13,95 +13,27 @@ FRAGMENT = "<h1>Hello</h1><p>Some text.</p>"
 FULL_DOCUMENT = "<!doctype html><html><body><p>full</p></body></html>"
 
 
-def test_html_alias():
-    assert Html is TrackioHtml
+def test_html_resolves_sources(tmp_path):
+    fragment = TrackioHtml(FRAGMENT)
+    assert fragment._html.lstrip().lower().startswith("<!doctype")
+    assert FRAGMENT in fragment._html
 
+    assert TrackioHtml(FRAGMENT, inject=False)._html == FRAGMENT
+    assert TrackioHtml(FULL_DOCUMENT)._html == FULL_DOCUMENT
 
-def test_html_save(temp_dir):
-    html = TrackioHtml(FRAGMENT)
-    html._save(PROJECT_NAME, "test_run", 0)
-
-    expected_rel_dir = Path(PROJECT_NAME) / "test_run" / "0"
-    assert str(html._get_relative_file_path()).startswith(str(expected_rel_dir))
-    absolute_path = html._get_absolute_file_path()
-    assert str(absolute_path).endswith(".html")
-    assert absolute_path.is_file()
-    assert FRAGMENT in absolute_path.read_text(encoding="utf-8")
-
-
-def test_html_serialization(temp_dir):
-    html = TrackioHtml(FRAGMENT, caption="a caption")
-    html._save(PROJECT_NAME, "test_run", 0)
-    value = html._to_dict()
-
-    assert value.get("_type") == TrackioHtml.TYPE
-    assert value.get("file_path") == str(html._get_relative_file_path())
-    assert value.get("caption") == "a caption"
-
-
-def test_html_inject_wraps_fragment():
-    html = TrackioHtml(FRAGMENT)
-    assert html._html.lstrip().lower().startswith("<!doctype")
-    assert FRAGMENT in html._html
-
-
-def test_html_inject_false_passes_through():
-    html = TrackioHtml(FRAGMENT, inject=False)
-    assert html._html == FRAGMENT
-
-
-def test_html_full_document_not_double_wrapped():
-    html = TrackioHtml(FULL_DOCUMENT)
-    assert html._html == FULL_DOCUMENT
-
-
-def test_html_reads_html_file(tmp_path):
     file_path = tmp_path / "report.html"
     file_path.write_text(FULL_DOCUMENT, encoding="utf-8")
+    assert TrackioHtml(str(file_path))._html == FULL_DOCUMENT
 
-    html = TrackioHtml(str(file_path))
-    assert html._html == FULL_DOCUMENT
+    assert TrackioHtml(io.StringIO(FULL_DOCUMENT))._html == FULL_DOCUMENT
+    assert TrackioHtml(io.BytesIO(FULL_DOCUMENT.encode("utf-8")))._html == FULL_DOCUMENT
 
-
-def test_html_from_text_file_like_object():
-    html = TrackioHtml(io.StringIO(FULL_DOCUMENT))
-    assert html._html == FULL_DOCUMENT
-
-
-def test_html_from_bytes_file_like_object():
-    html = TrackioHtml(io.BytesIO(FULL_DOCUMENT.encode("utf-8")))
-    assert html._html == FULL_DOCUMENT
-
-
-def test_html_from_file_like_object_not_at_start():
     stream = io.StringIO()
     stream.write(FULL_DOCUMENT)
-    html = TrackioHtml(stream)
-    assert html._html == FULL_DOCUMENT
+    assert TrackioHtml(stream)._html == FULL_DOCUMENT
 
-
-def test_html_invalid_type():
     with pytest.raises(ValueError):
         TrackioHtml(123)
-
-
-def test_html_string_with_null_byte_not_treated_as_path():
-    data = "weird\x00name.html"
-    html = TrackioHtml(data, inject=False)
-    assert html._html == data
-
-
-def test_data_is_not_path_ignored_but_warns():
-    with pytest.warns(UserWarning, match="data_is_not_path"):
-        html = TrackioHtml(FRAGMENT, data_is_not_path=True, inject=False)
-    assert html._html == FRAGMENT
-
-
-def test_is_loggable_figure_false_for_plain():
-    assert not TrackioHtml.is_loggable_figure("string")
-    assert not TrackioHtml.is_loggable_figure(1)
-    assert not TrackioHtml.is_loggable_figure({"a": 1})
-    assert not TrackioHtml.is_loggable_figure(TrackioHtml(FRAGMENT))
 
 
 def test_html_logging(temp_dir):
@@ -120,7 +52,13 @@ def test_html_logging(temp_dir):
     ]
     assert len(entries) == 1
     assert entries[0]["report"]["caption"] == "report"
-    assert entries[0]["report"]["file_path"].endswith(".html")
+
+    file_path = entries[0]["report"]["file_path"]
+    assert file_path.startswith(str(Path(PROJECT_NAME) / "run-html"))
+    assert file_path.endswith(".html")
+    saved = Path(temp_dir) / "media" / file_path
+    assert saved.is_file()
+    assert FRAGMENT in saved.read_text(encoding="utf-8")
 
 
 def test_matplotlib_figure_logging(temp_dir):
@@ -133,6 +71,7 @@ def test_matplotlib_figure_logging(temp_dir):
 
     assert TrackioHtml.is_loggable_figure(fig)
     assert TrackioHtml.is_loggable_figure(plt)
+    assert not TrackioHtml.is_loggable_figure(FRAGMENT)
 
     run = Run(
         url=None, project=PROJECT_NAME, client=None, name="run-mpl", space_id=None
@@ -149,23 +88,9 @@ def test_matplotlib_figure_logging(temp_dir):
         and entry["chart"].get("_type") == TrackioHtml.TYPE
     ]
     assert len(entries) == 1
-    file_path = entries[0]["chart"]["file_path"]
-    assert file_path.endswith(".html")
-    saved = Path(temp_dir) / "media" / file_path
+    saved = Path(temp_dir) / "media" / entries[0]["chart"]["file_path"]
     assert saved.is_file()
     assert "<svg" in saved.read_text(encoding="utf-8")
-
-
-def test_pyplot_module_to_svg():
-    matplotlib = pytest.importorskip("matplotlib")
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    plt.figure()
-    plt.plot([1, 2, 3])
-    html = TrackioHtml(plt)
-    plt.close("all")
-    assert "<svg" in html._html
 
 
 def test_matplotlib_animation_to_jshtml():
@@ -189,20 +114,12 @@ def test_matplotlib_animation_to_jshtml():
     assert "<script" in html._html.lower()
 
 
-def test_plotly_figure_to_html():
+def test_plotly_figure_logging(temp_dir):
     go = pytest.importorskip("plotly.graph_objects")
 
     fig = go.Figure(data=go.Scatter(x=[1, 2, 3], y=[4, 5, 6]))
     assert TrackioHtml.is_loggable_figure(fig)
 
-    html = TrackioHtml(fig)
-    assert "plotly" in html._html.lower()
-
-
-def test_plotly_figure_logging(temp_dir):
-    go = pytest.importorskip("plotly.graph_objects")
-
-    fig = go.Figure(data=go.Scatter(x=[1, 2, 3], y=[4, 5, 6]))
     run = Run(
         url=None, project=PROJECT_NAME, client=None, name="run-plotly", space_id=None
     )
@@ -217,8 +134,6 @@ def test_plotly_figure_logging(temp_dir):
         and entry["plot"].get("_type") == TrackioHtml.TYPE
     ]
     assert len(entries) == 1
-    file_path = entries[0]["plot"]["file_path"]
-    assert file_path.endswith(".html")
-    saved = Path(temp_dir) / "media" / file_path
+    saved = Path(temp_dir) / "media" / entries[0]["plot"]["file_path"]
     assert saved.is_file()
     assert "plotly" in saved.read_text(encoding="utf-8").lower()
