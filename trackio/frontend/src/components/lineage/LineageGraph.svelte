@@ -256,6 +256,14 @@
               />
             {/if}
             <rect class="node-box" width={NODE_W} height={NODE_H} rx="6" />
+            <rect
+              class="selection-ring"
+              x="-4"
+              y="-4"
+              width={NODE_W + 8}
+              height={NODE_H + 8}
+              rx="10"
+            />
             {#if node.id === focusId}
               <g class="base-target" transform="translate({NODE_W}, 0)">
                 <circle class="target-ring" r="5.5" />
@@ -355,18 +363,20 @@
     stroke-dasharray: none;
     opacity: 0.7;
   }
-  .node.selected .node-box,
-  .node:focus-visible .node-box {
-    stroke: var(--lineage-selected);
-    stroke-width: 2.5;
-    filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.65));
-  }
-  .node.selected .node-box {
-    fill: color-mix(
+  .selection-ring {
+    fill: none;
+    stroke: color-mix(
       in srgb,
-      var(--lineage-selected) 10%,
+      var(--body-text-color, #1f2937) 80%,
       var(--background-fill-primary, #ffffff)
     );
+    stroke-width: 2;
+    pointer-events: none;
+    opacity: 0;
+  }
+  .node.selected .selection-ring,
+  .node:focus-visible .selection-ring {
+    opacity: 1;
   }
   .target-ring {
     fill: var(--background-fill-primary, #ffffff);

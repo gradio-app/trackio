@@ -143,7 +143,6 @@
   .lineage {
     --lineage-run: #10b981;
     --lineage-artifact: #3b82f6;
-    --lineage-selected: #8b5cf6;
     flex: 1;
     min-height: 0;
     display: flex;
