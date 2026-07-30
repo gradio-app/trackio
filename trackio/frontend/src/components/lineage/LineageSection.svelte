@@ -103,6 +103,14 @@
         />
         <div class="legend">
           <span class="legend-item"
+            ><svg class="target-swatch" viewBox="-7 -7 14 14" aria-hidden="true"
+              ><circle class="target-ring" r="5" /><circle
+                class="target-dot"
+                r="2"
+              /></svg
+            >Base Artifact</span
+          >
+          <span class="legend-item"
             ><span class="swatch artifact"></span>Artifact</span
           >
           <span class="legend-item"><span class="swatch run"></span>Run</span>
@@ -207,5 +215,17 @@
   }
   .swatch.run {
     border-color: var(--lineage-run);
+  }
+  .target-swatch {
+    width: 11px;
+    height: 11px;
+  }
+  .target-swatch .target-ring {
+    fill: none;
+    stroke: var(--color-accent, #f97316);
+    stroke-width: 2;
+  }
+  .target-swatch .target-dot {
+    fill: var(--color-accent, #f97316);
   }
 </style>

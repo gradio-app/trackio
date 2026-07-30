@@ -122,12 +122,6 @@
     return "run";
   }
 
-  let focusChipWidth = $state(0);
-
-  function measureChip(el) {
-    focusChipWidth = el.getComputedTextLength();
-  }
-
   function handleNodeKey(event, node) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -210,21 +204,15 @@
             {/if}
             <rect class="node-box" width={NODE_W} height={NODE_H} rx="6" />
             {#if node.id === focusId}
-              <text class="node-chip" x="10" y="16" use:measureChip>
-                {truncate(nodeChip(node), 12).toUpperCase()}
-              </text>
-              <g
-                class="base-badge"
-                transform="translate({10 + focusChipWidth + 6}, 5.5)"
-              >
-                <rect width="34" height="14" rx="7" />
-                <text x="17" y="10.5" text-anchor="middle">base</text>
+              <g class="base-target" transform="translate({NODE_W}, 0)">
+                <circle class="target-ring" r="5.5" />
+                <circle class="target-dot" r="2.25" />
+                <title>base artifact</title>
               </g>
-            {:else}
-              <text class="node-chip" x="10" y="16">
-                {truncate(nodeChip(node), 20).toUpperCase()}
-              </text>
             {/if}
+            <text class="node-chip" x="10" y="16">
+              {truncate(nodeChip(node), 20).toUpperCase()}
+            </text>
             <text class="node-label" x="10" y="33">
               {node.kind === "cluster"
                 ? lineageNodeLabel(node)
@@ -319,13 +307,12 @@
       var(--background-fill-primary, #ffffff)
     );
   }
-  .base-badge rect {
-    fill: transparent;
+  .target-ring {
+    fill: var(--background-fill-primary, #ffffff);
     stroke: var(--color-accent, #f97316);
-    stroke-width: 1;
+    stroke-width: 2;
   }
-  .base-badge text {
-    font-size: 9px;
+  .target-dot {
     fill: var(--color-accent, #f97316);
   }
   .node-chip {
