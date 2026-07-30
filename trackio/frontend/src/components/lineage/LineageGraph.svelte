@@ -90,7 +90,12 @@
 
   function onPointerDown(event) {
     if (event.button !== 0) return;
-    panning = { x: event.clientX, y: event.clientY };
+    panning = {
+      x: event.clientX,
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -101,13 +106,18 @@
       x: view.x + event.clientX - panning.x,
       y: view.y + event.clientY - panning.y,
     };
-    panning = { x: event.clientX, y: event.clientY };
+    panning = { ...panning, x: event.clientX, y: event.clientY };
   }
 
   function onPointerUp(event) {
     if (!panning) return;
+    const moved = Math.hypot(
+      event.clientX - panning.startX,
+      event.clientY - panning.startY,
+    );
     panning = null;
     event.currentTarget.releasePointerCapture(event.pointerId);
+    if (moved < 4) onSelect(null);
   }
 
   function truncate(text, max = 18) {
@@ -120,6 +130,47 @@
     if (node.kind === "artifact") return node.artifact_type;
     if (node.kind === "cluster") return "cluster";
     return "run";
+  }
+
+  const chain = $derived.by(() => {
+    if (!layout || !selectedId) return null;
+    const out = new Map();
+    const inc = new Map();
+    const add = (map, from, to) => {
+      if (!map.has(from)) map.set(from, []);
+      map.get(from).push(to);
+    };
+    for (const edge of layout.edges) {
+      add(out, edge.source, edge.target);
+      add(inc, edge.target, edge.source);
+      if (edge.bidirectional) {
+        add(out, edge.target, edge.source);
+        add(inc, edge.source, edge.target);
+      }
+    }
+    const walk = (adj) => {
+      const seen = new Set([selectedId]);
+      const queue = [selectedId];
+      while (queue.length) {
+        for (const next of adj.get(queue.pop()) ?? []) {
+          if (!seen.has(next)) {
+            seen.add(next);
+            queue.push(next);
+          }
+        }
+      }
+      return seen;
+    };
+    const down = walk(out);
+    const up = walk(inc);
+    return { nodes: new Set([...down, ...up]), down, up };
+  });
+
+  function edgeInChain(edge) {
+    return (
+      (chain.down.has(edge.source) && chain.down.has(edge.target)) ||
+      (chain.up.has(edge.source) && chain.up.has(edge.target))
+    );
   }
 
   function handleNodeKey(event, node) {
@@ -164,6 +215,7 @@
         {#each layout.edges as edge (edgeKey(edge))}
           <path
             class="edge"
+            class:dimmed={chain && !edgeInChain(edge)}
             d={edgePath(edge.points, smooth)}
             marker-end="url(#lineage-arrow-end)"
             marker-start={edge.bidirectional ? "url(#lineage-arrow-end)" : null}
@@ -176,6 +228,7 @@
               : ''}"
             class:focused={node.id === focusId}
             class:selected={node.id === selectedId}
+            class:dimmed={chain && !chain.nodes.has(node.id)}
             transform="translate({node.x - NODE_W / 2}, {node.y - NODE_H / 2})"
             role="button"
             tabindex="0"
@@ -269,6 +322,14 @@
   .node {
     cursor: pointer;
     outline: none;
+    transition: opacity 0.15s ease;
+  }
+  .edge {
+    transition: opacity 0.15s ease;
+  }
+  .node.dimmed,
+  .edge.dimmed {
+    opacity: 0.5;
   }
   .node-box {
     fill: var(--background-fill-primary, #ffffff);

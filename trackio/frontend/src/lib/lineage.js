@@ -5,7 +5,7 @@ export function lineageNodeLabel(node) {
     return `${node.artifact_name}:v${node.version}`;
   }
   if (node.kind === "cluster") {
-    return `${node.count} ${node.member_kind === "run" ? "runs" : "artifact versions"}`;
+    return `${node.count} ${node.member_kind === "run" ? "Runs" : "Artifacts"}`;
   }
   return node.run_name ?? node.run_id ?? "run";
 }

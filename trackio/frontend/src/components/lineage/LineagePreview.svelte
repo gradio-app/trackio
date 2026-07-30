@@ -36,17 +36,18 @@
   <div class="preview">
     <div class="preview-header">
       {#if node.kind === "artifact"}
+        <span class="kind-chip artifact">{node.artifact_type}</span>
         <span class="title">{node.artifact_name}</span>
         <span class="ver-badge">v{node.version}</span>
         {#each node.aliases as alias}
           <AliasPill {alias} />
         {/each}
       {:else if node.kind === "cluster"}
-        <span class="title">{lineageNodeLabel(node)}</span>
         <span class="kind-chip cluster">cluster</span>
+        <span class="title">{lineageNodeLabel(node)}</span>
       {:else}
-        <span class="title">{node.run_name ?? node.run_id}</span>
         <span class="kind-chip run">run</span>
+        <span class="title">{node.run_name ?? node.run_id}</span>
       {/if}
       <button class="close-btn" title="Close preview" onclick={onClose}
         >×</button
@@ -86,8 +87,6 @@
     {/if}
     <div class="detail-grid">
       {#if node.kind === "artifact"}
-        <span class="detail-key">Type</span>
-        <span class="detail-val type-chip">{node.artifact_type}</span>
         <span class="detail-key">Size</span>
         <span class="detail-val">{formatSize(node.size_bytes)}</span>
         <span class="detail-key">Files</span>
@@ -143,7 +142,7 @@
   .preview-header {
     position: relative;
     display: flex;
-    align-items: center;
+    align-items: baseline;
     flex-wrap: wrap;
     gap: 6px;
     padding-right: 24px;
@@ -163,6 +162,7 @@
     padding: 2px 7px;
   }
   .kind-chip {
+    flex-basis: 100%;
     font-size: var(--text-xs, 11px);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -171,6 +171,9 @@
   }
   .kind-chip.cluster {
     color: var(--body-text-color-subdued, #6b7280);
+  }
+  .kind-chip.artifact {
+    color: var(--lineage-artifact);
   }
   .cluster-body {
     min-height: 0;
@@ -239,9 +242,6 @@
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color, #1f2937);
     overflow-wrap: anywhere;
-  }
-  .type-chip {
-    font-weight: 600;
   }
   .run-link {
     background: none;
