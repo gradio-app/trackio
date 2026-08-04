@@ -128,6 +128,35 @@ def test_scalar_only_rows_do_not_spend_sampling_budget(temp_dir):
     assert [row["loss"] for row in logs] == [float(index) for index in range(10)]
 
 
+def test_metric_group_budgets_scale_with_group_size():
+    budgets = SQLiteStorage._allocate_metric_group_budgets([100_000, 50, 50, 50], 3000)
+
+    assert sum(budgets) <= 3000
+    assert all(budget > 0 for budget in budgets)
+    assert budgets[0] > sum(budgets[1:])
+
+
+def test_metric_group_budgets_keep_every_group_when_budget_allows():
+    budgets = SQLiteStorage._allocate_metric_group_budgets([500_000] + [5] * 999, 3000)
+
+    assert sum(budgets) <= 3000
+    assert all(budget > 0 for budget in budgets)
+
+
+def test_dense_metric_survives_many_distinct_signatures(temp_dir):
+    metrics = [{"train/loss": float(step)} for step in range(20_000)]
+    steps = list(range(20_000))
+    metrics.extend({f"eval/sample_{index}/score": 1.0} for index in range(4000))
+    steps.extend(range(4000))
+
+    SQLiteStorage.bulk_log("proj1", "run1", metrics, steps=steps)
+
+    logs = SQLiteStorage.get_logs("proj1", "run1", max_points=3000)
+
+    assert len(logs) <= 3000
+    assert sum(1 for row in logs if "train/loss" in row) > 1000
+
+
 def test_get_projects_and_runs(temp_dir):
     SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
     SQLiteStorage.log(project="proj2", run="run2", metrics={"b": 2})

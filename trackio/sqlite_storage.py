@@ -222,6 +222,7 @@ _LOGS_READ_CACHE: dict[tuple[Any, ...], tuple[int, list[dict[str, Any]]]] = {}
 _LOGS_READ_CACHE_LOCK = Lock()
 _LOGS_READ_CACHE_MAX_KEYS = 512
 _LOGS_READ_CACHE_MAX_ROWS_PER_ENTRY = 4000
+_METRIC_BUDGET_REFINEMENT_PASSES = 4
 
 
 def _spaces_logs_read_cache_enabled() -> bool:
@@ -2232,15 +2233,21 @@ class SQLiteStorage:
 
     @staticmethod
     def _metric_row_signature(
-        row: Any, *, scalar_only: bool = False
+        metrics: dict[str, Any], *, scalar_only: bool = False
     ) -> tuple[str, ...]:
-        metrics = orjson.loads(row["metrics"])
         if scalar_only:
             return tuple(
                 sorted(
-                    key
-                    for key, value in metrics.items()
-                    if SQLiteStorage._is_scalar_metric_value(value)
+                    [
+                        key
+                        for key, value in metrics.items()
+                        if type(value) is float
+                        or type(value) is int
+                        or (
+                            type(value) is dict
+                            and value.get("_type") == "trackio.histogram"
+                        )
+                    ]
                 )
             )
         return tuple(sorted(metrics))
@@ -2249,32 +2256,48 @@ class SQLiteStorage:
     def _allocate_metric_group_budgets(
         group_sizes: list[int], max_points: int
     ) -> list[int]:
-        budgets = [0] * len(group_sizes)
-        remaining_budget = max_points
-        ordered_groups = sorted(
-            range(len(group_sizes)), key=lambda index: (group_sizes[index], index)
-        )
+        group_count = len(group_sizes)
+        budgets = [0] * group_count
+        if group_count == 0 or max_points < 1:
+            return budgets
+        if sum(group_sizes) <= max_points:
+            return list(group_sizes)
 
-        for position, group_index in enumerate(ordered_groups):
-            remaining_groups = len(ordered_groups) - position
-            fair_share = remaining_budget // remaining_groups
-            group_size = group_sizes[group_index]
-            if group_size <= fair_share:
-                budgets[group_index] = group_size
-                remaining_budget -= group_size
-                continue
+        presence_floor = max_points // group_count
+        for index, group_size in enumerate(group_sizes):
+            budgets[index] = min(group_size, presence_floor)
 
-            base_budget, extra = divmod(remaining_budget, remaining_groups)
-            for offset, remaining_group_index in enumerate(ordered_groups[position:]):
-                budgets[remaining_group_index] = base_budget + (offset < extra)
-            break
+        for _ in range(_METRIC_BUDGET_REFINEMENT_PASSES):
+            remaining_budget = max_points - sum(budgets)
+            if remaining_budget < 1:
+                break
+            demands = [
+                group_size - budget
+                for group_size, budget in zip(group_sizes, budgets, strict=True)
+            ]
+            total_demand = sum(demands)
+            if total_demand < 1:
+                break
+
+            quotas = [remaining_budget * demand / total_demand for demand in demands]
+            additions = [int(quota) for quota in quotas]
+            leftover = remaining_budget - sum(additions)
+            if leftover > 0:
+                by_remainder = sorted(
+                    range(group_count),
+                    key=lambda index: (additions[index] - quotas[index], index),
+                )
+                for index in by_remainder[:leftover]:
+                    additions[index] += 1
+            for index in range(group_count):
+                budgets[index] = min(
+                    group_sizes[index], budgets[index] + additions[index]
+                )
 
         return budgets
 
     @staticmethod
-    def _stable_subsample_metric_group(
-        rows: list[tuple[int, Any]], max_points: int
-    ) -> list[tuple[int, Any]]:
+    def _stable_subsample_metric_group(rows: list[int], max_points: int) -> list[int]:
         if max_points < 1:
             return []
         if len(rows) <= max_points:
@@ -2298,38 +2321,40 @@ class SQLiteStorage:
         *,
         scalar_only: bool = False,
     ) -> list[Any]:
-        if not scalar_only and (
-            max_points is None or max_points < 1 or len(rows) <= max_points
-        ):
+        if max_points is None or max_points < 1 or len(rows) <= max_points:
             return rows
 
-        grouped_rows: dict[tuple[str, ...], list[tuple[int, Any]]] = {}
+        signature_by_key_order: dict[tuple[str, ...], tuple[str, ...]] = {}
+        grouped_indices: dict[tuple[str, ...], list[int]] = {}
         for index, row in enumerate(rows):
-            signature = SQLiteStorage._metric_row_signature(
-                row, scalar_only=scalar_only
-            )
+            metrics = orjson.loads(row["metrics"])
+            key_order = tuple(metrics)
+            signature = signature_by_key_order.get(key_order)
+            if signature is None:
+                signature = SQLiteStorage._metric_row_signature(
+                    metrics, scalar_only=scalar_only
+                )
+                if not scalar_only:
+                    signature_by_key_order[key_order] = signature
             if scalar_only and not signature:
                 continue
-            grouped_rows.setdefault(signature, []).append((index, row))
+            grouped_indices.setdefault(signature, []).append(index)
 
-        filtered_rows = [
-            indexed_row for group in grouped_rows.values() for indexed_row in group
-        ]
-        if max_points is None or max_points < 1 or len(filtered_rows) <= max_points:
-            return [row for _, row in sorted(filtered_rows)]
-
-        groups = list(grouped_rows.values())
-        budgets = SQLiteStorage._allocate_metric_group_budgets(
-            [len(group) for group in groups], max_points
-        )
-        sampled_rows = [
-            indexed_row
-            for group, budget in zip(groups, budgets, strict=True)
-            for indexed_row in SQLiteStorage._stable_subsample_metric_group(
-                group, budget
+        groups = list(grouped_indices.values())
+        total_rows = sum(len(group) for group in groups)
+        if total_rows <= max_points:
+            sampled_indices = [index for group in groups for index in group]
+        else:
+            budgets = SQLiteStorage._allocate_metric_group_budgets(
+                [len(group) for group in groups], max_points
             )
-        ]
-        return [row for _, row in sorted(sampled_rows)]
+            sampled_indices = [
+                index
+                for group, budget in zip(groups, budgets, strict=True)
+                for index in SQLiteStorage._stable_subsample_metric_group(group, budget)
+            ]
+        sampled_indices.sort()
+        return [rows[index] for index in sampled_indices]
 
     @staticmethod
     def _metric_rows_to_log_dicts(
