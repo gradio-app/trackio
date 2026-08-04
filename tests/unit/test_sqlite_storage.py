@@ -57,6 +57,77 @@ def test_get_logs_scalar_only_excludes_heavy_values(temp_dir):
     ]
 
 
+def test_subsample_metric_rows_preserves_sparse_metrics(temp_dir):
+    metrics = []
+    steps = []
+    for step in range(800):
+        for metric_index in range(9):
+            metrics.append({f"dense/metric_{metric_index}": 0.0})
+            steps.append(step)
+        if step % 10 == 0:
+            metrics.append({"sparse/value": float(step)})
+            steps.append(step)
+
+    SQLiteStorage.bulk_log("proj1", "run1", metrics, steps=steps)
+
+    logs = SQLiteStorage.get_logs("proj1", "run1", max_points=3000)
+    sparse_steps = [row["step"] for row in logs if "sparse/value" in row]
+
+    assert len(logs) <= 3000
+    assert sparse_steps == list(range(0, 800, 10))
+
+
+def test_subsample_metric_rows_is_stable_as_rows_are_appended(temp_dir):
+    previous_metric_steps = None
+    for step_count in range(800, 805):
+        metrics = []
+        steps = []
+        for step in range(step_count):
+            for metric_index in range(9):
+                metrics.append({f"dense/metric_{metric_index}": 0.0})
+                steps.append(step)
+            if step % 10 == 0:
+                metrics.append({"sparse/value": float(step)})
+                steps.append(step)
+
+        project = f"proj-{step_count}"
+        SQLiteStorage.bulk_log(project, "run1", metrics, steps=steps)
+        logs = SQLiteStorage.get_logs(project, "run1", max_points=3000)
+        metric_steps = {
+            metric: {row["step"] for row in logs if metric in row}
+            for metric in [
+                *(f"dense/metric_{index}" for index in range(9)),
+                "sparse/value",
+            ]
+        }
+
+        assert len(logs) <= 3000
+        if previous_metric_steps is not None:
+            for metric, current_steps in metric_steps.items():
+                previous_steps = previous_metric_steps[metric]
+                assert previous_steps - current_steps <= {max(previous_steps)}
+        previous_metric_steps = metric_steps
+
+
+def test_scalar_only_rows_do_not_spend_sampling_budget(temp_dir):
+    metrics = [
+        {
+            "table": {
+                "_type": "trackio.table",
+                "_value": [{"value": index}],
+            }
+        }
+        for index in range(100)
+    ]
+    metrics.extend({"loss": float(index)} for index in range(10))
+    SQLiteStorage.bulk_log("proj1", "run1", metrics)
+
+    logs = SQLiteStorage.get_logs("proj1", "run1", max_points=10, scalar_only=True)
+
+    assert len(logs) == 10
+    assert [row["loss"] for row in logs] == [float(index) for index in range(10)]
+
+
 def test_get_projects_and_runs(temp_dir):
     SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
     SQLiteStorage.log(project="proj2", run="run2", metrics={"b": 2})

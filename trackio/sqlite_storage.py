@@ -1958,7 +1958,7 @@ class SQLiteStorage:
             SELECT timestamp, metrics
             FROM system_metrics
             WHERE {run_identity[0]} = ?
-            ORDER BY timestamp
+            ORDER BY timestamp, id
             """,
             (run_identity[1],),
         )
@@ -2225,15 +2225,111 @@ class SQLiteStorage:
         return flags
 
     @staticmethod
-    def _subsample_metric_rows(rows: list[Any], max_points: int | None) -> list[Any]:
-        if max_points is None or max_points < 1:
-            return rows
+    def _is_scalar_metric_value(value: Any) -> bool:
+        return (isinstance(value, int | float) and not isinstance(value, bool)) or (
+            isinstance(value, dict) and value.get("_type") == "trackio.histogram"
+        )
+
+    @staticmethod
+    def _metric_row_signature(
+        row: Any, *, scalar_only: bool = False
+    ) -> tuple[str, ...]:
+        metrics = orjson.loads(row["metrics"])
+        if scalar_only:
+            return tuple(
+                sorted(
+                    key
+                    for key, value in metrics.items()
+                    if SQLiteStorage._is_scalar_metric_value(value)
+                )
+            )
+        return tuple(sorted(metrics))
+
+    @staticmethod
+    def _allocate_metric_group_budgets(
+        group_sizes: list[int], max_points: int
+    ) -> list[int]:
+        budgets = [0] * len(group_sizes)
+        remaining_budget = max_points
+        ordered_groups = sorted(
+            range(len(group_sizes)), key=lambda index: (group_sizes[index], index)
+        )
+
+        for position, group_index in enumerate(ordered_groups):
+            remaining_groups = len(ordered_groups) - position
+            fair_share = remaining_budget // remaining_groups
+            group_size = group_sizes[group_index]
+            if group_size <= fair_share:
+                budgets[group_index] = group_size
+                remaining_budget -= group_size
+                continue
+
+            base_budget, extra = divmod(remaining_budget, remaining_groups)
+            for offset, remaining_group_index in enumerate(ordered_groups[position:]):
+                budgets[remaining_group_index] = base_budget + (offset < extra)
+            break
+
+        return budgets
+
+    @staticmethod
+    def _stable_subsample_metric_group(
+        rows: list[tuple[int, Any]], max_points: int
+    ) -> list[tuple[int, Any]]:
+        if max_points < 1:
+            return []
         if len(rows) <= max_points:
             return rows
-        step = len(rows) / max_points
-        indices = {int(i * step) for i in range(max_points)}
-        indices.add(len(rows) - 1)
-        return [rows[i] for i in sorted(indices)]
+        if max_points == 1:
+            return [rows[-1]]
+
+        stride = 1
+        anchored_points = len(rows) - 1
+        while (anchored_points + stride - 1) // stride > max_points - 1:
+            stride *= 2
+
+        sampled = [rows[index] for index in range(0, len(rows) - 1, stride)]
+        sampled.append(rows[-1])
+        return sampled
+
+    @staticmethod
+    def _subsample_metric_rows(
+        rows: list[Any],
+        max_points: int | None,
+        *,
+        scalar_only: bool = False,
+    ) -> list[Any]:
+        if not scalar_only and (
+            max_points is None or max_points < 1 or len(rows) <= max_points
+        ):
+            return rows
+
+        grouped_rows: dict[tuple[str, ...], list[tuple[int, Any]]] = {}
+        for index, row in enumerate(rows):
+            signature = SQLiteStorage._metric_row_signature(
+                row, scalar_only=scalar_only
+            )
+            if scalar_only and not signature:
+                continue
+            grouped_rows.setdefault(signature, []).append((index, row))
+
+        filtered_rows = [
+            indexed_row for group in grouped_rows.values() for indexed_row in group
+        ]
+        if max_points is None or max_points < 1 or len(filtered_rows) <= max_points:
+            return [row for _, row in sorted(filtered_rows)]
+
+        groups = list(grouped_rows.values())
+        budgets = SQLiteStorage._allocate_metric_group_budgets(
+            [len(group) for group in groups], max_points
+        )
+        sampled_rows = [
+            indexed_row
+            for group, budget in zip(groups, budgets, strict=True)
+            for indexed_row in SQLiteStorage._stable_subsample_metric_group(
+                group, budget
+            )
+        ]
+        return [row for _, row in sorted(sampled_rows)]
 
     @staticmethod
     def _metric_rows_to_log_dicts(
@@ -2248,11 +2344,7 @@ class SQLiteStorage:
                 metrics = {
                     key: value
                     for key, value in metrics.items()
-                    if (isinstance(value, int | float) and not isinstance(value, bool))
-                    or (
-                        isinstance(value, dict)
-                        and value.get("_type") == "trackio.histogram"
-                    )
+                    if SQLiteStorage._is_scalar_metric_value(value)
                 }
             else:
                 metrics = deserialize_values(metrics)
@@ -2274,12 +2366,14 @@ class SQLiteStorage:
             SELECT timestamp, step, metrics
             FROM metrics
             WHERE {run_identity[0]} = ?
-            ORDER BY timestamp
+            ORDER BY timestamp, id
             """,
             (run_identity[1],),
         )
         rows = cursor.fetchall()
-        rows = SQLiteStorage._subsample_metric_rows(rows, max_points)
+        rows = SQLiteStorage._subsample_metric_rows(
+            rows, max_points, scalar_only=scalar_only
+        )
         return SQLiteStorage._metric_rows_to_log_dicts(rows, scalar_only=scalar_only)
 
     @staticmethod
