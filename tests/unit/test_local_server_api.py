@@ -345,7 +345,13 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
         app.close()
 
 
-def test_local_dashboard_run_media_upload_preserves_media_basename(temp_dir):
+@pytest.mark.parametrize(
+    "orig_name_template",
+    ["{name}", "C:\\fakepath\\{name}"],
+)
+def test_local_dashboard_run_media_upload_preserves_media_basename(
+    temp_dir, orig_name_template
+):
     project = "test_local_run_media_upload"
     run_name = "run-media"
     step = 7
@@ -385,7 +391,9 @@ def test_local_dashboard_run_media_upload_preserves_media_basename(temp_dir):
                         "relative_path": None,
                         "uploaded_file": {
                             "path": uploaded_path,
-                            "orig_name": source_path.name,
+                            "orig_name": orig_name_template.format(
+                                name=source_path.name
+                            ),
                         },
                     }
                 ],
@@ -402,6 +410,41 @@ def test_local_dashboard_run_media_upload_preserves_media_basename(temp_dir):
         source_path.unlink(missing_ok=True)
         trackio.delete_project(project, force=True)
         app.close()
+
+
+@pytest.mark.parametrize(
+    "orig_name,expected",
+    [
+        ("image.png", "image.png"),
+        ("C:\\fakepath\\image.png", "image.png"),
+        ("nested/dir/image.png", "image.png"),
+        ("..", "fallback.bin"),
+        (".", "fallback.bin"),
+        ("../..", "fallback.bin"),
+        ("dir/", "dir"),
+        ("", "fallback.bin"),
+        (None, "fallback.bin"),
+        (17, "fallback.bin"),
+    ],
+)
+def test_uploaded_file_media_basename_rejects_unsafe_names(orig_name, expected):
+    from trackio.server import _uploaded_file_media_basename
+
+    upload = {"uploaded_file": {"path": "/tmp/staged", "orig_name": orig_name}}
+
+    assert _uploaded_file_media_basename(upload, "fallback.bin") == expected
+
+
+def test_uploaded_file_media_basename_stays_within_media_dir(tmp_path):
+    from trackio.server import _uploaded_file_media_basename
+
+    media_path = tmp_path / "project" / "run" / "7"
+    media_path.mkdir(parents=True)
+
+    for orig_name in ["..", "../..", "C:\\fakepath\\..", "nested/../.."]:
+        upload = {"uploaded_file": {"path": "/tmp/staged", "orig_name": orig_name}}
+        destination = media_path / _uploaded_file_media_basename(upload, "fallback.bin")
+        assert destination.resolve().parent == media_path.resolve()
 
 
 def test_get_tab_availability_reflects_data(temp_dir):
