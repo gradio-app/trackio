@@ -34,7 +34,9 @@ STEPS = int(os.environ.get("STEPS", "800"))
 STEP_DELAY = float(os.environ.get("STEP_DELAY", "0.05"))
 DENSE_METRICS = 9
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "1.0"))
-PROJECT = os.environ.get("PROJECT", f"repro-653-live-{random.randint(100000, 999999)}")
+PROJECT = os.environ.get(
+    "PROJECT", f"repro-653-live-{random.randint(100000, 999999)}"
+)
 RUN_NAME = "run-1"
 OPEN_BROWSER = os.environ.get("OPEN_BROWSER", "1") != "0"
 KEEP_OPEN = os.environ.get("KEEP_OPEN", "1") != "0"
@@ -45,7 +47,11 @@ def log_step(step: int) -> None:
         trackio.log({f"dense/metric_{metric_index}": 0.0}, step=step)
 
     if step % 10 == 0:
-        loss = 2.0 + (0.75 if (step // 10) % 2 else -0.75) + 0.15 * math.sin(step / 20)
+        loss = (
+            2.0
+            + (0.75 if (step // 10) % 2 else -0.75)
+            + 0.15 * math.sin(step / 20)
+        )
         trackio.log(
             {"sparse/value": float(step), "train/loss": round(loss, 5)}, step=step
         )
@@ -88,7 +94,9 @@ def print_integrity_check() -> None:
     display_logs = SQLiteStorage.get_logs(
         PROJECT, RUN_NAME, max_points=3000, scalar_only=True
     )
-    stored_sparse_steps = [row["step"] for row in stored_logs if "sparse/value" in row]
+    stored_sparse_steps = [
+        row["step"] for row in stored_logs if "sparse/value" in row
+    ]
     displayed_sparse_steps = [
         row["step"] for row in display_logs if "sparse/value" in row
     ]
@@ -99,9 +107,7 @@ def print_integrity_check() -> None:
     print(f"  display rows:             {len(display_logs)}")
     print(f"  stored sparse/value:      {len(stored_sparse_steps)}")
     print(f"  shown sparse/value:       {len(displayed_sparse_steps)}")
-    print(
-        f"  expected cadence intact:  {displayed_sparse_steps == expected_sparse_steps}"
-    )
+    print(f"  expected cadence intact:  {displayed_sparse_steps == expected_sparse_steps}")
 
 
 def main() -> None:
