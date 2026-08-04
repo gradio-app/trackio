@@ -345,6 +345,65 @@ def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir)
         app.close()
 
 
+def test_local_dashboard_run_media_upload_preserves_media_basename(temp_dir):
+    project = "test_local_run_media_upload"
+    run_name = "run-media"
+    step = 7
+    source_path = Path(temp_dir) / "trackio-media-basename.png"
+    source_bytes = b"uploaded media bytes"
+    source_path.write_bytes(source_bytes)
+
+    app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
+    write_token = parse_qs(urlparse(full_url).query).get("write_token", [None])[0]
+    assert write_token
+    write_headers = {"x-trackio-write-token": write_token}
+
+    try:
+        with source_path.open("rb") as handle:
+            upload_response = httpx.post(
+                f"{url.rstrip('/')}/api/upload",
+                headers=write_headers,
+                files={"files": (source_path.name, handle)},
+                timeout=5,
+            )
+        upload_response.raise_for_status()
+        uploaded_path = upload_response.json()["paths"][0]
+        target = (
+            trackio_utils.MEDIA_DIR / project / run_name / str(step) / source_path.name
+        )
+        temp_name_target = target.parent / Path(uploaded_path).name
+
+        response = httpx.post(
+            f"{url.rstrip('/')}/api/bulk_upload_media",
+            headers=write_headers,
+            json={
+                "uploads": [
+                    {
+                        "project": project,
+                        "run": run_name,
+                        "step": step,
+                        "relative_path": None,
+                        "uploaded_file": {
+                            "path": uploaded_path,
+                            "orig_name": source_path.name,
+                        },
+                    }
+                ],
+                "hf_token": None,
+            },
+            timeout=5,
+        )
+
+        assert response.status_code == 200
+        assert target.read_bytes() == source_bytes
+        assert not temp_name_target.exists()
+        assert not Path(uploaded_path).exists()
+    finally:
+        source_path.unlink(missing_ok=True)
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
 def test_get_tab_availability_reflects_data(temp_dir):
     from trackio.server import get_tab_availability
     from trackio.utils import MEDIA_DIR

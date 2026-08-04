@@ -601,6 +601,24 @@ def _bulk_upload(
             cleanup_uploaded_temp_file(path)
 
 
+def _uploaded_file_media_basename(upload: UploadEntry, fallback: str) -> str:
+    """Return the client-side Trackio media basename for a staged upload.
+
+    Run media is serialized in metrics using the basename from the local
+    Trackio media file. The server must store the uploaded bytes under that
+    basename so `/file` lookups match the logged `file_path`.
+    """
+    uploaded_file = upload.get("uploaded_file")
+    raw_name = (
+        uploaded_file.get("orig_name") if isinstance(uploaded_file, dict) else None
+    )
+    if not isinstance(raw_name, str) or not raw_name:
+        return fallback
+
+    name = Path(raw_name).name
+    return name or fallback
+
+
 def bulk_upload_media(
     request: Request,
     uploads: list[UploadEntry],
@@ -615,6 +633,8 @@ def bulk_upload_media(
             step=upload["step"],
             relative_path=upload["relative_path"],
         )
+        if upload["run"] is not None:
+            media_path = media_path / _uploaded_file_media_basename(upload, src.name)
         shutil.copy(src, media_path)
 
     _bulk_upload(request, uploads, _write)
