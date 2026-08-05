@@ -44,6 +44,7 @@ jobs:
   e2e-test:
     name: "e2e-spaces-test"
     needs: get-pr-info
+    if: needs.get-pr-info.outputs.source_repo == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -134,3 +135,24 @@ jobs:
               target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
             })
 
+  e2e-skip-fork:
+    name: "e2e-spaces-skip-fork"
+    needs: get-pr-info
+    if: needs.get-pr-info.outputs.source_repo != github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Set skipped status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: '${{ needs.get-pr-info.outputs.sha }}',
+              state: 'success',
+              context: 'E2E Spaces Test',
+              description: 'Skipped: fork PR cannot run with repo secrets',
+              target_url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+            })
