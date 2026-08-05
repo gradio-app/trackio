@@ -38,6 +38,12 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-uv-
 
+    - name: Install system dependencies (Linux)
+      if: matrix.os != 'windows-latest'
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq ffmpeg
+
     - name: Install system dependencies (Windows)
       if: matrix.os == 'windows-latest'
       uses: AnimMouse/setup-ffmpeg@27e66fd2fe1d643b73a7c5cb105f3b4116bfb8db # v1.2.1
