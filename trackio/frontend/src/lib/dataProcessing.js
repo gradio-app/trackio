@@ -250,7 +250,12 @@ function downsampleImpl(data, x, y, colorField, xLim, extraFields = []) {
       return;
     }
 
-    const binSize = (gXMax - gXMin) / nBins;
+    const targetBinSize = (gXMax - gXMin) / nBins;
+    const binSize = 2 ** Math.ceil(Math.log2(targetBinSize));
+    if (!Number.isFinite(binSize) || binSize <= 0) {
+      result.push(...groupData);
+      return;
+    }
     const bins = new Map();
 
     groupData.forEach((r) => {
