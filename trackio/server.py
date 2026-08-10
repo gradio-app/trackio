@@ -13,7 +13,7 @@ import warnings
 from collections import deque
 from collections.abc import Callable
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlencode
 
@@ -601,6 +601,29 @@ def _bulk_upload(
             cleanup_uploaded_temp_file(path)
 
 
+def _uploaded_file_media_basename(upload: UploadEntry, fallback: str) -> str:
+    """Return the client-side Trackio media basename for a staged upload.
+
+    Run media is serialized in metrics using the basename from the local
+    Trackio media file. The server must store the uploaded bytes under that
+    basename so `/file` lookups match the logged `file_path`.
+
+    The name is client-supplied, so separators of either platform are stripped
+    and relative components are rejected to keep the write inside `media_path`.
+    """
+    uploaded_file = upload.get("uploaded_file")
+    raw_name = (
+        uploaded_file.get("orig_name") if isinstance(uploaded_file, dict) else None
+    )
+    if not isinstance(raw_name, str) or not raw_name:
+        return fallback
+
+    name = PurePosixPath(raw_name.replace("\\", "/")).name
+    if name in ("", ".", ".."):
+        return fallback
+    return name
+
+
 def bulk_upload_media(
     request: Request,
     uploads: list[UploadEntry],
@@ -615,6 +638,8 @@ def bulk_upload_media(
             step=upload["step"],
             relative_path=upload["relative_path"],
         )
+        if upload["run"]:
+            media_path = media_path / _uploaded_file_media_basename(upload, src.name)
         shutil.copy(src, media_path)
 
     _bulk_upload(request, uploads, _write)
