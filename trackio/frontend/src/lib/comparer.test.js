@@ -42,8 +42,11 @@ describe("flattenConfig", () => {
     expect(flattenConfig({ a: null })).toEqual({ a: null });
   });
 
-  test("drops empty object leaves", () => {
-    expect(flattenConfig({ a: {}, b: 1 })).toEqual({ b: 1 });
+  test("keeps empty object leaves", () => {
+    expect(flattenConfig({ a: {}, b: 1 })).toEqual({ a: {}, b: 1 });
+    expect(flattenConfig({ optimizer: { opts: {} } })).toEqual({
+      "optimizer.opts": {},
+    });
   });
 
   test("returns an empty object for non-object input", () => {
@@ -218,6 +221,17 @@ describe("buildComparerRows", () => {
     const groupRow = rows.find((r) => r.label === "Group");
     expect(groupRow.values).toEqual([undefined, "demo"]);
     expect(groupRow.differs).toBe(true);
+  });
+
+  test("keeps an empty object distinct from a missing key", () => {
+    const rows = buildComparerRows(runs, {
+      "id-a": { optimizer: {} },
+      "id-b": {},
+    });
+    const row = rows.find((r) => r.key === "optimizer");
+    expect(row.values).toEqual([{}, undefined]);
+    expect(row.differs).toBe(true);
+    expect(formatCellValue(row.values[0]).text).toBe("{}");
   });
 
   test("resolves configs by id first, then name", () => {

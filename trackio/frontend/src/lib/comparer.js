@@ -73,11 +73,13 @@ function escapeSegment(segment) {
 
 /**
  * Flattens a nested config into dot-path keys (`optimizer.lr`).
- * Arrays and other non-plain-object values are leaves, and empty-object
- * leaves produce no entry. A dot inside a literal key is escaped
- * (`{"a.b": 1}` → `a\.b`), keeping it distinct from the nested path
- * (`{a: {b: 2}}` → `a.b`) so both values are always shown. The result is a
- * prototype-less map so a key literally named `__proto__` stays data.
+ * Arrays and other non-plain-object values are leaves, and a plain object
+ * with no keys is kept as an `{}` leaf so an explicitly configured empty
+ * object stays distinguishable from a missing key. A dot inside a literal
+ * key is escaped (`{"a.b": 1}` → `a\.b`), keeping it distinct from the
+ * nested path (`{a: {b: 2}}` → `a.b`) so both values are always shown.
+ * The result is a prototype-less map so a key literally named `__proto__`
+ * stays data.
  * @param {unknown} config
  * @returns {Record<string, unknown>} escaped dot-path → leaf value
  */
@@ -90,7 +92,7 @@ export function flattenConfig(config) {
     for (const [key, value] of Object.entries(obj)) {
       const segment = escapeSegment(key);
       const path = prefix === null ? segment : `${prefix}.${segment}`;
-      if (isTraversable(value)) {
+      if (isTraversable(value) && Object.keys(value).length > 0) {
         walk(value, path);
       } else if (typeof value === "bigint") {
         flat[path] = fromBigInt(value);
