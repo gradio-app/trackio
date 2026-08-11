@@ -165,6 +165,17 @@ def resolve_space_id_and_server_url(
     return space_id, server_url
 
 
+def resolve_registry_bucket_id(bucket_id: str | None) -> str | None:
+    """Bucket a registry operation should use: the explicit argument, else
+    `TRACKIO_REGISTRY_BUCKET_ID`, else None for the local database.
+
+    Deliberately unrelated to a run's own bucket (`<space_id>-bucket`): a
+    registry is a cross-project catalog that outlives any one Space, so it is
+    named explicitly rather than inherited from wherever metrics happen to go.
+    """
+    return bucket_id or os.environ.get("TRACKIO_REGISTRY_BUCKET_ID")
+
+
 def parse_trackio_server_url(url: str) -> tuple[str, str | None]:
     from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 

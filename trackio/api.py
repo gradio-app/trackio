@@ -1,7 +1,6 @@
 from typing import Iterator
 
 from trackio.registry import Registry
-from trackio.registry_storage import RegistryStorage
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -100,7 +99,12 @@ class Api:
             raise ValueError(f"Project '{project}' does not exist")
         return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
 
-    def create_registry(self, name: str, description: str | None = None) -> Registry:
+    def create_registry(
+        self,
+        name: str,
+        description: str | None = None,
+        bucket_id: str | None = None,
+    ) -> Registry:
         """Create a new registry and return a handle on it.
 
         Raises `ValueError` if a registry with this name already exists.
@@ -113,17 +117,33 @@ class Api:
                 `^[A-Za-z0-9_-]+$`.
             description (`str`, *optional*):
                 Human-readable description of the registry.
+            bucket_id (`str`, *optional*):
+                Hugging Face bucket to hold the registry, e.g.
+                `"my-org/models-registry"`. The bucket is created (private) if
+                it does not exist. A bucket-backed registry is reachable from
+                any machine with access to it, including runs that log to a
+                Space. Omit for a local registry; defaults to
+                `TRACKIO_REGISTRY_BUCKET_ID` when that is set.
 
         Returns:
             A [`Registry`] handle on the new registry.
         """
-        RegistryStorage.create_registry(name, description=description)
-        return Registry(name)
+        registry = Registry(name, bucket_id=bucket_id)
+        registry._storage.create_registry(name, description=description)
+        return registry
 
-    def registry(self, name: str) -> Registry:
+    def registry(self, name: str, bucket_id: str | None = None) -> Registry:
         """Fetch a handle on an existing registry.
 
-        Raises `ValueError` if no registry with this name exists."""
-        if not RegistryStorage.registry_exists(name):
-            raise ValueError(f"Registry '{name}' does not exist")
-        return Registry(name)
+        Pass `bucket_id` (or set `TRACKIO_REGISTRY_BUCKET_ID`) for a
+        bucket-backed registry. Raises `ValueError` if no registry with this
+        name exists."""
+        registry = Registry(name, bucket_id=bucket_id)
+        if not registry._storage.registry_exists(name):
+            where = (
+                ""
+                if registry.bucket_id is None
+                else f" in bucket '{registry.bucket_id}'"
+            )
+            raise ValueError(f"Registry '{name}' does not exist{where}")
+        return registry

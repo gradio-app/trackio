@@ -658,14 +658,16 @@ def test_link_artifact_auto_logs_unlogged_instance(temp_dir, tmp_path):
     assert links[0]["source_version"] == 0
 
 
-def test_link_remotely_fetched_artifact_locally_raises(temp_dir, tmp_path):
+def test_link_remotely_fetched_artifact_into_local_registry_raises(temp_dir, tmp_path):
+    """Bytes that live on a Space cannot be published into a registry that only
+    this machine can read; the error points at bucket_id."""
     weights = tmp_path / "model.pt"
     weights.write_bytes(b"weights")
     trackio.Api().create_registry("models")
     run = trackio.init(project="exp", name="run")
     artifact = trackio.log_artifact(weights, name="m", type="model")
     artifact._remote_source = {"space_id": "user/space", "write_token": None}
-    with pytest.raises(NotImplementedError, match="not supported yet"):
+    with pytest.raises(NotImplementedError, match="bucket_id"):
         run.link_artifact(artifact, "registry-models/churn")
     trackio.finish()
 
@@ -679,7 +681,7 @@ class _StubClient:
         return None
 
 
-def test_link_artifact_remote_run_not_supported(temp_dir):
+def test_link_artifact_from_remote_run_requires_a_bucket(temp_dir):
     run = Run(
         url="fake_url",
         project="exp",
@@ -698,7 +700,7 @@ def test_link_artifact_remote_run_not_supported(temp_dir):
         manifest_digest="a" * 64,
         size_bytes=3,
     )
-    with pytest.raises(NotImplementedError, match="not supported yet"):
+    with pytest.raises(NotImplementedError, match="bucket_id"):
         run.link_artifact(art, "registry-models/churn", aliases=["staging"])
 
 

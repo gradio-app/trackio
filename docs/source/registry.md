@@ -13,7 +13,7 @@ For example, a registry named `models` might contain one collection per deployab
 
 A collection has its own version line (`v0`, `v1`, …) that is independent of the source artifacts' version numbers, and its versions may point at different source artifacts in different projects. Aliases name exactly one version per collection.
 
-Registries live next to your other Trackio data. A registry named `models` is stored as a project named `registry-models` (the `registry-` prefix is reserved). Registries are local for now; linking from a run that logs to a Space or a self-hosted server arrives together with the registry server endpoints.
+A registry is either **local** — stored next to your other Trackio data as a project named `registry-models` (the `registry-` prefix is reserved) — or backed by a **Hugging Face bucket**, which is what makes it reachable from other machines and from runs that log to a Space. See [Remote registries](#remote-registries).
 
 ## Create a registry
 
@@ -80,7 +80,7 @@ You can also link from the artifact itself with [`Artifact.link`], handy when th
 artifact.link("registry-models/my-model", aliases=["staging"])
 ```
 
-`Artifact.link` requires the artifact to be already logged or fetched — it won't log a draft for you — and the link records no publishing run. It is local for now.
+`Artifact.link` requires the artifact to be already logged or fetched — it won't log a draft for you — and the link records no publishing run.
 
 ### The linked artifact
 
@@ -137,7 +137,59 @@ linked = run.link_artifact(artifact, "registry-models/my-model")
 linked.unlink()
 ```
 
-The source artifact and its files are untouched — only the collection membership is removed. Any aliases on the link go with it, and the collection version number is never reused, so `my-model:v0` can't later mean something else. If the version you remove held `latest`, that alias moves to the highest remaining version, so `latest` keeps pointing at the newest version in the collection. Unlinking is local for now.
+The source artifact and its files are untouched — only the collection membership is removed. Any aliases on the link go with it, and the collection version number is never reused, so `my-model:v0` can't later mean something else. If the version you remove held `latest`, that alias moves to the highest remaining version, so `latest` keeps pointing at the newest version in the collection.
+
+## Remote registries
+
+A local registry only exists on the machine that wrote it. To share a catalog across machines — or to publish from a run that logs to a Space or a self-hosted server — back the registry with a **Hugging Face bucket** by passing `bucket_id`:
+
+```python
+registry = trackio.Api().create_registry(
+    "models", description="Our deployable models", bucket_id="my-org/models-registry"
+)
+```
+
+The bucket is created (private) if it does not exist. Set `TRACKIO_REGISTRY_BUCKET_ID` to make it the default for every registry call in a process, so scripts don't have to pass it.
+
+Fetching, inspecting, and publishing all take the same argument:
+
+```python
+registry = trackio.Api().registry("models", bucket_id="my-org/models-registry")
+
+run = trackio.init(project="my-experiments", space_id="my-org/my-dashboard")
+artifact = trackio.log_artifact("model.pt", name="resnet", type="model")
+
+run.link_artifact(
+    artifact,
+    "registry-models/my-model",
+    aliases=["staging"],
+    bucket_id="my-org/models-registry",
+)
+```
+
+Everyone with access to the bucket writes to it directly with their own Hugging Face credentials — there is no server in the path, so a registry is not tied to any one Space and outlives all of them. `Artifact.link` and `Artifact.unlink` accept `bucket_id` the same way, and a linked artifact remembers the bucket it came from, so `linked.unlink()` goes back to the right registry.
+
+The registry's own bucket is deliberately *not* the run's bucket: a registry is a cross-project catalog, so you name it explicitly rather than inheriting wherever metrics happen to go.
+
+### What lives in the bucket
+
+Each mutation is stored as one immutable object, and state is a fold of that log:
+
+```
+trackio/registries/<registry>/registry.json            name, description, created_at
+trackio/registries/<registry>/events/<event_uid>.json  one object per mutation
+```
+
+Reading a remote registry folds those events into a local projection database under `registry-cache/`, which is a cache: delete it and the next read rebuilds it from the bucket.
+
+### Concurrency
+
+Object storage has no compare-and-swap, so writers cannot take a lock — they can only add objects nobody else is writing. Two consequences, both by design:
+
+- **Version numbers are assigned by the fold, not by the writer.** Concurrent links are ordered by their event id (timestamp, then writer, then sequence), so each gets a distinct, never-reused number. A version reported by one writer can shift once a concurrent writer's events are folded in.
+- **Alias moves are last-writer-wins** under that same order, `latest` included. Two people promoting `production` at the same instant is settled by event order.
+
+Links stay pure pointers: nothing is copied into the registry bucket, so resolving a version reads the source project's storage, which has to stay reachable. Copying (pinning) a version's bytes into the registry is a planned follow-up.
 
 ## Inspect a registry
 
@@ -155,7 +207,7 @@ registry.collection("my-model").links
 #   "aliases": ["latest", "production"], ...}]
 ```
 
-Each link records where the version came from (`source_project`, `source_artifact`, `source_version`) and the aliases currently on it. A link is a pure pointer to that source version; resolving it (a follow-up) reads the source version directly.
+Each link records where the version came from (`source_project`, `source_artifact`, `source_version`), the `manifest_digest` of the content it points at, the source's storage coordinates when it is not local (`source_space_id`, `source_bucket_id`), and the aliases currently on it. A link is a pure pointer to that source version; resolving it (a follow-up) reads the source version directly.
 
 ## Audit history
 

@@ -212,6 +212,9 @@ Indexes and constraints:
 | `source_project` | `TEXT` | Project the linked artifact version was logged in |
 | `source_artifact` | `TEXT` | Name of the linked artifact |
 | `source_version` | `INTEGER` | Version of the linked artifact |
+| `manifest_digest` | `TEXT` | Digest of the content the link points at, when known |
+| `source_space_id` | `TEXT` | Space holding the source version, `NULL` when it is local |
+| `source_bucket_id` | `TEXT` | Bucket holding the source version, `NULL` when it is local |
 | `created_at` | `TEXT` | ISO timestamp |
 
 Constraints:
@@ -236,9 +239,12 @@ Constraints:
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | `INTEGER` | Primary key |
+| `event_uid` | `TEXT` | `<compact-utc>-<writer>-<seq>`, unique; totally orders events across writers and makes replay idempotent |
 | `ts` | `TEXT` | ISO timestamp |
 | `kind` | `TEXT` | `create`, `link`, `promote`, `update`, or `unlink` |
 | `payload` | `TEXT` | JSON blob describing the mutation |
+
+The log is the authoritative form of a registry: the tables above are a fold of it. A bucket-backed registry stores the same events as one object each (see the Registry guide) and materializes these tables locally.
 
 ## How Metric Payloads Are Stored
 

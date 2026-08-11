@@ -1469,6 +1469,7 @@ class Run:
         artifact: Artifact,
         target_path: str,
         aliases: list[str] | None = None,
+        bucket_id: str | None = None,
     ) -> Artifact:
         """Link an artifact version into a registry collection.
 
@@ -1479,9 +1480,11 @@ class Run:
         a new one: you get the existing version back, and the `aliases` you
         pass still move.
 
-        The link is recorded locally, alongside the run's data. Linking from
-        a run that logs to a Space or a self-hosted server is not supported
-        yet; it arrives with the registry server endpoints.
+        A local registry records the link alongside the run's data, so it is
+        only available to runs on this machine. Pass `bucket_id` to publish
+        into a bucket-backed registry instead — that is also how a run that
+        logs to a Space or a self-hosted server publishes, since the bucket is
+        reachable from both sides.
 
         Args:
             artifact (`Artifact`):
@@ -1503,6 +1506,12 @@ class Run:
                 an alias that another version holds moves it. `latest` is
                 managed automatically and always follows the newest linked
                 version; passing it here is a no-op.
+            bucket_id (`str`, *optional*):
+                Hugging Face bucket holding the registry, e.g.
+                `"my-org/models-registry"`. Required to link from a run that
+                logs to a Space or a self-hosted server. Omit for a local
+                registry; defaults to `TRACKIO_REGISTRY_BUCKET_ID` when that is
+                set.
 
         Returns:
             The linked artifact at its registry location. Its `name` is the
@@ -1522,16 +1531,20 @@ class Run:
                 "fetch a specific version with use_artifact('name:v3') and "
                 "link the result."
             )
-        if not self._is_local:
+        bucket_id = utils.resolve_registry_bucket_id(bucket_id)
+        if not self._is_local and bucket_id is None:
             raise NotImplementedError(
                 "Linking from a run that logs to a Space or a self-hosted "
-                "server is not supported yet; it arrives with the registry "
-                "server endpoints. Link from a local run for now."
+                "server requires a bucket-backed registry: pass bucket_id= "
+                "(or set TRACKIO_REGISTRY_BUCKET_ID). A local registry lives "
+                "on this machine only, so the link would resolve nowhere else."
             )
         if not artifact._logged:
             artifact = self.log_artifact(artifact)
 
-        return artifact._link_version(registry, collection, aliases, self.name, self.id)
+        return artifact._link_version(
+            registry, collection, aliases, self.name, self.id, bucket_id=bucket_id
+        )
 
     def alert(
         self,

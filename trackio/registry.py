@@ -1,6 +1,19 @@
 from dataclasses import dataclass
 
+from trackio.registry_bucket import BucketRegistryStorage
 from trackio.registry_storage import RegistryStorage, validate_registry_name
+from trackio.utils import resolve_registry_bucket_id
+
+
+def registry_backend(bucket_id: str | None):
+    """Storage backend for a registry: `RegistryStorage` for a local database,
+    or a `BucketRegistryStorage` bound to `bucket_id`. Both expose the same
+    operations with the registry name as the first argument, so callers hold one
+    and never branch again."""
+    bucket_id = resolve_registry_bucket_id(bucket_id)
+    if bucket_id is None:
+        return RegistryStorage
+    return BucketRegistryStorage(bucket_id)
 
 
 @dataclass(frozen=True)
@@ -52,6 +65,10 @@ class Registry:
         name (`str`):
             Registry name, e.g. `"models"`. Must match `^[A-Za-z0-9_-]+$`
             (letters, digits, underscore, hyphen).
+        bucket_id (`str`, *optional*):
+            Hugging Face bucket holding the registry, e.g.
+            `"my-org/models-registry"`. Omit for a local registry. Defaults to
+            `TRACKIO_REGISTRY_BUCKET_ID` when that is set.
 
     Example:
         ```python
@@ -71,9 +88,11 @@ class Registry:
         ```
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, bucket_id: str | None = None):
         validate_registry_name(name)
         self._name = name
+        self._bucket_id = resolve_registry_bucket_id(bucket_id)
+        self._storage = registry_backend(self._bucket_id)
 
     @property
     def name(self) -> str:
@@ -81,9 +100,14 @@ class Registry:
         return self._name
 
     @property
+    def bucket_id(self) -> str | None:
+        """Bucket holding the registry, or None when it is local."""
+        return self._bucket_id
+
+    @property
     def description(self) -> str | None:
         """The registry's description, or None if unset."""
-        record = RegistryStorage.get_registry(self._name)
+        record = self._storage.get_registry(self._name)
         return record["description"] if record is not None else None
 
     def create_collection(
@@ -113,7 +137,7 @@ class Registry:
         Returns:
             The [`Collection`].
         """
-        RegistryStorage.create_collection(
+        self._storage.create_collection(
             self._name, name, artifact_type, description=description
         )
         return self.collection(name)
@@ -122,7 +146,7 @@ class Registry:
         """Describe one collection.
 
         Returns None if the registry or the collection does not exist."""
-        record = RegistryStorage.get_collection(self._name, name)
+        record = self._storage.get_collection(self._name, name)
         if record is None:
             return None
         links = record["links"]
@@ -142,7 +166,7 @@ class Registry:
         Returns an empty list if the registry does not exist."""
         return [
             Collection(**summary)
-            for summary in RegistryStorage.list_collections(self._name)
+            for summary in self._storage.list_collections(self._name)
         ]
 
     def events(self) -> list[dict]:
@@ -152,7 +176,7 @@ class Registry:
         `"link"`, `"promote"`, `"update"`, or `"unlink"`), and a `payload`
         describing the mutation. A `create` payload without a `collection`
         key records the creation of the registry itself."""
-        return RegistryStorage.get_events(self._name)
+        return self._storage.get_events(self._name)
 
     def __repr__(self) -> str:
         return f"Registry({self._name!r})"

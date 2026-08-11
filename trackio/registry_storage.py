@@ -1,17 +1,25 @@
 """Storage layer for artifact registries.
 
-A registry is a regular trackio project named with the reserved
+A local registry is a regular trackio project named with the reserved
 ``registry-`` prefix, reusing the per-project SQLite database, locking, and
 connection machinery of `SQLiteStorage` and keeping the standard project
 schema. Its four registry tables (``collections``, ``collection_links``,
 ``collection_aliases``, ``registry_events``) are documented in the storage
-schema docs. Collection versions come from a per-collection counter that
-only moves forward, and every mutation appends an audit event in the same
-transaction.
+schema docs.
+
+Mutations are event-sourced: each one is built as an event (`new_event`),
+folded into the projection tables by `apply_event_cursor`, and appended to
+``registry_events`` in the same transaction. Collection versions are assigned
+by the fold rather than claimed by the writer, and events are idempotent, which
+is what lets `trackio.registry_bucket` keep the same registry in object storage
+— where an append-only log is the only thing concurrent writers can safely
+share — and reuse this reducer to materialize it.
 """
 
+import itertools
 import re
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +30,30 @@ from trackio.sqlite_storage import SQLiteStorage
 from trackio.utils import REGISTRY_PROJECT_PREFIX
 
 REGISTRY_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+\Z")
+
+_WRITER_ID = uuid.uuid4().hex[:8]
+_EVENT_SEQ = itertools.count()
+
+
+def new_event(kind: str, payload: dict, ts: str | None = None) -> dict:
+    """Build one registry mutation as a self-describing record.
+
+    A mutation is expressed as an event first and applied second, so the same
+    reducer serves a local database and an object-store backend where the log
+    is the only thing writers can safely append to. `event_uid` is
+    ``<compact-utc>-<writer>-<seq>``: fixed width, so sorting it lexicographically
+    totally orders events across writers, and unique, so replaying a log twice
+    changes nothing.
+    """
+    now = datetime.now(timezone.utc)
+    return {
+        "event_uid": (
+            f"{now.strftime('%Y%m%dT%H%M%S%f')}-{_WRITER_ID}-{next(_EVENT_SEQ):06d}"
+        ),
+        "ts": ts or now.isoformat(),
+        "kind": kind,
+        "payload": payload,
+    }
 
 
 def validate_registry_name(name: str) -> str:
@@ -129,16 +161,13 @@ class RegistryStorage:
         """
         project = registry_project_name(registry)
         db_path = SQLiteStorage.init_db(project)
-        now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 if RegistryStorage._registry_marker_cursor(conn) is not None:
                     raise ValueError(f"Registry {registry!r} already exists.")
                 RegistryStorage._create_registry_tables_cursor(conn)
-                conn.execute(
-                    """INSERT OR REPLACE INTO project_metadata (key, value)
-                    VALUES (?, ?)""",
-                    (RegistryStorage.REGISTRY_CREATED_AT_KEY, now),
+                RegistryStorage._commit_event_cursor(
+                    conn, new_event("create", {"registry": registry})
                 )
                 if description is not None:
                     conn.execute(
@@ -146,9 +175,6 @@ class RegistryStorage:
                         VALUES (?, ?)""",
                         (RegistryStorage.REGISTRY_DESCRIPTION_KEY, description),
                     )
-                RegistryStorage._append_event_cursor(
-                    conn, "create", {"registry": registry}, now
-                )
                 conn.commit()
         return {"name": registry, "description": description}
 
@@ -200,10 +226,20 @@ class RegistryStorage:
 
     @staticmethod
     def _create_registry_tables_cursor(conn: sqlite3.Connection) -> None:
-        """Add the four registry tables to a database that already has the
-        standard project schema. Idempotent, and callable from within a caller's
-        lock and transaction."""
+        """Add the registry tables to a database. Idempotent, and callable from
+        within a caller's lock and transaction. `project_metadata` is included
+        so the schema is self-contained: a project database already has that
+        table, and a standalone projection of a remote registry needs it for
+        the creation marker."""
         cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS project_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS collections (
@@ -225,6 +261,9 @@ class RegistryStorage:
                 source_project TEXT NOT NULL,
                 source_artifact TEXT NOT NULL,
                 source_version INTEGER NOT NULL,
+                manifest_digest TEXT,
+                source_space_id TEXT,
+                source_bucket_id TEXT,
                 created_at TEXT NOT NULL,
                 UNIQUE(collection_id, source_project, source_artifact,
                        source_version),
@@ -246,24 +285,150 @@ class RegistryStorage:
             """
             CREATE TABLE IF NOT EXISTS registry_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_uid TEXT,
                 ts TEXT NOT NULL,
                 kind TEXT NOT NULL,
                 payload TEXT NOT NULL
             )
             """
         )
+        RegistryStorage._add_missing_columns_cursor(
+            conn,
+            {
+                "registry_events": {"event_uid": "TEXT"},
+                "collection_links": {
+                    "manifest_digest": "TEXT",
+                    "source_space_id": "TEXT",
+                    "source_bucket_id": "TEXT",
+                },
+            },
+        )
+        cursor.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_registry_events_uid
+            ON registry_events(event_uid)"""
+        )
 
     @staticmethod
-    def _append_event_cursor(
-        conn: sqlite3.Connection,
-        kind: str,
-        payload: dict,
-        now: str,
+    def _add_missing_columns_cursor(
+        conn: sqlite3.Connection, columns_by_table: dict[str, dict[str, str]]
     ) -> None:
+        """Add columns a registry database created by an older Trackio is
+        missing. `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so
+        new columns need this."""
+        for table, columns in columns_by_table.items():
+            present = {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            for column, decl in columns.items():
+                if column not in present:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+    @staticmethod
+    def _store_event_cursor(conn: sqlite3.Connection, event: dict) -> None:
+        """Append `event` to the log. Re-storing an event already in the log is
+        a no-op, which is what makes replaying a remote log idempotent."""
         conn.execute(
-            "INSERT INTO registry_events (ts, kind, payload) VALUES (?, ?, ?)",
-            (now, kind, orjson.dumps(payload).decode("utf-8")),
+            """INSERT OR IGNORE INTO registry_events (event_uid, ts, kind, payload)
+            VALUES (?, ?, ?, ?)""",
+            (
+                event["event_uid"],
+                event["ts"],
+                event["kind"],
+                orjson.dumps(event["payload"]).decode("utf-8"),
+            ),
         )
+
+    @staticmethod
+    def apply_event_cursor(conn: sqlite3.Connection, event: dict) -> dict:
+        """Fold one event into the projection tables (`collections`,
+        `collection_links`, `collection_aliases`) and return whatever it
+        derived — the assigned `collection_version`, the version an alias moved
+        from, the aliases an unlink removed.
+
+        Derived values are also stamped back into `event["payload"]`, so a
+        caller that stores the event afterwards records what actually happened.
+        Applying the same event twice is a no-op.
+        """
+        kind = event["kind"]
+        payload = event["payload"]
+        ts = event["ts"]
+        if kind == "create":
+            if "collection" in payload:
+                return RegistryStorage._apply_collection_create(conn, payload, ts)
+            return RegistryStorage._apply_registry_create(conn, ts)
+        if kind == "update":
+            return RegistryStorage._apply_collection_update(conn, payload)
+        if kind == "link":
+            return RegistryStorage._apply_link(conn, payload, ts)
+        if kind == "promote":
+            return RegistryStorage._apply_promote(conn, payload)
+        if kind == "unlink":
+            return RegistryStorage._apply_unlink(conn, payload)
+        raise ValueError(f"Unknown registry event kind {kind!r}.")
+
+    @staticmethod
+    def _commit_event_cursor(conn: sqlite3.Connection, event: dict) -> dict:
+        """Apply `event` and append it to the log inside the caller's
+        transaction, so the projection and the log can never disagree."""
+        result = RegistryStorage.apply_event_cursor(conn, event)
+        RegistryStorage._store_event_cursor(conn, event)
+        return result
+
+    @staticmethod
+    def replay_events_cursor(conn: sqlite3.Connection, events: list[dict]) -> None:
+        """Fold a log into an empty or partially-built projection, oldest event
+        first. Events already in the log are skipped, and the stored payload is
+        left exactly as the writer wrote it — the projection, not the payload,
+        carries the derived truth."""
+        known = {
+            row[0]
+            for row in conn.execute(
+                "SELECT event_uid FROM registry_events WHERE event_uid IS NOT NULL"
+            ).fetchall()
+        }
+        for event in sorted(events, key=lambda e: e["event_uid"]):
+            if event["event_uid"] in known:
+                continue
+            RegistryStorage.apply_event_cursor(
+                conn, {**event, "payload": dict(event["payload"])}
+            )
+            RegistryStorage._store_event_cursor(conn, event)
+
+    @staticmethod
+    def _apply_registry_create(conn: sqlite3.Connection, ts: str) -> dict:
+        conn.execute(
+            """INSERT OR REPLACE INTO project_metadata (key, value)
+            VALUES (?, ?)""",
+            (RegistryStorage.REGISTRY_CREATED_AT_KEY, ts),
+        )
+        return {}
+
+    @staticmethod
+    def _apply_collection_create(
+        conn: sqlite3.Connection, payload: dict, ts: str
+    ) -> dict:
+        conn.execute(
+            """INSERT OR IGNORE INTO collections
+            (name, type, description, next_version, created_at)
+            VALUES (?, ?, ?, 0, ?)""",
+            (payload["collection"], payload["type"], payload.get("description"), ts),
+        )
+        return {}
+
+    @staticmethod
+    def _apply_collection_update(conn: sqlite3.Connection, payload: dict) -> dict:
+        conn.execute(
+            "UPDATE collections SET description = ? WHERE name = ?",
+            (payload.get("description"), payload["collection"]),
+        )
+        return {}
+
+    @staticmethod
+    def _collection_id_cursor(conn: sqlite3.Connection, collection: str) -> int | None:
+        row = conn.execute(
+            "SELECT id FROM collections WHERE name = ?", (collection,)
+        ).fetchone()
+        return None if row is None else int(row["id"])
 
     @staticmethod
     def _create_or_get_collection_cursor(
@@ -272,15 +437,13 @@ class RegistryStorage:
         name: str,
         type: str,
         description: str | None,
-        now: str,
     ) -> tuple[int, bool]:
         """Return ``(collection_id, created)`` for the collection named `name`,
         creating it if absent. For an existing collection a non-None, changed
-        `description` is applied in place (appending an ``update`` event); the
-        type is immutable and a mismatch raises. Creation appends a ``create``
-        event."""
-        cursor = conn.cursor()
-        row = cursor.execute(
+        `description` is applied in place (through an ``update`` event); the
+        type is immutable and a mismatch raises. Creation goes through a
+        ``create`` event."""
+        row = conn.execute(
             "SELECT id, type, description FROM collections WHERE name = ?", (name,)
         ).fetchone()
         if row is not None:
@@ -290,40 +453,31 @@ class RegistryStorage:
                     f"type {row['type']!r}, not {type!r}."
                 )
             if description is not None and description != row["description"]:
-                cursor.execute(
-                    "UPDATE collections SET description = ? WHERE id = ?",
-                    (description, int(row["id"])),
-                )
-                RegistryStorage._append_event_cursor(
+                RegistryStorage._commit_event_cursor(
                     conn,
-                    "update",
-                    {
-                        "registry": registry,
-                        "collection": name,
-                        "description": description,
-                    },
-                    now,
+                    new_event(
+                        "update",
+                        {
+                            "registry": registry,
+                            "collection": name,
+                            "description": description,
+                        },
+                    ),
                 )
             return int(row["id"]), False
-        cursor.execute(
-            """INSERT INTO collections
-            (name, type, description, next_version, created_at)
-            VALUES (?, ?, ?, 0, ?)""",
-            (name, type, description, now),
-        )
-        collection_id = int(cursor.lastrowid)
-        RegistryStorage._append_event_cursor(
+        RegistryStorage._commit_event_cursor(
             conn,
-            "create",
-            {
-                "registry": registry,
-                "collection": name,
-                "type": type,
-                "description": description,
-            },
-            now,
+            new_event(
+                "create",
+                {
+                    "registry": registry,
+                    "collection": name,
+                    "type": type,
+                    "description": description,
+                },
+            ),
         )
-        return collection_id, True
+        return RegistryStorage._collection_id_cursor(conn, name), True
 
     @staticmethod
     def _reassign_collection_alias_cursor(
@@ -385,94 +539,85 @@ class RegistryStorage:
         return int(row["collection_version"])
 
     @staticmethod
-    def _promote_alias_cursor(
-        conn: sqlite3.Connection,
-        registry: str,
-        collection_id: int,
-        collection: str,
-        alias: str,
-        link_id: int,
-        collection_version: int,
-        run_name: str | None,
-        run_id: str | None,
-        now: str,
-    ) -> None:
-        """Upsert `alias` onto `link_id` and append a ``promote`` event
-        recording the version it moved from. An exact no-op (the alias already
-        points at `link_id`) writes nothing."""
-        current = conn.execute(
-            """SELECT ca.link_id, cl.collection_version
-            FROM collection_aliases ca
-            JOIN collection_links cl ON cl.id = ca.link_id
-            WHERE ca.collection_id = ? AND ca.alias = ?""",
-            (collection_id, alias),
-        ).fetchone()
-        if current is not None and int(current["link_id"]) == link_id:
-            return
-        RegistryStorage._reassign_collection_alias_cursor(
-            conn, collection_id, alias, link_id
-        )
-        RegistryStorage._append_event_cursor(
-            conn,
-            "promote",
-            {
-                "registry": registry,
-                "collection": collection,
-                "alias": alias,
-                "collection_version": collection_version,
-                "previous_version": (
-                    None if current is None else int(current["collection_version"])
+    def _find_link_cursor(
+        conn: sqlite3.Connection, collection_id: int, payload: dict
+    ) -> sqlite3.Row | None:
+        """The link an event refers to, by source triple when the payload
+        carries one and by `collection_version` otherwise. The triple is the
+        stable identity: a version number assigned by one writer can be
+        superseded when a concurrent log is folded in, the source coordinates
+        never are."""
+        if payload.get("source_project") is not None:
+            return conn.execute(
+                """SELECT id, collection_version FROM collection_links
+                WHERE collection_id = ? AND source_project = ?
+                  AND source_artifact = ? AND source_version = ?""",
+                (
+                    collection_id,
+                    payload["source_project"],
+                    payload["source_artifact"],
+                    int(payload["source_version"]),
                 ),
-                "run_name": run_name,
-                "run_id": run_id,
-            },
-            now,
-        )
+            ).fetchone()
+        return conn.execute(
+            """SELECT id, collection_version FROM collection_links
+            WHERE collection_id = ? AND collection_version = ?""",
+            (collection_id, int(payload["collection_version"])),
+        ).fetchone()
 
     @staticmethod
-    def _insert_collection_link_cursor(
-        conn: sqlite3.Connection,
-        registry: str,
-        collection_id: int,
-        collection: str,
-        source_project: str,
-        source_artifact: str,
-        source_version: int,
-        run_name: str | None,
-        run_id: str | None,
-        now: str,
-    ) -> tuple[int, int, bool]:
-        """Return ``(link_id, collection_version, created)``. Re-linking an
-        already-linked source version returns the existing link unchanged
-        (``created`` False). A new link consumes the collection's monotonic
-        ``next_version`` counter, moves the collection's ``latest`` alias onto
-        itself (part of the link operation, recorded by the ``link`` event),
-        and appends that event."""
-        cursor = conn.cursor()
-        existing = cursor.execute(
-            """SELECT id, collection_version FROM collection_links
-            WHERE collection_id = ? AND source_project = ?
-              AND source_artifact = ? AND source_version = ?""",
-            (collection_id, source_project, source_artifact, source_version),
-        ).fetchone()
+    def _apply_link(conn: sqlite3.Connection, payload: dict, ts: str) -> dict:
+        """Add the link the event describes and move ``latest`` onto it.
+
+        The version is assigned here rather than by the writer: the version the
+        payload asks for is honored only if it is still free (which it always is
+        when a single writer's log is replayed in order), and otherwise the
+        collection's monotonic counter decides. That keeps numbers unique and
+        never-reused however two writers' logs interleave.
+        """
+        collection_id = RegistryStorage._collection_id_cursor(
+            conn, payload["collection"]
+        )
+        if collection_id is None:
+            raise ValueError(
+                f"Link event for unknown collection {payload['collection']!r}."
+            )
+        existing = RegistryStorage._find_link_cursor(conn, collection_id, payload)
         if existing is not None:
-            return int(existing["id"]), int(existing["collection_version"]), False
-        row = cursor.execute(
-            "SELECT next_version FROM collections WHERE id = ?", (collection_id,)
-        ).fetchone()
-        collection_version = int(row["next_version"])
+            payload["collection_version"] = int(existing["collection_version"])
+            return {
+                "link_id": int(existing["id"]),
+                "collection_version": int(existing["collection_version"]),
+                "created": False,
+            }
+        next_version = int(
+            conn.execute(
+                "SELECT next_version FROM collections WHERE id = ?", (collection_id,)
+            ).fetchone()["next_version"]
+        )
+        requested = payload.get("collection_version")
+        collection_version = (
+            int(requested)
+            if requested is not None and int(requested) >= next_version
+            else next_version
+        )
+        cursor = conn.cursor()
         cursor.execute(
             """INSERT INTO collection_links
             (collection_id, collection_version, source_project, source_artifact,
-             source_version, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)""",
+             source_version, manifest_digest, source_space_id, source_bucket_id,
+             created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 collection_id,
                 collection_version,
-                source_project,
-                source_artifact,
-                source_version,
-                now,
+                payload["source_project"],
+                payload["source_artifact"],
+                int(payload["source_version"]),
+                payload.get("manifest_digest"),
+                payload.get("source_space_id"),
+                payload.get("source_bucket_id"),
+                ts,
             ),
         )
         link_id = int(cursor.lastrowid)
@@ -483,22 +628,117 @@ class RegistryStorage:
         RegistryStorage._reassign_collection_alias_cursor(
             conn, collection_id, "latest", link_id
         )
-        RegistryStorage._append_event_cursor(
-            conn,
-            "link",
-            {
-                "registry": registry,
-                "collection": collection,
-                "collection_version": collection_version,
-                "source_project": source_project,
-                "source_artifact": source_artifact,
-                "source_version": source_version,
-                "run_name": run_name,
-                "run_id": run_id,
-            },
-            now,
+        payload["collection_version"] = collection_version
+        return {
+            "link_id": link_id,
+            "collection_version": collection_version,
+            "created": True,
+        }
+
+    @staticmethod
+    def _apply_promote(conn: sqlite3.Connection, payload: dict) -> dict:
+        collection_id = RegistryStorage._collection_id_cursor(
+            conn, payload["collection"]
         )
-        return link_id, collection_version, True
+        if collection_id is None:
+            raise ValueError(
+                f"Promote event for unknown collection {payload['collection']!r}."
+            )
+        link = RegistryStorage._find_link_cursor(conn, collection_id, payload)
+        if link is None:
+            raise ValueError(
+                f"Promote event for a version that is not linked in "
+                f"{payload['collection']!r}."
+            )
+        current = conn.execute(
+            """SELECT ca.link_id, cl.collection_version
+            FROM collection_aliases ca
+            JOIN collection_links cl ON cl.id = ca.link_id
+            WHERE ca.collection_id = ? AND ca.alias = ?""",
+            (collection_id, payload["alias"]),
+        ).fetchone()
+        RegistryStorage._reassign_collection_alias_cursor(
+            conn, collection_id, payload["alias"], int(link["id"])
+        )
+        payload["collection_version"] = int(link["collection_version"])
+        payload["previous_version"] = (
+            None if current is None else int(current["collection_version"])
+        )
+        return {"previous_version": payload["previous_version"]}
+
+    @staticmethod
+    def _apply_unlink(conn: sqlite3.Connection, payload: dict) -> dict:
+        collection_id = RegistryStorage._collection_id_cursor(
+            conn, payload["collection"]
+        )
+        if collection_id is None:
+            raise ValueError(
+                f"Unlink event for unknown collection {payload['collection']!r}."
+            )
+        link = RegistryStorage._find_link_cursor(conn, collection_id, payload)
+        if link is None:
+            return {"removed_aliases": [], "latest_version": None}
+        link_id = int(link["id"])
+        removed_aliases = sorted(
+            row["alias"]
+            for row in conn.execute(
+                "SELECT alias FROM collection_aliases WHERE link_id = ?", (link_id,)
+            ).fetchall()
+        )
+        conn.execute("DELETE FROM collection_aliases WHERE link_id = ?", (link_id,))
+        conn.execute("DELETE FROM collection_links WHERE id = ?", (link_id,))
+        latest_version = (
+            RegistryStorage._reassign_latest_cursor(conn, collection_id)
+            if "latest" in removed_aliases
+            else RegistryStorage._latest_version_cursor(conn, collection_id)
+        )
+        payload["removed_aliases"] = removed_aliases
+        payload["latest_version"] = latest_version
+        return {"removed_aliases": removed_aliases, "latest_version": latest_version}
+
+    @staticmethod
+    def _alias_points_at_cursor(
+        conn: sqlite3.Connection, collection: str, alias: str, link_id: int
+    ) -> bool:
+        """Whether `alias` already points at `link_id`, in which case promoting
+        it is an exact no-op that should write neither rows nor an event."""
+        current = conn.execute(
+            """SELECT ca.link_id FROM collection_aliases ca
+            JOIN collections c ON c.id = ca.collection_id
+            WHERE c.name = ? AND ca.alias = ?""",
+            (collection, alias),
+        ).fetchone()
+        return current is not None and int(current["link_id"]) == link_id
+
+    @staticmethod
+    def _promote_alias_cursor(
+        conn: sqlite3.Connection,
+        registry: str,
+        collection: str,
+        alias: str,
+        link_id: int,
+        source: dict,
+        run_name: str | None,
+        run_id: str | None,
+    ) -> None:
+        """Move `alias` onto the link at `source` through a ``promote`` event.
+        An exact no-op (the alias already points at `link_id`) writes nothing."""
+        if RegistryStorage._alias_points_at_cursor(conn, collection, alias, link_id):
+            return
+        RegistryStorage._commit_event_cursor(
+            conn,
+            new_event(
+                "promote",
+                {
+                    "registry": registry,
+                    "collection": collection,
+                    "alias": alias,
+                    **source,
+                    "run_name": run_name,
+                    "run_id": run_id,
+                },
+            ),
+        )
 
     @staticmethod
     def link_artifact_version(
@@ -511,6 +751,9 @@ class RegistryStorage:
         aliases: list[str] | None,
         run_name: str | None = None,
         run_id: str | None = None,
+        manifest_digest: str | None = None,
+        source_space_id: str | None = None,
+        source_bucket_id: str | None = None,
     ) -> dict:
         """Link one artifact version into `registry`/`collection` and return
         the link record.
@@ -521,7 +764,12 @@ class RegistryStorage:
         link (``created`` False) and still moves the requested `aliases`.
         An alias move may go backward (a rollback). ``latest`` is managed
         automatically and always follows the newest linked version; passing
-        it in `aliases` is a no-op rather than an error (matching wandb)."""
+        it in `aliases` is a no-op rather than an error (matching wandb).
+
+        `manifest_digest` and the source's storage coordinates
+        (`source_space_id` / `source_bucket_id`, None for a local project) are
+        recorded on the link so a reader elsewhere can find and verify the
+        source version's bytes."""
         validate_collection_name(collection)
         validate_collection_type(type)
         user_aliases = [
@@ -529,38 +777,44 @@ class RegistryStorage:
         ]
         project = registry_project_name(registry)
         db_path = RegistryStorage._require_registry(registry)
-        now = datetime.now(timezone.utc).isoformat()
+        source = {
+            "source_project": source_project,
+            "source_artifact": source_artifact,
+            "source_version": source_version,
+        }
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
-                collection_id, _ = RegistryStorage._create_or_get_collection_cursor(
-                    conn, registry, collection, type, None, now
+                RegistryStorage._create_or_get_collection_cursor(
+                    conn, registry, collection, type, None
                 )
-                link_id, collection_version, created = (
-                    RegistryStorage._insert_collection_link_cursor(
-                        conn,
-                        registry,
-                        collection_id,
-                        collection,
-                        source_project,
-                        source_artifact,
-                        source_version,
-                        run_name,
-                        run_id,
-                        now,
-                    )
+                link_event = new_event(
+                    "link",
+                    {
+                        "registry": registry,
+                        "collection": collection,
+                        **source,
+                        "manifest_digest": manifest_digest,
+                        "source_space_id": source_space_id,
+                        "source_bucket_id": source_bucket_id,
+                        "run_name": run_name,
+                        "run_id": run_id,
+                    },
                 )
+                linked = RegistryStorage.apply_event_cursor(conn, link_event)
+                link_id = linked["link_id"]
+                created = linked["created"]
+                if created:
+                    RegistryStorage._store_event_cursor(conn, link_event)
                 for alias in user_aliases:
                     RegistryStorage._promote_alias_cursor(
                         conn,
                         registry,
-                        collection_id,
                         collection,
                         alias,
                         link_id,
-                        collection_version,
+                        source,
                         run_name,
                         run_id,
-                        now,
                     )
                 link_row = conn.execute(
                     """SELECT collection_version, source_project, source_artifact,
@@ -601,12 +855,11 @@ class RegistryStorage:
         validate_collection_type(type)
         project = registry_project_name(registry)
         db_path = RegistryStorage._require_registry(registry)
-        now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 collection_id, created = (
                     RegistryStorage._create_or_get_collection_cursor(
-                        conn, registry, name, type, description, now
+                        conn, registry, name, type, description
                     )
                 )
                 row = conn.execute(
@@ -642,45 +895,24 @@ class RegistryStorage:
         exist."""
         project = registry_project_name(registry)
         db_path = RegistryStorage._require_registry(registry)
-        now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 resolved = RegistryStorage._resolve_link_cursor(
                     conn, registry, collection, collection_version
                 )
-                link_id = resolved["link_id"]
-                alias_rows = conn.execute(
-                    "SELECT alias FROM collection_aliases WHERE link_id = ?",
-                    (link_id,),
-                ).fetchall()
-                removed_aliases = sorted(r["alias"] for r in alias_rows)
-                conn.execute(
-                    "DELETE FROM collection_aliases WHERE link_id = ?", (link_id,)
-                )
-                conn.execute("DELETE FROM collection_links WHERE id = ?", (link_id,))
-                latest_version = (
-                    RegistryStorage._reassign_latest_cursor(
-                        conn, resolved["collection_id"]
-                    )
-                    if "latest" in removed_aliases
-                    else RegistryStorage._latest_version_cursor(
-                        conn, resolved["collection_id"]
-                    )
-                )
-                RegistryStorage._append_event_cursor(
+                removed = RegistryStorage._commit_event_cursor(
                     conn,
-                    "unlink",
-                    {
-                        "registry": registry,
-                        "collection": collection,
-                        "collection_version": collection_version,
-                        "source_project": resolved["source_project"],
-                        "source_artifact": resolved["source_artifact"],
-                        "source_version": resolved["source_version"],
-                        "removed_aliases": removed_aliases,
-                        "latest_version": latest_version,
-                    },
-                    now,
+                    new_event(
+                        "unlink",
+                        {
+                            "registry": registry,
+                            "collection": collection,
+                            "collection_version": collection_version,
+                            "source_project": resolved["source_project"],
+                            "source_artifact": resolved["source_artifact"],
+                            "source_version": resolved["source_version"],
+                        },
+                    ),
                 )
                 conn.commit()
                 return {
@@ -690,8 +922,8 @@ class RegistryStorage:
                     "source_project": resolved["source_project"],
                     "source_artifact": resolved["source_artifact"],
                     "source_version": resolved["source_version"],
-                    "removed_aliases": removed_aliases,
-                    "latest_version": latest_version,
+                    "removed_aliases": removed["removed_aliases"],
+                    "latest_version": removed["latest_version"],
                 }
 
     @staticmethod
@@ -739,7 +971,8 @@ class RegistryStorage:
         params = (collection_id,) if collection_id is not None else ()
         link_rows = conn.execute(
             f"""SELECT id, collection_id, collection_version, source_project,
-               source_artifact, source_version, created_at
+               source_artifact, source_version, manifest_digest, source_space_id,
+               source_bucket_id, created_at
             FROM collection_links {where}
             ORDER BY collection_id, collection_version DESC""",
             params,
@@ -761,11 +994,90 @@ class RegistryStorage:
                     "source_project": link["source_project"],
                     "source_artifact": link["source_artifact"],
                     "source_version": int(link["source_version"]),
+                    "manifest_digest": link["manifest_digest"],
+                    "source_space_id": link["source_space_id"],
+                    "source_bucket_id": link["source_bucket_id"],
                     "aliases": sorted(aliases_by_link.get(int(link["id"]), [])),
                     "created_at": link["created_at"],
                 }
             )
         return links_by_collection
+
+    @staticmethod
+    def get_collection_cursor(conn: sqlite3.Connection, name: str) -> dict | None:
+        """`get_collection` against an already-open projection, shared by the
+        local database and a remote registry's local projection."""
+        try:
+            row = conn.execute(
+                """SELECT id, name, type, description, created_at
+                FROM collections WHERE name = ?""",
+                (name,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if row is None:
+            return None
+        collection_id = int(row["id"])
+        links = RegistryStorage._links_by_collection_cursor(conn, collection_id).get(
+            collection_id, []
+        )
+        return {
+            "name": row["name"],
+            "type": row["type"],
+            "description": row["description"],
+            "created_at": row["created_at"],
+            "links": links,
+        }
+
+    @staticmethod
+    def list_collections_cursor(conn: sqlite3.Connection) -> list[dict]:
+        """`list_collections` against an already-open projection."""
+        try:
+            rows = conn.execute(
+                """SELECT id, name, type, description, created_at
+                FROM collections ORDER BY type, name"""
+            ).fetchall()
+            links_by_collection = RegistryStorage._links_by_collection_cursor(conn)
+        except sqlite3.OperationalError:
+            return []
+        result = []
+        for row in rows:
+            links = links_by_collection.get(int(row["id"]), [])
+            result.append(
+                {
+                    "name": row["name"],
+                    "type": row["type"],
+                    "description": row["description"],
+                    "created_at": row["created_at"],
+                    "num_links": len(links),
+                    "latest_version": (
+                        links[0]["collection_version"] if links else None
+                    ),
+                    "links": links,
+                }
+            )
+        return result
+
+    @staticmethod
+    def get_events_cursor(conn: sqlite3.Connection) -> list[dict]:
+        """`get_events` against an already-open projection."""
+        try:
+            rows = conn.execute(
+                """SELECT id, event_uid, ts, kind, payload
+                FROM registry_events ORDER BY id"""
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [
+            {
+                "id": int(row["id"]),
+                "event_uid": row["event_uid"],
+                "ts": row["ts"],
+                "kind": row["kind"],
+                "payload": orjson.loads(row["payload"]),
+            }
+            for row in rows
+        ]
 
     @staticmethod
     def get_collection(registry: str, name: str) -> dict | None:
@@ -777,27 +1089,7 @@ class RegistryStorage:
         if not db_path.exists():
             return None
         with SQLiteStorage._get_connection(db_path) as conn:
-            try:
-                row = conn.execute(
-                    """SELECT id, name, type, description, created_at
-                    FROM collections WHERE name = ?""",
-                    (name,),
-                ).fetchone()
-            except sqlite3.OperationalError:
-                return None
-            if row is None:
-                return None
-            collection_id = int(row["id"])
-            links = RegistryStorage._links_by_collection_cursor(
-                conn, collection_id
-            ).get(collection_id, [])
-            return {
-                "name": row["name"],
-                "type": row["type"],
-                "description": row["description"],
-                "created_at": row["created_at"],
-                "links": links,
-            }
+            return RegistryStorage.get_collection_cursor(conn, name)
 
     @staticmethod
     def list_collections(registry: str) -> list[dict]:
@@ -809,31 +1101,7 @@ class RegistryStorage:
         if not db_path.exists():
             return []
         with SQLiteStorage._get_connection(db_path) as conn:
-            try:
-                rows = conn.execute(
-                    """SELECT id, name, type, description, created_at
-                    FROM collections ORDER BY type, name"""
-                ).fetchall()
-                links_by_collection = RegistryStorage._links_by_collection_cursor(conn)
-            except sqlite3.OperationalError:
-                return []
-            result = []
-            for row in rows:
-                links = links_by_collection.get(int(row["id"]), [])
-                result.append(
-                    {
-                        "name": row["name"],
-                        "type": row["type"],
-                        "description": row["description"],
-                        "created_at": row["created_at"],
-                        "num_links": len(links),
-                        "latest_version": (
-                            links[0]["collection_version"] if links else None
-                        ),
-                        "links": links,
-                    }
-                )
-            return result
+            return RegistryStorage.list_collections_cursor(conn)
 
     @staticmethod
     def get_events(registry: str) -> list[dict]:
@@ -844,18 +1112,4 @@ class RegistryStorage:
         if not db_path.exists():
             return []
         with SQLiteStorage._get_connection(db_path) as conn:
-            try:
-                rows = conn.execute(
-                    "SELECT id, ts, kind, payload FROM registry_events ORDER BY id"
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return []
-            return [
-                {
-                    "id": int(row["id"]),
-                    "ts": row["ts"],
-                    "kind": row["kind"],
-                    "payload": orjson.loads(row["payload"]),
-                }
-                for row in rows
-            ]
+            return RegistryStorage.get_events_cursor(conn)

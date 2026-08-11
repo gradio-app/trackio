@@ -6,8 +6,8 @@ import httpx
 from huggingface_hub.utils import get_token
 
 from trackio import cas, references, utils
+from trackio.registry import registry_backend
 from trackio.registry_storage import (
-    RegistryStorage,
     parse_collection_target,
     registry_project_name,
 )
@@ -159,6 +159,7 @@ class Artifact:
         self._project: str | None = None
         self._remote_source: dict | None = None
         self._registry: str | None = None
+        self._registry_bucket_id: str | None = None
         self._source_project: str | None = None
         self._source_artifact: str | None = None
         self._source_version: int | None = None
@@ -576,7 +577,12 @@ class Artifact:
 
         return str(root_path)
 
-    def link(self, target_path: str, aliases: list[str] | None = None) -> "Artifact":
+    def link(
+        self,
+        target_path: str,
+        aliases: list[str] | None = None,
+        bucket_id: str | None = None,
+    ) -> "Artifact":
         """Link this artifact version into a registry collection.
 
         A link is a pointer to this version: no files are copied. See
@@ -585,9 +591,9 @@ class Artifact:
 
         The artifact must already be logged or fetched; unlike
         `Run.link_artifact`, this does not log a draft artifact for you, and
-        the link records no publishing run. Linking is local for now: an
-        artifact fetched from a Space or a self-hosted server raises
-        `NotImplementedError`.
+        the link records no publishing run. An artifact fetched from a Space or
+        a self-hosted server can only be linked into a bucket-backed registry,
+        since a local registry is not reachable from where its bytes live.
 
         Args:
             target_path (`str`):
@@ -597,6 +603,10 @@ class Artifact:
             aliases (`list[str]`, *optional*):
                 Aliases to place on the linked version. `latest` is managed
                 automatically; passing it is a no-op.
+            bucket_id (`str`, *optional*):
+                Bucket holding the registry, e.g. `"my-org/models-registry"`.
+                Omit for a local registry; defaults to
+                `TRACKIO_REGISTRY_BUCKET_ID` when that is set.
 
         Returns:
             The linked artifact at its registry location.
@@ -608,7 +618,9 @@ class Artifact:
                 "use_artifact, then link the result."
             )
         registry, collection = parse_collection_target(target_path)
-        return self._link_version(registry, collection, aliases, None, None)
+        return self._link_version(
+            registry, collection, aliases, None, None, bucket_id=bucket_id
+        )
 
     def unlink(self) -> None:
         """Remove this registry link.
@@ -617,8 +629,8 @@ class Artifact:
         `Run.link_artifact`, not on a source artifact version. The source
         artifact and its files are untouched; only the collection membership
         is removed. Aliases pointing at the link go with it, and the
-        collection version number is never reused. Unlinking is local for
-        now.
+        collection version number is never reused. If the version held
+        `latest`, that alias moves to the highest remaining version.
         """
         if not self.is_link:
             raise ValueError(
@@ -626,7 +638,9 @@ class Artifact:
                 "artifact returned by link() or Run.link_artifact, not on a "
                 "source artifact version."
             )
-        RegistryStorage.unlink(self._registry, self._name, self._version)
+        registry_backend(self._registry_bucket_id).unlink(
+            self._registry, self._name, self._version
+        )
 
     def _resolve_link_source(self) -> tuple[str, str, int]:
         """Coordinates ``(project, artifact, version)`` a link operation
@@ -643,9 +657,17 @@ class Artifact:
         aliases: list[str] | None,
         run_name: str | None,
         run_id: str | None,
+        bucket_id: str | None = None,
     ) -> "Artifact":
         """Link this logged artifact version into `registry`/`collection` and
-        return the linked artifact hydrated at its registry location."""
+        return the linked artifact hydrated at its registry location.
+
+        A bucket-backed registry accepts a version whose bytes live on a Space
+        or a self-hosted server, because the link records where the source is
+        and every reader of the bucket can follow it. A local registry cannot:
+        it is reachable only from this machine, so linking remote bytes into it
+        would produce a pointer nobody else can resolve.
+        """
         source_project, source_artifact, source_version = self._resolve_link_source()
         if self.is_link:
             utils._emit_nonfatal_warning(
@@ -653,14 +675,17 @@ class Artifact:
                 f"({self.source_qualified_name}) directly; registry links "
                 "never chain."
             )
-        if self._remote_source is not None:
+        bucket_id = utils.resolve_registry_bucket_id(bucket_id)
+        if self._remote_source is not None and bucket_id is None:
             raise NotImplementedError(
                 "Linking an artifact fetched from a Space or a self-hosted "
-                "server is not supported yet; it arrives with the registry "
-                "server endpoints."
+                "server into a local registry is not supported. Pass "
+                "bucket_id= (or set TRACKIO_REGISTRY_BUCKET_ID) to publish "
+                "into a bucket-backed registry both sides can reach."
             )
         manifest = self._manifest or []
-        link = RegistryStorage.link_artifact_version(
+        remote_source = self._remote_source or {}
+        link = registry_backend(bucket_id).link_artifact_version(
             registry=registry,
             collection=collection,
             type=self._type,
@@ -670,6 +695,9 @@ class Artifact:
             aliases=aliases,
             run_name=run_name,
             run_id=run_id,
+            manifest_digest=self._manifest_digest,
+            source_space_id=remote_source.get("space_id"),
+            source_bucket_id=remote_source.get("bucket_id"),
         )
         return Artifact._from_registry_link(
             registry,
@@ -685,14 +713,20 @@ class Artifact:
                     "size_bytes": self._size or 0,
                 },
             },
+            bucket_id=bucket_id,
         )
 
     @classmethod
     def _from_registry_link(
-        cls, registry: str, collection: str, link: dict
+        cls,
+        registry: str,
+        collection: str,
+        link: dict,
+        bucket_id: str | None = None,
     ) -> "Artifact":
-        """Build the linked artifact at its registry location from a local
-        link record."""
+        """Build the linked artifact at its registry location from a link
+        record. `bucket_id` is remembered so `unlink()` goes back to the same
+        registry the link was written to."""
         source = link["source"]
         linked = cls(
             name=collection,
@@ -709,6 +743,7 @@ class Artifact:
             size_bytes=int(source["size_bytes"]),
         )
         linked._registry = registry
+        linked._registry_bucket_id = bucket_id
         linked._source_project = link["source_project"]
         linked._source_artifact = link["source_artifact"]
         linked._source_version = int(link["source_version"])
