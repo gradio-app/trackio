@@ -21,6 +21,9 @@ from trackio.cli_helpers import (
     format_run_summary,
     format_snapshot,
     format_spaces,
+    format_sweep_summary,
+    format_sweep_trials,
+    format_sweeps,
     format_system_metric_names,
     format_system_metrics,
 )
@@ -1276,6 +1279,48 @@ def main():
 
     logbook_sub.add_parser("sync-todos")
 
+    sweep_parser = subparsers.add_parser(
+        "sweep", help="Create and manage hyperparameter sweeps."
+    )
+    sweep_sub = sweep_parser.add_subparsers(dest="sweep_action", required=True)
+
+    sweep_new = sweep_sub.add_parser(
+        "new", help="Create a sweep from a config file (JSON, TOML, or YAML)."
+    )
+    sweep_new.add_argument("config", help="Path to the sweep config file")
+    sweep_new.add_argument("--project", "-p", required=True, help="Project name")
+    sweep_new.add_argument("--name", help="Display name for the sweep")
+    sweep_new.add_argument("--json", action="store_true", help="Output as JSON")
+
+    sweep_list = sweep_sub.add_parser("list", help="List sweeps in a project.")
+    sweep_list.add_argument("--project", "-p", required=True, help="Project name")
+    sweep_list.add_argument("--json", action="store_true", help="Output as JSON")
+
+    sweep_status = sweep_sub.add_parser(
+        "status", help="Show a sweep's state, trials, and best run."
+    )
+    sweep_status.add_argument("sweep_id", help="Sweep id (or project/sweep_id)")
+    sweep_status.add_argument("--project", "-p", help="Project name")
+    sweep_status.add_argument("--json", action="store_true", help="Output as JSON")
+    sweep_status.add_argument(
+        "--trials", action="store_true", help="Also list every trial"
+    )
+
+    for action, help_text in (
+        ("pause", "Pause a sweep (agents wait; no new trials are started)."),
+        ("resume", "Resume a paused sweep."),
+        ("stop", "Stop a sweep (running trials finish; no new trials)."),
+        ("cancel", "Cancel a sweep."),
+    ):
+        sweep_action_parser = sweep_sub.add_parser(action, help=help_text)
+        sweep_action_parser.add_argument(
+            "sweep_id", help="Sweep id (or project/sweep_id)"
+        )
+        sweep_action_parser.add_argument("--project", "-p", help="Project name")
+        sweep_action_parser.add_argument(
+            "--json", action="store_true", help="Output as JSON"
+        )
+
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
         trailing_global_parser = argparse.ArgumentParser(add_help=False)
@@ -1850,10 +1895,119 @@ def main():
     elif args.command == "skills":
         if args.skills_action == "add":
             _handle_skills_add(args)
+    elif args.command == "sweep":
+        _handle_sweep(args)
     elif args.command == "logbook":
         _handle_logbook(args)
     else:
         parser.print_help()
+
+
+def _load_sweep_config_file(path_str: str) -> dict:
+    path = Path(path_str)
+    if not path.exists():
+        error_exit(f"Sweep config file '{path_str}' not found.")
+    text = path.read_text()
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        import json
+
+        return json.loads(text)
+    if suffix == ".toml":
+        import tomllib
+
+        return tomllib.loads(text)
+    if suffix in (".yaml", ".yml"):
+        try:
+            import yaml
+        except ImportError:
+            error_exit(
+                "Reading YAML sweep configs requires pyyaml: pip install pyyaml. "
+                "Alternatively, use a JSON or TOML config file."
+            )
+        return yaml.safe_load(text)
+    error_exit(
+        f"Unsupported sweep config format '{suffix}'. Use .json, .toml, .yaml, or .yml."
+    )
+
+
+def _resolve_sweep_target(args) -> tuple[str, str]:
+    from trackio.sweep_agent import split_sweep_path
+
+    project, sweep_id = split_sweep_path(args.sweep_id, getattr(args, "project", None))
+    if project is None:
+        error_exit(
+            "A project is required: pass --project or use a qualified sweep id "
+            "like 'my-project/abcd1234'."
+        )
+    return project, sweep_id
+
+
+def _handle_sweep(args):
+    from trackio.sweep_agent import SweepClient
+    from trackio.sweeps import SweepConfigError
+
+    space = _get_space(args)
+
+    if args.sweep_action == "new":
+        config = _load_sweep_config_file(args.config)
+        client = SweepClient(args.project, space_id=space)
+        try:
+            sweep_id = client.create_sweep(config, name=args.name)
+        except SweepConfigError as e:
+            error_exit(str(e))
+        if args.json:
+            print(format_json({"project": args.project, "sweep_id": sweep_id}))
+        else:
+            print(f"Created sweep: {sweep_id} (project: {args.project})")
+            print(
+                f'Run an agent with: trackio.agent("{args.project}/{sweep_id}", function=...)'
+            )
+        return
+
+    if args.sweep_action == "list":
+        client = SweepClient(args.project, space_id=space)
+        sweeps = client.list_sweeps()
+        if args.json:
+            print(format_json({"project": args.project, "sweeps": sweeps}))
+        else:
+            print(format_sweeps(sweeps, args.project))
+        return
+
+    project, sweep_id = _resolve_sweep_target(args)
+    client = SweepClient(project, space_id=space)
+
+    if args.sweep_action == "status":
+        sweep = client.get_sweep(sweep_id)
+        if sweep is None:
+            error_exit(f"Sweep '{sweep_id}' not found in project '{project}'.")
+        trials = client.get_trials(sweep_id)
+        if args.json:
+            print(format_json({"sweep": sweep, "trials": trials}))
+        else:
+            print(format_sweep_summary(sweep))
+            if args.trials:
+                print()
+                print(format_sweep_trials(trials))
+        return
+
+    state_by_action = {
+        "pause": "paused",
+        "resume": "running",
+        "stop": "stopped",
+        "cancel": "cancelled",
+    }
+    state = state_by_action[args.sweep_action]
+    try:
+        sweep = client.set_sweep_state(sweep_id, state)
+    except ValueError as e:
+        error_exit(str(e))
+    if sweep is None:
+        error_exit(f"Sweep '{sweep_id}' not found in project '{project}'.")
+    if args.json:
+        print(format_json({"sweep": sweep}))
+    else:
+        print(f"Sweep {sweep_id} is now {sweep['state']}.")
 
 
 def _logbook_cell_target(lb, proj, args):

@@ -391,6 +391,32 @@ class SQLiteStorage:
         ],
     }
 
+    _SWEEP_PARQUET_TABLES: dict[str, list[str]] = {
+        "sweeps": [
+            "sweep_id",
+            "name",
+            "config",
+            "method",
+            "metric_name",
+            "metric_goal",
+            "state",
+            "created_at",
+            "updated_at",
+        ],
+        "sweep_trials": [
+            "trial_id",
+            "sweep_id",
+            "params",
+            "param_hash",
+            "state",
+            "run_id",
+            "agent_id",
+            "metric_value",
+            "created_at",
+            "updated_at",
+        ],
+    }
+
     @staticmethod
     @contextmanager
     def _get_connection(
@@ -466,6 +492,7 @@ class SQLiteStorage:
                 "configs",
                 "traces",
                 *SQLiteStorage._ARTIFACT_PARQUET_TABLES,
+                *SQLiteStorage._SWEEP_PARQUET_TABLES,
             )
         )
         for suffix in reserved:
@@ -582,6 +609,43 @@ class SQLiteStorage:
                         step INTEGER,
                         alert_id TEXT
                     )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS sweeps (
+                        sweep_id TEXT PRIMARY KEY,
+                        name TEXT,
+                        config TEXT NOT NULL,
+                        method TEXT NOT NULL,
+                        metric_name TEXT,
+                        metric_goal TEXT,
+                        state TEXT NOT NULL DEFAULT 'running',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS sweep_trials (
+                        trial_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sweep_id TEXT NOT NULL,
+                        params TEXT NOT NULL,
+                        param_hash TEXT NOT NULL,
+                        state TEXT NOT NULL DEFAULT 'assigned',
+                        run_id TEXT,
+                        agent_id TEXT,
+                        metric_value REAL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_sweep_trials_sweep
+                    ON sweep_trials(sweep_id)
                     """
                 )
                 cursor.execute(
@@ -1159,7 +1223,10 @@ class SQLiteStorage:
                     SQLiteStorage._normalize_trace_rows_for_parquet(trace_rows),
                 )
             db_mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
-            for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
+            for table in (
+                *SQLiteStorage._ARTIFACT_PARQUET_TABLES,
+                *SQLiteStorage._SWEEP_PARQUET_TABLES,
+            ):
                 parquet_path = TRACKIO_DIR / f"{db_path.stem}_{table}.parquet"
                 if (
                     parquet_path.exists()
@@ -1215,11 +1282,14 @@ class SQLiteStorage:
             flat = SQLiteStorage._flatten_json_rows(configs_rows, "config")
             SQLiteStorage._write_parquet_rows(aux_dir / "configs.parquet", flat)
 
-        for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
-            artifact_rows = SQLiteStorage._read_table_rows(db_path, table)
-            if artifact_rows:
+        for table in (
+            *SQLiteStorage._ARTIFACT_PARQUET_TABLES,
+            *SQLiteStorage._SWEEP_PARQUET_TABLES,
+        ):
+            table_rows = SQLiteStorage._read_table_rows(db_path, table)
+            if table_rows:
                 SQLiteStorage._write_parquet_rows(
-                    aux_dir / f"{table}.parquet", artifact_rows
+                    aux_dir / f"{table}.parquet", table_rows
                 )
 
         try:
@@ -1303,7 +1373,11 @@ class SQLiteStorage:
             "_traces.parquet",
         ]
         suffixes += [
-            f"_{table}.parquet" for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES
+            f"_{table}.parquet"
+            for table in (
+                *SQLiteStorage._ARTIFACT_PARQUET_TABLES,
+                *SQLiteStorage._SWEEP_PARQUET_TABLES,
+            )
         ]
         return [db_path.with_name(f"{stem}{suffix}") for suffix in suffixes]
 
@@ -1320,8 +1394,13 @@ class SQLiteStorage:
         all_paths = os.listdir(TRACKIO_DIR)
         all_paths_set = set(all_paths)
 
-        def _artifact_sidecar(pq_name: str) -> tuple[str, str] | None:
-            for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
+        sidecar_tables: dict[str, list[str]] = {
+            **SQLiteStorage._ARTIFACT_PARQUET_TABLES,
+            **SQLiteStorage._SWEEP_PARQUET_TABLES,
+        }
+
+        def _table_sidecar(pq_name: str) -> tuple[str, str] | None:
+            for table in sidecar_tables:
                 suffix = f"_{table}.parquet"
                 if not pq_name.endswith(suffix) or len(pq_name) <= len(suffix):
                     continue
@@ -1330,6 +1409,7 @@ class SQLiteStorage:
                     f"{base}.parquet" in all_paths_set
                     or (TRACKIO_DIR / f"{base}{DB_EXT}").exists()
                     or f"{base}_artifact_versions.parquet" in all_paths_set
+                    or f"{base}_sweeps.parquet" in all_paths_set
                 ):
                     return base, table
             return None
@@ -1341,7 +1421,7 @@ class SQLiteStorage:
             and not f.endswith("_system.parquet")
             and not f.endswith("_configs.parquet")
             and not f.endswith("_traces.parquet")
-            and _artifact_sidecar(f) is None
+            and _table_sidecar(f) is None
         ]
         imported_projects = {Path(name).stem for name in parquet_names}
         for pq_name in parquet_names:
@@ -1475,11 +1555,11 @@ class SQLiteStorage:
             )
 
         for pq_name in all_paths:
-            sidecar = _artifact_sidecar(pq_name)
+            sidecar = _table_sidecar(pq_name)
             if sidecar is None:
                 continue
             project_name, table = sidecar
-            columns = SQLiteStorage._ARTIFACT_PARQUET_TABLES[table]
+            columns = sidecar_tables[table]
             parquet_path = TRACKIO_DIR / pq_name
             db_path = TRACKIO_DIR / f"{project_name}{DB_EXT}"
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
@@ -1969,6 +2049,368 @@ class SQLiteStorage:
                 return 0
 
     @staticmethod
+    def _sweep_row_to_dict(row: sqlite3.Row) -> dict:
+        return {
+            "sweep_id": row["sweep_id"],
+            "name": row["name"],
+            "config": json_mod.loads(row["config"]),
+            "method": row["method"],
+            "metric_name": row["metric_name"],
+            "metric_goal": row["metric_goal"],
+            "state": row["state"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @staticmethod
+    def _trial_row_to_dict(row: sqlite3.Row) -> dict:
+        return {
+            "trial_id": row["trial_id"],
+            "sweep_id": row["sweep_id"],
+            "params": json_mod.loads(row["params"]),
+            "param_hash": row["param_hash"],
+            "state": row["state"],
+            "run_id": row["run_id"],
+            "agent_id": row["agent_id"],
+            "metric_value": row["metric_value"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @staticmethod
+    def create_sweep(project: str, config: dict, name: str | None = None) -> str:
+        from trackio import sweeps as sweeps_module
+
+        config = sweeps_module.validate_sweep_config(config)
+        metric = config.get("metric") or {}
+        sweep_id = sweeps_module.generate_sweep_id()
+        now = datetime.now(timezone.utc).isoformat()
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO sweeps
+                    (sweep_id, name, config, method, metric_name, metric_goal,
+                     state, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)
+                    """,
+                    (
+                        sweep_id,
+                        name or config.get("name"),
+                        json_mod.dumps(config),
+                        config["method"],
+                        metric.get("name"),
+                        metric.get("goal"),
+                        now,
+                        now,
+                    ),
+                )
+                conn.commit()
+        return sweep_id
+
+    @staticmethod
+    def get_sweep(project: str, sweep_id: str) -> dict | None:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT * FROM sweeps WHERE sweep_id = ?", (sweep_id,))
+                row = cursor.fetchone()
+            except sqlite3.OperationalError:
+                return None
+            if row is None:
+                return None
+            sweep = SQLiteStorage._sweep_row_to_dict(row)
+            sweep.update(SQLiteStorage._sweep_trial_summary(cursor, sweep))
+            return sweep
+
+    @staticmethod
+    def _sweep_trial_summary(cursor: sqlite3.Cursor, sweep: dict) -> dict:
+        try:
+            cursor.execute(
+                """
+                SELECT state, COUNT(*) AS count FROM sweep_trials
+                WHERE sweep_id = ? GROUP BY state
+                """,
+                (sweep["sweep_id"],),
+            )
+            counts = {row["state"]: row["count"] for row in cursor.fetchall()}
+        except sqlite3.OperationalError:
+            counts = {}
+        summary = {
+            "num_trials": sum(counts.values()),
+            "trial_counts": counts,
+            "best_metric_value": None,
+            "best_run_id": None,
+        }
+        if sweep.get("metric_name"):
+            order = "ASC" if sweep.get("metric_goal") != "maximize" else "DESC"
+            try:
+                cursor.execute(
+                    f"""
+                    SELECT run_id, metric_value FROM sweep_trials
+                    WHERE sweep_id = ? AND metric_value IS NOT NULL
+                        AND state = 'finished'
+                    ORDER BY metric_value {order} LIMIT 1
+                    """,
+                    (sweep["sweep_id"],),
+                )
+                best = cursor.fetchone()
+            except sqlite3.OperationalError:
+                best = None
+            if best is not None:
+                summary["best_metric_value"] = best["metric_value"]
+                summary["best_run_id"] = best["run_id"]
+        return summary
+
+    @staticmethod
+    def list_sweeps(project: str) -> list[dict]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT * FROM sweeps ORDER BY created_at DESC")
+                rows = cursor.fetchall()
+            except sqlite3.OperationalError:
+                return []
+            sweeps = []
+            for row in rows:
+                sweep = SQLiteStorage._sweep_row_to_dict(row)
+                sweep.update(SQLiteStorage._sweep_trial_summary(cursor, sweep))
+                sweeps.append(sweep)
+            return sweeps
+
+    @staticmethod
+    def set_sweep_state(project: str, sweep_id: str, state: str) -> dict | None:
+        from trackio import sweeps as sweeps_module
+
+        if state not in sweeps_module.SWEEP_STATES:
+            raise ValueError(
+                f"Invalid sweep state {state!r}. Valid states: "
+                f"{', '.join(sweeps_module.SWEEP_STATES)}"
+            )
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        "SELECT * FROM sweeps WHERE sweep_id = ?", (sweep_id,)
+                    )
+                    row = cursor.fetchone()
+                except sqlite3.OperationalError:
+                    return None
+                if row is None:
+                    return None
+                current = row["state"]
+                if state != current and not sweeps_module.can_transition_sweep_state(
+                    current, state
+                ):
+                    raise ValueError(
+                        f"Cannot transition sweep '{sweep_id}' from "
+                        f"{current!r} to {state!r}."
+                    )
+                cursor.execute(
+                    "UPDATE sweeps SET state = ?, updated_at = ? WHERE sweep_id = ?",
+                    (state, datetime.now(timezone.utc).isoformat(), sweep_id),
+                )
+                conn.commit()
+        return SQLiteStorage.get_sweep(project, sweep_id)
+
+    @staticmethod
+    def suggest_trial(project: str, sweep_id: str, agent_id: str | None = None) -> dict:
+        """Atomically pick the next trial for a sweep. Runs entirely inside the
+        cross-process lock so concurrent agents never receive the same grid
+        cell. Returns a command dict: {"command": "run", "trial_id", "params"}
+        or {"command": "wait"} (paused) or {"command": "exit", "reason"}."""
+        from trackio import sweeps as sweeps_module
+
+        db_path = SQLiteStorage.init_db(project)
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM sweeps WHERE sweep_id = ?", (sweep_id,))
+                row = cursor.fetchone()
+                if row is None:
+                    raise ValueError(
+                        f"Sweep '{sweep_id}' not found in project '{project}'."
+                    )
+                sweep = SQLiteStorage._sweep_row_to_dict(row)
+                if sweep["state"] == "paused":
+                    return {"command": "wait"}
+                if sweep["state"] in sweeps_module.TERMINAL_SWEEP_STATES:
+                    return {"command": "exit", "reason": sweep["state"]}
+
+                cursor.execute(
+                    """
+                    SELECT params, param_hash, state FROM sweep_trials
+                    WHERE sweep_id = ?
+                    """,
+                    (sweep_id,),
+                )
+                trials = [
+                    {
+                        "params": json_mod.loads(trial_row["params"]),
+                        "param_hash": trial_row["param_hash"],
+                        "state": trial_row["state"],
+                    }
+                    for trial_row in cursor.fetchall()
+                ]
+                params = sweeps_module.next_trial(sweep["config"], trials)
+                now = datetime.now(timezone.utc).isoformat()
+                if params is None:
+                    cursor.execute(
+                        """UPDATE sweeps SET state = 'finished', updated_at = ?
+                        WHERE sweep_id = ? AND state IN ('running', 'paused')""",
+                        (now, sweep_id),
+                    )
+                    conn.commit()
+                    run_cap = sweep["config"].get("run_cap")
+                    reason = (
+                        "run_cap"
+                        if run_cap is not None and len(trials) >= run_cap
+                        else "exhausted"
+                    )
+                    return {"command": "exit", "reason": reason}
+
+                cursor.execute(
+                    """
+                    INSERT INTO sweep_trials
+                    (sweep_id, params, param_hash, state, agent_id,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, 'assigned', ?, ?, ?)
+                    """,
+                    (
+                        sweep_id,
+                        json_mod.dumps(params),
+                        sweeps_module.param_hash(params),
+                        agent_id,
+                        now,
+                        now,
+                    ),
+                )
+                trial_id = cursor.lastrowid
+                conn.commit()
+                return {
+                    "command": "run",
+                    "sweep_id": sweep_id,
+                    "trial_id": trial_id,
+                    "params": params,
+                }
+
+    @staticmethod
+    def mark_trial_running(
+        project: str, sweep_id: str, trial_id: int, run_id: str
+    ) -> bool:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return False
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        """
+                        UPDATE sweep_trials
+                        SET state = 'running', run_id = ?, updated_at = ?
+                        WHERE sweep_id = ? AND trial_id = ? AND state = 'assigned'
+                        """,
+                        (
+                            run_id,
+                            datetime.now(timezone.utc).isoformat(),
+                            sweep_id,
+                            trial_id,
+                        ),
+                    )
+                except sqlite3.OperationalError:
+                    return False
+                conn.commit()
+                return cursor.rowcount > 0
+
+    @staticmethod
+    def report_trial(
+        project: str,
+        sweep_id: str,
+        trial_id: int,
+        state: str,
+        metric_value: float | None = None,
+    ) -> bool:
+        from trackio import sweeps as sweeps_module
+
+        if state not in sweeps_module.TERMINAL_TRIAL_STATES:
+            raise ValueError(
+                f"Invalid terminal trial state {state!r}. Valid states: "
+                f"{', '.join(sweeps_module.TERMINAL_TRIAL_STATES)}"
+            )
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return False
+        with SQLiteStorage._get_process_lock(project):
+            with SQLiteStorage._get_connection(db_path) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(
+                        """
+                        UPDATE sweep_trials
+                        SET state = ?, metric_value = ?, updated_at = ?
+                        WHERE sweep_id = ? AND trial_id = ?
+                            AND state IN ('assigned', 'running')
+                        """,
+                        (
+                            state,
+                            metric_value,
+                            datetime.now(timezone.utc).isoformat(),
+                            sweep_id,
+                            trial_id,
+                        ),
+                    )
+                except sqlite3.OperationalError:
+                    return False
+                conn.commit()
+                return cursor.rowcount > 0
+
+    @staticmethod
+    def get_sweep_trials(project: str, sweep_id: str) -> list[dict]:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return []
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT * FROM sweep_trials WHERE sweep_id = ?
+                    ORDER BY trial_id ASC
+                    """,
+                    (sweep_id,),
+                )
+                rows = cursor.fetchall()
+            except sqlite3.OperationalError:
+                return []
+            return [SQLiteStorage._trial_row_to_dict(row) for row in rows]
+
+    @staticmethod
+    def get_sweep_count(project: str) -> int:
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return 0
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT COUNT(*) FROM sweeps")
+                return cursor.fetchone()[0]
+            except sqlite3.OperationalError:
+                return 0
+
+    @staticmethod
     def _fetch_system_logs_with_cursor(
         cursor: sqlite3.Cursor,
         run_identity: tuple[str, Any],
@@ -2192,6 +2634,7 @@ class SQLiteStorage:
             "reports": False,
             "alerts": False,
             "artifacts": False,
+            "sweeps": False,
         }
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -2243,6 +2686,7 @@ class SQLiteStorage:
             flags["artifacts"] = _exists(
                 conn, "SELECT 1 FROM artifact_versions LIMIT 1"
             )
+            flags["sweeps"] = _exists(conn, "SELECT 1 FROM sweeps LIMIT 1")
         return flags
 
     @staticmethod

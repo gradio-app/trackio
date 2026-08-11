@@ -14,7 +14,7 @@ from gradio_client import handle_file
 from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
-from trackio import context_vars, deploy, utils
+from trackio import context_vars, deploy, sweep_agent, utils
 from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
@@ -75,6 +75,8 @@ __all__ = [
     "log_cpu",
     "finish",
     "alert",
+    "sweep",
+    "agent",
     "AlertLevel",
     "show",
     "sync",
@@ -361,6 +363,36 @@ def init(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
+    sweep_trial = None
+    try:
+        sweep_trial = sweep_agent.resolve_trial_context()
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not resolve the sweep trial context: {e}. Continuing without sweep attachment."
+        )
+    if sweep_trial is not None:
+        if sweep_trial.get("project") not in (None, project):
+            _emit_nonfatal_warning(
+                f"trackio.init() was called with project '{project}' but the active sweep "
+                f"trial belongs to project '{sweep_trial.get('project')}'. The run will "
+                "NOT be attached to the sweep."
+            )
+            sweep_trial = None
+        else:
+            config = {**(config or {}), **(sweep_trial.get("params") or {})}
+            if sweep_trial.get("metric_name") is None:
+                try:
+                    sweep_record = SQLiteStorage.get_sweep(
+                        project, sweep_trial["sweep_id"]
+                    )
+                    if sweep_record is not None:
+                        sweep_trial = {
+                            **sweep_trial,
+                            "metric_name": sweep_record.get("metric_name"),
+                        }
+                except Exception:
+                    pass
+
     previous_run = context_vars.current_run.get()
     if previous_run is not None:
         try:
@@ -635,7 +667,35 @@ def init(
         cpu_log_interval=cpu_log_interval,
         webhook_url=webhook_url,
         webhook_min_level=webhook_min_level,
+        sweep_id=sweep_trial["sweep_id"] if sweep_trial else None,
+        sweep_trial_id=sweep_trial["trial_id"] if sweep_trial else None,
+        sweep_metric_name=sweep_trial.get("metric_name") if sweep_trial else None,
     )
+
+    if sweep_trial is not None:
+        try:
+            if remote_source is None:
+                SQLiteStorage.mark_trial_running(
+                    project, sweep_trial["sweep_id"], sweep_trial["trial_id"], run.id
+                )
+            elif remote_client is not None:
+                remote_client.predict(
+                    api_name="/sweep_mark_trial_running",
+                    project=project,
+                    sweep_id=sweep_trial["sweep_id"],
+                    trial_id=sweep_trial["trial_id"],
+                    run_id=run.id,
+                )
+            else:
+                _emit_nonfatal_warning(
+                    "trackio.init() could not attach the run to its sweep trial: no "
+                    "remote client is available yet. The trial will remain in the "
+                    "'assigned' state."
+                )
+        except Exception as e:
+            _emit_nonfatal_warning(
+                f"trackio.init() could not mark sweep trial {sweep_trial['trial_id']} as running: {e}. Logging will continue."
+            )
 
     if space_id is not None:
         try:
@@ -891,6 +951,111 @@ def alert(
     if run is None:
         raise RuntimeError("Call trackio.init() before trackio.alert().")
     run.alert(title=title, text=text, level=level, webhook_url=webhook_url)
+
+
+def sweep(
+    sweep: dict | Any,
+    entity: str | None = None,
+    project: str | None = None,
+    prior_runs: list[str] | None = None,
+    space_id: str | None = None,
+    server_url: str | None = None,
+) -> str:
+    """
+    Creates a hyperparameter sweep and returns its sweep id. Compatible with
+    `wandb.sweep()`: the sweep config uses the same schema (`method`,
+    `metric`, `parameters`, `run_cap`, ...).
+
+    Args:
+        sweep (`dict` or `Callable`):
+            The sweep configuration dict, or a callable that returns one.
+            Requires `method` ("grid" or "random") and `parameters`.
+        entity (`str`, *optional*):
+            Ignored. Provided for compatibility with `wandb.sweep()`.
+        project (`str`, *optional*):
+            The project to create the sweep in. Falls back to the current
+            project set by `trackio.init()`.
+        prior_runs (`list[str]`, *optional*):
+            Not supported yet. Provided for compatibility with `wandb.sweep()`.
+        space_id (`str`, *optional*):
+            If provided, the sweep is created on this Hugging Face Space.
+        server_url (`str`, *optional*):
+            If provided, the sweep is created on this self-hosted trackio
+            server (requires a write token).
+
+    Returns:
+        `str`: The sweep id, to be passed to `trackio.agent()`.
+    """
+    if entity is not None:
+        _emit_nonfatal_warning(
+            "* Warning: entity is not used. Provided for compatibility with wandb.sweep()."
+        )
+    if prior_runs:
+        _emit_nonfatal_warning(
+            "* Warning: prior_runs is not supported yet and will be ignored."
+        )
+    if callable(sweep):
+        sweep = sweep()
+    project = project or context_vars.current_project.get()
+    if project is None:
+        raise ValueError(
+            "trackio.sweep() requires a project: pass `project=` or call trackio.init() first."
+        )
+    SQLiteStorage.validate_project_name(project)
+    client = sweep_agent.SweepClient(project, space_id=space_id, server_url=server_url)
+    sweep_id = client.create_sweep(sweep)
+    if context_vars.current_project.get() is None:
+        context_vars.current_project.set(project)
+    print(f"* Created sweep: {sweep_id} (project: {project})")
+    print(f'* Run an agent with: trackio.agent("{project}/{sweep_id}", function=...)')
+    return sweep_id
+
+
+def agent(
+    sweep_id: str,
+    function: Any = None,
+    entity: str | None = None,
+    project: str | None = None,
+    count: int | None = None,
+    space_id: str | None = None,
+    server_url: str | None = None,
+) -> None:
+    """
+    Runs a sweep agent: repeatedly requests the next trial from the sweep and
+    calls `function` to execute it. Compatible with `wandb.agent()`. Inside
+    `function`, call `trackio.init()` as usual; the trial's hyperparameters
+    are merged into the run config automatically (sweep values override
+    values passed to `init(config=...)`).
+
+    Args:
+        sweep_id (`str`):
+            The sweep id returned by `trackio.sweep()`. May be qualified as
+            `"project/sweep_id"`, in which case `project` can be omitted.
+        function (`Callable`):
+            A function (called with no arguments) that runs one trial.
+        entity (`str`, *optional*):
+            Ignored. Provided for compatibility with `wandb.agent()`.
+        project (`str`, *optional*):
+            The project the sweep lives in. Falls back to the project encoded
+            in `sweep_id` or the current project set by `trackio.init()`.
+        count (`int`, *optional*):
+            The maximum number of trials this agent will run. If `None`, the
+            agent runs until the sweep is exhausted, capped, or stopped.
+        space_id (`str`, *optional*):
+            If provided, coordinate the sweep via this Hugging Face Space.
+        server_url (`str`, *optional*):
+            If provided, coordinate the sweep via this self-hosted trackio
+            server (requires a write token).
+    """
+    sweep_agent.agent(
+        sweep_id,
+        function=function,
+        entity=entity,
+        project=project,
+        count=count,
+        space_id=space_id,
+        server_url=server_url,
+    )
 
 
 def delete_project(project: str, force: bool = False) -> bool:

@@ -35,6 +35,8 @@
     title: API and MCP Server
   - local: alerts
     title: Alerts
+  - local: sweeps
+    title: Hyperparameter Sweeps
   - local: ml_agents
     title: ML Agents
   - local: environment_variables

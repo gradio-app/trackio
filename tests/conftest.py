@@ -29,11 +29,13 @@ def temp_dir(monkeypatch):
         context_vars.current_project.set(None)
         context_vars.current_server.set(None)
         context_vars.current_space_id.set(None)
+        context_vars.current_sweep_trial.set(None)
         yield tmpdir
         context_vars.current_run.set(None)
         context_vars.current_project.set(None)
         context_vars.current_server.set(None)
         context_vars.current_space_id.set(None)
+        context_vars.current_sweep_trial.set(None)
 
 
 @pytest.fixture

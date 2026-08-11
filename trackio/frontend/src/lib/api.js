@@ -250,6 +250,25 @@ export async function getTabAvailability(project) {
   return await callApi("/get_tab_availability", { project });
 }
 
+export async function getSweeps(project) {
+  if (await isStaticMode()) return staticApi.getSweeps(project);
+  return await callApi("/sweep_list", { project });
+}
+
+export async function getSweepTrials(project, sweepId) {
+  if (await isStaticMode()) return staticApi.getSweepTrials(project, sweepId);
+  return await callApi("/sweep_get_trials", { project, sweep_id: sweepId });
+}
+
+export async function setSweepState(project, sweepId, state) {
+  if (await isStaticMode()) return staticApi.setSweepState();
+  return await callApi("/sweep_set_state", {
+    project,
+    sweep_id: sweepId,
+    state,
+  });
+}
+
 export async function getRunMutationStatus() {
   if (await isStaticMode()) return staticApi.getRunMutationStatus();
   return await callApi("/get_run_mutation_status", {});

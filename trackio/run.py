@@ -62,6 +62,9 @@ class Run:
         cpu_log_interval: float = 10.0,
         webhook_url: str | None = None,
         webhook_min_level: AlertLevel | str | None = None,
+        sweep_id: str | None = None,
+        sweep_trial_id: int | None = None,
+        sweep_metric_name: str | None = None,
     ):
         """
         Initialize a Run for logging metrics to Trackio.
@@ -156,9 +159,16 @@ class Run:
                         f"Config key '{key}' is reserved (keys starting with '_' are reserved for internal use)"
                     )
 
+        self.sweep_id = sweep_id
+        self._sweep_trial_id = sweep_trial_id
+        self._sweep_metric_name = sweep_metric_name
+        self._sweep_metric_last: float | None = None
+        self._sweep_trial_reported = False
+
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
         self.config["_Group"] = self.group
+        self.config["_Sweep"] = self.sweep_id
 
         self._queued_logs: list[LogEntry] = []
         self._queued_system_logs: list[SystemLogEntry] = []
@@ -1120,6 +1130,11 @@ class Run:
 
     def log(self, metrics: dict, step: int | None = None):
         try:
+            if self._sweep_metric_name is not None:
+                value = metrics.get(self._sweep_metric_name)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    self._sweep_metric_last = float(value)
+
             renamed_keys = []
             new_metrics = {}
 
@@ -1711,5 +1726,43 @@ class Run:
                         f"They have been saved locally and will be sent automatically next time you call: "
                         f"{retry}"
                     )
+
+            self._report_sweep_trial("finished")
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")
+
+    def _report_sweep_trial(self, state: str):
+        if (
+            self.sweep_id is None
+            or self._sweep_trial_id is None
+            or self._sweep_trial_reported
+        ):
+            return
+        self._sweep_trial_reported = True
+        try:
+            if self._is_local:
+                SQLiteStorage.report_trial(
+                    self.project,
+                    self.sweep_id,
+                    self._sweep_trial_id,
+                    state,
+                    metric_value=self._sweep_metric_last,
+                )
+            else:
+                with self._client_lock:
+                    client = self._client
+                if client is not None:
+                    client.predict(
+                        api_name="/sweep_report_trial",
+                        project=self.project,
+                        sweep_id=self.sweep_id,
+                        trial_id=self._sweep_trial_id,
+                        state=state,
+                        metric_value=self._sweep_metric_last,
+                    )
+        except Exception as e:
+            self._warn_once(
+                "sweep-report-trial",
+                f"trackio.finish() could not report sweep trial "
+                f"{self._sweep_trial_id} for sweep '{self.sweep_id}': {e}.",
+            )

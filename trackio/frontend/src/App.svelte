@@ -9,6 +9,7 @@
   import Media from "./pages/Media.svelte";
   import Reports from "./pages/Reports.svelte";
   import Runs from "./pages/Runs.svelte";
+  import Sweeps from "./pages/Sweeps.svelte";
   import RunDetail from "./pages/RunDetail.svelte";
   import Files from "./pages/Files.svelte";
   import ArtifactsSidebar from "./components/ArtifactsSidebar.svelte";
@@ -121,6 +122,7 @@
     "traces",
     "media",
     "reports",
+    "sweeps",
     "files",
     "artifacts",
   ]);
@@ -131,6 +133,7 @@
     "media",
     "reports",
     "runs",
+    "sweeps",
     "files",
     "artifacts",
   ];
@@ -271,6 +274,7 @@
       media: false,
       reports: false,
       runs: false,
+      sweeps: false,
       files: false,
       artifacts: false,
     };
@@ -690,6 +694,11 @@
           {runs}
           {filterText}
           onRunsChanged={refreshRunsAndMutation}
+          runMutationAllowed={mutationStatus.allowed}
+        />
+      {:else if currentPage === "sweeps"}
+        <Sweeps
+          project={selectedProject}
           runMutationAllowed={mutationStatus.allowed}
         />
       {:else if currentPage === "run-detail"}

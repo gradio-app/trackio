@@ -1261,7 +1261,62 @@ def get_tab_availability(project: str) -> dict[str, bool]:
         "reports": flags["reports"] or flags["alerts"],
         "files": _project_has_files(project),
         "artifacts": flags["artifacts"],
+        "sweeps": flags["sweeps"],
     }
+
+
+def sweep_create(
+    request: Request, project: str, config: dict, name: str | None = None
+) -> str:
+    assert_can_mutate_runs(request)
+    return SQLiteStorage.create_sweep(project, config, name=name)
+
+
+def sweep_get(project: str, sweep_id: str) -> dict[str, Any] | None:
+    return SQLiteStorage.get_sweep(project, sweep_id)
+
+
+def sweep_list(project: str) -> list[dict[str, Any]]:
+    return SQLiteStorage.list_sweeps(project)
+
+
+def sweep_set_state(
+    request: Request, project: str, sweep_id: str, state: str
+) -> dict[str, Any] | None:
+    assert_can_mutate_runs(request)
+    return SQLiteStorage.set_sweep_state(project, sweep_id, state)
+
+
+def sweep_suggest_trial(
+    request: Request, project: str, sweep_id: str, agent_id: str | None = None
+) -> dict[str, Any]:
+    assert_can_mutate_runs(request)
+    return SQLiteStorage.suggest_trial(project, sweep_id, agent_id=agent_id)
+
+
+def sweep_mark_trial_running(
+    request: Request, project: str, sweep_id: str, trial_id: int, run_id: str
+) -> bool:
+    assert_can_mutate_runs(request)
+    return SQLiteStorage.mark_trial_running(project, sweep_id, trial_id, run_id)
+
+
+def sweep_report_trial(
+    request: Request,
+    project: str,
+    sweep_id: str,
+    trial_id: int,
+    state: str,
+    metric_value: float | None = None,
+) -> bool:
+    assert_can_mutate_runs(request)
+    return SQLiteStorage.report_trial(
+        project, sweep_id, trial_id, state, metric_value=metric_value
+    )
+
+
+def sweep_get_trials(project: str, sweep_id: str) -> list[dict[str, Any]]:
+    return SQLiteStorage.get_sweep_trials(project, sweep_id)
 
 
 def delete_run(
@@ -1347,6 +1402,14 @@ def _api_registry() -> dict[str, Any]:
         "delete_run": delete_run,
         "rename_run": rename_run,
         "force_sync": force_sync,
+        "sweep_create": sweep_create,
+        "sweep_get": sweep_get,
+        "sweep_list": sweep_list,
+        "sweep_set_state": sweep_set_state,
+        "sweep_suggest_trial": sweep_suggest_trial,
+        "sweep_mark_trial_running": sweep_mark_trial_running,
+        "sweep_report_trial": sweep_report_trial,
+        "sweep_get_trials": sweep_get_trials,
     }
 
 

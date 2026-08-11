@@ -382,7 +382,7 @@ Trackio covers the core experiment-tracking workflow while staying lightweight, 
     </tr>
     <tr>
       <td>Hyperparameter sweeps</td>
-      <td align="center">❌</td>
+      <td align="center">✅</td>
       <td align="center">✅</td>
     </tr>
     <tr>

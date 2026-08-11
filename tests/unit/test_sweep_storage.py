@@ -1,0 +1,206 @@
+import os
+from pathlib import Path
+
+import pytest
+
+from trackio.sqlite_storage import SQLiteStorage
+from trackio.sweeps import SweepConfigError
+
+
+def grid_config():
+    return {
+        "method": "grid",
+        "metric": {"name": "loss", "goal": "minimize"},
+        "parameters": {"lr": {"values": [0.1, 0.01]}},
+    }
+
+
+def test_create_and_get_sweep(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config(), name="my-sweep")
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["sweep_id"] == sweep_id
+    assert sweep["name"] == "my-sweep"
+    assert sweep["method"] == "grid"
+    assert sweep["state"] == "running"
+    assert sweep["metric_name"] == "loss"
+    assert sweep["metric_goal"] == "minimize"
+    assert sweep["num_trials"] == 0
+    assert sweep["config"]["parameters"]["lr"]["values"] == [0.1, 0.01]
+
+
+def test_create_sweep_validates_config(temp_dir):
+    with pytest.raises(SweepConfigError):
+        SQLiteStorage.create_sweep("proj", {"method": "grid"})
+
+
+def test_get_sweep_missing(temp_dir):
+    assert SQLiteStorage.get_sweep("proj", "nope") is None
+    SQLiteStorage.init_db("proj")
+    assert SQLiteStorage.get_sweep("proj", "nope") is None
+
+
+def test_list_sweeps(temp_dir):
+    assert SQLiteStorage.list_sweeps("proj") == []
+    first = SQLiteStorage.create_sweep("proj", grid_config())
+    second = SQLiteStorage.create_sweep("proj", grid_config())
+    listed = {s["sweep_id"] for s in SQLiteStorage.list_sweeps("proj")}
+    assert listed == {first, second}
+
+
+def test_suggest_trial_lifecycle(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+
+    first = SQLiteStorage.suggest_trial("proj", sweep_id, agent_id="a1")
+    assert first["command"] == "run"
+    second = SQLiteStorage.suggest_trial("proj", sweep_id, agent_id="a1")
+    assert second["command"] == "run"
+    assert first["params"] != second["params"]
+
+    exhausted = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert exhausted == {"command": "exit", "reason": "exhausted"}
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "finished"
+
+
+def test_suggest_trial_unknown_sweep(temp_dir):
+    with pytest.raises(ValueError, match="not found"):
+        SQLiteStorage.suggest_trial("proj", "nope")
+
+
+def test_suggest_trial_respects_pause_and_stop(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    SQLiteStorage.set_sweep_state("proj", sweep_id, "paused")
+    assert SQLiteStorage.suggest_trial("proj", sweep_id) == {"command": "wait"}
+    SQLiteStorage.set_sweep_state("proj", sweep_id, "stopped")
+    assert SQLiteStorage.suggest_trial("proj", sweep_id) == {
+        "command": "exit",
+        "reason": "stopped",
+    }
+
+
+def test_run_cap_reason(temp_dir):
+    config = {**grid_config(), "run_cap": 1}
+    sweep_id = SQLiteStorage.create_sweep("proj", config)
+    assert SQLiteStorage.suggest_trial("proj", sweep_id)["command"] == "run"
+    capped = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert capped == {"command": "exit", "reason": "run_cap"}
+
+
+def test_state_transitions_enforced(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    SQLiteStorage.set_sweep_state("proj", sweep_id, "stopped")
+    with pytest.raises(ValueError, match="Cannot transition"):
+        SQLiteStorage.set_sweep_state("proj", sweep_id, "running")
+
+
+def test_set_sweep_state_same_state_is_noop(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    sweep = SQLiteStorage.set_sweep_state("proj", sweep_id, "running")
+    assert sweep["state"] == "running"
+
+
+def test_invalid_state_rejected(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    with pytest.raises(ValueError, match="Invalid sweep state"):
+        SQLiteStorage.set_sweep_state("proj", sweep_id, "zombie")
+
+
+def test_mark_and_report_trial(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+
+    assert SQLiteStorage.mark_trial_running(
+        "proj", sweep_id, trial["trial_id"], "run-1"
+    )
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert trials[0]["state"] == "running"
+    assert trials[0]["run_id"] == "run-1"
+
+    assert SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.5
+    )
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert trials[0]["state"] == "finished"
+    assert trials[0]["metric_value"] == 0.5
+
+
+def test_report_trial_first_report_wins(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert SQLiteStorage.report_trial("proj", sweep_id, trial["trial_id"], "failed")
+    assert not SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=1.0
+    )
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert trials[0]["state"] == "failed"
+
+
+def test_report_trial_rejects_non_terminal_state(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    with pytest.raises(ValueError, match="Invalid terminal trial state"):
+        SQLiteStorage.report_trial("proj", sweep_id, trial["trial_id"], "running")
+
+
+def test_best_metric_tracking(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    for run_id, value in (("run-a", 0.8), ("run-b", 0.2)):
+        trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+        SQLiteStorage.mark_trial_running("proj", sweep_id, trial["trial_id"], run_id)
+        SQLiteStorage.report_trial(
+            "proj", sweep_id, trial["trial_id"], "finished", metric_value=value
+        )
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["best_metric_value"] == 0.2
+    assert sweep["best_run_id"] == "run-b"
+
+
+def test_best_metric_maximize(temp_dir):
+    config = {**grid_config(), "metric": {"name": "acc", "goal": "maximize"}}
+    sweep_id = SQLiteStorage.create_sweep("proj", config)
+    for run_id, value in (("run-a", 0.8), ("run-b", 0.2)):
+        trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+        SQLiteStorage.mark_trial_running("proj", sweep_id, trial["trial_id"], run_id)
+        SQLiteStorage.report_trial(
+            "proj", sweep_id, trial["trial_id"], "finished", metric_value=value
+        )
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["best_metric_value"] == 0.8
+    assert sweep["best_run_id"] == "run-a"
+
+
+def test_sweep_project_name_suffixes_reserved(temp_dir):
+    with pytest.raises(ValueError, match="reserved suffix"):
+        SQLiteStorage.validate_project_name("model_sweeps")
+    with pytest.raises(ValueError, match="reserved suffix"):
+        SQLiteStorage.validate_project_name("model_sweep_trials")
+
+
+def test_tab_availability_includes_sweeps(temp_dir):
+    SQLiteStorage.init_db("proj")
+    assert SQLiteStorage.get_tab_availability_flags("proj")["sweeps"] is False
+    SQLiteStorage.create_sweep("proj", grid_config())
+    assert SQLiteStorage.get_tab_availability_flags("proj")["sweeps"] is True
+
+
+def test_parquet_roundtrip_preserves_sweeps(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config(), name="rt")
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id, agent_id="a1")
+    SQLiteStorage.mark_trial_running("proj", sweep_id, trial["trial_id"], "run-1")
+    SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.3
+    )
+    before_sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    before_trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+
+    db_path = SQLiteStorage.get_project_db_path("proj")
+    for table in SQLiteStorage._SWEEP_PARQUET_TABLES:
+        assert (Path(temp_dir) / f"{db_path.stem}_{table}.parquet").exists()
+
+    os.unlink(db_path)
+    SQLiteStorage.import_from_parquet()
+
+    assert SQLiteStorage.get_sweep("proj", sweep_id) == before_sweep
+    assert SQLiteStorage.get_sweep_trials("proj", sweep_id) == before_trials

@@ -97,6 +97,27 @@ async function getArtifactTables() {
   return artifactData;
 }
 
+let sweepsPromise = null;
+let sweepTrialsPromise = null;
+
+function getSweepsData() {
+  if (!sweepsPromise) {
+    sweepsPromise = readParquet(resolveUrl("aux/sweeps.parquet")).catch(
+      () => [],
+    );
+  }
+  return sweepsPromise;
+}
+
+function getSweepTrialsData() {
+  if (!sweepTrialsPromise) {
+    sweepTrialsPromise = readParquet(
+      resolveUrl("aux/sweep_trials.parquet"),
+    ).catch(() => []);
+  }
+  return sweepTrialsPromise;
+}
+
 async function getSettingsJson() {
   if (settingsData) return settingsData;
   const resp = await fetch(resolveUrl("settings.json"));
@@ -550,13 +571,14 @@ function rowHasTypedValue(row, types) {
 export async function getTabAvailability() {
   if (tabAvailabilityCache) return tabAvailabilityCache;
 
-  const [metricsRaw, systemRaw, tracesRaw, files, artifactVersions] =
+  const [metricsRaw, systemRaw, tracesRaw, files, artifactVersions, sweeps] =
     await Promise.all([
       getMetricsData().catch(() => []),
       getSystemData().catch(() => []),
       getTracesData().catch(() => []),
       getProjectFiles().catch(() => []),
       getArtifactVersions(),
+      getSweepsData(),
     ]);
 
   const metricsRows = (metricsRaw || []);
@@ -582,8 +604,94 @@ export async function getTabAvailability() {
     traces: (tracesRaw || []).length > 0,
     files: (files || []).length > 0,
     artifacts: (artifactVersions || []).length > 0,
+    sweeps: (sweeps || []).length > 0,
   };
   return tabAvailabilityCache;
+}
+
+function parseSweepJson(value) {
+  if (value == null) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function normalizeSweepTrialRow(row) {
+  return {
+    trial_id: Number(row.trial_id),
+    sweep_id: row.sweep_id,
+    params: parseSweepJson(row.params),
+    param_hash: row.param_hash,
+    state: row.state,
+    run_id: row.run_id ?? null,
+    agent_id: row.agent_id ?? null,
+    metric_value: row.metric_value == null ? null : Number(row.metric_value),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export async function getSweeps() {
+  const [sweepsRaw, trialsRaw] = await Promise.all([
+    getSweepsData(),
+    getSweepTrialsData(),
+  ]);
+  const { rows: sweepRows } = parseRows(sweepsRaw || []);
+  const { rows: trialRowsRaw } = parseRows(trialsRaw || []);
+  const trialRows = trialRowsRaw.map(normalizeSweepTrialRow);
+
+  return sweepRows.map((row) => {
+    const trials = trialRows.filter((t) => t.sweep_id === row.sweep_id);
+    const counts = {};
+    for (const t of trials) counts[t.state] = (counts[t.state] || 0) + 1;
+    let best = null;
+    if (row.metric_name) {
+      const finished = trials.filter(
+        (t) => t.state === "finished" && t.metric_value != null,
+      );
+      const maximize = row.metric_goal === "maximize";
+      for (const t of finished) {
+        if (
+          best == null ||
+          (maximize
+            ? t.metric_value > best.metric_value
+            : t.metric_value < best.metric_value)
+        )
+          best = t;
+      }
+    }
+    return {
+      sweep_id: row.sweep_id,
+      name: row.name ?? null,
+      config: parseSweepJson(row.config),
+      method: row.method,
+      metric_name: row.metric_name ?? null,
+      metric_goal: row.metric_goal ?? null,
+      state: row.state,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      num_trials: trials.length,
+      trial_counts: counts,
+      best_metric_value: best ? best.metric_value : null,
+      best_run_id: best ? best.run_id : null,
+    };
+  });
+}
+
+export async function getSweepTrials(project, sweepId) {
+  const trialsRaw = await getSweepTrialsData();
+  const { rows } = parseRows(trialsRaw || []);
+  return rows
+    .map(normalizeSweepTrialRow)
+    .filter((t) => t.sweep_id === sweepId)
+    .sort((a, b) => a.trial_id - b.trial_id);
+}
+
+export async function setSweepState() {
+  throw new Error("Not supported in static mode");
 }
 
 const ARTIFACT_VERSION_SPEC_RE = /^v(\d+)$/;

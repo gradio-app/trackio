@@ -84,6 +84,26 @@ describe("computeGroupByOptions", () => {
     ]);
   });
 
+  test("promotes _Sweep to 'Sweep' when sweep runs are present", () => {
+    const configs = {
+      "run-a": { _Sweep: "abcd1234", lr: 0.01 },
+      "run-b": { _Sweep: null, lr: 0.02 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual([
+      none,
+      { label: "Sweep", value: "_Sweep" },
+      opt("lr"),
+    ]);
+  });
+
+  test("omits 'Sweep' when no run belongs to a sweep", () => {
+    const configs = {
+      "run-a": { _Sweep: null, lr: 0.01 },
+      "run-b": { _Sweep: null, lr: 0.02 },
+    };
+    expect(computeGroupByOptions(configs)).toEqual([none, opt("lr")]);
+  });
+
   test("omits 'Group' when no run sets _Group to a real value", () => {
     const configs = {
       "run-a": { _Group: null, lr: 0.01 },

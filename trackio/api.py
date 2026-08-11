@@ -82,11 +82,114 @@ class Runs:
         return f"<Runs project={self.project} count={len(self._runs)}>"
 
 
+class Sweep:
+    def __init__(self, project: str, sweep_id: str):
+        self.project = project
+        self.sweep_id = sweep_id
+
+    def _record(self) -> dict:
+        record = SQLiteStorage.get_sweep(self.project, self.sweep_id)
+        if record is None:
+            raise ValueError(
+                f"Sweep '{self.sweep_id}' does not exist in project '{self.project}'"
+            )
+        return record
+
+    @property
+    def config(self) -> dict:
+        return self._record()["config"]
+
+    @property
+    def state(self) -> str:
+        return self._record()["state"]
+
+    @property
+    def trials(self) -> list[dict]:
+        return SQLiteStorage.get_sweep_trials(self.project, self.sweep_id)
+
+    def best_run(self) -> Run | None:
+        record = self._record()
+        best_run_id = record.get("best_run_id")
+        if best_run_id is None:
+            return None
+        run_record = next(
+            (
+                r
+                for r in SQLiteStorage.get_run_records(self.project)
+                if r["id"] == best_run_id
+            ),
+            None,
+        )
+        if run_record is None:
+            return None
+        return Run(self.project, str(run_record["name"]), run_id=best_run_id)
+
+    def pause(self) -> "Sweep":
+        SQLiteStorage.set_sweep_state(self.project, self.sweep_id, "paused")
+        return self
+
+    def resume(self) -> "Sweep":
+        SQLiteStorage.set_sweep_state(self.project, self.sweep_id, "running")
+        return self
+
+    def stop(self) -> "Sweep":
+        SQLiteStorage.set_sweep_state(self.project, self.sweep_id, "stopped")
+        return self
+
+    def cancel(self) -> "Sweep":
+        SQLiteStorage.set_sweep_state(self.project, self.sweep_id, "cancelled")
+        return self
+
+    def __repr__(self) -> str:
+        return f"<Sweep {self.sweep_id} in project {self.project}>"
+
+
+class Sweeps:
+    def __init__(self, project: str):
+        self.project = project
+        self._sweeps = None
+
+    def _load_sweeps(self):
+        if self._sweeps is None:
+            records = SQLiteStorage.list_sweeps(self.project)
+            self._sweeps = [
+                Sweep(self.project, record["sweep_id"]) for record in records
+            ]
+
+    def __iter__(self) -> Iterator[Sweep]:
+        self._load_sweeps()
+        return iter(self._sweeps)
+
+    def __getitem__(self, index: int) -> Sweep:
+        self._load_sweeps()
+        return self._sweeps[index]
+
+    def __len__(self) -> int:
+        self._load_sweeps()
+        return len(self._sweeps)
+
+    def __repr__(self) -> str:
+        self._load_sweeps()
+        return f"<Sweeps project={self.project} count={len(self._sweeps)}>"
+
+
 class Api:
     def runs(self, project: str) -> Runs:
         if not SQLiteStorage.get_project_db_path(project).exists():
             raise ValueError(f"Project '{project}' does not exist")
         return Runs(project)
+
+    def sweeps(self, project: str) -> Sweeps:
+        if not SQLiteStorage.get_project_db_path(project).exists():
+            raise ValueError(f"Project '{project}' does not exist")
+        return Sweeps(project)
+
+    def sweep(self, project: str, sweep_id: str) -> Sweep:
+        if SQLiteStorage.get_sweep(project, sweep_id) is None:
+            raise ValueError(
+                f"Sweep '{sweep_id}' does not exist in project '{project}'"
+            )
+        return Sweep(project, sweep_id)
 
     def alerts(
         self,

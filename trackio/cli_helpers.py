@@ -216,6 +216,73 @@ def format_alerts(alerts: list[dict]) -> str:
     return "\n".join(output)
 
 
+def format_sweeps(sweeps: list[dict], project: str | None = None) -> str:
+    """Format a project's sweeps in human-readable format."""
+    if not sweeps:
+        return "No sweeps found."
+
+    title = f"Sweeps in '{project}'" if project else "Sweeps"
+    output = [f"{title}:"]
+    for s in sweeps:
+        name = f" · {s['name']}" if s.get("name") else ""
+        best = (
+            f" best={s['best_metric_value']:g}"
+            if s.get("best_metric_value") is not None
+            else ""
+        )
+        output.append(
+            f"  - {s['sweep_id']}{name} ({s['method']}, {s['state']}) "
+            f"trials={s.get('num_trials', 0)}{best}"
+        )
+    return "\n".join(output)
+
+
+def format_sweep_summary(sweep: dict) -> str:
+    """Format a single sweep in human-readable format."""
+    lines = [
+        f"Sweep: {sweep['sweep_id']}",
+    ]
+    if sweep.get("name"):
+        lines.append(f"  name:    {sweep['name']}")
+    lines.append(f"  method:  {sweep['method']}")
+    lines.append(f"  state:   {sweep['state']}")
+    if sweep.get("metric_name"):
+        lines.append(
+            f"  metric:  {sweep['metric_name']} ({sweep.get('metric_goal', 'minimize')})"
+        )
+    lines.append(f"  created: {sweep.get('created_at')}")
+    counts = sweep.get("trial_counts") or {}
+    counts_str = (
+        ", ".join(f"{state}={count}" for state, count in sorted(counts.items()))
+        or "none"
+    )
+    lines.append(f"  trials:  {sweep.get('num_trials', 0)} ({counts_str})")
+    if sweep.get("best_metric_value") is not None:
+        lines.append(
+            f"  best:    {sweep['best_metric_value']:g} "
+            f"(run_id={sweep.get('best_run_id')})"
+        )
+    return "\n".join(lines)
+
+
+def format_sweep_trials(trials: list[dict]) -> str:
+    """Format sweep trials in human-readable format."""
+    if not trials:
+        return "No trials found."
+
+    output = [f"Found {len(trials)} trial(s):\n"]
+    output.append("Trial | State | Metric | Run ID | Params")
+    output.append("-" * 80)
+    for t in trials:
+        metric = "" if t.get("metric_value") is None else f"{t['metric_value']:g}"
+        run_id = t.get("run_id") or ""
+        params = json.dumps(t.get("params", {}), sort_keys=True)
+        output.append(
+            f"{t['trial_id']} | {t['state']} | {metric} | {run_id} | {params}"
+        )
+    return "\n".join(output)
+
+
 def format_query_result(result: dict[str, Any]) -> str:
     """Format SQL query results in human-readable format."""
     columns = result.get("columns", [])
