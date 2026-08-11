@@ -284,11 +284,6 @@ def test_artifact_lineage_matches_golden_fixture(temp_dir):
     fixture = _seed_golden_lineage()
     result = SQLiteStorage.get_artifact_lineage("p", fixture["focus_version_id"])
     assert result == fixture["expected"]
-
-
-def test_artifact_lineage_run_keys_match_run_artifact_counts(temp_dir):
-    fixture = _seed_golden_lineage()
-    result = SQLiteStorage.get_artifact_lineage("p", fixture["focus_version_id"])
     lineage_keys = {
         (node["run_id"], node["run_name"])
         for node in result["nodes"]
@@ -301,7 +296,7 @@ def test_artifact_lineage_run_keys_match_run_artifact_counts(temp_dir):
     assert lineage_keys == count_keys
 
 
-def test_artifact_lineage_excludes_disconnected_components(temp_dir):
+def test_artifact_lineage_handles_boundary_cases(temp_dir):
     _seed_golden_lineage()
     isolated = _commit(
         name="other", type="dataset", payload=b"other", run_name="solo", run_id="solo-1"
@@ -314,9 +309,6 @@ def test_artifact_lineage_excludes_disconnected_components(temp_dir):
     }
     assert len(result["edges"]) == 1
 
-
-def test_artifact_lineage_version_without_links_is_single_node(temp_dir):
-    fixture = _seed_golden_lineage()
     db_path = SQLiteStorage.get_project_db_path("p")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -335,25 +327,21 @@ def test_artifact_lineage_version_without_links_is_single_node(temp_dir):
     assert node["producer_run_id"] is None
     assert node["producer_run_name"] is None
     assert node["num_files"] == 0
-    assert fixture["focus_version_id"] != 99
 
-
-def test_artifact_lineage_missing_version_or_db_is_empty(temp_dir):
     assert SQLiteStorage.get_artifact_lineage("nope", 1) == {
         "focus": "art:1",
         "truncated": False,
         "nodes": [],
         "edges": [],
     }
-    _seed_golden_lineage()
     result = SQLiteStorage.get_artifact_lineage("p", 12345)
     assert result["nodes"] == [] and result["edges"] == []
 
 
-def test_artifact_lineage_legacy_db_keys_runs_by_name(temp_dir):
-    _create_legacy_project_db("p")
-    artifact = _commit(run_name="legacy-run", run_id="client-uuid")
-    result = SQLiteStorage.get_artifact_lineage("p", artifact["version_id"])
+def test_artifact_lineage_canonicalizes_run_identities(temp_dir):
+    _create_legacy_project_db("legacy")
+    artifact = _commit(project="legacy", run_name="legacy-run", run_id="client-uuid")
+    result = SQLiteStorage.get_artifact_lineage("legacy", artifact["version_id"])
     run_nodes = [node for node in result["nodes"] if node["kind"] == "run"]
     assert run_nodes == [
         {
@@ -365,23 +353,19 @@ def test_artifact_lineage_legacy_db_keys_runs_by_name(temp_dir):
         }
     ]
 
-
-def test_artifact_lineage_orphan_link_folds_into_same_name_run(temp_dir):
-    _insert_metrics_row("p", "train", "known-id")
-    artifact = _commit(run_name="train", run_id=None)
-    result = SQLiteStorage.get_artifact_lineage("p", artifact["version_id"])
+    _insert_metrics_row("orphan", "train", "known-id")
+    artifact = _commit(project="orphan", run_name="train", run_id=None)
+    result = SQLiteStorage.get_artifact_lineage("orphan", artifact["version_id"])
     run_nodes = [node for node in result["nodes"] if node["kind"] == "run"]
     assert [node["id"] for node in run_nodes] == ["run:known-id"]
     assert run_nodes[0]["run_id"] == "known-id"
 
-
-def test_artifact_lineage_dedupes_duplicate_links(temp_dir):
-    artifact = _commit()
+    artifact = _commit(project="dedupe")
     SQLiteStorage.insert_run_artifact_link(
-        "p", "producer", "other-id", artifact["version_id"], "output"
+        "dedupe", "producer", "other-id", artifact["version_id"], "output"
     )
-    _insert_metrics_row("p", "producer", "producer-id")
-    result = SQLiteStorage.get_artifact_lineage("p", artifact["version_id"])
+    _insert_metrics_row("dedupe", "producer", "producer-id")
+    result = SQLiteStorage.get_artifact_lineage("dedupe", artifact["version_id"])
     assert len(result["edges"]) == 1
     assert [node["id"] for node in result["nodes"] if node["kind"] == "run"] == [
         "run:producer-id"
@@ -422,25 +406,24 @@ def test_artifact_lineage_row_budget_ignores_disconnected_history(
     assert len(result["edges"]) == 1
 
 
-def test_artifact_lineage_row_budget_caps_connected_fanout(temp_dir, monkeypatch):
-    focus = _commit(name="model-0")
+def test_artifact_lineage_budgets_cap_connected_fanout(temp_dir, monkeypatch):
+    focus = _commit(project="row-budget", name="model-0")
     for index in range(1, 10):
-        _commit(name=f"model-{index}")
+        _commit(project="row-budget", name=f"model-{index}")
 
     monkeypatch.setattr(trackio.sqlite_storage, "_MAX_LINEAGE_LINK_ROWS", 4)
-    result = SQLiteStorage.get_artifact_lineage("p", focus["version_id"])
+    result = SQLiteStorage.get_artifact_lineage("row-budget", focus["version_id"])
 
     assert result["truncated"] is True
     assert len(result["edges"]) <= 3
 
-
-def test_artifact_lineage_edge_budget_caps_dense_components(temp_dir, monkeypatch):
-    focus = _commit(name="model-0")
+    monkeypatch.setattr(trackio.sqlite_storage, "_MAX_LINEAGE_LINK_ROWS", 10_000)
+    focus = _commit(project="edge-budget", name="model-0")
     for index in range(1, 10):
-        _commit(name=f"model-{index}")
+        _commit(project="edge-budget", name=f"model-{index}")
 
     monkeypatch.setattr(trackio.sqlite_storage, "_MAX_LINEAGE_EDGES", 3)
-    result = SQLiteStorage.get_artifact_lineage("p", focus["version_id"])
+    result = SQLiteStorage.get_artifact_lineage("edge-budget", focus["version_id"])
 
     assert result["truncated"] is True
     assert len(result["edges"]) == 3
