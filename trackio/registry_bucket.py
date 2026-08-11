@@ -33,6 +33,7 @@ from pathlib import Path
 import huggingface_hub
 import orjson
 from huggingface_hub.errors import BucketNotFoundError
+from huggingface_hub.utils import get_token
 
 from trackio import cas
 from trackio.bucket_storage import _list_bucket_file_paths, create_bucket_if_not_exists
@@ -80,7 +81,7 @@ class BucketRegistryStorage:
         self.bucket_id = bucket_id
 
     def _token(self) -> str | None:
-        return huggingface_hub.utils.get_token()
+        return get_token()
 
     def cache_db_path(self, registry: str) -> Path:
         validate_registry_name(registry)

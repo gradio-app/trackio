@@ -386,6 +386,8 @@ Register handlers in every process that adds *or downloads* such references: `Ar
 
 The dashboard's **Artifacts** tab (shown once a project has artifacts) lists artifacts grouped by type, with each version's aliases, size, and file count. Selecting a version shows its file manifest — click a file to download it — plus its metadata and lineage: the run that produced it and the runs that used it, each linking to the run's detail page.
 
+Each version also has a **Lineage** section showing an interactive graph of the version's lineage: artifact versions and runs as nodes, with arrows from a run to the artifacts it logged and from an artifact to the runs that used it. The selected version is highlighted. To keep large graphs readable, five or more similar nodes with identical connections (for example, the many checkpoints a single run logged) are grouped into a single **cluster** node showing the count — click the cluster to search its members and extract individual ones back into the graph. Drag to pan, use Ctrl/Cmd + scroll (or the +/− buttons) to zoom, and click any node to open a summary with a link to that run or artifact version.
+
 Run detail pages show the same lineage from the other direction, with **Output artifacts** and **Input artifacts** sections linking back to the Artifacts tab.
 
 ## Remote storage

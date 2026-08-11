@@ -67,9 +67,43 @@ export function getQueryParam(key) {
   return new URLSearchParams(window.location.search).get(key);
 }
 
-export function setArtifactSelectionParams(name, version) {
-  setQueryParam("selected_artifact", name);
-  setQueryParam("selected_version", `v${version}`);
+function updateQueryParams(changes, { push = false } = {}) {
+  const params = new URLSearchParams(window.location.search);
+  for (const [key, value] of Object.entries(changes)) {
+    if (value != null && value !== "") {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+  }
+  const search = params.toString();
+  const url = search
+    ? `${window.location.pathname}?${search}`
+    : window.location.pathname;
+  if (push) {
+    window.history.pushState({}, "", url);
+  } else {
+    window.history.replaceState({}, "", url);
+  }
+}
+
+export function setArtifactSelectionParams(name, version, { push = false } = {}) {
+  updateQueryParams(
+    {
+      selected_artifact: name,
+      selected_version: `v${version}`,
+      detail_tab: null,
+    },
+    { push },
+  );
+}
+
+export function clearArtifactSelectionParams() {
+  updateQueryParams({
+    selected_artifact: null,
+    selected_version: null,
+    detail_tab: null,
+  });
 }
 
 export function getArtifactSelectionFromUrl() {
@@ -82,21 +116,14 @@ export function getArtifactSelectionFromUrl() {
 }
 
 export function openRunDetail(runName, runId) {
-  setQueryParam("selected_run_id", runId);
-  setQueryParam("selected_run", runName);
+  updateQueryParams({
+    selected_run_id: runId,
+    selected_run: runName,
+    detail_tab: null,
+  });
   navigateTo("run-detail");
 }
 
-export function setQueryParam(key, value) {
-  const params = new URLSearchParams(window.location.search);
-  if (value != null && value !== "") {
-    params.set(key, value);
-  } else {
-    params.delete(key);
-  }
-  const search = params.toString();
-  const url = search
-    ? `${window.location.pathname}?${search}`
-    : window.location.pathname;
-  window.history.replaceState({}, "", url);
+export function setQueryParam(key, value, { push = false } = {}) {
+  updateQueryParams({ [key]: value }, { push });
 }

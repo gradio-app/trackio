@@ -28,12 +28,13 @@ import tempfile
 from pathlib import Path
 
 import huggingface_hub
+from huggingface_hub.utils import disable_progress_bars
 
 import trackio as wandb
 from trackio.registry_bucket import BucketRegistryStorage
 
 # Registry events are a few hundred bytes each; their upload bars add nothing.
-huggingface_hub.utils.disable_progress_bars()
+disable_progress_bars()
 
 SUFFIX = random.randint(100000, 999999)
 NAMESPACE = huggingface_hub.whoami()["name"]

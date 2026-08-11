@@ -1,39 +1,74 @@
 <script>
   import Accordion from "./Accordion.svelte";
+  import AliasPill from "./AliasPill.svelte";
   import IndentGuides from "./IndentGuides.svelte";
   import {
     getArtifactManifest,
     getArtifactConsumers,
     getArtifactBlobUrl,
   } from "../lib/api.js";
-  import { openRunDetail } from "../lib/router.js";
-  import { formatSize } from "../lib/format.js";
+  import { getQueryParam, openRunDetail, setQueryParam } from "../lib/router.js";
+  import { formatDate, formatSize } from "../lib/format.js";
 
-  let { project = null, name = null, version = null, variant = "inline" } =
-    $props();
+  let {
+    project = null,
+    name = null,
+    version = null,
+    variant = "inline",
+    onOpenVersion = null,
+  } = $props();
 
   let record = $state(null);
+
+  function tabFromUrl() {
+    return getQueryParam("detail_tab") === "lineage" ? "lineage" : "details";
+  }
+
+  let activeTab = $state(tabFromUrl());
+  let lineageMounted = $state(false);
+  let LineageSection = $state(null);
+
+  function selectTab(tab) {
+    if (tab === activeTab) return;
+    activeTab = tab;
+    setQueryParam("detail_tab", tab === "lineage" ? "lineage" : null, {
+      push: true,
+    });
+  }
+
+  $effect(() => {
+    const onPop = () => {
+      activeTab = tabFromUrl();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  });
+
+  $effect(() => {
+    name;
+    version;
+    const tab = tabFromUrl();
+    activeTab = tab;
+    if (tab !== "lineage") lineageMounted = false;
+  });
+
+  $effect(() => {
+    if (activeTab === "lineage") lineageMounted = true;
+  });
+
+  $effect(() => {
+    if (lineageMounted && !LineageSection) {
+      import("./lineage/LineageSection.svelte").then((m) => {
+        LineageSection = m.default;
+      });
+    }
+  });
   let consumers = $state([]);
   let loading = $state(false);
   let error = $state(false);
   let copied = $state("");
   let copyTimer = null;
   let metaOverrides = $state({});
-
-  function formatDate(iso) {
-    if (!iso) return "";
-    try {
-      return new Date(iso).toLocaleString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return iso;
-    }
-  }
 
   function isPlainObject(v) {
     return v !== null && typeof v === "object" && !Array.isArray(v);
@@ -214,49 +249,83 @@
   {/if}
 {/snippet}
 
-<div class={variant === "panel" ? "panel" : "version-detail"}>
+<div
+  class={variant === "panel" ? "panel" : "version-detail"}
+  class:fill={activeTab === "lineage"}
+>
   {#if loading}
     <div class="status">Loading…</div>
   {:else if error || !record}
     <div class="status">Failed to load this version.</div>
   {:else if variant === "panel"}
     <header class="panel-header">
-      <div class="title-row">
-        <h2 class="art-name">{record.name}</h2>
-        <span class="ver-badge">v{record.version}</span>
-        {#each record.aliases as alias}
-          <span class="alias-pill" class:latest={alias === "latest"}
-            >{alias}</span
+      <div class="header-row">
+        <div class="header-left">
+          <div class="title-row">
+            <h2 class="art-name">{record.name}</h2>
+            <span class="ver-badge">v{record.version}</span>
+            {#each record.aliases as alias}
+              <AliasPill {alias} />
+            {/each}
+          </div>
+          <div class="fact-row">
+            <span class="fact type-chip">{record.type}</span>
+            <span class="dot">·</span>
+            <span class="fact"
+              >{(record.manifest || []).length}
+              {(record.manifest || []).length === 1 ? "file" : "files"}</span
+            >
+            <span class="dot">·</span>
+            <span class="fact">{formatSize(record.size_bytes)}</span>
+          </div>
+        </div>
+        <div class="use-snippet">
+          <code class="snippet"><span class="tok-mod">trackio</span><span
+              class="tok-punc">.</span><span class="tok-fn">use_artifact</span><span
+              class="tok-punc">(</span><span class="tok-str"
+              >"{record.name}:v{record.version}"</span><span class="tok-punc"
+              >)</span></code>
+          <button
+            class="copy-btn"
+            onclick={() => copy(usageSnippet, "use")}
+            title="Copy usage snippet"
           >
-        {/each}
-      </div>
-      <div class="fact-row">
-        <span class="fact type-chip">{record.type}</span>
-        <span class="dot">·</span>
-        <span class="fact"
-          >{(record.manifest || []).length}
-          {(record.manifest || []).length === 1 ? "file" : "files"}</span
-        >
-        <span class="dot">·</span>
-        <span class="fact">{formatSize(record.size_bytes)}</span>
-      </div>
-      <div class="use-snippet">
-        <code class="snippet"><span class="tok-mod">trackio</span><span
-            class="tok-punc">.</span><span class="tok-fn">use_artifact</span><span
-            class="tok-punc">(</span><span class="tok-str"
-            >"{record.name}:v{record.version}"</span><span class="tok-punc"
-            >)</span></code>
-        <button
-          class="copy-btn"
-          onclick={() => copy(usageSnippet, "use")}
-          title="Copy usage snippet"
-        >
-          {copied === "use" ? "Copied" : "Copy"}
-        </button>
+            {copied === "use" ? "Copied" : "Copy"}
+          </button>
+        </div>
       </div>
     </header>
 
-    <Accordion label="Overview">
+    <div class="detail-tabs" role="tablist">
+      <button
+        role="tab"
+        class="tab-btn"
+        class:active={activeTab === "details"}
+        aria-selected={activeTab === "details"}
+        onclick={() => selectTab("details")}>Details</button
+      >
+      {#if record.version_id != null}
+        <button
+          role="tab"
+          class="tab-btn"
+          class:active={activeTab === "lineage"}
+          aria-selected={activeTab === "lineage"}
+          onclick={() => selectTab("lineage")}>Lineage</button
+        >
+      {/if}
+    </div>
+
+    {#if lineageMounted && LineageSection && record.version_id != null}
+      <div class="lineage-tab" class:hidden={activeTab !== "lineage"}>
+        <LineageSection
+          {project}
+          versionId={record.version_id}
+          {onOpenVersion}
+        />
+      </div>
+    {/if}
+    {#if activeTab !== "lineage" || record.version_id == null}
+      <Accordion label="Overview">
       <div class="detail-grid">
         {#if record.description}
           <span class="detail-key">Description</span>
@@ -281,17 +350,18 @@
       </div>
     </Accordion>
 
-    {#if record.metadata && Object.keys(record.metadata).length}
-      <Accordion label="Metadata ({Object.keys(record.metadata).length})">
-        <div class="meta-grid">
-          {@render metaRows(Object.entries(record.metadata), 0, [])}
-        </div>
+      {#if record.metadata && Object.keys(record.metadata).length}
+        <Accordion label="Metadata ({Object.keys(record.metadata).length})">
+          <div class="meta-grid">
+            {@render metaRows(Object.entries(record.metadata), 0, [])}
+          </div>
+        </Accordion>
+      {/if}
+
+      <Accordion label="Files ({(record.manifest || []).length})">
+        {@render fileTable()}
       </Accordion>
     {/if}
-
-    <Accordion label="Files ({(record.manifest || []).length})">
-      {@render fileTable()}
-    </Accordion>
   {:else}
     <div class="detail-grid">
       {@render lineageRows()}
@@ -322,10 +392,48 @@
   .panel {
     padding: 4px 4px 24px;
   }
+  .panel.fill {
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .lineage-tab {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .lineage-tab.hidden {
+    display: none;
+  }
   .panel-header {
+    padding-bottom: 6px;
+  }
+  .detail-tabs {
+    display: flex;
+    gap: 18px;
     border-bottom: 1px solid var(--border-color-primary, #e5e7eb);
-    padding-bottom: 14px;
     margin-bottom: 16px;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    padding: 6px 2px 8px;
+    margin-bottom: -1px;
+    font-size: var(--text-sm, 13px);
+    font-weight: 500;
+    color: var(--body-text-color-subdued, #6b7280);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+  }
+  .tab-btn:hover {
+    color: var(--body-text-color, #1f2937);
+  }
+  .tab-btn.active {
+    color: var(--body-text-color, #1f2937);
+    border-bottom-color: var(--body-text-color, #1f2937);
   }
   .title-row {
     display: flex;
@@ -348,6 +456,15 @@
     background: var(--background-fill-secondary, #f3f4f6);
     border-radius: var(--radius-sm, 4px);
     padding: 2px 7px;
+  }
+  .header-row {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .header-left {
+    min-width: 0;
   }
   .fact-row {
     display: flex;
@@ -372,7 +489,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 12px;
+    margin-left: auto;
     background: var(--background-fill-secondary, #f9fafb);
     border: 1px solid var(--border-color-primary, #e5e7eb);
     border-radius: var(--radius-md, 6px);
@@ -601,18 +718,4 @@
     padding: 4px 0;
   }
 
-  .alias-pill {
-    font-size: var(--text-xs, 11px);
-    padding: 1px 7px;
-    border-radius: 9px;
-    border: 1px solid var(--border-color-primary, #e5e7eb);
-    color: var(--body-text-color-subdued, #6b7280);
-    background: var(--background-fill-secondary, #f3f4f6);
-    white-space: nowrap;
-  }
-  .alias-pill.latest {
-    color: var(--color-accent, #f97316);
-    border-color: var(--color-accent, #f97316);
-    background: transparent;
-  }
 </style>

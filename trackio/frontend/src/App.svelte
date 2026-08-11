@@ -38,6 +38,8 @@
     navigateTo,
     getQueryParam,
     getArtifactSelectionFromUrl,
+    setArtifactSelectionParams,
+    clearArtifactSelectionParams,
   } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
@@ -136,6 +138,19 @@
   let runConfigsProject = $state(null);
   let artifactSelection = $state(null);
   let artifactsEmpty = $state(false);
+  let artifactSelectionProject = $state(null);
+
+  function isSameArtifactSelection(name, version) {
+    return (
+      artifactSelection?.name === name && artifactSelection?.version === version
+    );
+  }
+
+  function openArtifactVersion(name, version) {
+    if (isSameArtifactSelection(name, version)) return;
+    artifactSelection = { name, version };
+    setArtifactSelectionParams(name, version, { push: true });
+  }
 
   function runKey(run) {
     return run?.id ?? run?.name;
@@ -370,10 +385,20 @@
   });
 
   $effect(() => {
+    if (selectedProject === artifactSelectionProject) return;
+    const previous = artifactSelectionProject;
+    artifactSelectionProject = selectedProject;
+    if (previous == null) return;
+    artifactSelection = null;
+    clearArtifactSelectionParams();
+  });
+
+  $effect(() => {
     urlTick;
-    if (currentPage !== "artifacts" || !sidebarHidden) return;
+    if (currentPage !== "artifacts") return;
     const { name, version } = getArtifactSelectionFromUrl();
     if (!name || version == null) return;
+    if (isSameArtifactSelection(name, version)) return;
     artifactSelection = { name, version };
   });
 
@@ -592,6 +617,7 @@
 
   {#if currentPage === "artifacts" && !sidebarHidden}
     <ArtifactsSidebar
+      bind:open={sidebarOpen}
       {projects}
       bind:project={selectedProject}
       projectLocked={projectLocked}
@@ -675,6 +701,7 @@
           project={selectedProject}
           selection={artifactSelection}
           empty={artifactsEmpty}
+          onOpenVersion={openArtifactVersion}
         />
       {:else if currentPage === "settings"}
         <Settings {spaceId} selectedProject={selectedProject} {projects} />
