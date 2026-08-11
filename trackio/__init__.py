@@ -46,6 +46,8 @@ from trackio.remote_client import RemoteClient
 from trackio.run import Run
 from trackio.server import TrackioDashboardApp, build_starlette_app_only
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.sweep import SweepConfig, SweepParameter, sweep
+from trackio.sweep import generate_configs as sweep_generate_configs
 from trackio.table import Table
 from trackio.trace import Trace
 from trackio.typehints import UploadEntry
@@ -95,6 +97,10 @@ __all__ = [
     "Markdown",
     "Api",
     "TRACKIO_LOGO_DIR",
+    "sweep",
+    "sweep_generate_configs",
+    "SweepConfig",
+    "SweepParameter",
 ]
 
 Audio = TrackioAudio
@@ -353,6 +359,12 @@ def init(
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
     SQLiteStorage.validate_project_name(project)
+
+    sweep_config = context_vars.current_sweep_config.get()
+    if sweep_config is not None:
+        config = {**(config or {}), **sweep_config}
+        if group is None:
+            group = context_vars.current_sweep_id.get()
 
     if settings is not None:
         _emit_nonfatal_warning(

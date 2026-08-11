@@ -19,3 +19,9 @@ current_space_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 current_server_write_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_server_write_token", default=None
 )
+current_sweep_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_sweep_id", default=None
+)
+current_sweep_config: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "current_sweep_config", default=None
+)
