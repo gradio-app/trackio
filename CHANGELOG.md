@@ -1,5 +1,12 @@
 # trackio
 
+## 0.34.1
+
+### Features
+
+- [#658](https://github.com/gradio-app/trackio/pull/658) [`ad4373c`](https://github.com/gradio-app/trackio/commit/ad4373c521a84092f8bf7b12d87d6d9c65bc3078) - Fix remote media upload filenames.  Thanks @MiloDavis!
+- [#659](https://github.com/gradio-app/trackio/pull/659) [`e9b6e06`](https://github.com/gradio-app/trackio/commit/e9b6e0601ed41d51d9cffc143d21d282d25ca73a) - Fix unstable metric sampling in charts that happens in `trl>=1.7.0`.  Thanks @abidlabs!
+
 ## 0.34.0
 
 ### Features

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -69,6 +69,7 @@ trackio = "trackio.cli:main"
 [tool.hatch.build.hooks.custom]
 
 [tool.hatch.build.targets.wheel]
+core-metadata-version = "2.4"
 packages = ["trackio"]
 artifacts = ["trackio/frontend/dist/**", "trackio/frontend_templates/**"]
 
