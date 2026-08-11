@@ -398,3 +398,54 @@ def test_artifact_lineage_truncation_filters_dangling_edges(temp_dir, monkeypatc
     for edge in result["edges"]:
         assert edge["source"] in node_ids
         assert edge["target"] in node_ids
+
+
+def test_artifact_lineage_row_budget_ignores_disconnected_history(
+    temp_dir, monkeypatch
+):
+    focus = _commit()
+    for index in range(20):
+        _commit(
+            name=f"unrelated-{index}",
+            run_name=f"unrelated-run-{index}",
+            run_id=f"unrelated-id-{index}",
+        )
+
+    monkeypatch.setattr(trackio.sqlite_storage, "_MAX_LINEAGE_LINK_ROWS", 3)
+    result = SQLiteStorage.get_artifact_lineage("p", focus["version_id"])
+
+    assert result["truncated"] is False
+    assert {node["id"] for node in result["nodes"]} == {
+        f"art:{focus['version_id']}",
+        "run:producer-id",
+    }
+    assert len(result["edges"]) == 1
+
+
+def test_artifact_lineage_row_budget_caps_connected_fanout(temp_dir, monkeypatch):
+    focus = _commit(name="model-0")
+    for index in range(1, 10):
+        _commit(name=f"model-{index}")
+
+    monkeypatch.setattr(trackio.sqlite_storage, "_MAX_LINEAGE_LINK_ROWS", 4)
+    result = SQLiteStorage.get_artifact_lineage("p", focus["version_id"])
+
+    assert result["truncated"] is True
+    assert len(result["edges"]) <= 3
+
+
+def test_artifact_lineage_edge_budget_caps_dense_components(temp_dir, monkeypatch):
+    focus = _commit(name="model-0")
+    for index in range(1, 10):
+        _commit(name=f"model-{index}")
+
+    monkeypatch.setattr(trackio.sqlite_storage, "_MAX_LINEAGE_EDGES", 3)
+    result = SQLiteStorage.get_artifact_lineage("p", focus["version_id"])
+
+    assert result["truncated"] is True
+    assert len(result["edges"]) == 3
+    node_ids = {node["id"] for node in result["nodes"]}
+    assert all(
+        edge["source"] in node_ids and edge["target"] in node_ids
+        for edge in result["edges"]
+    )

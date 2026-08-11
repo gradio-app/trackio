@@ -12,6 +12,7 @@
   let error = $state(false);
   let extracted = $state(new Set());
   let selectedId = $state(null);
+  let loadGeneration = 0;
 
   const focusId = $derived(`art:${versionId}`);
 
@@ -20,7 +21,16 @@
   });
 
   async function loadGraph() {
-    if (!project || versionId == null) {
+    const generation = ++loadGeneration;
+    const requestProject = project;
+    const requestVersionId = versionId;
+    const requestFocusId = `art:${requestVersionId}`;
+
+    if (!requestProject || requestVersionId == null) {
+      graph = null;
+      error = false;
+      extracted = new Set();
+      selectedId = null;
       loading = false;
       return;
     }
@@ -29,12 +39,18 @@
     extracted = new Set();
     selectedId = null;
     try {
-      graph = await getArtifactLineage(project, versionId);
-      selectedId = focusId;
+      const nextGraph = await getArtifactLineage(
+        requestProject,
+        requestVersionId,
+      );
+      if (generation !== loadGeneration) return;
+      graph = nextGraph;
+      selectedId = requestFocusId;
     } catch {
+      if (generation !== loadGeneration) return;
       error = true;
     } finally {
-      loading = false;
+      if (generation === loadGeneration) loading = false;
     }
   }
 

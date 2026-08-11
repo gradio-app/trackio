@@ -6,7 +6,6 @@ import shutil
 import sqlite3
 import time
 import uuid
-from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -59,6 +58,8 @@ _TEMP_STORE_WHITELIST = frozenset({"default", "file", "memory"})
 _READ_ONLY_QUERY_PREFIXES = ("select", "with", "pragma")
 _QUERY_MAX_ROWS = 10_000
 _MAX_LINEAGE_NODES = 1000
+_MAX_LINEAGE_EDGES = 5000
+_MAX_LINEAGE_LINK_ROWS = 10_000
 _SQL_IN_CHUNK = 500
 _READ_ONLY_PRAGMAS = frozenset(
     {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo"}
@@ -628,6 +629,12 @@ class SQLiteStorage:
                     """
                     CREATE INDEX IF NOT EXISTS idx_run_artifact_links_run
                     ON run_artifact_links(run_id, run_name)
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_run_artifact_links_name
+                    ON run_artifact_links(run_name, run_id)
                     """
                 )
                 cursor.execute(
@@ -5203,8 +5210,10 @@ class SQLiteStorage:
         "run:{run_id}", or "run:name:{run_name}" when no canonical run id
         exists, using the same identity folding as get_run_artifact_counts.
         Edges point run->artifact for output links and artifact->run for
-        input links. Returns empty nodes/edges when the DB, tables, or the
-        version itself are absent."""
+        input links. Traversal queries only the current artifact/run frontier
+        and stops at the configured node, edge, or link-row budgets. Returns
+        empty nodes/edges when the DB, tables, or the version itself are
+        absent."""
         focus = f"art:{version_id}"
         empty = {"focus": focus, "truncated": False, "nodes": [], "edges": []}
         SQLiteStorage._ensure_hub_loaded()
@@ -5212,78 +5221,219 @@ class SQLiteStorage:
         if not db_path.exists():
             return empty
         with SQLiteStorage._get_connection(db_path) as conn:
-            try:
-                link_rows = conn.execute(
-                    """SELECT run_id, run_name, artifact_version_id,
-                        direction, MIN(created_at) AS created_at
-                    FROM run_artifact_links
-                    WHERE direction IN ('input', 'output')
-                    GROUP BY run_id, run_name, artifact_version_id, direction
-                    ORDER BY created_at"""
-                ).fetchall()
-            except sqlite3.OperationalError:
-                link_rows = []
-
-            legacy_metrics, record_ids, ids_by_name = (
-                SQLiteStorage._link_run_identity_maps(
-                    conn, {(row["run_id"], row["run_name"]) for row in link_rows}
-                )
-            )
-
-            links = []
+            truncated = False
+            row_budget_hit = False
+            link_rows_read = 0
+            links_available = True
+            node_ids = {focus}
+            edge_meta: dict[tuple[str, str, str], str] = {}
             run_meta: dict[str, dict] = {}
-            for row in link_rows:
-                run_name = row["run_name"]
+
+            def query_links(where: str, params: list) -> list[sqlite3.Row]:
+                nonlocal truncated
+                nonlocal row_budget_hit
+                nonlocal link_rows_read
+                nonlocal links_available
+                if not links_available or row_budget_hit:
+                    return []
+                remaining = _MAX_LINEAGE_LINK_ROWS - link_rows_read
+                if remaining <= 0:
+                    truncated = True
+                    row_budget_hit = True
+                    return []
+                try:
+                    rows = conn.execute(
+                        f"""SELECT id, run_id, run_name, artifact_version_id,
+                            direction, created_at
+                        FROM run_artifact_links
+                        WHERE direction IN ('input', 'output') AND ({where})
+                        ORDER BY id
+                        LIMIT ?""",
+                        (*params, remaining + 1),
+                    ).fetchall()
+                except sqlite3.OperationalError:
+                    links_available = False
+                    return []
+                if len(rows) > remaining:
+                    rows = rows[:remaining]
+                    truncated = True
+                    row_budget_hit = True
+                link_rows_read += len(rows)
+                return rows
+
+            def links_for_versions(version_ids: set[int]) -> list[sqlite3.Row]:
+                rows = []
+                values = sorted(version_ids)
+                for start in range(0, len(values), _SQL_IN_CHUNK):
+                    chunk = values[start : start + _SQL_IN_CHUNK]
+                    placeholders = ",".join("?" * len(chunk))
+                    rows.extend(
+                        query_links(f"artifact_version_id IN ({placeholders})", chunk)
+                    )
+                    if row_budget_hit:
+                        break
+                return rows
+
+            def links_for_run_identities(identities: set[tuple]) -> list[sqlite3.Row]:
+                """Fetch rows that could fold into the frontier run identities.
+
+                Both columns are queried because an orphaned id can fold into a
+                same-name run record and a renamed run can retain the same id.
+                The paired indexes keep both sides of the OR bounded to the
+                requested frontier.
+                """
+                ids = sorted({run_id for run_id, _ in identities if run_id is not None})
+                names = sorted(
+                    {run_name for _, run_name in identities if run_name is not None}
+                )
+                include_null_identity = (None, None) in identities
+                chunk_size = max(1, _SQL_IN_CHUNK // 2)
+                value_count = max(
+                    len(ids), len(names), 1 if include_null_identity else 0
+                )
+                rows = []
+                for start in range(0, value_count, chunk_size):
+                    id_chunk = ids[start : start + chunk_size]
+                    name_chunk = names[start : start + chunk_size]
+                    clauses = []
+                    params = []
+                    if id_chunk:
+                        clauses.append(f"run_id IN ({','.join('?' * len(id_chunk))})")
+                        params.extend(id_chunk)
+                    if name_chunk:
+                        clauses.append(
+                            f"run_name IN ({','.join('?' * len(name_chunk))})"
+                        )
+                        params.extend(name_chunk)
+                    if start == 0 and include_null_identity:
+                        clauses.append("(run_id IS NULL AND run_name IS NULL)")
+                    if not clauses:
+                        continue
+                    rows.extend(query_links(" OR ".join(clauses), params))
+                    if row_budget_hit:
+                        break
+                return rows
+
+            def identity_maps(rows: list[sqlite3.Row]):
+                return SQLiteStorage._link_run_identity_maps(
+                    conn, {(row["run_id"], row["run_name"]) for row in rows}
+                )
+
+            def canonical_run(row, maps) -> tuple[str, str | None]:
+                legacy_metrics, record_ids, ids_by_name = maps
                 run_id = SQLiteStorage._canonical_link_run_id(
-                    row["run_id"], run_name, legacy_metrics, record_ids, ids_by_name
+                    row["run_id"],
+                    row["run_name"],
+                    legacy_metrics,
+                    record_ids,
+                    ids_by_name,
                 )
                 run_key = (
-                    f"run:{run_id}" if run_id is not None else f"run:name:{run_name}"
+                    f"run:{run_id}"
+                    if run_id is not None
+                    else f"run:name:{row['run_name']}"
                 )
-                run_meta.setdefault(
-                    run_key,
-                    {
-                        "run_id": run_id,
-                        "run_name": run_name,
-                        "created_at": row["created_at"],
-                    },
-                )
-                links.append(
-                    {
-                        "run_key": run_key,
-                        "version_id": int(row["artifact_version_id"]),
-                        "direction": row["direction"],
-                        "created_at": row["created_at"],
-                    }
-                )
+                return run_key, run_id
 
-            by_version: dict[int, list[str]] = {}
-            by_run: dict[str, list[int]] = {}
-            for link in links:
-                by_version.setdefault(link["version_id"], []).append(link["run_key"])
-                by_run.setdefault(link["run_key"], []).append(link["version_id"])
+            artifact_frontier = {version_id}
+            expanded_artifacts = set()
+            expanded_runs = set()
+            stop_traversal = False
 
-            visited = {focus}
-            truncated = False
-            queue = deque([focus])
-            while queue:
-                node = queue.popleft()
-                if node.startswith("art:"):
-                    neighbors = by_version.get(int(node[4:]), ())
-                else:
-                    neighbors = (f"art:{v}" for v in by_run.get(node, ()))
-                for neighbor in neighbors:
-                    if neighbor in visited:
-                        continue
-                    if len(visited) >= _MAX_LINEAGE_NODES:
-                        truncated = True
-                        break
-                    visited.add(neighbor)
-                    queue.append(neighbor)
-                if truncated:
+            while artifact_frontier and not stop_traversal:
+                artifact_frontier -= expanded_artifacts
+                if not artifact_frontier:
+                    break
+                expanded_artifacts.update(artifact_frontier)
+                artifact_rows = links_for_versions(artifact_frontier)
+                if not artifact_rows:
                     break
 
-            version_ids = sorted(int(n[4:]) for n in visited if n.startswith("art:"))
+                preliminary_maps = identity_maps(artifact_rows)
+                seed_rows = []
+                for row in artifact_rows:
+                    run_key, _ = canonical_run(row, preliminary_maps)
+                    if run_key not in expanded_runs:
+                        seed_rows.append(row)
+                if not seed_rows:
+                    artifact_frontier = set()
+                    continue
+
+                seed_identities = {
+                    (row["run_id"], row["run_name"]) for row in seed_rows
+                }
+                run_rows = (
+                    [] if row_budget_hit else links_for_run_identities(seed_identities)
+                )
+                stage_by_id = {
+                    int(row["id"]): row for row in (*artifact_rows, *run_rows)
+                }
+                stage_rows = list(stage_by_id.values())
+                maps = identity_maps(stage_rows)
+                allowed_runs = {
+                    canonical_run(row, maps)[0] for row in seed_rows
+                } - expanded_runs
+                expanded_runs.update(allowed_runs)
+
+                next_artifacts = set()
+                ordered_rows = sorted(
+                    stage_rows, key=lambda row: (row["created_at"] or "", row["id"])
+                )
+                for row in ordered_rows:
+                    run_key, run_id = canonical_run(row, maps)
+                    if run_key not in allowed_runs:
+                        continue
+                    art_id = int(row["artifact_version_id"])
+                    art_key = f"art:{art_id}"
+                    new_node_ids = {
+                        candidate
+                        for candidate in (run_key, art_key)
+                        if candidate not in node_ids
+                    }
+                    if len(node_ids) + len(new_node_ids) > _MAX_LINEAGE_NODES:
+                        truncated = True
+                        stop_traversal = True
+                        break
+
+                    if row["direction"] == "output":
+                        source, target = run_key, art_key
+                    else:
+                        source, target = art_key, run_key
+                    edge_key = (source, target, row["direction"])
+                    if (
+                        edge_key not in edge_meta
+                        and len(edge_meta) >= _MAX_LINEAGE_EDGES
+                    ):
+                        truncated = True
+                        stop_traversal = True
+                        break
+
+                    node_ids.update(new_node_ids)
+                    if art_id not in expanded_artifacts:
+                        next_artifacts.add(art_id)
+
+                    current_meta = run_meta.get(run_key)
+                    if current_meta is None or (row["created_at"] or "") < (
+                        current_meta["created_at"] or ""
+                    ):
+                        run_meta[run_key] = {
+                            "run_id": run_id,
+                            "run_name": row["run_name"],
+                            "created_at": row["created_at"],
+                        }
+                    created_at = edge_meta.get(edge_key)
+                    if created_at is None or (row["created_at"] or "") < (
+                        created_at or ""
+                    ):
+                        edge_meta[edge_key] = row["created_at"]
+
+                artifact_frontier = next_artifacts
+                if row_budget_hit:
+                    stop_traversal = True
+
+            version_ids = sorted(
+                int(node_id[4:]) for node_id in node_ids if node_id.startswith("art:")
+            )
             placeholders = ",".join("?" * len(version_ids))
             try:
                 version_rows = conn.execute(
@@ -5314,7 +5464,7 @@ class SQLiteStorage:
             hydrated = {int(row["id"]) for row in version_rows}
             if version_id not in hydrated:
                 return empty
-            run_keys = set(run_meta) & visited
+            run_keys = set(run_meta) & node_ids
             node_ids = {f"art:{v}" for v in hydrated} | run_keys
 
             nodes = []
@@ -5348,28 +5498,24 @@ class SQLiteStorage:
                     }
                 )
 
-            edges = []
-            seen_edges = set()
-            for link in links:
-                art_key = f"art:{link['version_id']}"
-                if art_key not in node_ids or link["run_key"] not in node_ids:
-                    continue
-                if link["direction"] == "output":
-                    source, target = link["run_key"], art_key
-                else:
-                    source, target = art_key, link["run_key"]
-                dedupe = (source, target, link["direction"])
-                if dedupe in seen_edges:
-                    continue
-                seen_edges.add(dedupe)
-                edges.append(
-                    {
-                        "source": source,
-                        "target": target,
-                        "direction": link["direction"],
-                        "created_at": link["created_at"],
-                    }
+            edges = [
+                {
+                    "source": source,
+                    "target": target,
+                    "direction": direction,
+                    "created_at": created_at,
+                }
+                for (source, target, direction), created_at in sorted(
+                    edge_meta.items(),
+                    key=lambda item: (
+                        item[1] or "",
+                        item[0][0],
+                        item[0][1],
+                        item[0][2],
+                    ),
                 )
+                if source in node_ids and target in node_ids
+            ]
 
             return {
                 "focus": focus,
