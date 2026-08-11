@@ -9,6 +9,10 @@ A registry contains **collections**. Each collection represents one asset — a 
 
 For example, a registry named `models` might contain one collection per deployable model, and a registry named `datasets` one collection per benchmark. How you split assets across registries and collections is up to you.
 
+![How projects, artifact versions, collections, links, and aliases relate](https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/trackio/registry-overview.png)
+
+A collection has its own version line (`v0`, `v1`, …) that is independent of the source artifacts' version numbers, and its versions may point at different source artifacts in different projects. Aliases name exactly one version per collection.
+
 Registries live next to your other Trackio data. A registry named `models` is stored as a project named `registry-models` (the `registry-` prefix is reserved). Registries are local for now; linking from a run that logs to a Space or a self-hosted server arrives together with the registry server endpoints.
 
 ## Create a registry
