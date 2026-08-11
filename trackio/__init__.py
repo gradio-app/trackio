@@ -32,6 +32,7 @@ from trackio.launch import launch_trackio_dashboard
 from trackio.markdown import Markdown
 from trackio.media import (
     TrackioAudio,
+    TrackioHtml,
     TrackioImage,
     TrackioVideo,
     get_project_media_path,
@@ -89,6 +90,7 @@ __all__ = [
     "Image",
     "Video",
     "Audio",
+    "Html",
     "Table",
     "Trace",
     "Histogram",
@@ -100,6 +102,7 @@ __all__ = [
 Audio = TrackioAudio
 Image = TrackioImage
 Video = TrackioVideo
+Html = TrackioHtml
 
 
 config = {}
@@ -289,7 +292,9 @@ def init(
         space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
             Choice of persistent storage tier.
         dataset_id (`str`, *optional*):
-            Deprecated. Use `bucket_id` instead.
+            Deprecated: persisting trackio data to a Hugging Face Dataset will be
+            removed in a future version of trackio. Use `bucket_id` (a Hugging
+            Face Bucket) instead.
         bucket_id (`str`, *optional*):
             The ID of the Hugging Face Bucket to use for metric persistence. By default,
             when a `space_id` is provided and `bucket_id` is not explicitly set, a

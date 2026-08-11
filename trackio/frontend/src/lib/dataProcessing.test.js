@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { computeMetricPlotData, processRunData } from "./dataProcessing.js";
+import {
+  computeMetricPlotData,
+  downsample,
+  processRunData,
+} from "./dataProcessing.js";
 
 describe("processRunData smoothing", () => {
   test("does not fabricate values for rows that did not log the metric", () => {
@@ -72,5 +76,33 @@ describe("processRunData smoothing", () => {
     );
 
     expect(result.xColumn).toBe("step");
+  });
+
+  test("keeps downsampled bins stable as points are appended", () => {
+    let previousSteps;
+    for (let length = 500; length <= 504; length += 1) {
+      const rows = Array.from({ length }, (_, step) => ({
+        step,
+        value: step,
+        series_key: "run-1",
+      }));
+      const result = downsample(
+        rows,
+        "step",
+        "value",
+        "series_key",
+        null,
+      );
+      const steps = new Set(result.data.map((row) => row.step));
+
+      if (previousSteps) {
+        const changed = [
+          ...[...steps].filter((step) => !previousSteps.has(step)),
+          ...[...previousSteps].filter((step) => !steps.has(step)),
+        ];
+        expect(changed.length).toBeLessThanOrEqual(2);
+      }
+      previousSteps = steps;
+    }
   });
 });

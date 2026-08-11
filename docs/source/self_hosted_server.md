@@ -69,7 +69,7 @@ trackio.finish()
 
 Precedence: **`space_id` / `TRACKIO_SPACE_ID` always wins** over `server_url` / `TRACKIO_SERVER_URL` when both are set (in code or in the environment). Trackio then behaves as if only the Space were configured.
 
-Hugging Face–specific options such as `dataset_id` and `bucket_id` apply only when logging to a Space. When only `server_url` is in effect, configure persistence on the machine where the server runs (for example via `TRACKIO_DIR` on that host). See [Environment Variables](environment_variables.md).
+Hugging Face–specific options such as `dataset_id` (deprecated; use `bucket_id` instead) and `bucket_id` apply only when logging to a Space. When only `server_url` is in effect, configure persistence on the machine where the server runs (for example via `TRACKIO_DIR` on that host). See [Environment Variables](environment_variables.md).
 
 ## Related
 

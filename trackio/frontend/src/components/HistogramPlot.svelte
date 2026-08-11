@@ -1,46 +1,38 @@
 <script>
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
-  import { buildColorSpecKey } from "../lib/dataProcessing.js";
 
   let {
-    data = [],
-    y = "",
-    colorField = "run",
-    colorDisplayField = "",
+    items = [],
     colorMap = {},
     title = "",
-    draggable = false,
-    ondragstart = null,
-    ondragover = null,
-    ondrop = null,
+    metric = "",
   } = $props();
 
   let container = $state(null);
-  let plotContainer = $state(null);
   let fullscreenHost = $state(null);
   let view = $state(null);
   let fullscreen = $state(false);
 
   let legendEntries = $derived.by(() => {
-    if (!colorField || !data || data.length === 0) return [];
     const seen = new Set();
     const entries = [];
-    for (const d of data) {
-      const key = d[colorField];
-      if (key && !seen.has(key)) {
-        seen.add(key);
+    for (const item of items) {
+      if (item.key && !seen.has(item.key)) {
+        seen.add(item.key);
         entries.push({
-          key,
-          name: d[colorDisplayField] || key,
-          color: colorMap[key] || "#999",
+          key: item.key,
+          name: item.label || item.key,
+          color: colorMap[item.key] || "#999",
         });
       }
     }
     return entries;
   });
 
-  let colorSpecKey = $derived(buildColorSpecKey(data, colorField, colorMap));
+  let colorSpecKey = $derived(
+    legendEntries.map((e) => `${e.key}:${e.color}`).join("|"),
+  );
 
   const LEGEND_COLLAPSED_COUNT = 6;
   let legendExpanded = $state(false);
@@ -57,19 +49,23 @@
   );
 
   function getBarData() {
-    const runValues = new Map();
-    for (const d of data) {
-      if (d.data_type === "smoothed") continue;
-      const key = d[colorField];
-      if (key && d[y] != null) {
-        runValues.set(key, {
-          key,
-          label: d[colorDisplayField] || key,
-          value: d[y],
+    const rows = [];
+    for (const item of items) {
+      const bins = item.bins || [];
+      const values = item.values || [];
+      const n = Math.min(Math.max(bins.length - 1, 0), values.length);
+      for (let i = 0; i < n; i++) {
+        rows.push({
+          bin_start: bins[i],
+          bin_end: bins[i + 1],
+          count: values[i],
+          key: item.key,
+          label: item.label || item.key,
+          step: item.step,
         });
       }
     }
-    return Array.from(runValues.values());
+    return rows;
   }
 
   function cssVar(name, fallback) {
@@ -81,13 +77,10 @@
   }
 
   function buildSpec(barData) {
-    const keys = barData.map((d) => d.key);
+    const keys = legendEntries.map((e) => e.key);
     const colorRange = keys.map((k) => colorMap[k] || "#999");
-    const labelByKey = Object.fromEntries(
-      barData.map((d) => [d.key, d.label]),
-    );
 
-    const yTitle = y.includes("/") ? y.split("/").pop() : y;
+    const yTitle = "count";
 
     return {
       $schema: "https://vega.github.io/schema/vega-lite/v5.json",
@@ -97,26 +90,24 @@
       data: { values: barData },
       mark: {
         type: "bar",
-        cornerRadiusTopLeft: 3,
-        cornerRadiusTopRight: 3,
+        opacity: keys.length > 1 ? 0.55 : 0.9,
+        binSpacing: 0,
       },
       encoding: {
         x: {
-          field: "key",
-          type: "nominal",
-          sort: keys,
-          axis: {
-            labelAngle: keys.length > 4 ? -45 : 0,
-            labelLimit: 120,
-            labelExpr: `${JSON.stringify(labelByKey)}[datum.value] || datum.value`,
-          },
-          title: null,
+          field: "bin_start",
+          type: "quantitative",
+          bin: { binned: true },
+          title: "value",
+          axis: { format: "~s" },
         },
+        x2: { field: "bin_end" },
         y: {
-          field: "value",
+          field: "count",
           type: "quantitative",
           title: yTitle,
           scale: { zero: true },
+          stack: null,
         },
         color: {
           field: "key",
@@ -126,7 +117,10 @@
         },
         tooltip: [
           { field: "label", type: "nominal", title: "Run" },
-          { field: "value", type: "quantitative", title: yTitle },
+          { field: "step", type: "quantitative", title: "Step" },
+          { field: "bin_start", type: "quantitative", title: "Bin start" },
+          { field: "bin_end", type: "quantitative", title: "Bin end" },
+          { field: "count", type: "quantitative", title: "Count" },
         ],
       },
       config: {
@@ -143,16 +137,9 @@
     };
   }
 
-  function syncViewSize() {
-    if (!view || !container) return;
-    view.width(container.clientWidth);
-    if (fullscreen) view.height(container.clientHeight);
-    view.resize().run();
-  }
-
   async function render() {
     await tick();
-    if (!container || !data || data.length === 0 || !y) return;
+    if (!container || !items || items.length === 0) return;
 
     const barData = getBarData();
     if (barData.length === 0) return;
@@ -169,7 +156,9 @@
         renderer: "canvas",
       });
       view = result.view;
-      requestAnimationFrame(syncViewSize);
+      requestAnimationFrame(() => {
+        result.view.resize();
+      });
     } catch (e) {
       console.error("Vega render error:", e);
     }
@@ -178,21 +167,20 @@
   function downloadCSV() {
     const barData = getBarData();
     if (barData.length === 0) return;
-    const yHeader = /[,"]/.test(y) ? `"${y.replace(/"/g, '""')}"` : y;
-    const header = "run," + yHeader;
+    const header = "run,step,bin_start,bin_end,count";
     const rows = barData.map((row) => {
       const label =
         typeof row.label === "string" && (row.label.includes(",") || row.label.includes('"'))
           ? `"${row.label.replace(/"/g, '""')}"`
           : row.label;
-      return `${label},${row.value}`;
+      return `${label},${row.step},${row.bin_start},${row.bin_end},${row.count}`;
     });
     const csv = [header, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${(y || "data").replace(/\//g, "_")}.csv`;
+    a.download = `${(metric || title || "histogram").replace(/\//g, "_")}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -205,7 +193,7 @@
       const url = await view.toImageURL("png", 4);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(y || "chart").replace(/\//g, "_")}.png`;
+      a.download = `${(metric || title || "histogram").replace(/\//g, "_")}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -251,7 +239,7 @@
       await requestFullscreenEl(fullscreenHost);
       await tick();
       relocateTooltipElement(fullscreenHost);
-      syncViewSize();
+      view?.resize();
     } catch {
       document.body.style.overflow = "";
       fullscreen = false;
@@ -288,7 +276,7 @@
       relocateTooltipElement(document.body);
     }
     if (active && fullscreen) {
-      tick().then(syncViewSize);
+      tick().then(() => view?.resize());
     }
   }
 
@@ -299,8 +287,7 @@
   }
 
   $effect(() => {
-    data;
-    y;
+    items;
     colorSpecKey;
     title;
     fullscreen;
@@ -311,7 +298,9 @@
   $effect(() => {
     if (!container) return;
     const ro = new ResizeObserver(() => {
-      queueMicrotask(syncViewSize);
+      queueMicrotask(() => {
+        view?.resize();
+      });
     });
     ro.observe(container);
     return () => ro.disconnect();
@@ -331,31 +320,21 @@
       document.body.style.overflow = "";
     };
   });
-
-  function handleDragStart(e) {
-    if (ondragstart) ondragstart(e);
-  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="plot-container bar-plot"
+  class="plot-container histogram-plot"
   class:hidden-plot={fullscreen}
-  bind:this={plotContainer}
-  draggable={draggable ? "true" : undefined}
-  ondragstart={draggable ? handleDragStart : undefined}
-  ondragover={draggable ? ondragover : undefined}
-  ondrop={draggable ? ondrop : undefined}
 >
   <div class="plot-toolbar">
     <button
       type="button"
       class="toolbar-btn"
       onclick={downloadCSV}
-      title="Download this plot's data as a CSV file"
-      aria-label="Download this plot's data as a CSV file"
+      title="Download this histogram's data as a CSV file"
+      aria-label="Download this histogram's data as a CSV file"
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
@@ -392,19 +371,6 @@
       </svg>
     </button>
   </div>
-  {#if draggable}
-    <div
-      class="drag-handle"
-      title="Drag to reorder this plot in the list"
-      aria-label="Drag to reorder this plot in the list"
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-        <circle cx="9" cy="5" r="2"/><circle cx="15" cy="5" r="2"/>
-        <circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/>
-        <circle cx="9" cy="19" r="2"/><circle cx="15" cy="19" r="2"/>
-      </svg>
-    </div>
-  {/if}
   {#if !fullscreen}
     {#if title}
       <div class="plot-title">{title}</div>
@@ -443,8 +409,8 @@
         type="button"
         class="toolbar-btn"
         onclick={downloadCSV}
-        title="Download this plot's data as a CSV file"
-        aria-label="Download this plot's data as a CSV file"
+        title="Download this histogram's data as a CSV file"
+        aria-label="Download this histogram's data as a CSV file"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
@@ -524,12 +490,6 @@
     overflow: hidden;
     position: relative;
   }
-  .plot-container[draggable="true"] {
-    cursor: grab;
-  }
-  .plot-container[draggable="true"]:active {
-    cursor: grabbing;
-  }
   .hidden-plot {
     visibility: hidden;
     height: 0;
@@ -538,21 +498,6 @@
     border: none;
     overflow: hidden;
     pointer-events: none;
-  }
-  .drag-handle {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    color: var(--body-text-color-subdued, #9ca3af);
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 5;
-  }
-  .plot-container:hover .drag-handle {
-    opacity: 0.5;
-  }
-  .drag-handle:hover {
-    opacity: 1 !important;
   }
   .plot-toolbar {
     position: absolute;

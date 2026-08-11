@@ -84,6 +84,10 @@
 
 [[autodoc]] Audio
 
+## Html
+
+[[autodoc]] Html
+
 ## Table
 
 [[autodoc]] Table

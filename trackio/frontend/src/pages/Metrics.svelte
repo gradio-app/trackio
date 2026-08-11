@@ -3,6 +3,7 @@
   import { getQueryParam } from "../lib/router.js";
   import LinePlot from "../components/LinePlot.svelte";
   import BarPlot from "../components/BarPlot.svelte";
+  import HistogramPlot from "../components/HistogramPlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getLogsBatch } from "../lib/api.js";
@@ -26,6 +27,7 @@
     selectedRuns = [],
     allRuns = [],
     smoothing = 10,
+    panelsPerRow = 4,
     xAxis = "step",
     logScaleX = false,
     logScaleY = false,
@@ -41,6 +43,8 @@
   let masterData = $state([]);
   let xColumn = $state("step");
   let metrics = $state([]);
+  let histogramMetrics = $state([]);
+  let histogramItems = $state({});
   let singlePointMetrics = $state(new Set());
   let xLim = $state(null);
   let hasLoaded = $state(false);
@@ -62,8 +66,18 @@
 
   let groupNames = $derived(Object.keys(metricGroups));
 
+  let filteredHistogramMetrics = $derived(
+    metricFilter
+      ? filterMetricsByRegex(histogramMetrics, metricFilter)
+      : histogramMetrics,
+  );
+
   function getPlotResult(metric) {
     return computeMetricPlotData(masterData, xColumn, metric, xLim);
+  }
+
+  function getGroupCols(items) {
+    return Math.max(1, Math.min(panelsPerRow, items.length || 1));
   }
 
   function getOrderedMetrics(key, items) {
@@ -104,10 +118,46 @@
     dragState = { group: null, index: -1 };
   }
 
+  function extractHistograms(originals) {
+    const latest = new Map();
+    for (const r of originals) {
+      for (const [key, value] of Object.entries(r)) {
+        if (
+          !value ||
+          typeof value !== "object" ||
+          value._type !== "trackio.histogram"
+        )
+          continue;
+        if (!Array.isArray(value.bins) || value.bins.length < 2) continue;
+        const mapKey = `${key}\0${r.series_key}`;
+        const prev = latest.get(mapKey);
+        if (!prev || (r.step ?? 0) >= prev.step) {
+          latest.set(mapKey, {
+            metric: key,
+            key: r.series_key,
+            label: r.run,
+            step: r.step ?? 0,
+            bins: value.bins,
+            values: value.values ?? [],
+          });
+        }
+      }
+    }
+    const byMetric = {};
+    for (const item of latest.values()) {
+      if (!byMetric[item.metric]) byMetric[item.metric] = [];
+      byMetric[item.metric].push(item);
+    }
+    histogramItems = byMetric;
+    histogramMetrics = Object.keys(byMetric).sort();
+  }
+
   function processFromCache() {
     if (!project || selectedRuns.length === 0) {
       masterData = [];
       metrics = [];
+      histogramMetrics = [];
+      histogramItems = {};
       return;
     }
 
@@ -126,6 +176,7 @@
     const originals = allRows.filter(
       (r) => r.data_type === "original" || !r.data_type,
     );
+    extractHistograms(originals);
     const allCols = getMetricColumns(originals).filter(
       (c) => c !== "run" && c !== "data_type" && c !== "x_axis",
     );
@@ -169,6 +220,8 @@
     if (!project || selectedRuns.length === 0) {
       masterData = [];
       metrics = [];
+      histogramMetrics = [];
+      histogramItems = {};
       hasLoaded = true;
       return;
     }
@@ -302,6 +355,7 @@
       {@const group = metricGroups[groupName]}
       {@const directKey = `${groupName}:direct`}
       {@const orderedDirect = getOrderedMetrics(directKey, group.direct)}
+      {@const directCols = getGroupCols(orderedDirect)}
       {@const directCount = group.direct.length}
       {@const subCount = Object.values(group.subgroups).reduce((a, b) => a + b.length, 0)}
       {@const totalCount = directCount + subCount}
@@ -312,7 +366,7 @@
         hidden={!showHeaders}
       >
         {#if orderedDirect.length > 0}
-          <div class="plot-grid">
+          <div class="plot-grid" style="--cols: {directCols}">
             {#each orderedDirect as metric, i}
               {@const plotResult = getPlotResult(metric)}
               {@const plotData = plotResult.data}
@@ -361,12 +415,13 @@
           {#each Object.entries(group.subgroups) as [subName, subMetrics]}
             {@const subKey = `${groupName}:${subName}`}
             {@const orderedSub = getOrderedMetrics(subKey, subMetrics)}
+            {@const subCols = getGroupCols(orderedSub)}
             <Accordion
               label="{subName} ({subMetrics.length})"
               open={true}
               hidden={!showHeaders}
             >
-              <div class="plot-grid">
+              <div class="plot-grid" style="--cols: {subCols}">
                 {#each orderedSub as metric, i}
                   {@const plotResult = getPlotResult(metric)}
                   {@const plotData = plotResult.data}
@@ -414,6 +469,25 @@
         </div>
       </Accordion>
     {/each}
+
+    {#if filteredHistogramMetrics.length > 0}
+      <Accordion
+        label="histograms ({filteredHistogramMetrics.length})"
+        open={true}
+        hidden={!showHeaders}
+      >
+        <div class="plot-grid">
+          {#each filteredHistogramMetrics as metric}
+            <HistogramPlot
+              items={histogramItems[metric]}
+              title={metric}
+              {metric}
+              {colorMap}
+            />
+          {/each}
+        </div>
+      </Accordion>
+    {/if}
   {/if}
 </div>
 
@@ -425,9 +499,13 @@
     min-height: 0;
   }
   .plot-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
     gap: 16px;
+  }
+  .plot-grid :global(.plot-container) {
+    min-width: 0;
+    width: 100%;
   }
   .subgroup-list {
     margin-top: 16px;
