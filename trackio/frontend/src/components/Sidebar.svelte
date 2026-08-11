@@ -29,6 +29,7 @@
     metricFilter = $bindable(""),
     realtimeEnabled = $bindable(true),
     showHeaders = $bindable(true),
+    showComparer = $bindable(false),
     filterText = $bindable(""),
     runConfigs = {},
     metricColumns = [],
@@ -477,6 +478,12 @@
               label="Show section headers"
               bind:checked={showHeaders}
             />
+            {#if currentPage === "metrics"}
+              <GradioCheckbox
+                label="Show run comparer"
+                bind:checked={showComparer}
+              />
+            {/if}
           </div>
 
           <div class="section">

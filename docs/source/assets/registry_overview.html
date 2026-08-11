@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Artifacts and the registry</title>
+<style>
+  :root {
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #cbd5e1;
+    --line-soft: #e2e8f0;
+    --accent: #ea580c;
+    --accent-soft: #fff1e7;
+    --chip: #f1f5f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8eef7;
+      --muted: #94a3b8;
+      --line: #475569;
+      --line-soft: #334155;
+      --accent: #fb923c;
+      --accent-soft: #3b2718;
+      --chip: #1e293b;
+    }
+  }
+  html, body { margin: 0; padding: 0; background: transparent; }
+  body { display: inline-block; }
+  svg { display: block; font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+  .card { fill: none; stroke: var(--line); stroke-width: 1.25; }
+  .card-accent { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .divider { stroke: var(--line-soft); stroke-width: 1; }
+  .eyebrow { fill: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; }
+  .label { fill: var(--muted); font-size: 12px; }
+  .name { fill: var(--ink); font-size: 15px; font-weight: 640; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .sub { fill: var(--muted); font-size: 11.5px; }
+  .mono { fill: var(--ink); font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .mono-muted { fill: var(--muted); font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .chip-box { fill: var(--chip); stroke: var(--line-soft); stroke-width: 1; }
+  .chip-box-on { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.25; }
+  .chip-text { fill: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .chip-text-on { fill: var(--accent); font-size: 12px; font-weight: 650; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .badge-box { fill: none; stroke: var(--line); stroke-width: 1; }
+  .badge-text { fill: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; }
+  .pill-box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
+  .pill-text { fill: var(--accent); font-size: 11.5px; font-weight: 600; }
+  .link-path { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .arrowhead { fill: var(--accent); }
+  .legend { fill: var(--muted); font-size: 12.5px; }
+  .legend-strong { fill: var(--ink); font-size: 12.5px; font-weight: 600; }
+</style>
+</head>
+<body>
+<svg id="diagram" width="1120" height="490" viewBox="0 0 1120 490" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="arrowhead" d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+  </defs>
+
+  <text class="eyebrow" x="44" y="30">Projects — where artifacts are produced and versioned</text>
+  <text class="eyebrow" x="604" y="30">Registry — a catalog across projects</text>
+
+  <!-- project card: my-experiments -->
+  <rect class="card" x="40" y="46" width="440" height="140" rx="12" />
+  <text x="64" y="78"><tspan class="label">project</tspan><tspan class="name" dx="10">my-experiments</tspan></text>
+  <line class="divider" x1="56" y1="96" x2="464" y2="96" />
+  <text x="64" y="124"><tspan class="mono-muted">artifact</tspan><tspan class="mono" dx="8">resnet</tspan></text>
+  <rect class="badge-box" x="196" y="108" width="52" height="20" rx="6" />
+  <text class="badge-text" x="222" y="122" text-anchor="middle">model</text>
+  <rect class="chip-box" x="216" y="142" width="40" height="28" rx="8" />
+  <text class="chip-text" x="236" y="160" text-anchor="middle">v0</text>
+  <rect class="chip-box" x="266" y="142" width="40" height="28" rx="8" />
+  <text class="chip-text" x="286" y="160" text-anchor="middle">v1</text>
+  <rect class="chip-box" x="316" y="142" width="40" height="28" rx="8" />
+  <text class="chip-text" x="336" y="160" text-anchor="middle">v2</text>
+  <rect class="chip-box-on" x="366" y="142" width="40" height="28" rx="8" />
+  <text class="chip-text-on" x="386" y="160" text-anchor="middle">v3</text>
+  <rect class="chip-box-on" x="416" y="142" width="40" height="28" rx="8" />
+  <text class="chip-text-on" x="436" y="160" text-anchor="middle">v4</text>
+
+  <!-- project card: other-team -->
+  <rect class="card" x="40" y="210" width="440" height="140" rx="12" />
+  <text x="64" y="242"><tspan class="label">project</tspan><tspan class="name" dx="10">other-team</tspan></text>
+  <line class="divider" x1="56" y1="260" x2="464" y2="260" />
+  <text x="64" y="288"><tspan class="mono-muted">artifact</tspan><tspan class="mono" dx="8">unet</tspan></text>
+  <rect class="badge-box" x="180" y="272" width="52" height="20" rx="6" />
+  <text class="badge-text" x="206" y="286" text-anchor="middle">model</text>
+  <rect class="chip-box-on" x="416" y="306" width="40" height="28" rx="8" />
+  <text class="chip-text-on" x="436" y="324" text-anchor="middle">v0</text>
+
+  <!-- registry card -->
+  <rect class="card-accent" x="600" y="46" width="480" height="304" rx="12" />
+  <text x="624" y="78"><tspan class="label">registry</tspan><tspan class="name" dx="10">models</tspan></text>
+  <text class="sub" x="624" y="97">stored as the project registry-models</text>
+  <line class="divider" x1="616" y1="114" x2="1064" y2="114" />
+  <text x="624" y="140"><tspan class="label">collection</tspan><tspan class="name" dx="10">my-model</tspan></text>
+  <rect class="badge-box" x="772" y="124" width="52" height="20" rx="6" />
+  <text class="badge-text" x="798" y="138" text-anchor="middle">model</text>
+
+  <rect class="chip-box-on" x="624" y="166" width="40" height="28" rx="8" />
+  <text class="chip-text-on" x="644" y="184" text-anchor="middle">v0</text>
+  <text class="mono" x="680" y="185">my-experiments/resnet:v3</text>
+
+  <rect class="chip-box-on" x="624" y="214" width="40" height="28" rx="8" />
+  <text class="chip-text-on" x="644" y="232" text-anchor="middle">v1</text>
+  <text class="mono" x="680" y="233">my-experiments/resnet:v4</text>
+  <rect class="pill-box" x="965" y="217" width="91" height="22" rx="11" />
+  <text class="pill-text" x="1010" y="232" text-anchor="middle">production</text>
+
+  <rect class="chip-box-on" x="624" y="262" width="40" height="28" rx="8" />
+  <text class="chip-text-on" x="644" y="280" text-anchor="middle">v2</text>
+  <text class="mono" x="680" y="281">other-team/unet:v0</text>
+  <rect class="pill-box" x="913" y="265" width="71" height="22" rx="11" />
+  <text class="pill-text" x="948" y="280" text-anchor="middle">staging</text>
+  <rect class="pill-box" x="992" y="265" width="64" height="22" rx="11" />
+  <text class="pill-text" x="1024" y="280" text-anchor="middle">latest</text>
+
+  <text class="sub" x="624" y="326">v0, v1, v2 … are the collection's own version line, independent of the sources'</text>
+
+  <!-- links: every collection version points back at one source version -->
+  <path class="link-path" d="M 596 180 C 552 180, 532 140, 486 140" marker-end="url(#arrow)" />
+  <path class="link-path" d="M 596 228 C 552 228, 532 158, 486 158" marker-end="url(#arrow)" />
+  <path class="link-path" d="M 596 276 C 552 276, 532 320, 486 320" marker-end="url(#arrow)" />
+
+  <!-- legend -->
+  <rect class="chip-box-on" x="44" y="380" width="40" height="24" rx="8" />
+  <text class="chip-text-on" x="64" y="396" text-anchor="middle">v4</text>
+  <text class="legend" x="100" y="397">a version published into the registry — <tspan class="legend-strong">its files never move</tspan></text>
+
+  <path class="link-path" d="M 84 428 L 50 428" marker-end="url(#arrow)" />
+  <text class="legend" x="100" y="432">a <tspan class="legend-strong">link</tspan>: the collection version points at that source version, nothing is copied</text>
+
+  <rect class="pill-box" x="44" y="450" width="40" height="22" rx="11" />
+  <text class="legend" x="100" y="466">an <tspan class="legend-strong">alias</tspan>: names exactly one version per collection; latest follows the newest link</text>
+</svg>
+</body>
+</html>

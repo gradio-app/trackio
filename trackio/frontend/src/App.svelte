@@ -83,6 +83,7 @@
   let metricFilter = $state("");
   let realtimeEnabled = $state(true);
   let showHeaders = $state(true);
+  let showComparer = $state(false);
   let filterText = $state("");
   let metricColumns = $state([]);
   let requestedUrlXAxis = $state(null);
@@ -603,6 +604,7 @@
       bind:metricFilter
       bind:realtimeEnabled
       bind:showHeaders
+      bind:showComparer
       bind:filterText
       {metricColumns}
       {availableSystemDevices}
@@ -643,6 +645,7 @@
           project={selectedProject}
           selectedRuns={selectedRunRecords}
           allRuns={runs}
+          {runConfigs}
           {smoothing}
           {panelsPerRow}
           {xAxis}
@@ -650,6 +653,7 @@
           {logScaleY}
           {metricFilter}
           {showHeaders}
+          {showComparer}
           {appBootstrapReady}
           {plotOrder}
           {realtimeEnabled}

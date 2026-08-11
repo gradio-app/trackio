@@ -26,6 +26,7 @@ from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioHtml, TrackioMedia, get_project_media_path
 from trackio.pending_uploads import classify_pending_uploads, replay_pending_uploads
+from trackio.registry_storage import parse_collection_target
 from trackio.remote_client import RemoteClient, is_transient_remote_error
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -1462,6 +1463,88 @@ class Run:
             )
 
         return art
+
+    def link_artifact(
+        self,
+        artifact: Artifact,
+        target_path: str,
+        aliases: list[str] | None = None,
+        bucket_id: str | None = None,
+    ) -> Artifact:
+        """Link an artifact version into a registry collection.
+
+        A link is a pointer to the source version: no files are copied. The
+        link gets the next version number in the collection (`v0`, `v1`,
+        ...), independent of the source artifact's own version numbers.
+        Linking a version that is already in the collection does not create
+        a new one: you get the existing version back, and the `aliases` you
+        pass still move.
+
+        A local registry records the link alongside the run's data, so it is
+        only available to runs on this machine. Pass `bucket_id` to publish
+        into a bucket-backed registry instead — that is also how a run that
+        logs to a Space or a self-hosted server publishes, since the bucket is
+        reachable from both sides.
+
+        Args:
+            artifact (`Artifact`):
+                The artifact version to link. Must be an `Artifact` that has
+                been logged or fetched. To link a specific existing version,
+                fetch it first with `use_artifact("my-model:v3")` and link
+                the result. An artifact that was never logged is logged to
+                this run's project first.
+            target_path (`str`):
+                The collection to link into, as
+                `"registry-<registry>/<collection>"`, e.g.
+                `"registry-models/my-model"`. The registry must already
+                exist (see `trackio.Api().create_registry`). The collection
+                is created on first link and adopts the artifact's type;
+                later links must match it.
+            aliases (`list[str]`, *optional*):
+                Aliases to place on the linked version, e.g. `["staging"]`.
+                An alias points at one version per collection, so assigning
+                an alias that another version holds moves it. `latest` is
+                managed automatically and always follows the newest linked
+                version; passing it here is a no-op.
+            bucket_id (`str`, *optional*):
+                Hugging Face bucket holding the registry, e.g.
+                `"my-org/models-registry"`. Required to link from a run that
+                logs to a Space or a self-hosted server. Omit for a local
+                registry; defaults to `TRACKIO_REGISTRY_BUCKET_ID` when that is
+                set.
+
+        Returns:
+            The linked artifact at its registry location. Its `name` is the
+            collection, its `project` is the registry's project, and its
+            `version` and `aliases` are the collection's. Its content
+            (`manifest`, `manifest_digest`, `size`, `metadata`) is the
+            source version's, and the `source_project`, `source_name`,
+            `source_version`, and `source_qualified_name` properties point
+            back at it. Calling `download()` on it is not supported yet;
+            download the source version instead.
+        """
+        registry, collection = parse_collection_target(target_path)
+        if not isinstance(artifact, Artifact):
+            raise TypeError(
+                f"link_artifact expects an Artifact instance, got "
+                f"{type(artifact).__name__}. Log one with log_artifact, or "
+                "fetch a specific version with use_artifact('name:v3') and "
+                "link the result."
+            )
+        bucket_id = utils.resolve_registry_bucket_id(bucket_id)
+        if not self._is_local and bucket_id is None:
+            raise NotImplementedError(
+                "Linking from a run that logs to a Space or a self-hosted "
+                "server requires a bucket-backed registry: pass bucket_id= "
+                "(or set TRACKIO_REGISTRY_BUCKET_ID). A local registry lives "
+                "on this machine only, so the link would resolve nowhere else."
+            )
+        if not artifact._logged:
+            artifact = self.log_artifact(artifact)
+
+        return artifact._link_version(
+            registry, collection, aliases, self.name, self.id, bucket_id=bucket_id
+        )
 
     def alert(
         self,

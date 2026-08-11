@@ -13,6 +13,8 @@
     title: Track
   - local: artifacts
     title: Artifacts
+  - local: registry
+    title: Registry
   - local: launch
     title: Launch the Dashboard
   - local: self_hosted_server
