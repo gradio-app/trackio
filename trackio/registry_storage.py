@@ -80,11 +80,36 @@ def parse_collection_target(target_path: str) -> tuple[str, str]:
 
 
 class RegistryStorage:
+    REGISTRY_CREATED_AT_KEY = "registry_created_at"
+    REGISTRY_DESCRIPTION_KEY = "registry_description"
+
     @staticmethod
     def registry_exists(registry: str) -> bool:
-        return SQLiteStorage.get_project_db_path(
-            registry_project_name(registry)
-        ).exists()
+        return RegistryStorage._registry_created_at(registry) is not None
+
+    @staticmethod
+    def _registry_created_at(registry: str) -> str | None:
+        """Creation timestamp of the registry, or None when it has not been
+        created. `create_registry` writes this marker in the same transaction
+        as the ``create`` event, so it — not the mere existence of the database
+        file — is what makes a registry exist: a database left behind by an
+        interrupted creation carries no marker and can be created again."""
+        project = registry_project_name(registry)
+        if not SQLiteStorage.get_project_db_path(project).exists():
+            return None
+        return SQLiteStorage.get_project_metadata(
+            project, RegistryStorage.REGISTRY_CREATED_AT_KEY
+        )
+
+    @staticmethod
+    def _registry_marker_cursor(conn: sqlite3.Connection) -> str | None:
+        """`_registry_created_at` read through an open connection, so the
+        existence check can share a transaction with the writes that follow."""
+        row = conn.execute(
+            "SELECT value FROM project_metadata WHERE key = ?",
+            (RegistryStorage.REGISTRY_CREATED_AT_KEY,),
+        ).fetchone()
+        return None if row is None else row[0]
 
     @staticmethod
     def create_registry(registry: str, description: str | None = None) -> dict:
@@ -95,21 +120,32 @@ class RegistryStorage:
         Raises ValueError when the registry already exists. Registries are
         never created implicitly: linking or creating a collection in a
         registry that does not exist raises.
+
+        The existence check, the registry tables, the creation marker and
+        description, and the ``create`` event all happen under one process
+        lock in a single transaction, with the check repeated after the lock
+        is held. Concurrent creators therefore cannot both succeed, and an
+        interrupted creation commits nothing for a retry to inherit.
         """
         project = registry_project_name(registry)
-        if RegistryStorage.registry_exists(registry):
-            raise ValueError(f"Registry {registry!r} already exists.")
-
-        db_path = RegistryStorage.init_registry_db(registry)
+        db_path = SQLiteStorage.init_db(project)
         now = datetime.now(timezone.utc).isoformat()
-
-        SQLiteStorage.set_project_metadata(project, "registry_created_at", now)
-        if description is not None:
-            SQLiteStorage.set_project_metadata(
-                project, "registry_description", description
-            )
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
+                if RegistryStorage._registry_marker_cursor(conn) is not None:
+                    raise ValueError(f"Registry {registry!r} already exists.")
+                RegistryStorage._create_registry_tables_cursor(conn)
+                conn.execute(
+                    """INSERT OR REPLACE INTO project_metadata (key, value)
+                    VALUES (?, ?)""",
+                    (RegistryStorage.REGISTRY_CREATED_AT_KEY, now),
+                )
+                if description is not None:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO project_metadata (key, value)
+                        VALUES (?, ?)""",
+                        (RegistryStorage.REGISTRY_DESCRIPTION_KEY, description),
+                    )
                 RegistryStorage._append_event_cursor(
                     conn, "create", {"registry": registry}, now
                 )
@@ -122,93 +158,100 @@ class RegistryStorage:
         creation), and `created_at`. Both are read from `project_metadata`.
         Returns None when the registry does not exist.
         """
-        project = registry_project_name(registry)
-        if not SQLiteStorage.get_project_db_path(project).exists():
+        created_at = RegistryStorage._registry_created_at(registry)
+        if created_at is None:
             return None
         return {
             "name": registry,
             "description": SQLiteStorage.get_project_metadata(
-                project, "registry_description"
+                registry_project_name(registry),
+                RegistryStorage.REGISTRY_DESCRIPTION_KEY,
             ),
-            "created_at": SQLiteStorage.get_project_metadata(
-                project, "registry_created_at"
-            ),
+            "created_at": created_at,
         }
 
     @staticmethod
     def _require_registry(registry: str) -> Path:
         """Path of the registry's database, raising when the registry has not
-        been created yet."""
-        db_path = SQLiteStorage.get_project_db_path(registry_project_name(registry))
-        if not db_path.exists():
+        been created yet — a database left behind by an interrupted creation
+        does not count as one."""
+        if RegistryStorage._registry_created_at(registry) is None:
             raise ValueError(
                 f"Registry {registry!r} does not exist. Create it first with "
                 f"trackio.Api().create_registry({registry!r})."
             )
-        return db_path
+        return SQLiteStorage.get_project_db_path(registry_project_name(registry))
 
     @staticmethod
     def init_registry_db(registry: str) -> Path:
         """Initialize the registry's database and return its path.
 
         The database is created with the standard project schema first, then
-        the registry tables are added.
+        the registry tables are added. This leaves the registry unmarked;
+        `create_registry` is what makes it exist.
         """
         project = registry_project_name(registry)
         db_path = SQLiteStorage.init_db(project)
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path, row_factory=None) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS collections (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL UNIQUE,
-                        type TEXT NOT NULL,
-                        description TEXT,
-                        next_version INTEGER NOT NULL DEFAULT 0,
-                        created_at TEXT NOT NULL
-                    )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS collection_links (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        collection_id INTEGER NOT NULL REFERENCES collections(id),
-                        collection_version INTEGER NOT NULL,
-                        source_project TEXT NOT NULL,
-                        source_artifact TEXT NOT NULL,
-                        source_version INTEGER NOT NULL,
-                        created_at TEXT NOT NULL,
-                        UNIQUE(collection_id, source_project, source_artifact,
-                               source_version),
-                        UNIQUE(collection_id, collection_version)
-                    )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS collection_aliases (
-                        collection_id INTEGER NOT NULL REFERENCES collections(id),
-                        alias TEXT NOT NULL,
-                        link_id INTEGER NOT NULL REFERENCES collection_links(id),
-                        PRIMARY KEY (collection_id, alias)
-                    )
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS registry_events (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        ts TEXT NOT NULL,
-                        kind TEXT NOT NULL,
-                        payload TEXT NOT NULL
-                    )
-                    """
-                )
+                RegistryStorage._create_registry_tables_cursor(conn)
                 conn.commit()
         return db_path
+
+    @staticmethod
+    def _create_registry_tables_cursor(conn: sqlite3.Connection) -> None:
+        """Add the four registry tables to a database that already has the
+        standard project schema. Idempotent, and callable from within a caller's
+        lock and transaction."""
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS collections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                type TEXT NOT NULL,
+                description TEXT,
+                next_version INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS collection_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                collection_id INTEGER NOT NULL REFERENCES collections(id),
+                collection_version INTEGER NOT NULL,
+                source_project TEXT NOT NULL,
+                source_artifact TEXT NOT NULL,
+                source_version INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(collection_id, source_project, source_artifact,
+                       source_version),
+                UNIQUE(collection_id, collection_version)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS collection_aliases (
+                collection_id INTEGER NOT NULL REFERENCES collections(id),
+                alias TEXT NOT NULL,
+                link_id INTEGER NOT NULL REFERENCES collection_links(id),
+                PRIMARY KEY (collection_id, alias)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS registry_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                payload TEXT NOT NULL
+            )
+            """
+        )
 
     @staticmethod
     def _append_event_cursor(
@@ -301,6 +344,45 @@ class RegistryStorage:
                 link_id = excluded.link_id""",
             (collection_id, alias, link_id),
         )
+
+    @staticmethod
+    def _latest_version_cursor(
+        conn: sqlite3.Connection,
+        collection_id: int,
+    ) -> int | None:
+        """Version the collection's ``latest`` alias currently points at, or
+        None when the collection has no links."""
+        row = conn.execute(
+            """SELECT cl.collection_version
+            FROM collection_aliases ca
+            JOIN collection_links cl ON cl.id = ca.link_id
+            WHERE ca.collection_id = ? AND ca.alias = 'latest'""",
+            (collection_id,),
+        ).fetchone()
+        return None if row is None else int(row["collection_version"])
+
+    @staticmethod
+    def _reassign_latest_cursor(
+        conn: sqlite3.Connection,
+        collection_id: int,
+    ) -> int | None:
+        """Move ``latest`` onto the collection's highest remaining version after
+        its holder was unlinked, and return that ``collection_version`` (None
+        when no link is left). Without this the collection would sit with no
+        ``latest`` at all until the next link, contradicting the invariant that
+        ``latest`` always follows the newest linked version."""
+        row = conn.execute(
+            """SELECT id, collection_version FROM collection_links
+            WHERE collection_id = ?
+            ORDER BY collection_version DESC LIMIT 1""",
+            (collection_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        RegistryStorage._reassign_collection_alias_cursor(
+            conn, collection_id, "latest", int(row["id"])
+        )
+        return int(row["collection_version"])
 
     @staticmethod
     def _promote_alias_cursor(
@@ -551,13 +633,15 @@ class RegistryStorage:
         removed.
 
         Aliases pointing at the link are removed with it and recorded in
-        the ``unlink`` event. The version number is never reused. Raises
+        the ``unlink`` event. Removing the version that holds ``latest`` moves
+        that alias to the highest remaining version in the same transaction;
+        ``latest_version`` (in the event and the returned record) is the version
+        ``latest`` points at afterwards, None when the collection is left
+        empty. The version number is never reused. Raises
         ValueError when the registry, collection, or version does not
         exist."""
         project = registry_project_name(registry)
-        db_path = SQLiteStorage.get_project_db_path(project)
-        if not db_path.exists():
-            raise ValueError(f"Registry {registry!r} does not exist.")
+        db_path = RegistryStorage._require_registry(registry)
         now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
@@ -574,6 +658,15 @@ class RegistryStorage:
                     "DELETE FROM collection_aliases WHERE link_id = ?", (link_id,)
                 )
                 conn.execute("DELETE FROM collection_links WHERE id = ?", (link_id,))
+                latest_version = (
+                    RegistryStorage._reassign_latest_cursor(
+                        conn, resolved["collection_id"]
+                    )
+                    if "latest" in removed_aliases
+                    else RegistryStorage._latest_version_cursor(
+                        conn, resolved["collection_id"]
+                    )
+                )
                 RegistryStorage._append_event_cursor(
                     conn,
                     "unlink",
@@ -585,6 +678,7 @@ class RegistryStorage:
                         "source_artifact": resolved["source_artifact"],
                         "source_version": resolved["source_version"],
                         "removed_aliases": removed_aliases,
+                        "latest_version": latest_version,
                     },
                     now,
                 )
@@ -597,6 +691,7 @@ class RegistryStorage:
                     "source_artifact": resolved["source_artifact"],
                     "source_version": resolved["source_version"],
                     "removed_aliases": removed_aliases,
+                    "latest_version": latest_version,
                 }
 
     @staticmethod

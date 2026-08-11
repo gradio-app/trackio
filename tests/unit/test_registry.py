@@ -157,6 +157,25 @@ def test_registry_must_be_created_explicitly(temp_dir):
     assert "collection" not in events[0]["payload"]
 
 
+def test_interrupted_creation_leaves_no_registry(temp_dir):
+    """A database created but never marked — what an interrupted
+    `create_registry` leaves behind — does not count as a registry, and
+    creating it again completes normally."""
+    RegistryStorage.init_registry_db("models")
+    assert RegistryStorage.registry_exists("models") is False
+    assert RegistryStorage.get_registry("models") is None
+    with pytest.raises(ValueError, match="does not exist"):
+        RegistryStorage.create_collection("models", "churn", "model")
+
+    created = RegistryStorage.create_registry("models", description="Our models")
+    assert created["name"] == "models"
+    assert RegistryStorage.registry_exists("models")
+    assert RegistryStorage.get_registry("models")["description"] == "Our models"
+    assert [event["kind"] for event in RegistryStorage.get_events("models")] == [
+        "create"
+    ]
+
+
 def test_api_create_and_fetch_registry(temp_dir):
     registry = trackio.Api().create_registry("models")
     assert registry.name == "models"
@@ -233,6 +252,43 @@ def test_unlink_removes_aliases_and_never_reuses_version(temp_dir):
     assert replacement["collection_version"] == 2
 
 
+def _aliases_by_version(registry="models", collection="churn"):
+    links = RegistryStorage.get_collection(registry, collection)["links"]
+    return {link["collection_version"]: link["aliases"] for link in links}
+
+
+def test_unlink_moves_latest_to_highest_remaining_version(temp_dir):
+    _link(source_version=0)
+    _link(source_version=1)
+    removed = RegistryStorage.unlink("models", "churn", 1)
+    assert removed["removed_aliases"] == ["latest"]
+    assert removed["latest_version"] == 0
+    assert _aliases_by_version()[0] == ["latest"]
+
+    _link(source_artifact="vgg", source_version=5)
+    aliases = _aliases_by_version()
+    assert aliases[2] == ["latest"]
+    assert aliases[0] == []
+
+
+def test_unlink_of_non_latest_version_leaves_latest_alone(temp_dir):
+    _link(source_version=0)
+    _link(source_version=1)
+    removed = RegistryStorage.unlink("models", "churn", 0)
+    assert removed["removed_aliases"] == []
+    assert removed["latest_version"] == 1
+    assert _aliases_by_version()[1] == ["latest"]
+
+
+def test_unlink_of_last_version_leaves_no_latest(temp_dir):
+    _link(source_version=0, aliases=["production"])
+    removed = RegistryStorage.unlink("models", "churn", 0)
+    assert removed["removed_aliases"] == ["latest", "production"]
+    assert removed["latest_version"] is None
+    collection = RegistryStorage.get_collection("models", "churn")
+    assert collection["links"] == []
+
+
 def test_relink_after_unlink_gets_new_version(temp_dir):
     _link(source_version=0)
     RegistryStorage.unlink("models", "churn", 0)
@@ -276,6 +332,7 @@ def test_events_written_for_every_mutation(temp_dir):
     assert promote_rollback["payload"]["previous_version"] == 1
     assert unlink["payload"]["collection_version"] == 1
     assert unlink["payload"]["removed_aliases"] == ["latest"]
+    assert unlink["payload"]["latest_version"] == 0
     assert all(event["ts"] for event in events)
 
 

@@ -133,7 +133,7 @@ linked = run.link_artifact(artifact, "registry-models/my-model")
 linked.unlink()
 ```
 
-The source artifact and its files are untouched — only the collection membership is removed. Any aliases on the link go with it, and the collection version number is never reused, so `my-model:v0` can't later mean something else. Unlinking is local for now.
+The source artifact and its files are untouched — only the collection membership is removed. Any aliases on the link go with it, and the collection version number is never reused, so `my-model:v0` can't later mean something else. If the version you remove held `latest`, that alias moves to the highest remaining version, so `latest` keeps pointing at the newest version in the collection. Unlinking is local for now.
 
 ## Inspect a registry
 
