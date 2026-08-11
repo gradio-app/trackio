@@ -6,6 +6,7 @@
   import HistogramPlot from "../components/HistogramPlot.svelte";
   import Accordion from "../components/Accordion.svelte";
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
+  import RunComparer from "../components/RunComparer.svelte";
   import { getLogsBatch } from "../lib/api.js";
   import {
     getMetricsPollIntervalMs,
@@ -26,6 +27,7 @@
     project = null,
     selectedRuns = [],
     allRuns = [],
+    runConfigs = {},
     smoothing = 10,
     panelsPerRow = 4,
     xAxis = "step",
@@ -33,6 +35,7 @@
     logScaleY = false,
     metricFilter = "",
     showHeaders = true,
+    showComparer = false,
     appBootstrapReady = false,
     plotOrder = [],
     realtimeEnabled = true,
@@ -351,6 +354,9 @@
       <pre><code>{'trackio.finish()'}</code></pre>
     </div>
   {:else}
+    {#if showComparer}
+      <RunComparer runs={selectedRuns} {runConfigs} {colorMap} />
+    {/if}
     {#each groupNames as groupName}
       {@const group = metricGroups[groupName]}
       {@const directKey = `${groupName}:direct`}
