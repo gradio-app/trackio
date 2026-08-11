@@ -4,8 +4,9 @@ import trackio
 
 
 def test_run_comparer_diff_and_search(temp_dir):
-    """Two runs differing only in lr: the comparer starts collapsed, shows both
-    configs side by side, and filters rows via key search and Diff only."""
+    """Two runs differing only in lr: the comparer is hidden until "Show run
+    comparer" is checked in the sidebar, then shows both configs side by side
+    and filters rows via key search and Diff only."""
     for name, lr, losses in [
         ("run-a", 0.01, [0.5, 0.4, 0.3]),
         ("run-b", 0.02, [0.4, 0.3, 0.2]),
@@ -35,11 +36,13 @@ def test_run_comparer_diff_and_search(temp_dir):
             page.goto(full_url)
             page.wait_for_load_state("networkidle")
 
-            header = page.locator(".run-comparer .accordion-header")
-            expect(header).to_be_visible()
-            expect(page.locator(".comparer-table")).to_have_count(0)
+            toggle = page.locator(
+                "label.checkbox-container", has_text="Show run comparer"
+            ).locator("input[type='checkbox']")
+            expect(toggle).not_to_be_checked()
+            expect(page.locator(".run-comparer")).to_have_count(0)
 
-            header.click()
+            toggle.check()
             table = page.locator(".comparer-table")
             expect(table).to_be_visible()
 
@@ -79,6 +82,9 @@ def test_run_comparer_diff_and_search(temp_dir):
                     has=page.locator("td.key-col", has_text="lr")
                 )
             ).to_have_count(1)
+
+            toggle.uncheck()
+            expect(page.locator(".run-comparer")).to_have_count(0)
 
             browser.close()
     finally:
