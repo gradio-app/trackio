@@ -13,6 +13,15 @@ class DummyClient:
         self.predict = MagicMock()
 
 
+def wait_until(condition, timeout=15.0, interval=0.05):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(interval)
+    return condition()
+
+
 def test_run_log_writes_to_sqlite_locally(temp_dir):
     run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
     metrics = {"x": 1}
@@ -58,7 +67,7 @@ def test_run_log_calls_client_for_spaces(temp_dir):
     metrics = {"x": 1}
     run.log(metrics)
 
-    time.sleep(0.6)
+    assert wait_until(lambda: client.predict.call_args is not None)
     _, kwargs = client.predict.call_args
     assert kwargs["api_name"] == "/bulk_log"
     assert len(kwargs["logs"]) == 1
@@ -235,7 +244,9 @@ def test_step_recovery_after_crash(temp_dir):
     assert run._next_step == 3
 
     run.log({"loss": 0.2})
-    time.sleep(0.6)
+    wait_until(
+        lambda: len(SQLiteStorage.get_logs("proj", "run1", run_id="run-1-id")) == 4
+    )
 
     logs = SQLiteStorage.get_logs("proj", "run1", run_id="run-1-id")
     assert len(logs) == 4
