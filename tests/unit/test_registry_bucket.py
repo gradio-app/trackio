@@ -193,7 +193,6 @@ def test_space_backed_run_publishes_into_a_bucket_registry(temp_dir, bucket):
 
     link = BucketRegistryStorage(BUCKET).get_collection("models", "churn")["links"][0]
     assert link["source_space_id"] == "user/space"
-    assert link["manifest_digest"] == "a" * 64
 
     linked.unlink()
     assert (

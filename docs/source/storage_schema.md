@@ -212,7 +212,6 @@ Indexes and constraints:
 | `source_project` | `TEXT` | Project the linked artifact version was logged in |
 | `source_artifact` | `TEXT` | Name of the linked artifact |
 | `source_version` | `INTEGER` | Version of the linked artifact |
-| `manifest_digest` | `TEXT` | Digest of the content the link points at, when known |
 | `source_space_id` | `TEXT` | Space holding the source version, `NULL` when it is local |
 | `source_bucket_id` | `TEXT` | Bucket holding the source version, `NULL` when it is local |
 | `created_at` | `TEXT` | ISO timestamp |

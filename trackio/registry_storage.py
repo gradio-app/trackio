@@ -261,7 +261,6 @@ class RegistryStorage:
                 source_project TEXT NOT NULL,
                 source_artifact TEXT NOT NULL,
                 source_version INTEGER NOT NULL,
-                manifest_digest TEXT,
                 source_space_id TEXT,
                 source_bucket_id TEXT,
                 created_at TEXT NOT NULL,
@@ -297,7 +296,6 @@ class RegistryStorage:
             {
                 "registry_events": {"event_uid": "TEXT"},
                 "collection_links": {
-                    "manifest_digest": "TEXT",
                     "source_space_id": "TEXT",
                     "source_bucket_id": "TEXT",
                 },
@@ -605,16 +603,14 @@ class RegistryStorage:
         cursor.execute(
             """INSERT INTO collection_links
             (collection_id, collection_version, source_project, source_artifact,
-             source_version, manifest_digest, source_space_id, source_bucket_id,
-             created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             source_version, source_space_id, source_bucket_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 collection_id,
                 collection_version,
                 payload["source_project"],
                 payload["source_artifact"],
                 int(payload["source_version"]),
-                payload.get("manifest_digest"),
                 payload.get("source_space_id"),
                 payload.get("source_bucket_id"),
                 ts,
@@ -751,7 +747,6 @@ class RegistryStorage:
         aliases: list[str] | None,
         run_name: str | None = None,
         run_id: str | None = None,
-        manifest_digest: str | None = None,
         source_space_id: str | None = None,
         source_bucket_id: str | None = None,
     ) -> dict:
@@ -766,10 +761,10 @@ class RegistryStorage:
         automatically and always follows the newest linked version; passing
         it in `aliases` is a no-op rather than an error (matching wandb).
 
-        `manifest_digest` and the source's storage coordinates
-        (`source_space_id` / `source_bucket_id`, None for a local project) are
-        recorded on the link so a reader elsewhere can find and verify the
-        source version's bytes."""
+        The source's storage coordinates (`source_space_id` /
+        `source_bucket_id`, None for a local project) are recorded on the link,
+        because where the bytes live cannot be derived from the source
+        coordinates alone once a registry is shared across machines."""
         validate_collection_name(collection)
         validate_collection_type(type)
         user_aliases = [
@@ -793,7 +788,6 @@ class RegistryStorage:
                         "registry": registry,
                         "collection": collection,
                         **source,
-                        "manifest_digest": manifest_digest,
                         "source_space_id": source_space_id,
                         "source_bucket_id": source_bucket_id,
                         "run_name": run_name,
@@ -971,7 +965,7 @@ class RegistryStorage:
         params = (collection_id,) if collection_id is not None else ()
         link_rows = conn.execute(
             f"""SELECT id, collection_id, collection_version, source_project,
-               source_artifact, source_version, manifest_digest, source_space_id,
+               source_artifact, source_version, source_space_id,
                source_bucket_id, created_at
             FROM collection_links {where}
             ORDER BY collection_id, collection_version DESC""",
@@ -994,7 +988,6 @@ class RegistryStorage:
                     "source_project": link["source_project"],
                     "source_artifact": link["source_artifact"],
                     "source_version": int(link["source_version"]),
-                    "manifest_digest": link["manifest_digest"],
                     "source_space_id": link["source_space_id"],
                     "source_bucket_id": link["source_bucket_id"],
                     "aliases": sorted(aliases_by_link.get(int(link["id"]), [])),

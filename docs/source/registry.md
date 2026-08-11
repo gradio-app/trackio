@@ -207,7 +207,7 @@ registry.collection("my-model").links
 #   "aliases": ["latest", "production"], ...}]
 ```
 
-Each link records where the version came from (`source_project`, `source_artifact`, `source_version`), the `manifest_digest` of the content it points at, the source's storage coordinates when it is not local (`source_space_id`, `source_bucket_id`), and the aliases currently on it. A link is a pure pointer to that source version; resolving it (a follow-up) reads the source version directly.
+Each link records where the version came from (`source_project`, `source_artifact`, `source_version`), the source's storage coordinates when it is not local (`source_space_id`, `source_bucket_id`), and the aliases currently on it. A link is a pure pointer to that source version; resolving it (a follow-up) reads the source version directly.
 
 ## Audit history
 

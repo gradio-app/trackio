@@ -695,7 +695,6 @@ class Artifact:
             aliases=aliases,
             run_name=run_name,
             run_id=run_id,
-            manifest_digest=self._manifest_digest,
             source_space_id=remote_source.get("space_id"),
             source_bucket_id=remote_source.get("bucket_id"),
         )

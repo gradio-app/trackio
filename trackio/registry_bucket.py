@@ -312,7 +312,6 @@ class BucketRegistryStorage:
         aliases: list[str] | None,
         run_name: str | None = None,
         run_id: str | None = None,
-        manifest_digest: str | None = None,
         source_space_id: str | None = None,
         source_bucket_id: str | None = None,
     ) -> dict:
@@ -356,7 +355,6 @@ class BucketRegistryStorage:
                     "registry": registry,
                     "collection": collection,
                     **source,
-                    "manifest_digest": manifest_digest,
                     "source_space_id": source_space_id,
                     "source_bucket_id": source_bucket_id,
                     "run_name": run_name,
