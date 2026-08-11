@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Code Style
 
 - AVOID inline comments in code!!!
+- Don't create a .changeset file manually in the PR. Once you create a PR, a GH action will create it automatically based on the PR title
 
 ## Commands
 
