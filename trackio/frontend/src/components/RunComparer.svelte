@@ -3,7 +3,8 @@
 Run comparer panel: the selected runs as color-coded columns,
 their dot-flattened config keys and run metadata as rows, with a "Diff
 only" toggle, key search, per-cell copy of the full value, and an accent
-on rows that differ. Collapsed by default; shows at most the first
+on rows that differ. Rendered only when "Show run comparer" is checked
+under Display Settings in the sidebar; shows at most the first
 COMPARER_MAX_COLUMNS selected runs.
 
 Props:
@@ -13,7 +14,6 @@ Props:
 -->
 <script>
   import { onDestroy } from "svelte";
-  import Accordion from "./Accordion.svelte";
   import GradioCheckbox from "./GradioCheckbox.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
   import { copyTextToClipboard } from "../lib/clipboard.js";
@@ -36,7 +36,6 @@ Props:
   const DISPLAY_LIMIT = 200;
   const TITLE_LIMIT = 1000;
 
-  let open = $state(false);
   let searchText = $state("");
   let diffOnly = $state(false);
   let copiedCell = $state(null);
@@ -94,131 +93,139 @@ Props:
 </script>
 
 <div class="run-comparer">
-  <Accordion label="Run comparer" bind:open>
-    {#if runs.length === 0}
-      <p class="comparer-empty">Select runs to compare.</p>
-    {:else if allRows.length === 0}
-      <p class="comparer-empty">No config values to compare.</p>
-    {:else}
-      <div class="comparer-controls">
-        <div class="comparer-search">
-          <GradioTextbox
-            showLabel={false}
-            placeholder="Search keys"
-            bind:value={searchText}
-          />
-        </div>
-        <GradioCheckbox label="Diff only" bind:checked={diffOnly} />
-        {#if runs.length > COMPARER_MAX_COLUMNS}
-          <span class="comparer-note">
-            Showing first {COMPARER_MAX_COLUMNS} of {runs.length} selected runs
-          </span>
-        {/if}
+  <div class="comparer-title">Run comparer</div>
+  {#if runs.length === 0}
+    <p class="comparer-empty">Select runs to compare.</p>
+  {:else if allRows.length === 0}
+    <p class="comparer-empty">No config values to compare.</p>
+  {:else}
+    <div class="comparer-controls">
+      <div class="comparer-search">
+        <GradioTextbox
+          showLabel={false}
+          placeholder="Search keys"
+          bind:value={searchText}
+        />
       </div>
-      {#if rows.length === 0}
-        <p class="comparer-empty">No matching keys.</p>
-      {:else}
-        <div class="comparer-scroll">
-          <table class="comparer-table">
-            <thead>
-              <tr>
-                <th class="key-col">Key</th>
-                {#each displayRuns as run (runKeyOf(run))}
-                  <th class="run-col">
-                    <div class="run-header">
-                      <span
-                        class="color-dot"
-                        style="background: {colorMap[runKeyOf(run)] || '#999'}"
-                      ></span>
-                      <span class="run-name" title={run.name}>{run.name}</span>
-                    </div>
-                  </th>
-                {/each}
-              </tr>
-            </thead>
-            <tbody>
-              {#each sections as group (group.section)}
-                <tr class="section-row">
-                  <td class="key-col">{group.label}</td>
-                  <td colspan={displayRuns.length}></td>
-                </tr>
-                {#each group.rows as row (`${row.section}\0${row.key}`)}
-                  <tr class:differs={row.differs}>
-                    <td class="key-col" title={row.label}>{row.label}</td>
-                    {#each displayRuns as run, colIndex (runKeyOf(run))}
-                      {@const cell = formatCellValue(row.values[colIndex])}
-                      <td class="value-cell">
-                        {#if cell.missing}
-                          <span class="missing">{MISSING_MARKER}</span>
-                        {:else}
-                          <span
-                            class="cell-text"
-                            title={truncate(cell.text, TITLE_LIMIT)}
-                          >
-                            {truncate(cell.text, DISPLAY_LIMIT)}
-                          </span>
-                          {#if cell.text !== ""}
-                            <button
-                              class="copy-btn"
-                              title="Copy value"
-                              aria-label="Copy value"
-                              onclick={() => copyCell(row, colIndex, cell.text)}
-                            >
-                              {#if copiedCell === cellId(row, colIndex)}
-                                <svg
-                                  width="12"
-                                  height="12"
-                                  viewBox="0 0 16 16"
-                                  fill="none"
-                                >
-                                  <path
-                                    d="M3 8.5L6.5 12L13 4.5"
-                                    stroke="currentColor"
-                                    stroke-width="1.6"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                  />
-                                </svg>
-                              {:else}
-                                <svg
-                                  width="12"
-                                  height="12"
-                                  viewBox="0 0 16 16"
-                                  fill="none"
-                                >
-                                  <rect
-                                    x="5.5"
-                                    y="5.5"
-                                    width="8"
-                                    height="8"
-                                    rx="1.5"
-                                    stroke="currentColor"
-                                    stroke-width="1.4"
-                                  />
-                                  <path
-                                    d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"
-                                    stroke="currentColor"
-                                    stroke-width="1.4"
-                                  />
-                                </svg>
-                              {/if}
-                            </button>
-                          {/if}
-                        {/if}
-                      </td>
-                    {/each}
-                  </tr>
-                {/each}
-              {/each}
-            </tbody>
-          </table>
-        </div>
+      <GradioCheckbox label="Diff only" bind:checked={diffOnly} />
+      {#if runs.length > COMPARER_MAX_COLUMNS}
+        <span class="comparer-note">
+          Showing first {COMPARER_MAX_COLUMNS} of {runs.length} selected runs
+        </span>
       {/if}
+    </div>
+    {#if rows.length === 0}
+      <p class="comparer-empty">No matching keys.</p>
+    {:else}
+      <div class="comparer-scroll">
+        <table class="comparer-table">
+          <thead>
+            <tr>
+              <th class="key-col">Key</th>
+              {#each displayRuns as run (runKeyOf(run))}
+                <th class="run-col">
+                  <div class="run-header">
+                    <span
+                      class="color-dot"
+                      style="background: {colorMap[runKeyOf(run)] || '#999'}"
+                    ></span>
+                    <span class="run-name" title={run.name}>{run.name}</span>
+                  </div>
+                </th>
+              {/each}
+            </tr>
+          </thead>
+          <tbody>
+            {#each sections as group (group.section)}
+              <tr class="section-row">
+                <td class="key-col">{group.label}</td>
+                <td colspan={displayRuns.length}></td>
+              </tr>
+              {#each group.rows as row (`${row.section}\0${row.key}`)}
+                <tr class:differs={row.differs}>
+                  <td class="key-col" title={row.label}>{row.label}</td>
+                  {#each displayRuns as run, colIndex (runKeyOf(run))}
+                    {@const cell = formatCellValue(row.values[colIndex])}
+                    <td class="value-cell">
+                      {#if cell.missing}
+                        <span class="missing">{MISSING_MARKER}</span>
+                      {:else}
+                        <span
+                          class="cell-text"
+                          title={truncate(cell.text, TITLE_LIMIT)}
+                        >
+                          {truncate(cell.text, DISPLAY_LIMIT)}
+                        </span>
+                        {#if cell.text !== ""}
+                          <button
+                            class="copy-btn"
+                            title="Copy value"
+                            aria-label="Copy value"
+                            onclick={() => copyCell(row, colIndex, cell.text)}
+                          >
+                            {#if copiedCell === cellId(row, colIndex)}
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                              >
+                                <path
+                                  d="M3 8.5L6.5 12L13 4.5"
+                                  stroke="currentColor"
+                                  stroke-width="1.6"
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                />
+                              </svg>
+                            {:else}
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                              >
+                                <rect
+                                  x="5.5"
+                                  y="5.5"
+                                  width="8"
+                                  height="8"
+                                  rx="1.5"
+                                  stroke="currentColor"
+                                  stroke-width="1.4"
+                                />
+                                <path
+                                  d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"
+                                  stroke="currentColor"
+                                  stroke-width="1.4"
+                                />
+                              </svg>
+                            {/if}
+                          </button>
+                        {/if}
+                      {/if}
+                    </td>
+                  {/each}
+                </tr>
+              {/each}
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
-  </Accordion>
+  {/if}
 </div>
 
 <style>
+  .run-comparer {
+    margin-bottom: 12px;
+  }
+  .comparer-title {
+    margin-bottom: 10px;
+    color: var(--body-text-color, #1f2937);
+    font-size: var(--text-md, 14px);
+    font-weight: 600;
+  }
   .comparer-controls {
     display: flex;
     align-items: center;

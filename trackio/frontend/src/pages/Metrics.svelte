@@ -35,6 +35,7 @@
     logScaleY = false,
     metricFilter = "",
     showHeaders = true,
+    showComparer = false,
     appBootstrapReady = false,
     plotOrder = [],
     realtimeEnabled = true,
@@ -353,7 +354,7 @@
       <pre><code>{'trackio.finish()'}</code></pre>
     </div>
   {:else}
-    {#if showHeaders}
+    {#if showComparer}
       <RunComparer runs={selectedRuns} {runConfigs} {colorMap} />
     {/if}
     {#each groupNames as groupName}
