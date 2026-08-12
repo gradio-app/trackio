@@ -1,13 +1,17 @@
 import argparse
+import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
 import huggingface_hub
+from huggingface_hub.utils import get_session
 
 import trackio
 from trackio import freeze, show, sync
+from trackio import logbook as lb
 from trackio.cli_helpers import (
     error_exit,
     format_alerts,
@@ -27,6 +31,7 @@ from trackio.cli_helpers import (
     format_system_metric_names,
     format_system_metrics,
 )
+from trackio.deploy import sync_incremental
 from trackio.frontend_config import (
     TRACKIO_CONFIG_PATH,
     get_persisted_frontend_dir,
@@ -34,6 +39,8 @@ from trackio.frontend_config import (
     unset_persisted_frontend_dir,
 )
 from trackio.markdown import Markdown
+from trackio.registry_storage import parse_collection_target
+from trackio.remote_client import RemoteClient
 from trackio.server import get_project_summary, get_run_summary
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -43,8 +50,6 @@ def _get_space(args):
 
 
 def _get_remote(args):
-    from trackio.remote_client import RemoteClient
-
     space = _get_space(args)
     if not space:
         return None
@@ -92,8 +97,6 @@ def _handle_status():
 
 
 def _handle_sync(args):
-    from trackio.deploy import sync_incremental
-
     if args.sync_all and args.project:
         error_exit("Cannot use --all and --project together.")
     if not args.sync_all and not args.project:
@@ -361,8 +364,6 @@ def _handle_list_spaces(args):
 
 
 def _registry_target(value: str) -> tuple[str, str]:
-    from trackio.registry_storage import parse_collection_target
-
     target = value if value.startswith("registry-") else f"registry-{value}"
     try:
         return parse_collection_target(target)
@@ -2262,8 +2263,6 @@ def _read_logbook_payload(path_or_text, inline_text):
 
 
 def _handle_logbook(args):
-    from trackio import logbook as lb
-
     action = args.logbook_action
     try:
         if action == "open":
@@ -2527,9 +2526,6 @@ def _handle_logbook(args):
 
 
 def _handle_skills_add(args):
-    import shutil
-    from pathlib import Path
-
     CENTRAL_LOCAL = Path(".agents/skills")
     CENTRAL_GLOBAL = Path("~/.agents/skills")
     CLAUDE_LOCAL = Path(".claude/skills")
@@ -2556,8 +2552,6 @@ def _handle_skills_add(args):
         print(f"Using local Trackio source at {REPO_ROOT}")
 
     def download(url: str) -> str:
-        from huggingface_hub.utils import get_session
-
         try:
             response = get_session().get(url)
             response.raise_for_status()
@@ -2613,8 +2607,6 @@ def _handle_skills_add(args):
     def install_command(
         command_dir: Path, force: bool, strip_frontmatter: bool = False
     ) -> Path:
-        import re
-
         command_dir = command_dir.expanduser().resolve()
         command_dir.mkdir(parents=True, exist_ok=True)
         dest = command_dir / COMMAND_FILE
@@ -2721,9 +2713,6 @@ def _handle_skills_add(args):
 
 
 def _install_claude_logbook_hook(global_: bool):
-    import json
-    from pathlib import Path
-
     settings = (
         Path("~/.claude/settings.json") if global_ else Path(".claude/settings.json")
     ).expanduser()
