@@ -67,7 +67,7 @@ The config schema follows wandb's:
 
 When `distribution` is omitted, it is inferred: `values` becomes `categorical`, `value` becomes `constant`, integer `min`/`max` becomes `int_uniform`, and float bounds become `uniform`. Explicit distributions include `uniform`, `int_uniform`, `log_uniform_values`, `q_uniform`, `normal`, `log_normal`, `beta`, and their `q_`-quantized variants — the same set wandb supports.
 
-Grid search requires discrete parameters (`value`, `values`, `int_uniform`, or `q_uniform`); continuous distributions raise an error. Random search never terminates on its own — bound it with `run_cap`, `metric.target`, or the agent's `count`.
+Grid search requires discrete parameters (`value`, `values`, `int_uniform`, or `q_uniform`); continuous distributions raise an error. Set `randomize_order: true` at the top level of the config to visit grid combinations in random order. Random search never terminates on its own — bound it with `run_cap`, `metric.target`, or the agent's `count`.
 
 ## Bayesian optimization
 

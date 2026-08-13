@@ -123,6 +123,40 @@ Indexes:
 - `idx_alerts_timestamp` on `(timestamp)`
 - `idx_alerts_alert_id` unique partial index on `alert_id`
 
+### `sweeps`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `sweep_id` | `TEXT` | Primary key (8-character hex id) |
+| `name` | `TEXT` | Optional display name |
+| `config` | `TEXT` | JSON blob of the validated sweep config |
+| `method` | `TEXT` | `grid`, `random`, or `bayes` |
+| `metric_name` | `TEXT` | Metric being optimized, if any |
+| `metric_goal` | `TEXT` | `minimize` or `maximize` |
+| `state` | `TEXT` | `running`, `paused`, `finished`, `stopped`, or `cancelled` |
+| `finish_reason` | `TEXT` | `target`, `run_cap`, or `exhausted` when the sweep finished on its own |
+| `created_at` | `TEXT` | ISO timestamp |
+| `updated_at` | `TEXT` | ISO timestamp |
+
+### `sweep_trials`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `trial_id` | `INTEGER` | Primary key |
+| `sweep_id` | `TEXT` | References `sweeps.sweep_id` |
+| `params` | `TEXT` | JSON blob of the trial's hyperparameters |
+| `param_hash` | `TEXT` | SHA-256 of the canonical params JSON, used to deduplicate grid cells |
+| `state` | `TEXT` | `assigned`, `running`, `finished`, `failed`, or `pruned` |
+| `run_id` | `TEXT` | Run attached via `trackio.init()`, if any |
+| `agent_id` | `TEXT` | Agent the trial was assigned to |
+| `metric_value` | `REAL` | Final value of the sweep metric |
+| `created_at` | `TEXT` | ISO timestamp |
+| `updated_at` | `TEXT` | ISO timestamp |
+
+Indexes:
+
+- `idx_sweep_trials_sweep` on `(sweep_id)`
+
 ### `artifacts`
 
 | Column | Type | Notes |

@@ -534,6 +534,13 @@ def assert_can_mutate_runs(request: Request) -> None:
             "A write_token is required to delete or rename runs. "
             "Open the dashboard using the link that includes the write_token query parameter."
         )
+    bearer_token = _authorization_bearer_token(request)
+    if bearer_token is not None:
+        try:
+            check_hf_token_has_write_access(bearer_token)
+        except PermissionError as e:
+            raise TrackioAPIError(str(e)) from e
+        return
     hf_tok = _hf_access_token(request)
     if hf_tok is not None:
         try:

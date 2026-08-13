@@ -54,6 +54,23 @@ All registry commands accept `--bucket-id org/bucket` for a bucket-backed regist
 
 The `link` command resolves `project/artifact:version-or-alias` from local Trackio data; omit the suffix to resolve `latest`. Publishing an artifact that only exists on a remote Space still uses the Python API so Trackio can record the source's remote storage coordinates.
 
+## Sweep Commands
+
+Create and manage [hyperparameter sweeps](./sweeps), and run agents for command-based sweeps:
+
+```sh
+trackio sweep new sweep.yaml --project my-project
+trackio sweep list --project my-project
+trackio sweep status my-project/abcd1234 --trials
+trackio sweep pause my-project/abcd1234
+trackio sweep resume my-project/abcd1234
+trackio sweep stop my-project/abcd1234
+trackio sweep cancel my-project/abcd1234
+trackio agent my-project/abcd1234 --count 10
+```
+
+`trackio sweep new` accepts `.json`, `.toml`, `.yaml`, or `.yml` config files. All sweep commands accept `--json` for structured output and `--space` to target a sweep on a Hugging Face Space; `trackio agent` also accepts `--server-url` for a self-hosted server. The `trackio agent` command only runs command-based sweeps (configs with `program`/`command`); function-based sweeps use `trackio.agent()` from Python. See the [Hyperparameter Sweeps guide](./sweeps) for details.
+
 ## Sync Command
 
 Upload a local project to a Hugging Face Space:
