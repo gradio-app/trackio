@@ -5,6 +5,7 @@
     getRegistries,
     getRegistryBuckets,
     getRegistryDetails,
+    isStaticMode,
   } from "../lib/api.js";
 
   let source = $state("local");
@@ -18,6 +19,8 @@
   let loading = $state(true);
   let error = $state("");
   let staticUnavailable = $state(false);
+  let bucketOptionsLoaded = $state(false);
+  let bucketOptionsLoading = $state(false);
   let requestId = 0;
 
   let collection = $derived(
@@ -95,6 +98,32 @@
     loadRegistries();
   }
 
+  async function loadBucketOptions() {
+    if (bucketOptionsLoaded || bucketOptionsLoading) return;
+    bucketOptionsLoading = true;
+    try {
+      const result = await getRegistryBuckets();
+      buckets = result?.buckets ?? [];
+      if (!bucketInput) {
+        bucketInput = result?.default_bucket_id ?? buckets[0] ?? "";
+      }
+      bucketOptionsLoaded = true;
+      if (source === "bucket" && bucketId === null && bucketInput) {
+        openBucket();
+      }
+    } catch {
+      bucketOptionsLoaded = false;
+    } finally {
+      bucketOptionsLoading = false;
+    }
+  }
+
+  function useBucket() {
+    source = "bucket";
+    if (bucketInput) openBucket();
+    loadBucketOptions();
+  }
+
   function openBucket() {
     const value = bucketInput.trim();
     if (!value) return;
@@ -104,19 +133,9 @@
     loadRegistries();
   }
 
-  onMount(() => {
-    loadRegistries();
-    getRegistryBuckets()
-      .then((result) => {
-        staticUnavailable = !!result?.unavailable;
-        buckets = result?.buckets ?? [];
-        if (!bucketInput) {
-          bucketInput = result?.default_bucket_id ?? buckets[0] ?? "";
-        }
-      })
-      .catch(() => {
-        // The bucket id can still be entered manually.
-      });
+  onMount(async () => {
+    staticUnavailable = await isStaticMode();
+    if (!staticUnavailable) loadRegistries();
   });
 </script>
 
@@ -131,10 +150,7 @@
         <button class:active={source === "local"} onclick={useLocal}>Local</button>
         <button
           class:active={source === "bucket"}
-          onclick={() => {
-            source = "bucket";
-            if (bucketInput) openBucket();
-          }}>HF Bucket</button
+          onclick={useBucket}>HF Bucket</button
         >
       </div>
       {#if source === "bucket"}
@@ -144,7 +160,7 @@
             list="registry-buckets"
             bind:value={bucketInput}
             onkeydown={(event) => event.key === "Enter" && openBucket()}
-            placeholder="owner/bucket"
+            placeholder={bucketOptionsLoading ? "Loading buckets…" : "owner/bucket"}
           />
           <datalist id="registry-buckets">
             {#each buckets as bucket}

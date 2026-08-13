@@ -1,5 +1,6 @@
 """The main API layer for the Trackio UI."""
 
+import asyncio
 import base64
 import logging
 import os
@@ -1239,8 +1240,7 @@ def _registry_read_token(request: Request) -> str | bool | None:
     return False
 
 
-def get_registry_buckets(request: Request) -> dict[str, Any]:
-    """List bucket choices available to the current dashboard viewer."""
+def _get_registry_buckets(request: Request) -> dict[str, Any]:
     token = _registry_read_token(request)
     default_bucket_id = utils.resolve_registry_bucket_id(None)
     bucket_ids = {default_bucket_id} if default_bucket_id else set()
@@ -1263,6 +1263,11 @@ def get_registry_buckets(request: Request) -> dict[str, Any]:
         "buckets": sorted(bucket_ids),
         "default_bucket_id": default_bucket_id,
     }
+
+
+async def get_registry_buckets(request: Request) -> dict[str, Any]:
+    """List bucket choices available to the current dashboard viewer."""
+    return await asyncio.to_thread(_get_registry_buckets, request)
 
 
 def get_registries(

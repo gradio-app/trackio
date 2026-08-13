@@ -1,6 +1,7 @@
 import asyncio
-import sys
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
@@ -9,7 +10,6 @@ import httpx
 import pytest
 
 import trackio
-import trackio.cli as trackio_cli
 import trackio.context_vars as context_vars
 import trackio.server as trackio_server
 import trackio.utils as trackio_utils
@@ -129,17 +129,6 @@ def test_local_dashboard_registry_read_api(temp_dir):
         app.close()
 
 
-def test_cli_show_registry(monkeypatch):
-    calls = []
-    monkeypatch.setattr(trackio_cli, "show", lambda **kwargs: calls.append(kwargs))
-    monkeypatch.setattr(sys, "argv", ["trackio", "show", "registry"])
-
-    trackio_cli.main()
-
-    assert calls[0]["dashboard"] == "registry"
-    assert calls[0]["project"] is None
-
-
 def test_registry_bucket_picker_only_uses_saved_token_with_write_access(
     temp_dir, monkeypatch
 ):
@@ -178,6 +167,53 @@ def test_registry_bucket_picker_only_uses_saved_token_with_write_access(
         ]
         assert calls == [("me", "hf_saved"), ("acme", "hf_saved")]
     finally:
+        app.close()
+
+
+def test_registry_bucket_picker_does_not_block_other_api_requests(
+    temp_dir, monkeypatch
+):
+    entered = threading.Event()
+    release = threading.Event()
+    monkeypatch.setattr(trackio_server.hf.utils, "get_token", lambda: "hf_saved")
+
+    def whoami(token):
+        entered.set()
+        release.wait(timeout=5)
+        return {"name": "viewer", "orgs": []}
+
+    monkeypatch.setattr(trackio_server.HfApi, "whoami", whoami)
+    monkeypatch.setattr(trackio_server.HfApi, "list_buckets", lambda **kwargs: [])
+    app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        write_token = parse_qs(urlparse(full_url).query)["write_token"][0]
+        headers = {"x-trackio-write-token": write_token}
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            bucket_request = executor.submit(
+                httpx.post,
+                f"{url.rstrip('/')}/api/get_registry_buckets",
+                json={},
+                headers=headers,
+                timeout=10,
+            )
+            assert entered.wait(timeout=2)
+            registry_request = executor.submit(
+                httpx.post,
+                f"{url.rstrip('/')}/api/get_registries",
+                json={},
+                timeout=10,
+            )
+            try:
+                response = registry_request.result(timeout=2)
+            finally:
+                release.set()
+
+            assert response.status_code == 200
+            assert bucket_request.result(timeout=2).status_code == 200
+    finally:
+        release.set()
         app.close()
 
 

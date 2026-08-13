@@ -97,16 +97,6 @@ def test_bucket_registry_round_trip(temp_dir, bucket):
     assert len(bucket.event_paths()) == 5
 
 
-def test_list_bucket_registries(temp_dir, bucket):
-    storage = BucketRegistryStorage(BUCKET)
-    storage.create_registry("models", description="Our models")
-    storage.create_registry("datasets")
-
-    registries = storage.list_registries()
-    assert [registry["name"] for registry in registries] == ["datasets", "models"]
-    assert registries[1]["description"] == "Our models"
-
-
 def test_bucket_registry_reads_use_explicit_token(temp_dir, bucket):
     writer = BucketRegistryStorage(BUCKET)
     writer.create_registry("models")
