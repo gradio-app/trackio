@@ -10,7 +10,7 @@ import huggingface_hub
 from huggingface_hub.utils import get_session
 
 import trackio
-from trackio import freeze, show, sync
+from trackio import freeze, show, sweep_agent, sync
 from trackio import logbook as lb
 from trackio.cli_helpers import (
     error_exit,
@@ -46,6 +46,7 @@ from trackio.registry_storage import parse_collection_target
 from trackio.remote_client import RemoteClient
 from trackio.server import get_project_summary, get_run_summary
 from trackio.sqlite_storage import SQLiteStorage
+from trackio.sweeps import SweepConfigError, is_command_sweep
 
 
 def _get_space(args):
@@ -2271,15 +2272,13 @@ def _load_sweep_config_file(path_str: str) -> dict:
     text = path.read_text()
     suffix = path.suffix.lower()
     if suffix == ".json":
-        import json
-
         return json.loads(text)
     if suffix == ".toml":
         try:
-            import tomllib
+            import tomllib  # noqa: PLC0415
         except ModuleNotFoundError:
             try:
-                import tomli as tomllib
+                import tomli as tomllib  # noqa: PLC0415
             except ModuleNotFoundError:
                 error_exit(
                     "Reading TOML sweep configs on Python 3.10 requires tomli: "
@@ -2291,7 +2290,7 @@ def _load_sweep_config_file(path_str: str) -> dict:
         return tomllib.loads(text)
     if suffix in (".yaml", ".yml"):
         try:
-            import yaml
+            import yaml  # noqa: PLC0415
         except ImportError:
             error_exit(
                 "Reading YAML sweep configs requires pyyaml: pip install pyyaml. "
@@ -2304,9 +2303,9 @@ def _load_sweep_config_file(path_str: str) -> dict:
 
 
 def _resolve_sweep_target(args) -> tuple[str, str]:
-    from trackio.sweep_agent import split_sweep_path
-
-    project, sweep_id = split_sweep_path(args.sweep_id, getattr(args, "project", None))
+    project, sweep_id = sweep_agent.split_sweep_path(
+        args.sweep_id, getattr(args, "project", None)
+    )
     if project is None:
         error_exit(
             "A project is required: pass --project or use a qualified sweep id "
@@ -2316,16 +2315,11 @@ def _resolve_sweep_target(args) -> tuple[str, str]:
 
 
 def _handle_sweep(args):
-    from trackio.sweep_agent import SweepClient
-    from trackio.sweeps import SweepConfigError
-
     space = _get_space(args)
 
     if args.sweep_action == "new":
-        from trackio.sweeps import is_command_sweep
-
         config = _load_sweep_config_file(args.config)
-        client = SweepClient(args.project, space_id=space)
+        client = sweep_agent.SweepClient(args.project, space_id=space)
         try:
             sweep_id = client.create_sweep(config, name=args.name)
         except SweepConfigError as e:
@@ -2343,7 +2337,7 @@ def _handle_sweep(args):
         return
 
     if args.sweep_action == "list":
-        client = SweepClient(args.project, space_id=space)
+        client = sweep_agent.SweepClient(args.project, space_id=space)
         sweeps = client.list_sweeps()
         if args.json:
             print(format_json({"project": args.project, "sweeps": sweeps}))
@@ -2352,7 +2346,7 @@ def _handle_sweep(args):
         return
 
     project, sweep_id = _resolve_sweep_target(args)
-    client = SweepClient(project, space_id=space)
+    client = sweep_agent.SweepClient(project, space_id=space)
 
     if args.sweep_action == "status":
         sweep = client.get_sweep(sweep_id)
@@ -2388,8 +2382,6 @@ def _handle_sweep(args):
 
 
 def _handle_agent(args):
-    from trackio import sweep_agent
-
     try:
         sweep_agent.agent(
             args.sweep_id,
