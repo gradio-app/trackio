@@ -671,6 +671,7 @@ export async function getSweeps() {
       metric_name: row.metric_name ?? null,
       metric_goal: row.metric_goal ?? null,
       state: row.state,
+      finish_reason: row.finish_reason ?? null,
       created_at: row.created_at,
       updated_at: row.updated_at,
       num_trials: trials.length,

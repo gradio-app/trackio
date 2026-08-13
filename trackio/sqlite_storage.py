@@ -400,6 +400,7 @@ class SQLiteStorage:
             "metric_name",
             "metric_goal",
             "state",
+            "finish_reason",
             "created_at",
             "updated_at",
         ],
@@ -621,11 +622,16 @@ class SQLiteStorage:
                         metric_name TEXT,
                         metric_goal TEXT,
                         state TEXT NOT NULL DEFAULT 'running',
+                        finish_reason TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     )
                     """
                 )
+                try:
+                    cursor.execute("ALTER TABLE sweeps ADD COLUMN finish_reason TEXT")
+                except sqlite3.OperationalError:
+                    pass
                 cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS sweep_trials (
@@ -2058,6 +2064,7 @@ class SQLiteStorage:
             "metric_name": row["metric_name"],
             "metric_goal": row["metric_goal"],
             "state": row["state"],
+            "finish_reason": row["finish_reason"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -2247,11 +2254,14 @@ class SQLiteStorage:
                 if sweep["state"] == "paused":
                     return {"command": "wait"}
                 if sweep["state"] in sweeps_module.TERMINAL_SWEEP_STATES:
-                    return {"command": "exit", "reason": sweep["state"]}
+                    return {
+                        "command": "exit",
+                        "reason": sweep["finish_reason"] or sweep["state"],
+                    }
 
                 cursor.execute(
                     """
-                    SELECT params, param_hash, state FROM sweep_trials
+                    SELECT params, param_hash, state, metric_value FROM sweep_trials
                     WHERE sweep_id = ?
                     """,
                     (sweep_id,),
@@ -2261,24 +2271,36 @@ class SQLiteStorage:
                         "params": json_mod.loads(trial_row["params"]),
                         "param_hash": trial_row["param_hash"],
                         "state": trial_row["state"],
+                        "metric_value": trial_row["metric_value"],
                     }
                     for trial_row in cursor.fetchall()
                 ]
-                params = sweeps_module.next_trial(sweep["config"], trials)
                 now = datetime.now(timezone.utc).isoformat()
-                if params is None:
+                if sweeps_module.target_met(sweep["config"], trials):
                     cursor.execute(
-                        """UPDATE sweeps SET state = 'finished', updated_at = ?
+                        """UPDATE sweeps
+                        SET state = 'finished', finish_reason = 'target',
+                            updated_at = ?
                         WHERE sweep_id = ? AND state IN ('running', 'paused')""",
                         (now, sweep_id),
                     )
                     conn.commit()
+                    return {"command": "exit", "reason": "target"}
+                params = sweeps_module.next_trial(sweep["config"], trials)
+                if params is None:
                     run_cap = sweep["config"].get("run_cap")
                     reason = (
                         "run_cap"
                         if run_cap is not None and len(trials) >= run_cap
                         else "exhausted"
                     )
+                    cursor.execute(
+                        """UPDATE sweeps
+                        SET state = 'finished', finish_reason = ?, updated_at = ?
+                        WHERE sweep_id = ? AND state IN ('running', 'paused')""",
+                        (reason, now, sweep_id),
+                    )
+                    conn.commit()
                     return {"command": "exit", "reason": reason}
 
                 cursor.execute(
@@ -2374,8 +2396,27 @@ class SQLiteStorage:
                     )
                 except sqlite3.OperationalError:
                     return False
+                updated = cursor.rowcount > 0
+                if updated and state == "finished" and metric_value is not None:
+                    cursor.execute(
+                        """SELECT config FROM sweeps
+                        WHERE sweep_id = ? AND state IN ('running', 'paused')""",
+                        (sweep_id,),
+                    )
+                    sweep_row = cursor.fetchone()
+                    if sweep_row is not None and sweeps_module.target_met(
+                        json_mod.loads(sweep_row["config"]),
+                        [{"state": "finished", "metric_value": metric_value}],
+                    ):
+                        cursor.execute(
+                            """UPDATE sweeps
+                            SET state = 'finished', finish_reason = 'target',
+                                updated_at = ?
+                            WHERE sweep_id = ?""",
+                            (datetime.now(timezone.utc).isoformat(), sweep_id),
+                        )
                 conn.commit()
-                return cursor.rowcount > 0
+                return updated
 
     @staticmethod
     def get_sweep_trials(project: str, sweep_id: str) -> list[dict]:

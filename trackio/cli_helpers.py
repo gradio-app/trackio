@@ -245,7 +245,10 @@ def format_sweep_summary(sweep: dict) -> str:
     if sweep.get("name"):
         lines.append(f"  name:    {sweep['name']}")
     lines.append(f"  method:  {sweep['method']}")
-    lines.append(f"  state:   {sweep['state']}")
+    state = sweep["state"]
+    if sweep.get("finish_reason"):
+        state += f" ({sweep['finish_reason']})"
+    lines.append(f"  state:   {state}")
     if sweep.get("metric_name"):
         lines.append(
             f"  metric:  {sweep['metric_name']} ({sweep.get('metric_goal', 'minimize')})"

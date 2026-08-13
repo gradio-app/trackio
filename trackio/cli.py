@@ -1321,6 +1321,19 @@ def main():
             "--json", action="store_true", help="Output as JSON"
         )
 
+    agent_parser = subparsers.add_parser(
+        "agent",
+        help="Run a sweep agent (command-mode sweeps with 'program'/'command').",
+    )
+    agent_parser.add_argument("sweep_id", help="Sweep id (or project/sweep_id)")
+    agent_parser.add_argument("--project", "-p", help="Project name")
+    agent_parser.add_argument(
+        "--count", type=int, help="Maximum number of trials for this agent"
+    )
+    agent_parser.add_argument(
+        "--server-url", help="Self-hosted trackio server URL (with write token)"
+    )
+
     args, unknown_args = parser.parse_known_args()
     if unknown_args:
         trailing_global_parser = argparse.ArgumentParser(add_help=False)
@@ -1897,6 +1910,8 @@ def main():
             _handle_skills_add(args)
     elif args.command == "sweep":
         _handle_sweep(args)
+    elif args.command == "agent":
+        _handle_agent(args)
     elif args.command == "logbook":
         _handle_logbook(args)
     else:
@@ -1950,6 +1965,8 @@ def _handle_sweep(args):
     space = _get_space(args)
 
     if args.sweep_action == "new":
+        from trackio.sweeps import is_command_sweep
+
         config = _load_sweep_config_file(args.config)
         client = SweepClient(args.project, space_id=space)
         try:
@@ -1960,9 +1977,12 @@ def _handle_sweep(args):
             print(format_json({"project": args.project, "sweep_id": sweep_id}))
         else:
             print(f"Created sweep: {sweep_id} (project: {args.project})")
-            print(
-                f'Run an agent with: trackio.agent("{args.project}/{sweep_id}", function=...)'
-            )
+            if is_command_sweep(config):
+                print(f"Run an agent with: trackio agent {args.project}/{sweep_id}")
+            else:
+                print(
+                    f'Run an agent with: trackio.agent("{args.project}/{sweep_id}", function=...)'
+                )
         return
 
     if args.sweep_action == "list":
@@ -2008,6 +2028,21 @@ def _handle_sweep(args):
         print(format_json({"sweep": sweep}))
     else:
         print(f"Sweep {sweep_id} is now {sweep['state']}.")
+
+
+def _handle_agent(args):
+    from trackio import sweep_agent
+
+    try:
+        sweep_agent.agent(
+            args.sweep_id,
+            project=getattr(args, "project", None),
+            count=args.count,
+            space_id=_get_space(args),
+            server_url=args.server_url,
+        )
+    except ValueError as e:
+        error_exit(str(e))
 
 
 def _logbook_cell_target(lb, proj, args):

@@ -40,11 +40,12 @@ The config schema follows wandb's:
 
 | Key | Description |
 |---|---|
-| `method` | Search strategy: `"grid"` or `"random"` (required). |
+| `method` | Search strategy: `"grid"`, `"random"`, or `"bayes"` (required). |
 | `parameters` | The search space (required). |
-| `metric` | `{"name": ..., "goal": "minimize"\|"maximize"}` — the metric to optimize. Must be logged as a top-level key via `trackio.log()`. |
+| `metric` | `{"name": ..., "goal": "minimize"\|"maximize", "target": ...}` — the metric to optimize. Must be logged as a top-level key via `trackio.log()`. When `target` is set, the sweep finishes as soon as a trial reaches it. Required for `method: "bayes"`. |
 | `run_cap` | Maximum total number of trials in the sweep. |
 | `name` | Display name for the sweep. |
+| `program` / `command` | Command-based sweeps: the training script and optional command template (see below). |
 
 ### Parameter specifications
 
@@ -66,7 +67,77 @@ The config schema follows wandb's:
 
 When `distribution` is omitted, it is inferred: `values` becomes `categorical`, `value` becomes `constant`, integer `min`/`max` becomes `int_uniform`, and float bounds become `uniform`. Explicit distributions include `uniform`, `int_uniform`, `log_uniform_values`, `q_uniform`, `normal`, `log_normal`, `beta`, and their `q_`-quantized variants — the same set wandb supports.
 
-Grid search requires discrete parameters (`value`, `values`, `int_uniform`, or `q_uniform`); continuous distributions raise an error. Random search never terminates on its own — bound it with `run_cap` or the agent's `count`.
+Grid search requires discrete parameters (`value`, `values`, `int_uniform`, or `q_uniform`); continuous distributions raise an error. Random search never terminates on its own — bound it with `run_cap`, `metric.target`, or the agent's `count`.
+
+## Bayesian optimization
+
+`method: "bayes"` suggests trials with a Gaussian-process surrogate (Matern kernel) and Expected Improvement, comparable to wandb's bayes engine and implemented with numpy only — no extra dependencies. It requires `metric.name` so trial results can guide the search:
+
+```python
+sweep_config = {
+    "method": "bayes",
+    "metric": {"name": "loss", "goal": "minimize"},
+    "run_cap": 40,
+    "parameters": {
+        "lr": {"distribution": "log_uniform_values", "min": 1e-5, "max": 1e-1},
+        "optimizer": {"values": ["adam", "sgd"]},
+    },
+}
+```
+
+The first two trials are sampled randomly; after that, each suggestion maximizes Expected Improvement over candidates drawn from the parameter priors. Failed trials are treated as worst-case observations so the search steers away from crashing regions, and in-flight trials from parallel agents are accounted for so agents don't receive near-duplicate suggestions. Like random search, bayes never exhausts the space — bound it with `run_cap` or `metric.target`.
+
+## Command-based sweeps and the CLI agent
+
+Instead of a Python `function`, a sweep can launch your training script as a subprocess — set `program` (and optionally `command`) in the config, wandb-style:
+
+```yaml
+method: bayes
+metric:
+  name: loss
+  goal: minimize
+program: train.py
+parameters:
+  lr:
+    min: 0.0001
+    max: 0.1
+```
+
+Then run agents from the CLI:
+
+```bash
+trackio sweep new sweep.yaml --project my-project
+trackio agent my-project/abcd1234 --count 10
+```
+
+Each trial runs `program` with the hyperparameters passed as `--key=value` arguments (nested parameters become dotted flags like `--optimizer.lr=0.001`). Inside the script, call `trackio.init()` as usual — the agent passes the trial context through environment variables, so the run attaches to the sweep and `run.config` contains the trial's hyperparameters automatically.
+
+The default command is `${env} ${interpreter} ${program} ${args}`. Set `command` to customize it, using wandb's macros:
+
+| Macro | Expands to |
+|---|---|
+| `${env}` | `/usr/bin/env` (omitted on Windows) |
+| `${interpreter}` | The agent's Python interpreter (`sys.executable`) |
+| `${program}` | The `program` value |
+| `${args}` | `--key=value` for every hyperparameter |
+| `${args_no_boolean_flags}` | Like `${args}`, but `True` becomes a bare `--key` and `False` is omitted |
+| `${args_no_hyphens}` | `key=value` pairs |
+| `${args_json}` | All hyperparameters as one JSON string |
+| `${envvar:NAME}` | The value of environment variable `NAME` |
+
+For example, to run training through a shell wrapper:
+
+```yaml
+program: train.py
+command:
+  - ${env}
+  - bash
+  - wrapper.sh
+  - ${program}
+  - ${args_no_hyphens}
+```
+
+`trackio.agent(sweep_id)` (without `function=`) also runs command-based sweeps from Python. Command-based agents work against remote sweeps too: `trackio agent --space ...` or `--server-url ...` forwards the connection to the subprocess so its run logs to the same server.
 
 ## Parallel agents
 
@@ -108,8 +179,8 @@ for sweep in api.sweeps("my-project"):
 
 ## Differences from wandb (current limitations)
 
-- **`method: "bayes"` is not supported yet** — configs using it raise a clear error. Use `random` with a `run_cap` in the meantime.
 - **`early_terminate` (hyperband) is not supported yet** — it is accepted but ignored, with a warning.
-- **Command-based agents are not supported yet** — `trackio.agent()` requires `function=`; sweep configs with `program`/`command` cannot be executed by an agent. There is no `trackio agent` CLI command yet for the same reason.
+- **Bayesian optimization is wandb-comparable, not identical** — trackio's numpy GP uses the same kernel family and acquisition strategy as wandb's engine but is not a bit-for-bit port, so the exact suggestion sequence differs.
+- `${interpreter}` expands to the agent's own Python interpreter (`sys.executable`) rather than wandb's bare `python`, so command-based sweeps respect virtual environments. The `${args_json_file}` macro is not supported.
 - `entity` and `prior_runs` are accepted for wandb compatibility but ignored.
 - Sweeps are scoped to a single project.

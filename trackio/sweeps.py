@@ -6,7 +6,10 @@ import hashlib
 import itertools
 import json
 import math
+import os
+import re
 import secrets
+import sys
 import warnings
 
 import numpy as np
@@ -16,8 +19,7 @@ SWEEP_TRIAL_ID_ENV = "TRACKIO_SWEEP_TRIAL_ID"
 SWEEP_PARAMS_ENV = "TRACKIO_SWEEP_PARAMS"
 SWEEP_PROJECT_ENV = "TRACKIO_SWEEP_PROJECT"
 
-SWEEP_METHODS = ("grid", "random")
-FUTURE_SWEEP_METHODS = ("bayes",)
+SWEEP_METHODS = ("grid", "random", "bayes")
 
 SWEEP_STATES = ("running", "paused", "finished", "stopped", "cancelled")
 TERMINAL_SWEEP_STATES = ("finished", "stopped", "cancelled")
@@ -31,6 +33,17 @@ SWEEP_STATE_TRANSITIONS = {
 
 TRIAL_STATES = ("assigned", "running", "finished", "failed", "pruned")
 TERMINAL_TRIAL_STATES = ("finished", "failed", "pruned")
+
+DEFAULT_COMMAND = ["${env}", "${interpreter}", "${program}", "${args}"]
+
+ARGS_MACROS = (
+    "${args}",
+    "${args_no_boolean_flags}",
+    "${args_no_hyphens}",
+    "${args_json}",
+)
+
+_ENVVAR_MACRO_RE = re.compile(r"\$\{envvar:([A-Za-z_][A-Za-z0-9_]*)\}")
 
 GRID_COMPATIBLE_DISTRIBUTIONS = (
     "constant",
@@ -203,6 +216,110 @@ def unflatten_params(flat_params: dict) -> dict:
     return nested
 
 
+def flatten_params(params: dict, prefix: str = "") -> dict:
+    """Flattens a nested params dict (parameter values, not specs) to dotted
+    paths, mirroring flatten_parameters."""
+    flat = {}
+    for key, value in params.items():
+        path = f"{prefix}{key}"
+        if isinstance(value, dict):
+            flat.update(flatten_params(value, prefix=f"{path}."))
+        else:
+            flat[path] = value
+    return flat
+
+
+def is_command_sweep(config: dict) -> bool:
+    return bool(config.get("program") or config.get("command"))
+
+
+def _format_arg_value(value) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bool, int, float)) or value is None:
+        return str(value)
+    return json.dumps(value)
+
+
+def _expand_args_macro(macro: str, params: dict, flat_params: dict) -> list[str]:
+    items = sorted(flat_params.items())
+    if macro == "${args}":
+        return [f"--{key}={_format_arg_value(value)}" for key, value in items]
+    if macro == "${args_no_boolean_flags}":
+        args = []
+        for key, value in items:
+            if value is True:
+                args.append(f"--{key}")
+            elif value is False:
+                continue
+            else:
+                args.append(f"--{key}={_format_arg_value(value)}")
+        return args
+    if macro == "${args_no_hyphens}":
+        return [f"{key}={_format_arg_value(value)}" for key, value in items]
+    if macro == "${args_json}":
+        return [json.dumps(params, sort_keys=True)]
+    raise SweepConfigError(f"Unknown args macro '{macro}'.")
+
+
+def expand_command(
+    config: dict, params: dict, environ: dict | None = None
+) -> list[str]:
+    """Expands a command-mode sweep's `command` template (or the wandb default
+    command) into an argv list for one trial's params. Pure: pass `environ` to
+    override os.environ for ${envvar:NAME} macros."""
+    environ = dict(os.environ) if environ is None else environ
+    program = config.get("program")
+    command = config.get("command")
+    if command is None:
+        if program is None:
+            raise SweepConfigError(
+                "Command-mode sweeps require 'program' (or an explicit 'command')."
+            )
+        command = DEFAULT_COMMAND
+    flat_params = flatten_params(params)
+    argv = []
+    for token in command:
+        if token in ARGS_MACROS:
+            argv.extend(_expand_args_macro(token, params, flat_params))
+            continue
+        for macro in ARGS_MACROS:
+            if macro in token:
+                raise SweepConfigError(
+                    f"Macro '{macro}' must be a whole command token, not part "
+                    f"of '{token}'."
+                )
+        if token == "${env}":
+            if sys.platform != "win32":
+                argv.append("/usr/bin/env")
+            continue
+        expanded = token.replace(
+            "${env}", "" if sys.platform == "win32" else "/usr/bin/env"
+        )
+        expanded = expanded.replace("${interpreter}", sys.executable)
+        if "${program}" in expanded:
+            if program is None:
+                raise SweepConfigError(
+                    "'command' references ${program} but no 'program' is set."
+                )
+            expanded = expanded.replace("${program}", program)
+
+        def _envvar(match: re.Match) -> str:
+            name = match.group(1)
+            if name not in environ:
+                warnings.warn(
+                    f"Sweep command references ${{envvar:{name}}} but it is "
+                    "not set; expanding to an empty string.",
+                    stacklevel=2,
+                )
+                return ""
+            return environ[name]
+
+        expanded = _ENVVAR_MACRO_RE.sub(_envvar, expanded)
+        argv.append(expanded)
+    return argv
+
+
 def validate_sweep_config(config: dict) -> dict:
     """Validates a wandb-schema sweep config and returns a normalized copy."""
     if not isinstance(config, dict):
@@ -210,11 +327,6 @@ def validate_sweep_config(config: dict) -> dict:
     config = dict(config)
 
     method = config.get("method")
-    if method in FUTURE_SWEEP_METHODS:
-        raise SweepConfigError(
-            f"Sweep method '{method}' is not supported yet by trackio. "
-            f"Supported methods: {', '.join(SWEEP_METHODS)}."
-        )
     if method not in SWEEP_METHODS:
         raise SweepConfigError(
             f"Sweep config requires 'method' set to one of: {', '.join(SWEEP_METHODS)}."
@@ -243,11 +355,36 @@ def validate_sweep_config(config: dict) -> dict:
         goal = metric.get("goal", "minimize")
         if goal not in ("minimize", "maximize"):
             raise SweepConfigError("'metric.goal' must be 'minimize' or 'maximize'.")
+        target = metric.get("target")
+        if target is not None and (
+            not isinstance(target, (int, float)) or isinstance(target, bool)
+        ):
+            raise SweepConfigError("'metric.target' must be a number.")
         config["metric"] = {**metric, "goal": goal}
+
+    if method == "bayes" and not (config.get("metric") or {}).get("name"):
+        raise SweepConfigError(
+            "Sweep method 'bayes' requires 'metric' with a 'name' so trial "
+            "results can guide the search."
+        )
 
     run_cap = config.get("run_cap")
     if run_cap is not None and (not isinstance(run_cap, int) or run_cap <= 0):
         raise SweepConfigError("'run_cap' must be a positive integer.")
+
+    program = config.get("program")
+    if program is not None and not isinstance(program, str):
+        raise SweepConfigError("'program' must be a string.")
+    command = config.get("command")
+    if command is not None:
+        if not isinstance(command, list) or not all(
+            isinstance(token, str) for token in command
+        ):
+            raise SweepConfigError("'command' must be a list of strings.")
+        if program is None and any("${program}" in token for token in command):
+            raise SweepConfigError(
+                "'command' references ${program} but no 'program' is set."
+            )
 
     if "early_terminate" in config:
         warnings.warn(
@@ -257,6 +394,22 @@ def validate_sweep_config(config: dict) -> dict:
         )
 
     return config
+
+
+def target_met(config: dict, trials: list[dict]) -> bool:
+    """Whether any finished trial's metric value meets `metric.target`."""
+    metric = config.get("metric") or {}
+    target = metric.get("target")
+    if target is None:
+        return False
+    maximize = metric.get("goal") == "maximize"
+    for trial in trials:
+        value = trial.get("metric_value")
+        if trial.get("state") != "finished" or value is None:
+            continue
+        if value >= target if maximize else value <= target:
+            return True
+    return False
 
 
 def _quantize(value: float, q: float) -> float:
@@ -379,9 +532,16 @@ class RandomSuggester:
         return unflatten_params(flat_params)
 
 
+def _bayes_suggester(config: dict):
+    from trackio.sweep_bayes import BayesSuggester  # noqa: PLC0415
+
+    return BayesSuggester(config)
+
+
 SUGGESTERS = {
     "grid": GridSuggester,
     "random": RandomSuggester,
+    "bayes": _bayes_suggester,
 }
 
 

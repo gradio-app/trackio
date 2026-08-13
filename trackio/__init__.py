@@ -969,7 +969,8 @@ def sweep(
     Args:
         sweep (`dict` or `Callable`):
             The sweep configuration dict, or a callable that returns one.
-            Requires `method` ("grid" or "random") and `parameters`.
+            Requires `method` ("grid", "random", or "bayes") and
+            `parameters`.
         entity (`str`, *optional*):
             Ignored. Provided for compatibility with `wandb.sweep()`.
         project (`str`, *optional*):
@@ -1031,8 +1032,11 @@ def agent(
         sweep_id (`str`):
             The sweep id returned by `trackio.sweep()`. May be qualified as
             `"project/sweep_id"`, in which case `project` can be omitted.
-        function (`Callable`):
+        function (`Callable`, *optional*):
             A function (called with no arguments) that runs one trial.
+            Required unless the sweep is command-based (its config has
+            `program` or `command`), in which case each trial runs as a
+            subprocess and `function` must be omitted.
         entity (`str`, *optional*):
             Ignored. Provided for compatibility with `wandb.agent()`.
         project (`str`, *optional*):

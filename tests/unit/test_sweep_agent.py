@@ -1,4 +1,5 @@
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -114,8 +115,21 @@ def test_agent_requires_function(temp_dir):
         {"method": "grid", "parameters": {"lr": {"values": [0.5]}}},
         project="proj",
     )
-    with pytest.raises(ValueError, match="requires `function`"):
+    with pytest.raises(ValueError, match="function-based"):
         trackio.agent(sweep_id, project="proj")
+
+
+def test_agent_rejects_function_for_command_sweep(temp_dir):
+    sweep_id = trackio.sweep(
+        {
+            "method": "grid",
+            "program": "train.py",
+            "parameters": {"lr": {"values": [0.5]}},
+        },
+        project="proj",
+    )
+    with pytest.raises(ValueError, match="command-based"):
+        trackio.agent(sweep_id, function=lambda: None, project="proj")
 
 
 def test_agent_marks_failed_trials_and_aborts(temp_dir):
@@ -174,6 +188,73 @@ def test_function_without_init_still_finishes_trial(temp_dir):
     assert trials[0]["state"] == "finished"
 
 
+TRAIN_SCRIPT = """\
+import argparse
+import os
+
+import trackio
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--lr", type=float, required=True)
+args = parser.parse_args()
+
+assert os.environ.get("TRACKIO_SWEEP_ID")
+assert os.environ.get("TRACKIO_SWEEP_TRIAL_ID")
+
+run = trackio.init(project="proj")
+assert run.config["lr"] == args.lr
+trackio.log({"loss": args.lr * 2})
+trackio.finish()
+"""
+
+
+def test_command_mode_agent_end_to_end(temp_dir, monkeypatch):
+    monkeypatch.setenv("TRACKIO_DIR", temp_dir)
+    script = Path(temp_dir) / "train_script.py"
+    script.write_text(TRAIN_SCRIPT)
+    sweep_id = trackio.sweep(
+        {
+            "method": "grid",
+            "metric": {"name": "loss", "goal": "minimize"},
+            "program": str(script),
+            "parameters": {"lr": {"values": [0.5, 0.25]}},
+        },
+        project="proj",
+    )
+
+    trackio.agent(sweep_id, project="proj")
+
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["state"] == "finished"
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert len(trials) == 2
+    assert all(t["state"] == "finished" for t in trials)
+    assert all(t["run_id"] for t in trials)
+    assert sorted(t["metric_value"] for t in trials) == [0.5, 1.0]
+    assert sweep["best_metric_value"] == 0.5
+
+
+def test_command_mode_nonzero_exit_marks_trial_failed(temp_dir, monkeypatch):
+    monkeypatch.setenv("TRACKIO_DIR", temp_dir)
+    script = Path(temp_dir) / "crash_script.py"
+    script.write_text("import sys\nsys.exit(1)\n")
+    sweep_id = trackio.sweep(
+        {
+            "method": "grid",
+            "program": str(script),
+            "parameters": {"lr": {"values": [0.5]}},
+        },
+        project="proj",
+    )
+
+    trackio.agent(sweep_id, project="proj")
+
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert len(trials) == 1
+    assert trials[0]["state"] == "failed"
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "finished"
+
+
 def test_concurrent_agents_never_share_a_grid_cell(temp_dir):
     sweep_id = SQLiteStorage.create_sweep(
         "proj",
@@ -228,6 +309,30 @@ def test_trial_context_from_env(temp_dir, monkeypatch):
     assert trials[0]["state"] == "finished"
     assert trials[0]["metric_value"] == 0.1
     assert trials[0]["run_id"] == run.id
+
+
+def test_bayes_sweep_through_agent_loop(temp_dir):
+    sweep_id = trackio.sweep(
+        {
+            "method": "bayes",
+            "metric": {"name": "loss", "goal": "minimize"},
+            "run_cap": 5,
+            "parameters": {"x": {"min": 0.0, "max": 1.0}},
+        },
+        project="proj",
+    )
+
+    def train():
+        run = trackio.init(project="proj")
+        trackio.log({"loss": (run.config["x"] - 0.5) ** 2})
+        trackio.finish()
+
+    trackio.agent(sweep_id, function=train, project="proj")
+
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["state"] == "finished"
+    assert sweep["trial_counts"] == {"finished": 5}
+    assert sweep["best_metric_value"] is not None
 
 
 def test_api_sweeps_accessor(temp_dir):

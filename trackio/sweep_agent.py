@@ -3,6 +3,7 @@ remote trackio server) and executes them via a user-provided function."""
 
 import json
 import os
+import subprocess
 import time
 import uuid
 
@@ -16,6 +17,8 @@ from trackio.sweeps import (
     SWEEP_PARAMS_ENV,
     SWEEP_PROJECT_ENV,
     SWEEP_TRIAL_ID_ENV,
+    expand_command,
+    is_command_sweep,
 )
 from trackio.utils import _emit_nonfatal_warning
 
@@ -37,6 +40,8 @@ class SweepClient:
         space_id, server_url = utils.resolve_space_id_and_server_url(
             space_id, server_url
         )
+        self.space_id = space_id
+        self.server_url = server_url
         self._remote: RemoteClient | None = None
         if space_id is not None:
             self._remote = RemoteClient(
@@ -163,6 +168,29 @@ def resolve_trial_context() -> dict | None:
     return context_vars.current_sweep_trial.get() or trial_context_from_env()
 
 
+def _run_command_trial(
+    sweep_config: dict,
+    client: SweepClient,
+    sweep_id: str,
+    trial_id: int,
+    params: dict,
+) -> None:
+    argv = expand_command(sweep_config, params)
+    child_env = os.environ.copy()
+    child_env[SWEEP_ID_ENV] = sweep_id
+    child_env[SWEEP_TRIAL_ID_ENV] = str(trial_id)
+    child_env[SWEEP_PARAMS_ENV] = json.dumps(params)
+    child_env[SWEEP_PROJECT_ENV] = client.project
+    if client.space_id is not None:
+        child_env["TRACKIO_SPACE_ID"] = client.space_id
+    elif client.server_url is not None:
+        child_env["TRACKIO_SERVER_URL"] = client.server_url
+    print(f"* Running: {' '.join(argv)}")
+    returncode = subprocess.Popen(argv, env=child_env).wait()
+    if returncode != 0:
+        raise RuntimeError(f"Trial command exited with non-zero status {returncode}.")
+
+
 def _finish_current_run():
     run = context_vars.current_run.get()
     if run is None:
@@ -186,11 +214,6 @@ def agent(
         _emit_nonfatal_warning(
             "* Warning: entity is not used. Provided for compatibility with wandb.agent()."
         )
-    if function is None:
-        raise ValueError(
-            "trackio.agent() requires `function`. Command-based agents "
-            "(sweep configs with 'program'/'command') are not supported yet."
-        )
     project, sweep_id = split_sweep_path(sweep_id, project)
     project = project or context_vars.current_project.get()
     if project is None:
@@ -204,8 +227,23 @@ def agent(
     sweep = client.get_sweep(sweep_id)
     if sweep is None:
         raise ValueError(f"Sweep '{sweep_id}' not found in project '{project}'.")
-    metric = (sweep.get("config") or {}).get("metric") or {}
+    sweep_config = sweep.get("config") or {}
+    metric = sweep_config.get("metric") or {}
     metric_name = metric.get("name")
+
+    command_mode = is_command_sweep(sweep_config)
+    if command_mode and function is not None:
+        raise ValueError(
+            f"Sweep '{sweep_id}' is command-based ('program'/'command' in its "
+            "config); do not pass `function` to trackio.agent()."
+        )
+    if not command_mode and function is None:
+        raise ValueError(
+            f"Sweep '{sweep_id}' is function-based: its config has no "
+            "'program' or 'command', so agents must supply the training "
+            "function via trackio.agent(sweep_id, function=...). The "
+            "`trackio agent` CLI only supports command-mode sweeps."
+        )
 
     agent_id = uuid.uuid4().hex[:8]
     print(f"* Starting sweep agent {agent_id} for sweep {sweep_id} ({project})")
@@ -225,18 +263,24 @@ def agent(
         params = command["params"]
         trials_run += 1
         print(f"* Agent {agent_id} starting trial {trial_id} with params: {params}")
-        token = context_vars.current_sweep_trial.set(
-            {
-                "sweep_id": sweep_id,
-                "trial_id": trial_id,
-                "params": params,
-                "project": project,
-                "metric_name": metric_name,
-            }
-        )
         try:
-            function()
-            _finish_current_run()
+            if command_mode:
+                _run_command_trial(sweep_config, client, sweep_id, trial_id, params)
+            else:
+                token = context_vars.current_sweep_trial.set(
+                    {
+                        "sweep_id": sweep_id,
+                        "trial_id": trial_id,
+                        "params": params,
+                        "project": project,
+                        "metric_name": metric_name,
+                    }
+                )
+                try:
+                    function()
+                    _finish_current_run()
+                finally:
+                    context_vars.current_sweep_trial.reset(token)
             try:
                 client.report_trial(sweep_id, trial_id, "finished")
             except Exception as report_error:
@@ -255,14 +299,13 @@ def agent(
                 _emit_nonfatal_warning(
                     f"Could not report failed trial {trial_id}: {report_error}"
                 )
-            try:
-                _finish_current_run()
-            except Exception:
-                pass
+            if not command_mode:
+                try:
+                    _finish_current_run()
+                except Exception:
+                    pass
             if consecutive_failures >= MAX_INITIAL_FAILURES:
                 raise RuntimeError(
                     f"Sweep agent aborting after {consecutive_failures} "
                     "consecutive failed trials."
                 ) from e
-        finally:
-            context_vars.current_sweep_trial.reset(token)

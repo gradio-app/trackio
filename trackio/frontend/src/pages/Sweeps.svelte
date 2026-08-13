@@ -150,7 +150,15 @@
             </td>
             <td>{sweep.method}</td>
             <td>
-              <span class="state-badge state-{sweep.state}">{sweep.state}</span>
+              <span
+                class="state-badge state-{sweep.state}"
+                title={sweep.finish_reason
+                  ? `Finished: ${sweep.finish_reason}`
+                  : undefined}
+                >{sweep.state}{sweep.finish_reason
+                  ? ` (${sweep.finish_reason})`
+                  : ""}</span
+              >
             </td>
             <td>{sweep.num_trials}</td>
             <td>

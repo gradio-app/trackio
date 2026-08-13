@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pytest
 
@@ -7,12 +9,16 @@ from trackio.sweeps import (
     RandomSuggester,
     SweepConfigError,
     can_transition_sweep_state,
+    expand_command,
     flatten_parameters,
+    flatten_params,
     grid_values,
     infer_distribution,
+    is_command_sweep,
     next_trial,
     param_hash,
     sample_parameter,
+    target_met,
     unflatten_params,
     validate_sweep_config,
 )
@@ -35,11 +41,19 @@ class TestValidateSweepConfig:
         with pytest.raises(SweepConfigError, match="method"):
             validate_sweep_config({"parameters": {"lr": {"values": [1]}}})
 
-    def test_rejects_bayes_with_clear_message(self):
-        with pytest.raises(SweepConfigError, match="not supported yet"):
+    def test_bayes_requires_metric(self):
+        with pytest.raises(SweepConfigError, match="bayes.*metric"):
             validate_sweep_config(
                 {"method": "bayes", "parameters": {"lr": {"values": [1]}}}
             )
+        config = validate_sweep_config(
+            {
+                "method": "bayes",
+                "metric": {"name": "loss"},
+                "parameters": {"lr": {"min": 0.001, "max": 0.1}},
+            }
+        )
+        assert config["metric"]["goal"] == "minimize"
 
     def test_requires_parameters(self):
         with pytest.raises(SweepConfigError, match="parameters"):
@@ -60,6 +74,20 @@ class TestValidateSweepConfig:
             validate_sweep_config(
                 {**grid_config(), "metric": {"name": "loss", "goal": "up"}}
             )
+
+    def test_metric_target_must_be_number(self):
+        with pytest.raises(SweepConfigError, match="target"):
+            validate_sweep_config(
+                {**grid_config(), "metric": {"name": "loss", "target": "low"}}
+            )
+        with pytest.raises(SweepConfigError, match="target"):
+            validate_sweep_config(
+                {**grid_config(), "metric": {"name": "loss", "target": True}}
+            )
+        config = validate_sweep_config(
+            {**grid_config(), "metric": {"name": "loss", "target": 0.1}}
+        )
+        assert config["metric"]["target"] == 0.1
 
     def test_run_cap_must_be_positive(self):
         with pytest.raises(SweepConfigError, match="run_cap"):
@@ -182,6 +210,114 @@ class TestNestedParameters:
         assert first["optimizer"]["name"] in ("adam", "sgd")
 
 
+class TestCommandConfigValidation:
+    def test_program_must_be_string(self):
+        with pytest.raises(SweepConfigError, match="program"):
+            validate_sweep_config({**grid_config(), "program": ["train.py"]})
+
+    def test_command_must_be_list_of_strings(self):
+        with pytest.raises(SweepConfigError, match="command"):
+            validate_sweep_config({**grid_config(), "command": "python train.py"})
+        with pytest.raises(SweepConfigError, match="command"):
+            validate_sweep_config({**grid_config(), "command": ["python", 3]})
+
+    def test_command_referencing_program_requires_program(self):
+        with pytest.raises(SweepConfigError, match="program"):
+            validate_sweep_config(
+                {**grid_config(), "command": ["${interpreter}", "${program}"]}
+            )
+
+    def test_is_command_sweep(self):
+        assert not is_command_sweep(grid_config())
+        assert is_command_sweep({**grid_config(), "program": "train.py"})
+        assert is_command_sweep({**grid_config(), "command": ["./train.sh"]})
+
+
+class TestExpandCommand:
+    def test_default_command(self):
+        config = {**grid_config(), "program": "train.py"}
+        argv = expand_command(config, {"lr": 0.1, "batch_size": 8})
+        assert argv == [
+            "/usr/bin/env",
+            sys.executable,
+            "train.py",
+            "--batch_size=8",
+            "--lr=0.1",
+        ]
+
+    def test_requires_program_or_command(self):
+        with pytest.raises(SweepConfigError, match="program"):
+            expand_command(grid_config(), {"lr": 0.1})
+
+    def test_nested_params_use_dotted_args(self):
+        config = {**grid_config(), "program": "train.py"}
+        argv = expand_command(config, {"optimizer": {"lr": 0.1, "name": "adam"}})
+        assert "--optimizer.lr=0.1" in argv
+        assert "--optimizer.name=adam" in argv
+
+    def test_args_no_hyphens(self):
+        config = {
+            **grid_config(),
+            "program": "train.py",
+            "command": ["${program}", "${args_no_hyphens}"],
+        }
+        argv = expand_command(config, {"lr": 0.1})
+        assert argv == ["train.py", "lr=0.1"]
+
+    def test_args_no_boolean_flags(self):
+        config = {
+            **grid_config(),
+            "command": ["run.sh", "${args_no_boolean_flags}"],
+        }
+        argv = expand_command(config, {"augment": True, "debug": False, "lr": 0.1})
+        assert argv == ["run.sh", "--augment", "--lr=0.1"]
+
+    def test_boolean_values_in_plain_args(self):
+        config = {**grid_config(), "command": ["run.sh", "${args}"]}
+        argv = expand_command(config, {"augment": True})
+        assert argv == ["run.sh", "--augment=True"]
+
+    def test_args_json(self):
+        config = {**grid_config(), "command": ["run.sh", "${args_json}"]}
+        params = {"optimizer": {"lr": 0.1}}
+        argv = expand_command(config, params)
+        assert argv == ["run.sh", '{"optimizer": {"lr": 0.1}}']
+
+    def test_args_macros_must_be_whole_tokens(self):
+        config = {**grid_config(), "command": ["run.sh", "--params=${args}"]}
+        with pytest.raises(SweepConfigError, match="whole command token"):
+            expand_command(config, {"lr": 0.1})
+
+    def test_envvar_macro(self):
+        config = {
+            **grid_config(),
+            "command": ["run.sh", "${envvar:MY_TOKEN}"],
+        }
+        argv = expand_command(config, {}, environ={"MY_TOKEN": "secret"})
+        assert argv == ["run.sh", "secret"]
+
+    def test_missing_envvar_warns_and_expands_empty(self):
+        config = {**grid_config(), "command": ["run.sh", "x${envvar:NOPE_VAR}y"]}
+        with pytest.warns(UserWarning, match="NOPE_VAR"):
+            argv = expand_command(config, {}, environ={})
+        assert argv == ["run.sh", "xy"]
+
+    def test_inline_program_and_interpreter_substitution(self):
+        config = {
+            **grid_config(),
+            "program": "train.py",
+            "command": ["${interpreter}", "-u", "${program}", "${args}"],
+        }
+        argv = expand_command(config, {"lr": 0.5})
+        assert argv == [sys.executable, "-u", "train.py", "--lr=0.5"]
+
+    def test_flatten_params_round_trip(self):
+        nested = {"optimizer": {"lr": 0.1}, "seed": 3}
+        flat = flatten_params(nested)
+        assert flat == {"optimizer.lr": 0.1, "seed": 3}
+        assert unflatten_params(flat) == nested
+
+
 class TestGridSuggester:
     def test_exhausts_all_combinations_without_repeats(self):
         config = validate_sweep_config(grid_config())
@@ -240,6 +376,37 @@ class TestNextTrial:
             {"method": "grid", "parameters": {"lr": {"values": [0.1]}}}
         )
         assert next_trial(config, [{"params": {"lr": 0.1}}]) is None
+
+
+class TestTargetMet:
+    def _config(self, goal, target):
+        return {
+            **grid_config(),
+            "metric": {"name": "loss", "goal": goal, "target": target},
+        }
+
+    def test_no_target_never_met(self):
+        config = {**grid_config(), "metric": {"name": "loss", "goal": "minimize"}}
+        trials = [{"state": "finished", "metric_value": -100.0}]
+        assert not target_met(config, trials)
+
+    def test_minimize_met_at_or_below_target(self):
+        config = self._config("minimize", 0.5)
+        assert target_met(config, [{"state": "finished", "metric_value": 0.5}])
+        assert target_met(config, [{"state": "finished", "metric_value": 0.4}])
+        assert not target_met(config, [{"state": "finished", "metric_value": 0.6}])
+
+    def test_maximize_met_at_or_above_target(self):
+        config = self._config("maximize", 0.9)
+        assert target_met(config, [{"state": "finished", "metric_value": 0.9}])
+        assert target_met(config, [{"state": "finished", "metric_value": 0.95}])
+        assert not target_met(config, [{"state": "finished", "metric_value": 0.8}])
+
+    def test_only_finished_trials_count(self):
+        config = self._config("minimize", 0.5)
+        for state in ("assigned", "running", "failed", "pruned"):
+            assert not target_met(config, [{"state": state, "metric_value": 0.1}])
+        assert not target_met(config, [{"state": "finished", "metric_value": None}])
 
 
 class TestSweepStateMachine:

@@ -58,7 +58,13 @@ def test_suggest_trial_lifecycle(temp_dir):
 
     exhausted = SQLiteStorage.suggest_trial("proj", sweep_id)
     assert exhausted == {"command": "exit", "reason": "exhausted"}
-    assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "finished"
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["state"] == "finished"
+    assert sweep["finish_reason"] == "exhausted"
+    assert SQLiteStorage.suggest_trial("proj", sweep_id) == {
+        "command": "exit",
+        "reason": "exhausted",
+    }
 
 
 def test_suggest_trial_unknown_sweep(temp_dir):
@@ -83,6 +89,7 @@ def test_run_cap_reason(temp_dir):
     assert SQLiteStorage.suggest_trial("proj", sweep_id)["command"] == "run"
     capped = SQLiteStorage.suggest_trial("proj", sweep_id)
     assert capped == {"command": "exit", "reason": "run_cap"}
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["finish_reason"] == "run_cap"
 
 
 def test_state_transitions_enforced(temp_dir):
@@ -168,6 +175,95 @@ def test_best_metric_maximize(temp_dir):
     assert sweep["best_run_id"] == "run-a"
 
 
+def random_target_config(goal="minimize", target=0.5):
+    return {
+        "method": "random",
+        "metric": {"name": "loss", "goal": goal, "target": target},
+        "parameters": {"lr": {"min": 0.0, "max": 1.0}},
+    }
+
+
+def test_report_trial_meeting_target_finishes_sweep(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", random_target_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    SQLiteStorage.mark_trial_running("proj", sweep_id, trial["trial_id"], "run-1")
+    SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.4
+    )
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["state"] == "finished"
+    assert sweep["finish_reason"] == "target"
+    assert SQLiteStorage.suggest_trial("proj", sweep_id) == {
+        "command": "exit",
+        "reason": "target",
+    }
+
+
+def test_report_trial_missing_target_keeps_running(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", random_target_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.9
+    )
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "running"
+
+
+def test_failed_trial_value_does_not_trigger_target(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", random_target_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "failed", metric_value=0.1
+    )
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "running"
+    assert SQLiteStorage.suggest_trial("proj", sweep_id)["command"] == "run"
+
+
+def test_target_maximize_direction(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep(
+        "proj", random_target_config(goal="maximize", target=0.9)
+    )
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.5
+    )
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "running"
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.95
+    )
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "finished"
+
+
+def test_suggest_trial_detects_preexisting_target_hit(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", random_target_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    db_path = SQLiteStorage.get_project_db_path("proj")
+    with SQLiteStorage._get_connection(db_path) as conn:
+        conn.execute(
+            """UPDATE sweep_trials SET state = 'finished', metric_value = 0.1
+            WHERE trial_id = ?""",
+            (trial["trial_id"],),
+        )
+        conn.commit()
+    result = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert result == {"command": "exit", "reason": "target"}
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["state"] == "finished"
+    assert sweep["finish_reason"] == "target"
+
+
+def test_manual_stop_has_no_finish_reason(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    SQLiteStorage.set_sweep_state("proj", sweep_id, "stopped")
+    sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert sweep["state"] == "stopped"
+    assert sweep["finish_reason"] is None
+    assert SQLiteStorage.suggest_trial("proj", sweep_id) == {
+        "command": "exit",
+        "reason": "stopped",
+    }
+
+
 def test_sweep_project_name_suffixes_reserved(temp_dir):
     with pytest.raises(ValueError, match="reserved suffix"):
         SQLiteStorage.validate_project_name("model_sweeps")
@@ -189,7 +285,10 @@ def test_parquet_roundtrip_preserves_sweeps(temp_dir):
     SQLiteStorage.report_trial(
         "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.3
     )
+    SQLiteStorage.suggest_trial("proj", sweep_id, agent_id="a1")
+    assert SQLiteStorage.suggest_trial("proj", sweep_id)["reason"] == "exhausted"
     before_sweep = SQLiteStorage.get_sweep("proj", sweep_id)
+    assert before_sweep["finish_reason"] == "exhausted"
     before_trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
 
     SQLiteStorage._dataset_import_attempted = True
