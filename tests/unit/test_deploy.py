@@ -31,7 +31,7 @@ def test_list_bucket_file_paths_uses_list_bucket_tree(mock_list_bucket_tree):
     ]
 
     paths = _list_bucket_file_paths(
-        "abidlabs/example-bucket", prefix="trackio/media/proj/"
+        "abidlabs/example-bucket", prefix="trackio/media/proj/", token=False
     )
 
     assert paths == ["trackio/media/proj/image.png"]
@@ -39,6 +39,7 @@ def test_list_bucket_file_paths_uses_list_bucket_tree(mock_list_bucket_tree):
         "abidlabs/example-bucket",
         prefix="trackio/media/proj/",
         recursive=True,
+        token=False,
     )
 
 

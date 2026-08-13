@@ -198,6 +198,26 @@ export async function getSettings() {
   return await callApi("/get_settings");
 }
 
+export async function getRegistryBuckets() {
+  if (await isStaticMode()) {
+    return { buckets: [], default_bucket_id: null, unavailable: true };
+  }
+  return await callApi("/get_registry_buckets");
+}
+
+export async function getRegistries(bucketId = null) {
+  if (await isStaticMode()) return [];
+  return await callApi("/get_registries", { bucket_id: bucketId });
+}
+
+export async function getRegistryDetails(registry, bucketId = null) {
+  if (await isStaticMode()) return null;
+  return await callApi("/get_registry_details", {
+    registry,
+    bucket_id: bucketId,
+  });
+}
+
 export async function getProjectFiles(project) {
   if (await isStaticMode()) return staticApi.getProjectFiles(project);
   return await callApi("/get_project_files", { project });

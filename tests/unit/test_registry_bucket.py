@@ -16,6 +16,7 @@ class FakeBucket:
     def __init__(self):
         self.objects: dict[str, bytes] = {}
         self.created: list[tuple[str, bool | None]] = []
+        self.list_tokens: list[str | bool | None] = []
 
     def install(self, monkeypatch):
         monkeypatch.setattr(rb, "create_bucket_if_not_exists", self._create)
@@ -27,7 +28,8 @@ class FakeBucket:
     def _create(self, bucket_id, private=None):
         self.created.append((bucket_id, private))
 
-    def _list(self, bucket_id, prefix=None):
+    def _list(self, bucket_id, prefix=None, token=None):
+        self.list_tokens.append(token)
         return [p for p in self.objects if prefix is None or p.startswith(prefix)]
 
     def _batch(self, bucket_id, *, add=None, copy=None, delete=None, token=None):
@@ -93,6 +95,21 @@ def test_bucket_registry_round_trip(temp_dir, bucket):
         "promote",
     ]
     assert len(bucket.event_paths()) == 5
+
+
+def test_bucket_registry_reads_use_explicit_token(temp_dir, bucket):
+    writer = BucketRegistryStorage(BUCKET)
+    writer.create_registry("models")
+    _link(writer)
+    bucket.list_tokens.clear()
+
+    reader = BucketRegistryStorage(BUCKET, token=False)
+    reader.list_registries()
+    reader.get_registry("models")
+    reader.get_collection("models", "churn")
+
+    assert bucket.list_tokens
+    assert set(bucket.list_tokens) == {False}
 
 
 def test_registry_state_is_a_fold_of_the_bucket(temp_dir, bucket):

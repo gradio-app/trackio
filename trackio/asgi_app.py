@@ -318,6 +318,8 @@ async def run_api_request(request: Request, api_name: str) -> Response:
 
     try:
         result = _invoke_handler(fn, request, args=args, kwargs=kwargs)
+        if inspect.isawaitable(result):
+            result = await result
         return JSONResponse({"data": _json_safe(result)})
     except TrackioAPIError as e:
         return JSONResponse({"error": str(e)}, status_code=400)

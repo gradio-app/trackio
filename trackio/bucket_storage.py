@@ -42,8 +42,14 @@ def upload_logbook_path_artifacts_to_bucket(
     return uploaded
 
 
-def _list_bucket_file_paths(bucket_id: str, prefix: str | None = None) -> list[str]:
-    items = huggingface_hub.list_bucket_tree(bucket_id, prefix=prefix, recursive=True)
+def _list_bucket_file_paths(
+    bucket_id: str,
+    prefix: str | None = None,
+    token: str | bool | None = None,
+) -> list[str]:
+    items = huggingface_hub.list_bucket_tree(
+        bucket_id, prefix=prefix, recursive=True, token=token
+    )
     return [
         item.path
         for item in items
