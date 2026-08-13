@@ -103,7 +103,9 @@ class BucketRegistryStorage:
         remote_path = _manifest_path(registry)
         try:
             paths = _list_bucket_file_paths(
-                self.bucket_id, prefix=_registry_prefix(registry)
+                self.bucket_id,
+                prefix=_registry_prefix(registry),
+                token=self._token(),
             )
         except BucketNotFoundError:
             return None
@@ -128,7 +130,9 @@ class BucketRegistryStorage:
     def _remote_event_uids(self, registry: str) -> list[str]:
         prefix = _events_prefix(registry)
         try:
-            paths = _list_bucket_file_paths(self.bucket_id, prefix=prefix)
+            paths = _list_bucket_file_paths(
+                self.bucket_id, prefix=prefix, token=self._token()
+            )
         except BucketNotFoundError:
             return []
         return sorted(Path(p).stem for p in paths if p.endswith(".json"))
@@ -204,7 +208,9 @@ class BucketRegistryStorage:
         """List registry manifests stored in this bucket, ordered by name."""
         try:
             paths = _list_bucket_file_paths(
-                self.bucket_id, prefix=REGISTRIES_BUCKET_PREFIX
+                self.bucket_id,
+                prefix=REGISTRIES_BUCKET_PREFIX,
+                token=self._token(),
             )
         except BucketNotFoundError:
             return []

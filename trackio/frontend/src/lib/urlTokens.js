@@ -4,7 +4,8 @@ export function applyUrlTokens() {
   const writeToken = params.get("write_token");
   if (writeToken) {
     const maxAge = 60 * 60 * 24 * 7;
-    document.cookie = `trackio_write_token=${encodeURIComponent(writeToken)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `trackio_write_token=${encodeURIComponent(writeToken)}; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
     params.delete("write_token");
     changed = true;
   }
