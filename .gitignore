@@ -2,6 +2,7 @@ trackio/__pycache__/
 tests/__pycache__/
 .trackio/
 .gradio/
+.envrc
 trackio.db
 /artifacts/
 *.pyc
