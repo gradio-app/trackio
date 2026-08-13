@@ -114,7 +114,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "autonomous-experiments/**/*.py" = ["PLC0415"]
 "tests/**/*.py" = ["PLC0415"]
 "trackio/apple_gpu.py" = ["PLC0415"]
-"trackio/cli.py" = ["PLC0415"]
 "trackio/gpu.py" = ["PLC0415"]
 "trackio/imports.py" = ["PLC0415"]
 "trackio/run.py" = ["PLC0415"]

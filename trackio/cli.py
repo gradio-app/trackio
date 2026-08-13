@@ -1,13 +1,17 @@
 import argparse
+import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
 import huggingface_hub
+from huggingface_hub.utils import get_session
 
 import trackio
 from trackio import freeze, show, sync
+from trackio import logbook as lb
 from trackio.cli_helpers import (
     error_exit,
     format_alerts,
@@ -18,6 +22,9 @@ from trackio.cli_helpers import (
     format_metric_values,
     format_project_summary,
     format_query_result,
+    format_registry_collection,
+    format_registry_collections,
+    format_registry_events,
     format_run_summary,
     format_snapshot,
     format_spaces,
@@ -27,6 +34,7 @@ from trackio.cli_helpers import (
     format_system_metric_names,
     format_system_metrics,
 )
+from trackio.deploy import sync_incremental
 from trackio.frontend_config import (
     TRACKIO_CONFIG_PATH,
     get_persisted_frontend_dir,
@@ -34,6 +42,8 @@ from trackio.frontend_config import (
     unset_persisted_frontend_dir,
 )
 from trackio.markdown import Markdown
+from trackio.registry_storage import parse_collection_target
+from trackio.remote_client import RemoteClient
 from trackio.server import get_project_summary, get_run_summary
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -43,8 +53,6 @@ def _get_space(args):
 
 
 def _get_remote(args):
-    from trackio.remote_client import RemoteClient
-
     space = _get_space(args)
     if not space:
         return None
@@ -92,8 +100,6 @@ def _handle_status():
 
 
 def _handle_sync(args):
-    from trackio.deploy import sync_incremental
-
     if args.sync_all and args.project:
         error_exit("Cannot use --all and --project together.")
     if not args.sync_all and not args.project:
@@ -360,6 +366,227 @@ def _handle_list_spaces(args):
         print(format_spaces(spaces))
 
 
+def _registry_target(value: str) -> tuple[str, str]:
+    target = value if value.startswith("registry-") else f"registry-{value}"
+    try:
+        return parse_collection_target(target)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
+
+
+def _collection_version(value: str) -> int:
+    raw = value[1:] if value.startswith("v") else value
+    try:
+        version = int(raw)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"Collection version must be an integer or vN, got {value!r}."
+        ) from e
+    if version < 0:
+        raise argparse.ArgumentTypeError("Collection version cannot be negative.")
+    return version
+
+
+def _source_artifact(value: str) -> tuple[str, str, str | None]:
+    if "/" not in value:
+        raise argparse.ArgumentTypeError(
+            "Source must be '<project>/<artifact>[:<version-or-alias>]'."
+        )
+    project, artifact_spec = value.split("/", 1)
+    if not project or not artifact_spec:
+        raise argparse.ArgumentTypeError(
+            "Source must be '<project>/<artifact>[:<version-or-alias>]'."
+        )
+    if ":" in artifact_spec:
+        artifact, spec = artifact_spec.split(":", 1)
+        if not artifact or not spec:
+            raise argparse.ArgumentTypeError(
+                "Source must be '<project>/<artifact>[:<version-or-alias>]'."
+            )
+    else:
+        artifact, spec = artifact_spec, None
+    return project, artifact, spec
+
+
+def _collection_record(collection) -> dict:
+    return {
+        "name": collection.name,
+        "type": collection.type,
+        "description": collection.description,
+        "created_at": collection.created_at,
+        "num_links": collection.num_links,
+        "latest_version": collection.latest_version,
+        "links": collection.links,
+    }
+
+
+def _handle_registry(args):
+    try:
+        if args.registry_action == "create":
+            registry = trackio.Api().create_registry(
+                args.name,
+                description=args.description,
+                bucket_id=args.bucket_id,
+            )
+            result = {
+                "name": registry.name,
+                "description": registry.description,
+                "bucket_id": registry.bucket_id,
+            }
+            if args.json:
+                print(format_json(result))
+            else:
+                where = (
+                    f" in bucket '{registry.bucket_id}'" if registry.bucket_id else ""
+                )
+                print(f"Created registry '{registry.name}'{where}.")
+            return
+
+        if args.registry_action == "create-collection":
+            registry_name, collection_name = args.target
+            registry = trackio.Api().registry(registry_name, bucket_id=args.bucket_id)
+            collection = registry.create_collection(
+                collection_name,
+                artifact_type=args.type,
+                description=args.description,
+            )
+            result = _collection_record(collection)
+            if args.json:
+                print(format_json(result))
+            else:
+                print(
+                    f"Collection '{registry_name}/{collection_name}' "
+                    f"is ready ({collection.type})."
+                )
+            return
+
+        if args.registry_action == "list":
+            registry = trackio.Api().registry(args.name, bucket_id=args.bucket_id)
+            collections = [_collection_record(c) for c in registry.collections()]
+            if args.json:
+                print(
+                    format_json({"registry": registry.name, "collections": collections})
+                )
+            else:
+                print(format_registry_collections(registry.name, collections))
+            return
+
+        if args.registry_action == "events":
+            registry = trackio.Api().registry(args.name, bucket_id=args.bucket_id)
+            events = registry.events()
+            if args.json:
+                print(format_json({"registry": registry.name, "events": events}))
+            else:
+                print(format_registry_events(events))
+            return
+
+        registry_name, collection_name = args.target
+        registry = trackio.Api().registry(registry_name, bucket_id=args.bucket_id)
+
+        if args.registry_action == "show":
+            collection = registry.collection(collection_name)
+            if collection is None:
+                error_exit(
+                    f"Collection '{collection_name}' not found in registry "
+                    f"'{registry_name}'."
+                )
+            result = _collection_record(collection)
+            if args.json:
+                print(format_json(result))
+            else:
+                print(format_registry_collection(registry_name, result))
+            return
+
+        if args.registry_action == "link":
+            source_project, source_artifact, source_spec = args.source
+            record = SQLiteStorage.get_artifact_manifest(
+                source_project, source_artifact, source_spec
+            )
+            if record is None:
+                suffix = f":{source_spec}" if source_spec else ""
+                error_exit(
+                    f"Artifact '{source_project}/{source_artifact}{suffix}' "
+                    "not found locally."
+                )
+            result = registry._storage.link_artifact_version(
+                registry=registry_name,
+                collection=collection_name,
+                type=record["type"],
+                source_project=source_project,
+                source_artifact=record["name"],
+                source_version=int(record["version"]),
+                aliases=args.alias,
+            )
+            if args.json:
+                print(format_json(result))
+            else:
+                action = "Linked" if result["created"] else "Updated"
+                print(
+                    f"{action} '{source_project}/{record['name']}:v{record['version']}' "
+                    f"as '{registry_name}/{collection_name}:"
+                    f"v{result['collection_version']}'."
+                )
+            return
+
+        collection = registry.collection(collection_name)
+        if collection is None:
+            error_exit(
+                f"Collection '{collection_name}' not found in registry "
+                f"'{registry_name}'."
+            )
+
+        if args.registry_action == "promote":
+            if args.alias == "latest":
+                error_exit(
+                    "The 'latest' alias is managed automatically by the registry."
+                )
+            link = next(
+                (
+                    link
+                    for link in collection.links
+                    if link["collection_version"] == args.version
+                ),
+                None,
+            )
+            if link is None:
+                error_exit(
+                    f"Version v{args.version} not found in "
+                    f"'{registry_name}/{collection_name}'."
+                )
+            result = registry._storage.link_artifact_version(
+                registry=registry_name,
+                collection=collection_name,
+                type=collection.type,
+                source_project=link["source_project"],
+                source_artifact=link["source_artifact"],
+                source_version=int(link["source_version"]),
+                aliases=[args.alias],
+                source_space_id=link.get("source_space_id"),
+                source_bucket_id=link.get("source_bucket_id"),
+            )
+            if args.json:
+                print(format_json(result))
+            else:
+                print(
+                    f"Promoted '{registry_name}/{collection_name}:v{args.version}' "
+                    f"to alias '{args.alias}'."
+                )
+            return
+
+        if args.registry_action == "unlink":
+            result = registry._storage.unlink(
+                registry_name, collection_name, args.version
+            )
+            if args.json:
+                print(format_json(result))
+            else:
+                print(f"Unlinked '{registry_name}/{collection_name}:v{args.version}'.")
+            return
+
+    except ValueError as e:
+        error_exit(str(e))
+
+
 def main():
     if _maybe_handle_logbook_run_argv():
         return
@@ -383,8 +610,12 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    ui_parser = subparsers.add_parser(
-        "show", help="Show the Trackio dashboard UI for a project"
+    ui_parser = subparsers.add_parser("show", help="Show a Trackio dashboard")
+    ui_parser.add_argument(
+        "dashboard",
+        nargs="?",
+        choices=["registry"],
+        help="Dashboard to show. Omit for the project dashboard.",
     )
     ui_parser.add_argument(
         "--project", required=False, help="Project name to show in the dashboard"
@@ -1027,6 +1258,111 @@ def main():
         help="Do not install the Claude Code hook that mirrors todos into the logbook",
     )
 
+    registry_parser = subparsers.add_parser(
+        "registry",
+        help="Create and manage artifact registries",
+    )
+    registry_subparsers = registry_parser.add_subparsers(
+        dest="registry_action", required=True
+    )
+
+    def add_registry_output_options(command_parser):
+        command_parser.add_argument(
+            "--bucket-id",
+            help="HF bucket holding the registry. Omit for a local registry.",
+        )
+        command_parser.add_argument(
+            "--json", action="store_true", help="Output in JSON format"
+        )
+
+    registry_create = registry_subparsers.add_parser("create", help="Create a registry")
+    registry_create.add_argument("name", help="Registry name")
+    registry_create.add_argument("--description", help="Registry description")
+    add_registry_output_options(registry_create)
+
+    registry_create_collection = registry_subparsers.add_parser(
+        "create-collection", help="Create a typed collection"
+    )
+    registry_create_collection.add_argument(
+        "target",
+        type=_registry_target,
+        help="Registry collection as registry/collection",
+    )
+    registry_create_collection.add_argument(
+        "--type", required=True, help="Artifact type accepted by the collection"
+    )
+    registry_create_collection.add_argument(
+        "--description", help="Collection description"
+    )
+    add_registry_output_options(registry_create_collection)
+
+    registry_list = registry_subparsers.add_parser(
+        "list", help="List collections in a registry"
+    )
+    registry_list.add_argument("name", help="Registry name")
+    add_registry_output_options(registry_list)
+
+    registry_show = registry_subparsers.add_parser(
+        "show", help="Show a collection and its linked versions"
+    )
+    registry_show.add_argument(
+        "target",
+        type=_registry_target,
+        help="Registry collection as registry/collection",
+    )
+    add_registry_output_options(registry_show)
+
+    registry_link = registry_subparsers.add_parser(
+        "link", help="Link a local artifact version into a collection"
+    )
+    registry_link.add_argument(
+        "target",
+        type=_registry_target,
+        help="Registry collection as registry/collection",
+    )
+    registry_link.add_argument(
+        "source",
+        type=_source_artifact,
+        help="Local source as project/artifact[:version-or-alias]",
+    )
+    registry_link.add_argument(
+        "--alias", action="append", default=[], help="Alias to assign; repeatable"
+    )
+    add_registry_output_options(registry_link)
+
+    registry_promote = registry_subparsers.add_parser(
+        "promote", help="Move an alias onto a collection version"
+    )
+    registry_promote.add_argument(
+        "target",
+        type=_registry_target,
+        help="Registry collection as registry/collection",
+    )
+    registry_promote.add_argument("alias", help="Alias to move")
+    registry_promote.add_argument(
+        "version", type=_collection_version, help="Collection version (vN or N)"
+    )
+    add_registry_output_options(registry_promote)
+
+    registry_unlink = registry_subparsers.add_parser(
+        "unlink", help="Remove a linked collection version"
+    )
+    registry_unlink.add_argument(
+        "target",
+        type=_registry_target,
+        help="Registry collection as registry/collection",
+    )
+    registry_unlink.add_argument(
+        "version", type=_collection_version, help="Collection version (vN or N)"
+    )
+    add_registry_output_options(registry_unlink)
+
+    registry_events = registry_subparsers.add_parser(
+        "events", help="Show the registry audit log"
+    )
+    registry_events.add_argument("name", help="Registry name")
+    add_registry_output_options(registry_events)
+
     logbook_parser = subparsers.add_parser(
         "logbook",
         help="Create and publish a shareable experiment logbook",
@@ -1349,14 +1685,21 @@ def main():
         if trailing_globals.hf_token is not None:
             args.hf_token = trailing_globals.hf_token
 
-    if args.command in ("show", "status", "sync", "freeze", "skills") and _get_space(
-        args
-    ):
+    if args.command in (
+        "show",
+        "status",
+        "sync",
+        "freeze",
+        "skills",
+        "registry",
+    ) and _get_space(args):
         error_exit(
             f"The '{args.command}' command does not support --space (remote mode)."
         )
 
     if args.command == "show":
+        if args.dashboard == "registry" and args.project:
+            parser.error("trackio show registry does not accept --project")
         color_palette = None
         if args.color_palette:
             color_palette = [color.strip() for color in args.color_palette.split(",")]
@@ -1368,6 +1711,7 @@ def main():
             color_palette=color_palette,
             host=args.host,
             frontend_dir=args.frontend,
+            dashboard=args.dashboard,
         )
     elif args.command == "status":
         _handle_status()
@@ -1912,6 +2256,8 @@ def main():
         _handle_sweep(args)
     elif args.command == "agent":
         _handle_agent(args)
+    elif args.command == "registry":
+        _handle_registry(args)
     elif args.command == "logbook":
         _handle_logbook(args)
     else:
@@ -2124,8 +2470,6 @@ def _read_logbook_payload(path_or_text, inline_text):
 
 
 def _handle_logbook(args):
-    from trackio import logbook as lb
-
     action = args.logbook_action
     try:
         if action == "open":
@@ -2389,9 +2733,6 @@ def _handle_logbook(args):
 
 
 def _handle_skills_add(args):
-    import shutil
-    from pathlib import Path
-
     CENTRAL_LOCAL = Path(".agents/skills")
     CENTRAL_GLOBAL = Path("~/.agents/skills")
     CLAUDE_LOCAL = Path(".claude/skills")
@@ -2418,8 +2759,6 @@ def _handle_skills_add(args):
         print(f"Using local Trackio source at {REPO_ROOT}")
 
     def download(url: str) -> str:
-        from huggingface_hub.utils import get_session
-
         try:
             response = get_session().get(url)
             response.raise_for_status()
@@ -2475,8 +2814,6 @@ def _handle_skills_add(args):
     def install_command(
         command_dir: Path, force: bool, strip_frontmatter: bool = False
     ) -> Path:
-        import re
-
         command_dir = command_dir.expanduser().resolve()
         command_dir.mkdir(parents=True, exist_ok=True)
         dest = command_dir / COMMAND_FILE
@@ -2583,9 +2920,6 @@ def _handle_skills_add(args):
 
 
 def _install_claude_logbook_hook(global_: bool):
-    import json
-    from pathlib import Path
-
     settings = (
         Path("~/.claude/settings.json") if global_ else Path(".claude/settings.json")
     ).expanduser()

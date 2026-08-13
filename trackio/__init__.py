@@ -1271,6 +1271,7 @@ def save(
 def show(
     project: str | None = None,
     *,
+    dashboard: str | None = None,
     theme: Any = None,
     mcp_server: bool | None = None,
     footer: bool = True,
@@ -1289,6 +1290,9 @@ def show(
         project (`str`, *optional*):
             The name of the project whose runs to show. If not provided, all projects
             will be shown and the user can select one.
+        dashboard (`str`, *optional*):
+            Set to `"registry"` to show the standalone registry dashboard. The
+            default is the project dashboard.
         theme (`Any`, *optional*):
             Ignored. Kept for backward compatibility; Trackio no longer uses Gradio themes.
         mcp_server (`bool`, *optional*):
@@ -1331,6 +1335,11 @@ def show(
             `share_url`: The public share URL, if any.
             `full_url`: The full URL including the write token (share URL when sharing, else local).
     """
+    if dashboard not in (None, "registry"):
+        raise ValueError("dashboard must be None or 'registry'.")
+    if dashboard == "registry" and project is not None:
+        raise ValueError("The registry dashboard does not accept a project.")
+
     if theme is not None and theme != "default":
         warnings.warn(
             "The theme argument is ignored; Trackio no longer depends on Gradio themes.",
@@ -1364,18 +1373,20 @@ def show(
 
     base_root = (share_url or local_url).rstrip("/")
     base_url = base_root + "/"
-    dashboard_url = base_url
-    if project:
+    dashboard_url = base_url if dashboard is None else f"{base_root}/registry"
+    if dashboard is None and project:
         dashboard_url += f"?project={project}"
+    full_url_base = base_root if dashboard is None else f"{base_root}/registry"
     full_url = utils.get_full_url(
-        base_root,
+        full_url_base,
         project=project,
         write_token=wt,
         footer=footer,
     )
 
     if not utils.is_in_notebook():
-        print(f"\033[1m\033[38;5;208m* Trackio UI launched at: {dashboard_url}\033[0m")
+        label = "Trackio registry UI" if dashboard == "registry" else "Trackio UI"
+        print(f"\033[1m\033[38;5;208m* {label} launched at: {dashboard_url}\033[0m")
         utils.print_write_token_instructions(full_url)
         if open_browser:
             webbrowser.open(full_url)

@@ -23,7 +23,36 @@ For private Spaces, pass `--hf-token` or ensure you are logged in via `huggingfa
 trackio list projects --space username/private-space --hf-token hf_xxxxx
 ```
 
-> **Note:** The `show`, `status`, `sync`, `freeze`, `skills`, and `list spaces` commands do not support `--space`. Use `trackio list spaces` to discover Trackio dashboards on the Hugging Face Hub, then pass one of those Space IDs to commands such as `trackio list projects --space username/my-space`.
+> **Note:** The `show`, `status`, `sync`, `freeze`, `skills`, `registry`, and `list spaces` commands do not support `--space`. Use `trackio list spaces` to discover Trackio dashboards on the Hugging Face Hub, then pass one of those Space IDs to commands such as `trackio list projects --space username/my-space`.
+
+## Registry Commands
+
+Create a registry and, when useful, define a typed collection before linking into it:
+
+```sh
+trackio registry create models --description "Models we deploy"
+trackio registry create-collection models/churn-model --type model --description "Churn predictor"
+```
+
+Link a local artifact version, promote a collection version by moving an alias, or unlink a version:
+
+```sh
+trackio registry link models/churn-model experiments/resnet:v3 --alias staging
+trackio registry promote models/churn-model production v0
+trackio registry unlink models/churn-model v0
+```
+
+Inspect collections and their audit history:
+
+```sh
+trackio registry list models
+trackio registry show models/churn-model
+trackio registry events models
+```
+
+All registry commands accept `--bucket-id org/bucket` for a bucket-backed registry and `--json` for structured output. `--alias` is repeatable. Targets may be written as either `models/churn-model` or `registry-models/churn-model`.
+
+The `link` command resolves `project/artifact:version-or-alias` from local Trackio data; omit the suffix to resolve `latest`. Publishing an artifact that only exists on a remote Space still uses the Python API so Trackio can record the source's remote storage coordinates.
 
 ## Sync Command
 

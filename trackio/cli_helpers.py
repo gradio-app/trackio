@@ -72,6 +72,60 @@ def format_artifact(record: dict) -> str:
     return "\n".join(lines)
 
 
+def format_registry_collections(registry: str, collections: list[dict]) -> str:
+    """Format the collections in an artifact registry."""
+    if not collections:
+        return f"No collections found in registry '{registry}'."
+
+    output = [f"Collections in registry '{registry}':"]
+    for collection in collections:
+        latest = collection.get("latest_version")
+        latest_display = f"v{latest}" if latest is not None else "(empty)"
+        output.append(
+            f"  - {collection['name']} ({collection['type']}) "
+            f"latest={latest_display} versions={collection['num_links']}"
+        )
+        if collection.get("description"):
+            output.append(f"      {collection['description']}")
+    return "\n".join(output)
+
+
+def format_registry_collection(registry: str, collection: dict) -> str:
+    """Format one registry collection and its linked versions."""
+    output = [
+        f"Collection: {registry}/{collection['name']}",
+        f"  type:        {collection['type']}",
+        f"  versions:    {collection['num_links']}",
+    ]
+    if collection.get("description"):
+        output.append(f"  description: {collection['description']}")
+    if not collection["links"]:
+        output.append("  No linked versions.")
+        return "\n".join(output)
+
+    output.append("  Linked versions:")
+    for link in collection["links"]:
+        aliases = link.get("aliases") or []
+        alias_display = f" [{', '.join(aliases)}]" if aliases else ""
+        output.append(
+            f"    - v{link['collection_version']} -> "
+            f"{link['source_project']}/{link['source_artifact']}"
+            f":v{link['source_version']}{alias_display}"
+        )
+    return "\n".join(output)
+
+
+def format_registry_events(events: list[dict]) -> str:
+    """Format a registry audit log."""
+    if not events:
+        return "No registry events found."
+    return "\n".join(
+        f"{event['ts']} | {event['kind']} | "
+        f"{json.dumps(event['payload'], sort_keys=True)}"
+        for event in events
+    )
+
+
 def format_spaces(spaces: list[dict]) -> str:
     """Format HF Spaces in human-readable format."""
     if not spaces:
