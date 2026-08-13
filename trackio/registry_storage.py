@@ -197,6 +197,28 @@ class RegistryStorage:
         }
 
     @staticmethod
+    def list_registries() -> list[dict]:
+        """List local registries, ordered by name.
+
+        Registry databases share the project directory and are identified by
+        both their reserved project-name prefix and their atomic creation
+        marker. A prefixed database left behind by an interrupted creation is
+        therefore not exposed as a registry.
+        """
+        registries = []
+        for project in SQLiteStorage.get_projects():
+            if not project.startswith(REGISTRY_PROJECT_PREFIX):
+                continue
+            registry = project[len(REGISTRY_PROJECT_PREFIX) :]
+            try:
+                record = RegistryStorage.get_registry(registry)
+            except ValueError:
+                continue
+            if record is not None:
+                registries.append(record)
+        return registries
+
+    @staticmethod
     def _require_registry(registry: str) -> Path:
         """Path of the registry's database, raising when the registry has not
         been created yet — a database left behind by an interrupted creation

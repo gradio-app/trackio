@@ -14,6 +14,7 @@
   import ArtifactsSidebar from "./components/ArtifactsSidebar.svelte";
   import { DEFAULT_LOGO_URLS } from "./components/Logo.svelte";
   import ArtifactsDetail from "./pages/ArtifactsDetail.svelte";
+  import Registries from "./pages/Registries.svelte";
   import {
     getAllProjects,
     getRunsForProject,
@@ -703,6 +704,8 @@
           empty={artifactsEmpty}
           onOpenVersion={openArtifactVersion}
         />
+      {:else if currentPage === "registries"}
+        <Registries />
       {:else if currentPage === "settings"}
         <Settings {spaceId} selectedProject={selectedProject} {projects} />
       {/if}

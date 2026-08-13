@@ -1,7 +1,7 @@
 # Registry
 
 > [!NOTE]
-> The registry is under active development ([#607](https://github.com/gradio-app/trackio/issues/607)). Publishing — linking and promoting versions, described on this page — is available today. Resolving registry versions with `use_artifact`, CLI commands, and a dashboard view are planned follow-ups.
+> The registry is under active development ([#607](https://github.com/gradio-app/trackio/issues/607)). Publishing — linking and promoting versions, described on this page — and read-only dashboard browsing are available today. Resolving registry versions with `use_artifact` and CLI commands are planned follow-ups.
 
 A **registry** is a shared catalog of your best artifact versions. A project lists the artifacts your experiments produced; a registry lists selected artifacts **across** projects.
 
@@ -208,6 +208,12 @@ registry.collection("my-model").links
 ```
 
 Each link records where the version came from (`source_project`, `source_artifact`, `source_version`), the source's storage coordinates when it is not local (`source_space_id`, `source_bucket_id`), and the aliases currently on it. A link is a pure pointer to that source version; resolving it (a follow-up) reads the source version directly.
+
+### Browse registries in the dashboard
+
+Open the **Registries** tab in a live Trackio dashboard to browse registry descriptions, collections, linked versions, aliases, source locations, and audit events. The view is read-only.
+
+The **Local** source shows registries stored on the dashboard machine. Choose **HF Bucket** to select an accessible Hugging Face bucket or enter a bucket id such as `my-org/models-registry`. On a Space, private bucket access uses the signed-in viewer's Hugging Face credentials. A self-hosted dashboard only uses its saved Hugging Face token for viewers who opened its write-access URL. Public read-only dashboards never expose buckets through a server-owned token. Registry browsing is not included in static dashboard snapshots.
 
 ## Audit history
 

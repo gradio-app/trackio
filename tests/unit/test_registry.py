@@ -176,6 +176,25 @@ def test_interrupted_creation_leaves_no_registry(temp_dir):
     ]
 
 
+def test_list_local_registries_ignores_incomplete_database(temp_dir):
+    RegistryStorage.create_registry("models", description="Our models")
+    RegistryStorage.create_registry("datasets")
+    RegistryStorage.init_registry_db("unfinished")
+
+    assert RegistryStorage.list_registries() == [
+        {
+            "name": "datasets",
+            "description": None,
+            "created_at": RegistryStorage.get_registry("datasets")["created_at"],
+        },
+        {
+            "name": "models",
+            "description": "Our models",
+            "created_at": RegistryStorage.get_registry("models")["created_at"],
+        },
+    ]
+
+
 def test_api_create_and_fetch_registry(temp_dir):
     registry = trackio.Api().create_registry("models")
     assert registry.name == "models"

@@ -33,6 +33,8 @@ from trackio.asgi_app import (
 )
 from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
+from trackio.registry_bucket import BucketRegistryStorage
+from trackio.registry_storage import RegistryStorage, validate_registry_name
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import (
     AlertEntry,
@@ -1223,6 +1225,82 @@ def get_settings() -> dict[str, Any]:
     }
 
 
+def _registry_read_token(request: Request) -> str | bool | None:
+    """Credential used for read-only registry bucket access.
+
+    A Space uses the signed-in viewer's OAuth token. A self-hosted dashboard
+    only uses its saved token for viewers with the write-access cookie, so a
+    public read-only URL cannot expose buckets through a server credential.
+    """
+    if on_spaces():
+        return _hf_access_token(request) or False
+    if check_write_access(request, write_token):
+        return hf.utils.get_token() or False
+    return False
+
+
+def get_registry_buckets(request: Request) -> dict[str, Any]:
+    """List bucket choices available to the current dashboard viewer."""
+    token = _registry_read_token(request)
+    default_bucket_id = utils.resolve_registry_bucket_id(None)
+    bucket_ids = {default_bucket_id} if default_bucket_id else set()
+    if token:
+        try:
+            who = HfApi.whoami(token=token)
+            namespaces = [
+                "me",
+                *(
+                    org["name"] if isinstance(org, dict) else org
+                    for org in who.get("orgs", [])
+                ),
+            ]
+            for namespace in namespaces:
+                for bucket in HfApi.list_buckets(namespace=namespace, token=token):
+                    bucket_ids.add(bucket.id)
+        except Exception as e:
+            logger.info("could not list registry buckets: %s", e)
+    return {
+        "buckets": sorted(bucket_ids),
+        "default_bucket_id": default_bucket_id,
+    }
+
+
+def get_registries(
+    bucket_id: str | None = None, *, request: Request
+) -> list[dict[str, Any]]:
+    """List registries stored locally or in ``bucket_id``."""
+    if bucket_id is None:
+        return RegistryStorage.list_registries()
+    return BucketRegistryStorage(
+        bucket_id, token=_registry_read_token(request)
+    ).list_registries()
+
+
+def get_registry_details(
+    registry: str, bucket_id: str | None = None, *, request: Request
+) -> dict[str, Any]:
+    """Return one registry, its collections, and its audit history."""
+    try:
+        registry = validate_registry_name(registry)
+    except ValueError as e:
+        raise TrackioAPIError(str(e)) from e
+    storage = (
+        RegistryStorage
+        if bucket_id is None
+        else BucketRegistryStorage(bucket_id, token=_registry_read_token(request))
+    )
+    record = storage.get_registry(registry)
+    if record is None:
+        where = " locally" if bucket_id is None else f" in bucket {bucket_id!r}"
+        raise TrackioAPIError(f"Registry {registry!r} does not exist{where}.")
+    return {
+        **record,
+        "bucket_id": bucket_id,
+        "collections": storage.list_collections(registry),
+        "events": storage.get_events(registry),
+    }
+
+
 def get_project_files(project: str) -> list[dict[str, Any]]:
     files_dir = utils.project_media_dir(project) / "files"
     if not files_dir.exists():
@@ -1342,6 +1420,9 @@ def _api_registry() -> dict[str, Any]:
         "get_trace_steps": get_trace_steps,
         "query_project": query_project,
         "get_settings": get_settings,
+        "get_registry_buckets": get_registry_buckets,
+        "get_registries": get_registries,
+        "get_registry_details": get_registry_details,
         "get_project_files": get_project_files,
         "get_tab_availability": get_tab_availability,
         "delete_run": delete_run,

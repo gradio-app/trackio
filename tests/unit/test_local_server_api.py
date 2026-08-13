@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -8,6 +9,7 @@ import pytest
 
 import trackio
 import trackio.context_vars as context_vars
+import trackio.server as trackio_server
 import trackio.utils as trackio_utils
 from trackio import Api
 from trackio.remote_client import RemoteClient as Client
@@ -97,6 +99,68 @@ def test_local_dashboard_supports_remote_client(temp_dir):
         assert "logo_urls" in settings
     finally:
         trackio.delete_project(project, force=True)
+        app.close()
+
+
+def test_local_dashboard_registry_read_api(temp_dir):
+    registry = trackio.Api().create_registry("models", description="Our models")
+    registry.create_collection("churn", "model", description="Churn scorer")
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        client = Client(url, verbose=False)
+        registries = client.predict(api_name="/get_registries")
+        details = client.predict("models", api_name="/get_registry_details")
+
+        assert [item["name"] for item in registries] == ["models"]
+        assert details["description"] == "Our models"
+        assert details["bucket_id"] is None
+        assert details["collections"][0]["name"] == "churn"
+        assert details["collections"][0]["description"] == "Churn scorer"
+        assert details["events"]
+    finally:
+        app.close()
+
+
+def test_registry_bucket_picker_only_uses_saved_token_with_write_access(
+    temp_dir, monkeypatch
+):
+    calls = []
+    monkeypatch.setattr(trackio_server.hf.utils, "get_token", lambda: "hf_saved")
+    monkeypatch.setattr(
+        trackio_server.HfApi,
+        "whoami",
+        lambda token: {"name": "viewer", "orgs": [{"name": "acme"}]},
+    )
+
+    def list_buckets(namespace, token):
+        calls.append((namespace, token))
+        return [SimpleNamespace(id=f"{namespace}/registry")]
+
+    monkeypatch.setattr(trackio_server.HfApi, "list_buckets", list_buckets)
+    app, url, _, full_url = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        public_response = httpx.post(
+            f"{url.rstrip('/')}/api/get_registry_buckets", json={}, timeout=5
+        )
+        assert public_response.json()["data"]["buckets"] == []
+        assert calls == []
+
+        write_token = parse_qs(urlparse(full_url).query)["write_token"][0]
+        trusted_response = httpx.post(
+            f"{url.rstrip('/')}/api/get_registry_buckets",
+            json={},
+            headers={"x-trackio-write-token": write_token},
+            timeout=5,
+        )
+        assert trusted_response.json()["data"]["buckets"] == [
+            "acme/registry",
+            "me/registry",
+        ]
+        assert calls == [("me", "hf_saved"), ("acme", "hf_saved")]
+    finally:
         app.close()
 
 

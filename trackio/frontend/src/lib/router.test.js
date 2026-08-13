@@ -37,6 +37,8 @@ describe("getPageFromPath without a base prefix", () => {
     expect(getPageFromPath()).toBe("traces");
     setLocation("/system");
     expect(getPageFromPath()).toBe("system");
+    setLocation("/registries");
+    expect(getPageFromPath()).toBe("registries");
   });
 
   test("falls back to metrics for unknown segments", () => {
@@ -78,5 +80,12 @@ describe("navigateTo", () => {
     navigateTo("runs");
     expect(globalThis.window.location.pathname).toBe("/dashboard/runs");
     expect(globalThis.window.location.search).toBe("?project=demo");
+  });
+
+  test("navigates to registries", () => {
+    setLocation("/");
+    navigateTo("registries");
+    expect(globalThis.window.location.pathname).toBe("/registries");
+    expect(getPageFromPath()).toBe("registries");
   });
 });

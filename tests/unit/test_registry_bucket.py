@@ -95,6 +95,16 @@ def test_bucket_registry_round_trip(temp_dir, bucket):
     assert len(bucket.event_paths()) == 5
 
 
+def test_list_bucket_registries(temp_dir, bucket):
+    storage = BucketRegistryStorage(BUCKET)
+    storage.create_registry("models", description="Our models")
+    storage.create_registry("datasets")
+
+    registries = storage.list_registries()
+    assert [registry["name"] for registry in registries] == ["datasets", "models"]
+    assert registries[1]["description"] == "Our models"
+
+
 def test_registry_state_is_a_fold_of_the_bucket(temp_dir, bucket):
     """Every reader rebuilds the same state from the event objects alone, so a
     machine that has never seen the registry (or lost its cache) is not

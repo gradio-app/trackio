@@ -77,10 +77,13 @@ class BucketRegistryStorage:
     the resulting event, and only then commit it locally, so a failed upload
     leaves nothing behind."""
 
-    def __init__(self, bucket_id: str):
+    def __init__(self, bucket_id: str, token: str | bool | None = None):
         self.bucket_id = bucket_id
+        self._explicit_token = token
 
-    def _token(self) -> str | None:
+    def _token(self) -> str | bool | None:
+        if self._explicit_token is not None:
+            return self._explicit_token
         return get_token()
 
     def cache_db_path(self, registry: str) -> Path:
@@ -196,6 +199,52 @@ class BucketRegistryStorage:
             "description": manifest.get("description"),
             "created_at": manifest.get("created_at"),
         }
+
+    def list_registries(self) -> list[dict]:
+        """List registry manifests stored in this bucket, ordered by name."""
+        try:
+            paths = _list_bucket_file_paths(
+                self.bucket_id, prefix=REGISTRIES_BUCKET_PREFIX
+            )
+        except BucketNotFoundError:
+            return []
+        manifest_paths = sorted(
+            path
+            for path in paths
+            if path.startswith(f"{REGISTRIES_BUCKET_PREFIX}/")
+            and path.endswith(f"/{MANIFEST_FILENAME}")
+            and len(path.split("/")) == 4
+        )
+        if not manifest_paths:
+            return []
+
+        registries = []
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+            files = []
+            for index, remote_path in enumerate(manifest_paths):
+                local_path = Path(tmpdir) / f"{index}.json"
+                files.append((remote_path, str(local_path)))
+            huggingface_hub.download_bucket_files(
+                self.bucket_id, files=files, token=self._token()
+            )
+            for remote_path, local_path in files:
+                local = Path(local_path)
+                if not local.is_file():
+                    continue
+                manifest = orjson.loads(local.read_bytes())
+                registry = remote_path.split("/")[-2]
+                try:
+                    validate_registry_name(registry)
+                except ValueError:
+                    continue
+                registries.append(
+                    {
+                        "name": registry,
+                        "description": manifest.get("description"),
+                        "created_at": manifest.get("created_at"),
+                    }
+                )
+        return sorted(registries, key=lambda item: item["name"])
 
     def create_registry(self, registry: str, description: str | None = None) -> dict:
         """Create the bucket if needed (private), then write the manifest and
