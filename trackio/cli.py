@@ -380,8 +380,12 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    ui_parser = subparsers.add_parser(
-        "show", help="Show the Trackio dashboard UI for a project"
+    ui_parser = subparsers.add_parser("show", help="Show a Trackio dashboard")
+    ui_parser.add_argument(
+        "dashboard",
+        nargs="?",
+        choices=["registry"],
+        help="Dashboard to show. Omit for the project dashboard.",
     )
     ui_parser.add_argument(
         "--project", required=False, help="Project name to show in the dashboard"
@@ -1299,6 +1303,8 @@ def main():
         )
 
     if args.command == "show":
+        if args.dashboard == "registry" and args.project:
+            parser.error("trackio show registry does not accept --project")
         color_palette = None
         if args.color_palette:
             color_palette = [color.strip() for color in args.color_palette.split(",")]
@@ -1310,6 +1316,7 @@ def main():
             color_palette=color_palette,
             host=args.host,
             frontend_dir=args.frontend,
+            dashboard=args.dashboard,
         )
     elif args.command == "status":
         _handle_status()

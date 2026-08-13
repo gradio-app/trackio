@@ -14,7 +14,6 @@
   import ArtifactsSidebar from "./components/ArtifactsSidebar.svelte";
   import { DEFAULT_LOGO_URLS } from "./components/Logo.svelte";
   import ArtifactsDetail from "./pages/ArtifactsDetail.svelte";
-  import Registries from "./pages/Registries.svelte";
   import {
     getAllProjects,
     getRunsForProject,
@@ -44,6 +43,7 @@
   } from "./lib/router.js";
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
+  import { applyUrlTokens } from "./lib/urlTokens.js";
 
   function metricFilterFromLegacyMetricsParam(metricsParam) {
     if (!metricsParam) return "";
@@ -328,29 +328,6 @@
       await refreshAlerts();
       await refreshTabAvailability();
     }, getAppPollIntervalMs());
-  }
-
-  function applyUrlTokens() {
-    const params = new URLSearchParams(window.location.search);
-    let changed = false;
-    const wt = params.get("write_token");
-    if (wt) {
-      const maxAge = 60 * 60 * 24 * 7;
-      document.cookie = `trackio_write_token=${encodeURIComponent(wt)}; path=/; max-age=${maxAge}; SameSite=Lax`;
-      params.delete("write_token");
-      changed = true;
-    }
-    const oauthSession = params.get("oauth_session");
-    if (oauthSession) {
-      sessionStorage.setItem("trackio_oauth_session", oauthSession);
-      params.delete("oauth_session");
-      changed = true;
-    }
-    if (changed) {
-      const q = params.toString();
-      const path = window.location.pathname + (q ? `?${q}` : "");
-      window.history.replaceState({}, "", path);
-    }
   }
 
   async function refreshMutationAccess() {
@@ -704,8 +681,6 @@
           empty={artifactsEmpty}
           onOpenVersion={openArtifactVersion}
         />
-      {:else if currentPage === "registries"}
-        <Registries />
       {:else if currentPage === "settings"}
         <Settings {spaceId} selectedProject={selectedProject} {projects} />
       {/if}

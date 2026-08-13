@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +9,7 @@ import httpx
 import pytest
 
 import trackio
+import trackio.cli as trackio_cli
 import trackio.context_vars as context_vars
 import trackio.server as trackio_server
 import trackio.utils as trackio_utils
@@ -106,9 +108,13 @@ def test_local_dashboard_registry_read_api(temp_dir):
     registry = trackio.Api().create_registry("models", description="Our models")
     registry.create_collection("churn", "model", description="Churn scorer")
 
-    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    app, url, _, full_url = trackio.show(
+        dashboard="registry", block_thread=False, open_browser=False
+    )
 
     try:
+        assert urlparse(full_url).path == "/registry"
+        assert httpx.get(f"{url.rstrip('/')}/registry", timeout=5).status_code == 200
         client = Client(url, verbose=False)
         registries = client.predict(api_name="/get_registries")
         details = client.predict("models", api_name="/get_registry_details")
@@ -121,6 +127,17 @@ def test_local_dashboard_registry_read_api(temp_dir):
         assert details["events"]
     finally:
         app.close()
+
+
+def test_cli_show_registry(monkeypatch):
+    calls = []
+    monkeypatch.setattr(trackio_cli, "show", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(sys, "argv", ["trackio", "show", "registry"])
+
+    trackio_cli.main()
+
+    assert calls[0]["dashboard"] == "registry"
+    assert calls[0]["project"] is None
 
 
 def test_registry_bucket_picker_only_uses_saved_token_with_write_access(

@@ -211,7 +211,13 @@ Each link records where the version came from (`source_project`, `source_artifac
 
 ### Browse registries in the dashboard
 
-Open the **Registries** tab in a live Trackio dashboard to browse registry descriptions, collections, linked versions, aliases, source locations, and audit events. The view is read-only.
+Launch the standalone, read-only registry dashboard to browse registry descriptions, collections, linked versions, aliases, source locations, and audit events:
+
+```bash
+trackio show registry
+```
+
+Or launch it from Python with `trackio.show(dashboard="registry")`. The registry dashboard is separate from the project dashboard because registries catalog artifacts across projects.
 
 The **Local** source shows registries stored on the dashboard machine. Choose **HF Bucket** to select an accessible Hugging Face bucket or enter a bucket id such as `my-org/models-registry`. On a Space, private bucket access uses the signed-in viewer's Hugging Face credentials. A self-hosted dashboard only uses its saved Hugging Face token for viewers who opened its write-access URL. Public read-only dashboards never expose buckets through a server-owned token. Registry browsing is not included in static dashboard snapshots.
 

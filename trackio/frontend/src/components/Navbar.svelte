@@ -16,7 +16,6 @@
     { id: "runs", label: "Runs" },
     { id: "files", label: "Files" },
     { id: "artifacts", label: "Artifacts" },
-    { id: "registries", label: "Registries" },
   ];
 
   function handleClick(id) {

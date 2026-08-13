@@ -35,8 +35,6 @@ export function getPageFromPath() {
       return "files";
     case "artifacts":
       return "artifacts";
-    case "registries":
-      return "registries";
     case "settings":
       return "settings";
     default:
@@ -56,7 +54,6 @@ export function navigateTo(page) {
     "run-detail": "/run",
     files: "/files",
     artifacts: "/artifacts",
-    registries: "/registries",
     settings: "/settings",
   };
   const path = trackioBase() + (pathMap[page] || "/");
