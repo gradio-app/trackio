@@ -18,6 +18,7 @@ SWEEP_ID_ENV = "TRACKIO_SWEEP_ID"
 SWEEP_TRIAL_ID_ENV = "TRACKIO_SWEEP_TRIAL_ID"
 SWEEP_PARAMS_ENV = "TRACKIO_SWEEP_PARAMS"
 SWEEP_PROJECT_ENV = "TRACKIO_SWEEP_PROJECT"
+SWEEP_METRIC_ENV = "TRACKIO_SWEEP_METRIC_NAME"
 
 SWEEP_METHODS = ("grid", "random", "bayes")
 
@@ -476,15 +477,9 @@ def grid_values(spec: dict, path: str) -> list:
         return list(range(spec["min"], spec["max"] + 1))
     if distribution == "q_uniform":
         q = spec.get("q", 1.0)
-        values = []
-        step = 0
-        while True:
-            value = spec["min"] + step * q
-            if value > spec["max"] + 1e-9:
-                break
-            values.append(_quantize(value, q))
-            step += 1
-        return values
+        k_lo = int(round(spec["min"] / q))
+        k_hi = int(round(spec["max"] / q))
+        return [k * q for k in range(k_lo, k_hi + 1)]
     raise SweepConfigError(
         f"Parameter '{path}': distribution '{distribution}' is not compatible "
         "with method 'grid'."
@@ -505,7 +500,8 @@ class GridSuggester:
             trial.get("param_hash") or param_hash(trial["params"]) for trial in trials
         }
         combinations = itertools.product(*self.value_lists)
-        if self.config.get("randomize_order") and rng is not None:
+        if self.config.get("randomize_order"):
+            rng = rng if rng is not None else np.random.default_rng()
             combinations = list(combinations)
             rng.shuffle(combinations)
         for combination in combinations:

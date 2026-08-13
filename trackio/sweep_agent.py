@@ -14,6 +14,7 @@ from trackio.remote_client import RemoteClient
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.sweeps import (
     SWEEP_ID_ENV,
+    SWEEP_METRIC_ENV,
     SWEEP_PARAMS_ENV,
     SWEEP_PROJECT_ENV,
     SWEEP_TRIAL_ID_ENV,
@@ -160,12 +161,34 @@ def trial_context_from_env() -> dict | None:
         "trial_id": int(trial_id),
         "params": params,
         "project": os.environ.get(SWEEP_PROJECT_ENV),
-        "metric_name": None,
+        "metric_name": os.environ.get(SWEEP_METRIC_ENV) or None,
     }
 
 
 def resolve_trial_context() -> dict | None:
     return context_vars.current_sweep_trial.get() or trial_context_from_env()
+
+
+def _trial_child_env(
+    sweep_config: dict,
+    client: SweepClient,
+    sweep_id: str,
+    trial_id: int,
+    params: dict,
+) -> dict:
+    child_env = os.environ.copy()
+    child_env[SWEEP_ID_ENV] = sweep_id
+    child_env[SWEEP_TRIAL_ID_ENV] = str(trial_id)
+    child_env[SWEEP_PARAMS_ENV] = json.dumps(params)
+    child_env[SWEEP_PROJECT_ENV] = client.project
+    metric_name = (sweep_config.get("metric") or {}).get("name")
+    if metric_name:
+        child_env[SWEEP_METRIC_ENV] = metric_name
+    if client.space_id is not None:
+        child_env["TRACKIO_SPACE_ID"] = client.space_id
+    elif client.server_url is not None:
+        child_env["TRACKIO_SERVER_URL"] = client.server_url
+    return child_env
 
 
 def _run_command_trial(
@@ -176,27 +199,23 @@ def _run_command_trial(
     params: dict,
 ) -> None:
     argv = expand_command(sweep_config, params)
-    child_env = os.environ.copy()
-    child_env[SWEEP_ID_ENV] = sweep_id
-    child_env[SWEEP_TRIAL_ID_ENV] = str(trial_id)
-    child_env[SWEEP_PARAMS_ENV] = json.dumps(params)
-    child_env[SWEEP_PROJECT_ENV] = client.project
-    if client.space_id is not None:
-        child_env["TRACKIO_SPACE_ID"] = client.space_id
-    elif client.server_url is not None:
-        child_env["TRACKIO_SERVER_URL"] = client.server_url
+    child_env = _trial_child_env(sweep_config, client, sweep_id, trial_id, params)
     print(f"* Running: {' '.join(argv)}")
     returncode = subprocess.Popen(argv, env=child_env).wait()
     if returncode != 0:
         raise RuntimeError(f"Trial command exited with non-zero status {returncode}.")
 
 
-def _finish_current_run():
+def _finish_current_run() -> float | None:
+    """Finishes the contextvar run (if any) and returns the last logged value
+    of the sweep metric, so the agent's fallback trial report can carry it
+    when the run's own report could not reach the server."""
     run = context_vars.current_run.get()
     if run is None:
-        return
+        return None
     try:
         run.finish()
+        return run._sweep_metric_last
     finally:
         context_vars.current_run.set(None)
 
@@ -264,25 +283,29 @@ def agent(
         trials_run += 1
         print(f"* Agent {agent_id} starting trial {trial_id} with params: {params}")
         try:
+            metric_value = None
             if command_mode:
                 _run_command_trial(sweep_config, client, sweep_id, trial_id, params)
             else:
-                token = context_vars.current_sweep_trial.set(
-                    {
-                        "sweep_id": sweep_id,
-                        "trial_id": trial_id,
-                        "params": params,
-                        "project": project,
-                        "metric_name": metric_name,
-                    }
-                )
+                trial_context = {
+                    "sweep_id": sweep_id,
+                    "trial_id": trial_id,
+                    "params": params,
+                    "project": project,
+                    "metric_name": metric_name,
+                }
+                token = context_vars.current_sweep_trial.set(trial_context)
                 try:
                     function()
-                    _finish_current_run()
+                    metric_value = _finish_current_run()
+                    if metric_value is None:
+                        metric_value = trial_context.get("metric_value")
                 finally:
                     context_vars.current_sweep_trial.reset(token)
             try:
-                client.report_trial(sweep_id, trial_id, "finished")
+                client.report_trial(
+                    sweep_id, trial_id, "finished", metric_value=metric_value
+                )
             except Exception as report_error:
                 _emit_nonfatal_warning(
                     f"Could not report finished trial {trial_id}: {report_error}"

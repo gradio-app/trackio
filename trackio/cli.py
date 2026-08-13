@@ -1929,7 +1929,18 @@ def _load_sweep_config_file(path_str: str) -> dict:
 
         return json.loads(text)
     if suffix == ".toml":
-        import tomllib
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            try:
+                import tomli as tomllib
+            except ModuleNotFoundError:
+                error_exit(
+                    "Reading TOML sweep configs on Python 3.10 requires tomli: "
+                    "pip install tomli. (tomllib is in the standard library "
+                    "from Python 3.11.) Alternatively, use a JSON or YAML "
+                    "config file."
+                )
 
         return tomllib.loads(text)
     if suffix in (".yaml", ".yml"):

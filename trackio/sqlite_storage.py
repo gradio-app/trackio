@@ -498,6 +498,8 @@ class SQLiteStorage:
         )
         for suffix in reserved:
             if len(canonical) > len(suffix) and canonical.endswith(suffix):
+                if (TRACKIO_DIR / f"{canonical}{DB_EXT}").exists():
+                    return
                 sibling = canonical[: -len(suffix)]
                 raise ValueError(
                     f"Project name {project!r} is not allowed: its on-disk name "
@@ -1406,17 +1408,37 @@ class SQLiteStorage:
         }
 
         def _table_sidecar(pq_name: str) -> tuple[str, str] | None:
-            for table in sidecar_tables:
+            """Classifies a parquet file as `{base}_{table}.parquet` only when
+            the base project demonstrably exists through evidence OTHER than
+            the file itself (a legacy project may legitimately be named with a
+            reserved suffix), and the file's schema contains the table's key
+            column (a legacy project's metrics parquet does not)."""
+            for table, columns in sidecar_tables.items():
                 suffix = f"_{table}.parquet"
                 if not pq_name.endswith(suffix) or len(pq_name) <= len(suffix):
                     continue
                 base = pq_name[: -len(suffix)]
-                if (
-                    f"{base}.parquet" in all_paths_set
-                    or (TRACKIO_DIR / f"{base}{DB_EXT}").exists()
-                    or f"{base}_artifact_versions.parquet" in all_paths_set
-                    or f"{base}_sweeps.parquet" in all_paths_set
+                anchors = (
+                    f"{base}.parquet",
+                    f"{base}_configs.parquet",
+                    f"{base}_system.parquet",
+                    f"{base}_traces.parquet",
+                    *(f"{base}_{sibling}.parquet" for sibling in sidecar_tables),
+                )
+                if not (
+                    (TRACKIO_DIR / f"{base}{DB_EXT}").exists()
+                    or any(
+                        anchor != pq_name and anchor in all_paths_set
+                        for anchor in anchors
+                    )
                 ):
+                    continue
+                try:
+                    _, pq = SQLiteStorage._require_pyarrow()
+                    schema_names = set(pq.read_schema(TRACKIO_DIR / pq_name).names)
+                except Exception:
+                    return base, table
+                if columns[0] in schema_names:
                     return base, table
             return None
 
@@ -2088,6 +2110,7 @@ class SQLiteStorage:
     def create_sweep(project: str, config: dict, name: str | None = None) -> str:
         from trackio import sweeps as sweeps_module
 
+        SQLiteStorage.validate_project_name(project)
         config = sweeps_module.validate_sweep_config(config)
         metric = config.get("metric") or {}
         sweep_id = sweeps_module.generate_sweep_id()

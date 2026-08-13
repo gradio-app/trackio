@@ -255,6 +255,67 @@ def test_command_mode_nonzero_exit_marks_trial_failed(temp_dir, monkeypatch):
     assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "finished"
 
 
+def test_trial_child_env_includes_metric_and_context(temp_dir):
+    from trackio.sweep_agent import SweepClient, _trial_child_env
+
+    client = SweepClient("proj")
+    env = _trial_child_env(
+        {"metric": {"name": "loss", "goal": "minimize"}},
+        client,
+        "abcd1234",
+        7,
+        {"lr": 0.5},
+    )
+    assert env["TRACKIO_SWEEP_ID"] == "abcd1234"
+    assert env["TRACKIO_SWEEP_TRIAL_ID"] == "7"
+    assert env["TRACKIO_SWEEP_PROJECT"] == "proj"
+    assert env["TRACKIO_SWEEP_METRIC_NAME"] == "loss"
+
+    env = _trial_child_env({}, client, "abcd1234", 7, {"lr": 0.5})
+    assert "TRACKIO_SWEEP_METRIC_NAME" not in env
+
+
+def test_trial_context_from_env_reads_metric_name(temp_dir, monkeypatch):
+    from trackio.sweep_agent import trial_context_from_env
+
+    monkeypatch.setenv("TRACKIO_SWEEP_ID", "abcd1234")
+    monkeypatch.setenv("TRACKIO_SWEEP_TRIAL_ID", "3")
+    monkeypatch.setenv("TRACKIO_SWEEP_METRIC_NAME", "loss")
+    context = trial_context_from_env()
+    assert context["metric_name"] == "loss"
+
+
+def test_agent_fallback_report_carries_metric(temp_dir, monkeypatch):
+    from trackio import context_vars
+    from trackio.run import Run
+
+    def report_without_server(self, state):
+        trial_context = context_vars.current_sweep_trial.get()
+        if trial_context is not None:
+            trial_context["metric_value"] = self._sweep_metric_last
+
+    monkeypatch.setattr(Run, "_report_sweep_trial", report_without_server)
+    sweep_id = trackio.sweep(
+        {
+            "method": "grid",
+            "metric": {"name": "loss", "goal": "minimize"},
+            "parameters": {"lr": {"values": [0.5]}},
+        },
+        project="proj",
+    )
+
+    def train():
+        trackio.init(project="proj")
+        trackio.log({"loss": 0.25})
+        trackio.finish()
+
+    trackio.agent(sweep_id, function=train, project="proj")
+
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert trials[0]["state"] == "finished"
+    assert trials[0]["metric_value"] == 0.25
+
+
 def test_concurrent_agents_never_share_a_grid_cell(temp_dir):
     sweep_id = SQLiteStorage.create_sweep(
         "proj",

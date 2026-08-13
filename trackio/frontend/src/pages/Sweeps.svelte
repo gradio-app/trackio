@@ -16,6 +16,7 @@
   let trialsBySweep = $state({});
   let runNamesById = $state({});
   let actionPending = $state(null);
+  let actionError = $state(null);
   let loadSeq = 0;
 
   const TERMINAL_STATES = new Set(["finished", "stopped", "cancelled"]);
@@ -68,13 +69,15 @@
 
   async function applyState(sweepId, state) {
     actionPending = `${sweepId}:${state}`;
+    actionError = null;
     try {
       await setSweepState(project, sweepId, state);
-      trialsBySweep = {};
-      await loadSweeps();
     } catch (e) {
       console.error(`Failed to set sweep ${sweepId} to ${state}:`, e);
+      actionError = `Could not set sweep ${sweepId} to ${state} — it may have already finished or changed state. The list has been refreshed.`;
     } finally {
+      trialsBySweep = {};
+      await loadSweeps();
       actionPending = null;
     }
   }
@@ -121,6 +124,9 @@
         ></pre>
     </div>
   {:else}
+    {#if actionError}
+      <div class="action-error">{actionError}</div>
+    {/if}
     <table class="sweeps-table">
       <thead>
         <tr>
@@ -426,5 +432,14 @@
   }
   .art-none {
     color: var(--body-text-color-subdued, #9ca3af);
+  }
+  .action-error {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    border: 1px solid #fca5a5;
+    border-radius: 6px;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 13px;
   }
 </style>

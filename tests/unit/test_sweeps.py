@@ -175,6 +175,16 @@ class TestGridValues:
             {"distribution": "q_uniform", "min": 0.0, "max": 1.0, "q": 0.5}, "p"
         ) == [0.0, 0.5, 1.0]
 
+    def test_q_uniform_off_lattice_bounds_match_sampling_support(self):
+        spec = {"distribution": "q_uniform", "min": 0.1, "max": 0.5, "q": 0.2}
+        values = grid_values(spec, "p")
+        assert values == [0.0, 0.2, 0.4]
+        assert len(values) == len(set(values))
+        rng = np.random.default_rng(0)
+        support = set(values)
+        for _ in range(200):
+            assert sample_parameter(spec, "p", rng) in support
+
     def test_continuous_rejected(self):
         with pytest.raises(SweepConfigError):
             grid_values({"min": 0.1, "max": 1.0}, "p")
@@ -316,6 +326,17 @@ class TestExpandCommand:
         flat = flatten_params(nested)
         assert flat == {"optimizer.lr": 0.1, "seed": 3}
         assert unflatten_params(flat) == nested
+
+
+class TestRandomizeOrder:
+    def test_randomize_order_shuffles_without_explicit_rng(self):
+        config = {
+            "method": "grid",
+            "randomize_order": True,
+            "parameters": {"x": {"values": list(range(50))}},
+        }
+        firsts = {GridSuggester(config).suggest([])["x"] for _ in range(20)}
+        assert len(firsts) > 1
 
 
 class TestGridSuggester:

@@ -10,7 +10,7 @@ from typing import Any
 import huggingface_hub
 from gradio_client import handle_file
 
-from trackio import cas, fragments, references, utils
+from trackio import cas, context_vars, fragments, references, utils
 from trackio.alerts import (
     AlertLevel,
     format_alert_terminal,
@@ -1751,15 +1751,30 @@ class Run:
             else:
                 with self._client_lock:
                     client = self._client
-                if client is not None:
-                    client.predict(
-                        api_name="/sweep_report_trial",
-                        project=self.project,
-                        sweep_id=self.sweep_id,
-                        trial_id=self._sweep_trial_id,
-                        state=state,
-                        metric_value=self._sweep_metric_last,
+                if client is None:
+                    self._sweep_trial_reported = False
+                    trial_context = context_vars.current_sweep_trial.get()
+                    if (
+                        trial_context is not None
+                        and trial_context.get("trial_id") == self._sweep_trial_id
+                    ):
+                        trial_context["metric_value"] = self._sweep_metric_last
+                    self._warn_once(
+                        "sweep-report-no-client",
+                        f"trackio.finish() could not report sweep trial "
+                        f"{self._sweep_trial_id}: the remote client never "
+                        "connected. The sweep agent will finalize the trial "
+                        "instead.",
                     )
+                    return
+                client.predict(
+                    api_name="/sweep_report_trial",
+                    project=self.project,
+                    sweep_id=self.sweep_id,
+                    trial_id=self._sweep_trial_id,
+                    state=state,
+                    metric_value=self._sweep_metric_last,
+                )
         except Exception as e:
             self._warn_once(
                 "sweep-report-trial",

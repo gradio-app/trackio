@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -264,7 +265,61 @@ def test_manual_stop_has_no_finish_reason(temp_dir):
     }
 
 
-def test_sweep_project_name_suffixes_reserved(temp_dir):
+def test_create_sweep_validates_project_name(temp_dir):
+    with pytest.raises(ValueError, match="reserved suffix"):
+        SQLiteStorage.create_sweep("model_sweeps", grid_config())
+    assert not SQLiteStorage.get_project_db_path("model_sweeps").exists()
+
+
+def test_existing_reserved_name_project_is_grandfathered(temp_dir):
+    db_path = SQLiteStorage.get_project_db_path("legacy_sweeps")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    sqlite3.connect(db_path).close()
+
+    SQLiteStorage.validate_project_name("legacy_sweeps")
+    with pytest.raises(ValueError, match="reserved suffix"):
+        SQLiteStorage.validate_project_name("other_sweeps")
+
+
+def test_import_preserves_legacy_project_named_like_sidecar(temp_dir):
+    SQLiteStorage.log(
+        project="legacy_sweeps",
+        run="r1",
+        metrics={"loss": 1.0},
+        step=0,
+        run_id="r1",
+    )
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+    os.unlink(SQLiteStorage.get_project_db_path("legacy_sweeps"))
+
+    SQLiteStorage.import_from_parquet()
+
+    projects = set(SQLiteStorage.get_projects())
+    assert "legacy_sweeps" in projects
+    assert "legacy" not in projects
+    values = SQLiteStorage.get_metric_values("legacy_sweeps", None, "loss", run_id="r1")
+    assert len(values) == 1
+
+
+def test_import_distinguishes_real_sidecar_from_legacy_project(temp_dir):
+    SQLiteStorage.log(
+        project="myproj", run="r1", metrics={"loss": 1.0}, step=0, run_id="r1"
+    )
+    SQLiteStorage.log(
+        project="myproj_sweeps", run="r2", metrics={"acc": 0.5}, step=0, run_id="r2"
+    )
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+    for name in ("myproj", "myproj_sweeps"):
+        os.unlink(SQLiteStorage.get_project_db_path(name))
+
+    SQLiteStorage.import_from_parquet()
+
+    values = SQLiteStorage.get_metric_values("myproj_sweeps", None, "acc", run_id="r2")
+    assert len(values) == 1
+    assert SQLiteStorage.get_sweep_count("myproj") == 0
+    assert SQLiteStorage.get_metric_values("myproj", None, "loss", run_id="r1")
     with pytest.raises(ValueError, match="reserved suffix"):
         SQLiteStorage.validate_project_name("model_sweeps")
     with pytest.raises(ValueError, match="reserved suffix"):
