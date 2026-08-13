@@ -2,7 +2,9 @@
 
 ## Context
 
-Trackio markets itself as a drop-in wandb replacement, but had no sweep support (the README comparison table listed it as missing). This plan documents wandb's sweeps feature set (researched from official docs and the `wandb/sweeps` engine source), the trackio design chosen for parity, the milestone breakdown, and what is explicitly out of scope. **Milestone 1 is implemented** — see "M1 implementation notes (as built)" below for the file-level map future contributors should start from.
+Trackio markets itself as a drop-in wandb replacement, but had no sweep support (the README comparison table listed it as missing). This plan documents wandb's sweeps feature set (researched from official docs and the `wandb/sweeps` engine source), the trackio design chosen for parity, the milestone breakdown, and what is explicitly out of scope.
+
+**Status: M1 and M2 are implemented on this branch** — see the as-built notes below for the file-level map future contributors should start from. M3 is implemented on the `feat/sweeps-m3` branch and deferred to a follow-up PR to keep this one reviewable; M4 is unscheduled polish.
 
 ## wandb feature inventory (what parity means)
 
@@ -45,7 +47,7 @@ Two tables in the per-project DB, created idempotently in `SQLiteStorage.init_db
 
 - **M1 (done)** — grid + random, `run_cap`, `trackio.sweep()`/`trackio.agent()` (function mode), CLI `sweep new/list/status/pause/resume/stop/cancel`, storage + endpoints + parquet/static export, Sweeps dashboard tab, docs + skills + example + tests.
 - **M2 (done)** — bayes (numpy-only GP + EI in `trackio/sweep_bayes.py`; wandb-comparable, not bit-identical); command-mode agent with the full wandb macro set + `trackio agent` CLI; `metric.target` global stop. See "M2 implementation notes (as built)" below.
-- **M3** — should-stop polling channel (`Run` background thread polls a `sweep_should_stop` endpoint; doubles as the graceful-kill channel for `cancel`), hyperband pruning, `run.should_stop`, `SweepDetail.svelte` + parallel-coordinates + scatter plots (Vega-Lite supports both natively).
+- **M3 (implemented on `feat/sweeps-m3`, follow-up PR)** — should-stop polling channel (`Run` background thread polls a `sweep_should_stop` endpoint; doubles as the graceful-kill channel for `cancel`), hyperband pruning, `run.should_stop`, `SweepDetail.svelte` + parallel-coordinates + scatter plots. Until it lands, this branch's documented limitations hold: `early_terminate` warns and is ignored, and `cancel` stops new trials but does not kill in-flight ones.
 - **M4 (optional)** — correlation-only importance panel (Pearson/Spearman), `prior_runs` retro-attach, `trackio sweep delete`, optional optuna backend extra behind the `Suggester` protocol.
 
 ## Out of scope (documented, not built)
@@ -69,11 +71,9 @@ Two tables in the per-project DB, created idempotently in `SQLiteStorage.init_db
 
 ---
 
-## M1 implementation notes (as built)
+## Module map (as built: M1 + M2)
 
-Read this before extending sweeps. Everything below exists on this branch.
-
-### Module map
+Read this before extending sweeps. Everything below exists on this branch; the M2 section afterwards records the M2-specific design rationale.
 
 | File | What it contains |
 |---|---|
@@ -101,7 +101,7 @@ wandb semantics: once any finished run's metric meets the target, the sweep stop
 
 - **Validation** (`sweeps.validate_sweep_config`): `metric.target` must be a number; meaningless without `metric.name` (already required for any `metric` block).
 - **Predicate** (pure, in `sweeps.py`): `target_met(config, trials) -> bool` — any trial with `state == 'finished'` and non-null `metric_value` satisfying `value >= target` (maximize) / `value <= target` (minimize).
-- **Enforcement point** (`SQLiteStorage.suggest_trial`): per M1 invariant #6, this is the same place run_cap/exhaustion already flip the sweep to `finished`. Check `target_met` on the (already-fetched) trial rows *before* calling `next_trial`; if met, flip to `finished` and return `{"command": "exit", "reason": "target"}`. Requires extending the trial-row projection in `suggest_trial` with `metric_value` — which bayes needs anyway (invariant #7), so do it here first.
+- **Enforcement point** (`SQLiteStorage.suggest_trial`): per invariant #6, this is the same place run_cap/exhaustion already flip the sweep to `finished`. `target_met` is checked on the (already-fetched) trial rows *before* `next_trial`; if met, the sweep flips to `finished` and agents get `{"command": "exit", "reason": "target"}`. The trial-row projection in `suggest_trial` includes `metric_value` for this (bayes consumes the same projection, invariant #7).
 - **Also flip in `report_trial`**: after a successful `finished` report whose value meets the target, transition the sweep to `finished` in the same locked transaction. Without this, a sweep whose agents all exited on `count` stays `running` in the UI forever despite having hit its target.
 - **`finish_reason` column** (added post-M2, pre-release): `sweeps.finish_reason` records *why* a sweep auto-finished (`exhausted` | `run_cap` | `target`; NULL for manual stop/cancel/finish, where the state is its own reason). Written at the three auto-flip sites (`suggest_trial` exhaustion/run_cap/target, `report_trial` target); read back by `suggest_trial`'s terminal-state branch (`reason: finish_reason or state`) so every agent reports the true reason, not just the one whose call triggered the flip. Threaded through `_SWEEP_PARQUET_TABLES`, `_sweep_row_to_dict`, `staticApi.js` `getSweeps`, the state badge in `Sweeps.svelte`, and `format_sweep_summary` (`state: finished (target)`). DDL includes the column; an idempotent try-`ALTER` migrates pre-existing dev DBs (matching the `metrics` pattern at the top of `init_db`).
 - **Tests** (`test_sweep_storage.py`): suggest returns `exit/target` and sweep state flips; minimize vs maximize direction; target NOT triggered by `failed` trials' values; `report_trial` path flips state.
@@ -130,8 +130,8 @@ These ship together (a CLI agent has no `function` to call, so it only works wit
 
 Macros expand only when a token is exactly one macro or contains macros inline (simple string substitution per token; `${args}`-family macros must be a whole token since they expand to multiple argv entries — error otherwise). `${args_json_file}` stays out of scope (M1 decision). Value formatting: `json.dumps` for non-strings so `1e-05`, `True/true` etc. round-trip; bare strings unquoted (wandb convention).
 
-**Runner** (`sweep_agent.py`): `agent()` drops the `function is None` ValueError; instead it branches after `get_sweep`:
-- Function mode: exactly as today.
+**Runner** (`sweep_agent.py`): `agent()` branches on `is_command_sweep` after `get_sweep`:
+- Function mode: unchanged from M1.
 - Command mode (config has program/command): the suggest → report → failure-abort loop is shared; only the "run one trial" body differs. Spawn `subprocess.Popen(expand_command(...), env=child_env)` with inherited stdout/stderr (no tee — the logbook capture machinery isn't needed here; wandb agents also just stream through). `child_env` = `os.environ` plus:
   - `TRACKIO_SWEEP_ID`, `TRACKIO_SWEEP_TRIAL_ID`, `TRACKIO_SWEEP_PARAMS` (nested params as JSON), `TRACKIO_SWEEP_PROJECT` — the M1 env constants; `init()` already resolves them (invariant #5), so **no `init()` changes**.
   - `TRACKIO_SPACE_ID` / `TRACKIO_SERVER_URL` when the agent itself is remote — `utils.resolve_space_id_and_server_url` already reads these, so the child's `init()` attaches to the same backend without script changes.
@@ -139,7 +139,7 @@ Macros expand only when a token is exactly one macro or contains macros inline (
   - Passing `function=` for a command-mode sweep, or no function for a function-mode sweep, is a clear error either way.
 - Metric flow needs no new plumbing: in local mode the child process writes to the same SQLite; in remote mode the child's own `Run._client` reports. The agent process never sees the metric value.
 
-**CLI** (`cli.py`): top-level `trackio agent [PROJECT/]SWEEP_ID [--project P] [--count N] [--space SPACE] [--server-url URL]`, routed through `SweepClient` like the other sweep commands. Errors clearly when the target sweep has no `program`/`command` ("run agents for function-mode sweeps via trackio.agent(sweep_id, function=...)"). Update `sweep new` output to print a ready-to-copy `trackio agent {project}/{sweep_id}` line when the config is command-mode. No `-- {command override}` argv support in M2 (wandb parity doesn't require it; the `_maybe_handle_logbook_run_argv` pre-parse pattern is there if it's ever wanted).
+**CLI** (`cli.py`): top-level `trackio agent [PROJECT/]SWEEP_ID [--project P] [--count N] [--space SPACE] [--server-url URL]`, routed through `SweepClient` like the other sweep commands. Errors clearly when the target sweep has no `program`/`command` (run agents for function-mode sweeps via `trackio.agent(sweep_id, function=...)`). `sweep new` prints a ready-to-copy `trackio agent {project}/{sweep_id}` line when the config is command-mode. No `-- {command override}` argv support (wandb parity doesn't require it; the `_maybe_handle_logbook_run_argv` pre-parse pattern is there if it's ever wanted).
 
 **Server**: zero new endpoints — the CLI agent drives the existing eight.
 
@@ -149,7 +149,7 @@ Macros expand only when a token is exactly one macro or contains macros inline (
 
 **Scope restated (pinned in "Decisions made"):** wandb-*comparable*, not bit-identical. wandb's engine is an sklearn GP (Matern ν=1.5) + Expected Improvement; crucially it does **not** optimize the acquisition with L-BFGS — it samples a candidate pool from the parameter priors and picks the EI argmax. That candidate-set design is what makes a numpy-only port tractable, and it means categorical/quantized/log params need no special acquisition handling: candidates are already valid points in the space.
 
-**Module**: new `trackio/sweep_bayes.py` (pure, numpy-only, ~300–500 lines), exporting `BayesSuggester` registered in `sweeps.SUGGESTERS["bayes"]`. `sweeps.py` changes: move `"bayes"` from `FUTURE_SWEEP_METHODS` into `SWEEP_METHODS`; validation requires `metric.name` + `metric.goal` for bayes.
+**Module**: new `trackio/sweep_bayes.py` (pure, numpy-only, ~230 lines), exporting `BayesSuggester` registered in `sweeps.SUGGESTERS["bayes"]` via a lazy factory (avoids a `sweeps` ↔ `sweep_bayes` circular import). `sweeps.py` changes: `"bayes"` joined `SWEEP_METHODS` (the `FUTURE_SWEEP_METHODS` gate is gone); validation requires `metric.name` for bayes (`goal` defaults to minimize as usual).
 
 **Algorithm per `suggest(trials, rng)` call** (stateless — refit every call, fine at sweep scale of ≤ hundreds of trials):
 1. **Fallback**: if fewer than 2 trials have `state == 'finished'` with non-null `metric_value`, return a random sample (`sample_parameter` over the flat specs) — wandb's rule.
@@ -179,14 +179,14 @@ Macros expand only when a token is exactly one macro or contains macros inline (
 
 No server, frontend, or parquet changes anywhere in M2.
 
-### Invariants and gotchas for future work
+## Invariants and gotchas for future work
 
 1. **First terminal report wins.** `report_trial` only updates rows whose state is `assigned`/`running`. This is what makes the ordering safe when both the agent and `Run.finish()` report (agent reports `failed` before finishing the run → the run's later `finished` report is a no-op, and vice versa). Don't remove the guard.
 2. **`suggest_trial` must stay atomic** under `_get_process_lock(project)`. Never move params computation outside the lock, and never add a UNIQUE constraint on `param_hash` (random search legitimately repeats params; a schema constraint with `ON CONFLICT IGNORE` would silently deadlock small categorical spaces).
 3. **New sweep-related tables/columns** must be threaded through `_SWEEP_PARQUET_TABLES`, otherwise `trackio sync` / `freeze` silently drops the data. Column lists there must match the DDL exactly (import replays rows positionally by those names).
 4. **`Run.sweep_id` is public API** (wandb parity); `_sweep_trial_id` / `_sweep_metric_name` / `_sweep_metric_last` are internal.
-5. **Trial context resolution order** in `init()`: `context_vars.current_sweep_trial` (function-mode agent) then env vars (future command-mode). M2's command-mode agent should set the env vars on the child process and needs no `init()` changes.
+5. **Trial context resolution order** in `init()`: `context_vars.current_sweep_trial` (function-mode agent) then env vars (command mode). The command-mode agent sets the env vars on the child process; `init()` needed no changes for it.
 6. **`suggest_trial` flips the sweep to `finished`** when `next_trial` returns None; the exit reason distinguishes `run_cap` vs `exhausted` vs `target` (M2). `report_trial` also flips the sweep when a finished report meets `metric.target`, so subsequent suggests return reason `finished` (state), not `target`.
-7. **Bayes (M2, done)** is the lazy `_bayes_suggester` entry in `sweeps.SUGGESTERS` (lazy import avoids a `sweeps` ↔ `sweep_bayes` circular import); `suggest_trial`'s row projection includes `metric_value`.
-8. **Should-stop channel (M3):** add a `sweep_should_stop` endpoint + storage method; `Run` already has the `_start_background_thread` helper for the client-side poller. The `cancel` state currently only stops *new* trials — in-flight runs are not killed until M3.
+7. **Bayes** is the lazy `_bayes_suggester` entry in `sweeps.SUGGESTERS` (lazy import avoids a `sweeps` ↔ `sweep_bayes` circular import); `suggest_trial`'s row projection includes `metric_value`.
+8. **Should-stop channel (deferred with M3):** on this branch, `cancel` only stops *new* trials — in-flight runs are not killed. The channel (`sweep_should_stop` endpoint + `should_stop_trial` storage controller + `run.should_stop` poller + command-mode SIGTERM) is implemented on `feat/sweeps-m3`; its key invariant is that the controller marks trials `pruned` at decision time, since a SIGTERMed child may never report.
 9. **Dev environment:** HF-internal npm/pip proxies may be unreachable; use `--index-url https://pypi.org/simple` / `--registry https://registry.npmjs.org`, and `SKIP_FRONTEND_BUILD=1` for `pip install -e`. Parquet tests need `pyarrow` (the `spaces` extra).
