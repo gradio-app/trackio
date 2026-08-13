@@ -1,7 +1,7 @@
 # Registry
 
 > [!NOTE]
-> The registry is under active development ([#607](https://github.com/gradio-app/trackio/issues/607)). Publishing — linking and promoting versions, described on this page — is available today. Resolving registry versions with `use_artifact`, CLI commands, and a dashboard view are planned follow-ups.
+> The registry is under active development ([#607](https://github.com/gradio-app/trackio/issues/607)). Publishing — linking and promoting versions, described on this page — is available today. Resolving registry versions with `use_artifact` and a dashboard view are planned follow-ups.
 
 A **registry** is a shared catalog of your best artifact versions. A project lists the artifacts your experiments produced; a registry lists selected artifacts **across** projects.
 
@@ -208,6 +208,28 @@ registry.collection("my-model").links
 ```
 
 Each link records where the version came from (`source_project`, `source_artifact`, `source_version`), the source's storage coordinates when it is not local (`source_space_id`, `source_bucket_id`), and the aliases currently on it. A link is a pure pointer to that source version; resolving it (a follow-up) reads the source version directly.
+
+## Command-line interface
+
+The `trackio registry` commands cover the same publishing and inspection workflow without requiring a Python script:
+
+```sh
+trackio registry create models --description "Models we deploy"
+trackio registry create-collection models/churn-model --type model
+
+trackio registry link models/churn-model my-experiments/resnet:v3 --alias staging
+trackio registry promote models/churn-model production v0
+
+trackio registry list models
+trackio registry show models/churn-model
+trackio registry events models
+
+trackio registry unlink models/churn-model v0
+```
+
+`link` resolves its source from local Trackio data. It accepts an explicit version or alias and defaults to `latest` when the suffix is omitted. The registry may still be bucket-backed; pass `--bucket-id my-org/models-registry` to any command. Use `--json` for structured output suitable for scripts.
+
+The CLI accepts both `models/churn-model` and the Python API's full `registry-models/churn-model` target syntax. See [CLI Commands](cli_commands.md#registry-commands) for the complete command reference.
 
 ## Audit history
 
