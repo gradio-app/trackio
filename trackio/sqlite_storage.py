@@ -912,82 +912,85 @@ class SQLiteStorage:
 
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
-                cursor = conn.cursor()
-                has_links = (
-                    bool(SQLiteStorage._table_columns(conn, "run_artifact_links"))
-                    and cursor.execute(
-                        "SELECT 1 FROM run_artifact_links LIMIT 1"
-                    ).fetchone()
-                    is not None
-                )
-                if SQLiteStorage._supports_run_ids(conn):
-                    sources = [
-                        "SELECT run_id, run_name, timestamp AS created_at FROM metrics"
-                    ]
-                    if has_links:
-                        sources.append(
-                            """
-                            SELECT run_id, run_name, created_at
-                            FROM run_artifact_links AS l
-                            WHERE run_name IS NOT NULL
-                              AND l.run_name NOT IN (
-                                SELECT run_name FROM metrics
-                                WHERE run_name IS NOT NULL
-                              )
-                              AND (l.run_id IS NULL OR NOT EXISTS (
-                                SELECT 1 FROM metrics m
-                                WHERE m.run_id = l.run_id
-                              ))
-                              AND (l.run_id IS NOT NULL OR l.run_name NOT IN (
-                                SELECT run_name FROM run_artifact_links
-                                WHERE run_id IS NOT NULL
-                                  AND run_name IS NOT NULL
-                              ))
-                            """
-                        )
-                    cursor.execute(
-                        f"""
-                        SELECT run_id, run_name, MIN(created_at) AS created_at
-                        FROM ({" UNION ALL ".join(sources)})
-                        GROUP BY run_id, run_name
-                        ORDER BY created_at ASC
-                        """
-                    )
-                    return [
-                        {
-                            "id": row["run_id"],
-                            "name": row["run_name"],
-                            "created_at": row["created_at"],
-                        }
-                        for row in cursor.fetchall()
-                    ]
-
-                sources = ["SELECT run_name, timestamp AS created_at FROM metrics"]
-                if has_links:
-                    sources.append(
-                        "SELECT run_name, created_at FROM run_artifact_links "
-                        "WHERE run_name IS NOT NULL"
-                    )
-                cursor.execute(
-                    f"""
-                    SELECT run_name, MIN(created_at) AS created_at
-                    FROM ({" UNION ALL ".join(sources)})
-                    GROUP BY run_name
-                    ORDER BY created_at ASC
-                    """
-                )
-                return [
-                    {
-                        "id": row["run_name"],
-                        "name": row["run_name"],
-                        "created_at": row["created_at"],
-                    }
-                    for row in cursor.fetchall()
-                ]
+                return SQLiteStorage._run_records_from_conn(conn)
         except sqlite3.OperationalError as e:
             if "no such table: metrics" in str(e):
                 return []
             raise
+
+    @staticmethod
+    def _run_records_from_conn(conn: sqlite3.Connection) -> list[dict[str, str | None]]:
+        """get_run_records body operating on an already-held connection, so
+        callers inside a `_get_connection` block don't re-enter the per-DB
+        access lock (a non-reentrant Lock on Spaces)."""
+        cursor = conn.cursor()
+        has_links = (
+            bool(SQLiteStorage._table_columns(conn, "run_artifact_links"))
+            and cursor.execute("SELECT 1 FROM run_artifact_links LIMIT 1").fetchone()
+            is not None
+        )
+        if SQLiteStorage._supports_run_ids(conn):
+            sources = ["SELECT run_id, run_name, timestamp AS created_at FROM metrics"]
+            if has_links:
+                sources.append(
+                    """
+                    SELECT run_id, run_name, created_at
+                    FROM run_artifact_links AS l
+                    WHERE run_name IS NOT NULL
+                      AND l.run_name NOT IN (
+                        SELECT run_name FROM metrics
+                        WHERE run_name IS NOT NULL
+                      )
+                      AND (l.run_id IS NULL OR NOT EXISTS (
+                        SELECT 1 FROM metrics m
+                        WHERE m.run_id = l.run_id
+                      ))
+                      AND (l.run_id IS NOT NULL OR l.run_name NOT IN (
+                        SELECT run_name FROM run_artifact_links
+                        WHERE run_id IS NOT NULL
+                          AND run_name IS NOT NULL
+                      ))
+                    """
+                )
+            cursor.execute(
+                f"""
+                SELECT run_id, run_name, MIN(created_at) AS created_at
+                FROM ({" UNION ALL ".join(sources)})
+                GROUP BY run_id, run_name
+                ORDER BY created_at ASC
+                """
+            )
+            return [
+                {
+                    "id": row["run_id"],
+                    "name": row["run_name"],
+                    "created_at": row["created_at"],
+                }
+                for row in cursor.fetchall()
+            ]
+
+        sources = ["SELECT run_name, timestamp AS created_at FROM metrics"]
+        if has_links:
+            sources.append(
+                "SELECT run_name, created_at FROM run_artifact_links "
+                "WHERE run_name IS NOT NULL"
+            )
+        cursor.execute(
+            f"""
+            SELECT run_name, MIN(created_at) AS created_at
+            FROM ({" UNION ALL ".join(sources)})
+            GROUP BY run_name
+            ORDER BY created_at ASC
+            """
+        )
+        return [
+            {
+                "id": row["run_name"],
+                "name": row["run_name"],
+                "created_at": row["created_at"],
+            }
+            for row in cursor.fetchall()
+        ]
 
     @staticmethod
     def get_latest_run_record_by_name(
@@ -5510,7 +5513,10 @@ class SQLiteStorage:
                 where = f"ral.{col} = ?"
                 params = (val,)
                 if col == "run_id" and run_name is not None:
-                    records = SQLiteStorage.get_run_records(project)
+                    try:
+                        records = SQLiteStorage._run_records_from_conn(conn)
+                    except sqlite3.OperationalError:
+                        records = []
                     same_name = [r["id"] for r in records if r["name"] == run_name]
                     if same_name == [val]:
                         with_clause = """

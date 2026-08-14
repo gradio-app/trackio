@@ -1,5 +1,6 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
+  import ParallelCoordinatesPlot from "../components/ParallelCoordinatesPlot.svelte";
   import {
     getSweeps,
     getSweepTrials,
@@ -231,6 +232,14 @@
                 {:else if trialsBySweep[sweep.sweep_id].length === 0}
                   <div class="trials-loading">No trials yet.</div>
                 {:else}
+                  <div class="trials-plot">
+                    <ParallelCoordinatesPlot
+                      trials={trialsBySweep[sweep.sweep_id]}
+                      metricName={sweep.metric_name}
+                      metricGoal={sweep.metric_goal}
+                      bestRunId={sweep.best_run_id}
+                    />
+                  </div>
                   <table class="trials-table">
                     <thead>
                       <tr>
@@ -421,6 +430,12 @@
   }
   .trials-table {
     font-size: 13px;
+  }
+  .trials-plot {
+    margin-bottom: 12px;
+  }
+  .trials-plot:empty {
+    display: none;
   }
   .best-trial td {
     font-weight: 600;
