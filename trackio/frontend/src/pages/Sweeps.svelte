@@ -51,6 +51,16 @@
     }
   }
 
+  async function loadTrials(sweepId) {
+    try {
+      const trials = await getSweepTrials(project, sweepId);
+      trialsBySweep = { ...trialsBySweep, [sweepId]: trials || [] };
+    } catch (e) {
+      console.error("Failed to load sweep trials:", e);
+      trialsBySweep = { ...trialsBySweep, [sweepId]: [] };
+    }
+  }
+
   async function toggleTrials(sweepId) {
     if (expandedSweepId === sweepId) {
       expandedSweepId = null;
@@ -58,13 +68,7 @@
     }
     expandedSweepId = sweepId;
     if (!trialsBySweep[sweepId]) {
-      try {
-        const trials = await getSweepTrials(project, sweepId);
-        trialsBySweep = { ...trialsBySweep, [sweepId]: trials || [] };
-      } catch (e) {
-        console.error("Failed to load sweep trials:", e);
-        trialsBySweep = { ...trialsBySweep, [sweepId]: [] };
-      }
+      await loadTrials(sweepId);
     }
   }
 
@@ -79,6 +83,9 @@
     } finally {
       trialsBySweep = {};
       await loadSweeps();
+      if (expandedSweepId) {
+        await loadTrials(expandedSweepId);
+      }
       actionPending = null;
     }
   }

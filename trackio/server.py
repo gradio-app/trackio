@@ -1304,16 +1304,11 @@ def _get_registry_details(
         if bucket_id is None
         else BucketRegistryStorage(bucket_id, token=_registry_read_token(request))
     )
-    record = storage.get_registry(registry)
+    record = storage.describe_registry(registry)
     if record is None:
         where = " locally" if bucket_id is None else f" in bucket {bucket_id!r}"
         raise TrackioAPIError(f"Registry {registry!r} does not exist{where}.")
-    return {
-        **record,
-        "bucket_id": bucket_id,
-        "collections": storage.list_collections(registry),
-        "events": storage.get_events(registry),
-    }
+    return {**record, "bucket_id": bucket_id}
 
 
 async def get_registry_details(

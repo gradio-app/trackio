@@ -86,8 +86,10 @@ export function buildParallelCoordsData(
   const metricValues = usable.map((trial) => Number(trial.metric_value));
   const metricMin = Math.min(...metricValues);
   const metricMax = Math.max(...metricValues);
+  let metricKey = metricName || "metric";
+  if (seen.has(metricKey)) metricKey = `${metricKey} (metric)`;
   const metricAxis = {
-    key: metricName || "metric",
+    key: metricKey,
     kind: "numeric",
     min: metricMin,
     max: metricMax,

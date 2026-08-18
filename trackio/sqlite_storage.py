@@ -2480,19 +2480,6 @@ class SQLiteStorage:
             return [SQLiteStorage._trial_row_to_dict(row) for row in rows]
 
     @staticmethod
-    def get_sweep_count(project: str) -> int:
-        db_path = SQLiteStorage.get_project_db_path(project)
-        if not db_path.exists():
-            return 0
-        with SQLiteStorage._get_connection(db_path) as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute("SELECT COUNT(*) FROM sweeps")
-                return cursor.fetchone()[0]
-            except sqlite3.OperationalError:
-                return 0
-
-    @staticmethod
     def _fetch_system_logs_with_cursor(
         cursor: sqlite3.Cursor,
         run_identity: tuple[str, Any],

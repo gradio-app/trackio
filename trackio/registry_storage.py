@@ -231,22 +231,6 @@ class RegistryStorage:
         return SQLiteStorage.get_project_db_path(registry_project_name(registry))
 
     @staticmethod
-    def init_registry_db(registry: str) -> Path:
-        """Initialize the registry's database and return its path.
-
-        The database is created with the standard project schema first, then
-        the registry tables are added. This leaves the registry unmarked;
-        `create_registry` is what makes it exist.
-        """
-        project = registry_project_name(registry)
-        db_path = SQLiteStorage.init_db(project, validate_name=False)
-        with SQLiteStorage._get_process_lock(project):
-            with SQLiteStorage._get_connection(db_path, row_factory=None) as conn:
-                RegistryStorage._create_registry_tables_cursor(conn)
-                conn.commit()
-        return db_path
-
-    @staticmethod
     def _create_registry_tables_cursor(conn: sqlite3.Connection) -> None:
         """Add the registry tables to a database. Idempotent, and callable from
         within a caller's lock and transaction. `project_metadata` is included
@@ -1128,3 +1112,16 @@ class RegistryStorage:
             return []
         with SQLiteStorage._get_connection(db_path) as conn:
             return RegistryStorage.get_events_cursor(conn)
+
+    @staticmethod
+    def describe_registry(registry: str) -> dict | None:
+        """The registry record with its collections and events. Returns None
+        when the registry does not exist."""
+        record = RegistryStorage.get_registry(registry)
+        if record is None:
+            return None
+        return {
+            **record,
+            "collections": RegistryStorage.list_collections(registry),
+            "events": RegistryStorage.get_events(registry),
+        }

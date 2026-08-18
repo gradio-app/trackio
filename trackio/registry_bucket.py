@@ -104,7 +104,7 @@ class BucketRegistryStorage:
         try:
             paths = _list_bucket_file_paths(
                 self.bucket_id,
-                prefix=_registry_prefix(registry),
+                prefix=remote_path,
                 token=self._token(),
             )
         except BucketNotFoundError:
@@ -538,5 +538,27 @@ class BucketRegistryStorage:
             self._refresh_cursor(conn, registry)
             conn.commit()
             return RegistryStorage.get_events_cursor(conn)
+        finally:
+            conn.close()
+
+    def describe_registry(self, registry: str) -> dict | None:
+        """The registry record with its collections and events, from a single
+        manifest read and projection refresh (the individual getters each pay
+        their own bucket round-trips). Returns None when the registry does not
+        exist."""
+        manifest = self._read_manifest(registry)
+        if manifest is None:
+            return None
+        conn = self._connect(registry)
+        try:
+            self._refresh_cursor(conn, registry)
+            conn.commit()
+            return {
+                "name": registry,
+                "description": manifest.get("description"),
+                "created_at": manifest.get("created_at"),
+                "collections": RegistryStorage.list_collections_cursor(conn),
+                "events": RegistryStorage.get_events_cursor(conn),
+            }
         finally:
             conn.close()

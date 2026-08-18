@@ -19,6 +19,7 @@
   let container = $state(null);
   let view = $state(null);
   let darkMode = $state(isDark());
+  let renderSeq = 0;
 
   let plotData = $derived(
     buildParallelCoordsData(trials, metricName, bestRunId),
@@ -46,7 +47,9 @@
   }
 
   async function render() {
+    const seq = ++renderSeq;
     await tick();
+    if (seq !== renderSeq) return;
     if (!container) return;
     if (plotData.rows.length === 0) return;
 
@@ -60,14 +63,15 @@
     });
 
     try {
-      if (view) {
-        view.finalize();
-        view = null;
-      }
       const result = await embed(container, spec, {
         actions: false,
         renderer: "canvas",
       });
+      if (seq !== renderSeq) {
+        result.view.finalize();
+        return;
+      }
+      if (view) view.finalize();
       view = result.view;
       requestAnimationFrame(() => {
         result.view.resize();

@@ -65,54 +65,47 @@ class SweepClient:
     def is_local(self) -> bool:
         return self._remote is None
 
-    def create_sweep(self, config: dict, name: str | None = None) -> str:
+    def _dispatch(self, api_name: str, local_fn, **kwargs):
+        """Run one sweep operation against the remote server when one is
+        configured, else directly against local storage. The kwargs match
+        both the API endpoint and the storage function signatures."""
         if self._remote is not None:
             return self._remote.predict(
-                api_name="/sweep_create",
-                project=self.project,
-                config=config,
-                name=name,
+                api_name=f"/{api_name}", project=self.project, **kwargs
             )
-        return SQLiteStorage.create_sweep(self.project, config, name=name)
+        return local_fn(self.project, **kwargs)
+
+    def create_sweep(self, config: dict, name: str | None = None) -> str:
+        return self._dispatch(
+            "sweep_create", SQLiteStorage.create_sweep, config=config, name=name
+        )
 
     def get_sweep(self, sweep_id: str) -> dict | None:
-        if self._remote is not None:
-            return self._remote.predict(
-                api_name="/sweep_get", project=self.project, sweep_id=sweep_id
-            )
-        return SQLiteStorage.get_sweep(self.project, sweep_id)
+        return self._dispatch("sweep_get", SQLiteStorage.get_sweep, sweep_id=sweep_id)
 
     def list_sweeps(self) -> list[dict]:
-        if self._remote is not None:
-            return self._remote.predict(api_name="/sweep_list", project=self.project)
-        return SQLiteStorage.list_sweeps(self.project)
+        return self._dispatch("sweep_list", SQLiteStorage.list_sweeps)
 
     def get_trials(self, sweep_id: str) -> list[dict]:
-        if self._remote is not None:
-            return self._remote.predict(
-                api_name="/sweep_get_trials", project=self.project, sweep_id=sweep_id
-            )
-        return SQLiteStorage.get_sweep_trials(self.project, sweep_id)
+        return self._dispatch(
+            "sweep_get_trials", SQLiteStorage.get_sweep_trials, sweep_id=sweep_id
+        )
 
     def set_sweep_state(self, sweep_id: str, state: str) -> dict | None:
-        if self._remote is not None:
-            return self._remote.predict(
-                api_name="/sweep_set_state",
-                project=self.project,
-                sweep_id=sweep_id,
-                state=state,
-            )
-        return SQLiteStorage.set_sweep_state(self.project, sweep_id, state)
+        return self._dispatch(
+            "sweep_set_state",
+            SQLiteStorage.set_sweep_state,
+            sweep_id=sweep_id,
+            state=state,
+        )
 
     def suggest_trial(self, sweep_id: str, agent_id: str | None = None) -> dict:
-        if self._remote is not None:
-            return self._remote.predict(
-                api_name="/sweep_suggest_trial",
-                project=self.project,
-                sweep_id=sweep_id,
-                agent_id=agent_id,
-            )
-        return SQLiteStorage.suggest_trial(self.project, sweep_id, agent_id=agent_id)
+        return self._dispatch(
+            "sweep_suggest_trial",
+            SQLiteStorage.suggest_trial,
+            sweep_id=sweep_id,
+            agent_id=agent_id,
+        )
 
     def report_trial(
         self,
@@ -121,24 +114,25 @@ class SweepClient:
         state: str,
         metric_value: float | None = None,
     ) -> bool:
-        if self._remote is not None:
-            return self._remote.predict(
-                api_name="/sweep_report_trial",
-                project=self.project,
-                sweep_id=sweep_id,
-                trial_id=trial_id,
-                state=state,
-                metric_value=metric_value,
-            )
-        return SQLiteStorage.report_trial(
-            self.project, sweep_id, trial_id, state, metric_value=metric_value
+        return self._dispatch(
+            "sweep_report_trial",
+            SQLiteStorage.report_trial,
+            sweep_id=sweep_id,
+            trial_id=trial_id,
+            state=state,
+            metric_value=metric_value,
         )
 
 
 def split_sweep_path(sweep_id: str, project: str | None) -> tuple[str | None, str]:
     if "/" in sweep_id:
         path_project, path_sweep_id = sweep_id.rsplit("/", 1)
-        return project or path_project, path_sweep_id
+        if project is not None and project != path_project:
+            _emit_nonfatal_warning(
+                f"Ignoring project={project!r}: the qualified sweep id "
+                f"{sweep_id!r} already names project {path_project!r}."
+            )
+        return path_project, path_sweep_id
     return project, sweep_id
 
 

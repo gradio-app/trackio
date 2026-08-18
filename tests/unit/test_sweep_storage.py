@@ -320,7 +320,7 @@ def test_import_distinguishes_real_sidecar_from_legacy_project(temp_dir):
 
     values = SQLiteStorage.get_metric_values("myproj_sweeps", None, "acc", run_id="r2")
     assert len(values) == 1
-    assert SQLiteStorage.get_sweep_count("myproj") == 0
+    assert SQLiteStorage.list_sweeps("myproj") == []
     assert SQLiteStorage.get_metric_values("myproj", None, "loss", run_id="r1")
     with pytest.raises(ValueError, match="reserved suffix"):
         SQLiteStorage.validate_project_name("model_sweeps")

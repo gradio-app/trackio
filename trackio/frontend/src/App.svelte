@@ -379,7 +379,10 @@
     urlTick;
     if (currentPage !== "artifacts") return;
     const { name, version } = getArtifactSelectionFromUrl();
-    if (!name || version == null) return;
+    if (!name || version == null) {
+      artifactSelection = null;
+      return;
+    }
     if (isSameArtifactSelection(name, version)) return;
     artifactSelection = { name, version };
   });
