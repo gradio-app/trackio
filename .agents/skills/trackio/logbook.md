@@ -33,7 +33,9 @@ trackio logbook publish --review-publication            # ask the Traces/Workspa
 
 `cell markdown` **appends** a markdown cell — you never clobber findings someone else wrote. Fenced code blocks inside the markdown render with syntax highlighting, so embed short snippets directly in the body. Use `cell code` when the entry is code plus output (`--output` is optional). Use `cell figure` for HTML figures such as Plotly exports plus raw data. Use `cell artifact` to record a Trackio artifact and `cell dashboard` to embed a project's live Trackio dashboard. (`trackio.init()` / `trackio.log_artifact()` are side-effect-free on any logbook in the current directory — they never add cells or pages — so record artifacts and dashboards explicitly with these commands.) Every cell has a stable id and title; pass `--title` when you know the best label, otherwise Trackio derives one. Models, datasets, Spaces, artifacts, papers, jobs, buckets, and repos detected from URLs render as inline links or resource chips; images render inline and Trackio-tagged Spaces embed as live dashboards. Everything else is a direct file edit.
 
-`run` is the preferred way to execute experiments from the terminal: it tees output live, stores the exact command, attaches any script/config argv tokens it can see, records exit code and duration, and captures truncated output in one code cell. It also detects model/data files the command created or modified under the working directory (checkpoints like `.pt`/`.safetensors`/`.ckpt`, datasets like `.parquet`/`.csv`/`.jsonl`) and records each as a **path-reference artifact cell**. Disable with `--no-artifacts`. A path-reference cell does not itself upload the file; it appears locally in Workspace when the run finishes and is mirrored only when Workspace publication is approved.
+`run` is the preferred way to execute experiments from the terminal. It tees stdout and stderr live while retaining both complete streams in a private evidence bundle under `.trackio/run-evidence/`. The bundle records the exact command, code and Git state, runtime details, exit code, duration, capture diagnostics, and content-addressed snapshots of observed inputs and outputs. Python commands are instrumented automatically through a portable audit hook; other commands retain filesystem output detection as a fallback. The page contains a compact output preview and up to ten of the largest output artifact cells, while every captured output remains in the bundle. Disable artifact cells with `--no-artifacts`.
+
+Captured artifact cells point at immutable SHA-256 snapshots, not the mutable original path. Publication re-verifies the digest and size before uploading. The evidence bundle remains private and gitignored; the reviewed Workspace artifacts are what publication mirrors to the configured Bucket.
 
 ## Attach the current agent session
 
@@ -134,11 +136,12 @@ For each experiment, capture enough that someone could re-run it:
 
 ## Automatic capture from trackio
 
-If a logbook exists in the working directory, trackio **auto-captures itself** — no manual cell needed for these:
+When Trackio is called inside `trackio logbook run`, the wrapper **auto-captures the child SDK activity** — no manual cell needed for these:
 
-- `trackio.init()` immediately records an **embedded dashboard cell** on a page named after the trackio **project** (one per project per page; live in the local preview, promoted to a Space on publish), so anyone watching the logbook sees training metrics in real time. `finish()` no longer writes a run cell. Note: the hook lives in the trackio the script imports — a separate environment with an older trackio won't fire it.
-- `trackio.log_artifact(...)` records the artifact as its own **artifact cell**. On `publish`, artifacts are pushed to an HF Bucket and the cells link to it.
-- `trackio logbook run` records model/data files the command created or modified as **path-reference artifact cells** (path, size, and type only). The cell itself does not upload the file. Captured paths appear in Workspace after the run finishes even without a trace; with an attached active trace, supported post-baseline files can appear while work is still in progress. They are uploaded only if Workspace publication is approved. Disable per run with `--no-artifacts`.
+- `trackio.init()` records the resolved Trackio run id, project, config, group, and remote destination in the evidence bundle. After the command exits, the wrapper adds one dashboard cell to the page it was explicitly asked to update. Calling `trackio.init()` normally, outside the wrapper, never mutates a Logbook.
+- `trackio.use_artifact(...)` and `trackio.log_artifact(...)` record verified input/output lineage. Logged outputs become artifact cells on the selected page and publish through the normal artifact store.
+- Python file reads and writes are observed automatically. Workspace inputs and all non-cache outputs are copied into content-addressed storage; arbitrary output extensions are supported. Native subprocess reads and network responses are reported as capture limitations rather than silently claimed as complete.
+- `trackio logbook run` keeps complete logs and all captured artifacts in the evidence bundle. The Markdown page deliberately stays compact. Disable auto-generated artifact cells per run with `--no-artifacts`.
 
 Local runs/artifacts are marked as local until you publish (see below). Set `TRACKIO_LOGBOOK_AUTONOTE=0` to disable (e.g. during large sweeps).
 

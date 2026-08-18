@@ -335,6 +335,93 @@ def test_run_and_log_captures_command_and_output(proj):
     assert "exit 0" in text
 
 
+def test_run_and_log_records_command_that_cannot_start(proj):
+    logbook.ensure_page(proj, "Runs")
+    with pytest.raises(logbook.LogbookError, match="Command not found"):
+        logbook.run_and_log(proj, ["trackio-command-that-does-not-exist"], page="Runs")
+
+    [record] = _evidence_records(proj)
+    assert record["state"] == "failed_to_start"
+    assert record["evidence_status"] == "degraded"
+    assert "could not start" in record["warnings"][0]
+
+
+def _evidence_records(proj):
+    paths = sorted((proj / "run-evidence" / "runs").glob("*/run.json"))
+    return [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+
+
+def test_run_and_log_retains_full_logs_and_observed_file_provenance(proj, tmp_path):
+    (tmp_path / "input.txt").write_text("input-data", encoding="utf-8")
+    logbook.ensure_page(proj, "Runs")
+    script = (
+        "import pathlib, sys\n"
+        "data = pathlib.Path('input.txt').read_text()\n"
+        "pathlib.Path('result.tmp').write_bytes(data.encode())\n"
+        "pathlib.Path('result.tmp').replace('result.bin')\n"
+        "print('x' * 25000)\n"
+        "print('stderr-marker', file=sys.stderr)\n"
+    )
+
+    assert logbook.run_and_log(proj, [sys.executable, "-c", script], page="Runs") == 0
+
+    [record] = _evidence_records(proj)
+    assert record["state"] == "succeeded"
+    assert record["evidence_status"] == "complete_with_limitations"
+    assert record["providers"]["python_audit"]["status"] == "complete"
+    inputs = {entry["path"]: entry for entry in record["inputs"]}
+    outputs = {entry["path"]: entry for entry in record["outputs"]}
+    assert inputs["input.txt"]["storage"] == "captured"
+    assert outputs["result.bin"]["storage"] == "captured"
+    assert Path(inputs["input.txt"]["blob_path"]).read_text() == "input-data"
+    assert Path(outputs["result.bin"]["blob_path"]).read_bytes() == b"input-data"
+
+    run_dir = proj / "run-evidence" / "runs" / record["run_id"]
+    assert (run_dir / "stdout.log").stat().st_size > logbook.RUN_OUTPUT_LIMIT
+    assert "stderr-marker" in (run_dir / "stderr.log").read_text(encoding="utf-8")
+    assert "chars elided" in _page_text(proj, "Runs")
+    cells = _artifact_cells(proj, "Runs")
+    assert cells[0]["path"] == "result.bin"
+    assert cells[0]["artifact_type"] == "artifact"
+    tracked = logbook.read_metadata(proj)["local_path_artifacts"][0]
+    assert tracked["digest"] == outputs["result.bin"]["digest"]
+    assert tracked["abs_path"] == outputs["result.bin"]["blob_path"]
+    assert "/run-evidence/" in (proj / ".gitignore").read_text(encoding="utf-8")
+
+
+def test_logbook_run_links_trackio_run_and_artifacts_without_sdk_page_mutation(
+    proj, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("TRACKIO_DIR", str(tmp_path / "trackio-home"))
+    logbook.ensure_page(proj, "Runs")
+    script = (
+        "import pathlib, trackio\n"
+        "trackio.init(project='linked-project', name='child-run', "
+        "auto_log_cpu=False, auto_log_gpu=False)\n"
+        "pathlib.Path('model.bin').write_bytes(b'model')\n"
+        "trackio.log_artifact('model.bin', name='weights', type='model')\n"
+        "trackio.finish()\n"
+    )
+
+    assert logbook.run_and_log(proj, [sys.executable, "-c", script], page="Runs") == 0
+
+    [record] = _evidence_records(proj)
+    assert record["providers"]["trackio_sdk"]["status"] == "complete"
+    [linked_run] = record["trackio"]["runs"]
+    assert linked_run["project"] == "linked-project"
+    assert linked_run["run_name"] == "child-run"
+    [artifact] = record["trackio"]["artifact_outputs"]
+    assert artifact["qualified_name"] == "linked-project/weights:v0"
+    assert artifact["manifest_digest"]
+
+    outline = logbook.read_page_outline(proj, "Runs")
+    dashboards = [cell for cell in outline["cells"] if cell["type"] == "dashboard"]
+    artifacts = [cell for cell in outline["cells"] if cell["type"] == "artifact"]
+    assert len(dashboards) == 1
+    assert dashboards[0]["project"] == "linked-project"
+    assert any(cell.get("artifact") == "linked-project/weights:v0" for cell in artifacts)
+
+
 def _artifact_cells(proj, page):
     outline = logbook.read_page_outline(proj, page)
     return [c for c in outline["cells"] if c["type"] == "artifact"]
