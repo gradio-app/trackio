@@ -130,24 +130,25 @@ records only that the path was omitted by policy.
 ### Run the provenance demo
 
 The repository includes a small deterministic example that exercises the main
-capture paths without downloading a model or dataset. From the repository root:
+capture paths without downloading a model or dataset. It is an ordinary Python
+script with no Trackio import or instrumentation; the wrapper is the entire
+integration. From the repository root:
 
 ```sh
 trackio logbook open --title "Automatic provenance capture" --no-serve
 trackio logbook page "Captured training run"
 trackio logbook cell markdown \
   "This run demonstrates automatic input, output, metric, and artifact capture."
-trackio logbook run -- python3 examples/logbook-provenance-demo.py
+trackio logbook run -- python3 examples/generic-training-demo.py
 trackio logbook serve
 ```
 
 Open the **Captured training run** page for a screenshot. It contains the exact
-command and output preview, an embedded metrics dashboard, the semantic Trackio
-artifact, and captured output files. Behind the page, the private run bundle
+command and output preview plus the automatically captured model snapshot,
+metric history, and evaluation report. Behind the page, the private run bundle
 also contains complete stdout and stderr, the input fixture, Git/runtime
-metadata, provider diagnostics, and an immutable snapshot of
-`artifacts/logbook-provenance-demo/model.snapshot` despite its arbitrary
-extension.
+metadata, provider diagnostics, and immutable snapshots of the outputs despite
+their arbitrary `.snapshot` and `.metrics` extensions.
 
 The demo writes generated files under the repository's gitignored `artifacts/`
 directory. The Logbook and private evidence remain under `.trackio/`.

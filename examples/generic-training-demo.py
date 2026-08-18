@@ -1,18 +1,15 @@
-"""Small, deterministic workload for demonstrating Logbook provenance capture.
+"""Small deterministic training-like workload with no framework integration.
 
-Run this from the repository root through ``trackio logbook run``. The script
-intentionally reads an input fixture, writes an output with an arbitrary file
-extension, emits stdout and stderr, logs metrics, and registers an artifact.
+The script reads an input fixture, records metrics, writes a model-like output,
+and emits stdout and stderr using only the Python standard library.
 """
 
 import json
 import sys
 from pathlib import Path
 
-import trackio
-
-INPUT_PATH = Path("examples/files/logbook-provenance-demo.json")
-OUTPUT_DIR = Path("artifacts/logbook-provenance-demo")
+INPUT_PATH = Path("examples/files/generic-training-demo.json")
+OUTPUT_DIR = Path("artifacts/generic-training-demo")
 
 
 def main() -> None:
@@ -20,22 +17,13 @@ def main() -> None:
     epochs = dataset["epochs"]
     learning_rate = dataset["learning_rate"]
 
-    trackio.init(
-        project="logbook-provenance-demo",
-        name="automatic-capture",
-        config={
-            "epochs": epochs,
-            "learning_rate": learning_rate,
-            "input": str(INPUT_PATH),
-        },
-    )
-
     print(f"Loaded {len(dataset['examples'])} examples from {INPUT_PATH}")
+    metrics = []
     for epoch in range(epochs):
         progress = (epoch + 1) / epochs
         loss = round(1.4 * (1 - progress) ** 2 + 0.08, 4)
         accuracy = round(0.52 + 0.43 * progress, 4)
-        trackio.log({"train/loss": loss, "eval/accuracy": accuracy}, step=epoch)
+        metrics.append({"epoch": epoch + 1, "loss": loss, "accuracy": accuracy})
         print(f"epoch={epoch + 1}/{epochs} loss={loss:.4f} accuracy={accuracy:.4f}")
         if epoch == 1:
             print(
@@ -45,16 +33,24 @@ def main() -> None:
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     snapshot_path = OUTPUT_DIR / "model.snapshot"
+    metrics_path = OUTPUT_DIR / "training.metrics"
     report_path = OUTPUT_DIR / "evaluation.json"
     snapshot_path.write_text(
         json.dumps(
             {
-                "format": "trackio-provenance-demo",
-                "weights": [0.125, -0.25, 0.75],
+                "format": "generic-training-demo",
+                "weights": [
+                    round(learning_rate * (index + 1) * accuracy, 6)
+                    for index in range(3)
+                ],
                 "source_examples": len(dataset["examples"]),
             },
             indent=2,
         ),
+        encoding="utf-8",
+    )
+    metrics_path.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in metrics) + "\n",
         encoding="utf-8",
     )
     report_path.write_text(
@@ -69,19 +65,9 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    artifact = trackio.Artifact(
-        name="demo-model",
-        type="model",
-        description="Tiny model produced by the Logbook provenance demo",
-        metadata={"accuracy": accuracy, "epochs": epochs},
-    )
-    artifact.add_file(snapshot_path)
-    artifact.add_file(report_path)
-    logged = trackio.log_artifact(artifact, aliases=["latest", "demo"])
-
     print(f"Wrote arbitrary-extension output: {snapshot_path}")
-    print(f"Logged semantic artifact: {logged.qualified_name}")
-    trackio.finish()
+    print(f"Wrote metric history: {metrics_path}")
+    print(f"Wrote evaluation report: {report_path}")
 
 
 if __name__ == "__main__":
