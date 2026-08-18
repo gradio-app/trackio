@@ -123,6 +123,34 @@ The page keeps a compact output preview, while complete `stdout.log`,
 `.trackio/run-evidence/`. That directory is gitignored and is not copied into
 the public Logbook Space. Workspace publication uploads the reviewed artifact
 snapshots separately and verifies their recorded digest and size first.
+Known credential files and private/cache directories are never copied into the
+bundle. When a Python process reads a recognized sensitive file, the evidence
+records only that the path was omitted by policy.
+
+### Run the provenance demo
+
+The repository includes a small deterministic example that exercises the main
+capture paths without downloading a model or dataset. From the repository root:
+
+```sh
+trackio logbook open --title "Automatic provenance capture" --no-serve
+trackio logbook page "Captured training run"
+trackio logbook cell markdown \
+  "This run demonstrates automatic input, output, metric, and artifact capture."
+trackio logbook run -- python3 examples/logbook-provenance-demo.py
+trackio logbook serve
+```
+
+Open the **Captured training run** page for a screenshot. It contains the exact
+command and output preview, an embedded metrics dashboard, the semantic Trackio
+artifact, and captured output files. Behind the page, the private run bundle
+also contains complete stdout and stderr, the input fixture, Git/runtime
+metadata, provider diagnostics, and an immutable snapshot of
+`artifacts/logbook-provenance-demo/model.snapshot` despite its arbitrary
+extension.
+
+The demo writes generated files under the repository's gitignored `artifacts/`
+directory. The Logbook and private evidence remain under `.trackio/`.
 
 ## Read a logbook programmatically
 

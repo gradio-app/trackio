@@ -29,8 +29,22 @@ SAFE_ENV_VALUES = (
     "TOKENIZERS_PARALLELISM",
 )
 PRIVATE_PATH_PARTS = {".aws", ".config", ".gnupg", ".ssh", "keychains"}
+PRIVATE_FILE_NAMES = {
+    ".env",
+    ".netrc",
+    ".npmrc",
+    ".pypirc",
+    "credentials",
+    "credentials.json",
+    "secrets.json",
+    "stored_tokens",
+    "token",
+}
 INTERNAL_PATH_PARTS = {".cache", ".git", ".trackio", "__pycache__"}
 ENVIRONMENT_PATH_PARTS = {"site-packages", "dist-packages"}
+SYSTEM_PATH_PREFIXES = tuple(
+    Path(path) for path in ("/System", "/Library", "/usr", "/bin", "/sbin", "/etc")
+)
 
 
 def _now_iso() -> str:
@@ -181,11 +195,9 @@ def _capture_file(root: Path, path: Path, cwd: Path, role: str) -> dict[str, Any
 
 def _path_omission(path: Path, cwd: Path, python_prefixes: list[Path]) -> str | None:
     lowered = {part.lower() for part in path.parts}
-    if PRIVATE_PATH_PARTS & lowered:
+    if PRIVATE_PATH_PARTS & lowered or path.name.lower() in PRIVATE_FILE_NAMES:
         return "sensitive-path-policy"
-    if _is_within(path, cwd) and INTERNAL_PATH_PARTS & {
-        part.lower() for part in path.relative_to(cwd).parts
-    }:
+    if INTERNAL_PATH_PARTS & lowered:
         return "trackio-or-vcs-internal"
     if any(_is_within(path, prefix) for prefix in python_prefixes):
         return "python-environment"
@@ -193,6 +205,8 @@ def _path_omission(path: Path, cwd: Path, python_prefixes: list[Path]) -> str | 
         return "python-environment"
     if path.as_posix().startswith(("/dev/", "/proc/", "/sys/")):
         return "operating-system-virtual-file"
+    if any(_is_within(path, prefix) for prefix in SYSTEM_PATH_PREFIXES):
+        return "operating-system-file"
     return None
 
 
@@ -401,6 +415,8 @@ class RunEvidence:
                 "Network responses are not captured automatically.",
                 "Environment variable names are recorded, but only reproducibility-safe "
                 "values are retained to avoid capturing secrets.",
+                "Known credential files and private/cache directories are never copied; "
+                "sensitive accesses are recorded only as omitted paths.",
             ],
         }
         evidence = cls(proj, run_id, run_dir, record)
@@ -473,6 +489,7 @@ class RunEvidence:
                 if omission not in {
                     "trackio-or-vcs-internal",
                     "python-environment",
+                    "operating-system-file",
                     "operating-system-virtual-file",
                 }:
                     captured.append(
@@ -572,7 +589,7 @@ class RunEvidence:
         failed = [
             entry
             for entry in [*inputs, *outputs]
-            if entry.get("storage") in {"failed", "ignored"}
+            if entry.get("storage") == "failed"
         ]
         self.record.update(
             {

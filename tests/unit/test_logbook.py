@@ -389,6 +389,44 @@ def test_run_and_log_retains_full_logs_and_observed_file_provenance(proj, tmp_pa
     assert "/run-evidence/" in (proj / ".gitignore").read_text(encoding="utf-8")
 
 
+def test_run_and_log_never_snapshots_sensitive_or_external_cache_files(proj, tmp_path):
+    cache_token = tmp_path.parent / ".cache" / tmp_path.name / "token"
+    cache_token.parent.mkdir(parents=True)
+    cache_token.write_text("hf_secret_token", encoding="utf-8")
+    secret_file = tmp_path.parent / f"{tmp_path.name}-outside" / "secrets.json"
+    secret_file.parent.mkdir()
+    secret_file.write_text('{"api_key": "private"}', encoding="utf-8")
+    script = (
+        "from pathlib import Path\n"
+        "for value in __import__('sys').argv[1:]:\n"
+        "    Path(value).read_text()\n"
+    )
+
+    assert (
+        logbook.run_and_log(
+            proj,
+            [sys.executable, "-c", script, str(cache_token), str(secret_file)],
+            page="Runs",
+        )
+        == 0
+    )
+
+    [record] = _evidence_records(proj)
+    assert record["evidence_status"] == "complete_with_limitations"
+    inputs = {entry["original_path"]: entry for entry in record["inputs"]}
+    assert inputs[str(cache_token.resolve())]["storage"] == "ignored"
+    assert inputs[str(cache_token.resolve())]["reason"] == "sensitive-path-policy"
+    assert inputs[str(secret_file.resolve())]["storage"] == "ignored"
+    assert inputs[str(secret_file.resolve())]["reason"] == "sensitive-path-policy"
+    blob_contents = {
+        path.read_bytes()
+        for path in (proj / "run-evidence" / "blobs").rglob("*")
+        if path.is_file()
+    }
+    assert b"hf_secret_token" not in blob_contents
+    assert b'"api_key": "private"' not in blob_contents
+
+
 def test_logbook_run_links_trackio_run_and_artifacts_without_sdk_page_mutation(
     proj, tmp_path, monkeypatch
 ):

@@ -37,6 +37,8 @@ trackio logbook publish --review-publication            # ask the Traces/Workspa
 
 Captured artifact cells point at immutable SHA-256 snapshots, not the mutable original path. Publication re-verifies the digest and size before uploading. The evidence bundle remains private and gitignored; the reviewed Workspace artifacts are what publication mirrors to the configured Bucket.
 
+Known credential files and private/cache directories are never copied into the evidence store. Sensitive accesses are recorded only as policy omissions, without their contents.
+
 ## Attach the current agent session
 
 Near the beginning of an agent session, locate the JSON or JSONL file where the current agent runtime is recording its session, then attach it:
