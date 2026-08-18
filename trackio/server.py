@@ -1277,10 +1277,7 @@ async def get_registry_buckets(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(_get_registry_buckets, request)
 
 
-def get_registries(
-    bucket_id: str | None = None, *, request: Request
-) -> list[dict[str, Any]]:
-    """List registries stored locally or in ``bucket_id``."""
+def _get_registries(request: Request, bucket_id: str | None) -> list[dict[str, Any]]:
     if bucket_id is None:
         return RegistryStorage.list_registries()
     return BucketRegistryStorage(
@@ -1288,10 +1285,16 @@ def get_registries(
     ).list_registries()
 
 
-def get_registry_details(
-    registry: str, bucket_id: str | None = None, *, request: Request
+async def get_registries(
+    bucket_id: str | None = None, *, request: Request
+) -> list[dict[str, Any]]:
+    """List registries stored locally or in ``bucket_id``."""
+    return await asyncio.to_thread(_get_registries, request, bucket_id)
+
+
+def _get_registry_details(
+    request: Request, registry: str, bucket_id: str | None
 ) -> dict[str, Any]:
-    """Return one registry, its collections, and its audit history."""
     try:
         registry = validate_registry_name(registry)
     except ValueError as e:
@@ -1311,6 +1314,13 @@ def get_registry_details(
         "collections": storage.list_collections(registry),
         "events": storage.get_events(registry),
     }
+
+
+async def get_registry_details(
+    registry: str, bucket_id: str | None = None, *, request: Request
+) -> dict[str, Any]:
+    """Return one registry, its collections, and its audit history."""
+    return await asyncio.to_thread(_get_registry_details, request, registry, bucket_id)
 
 
 def get_project_files(project: str) -> list[dict[str, Any]]:

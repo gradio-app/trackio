@@ -52,7 +52,12 @@ export async function callApi(apiName, params = {}) {
     registerRateLimitHit();
   }
   if (!resp.ok) {
-    throw new Error(`API call ${apiName} failed: ${resp.status}`);
+    let message = `API call ${apiName} failed: ${resp.status}`;
+    try {
+      const body = await resp.json();
+      if (body && body.error) message = body.error;
+    } catch {}
+    throw new Error(message);
   }
   const json = await resp.json();
   if (json.error) {

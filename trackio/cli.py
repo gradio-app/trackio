@@ -6,6 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import httpx
 import huggingface_hub
 from huggingface_hub.utils import get_session
 
@@ -46,7 +47,7 @@ from trackio.registry_storage import parse_collection_target
 from trackio.remote_client import RemoteClient
 from trackio.server import get_project_summary, get_run_summary
 from trackio.sqlite_storage import SQLiteStorage
-from trackio.sweeps import SweepConfigError, is_command_sweep
+from trackio.sweeps import is_command_sweep
 
 
 def _get_space(args):
@@ -2315,15 +2316,19 @@ def _resolve_sweep_target(args) -> tuple[str, str]:
 
 
 def _handle_sweep(args):
+    try:
+        _handle_sweep_action(args)
+    except (ValueError, RuntimeError, httpx.HTTPError) as e:
+        error_exit(str(e))
+
+
+def _handle_sweep_action(args):
     space = _get_space(args)
 
     if args.sweep_action == "new":
         config = _load_sweep_config_file(args.config)
         client = sweep_agent.SweepClient(args.project, space_id=space)
-        try:
-            sweep_id = client.create_sweep(config, name=args.name)
-        except SweepConfigError as e:
-            error_exit(str(e))
+        sweep_id = client.create_sweep(config, name=args.name)
         if args.json:
             print(format_json({"project": args.project, "sweep_id": sweep_id}))
         else:
@@ -2369,10 +2374,7 @@ def _handle_sweep(args):
         "cancel": "cancelled",
     }
     state = state_by_action[args.sweep_action]
-    try:
-        sweep = client.set_sweep_state(sweep_id, state)
-    except ValueError as e:
-        error_exit(str(e))
+    sweep = client.set_sweep_state(sweep_id, state)
     if sweep is None:
         error_exit(f"Sweep '{sweep_id}' not found in project '{project}'.")
     if args.json:
@@ -2390,7 +2392,7 @@ def _handle_agent(args):
             space_id=_get_space(args),
             server_url=args.server_url,
         )
-    except ValueError as e:
+    except (ValueError, RuntimeError, httpx.HTTPError) as e:
         error_exit(str(e))
 
 

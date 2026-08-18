@@ -509,13 +509,20 @@ class SQLiteStorage:
                 )
 
     @staticmethod
-    def init_db(project: str) -> Path:
+    def init_db(project: str, validate_name: bool = True) -> Path:
         """
         Initialize the SQLite database with required tables.
         Returns the database path.
+
+        A brand-new database gets its project name validated first, so
+        unvalidated entry points (e.g. server log endpoints) cannot create
+        reserved-suffix projects; pass ``validate_name=False`` only for
+        internal names (registry databases) and legacy imports.
         """
         SQLiteStorage._ensure_hub_loaded()
         db_path = SQLiteStorage.get_project_db_path(project)
+        if validate_name and not db_path.exists():
+            SQLiteStorage.validate_project_name(project)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path, row_factory=None) as conn:
@@ -1411,16 +1418,28 @@ class SQLiteStorage:
         }
 
         def _table_sidecar(pq_name: str) -> tuple[str, str] | None:
-            """Classifies a parquet file as `{base}_{table}.parquet` only when
-            the base project demonstrably exists through evidence OTHER than
-            the file itself (a legacy project may legitimately be named with a
-            reserved suffix), and the file's schema contains the table's key
-            column (a legacy project's metrics parquet does not)."""
+            """Classifies a parquet file as `{base}_{table}.parquet`. The
+            file's schema is authoritative: a sidecar contains the table's key
+            column, a legacy project's metrics parquet does not (a legacy
+            project may legitimately be named with a reserved suffix). Only
+            when the schema cannot be read does classification fall back to
+            whether the base project exists through evidence other than the
+            file itself; a sweep-only project exports just its sweeps sidecar,
+            so an unreadable schema with no anchor stays unclassified."""
             for table, columns in sidecar_tables.items():
                 suffix = f"_{table}.parquet"
                 if not pq_name.endswith(suffix) or len(pq_name) <= len(suffix):
                     continue
                 base = pq_name[: -len(suffix)]
+                try:
+                    _, pq = SQLiteStorage._require_pyarrow()
+                    schema_names = set(pq.read_schema(TRACKIO_DIR / pq_name).names)
+                except Exception:
+                    schema_names = None
+                if schema_names is not None:
+                    if columns[0] in schema_names:
+                        return base, table
+                    continue
                 anchors = (
                     f"{base}.parquet",
                     f"{base}_configs.parquet",
@@ -1428,20 +1447,9 @@ class SQLiteStorage:
                     f"{base}_traces.parquet",
                     *(f"{base}_{sibling}.parquet" for sibling in sidecar_tables),
                 )
-                if not (
-                    (TRACKIO_DIR / f"{base}{DB_EXT}").exists()
-                    or any(
-                        anchor != pq_name and anchor in all_paths_set
-                        for anchor in anchors
-                    )
+                if (TRACKIO_DIR / f"{base}{DB_EXT}").exists() or any(
+                    anchor != pq_name and anchor in all_paths_set for anchor in anchors
                 ):
-                    continue
-                try:
-                    _, pq = SQLiteStorage._require_pyarrow()
-                    schema_names = set(pq.read_schema(TRACKIO_DIR / pq_name).names)
-                except Exception:
-                    return base, table
-                if columns[0] in schema_names:
                     return base, table
             return None
 
@@ -1463,7 +1471,7 @@ class SQLiteStorage:
 
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
             project = db_path.stem
-            SQLiteStorage.init_db(project)
+            SQLiteStorage.init_db(project, validate_name=False)
             metrics_rows = SQLiteStorage._rows_to_sql_table_rows(
                 rows,
                 json_col="metrics",
@@ -1503,7 +1511,7 @@ class SQLiteStorage:
                 continue
 
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
-            SQLiteStorage.init_db(project_name)
+            SQLiteStorage.init_db(project_name, validate_name=False)
             system_rows = SQLiteStorage._rows_to_sql_table_rows(
                 rows,
                 json_col="metrics",
@@ -1541,7 +1549,7 @@ class SQLiteStorage:
                 continue
 
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
-            SQLiteStorage.init_db(project_name)
+            SQLiteStorage.init_db(project_name, validate_name=False)
             config_rows = SQLiteStorage._rows_to_sql_table_rows(
                 rows,
                 json_col="config",
@@ -1564,7 +1572,7 @@ class SQLiteStorage:
                 continue
 
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
-            SQLiteStorage.init_db(project_name)
+            SQLiteStorage.init_db(project_name, validate_name=False)
             SQLiteStorage._replace_table_rows(
                 db_path,
                 "traces",
@@ -1594,7 +1602,7 @@ class SQLiteStorage:
             parquet_path = TRACKIO_DIR / pq_name
             db_path = TRACKIO_DIR / f"{project_name}{DB_EXT}"
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
-            SQLiteStorage.init_db(project_name)
+            SQLiteStorage.init_db(project_name, validate_name=False)
             SQLiteStorage._replace_table_rows(db_path, table, rows, columns)
 
     @staticmethod
@@ -2266,12 +2274,19 @@ class SQLiteStorage:
         or {"command": "wait"} (paused) or {"command": "exit", "reason"}."""
         from trackio import sweeps as sweeps_module
 
-        db_path = SQLiteStorage.init_db(project)
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            raise ValueError(f"Sweep '{sweep_id}' not found in project '{project}'.")
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM sweeps WHERE sweep_id = ?", (sweep_id,))
-                row = cursor.fetchone()
+                try:
+                    cursor.execute(
+                        "SELECT * FROM sweeps WHERE sweep_id = ?", (sweep_id,)
+                    )
+                    row = cursor.fetchone()
+                except sqlite3.OperationalError:
+                    row = None
                 if row is None:
                     raise ValueError(
                         f"Sweep '{sweep_id}' not found in project '{project}'."

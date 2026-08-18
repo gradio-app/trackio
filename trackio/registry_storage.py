@@ -160,7 +160,7 @@ class RegistryStorage:
         interrupted creation commits nothing for a retry to inherit.
         """
         project = registry_project_name(registry)
-        db_path = SQLiteStorage.init_db(project)
+        db_path = SQLiteStorage.init_db(project, validate_name=False)
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 if RegistryStorage._registry_marker_cursor(conn) is not None:
@@ -239,7 +239,7 @@ class RegistryStorage:
         `create_registry` is what makes it exist.
         """
         project = registry_project_name(registry)
-        db_path = SQLiteStorage.init_db(project)
+        db_path = SQLiteStorage.init_db(project, validate_name=False)
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path, row_factory=None) as conn:
                 RegistryStorage._create_registry_tables_cursor(conn)

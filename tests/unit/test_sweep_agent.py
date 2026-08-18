@@ -255,6 +255,33 @@ def test_command_mode_nonzero_exit_marks_trial_failed(temp_dir, monkeypatch):
     assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "finished"
 
 
+def test_command_mode_crash_after_init_marks_trial_failed(temp_dir, monkeypatch):
+    monkeypatch.setenv("TRACKIO_DIR", temp_dir)
+    script = Path(temp_dir) / "crash_after_init.py"
+    script.write_text(
+        "import trackio\n"
+        'trackio.init(project="proj")\n'
+        'trackio.log({"loss": 1.0})\n'
+        'raise RuntimeError("boom")\n'
+    )
+    sweep_id = trackio.sweep(
+        {
+            "method": "grid",
+            "program": str(script),
+            "metric": {"name": "loss", "goal": "minimize", "target": 2.0},
+            "parameters": {"lr": {"values": [0.5]}},
+        },
+        project="proj",
+    )
+
+    trackio.agent(sweep_id, project="proj")
+
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert len(trials) == 1
+    assert trials[0]["state"] == "failed"
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["finish_reason"] != "target"
+
+
 def test_trial_child_env_includes_metric_and_context(temp_dir):
     from trackio.sweep_agent import SweepClient, _trial_child_env
 
@@ -314,6 +341,26 @@ def test_agent_fallback_report_carries_metric(temp_dir, monkeypatch):
     trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
     assert trials[0]["state"] == "finished"
     assert trials[0]["metric_value"] == 0.25
+
+
+def test_init_merges_params_into_namespace_config(temp_dir):
+    import argparse
+
+    sweep_id = trackio.sweep(
+        {"method": "grid", "parameters": {"lr": {"values": [0.5]}}},
+        project="proj",
+    )
+    captured = {}
+
+    def train():
+        run = trackio.init(project="proj", config=argparse.Namespace(momentum=0.9))
+        captured["config"] = dict(run.config)
+        trackio.finish()
+
+    trackio.agent(sweep_id, function=train, project="proj")
+
+    assert captured["config"]["lr"] == 0.5
+    assert captured["config"]["momentum"] == 0.9
 
 
 def test_concurrent_agents_never_share_a_grid_cell(temp_dir):

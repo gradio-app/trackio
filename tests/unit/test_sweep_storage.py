@@ -282,6 +282,7 @@ def test_existing_reserved_name_project_is_grandfathered(temp_dir):
 
 
 def test_import_preserves_legacy_project_named_like_sidecar(temp_dir):
+    SQLiteStorage.init_db("legacy_sweeps", validate_name=False)
     SQLiteStorage.log(
         project="legacy_sweeps",
         run="r1",
@@ -306,6 +307,7 @@ def test_import_distinguishes_real_sidecar_from_legacy_project(temp_dir):
     SQLiteStorage.log(
         project="myproj", run="r1", metrics={"loss": 1.0}, step=0, run_id="r1"
     )
+    SQLiteStorage.init_db("myproj_sweeps", validate_name=False)
     SQLiteStorage.log(
         project="myproj_sweeps", run="r2", metrics={"acc": 0.5}, step=0, run_id="r2"
     )
@@ -324,6 +326,30 @@ def test_import_distinguishes_real_sidecar_from_legacy_project(temp_dir):
         SQLiteStorage.validate_project_name("model_sweeps")
     with pytest.raises(ValueError, match="reserved suffix"):
         SQLiteStorage.validate_project_name("model_sweep_trials")
+
+
+def test_suggest_trial_unknown_project_creates_no_db(temp_dir):
+    with pytest.raises(ValueError, match="not found"):
+        SQLiteStorage.suggest_trial("no-such-proj", "abc123")
+    assert not SQLiteStorage.get_project_db_path("no-such-proj").exists()
+
+
+def test_init_db_rejects_reserved_suffix_on_creation(temp_dir):
+    with pytest.raises(ValueError, match="reserved suffix"):
+        SQLiteStorage.init_db("train_sweeps")
+    assert not SQLiteStorage.get_project_db_path("train_sweeps").exists()
+
+
+def test_import_preserves_sweep_only_project(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+    os.unlink(SQLiteStorage.get_project_db_path("proj"))
+
+    SQLiteStorage.import_from_parquet()
+
+    assert SQLiteStorage.get_sweep("proj", sweep_id) is not None
+    assert "proj_sweeps" not in set(SQLiteStorage.get_projects())
 
 
 def test_tab_availability_includes_sweeps(temp_dir):

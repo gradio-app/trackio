@@ -413,8 +413,17 @@ def target_met(config: dict, trials: list[dict]) -> bool:
     return False
 
 
-def _quantize(value: float, q: float) -> float:
-    return round(value / q) * q
+def _quantize(
+    value: float, q: float, lo: float | None = None, hi: float | None = None
+) -> float:
+    """Round `value` to the nearest multiple of `q`, kept within the declared
+    bounds: without clamping, rounding can land one step outside [lo, hi]."""
+    k = round(value / q)
+    if lo is not None:
+        k = max(k, math.ceil(lo / q - 1e-9))
+    if hi is not None:
+        k = min(k, math.floor(hi / q + 1e-9))
+    return k * q
 
 
 def sample_parameter(spec: dict, path: str, rng: np.random.Generator):
@@ -435,16 +444,26 @@ def sample_parameter(spec: dict, path: str, rng: np.random.Generator):
     if distribution == "uniform":
         return float(rng.uniform(spec["min"], spec["max"]))
     if distribution == "q_uniform":
-        return _quantize(rng.uniform(spec["min"], spec["max"]), q)
+        return _quantize(
+            rng.uniform(spec["min"], spec["max"]), q, lo=spec["min"], hi=spec["max"]
+        )
     if distribution == "log_uniform":
         return float(np.exp(rng.uniform(spec["min"], spec["max"])))
     if distribution == "log_uniform_values":
         return float(np.exp(rng.uniform(np.log(spec["min"]), np.log(spec["max"]))))
     if distribution == "q_log_uniform":
-        return _quantize(np.exp(rng.uniform(spec["min"], spec["max"])), q)
+        return _quantize(
+            np.exp(rng.uniform(spec["min"], spec["max"])),
+            q,
+            lo=math.exp(spec["min"]),
+            hi=math.exp(spec["max"]),
+        )
     if distribution == "q_log_uniform_values":
         return _quantize(
-            np.exp(rng.uniform(np.log(spec["min"]), np.log(spec["max"]))), q
+            np.exp(rng.uniform(np.log(spec["min"]), np.log(spec["max"]))),
+            q,
+            lo=spec["min"],
+            hi=spec["max"],
         )
     if distribution == "inv_log_uniform":
         return float(1.0 / np.exp(rng.uniform(spec["min"], spec["max"])))
@@ -477,8 +496,13 @@ def grid_values(spec: dict, path: str) -> list:
         return list(range(spec["min"], spec["max"] + 1))
     if distribution == "q_uniform":
         q = spec.get("q", 1.0)
-        k_lo = int(round(spec["min"] / q))
-        k_hi = int(round(spec["max"] / q))
+        k_lo = math.ceil(spec["min"] / q - 1e-9)
+        k_hi = math.floor(spec["max"] / q + 1e-9)
+        if k_lo > k_hi:
+            raise SweepConfigError(
+                f"Parameter '{path}': no multiple of q={q} lies within "
+                f"[{spec['min']}, {spec['max']}]."
+            )
         return [k * q for k in range(k_lo, k_hi + 1)]
     raise SweepConfigError(
         f"Parameter '{path}': distribution '{distribution}' is not compatible "

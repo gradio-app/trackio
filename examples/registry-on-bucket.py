@@ -77,8 +77,6 @@ def publish(project: str, arch: str, loss: float, aliases: list[str]) -> None:
         artifact.add_dir(ckpt_dir)
         logged = wandb.log_artifact(artifact)
 
-        # The bucket is what makes this reachable from anywhere: the link is
-        # written straight to it, with no Space or server in the write path.
         linked = run.link_artifact(logged, TARGET, aliases=aliases, bucket_id=BUCKET)
         print(
             f"  published {linked.source_qualified_name} as {linked.qualified_name} "

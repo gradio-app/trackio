@@ -379,7 +379,13 @@ def init(
             )
             sweep_trial = None
         else:
-            config = {**(config or {}), **(sweep_trial.get("params") or {})}
+            try:
+                base_config = utils.to_json_safe(config or {})
+            except Exception:
+                base_config = {}
+            if not isinstance(base_config, dict):
+                base_config = {}
+            config = {**base_config, **(sweep_trial.get("params") or {})}
             if sweep_trial.get("metric_name") is None:
                 try:
                     sweep_record = SQLiteStorage.get_sweep(

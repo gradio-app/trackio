@@ -157,6 +157,13 @@ class _TrackioHTTPClient:
             raise RuntimeError(
                 f"Space '{self.src}' does not support '/{api_name}'. Redeploy with `trackio sync`."
             )
+        if 400 <= resp.status_code < 500:
+            try:
+                error = resp.json().get("error")
+            except Exception:
+                error = None
+            if error:
+                raise RuntimeError(error)
         resp.raise_for_status()
         body = resp.json()
         if body.get("error") is not None:

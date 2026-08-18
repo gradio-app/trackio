@@ -178,12 +178,26 @@ class TestGridValues:
     def test_q_uniform_off_lattice_bounds_match_sampling_support(self):
         spec = {"distribution": "q_uniform", "min": 0.1, "max": 0.5, "q": 0.2}
         values = grid_values(spec, "p")
-        assert values == [0.0, 0.2, 0.4]
+        assert values == [0.2, 0.4]
         assert len(values) == len(set(values))
         rng = np.random.default_rng(0)
         support = set(values)
         for _ in range(200):
             assert sample_parameter(spec, "p", rng) in support
+
+    def test_q_uniform_stays_within_declared_bounds(self):
+        spec = {"distribution": "q_uniform", "min": 1, "max": 7, "q": 2}
+        values = grid_values(spec, "p")
+        assert values == [2, 4, 6]
+        rng = np.random.default_rng(0)
+        for _ in range(200):
+            assert 1 <= sample_parameter(spec, "p", rng) <= 7
+
+    def test_q_uniform_rejects_empty_lattice(self):
+        with pytest.raises(SweepConfigError, match="no multiple"):
+            grid_values(
+                {"distribution": "q_uniform", "min": 3, "max": 3.5, "q": 2}, "p"
+            )
 
     def test_continuous_rejected(self):
         with pytest.raises(SweepConfigError):

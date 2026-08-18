@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -38,6 +39,28 @@ BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
 BUCKET_FLUSH_INTERVAL = 30
 ARTIFACT_LOG_RETRY_BACKOFFS = (0.5, 1.0, 2.0)
+
+_sweep_excepthook_installed = False
+_sweep_unhandled_exception = False
+
+
+def _install_sweep_excepthook():
+    """Record whether the process is dying from an unhandled exception, so a
+    sweep trial finalized from the atexit handler is reported as 'failed'
+    rather than 'finished' (report_trial only accepts the first terminal
+    state, so a premature 'finished' would mask the crash forever)."""
+    global _sweep_excepthook_installed
+    if _sweep_excepthook_installed:
+        return
+    _sweep_excepthook_installed = True
+    previous_hook = sys.excepthook
+
+    def _hook(exc_type, exc, tb):
+        global _sweep_unhandled_exception
+        _sweep_unhandled_exception = True
+        previous_hook(exc_type, exc, tb)
+
+    sys.excepthook = _hook
 
 
 class Run:
@@ -164,6 +187,8 @@ class Run:
         self._sweep_metric_name = sweep_metric_name
         self._sweep_metric_last: float | None = None
         self._sweep_trial_reported = False
+        if self._sweep_trial_id is not None:
+            _install_sweep_excepthook()
 
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
@@ -1727,7 +1752,9 @@ class Run:
                         f"{retry}"
                     )
 
-            self._report_sweep_trial("finished")
+            self._report_sweep_trial(
+                "failed" if _sweep_unhandled_exception else "finished"
+            )
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")
 
