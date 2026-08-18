@@ -2,7 +2,7 @@ function trackioBase() {
   return window.__trackio_base || "";
 }
 
-function stripBase(pathname) {
+export function stripBase(pathname) {
   const base = trackioBase();
   if (base && pathname.startsWith(base)) {
     return pathname.slice(base.length) || "/";

@@ -1,3 +1,5 @@
+import { formatCompactNumber } from "./format.js";
+
 export const METRIC_COLOR_RANGE_LIGHT = ["#93c5fd", "#1e3a8a"];
 export const METRIC_COLOR_RANGE_DARK = ["#2563eb", "#bfdbfe"];
 
@@ -6,16 +8,33 @@ function isFiniteNumber(value) {
 }
 
 function formatTickValue(value) {
-  if (isFiniteNumber(value)) {
-    if (Number.isInteger(value) && Math.abs(value) < 1e6) return String(value);
-    return Number(value.toPrecision(3)).toString();
-  }
+  if (isFiniteNumber(value)) return formatCompactNumber(value);
   return String(value);
 }
 
 function normalizeNumeric(value, min, max) {
   if (max === min) return 0.5;
   return (value - min) / (max - min);
+}
+
+function numericAxis(key, min, max) {
+  return {
+    key,
+    kind: "numeric",
+    min,
+    max,
+    ticks:
+      min === max
+        ? [{ position: 0.5, label: formatTickValue(min) }]
+        : [
+            { position: 0, label: formatTickValue(min) },
+            { position: 1, label: formatTickValue(max) },
+          ],
+  };
+}
+
+function categoryPosition(categories, index) {
+  return categories.length === 1 ? 0.5 : index / (categories.length - 1);
 }
 
 export function buildParallelCoordsData(
@@ -52,31 +71,16 @@ export function buildParallelCoordsData(
     if (values.length === 0) continue;
     const allNumeric = values.every((value) => isFiniteNumber(value));
     if (allNumeric) {
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      axes.push({
-        key,
-        kind: "numeric",
-        min,
-        max,
-        ticks:
-          min === max
-            ? [{ position: 0.5, label: formatTickValue(min) }]
-            : [
-                { position: 0, label: formatTickValue(min) },
-                { position: 1, label: formatTickValue(max) },
-              ],
-      });
+      axes.push(numericAxis(key, Math.min(...values), Math.max(...values)));
     } else {
       const categories = [...new Set(values.map((value) => String(value)))];
       categories.sort();
-      const denom = Math.max(categories.length - 1, 1);
       axes.push({
         key,
         kind: "categorical",
         categories,
         ticks: categories.map((category, i) => ({
-          position: categories.length === 1 ? 0.5 : i / denom,
+          position: categoryPosition(categories, i),
           label: category,
         })),
       });
@@ -88,19 +92,7 @@ export function buildParallelCoordsData(
   const metricMax = Math.max(...metricValues);
   let metricKey = metricName || "metric";
   if (seen.has(metricKey)) metricKey = `${metricKey} (metric)`;
-  const metricAxis = {
-    key: metricKey,
-    kind: "numeric",
-    min: metricMin,
-    max: metricMax,
-    ticks:
-      metricMin === metricMax
-        ? [{ position: 0.5, label: formatTickValue(metricMin) }]
-        : [
-            { position: 0, label: formatTickValue(metricMin) },
-            { position: 1, label: formatTickValue(metricMax) },
-          ],
-  };
+  const metricAxis = numericAxis(metricKey, metricMin, metricMax);
   axes.push(metricAxis);
 
   const rows = [];
@@ -120,10 +112,7 @@ export function buildParallelCoordsData(
           position = normalizeNumeric(raw, axis.min, axis.max);
         } else {
           const index = axis.categories.indexOf(String(raw));
-          position =
-            axis.categories.length === 1
-              ? 0.5
-              : index / (axis.categories.length - 1);
+          position = categoryPosition(axis.categories, index);
         }
       }
       rows.push({

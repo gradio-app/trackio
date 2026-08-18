@@ -1,4 +1,5 @@
 import argparse
+import dataclasses
 import json
 import os
 import re
@@ -48,6 +49,7 @@ from trackio.remote_client import RemoteClient
 from trackio.server import get_project_summary, get_run_summary
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.sweeps import is_command_sweep
+from trackio.utils import REGISTRY_PROJECT_PREFIX
 
 
 def _get_space(args):
@@ -369,7 +371,11 @@ def _handle_list_spaces(args):
 
 
 def _registry_target(value: str) -> tuple[str, str]:
-    target = value if value.startswith("registry-") else f"registry-{value}"
+    target = (
+        value
+        if value.startswith(REGISTRY_PROJECT_PREFIX)
+        else f"{REGISTRY_PROJECT_PREFIX}{value}"
+    )
     try:
         return parse_collection_target(target)
     except ValueError as e:
@@ -411,15 +417,7 @@ def _source_artifact(value: str) -> tuple[str, str, str | None]:
 
 
 def _collection_record(collection) -> dict:
-    return {
-        "name": collection.name,
-        "type": collection.type,
-        "description": collection.description,
-        "created_at": collection.created_at,
-        "num_links": collection.num_links,
-        "latest_version": collection.latest_version,
-        "links": collection.links,
-    }
+    return dataclasses.asdict(collection)
 
 
 def _handle_registry(args):

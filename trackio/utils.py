@@ -195,6 +195,22 @@ def parse_trackio_server_url(url: str) -> tuple[str, str | None]:
     return rebuilt, write_token
 
 
+def resolve_server_write_token(server_url: str, requirement: str) -> tuple[str, str]:
+    """Split a self-hosted server URL into ``(base_url, write_token)``, taking
+    the token from the URL's ``write_token`` query parameter or the
+    ``TRACKIO_WRITE_TOKEN`` environment variable. ``requirement`` opens the
+    error raised when neither provides one (e.g. ``"Self-hosted logging
+    requires"``)."""
+    base_url, token = parse_trackio_server_url(server_url)
+    token = token or os.environ.get("TRACKIO_WRITE_TOKEN")
+    if not token:
+        raise ValueError(
+            f"{requirement} a write token: add write_token to the server URL, "
+            "or set the TRACKIO_WRITE_TOKEN environment variable."
+        )
+    return base_url, token
+
+
 def _get_trackio_dir() -> Path:
     if os.environ.get("TRACKIO_DIR"):
         return Path(os.environ.get("TRACKIO_DIR"))

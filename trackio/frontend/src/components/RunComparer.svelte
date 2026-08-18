@@ -17,6 +17,7 @@ Props:
   import GradioCheckbox from "./GradioCheckbox.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
   import { copyTextToClipboard } from "../lib/clipboard.js";
+  import { truncate } from "../lib/format.js";
   import {
     COMPARER_MAX_COLUMNS,
     MISSING_MARKER,
@@ -67,22 +68,6 @@ Props:
       copiedCell = null;
       copyTimer = null;
     }, 1200);
-  }
-
-  /**
-   * Truncates display text at `limit` UTF-16 code units, dropping a
-   * trailing high surrogate so an emoji is never cut in half, and appends
-   * an ellipsis. Copying is unaffected — it always uses the full text.
-   */
-  function truncate(text, limit) {
-    if (text.length <= limit) {
-      return text;
-    }
-    let sliced = text.slice(0, limit);
-    if (/[\uD800-\uDBFF]$/.test(sliced)) {
-      sliced = sliced.slice(0, -1);
-    }
-    return sliced + "…";
   }
 
   onDestroy(() => {

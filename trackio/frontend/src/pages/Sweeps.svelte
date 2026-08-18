@@ -8,6 +8,7 @@
     getRunsForProject,
   } from "../lib/api.js";
   import { openRunDetail } from "../lib/router.js";
+  import { formatCompactNumber } from "../lib/format.js";
 
   let { project = null, runMutationAllowed = true } = $props();
 
@@ -88,13 +89,6 @@
       }
       actionPending = null;
     }
-  }
-
-  function formatMetric(value) {
-    if (value == null) return "—";
-    const num = Number(value);
-    if (Number.isInteger(num)) return String(num);
-    return num.toPrecision(4);
   }
 
   function formatParams(params) {
@@ -183,7 +177,7 @@
                 —
               {/if}
             </td>
-            <td>{formatMetric(sweep.best_metric_value)}</td>
+            <td>{formatCompactNumber(sweep.best_metric_value)}</td>
             <td>
               {#if bestRunName(sweep)}
                 <button
@@ -269,7 +263,7 @@
                               >{trial.state}</span
                             >
                           </td>
-                          <td>{formatMetric(trial.metric_value)}</td>
+                          <td>{formatCompactNumber(trial.metric_value)}</td>
                           <td>
                             {#if trial.run_id && runNamesById[trial.run_id]}
                               <button

@@ -7,12 +7,7 @@ from huggingface_hub.utils import get_token
 
 from trackio import cas, references, utils
 from trackio.registry import registry_backend
-from trackio.registry_bucket import BucketRegistryStorage
-from trackio.registry_storage import (
-    RegistryStorage,
-    parse_collection_target,
-    registry_project_name,
-)
+from trackio.registry_storage import parse_collection_target, registry_project_name
 from trackio.remote_client import _merge_client_headers, _resolve_src_url
 from trackio.typehints import ETag, Manifest, ManifestEntry, Sha256Digest, URIStr
 
@@ -645,11 +640,7 @@ class Artifact:
                 "artifact returned by link() or Run.link_artifact, not on a "
                 "source artifact version."
             )
-        backend = (
-            RegistryStorage
-            if self._registry_bucket_id is None
-            else BucketRegistryStorage(self._registry_bucket_id)
-        )
+        backend = registry_backend(self._registry_bucket_id, use_env=False)
         backend.unlink(self._registry, self._name, self._version)
 
     def _resolve_link_source(self) -> tuple[str, str, int]:

@@ -695,6 +695,18 @@ export async function setSweepState() {
   throw new Error("Not supported in static mode");
 }
 
+export async function getRegistryBuckets() {
+  return { buckets: [], default_bucket_id: null };
+}
+
+export async function getRegistries() {
+  return [];
+}
+
+export async function getRegistryDetails() {
+  return null;
+}
+
 const ARTIFACT_VERSION_SPEC_RE = /^v(\d+)$/;
 
 function aliasesByVersionId(aliases) {

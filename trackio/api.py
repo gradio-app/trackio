@@ -48,38 +48,45 @@ class Run:
         return f"<Run {self.name} in project {self.project}>"
 
 
-class Runs:
+class _LazyProjectList:
     def __init__(self, project: str):
         self.project = project
-        self._runs = None
+        self._items = None
 
-    def _load_runs(self):
-        if self._runs is None:
-            records = SQLiteStorage.get_run_records(self.project)
-            self._runs = [
-                Run(
-                    self.project,
-                    str(record["name"]),
-                    run_id=str(record["id"]) if record["id"] is not None else None,
-                )
-                for record in records
-            ]
+    def _load(self) -> list:
+        raise NotImplementedError
 
-    def __iter__(self) -> Iterator[Run]:
-        self._load_runs()
-        return iter(self._runs)
+    def _loaded(self) -> list:
+        if self._items is None:
+            self._items = self._load()
+        return self._items
 
-    def __getitem__(self, index: int) -> Run:
-        self._load_runs()
-        return self._runs[index]
+    def __iter__(self) -> Iterator:
+        return iter(self._loaded())
+
+    def __getitem__(self, index: int):
+        return self._loaded()[index]
 
     def __len__(self) -> int:
-        self._load_runs()
-        return len(self._runs)
+        return len(self._loaded())
 
     def __repr__(self) -> str:
-        self._load_runs()
-        return f"<Runs project={self.project} count={len(self._runs)}>"
+        return (
+            f"<{type(self).__name__} project={self.project} "
+            f"count={len(self._loaded())}>"
+        )
+
+
+class Runs(_LazyProjectList):
+    def _load(self) -> list[Run]:
+        return [
+            Run(
+                self.project,
+                str(record["name"]),
+                run_id=str(record["id"]) if record["id"] is not None else None,
+            )
+            for record in SQLiteStorage.get_run_records(self.project)
+        ]
 
 
 class Sweep:
@@ -144,44 +151,26 @@ class Sweep:
         return f"<Sweep {self.sweep_id} in project {self.project}>"
 
 
-class Sweeps:
-    def __init__(self, project: str):
-        self.project = project
-        self._sweeps = None
+class Sweeps(_LazyProjectList):
+    def _load(self) -> list[Sweep]:
+        return [
+            Sweep(self.project, record["sweep_id"])
+            for record in SQLiteStorage.list_sweeps(self.project)
+        ]
 
-    def _load_sweeps(self):
-        if self._sweeps is None:
-            records = SQLiteStorage.list_sweeps(self.project)
-            self._sweeps = [
-                Sweep(self.project, record["sweep_id"]) for record in records
-            ]
 
-    def __iter__(self) -> Iterator[Sweep]:
-        self._load_sweeps()
-        return iter(self._sweeps)
-
-    def __getitem__(self, index: int) -> Sweep:
-        self._load_sweeps()
-        return self._sweeps[index]
-
-    def __len__(self) -> int:
-        self._load_sweeps()
-        return len(self._sweeps)
-
-    def __repr__(self) -> str:
-        self._load_sweeps()
-        return f"<Sweeps project={self.project} count={len(self._sweeps)}>"
+def _require_project(project: str) -> None:
+    if not SQLiteStorage.get_project_db_path(project).exists():
+        raise ValueError(f"Project '{project}' does not exist")
 
 
 class Api:
     def runs(self, project: str) -> Runs:
-        if not SQLiteStorage.get_project_db_path(project).exists():
-            raise ValueError(f"Project '{project}' does not exist")
+        _require_project(project)
         return Runs(project)
 
     def sweeps(self, project: str) -> Sweeps:
-        if not SQLiteStorage.get_project_db_path(project).exists():
-            raise ValueError(f"Project '{project}' does not exist")
+        _require_project(project)
         return Sweeps(project)
 
     def sweep(self, project: str, sweep_id: str) -> Sweep:
@@ -198,8 +187,7 @@ class Api:
         level: str | None = None,
         since: str | None = None,
     ) -> list[dict]:
-        if not SQLiteStorage.get_project_db_path(project).exists():
-            raise ValueError(f"Project '{project}' does not exist")
+        _require_project(project)
         return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
 
     def create_registry(

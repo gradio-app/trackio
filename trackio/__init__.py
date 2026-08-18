@@ -363,41 +363,7 @@ def init(
             "* Warning: settings is not used. Provided for compatibility with wandb.init(). Please create an issue at: https://github.com/gradio-app/trackio/issues if you need a specific feature implemented."
         )
 
-    sweep_trial = None
-    try:
-        sweep_trial = sweep_agent.resolve_trial_context()
-    except Exception as e:
-        _emit_nonfatal_warning(
-            f"trackio.init() could not resolve the sweep trial context: {e}. Continuing without sweep attachment."
-        )
-    if sweep_trial is not None:
-        if sweep_trial.get("project") not in (None, project):
-            _emit_nonfatal_warning(
-                f"trackio.init() was called with project '{project}' but the active sweep "
-                f"trial belongs to project '{sweep_trial.get('project')}'. The run will "
-                "NOT be attached to the sweep."
-            )
-            sweep_trial = None
-        else:
-            try:
-                base_config = utils.to_json_safe(config or {})
-            except Exception:
-                base_config = {}
-            if not isinstance(base_config, dict):
-                base_config = {}
-            config = {**base_config, **(sweep_trial.get("params") or {})}
-            if sweep_trial.get("metric_name") is None:
-                try:
-                    sweep_record = SQLiteStorage.get_sweep(
-                        project, sweep_trial["sweep_id"]
-                    )
-                    if sweep_record is not None:
-                        sweep_trial = {
-                            **sweep_trial,
-                            "metric_name": sweep_record.get("metric_name"),
-                        }
-                except Exception:
-                    pass
+    sweep_trial, config = sweep_agent._resolve_sweep_trial(project, config)
 
     previous_run = context_vars.current_run.get()
     if previous_run is not None:
@@ -420,13 +386,9 @@ def init(
     server_base_url: str | None = None
     write_token_resolved: str | None = None
     if server_url is not None:
-        server_base_url, tok = utils.parse_trackio_server_url(server_url)
-        write_token_resolved = tok or os.environ.get("TRACKIO_WRITE_TOKEN")
-        if not write_token_resolved:
-            raise ValueError(
-                "Self-hosted logging requires a write token: add write_token to the server URL, "
-                "or set the TRACKIO_WRITE_TOKEN environment variable."
-            )
+        server_base_url, write_token_resolved = utils.resolve_server_write_token(
+            server_url, "Self-hosted logging requires"
+        )
     if server_url is not None and (dataset_id is not None or bucket_id is not None):
         raise ValueError(
             "`dataset_id` and `bucket_id` are Hugging Face Spaces concepts and are not "
@@ -679,29 +641,9 @@ def init(
     )
 
     if sweep_trial is not None:
-        try:
-            if remote_source is None:
-                SQLiteStorage.mark_trial_running(
-                    project, sweep_trial["sweep_id"], sweep_trial["trial_id"], run.id
-                )
-            elif remote_client is not None:
-                remote_client.predict(
-                    api_name="/sweep_mark_trial_running",
-                    project=project,
-                    sweep_id=sweep_trial["sweep_id"],
-                    trial_id=sweep_trial["trial_id"],
-                    run_id=run.id,
-                )
-            else:
-                _emit_nonfatal_warning(
-                    "trackio.init() could not attach the run to its sweep trial: no "
-                    "remote client is available yet. The trial will remain in the "
-                    "'assigned' state."
-                )
-        except Exception as e:
-            _emit_nonfatal_warning(
-                f"trackio.init() could not mark sweep trial {sweep_trial['trial_id']} as running: {e}. Logging will continue."
-            )
+        sweep_agent._mark_trial_running_for_run(
+            project, sweep_trial, run.id, remote_source, remote_client
+        )
 
     if space_id is not None:
         try:

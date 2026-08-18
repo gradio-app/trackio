@@ -13,6 +13,7 @@ import time
 import warnings
 from collections import deque
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -34,8 +35,8 @@ from trackio.asgi_app import (
 )
 from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
-from trackio.registry_bucket import BucketRegistryStorage
-from trackio.registry_storage import RegistryStorage, validate_registry_name
+from trackio.registry import registry_backend
+from trackio.registry_storage import validate_registry_name
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.typehints import (
     AlertEntry,
@@ -803,9 +804,13 @@ def get_artifact_consumers(project: str, version_id: int) -> list[dict]:
     return SQLiteStorage.get_artifact_consumers(project, version_id)
 
 
-def get_artifact_lineage(project: str, version_id: int) -> dict:
+def _get_artifact_lineage(project: str, version_id: int) -> dict:
     project = _validate_project_name(project)
     return SQLiteStorage.get_artifact_lineage(project, version_id)
+
+
+async def get_artifact_lineage(project: str, version_id: int) -> dict:
+    return await asyncio.to_thread(_get_artifact_lineage, project, version_id)
 
 
 def log_artifact_use(
@@ -1261,9 +1266,15 @@ def _get_registry_buckets(request: Request) -> dict[str, Any]:
                     for org in who.get("orgs", [])
                 ),
             ]
-            for namespace in namespaces:
-                for bucket in HfApi.list_buckets(namespace=namespace, token=token):
-                    bucket_ids.add(bucket.id)
+            with ThreadPoolExecutor(max_workers=len(namespaces)) as executor:
+                for buckets in executor.map(
+                    lambda namespace: HfApi.list_buckets(
+                        namespace=namespace, token=token
+                    ),
+                    namespaces,
+                ):
+                    for bucket in buckets:
+                        bucket_ids.add(bucket.id)
         except Exception as e:
             logger.info("could not list registry buckets: %s", e)
     return {
@@ -1278,10 +1289,8 @@ async def get_registry_buckets(request: Request) -> dict[str, Any]:
 
 
 def _get_registries(request: Request, bucket_id: str | None) -> list[dict[str, Any]]:
-    if bucket_id is None:
-        return RegistryStorage.list_registries()
-    return BucketRegistryStorage(
-        bucket_id, token=_registry_read_token(request)
+    return registry_backend(
+        bucket_id, token=_registry_read_token(request), use_env=False
     ).list_registries()
 
 
@@ -1299,10 +1308,8 @@ def _get_registry_details(
         registry = validate_registry_name(registry)
     except ValueError as e:
         raise TrackioAPIError(str(e)) from e
-    storage = (
-        RegistryStorage
-        if bucket_id is None
-        else BucketRegistryStorage(bucket_id, token=_registry_read_token(request))
+    storage = registry_backend(
+        bucket_id, token=_registry_read_token(request), use_env=False
     )
     record = storage.describe_registry(registry)
     if record is None:
@@ -1360,49 +1367,85 @@ def get_tab_availability(project: str) -> dict[str, bool]:
     }
 
 
-def sweep_create(
-    request: Request, project: str, config: dict, name: str | None = None
+def _sweep_create(
+    request: Request, project: str, config: dict, name: str | None
 ) -> str:
     assert_can_mutate_runs(request)
     return SQLiteStorage.create_sweep(project, config, name=name)
 
 
-def sweep_get(project: str, sweep_id: str) -> dict[str, Any] | None:
+async def sweep_create(
+    request: Request, project: str, config: dict, name: str | None = None
+) -> str:
+    return await asyncio.to_thread(_sweep_create, request, project, config, name)
+
+
+def _sweep_get(project: str, sweep_id: str) -> dict[str, Any] | None:
     return SQLiteStorage.get_sweep(project, sweep_id)
 
 
-def sweep_list(project: str) -> list[dict[str, Any]]:
+async def sweep_get(project: str, sweep_id: str) -> dict[str, Any] | None:
+    return await asyncio.to_thread(_sweep_get, project, sweep_id)
+
+
+def _sweep_list(project: str) -> list[dict[str, Any]]:
     return SQLiteStorage.list_sweeps(project)
 
 
-def sweep_set_state(
+async def sweep_list(project: str) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(_sweep_list, project)
+
+
+def _sweep_set_state(
     request: Request, project: str, sweep_id: str, state: str
 ) -> dict[str, Any] | None:
     assert_can_mutate_runs(request)
     return SQLiteStorage.set_sweep_state(project, sweep_id, state)
 
 
-def sweep_suggest_trial(
-    request: Request, project: str, sweep_id: str, agent_id: str | None = None
+async def sweep_set_state(
+    request: Request, project: str, sweep_id: str, state: str
+) -> dict[str, Any] | None:
+    return await asyncio.to_thread(_sweep_set_state, request, project, sweep_id, state)
+
+
+def _sweep_suggest_trial(
+    request: Request, project: str, sweep_id: str, agent_id: str | None
 ) -> dict[str, Any]:
     assert_can_mutate_runs(request)
     return SQLiteStorage.suggest_trial(project, sweep_id, agent_id=agent_id)
 
 
-def sweep_mark_trial_running(
+async def sweep_suggest_trial(
+    request: Request, project: str, sweep_id: str, agent_id: str | None = None
+) -> dict[str, Any]:
+    return await asyncio.to_thread(
+        _sweep_suggest_trial, request, project, sweep_id, agent_id
+    )
+
+
+def _sweep_mark_trial_running(
     request: Request, project: str, sweep_id: str, trial_id: int, run_id: str
 ) -> bool:
     assert_can_mutate_runs(request)
     return SQLiteStorage.mark_trial_running(project, sweep_id, trial_id, run_id)
 
 
-def sweep_report_trial(
+async def sweep_mark_trial_running(
+    request: Request, project: str, sweep_id: str, trial_id: int, run_id: str
+) -> bool:
+    return await asyncio.to_thread(
+        _sweep_mark_trial_running, request, project, sweep_id, trial_id, run_id
+    )
+
+
+def _sweep_report_trial(
     request: Request,
     project: str,
     sweep_id: str,
     trial_id: int,
     state: str,
-    metric_value: float | None = None,
+    metric_value: float | None,
 ) -> bool:
     assert_can_mutate_runs(request)
     return SQLiteStorage.report_trial(
@@ -1410,8 +1453,25 @@ def sweep_report_trial(
     )
 
 
-def sweep_get_trials(project: str, sweep_id: str) -> list[dict[str, Any]]:
+async def sweep_report_trial(
+    request: Request,
+    project: str,
+    sweep_id: str,
+    trial_id: int,
+    state: str,
+    metric_value: float | None = None,
+) -> bool:
+    return await asyncio.to_thread(
+        _sweep_report_trial, request, project, sweep_id, trial_id, state, metric_value
+    )
+
+
+def _sweep_get_trials(project: str, sweep_id: str) -> list[dict[str, Any]]:
     return SQLiteStorage.get_sweep_trials(project, sweep_id)
+
+
+async def sweep_get_trials(project: str, sweep_id: str) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(_sweep_get_trials, project, sweep_id)
 
 
 def delete_run(

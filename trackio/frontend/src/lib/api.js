@@ -204,19 +204,17 @@ export async function getSettings() {
 }
 
 export async function getRegistryBuckets() {
-  if (await isStaticMode()) {
-    return { buckets: [], default_bucket_id: null, unavailable: true };
-  }
+  if (await isStaticMode()) return staticApi.getRegistryBuckets();
   return await callApi("/get_registry_buckets");
 }
 
 export async function getRegistries(bucketId = null) {
-  if (await isStaticMode()) return [];
+  if (await isStaticMode()) return staticApi.getRegistries();
   return await callApi("/get_registries", { bucket_id: bucketId });
 }
 
 export async function getRegistryDetails(registry, bucketId = null) {
-  if (await isStaticMode()) return null;
+  if (await isStaticMode()) return staticApi.getRegistryDetails();
   return await callApi("/get_registry_details", {
     registry,
     bucket_id: bucketId,

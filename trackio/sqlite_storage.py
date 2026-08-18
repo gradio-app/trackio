@@ -2209,6 +2209,69 @@ class SQLiteStorage:
         return summary
 
     @staticmethod
+    def _sweep_trial_summaries(
+        cursor: sqlite3.Cursor, sweeps: list[dict]
+    ) -> dict[str, dict]:
+        counts_by_sweep: dict[str, dict[str, int]] = {}
+        try:
+            cursor.execute(
+                """
+                SELECT sweep_id, state, COUNT(*) AS count FROM sweep_trials
+                GROUP BY sweep_id, state
+                """
+            )
+            for row in cursor.fetchall():
+                counts_by_sweep.setdefault(row["sweep_id"], {})[row["state"]] = row[
+                    "count"
+                ]
+        except sqlite3.OperationalError:
+            counts_by_sweep = {}
+
+        ids_by_order: dict[str, list[str]] = {"ASC": [], "DESC": []}
+        for sweep in sweeps:
+            if sweep.get("metric_name"):
+                order = "ASC" if sweep.get("metric_goal") != "maximize" else "DESC"
+                ids_by_order[order].append(sweep["sweep_id"])
+
+        best_by_sweep: dict[str, sqlite3.Row] = {}
+        for order, sweep_ids in ids_by_order.items():
+            if not sweep_ids:
+                continue
+            placeholders = ", ".join("?" * len(sweep_ids))
+            try:
+                cursor.execute(
+                    f"""
+                    SELECT sweep_id, run_id, metric_value FROM sweep_trials
+                    WHERE sweep_id IN ({placeholders})
+                        AND metric_value IS NOT NULL AND state = 'finished'
+                    ORDER BY metric_value {order}
+                    """,
+                    sweep_ids,
+                )
+                for row in cursor.fetchall():
+                    if row["sweep_id"] not in best_by_sweep:
+                        best_by_sweep[row["sweep_id"]] = row
+            except sqlite3.OperationalError:
+                continue
+
+        summaries: dict[str, dict] = {}
+        for sweep in sweeps:
+            sweep_id = sweep["sweep_id"]
+            counts = counts_by_sweep.get(sweep_id, {})
+            summary = {
+                "num_trials": sum(counts.values()),
+                "trial_counts": counts,
+                "best_metric_value": None,
+                "best_run_id": None,
+            }
+            best = best_by_sweep.get(sweep_id)
+            if best is not None:
+                summary["best_metric_value"] = best["metric_value"]
+                summary["best_run_id"] = best["run_id"]
+            summaries[sweep_id] = summary
+        return summaries
+
+    @staticmethod
     def list_sweeps(project: str) -> list[dict]:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -2220,11 +2283,10 @@ class SQLiteStorage:
                 rows = cursor.fetchall()
             except sqlite3.OperationalError:
                 return []
-            sweeps = []
-            for row in rows:
-                sweep = SQLiteStorage._sweep_row_to_dict(row)
-                sweep.update(SQLiteStorage._sweep_trial_summary(cursor, sweep))
-                sweeps.append(sweep)
+            sweeps = [SQLiteStorage._sweep_row_to_dict(row) for row in rows]
+            summaries = SQLiteStorage._sweep_trial_summaries(cursor, sweeps)
+            for sweep in sweeps:
+                sweep.update(summaries[sweep["sweep_id"]])
             return sweeps
 
     @staticmethod
@@ -2259,12 +2321,17 @@ class SQLiteStorage:
                         f"Cannot transition sweep '{sweep_id}' from "
                         f"{current!r} to {state!r}."
                     )
+                now = datetime.now(timezone.utc).isoformat()
                 cursor.execute(
                     "UPDATE sweeps SET state = ?, updated_at = ? WHERE sweep_id = ?",
-                    (state, datetime.now(timezone.utc).isoformat(), sweep_id),
+                    (state, now, sweep_id),
                 )
                 conn.commit()
-        return SQLiteStorage.get_sweep(project, sweep_id)
+                sweep = SQLiteStorage._sweep_row_to_dict(row)
+                sweep["state"] = state
+                sweep["updated_at"] = now
+                sweep.update(SQLiteStorage._sweep_trial_summary(cursor, sweep))
+                return sweep
 
     @staticmethod
     def suggest_trial(project: str, sweep_id: str, agent_id: str | None = None) -> dict:
@@ -2495,10 +2562,14 @@ class SQLiteStorage:
             (run_identity[1],),
         )
         rows = cursor.fetchall()
-        rows = SQLiteStorage._subsample_metric_rows(rows, max_points)
+        rows, parsed_metrics = SQLiteStorage._subsample_metric_rows(rows, max_points)
         results = []
-        for row in rows:
-            metrics = orjson.loads(row["metrics"])
+        for index, row in enumerate(rows):
+            metrics = (
+                parsed_metrics[index]
+                if parsed_metrics is not None
+                else orjson.loads(row["metrics"])
+            )
             metrics = deserialize_values(metrics)
             metrics["timestamp"] = row["timestamp"]
             results.append(metrics)
@@ -2771,16 +2842,9 @@ class SQLiteStorage:
         if scalar_only:
             return tuple(
                 sorted(
-                    [
-                        key
-                        for key, value in metrics.items()
-                        if type(value) is float
-                        or type(value) is int
-                        or (
-                            type(value) is dict
-                            and value.get("_type") == "trackio.histogram"
-                        )
-                    ]
+                    key
+                    for key, value in metrics.items()
+                    if SQLiteStorage._is_scalar_metric_value(value)
                 )
             )
         return tuple(sorted(metrics))
@@ -2853,14 +2917,16 @@ class SQLiteStorage:
         max_points: int | None,
         *,
         scalar_only: bool = False,
-    ) -> list[Any]:
+    ) -> tuple[list[Any], list[dict[str, Any]] | None]:
         if max_points is None or max_points < 1 or len(rows) <= max_points:
-            return rows
+            return rows, None
 
         signature_by_key_order: dict[tuple[str, ...], tuple[str, ...]] = {}
         grouped_indices: dict[tuple[str, ...], list[int]] = {}
+        parsed_metrics: list[dict[str, Any]] = []
         for index, row in enumerate(rows):
             metrics = orjson.loads(row["metrics"])
+            parsed_metrics.append(metrics)
             key_order = tuple(metrics)
             signature = signature_by_key_order.get(key_order)
             if signature is None:
@@ -2887,17 +2953,25 @@ class SQLiteStorage:
                 for index in SQLiteStorage._stable_subsample_metric_group(group, budget)
             ]
         sampled_indices.sort()
-        return [rows[index] for index in sampled_indices]
+        return (
+            [rows[index] for index in sampled_indices],
+            [parsed_metrics[index] for index in sampled_indices],
+        )
 
     @staticmethod
     def _metric_rows_to_log_dicts(
         rows: list[Any],
         *,
         scalar_only: bool = False,
+        parsed_metrics: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         results = []
-        for row in rows:
-            metrics = orjson.loads(row["metrics"])
+        for index, row in enumerate(rows):
+            metrics = (
+                parsed_metrics[index]
+                if parsed_metrics is not None
+                else orjson.loads(row["metrics"])
+            )
             if scalar_only:
                 metrics = {
                     key: value
@@ -2929,10 +3003,12 @@ class SQLiteStorage:
             (run_identity[1],),
         )
         rows = cursor.fetchall()
-        rows = SQLiteStorage._subsample_metric_rows(
+        rows, parsed_metrics = SQLiteStorage._subsample_metric_rows(
             rows, max_points, scalar_only=scalar_only
         )
-        return SQLiteStorage._metric_rows_to_log_dicts(rows, scalar_only=scalar_only)
+        return SQLiteStorage._metric_rows_to_log_dicts(
+            rows, scalar_only=scalar_only, parsed_metrics=parsed_metrics
+        )
 
     @staticmethod
     def get_logs(

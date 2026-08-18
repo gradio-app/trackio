@@ -49,14 +49,9 @@ class SweepClient:
                 space_id, hf_token=huggingface_hub.utils.get_token(), verbose=False
             )
         elif server_url is not None:
-            server_base_url, token = utils.parse_trackio_server_url(server_url)
-            token = token or os.environ.get("TRACKIO_WRITE_TOKEN")
-            if not token:
-                raise ValueError(
-                    "Sweeps on a self-hosted server require a write token: add "
-                    "write_token to the server URL, or set the "
-                    "TRACKIO_WRITE_TOKEN environment variable."
-                )
+            server_base_url, token = utils.resolve_server_write_token(
+                server_url, "Sweeps on a self-hosted server require"
+            )
             self._remote = RemoteClient(
                 server_base_url, hf_token=None, write_token=token, verbose=False
             )
@@ -161,6 +156,82 @@ def trial_context_from_env() -> dict | None:
 
 def resolve_trial_context() -> dict | None:
     return context_vars.current_sweep_trial.get() or trial_context_from_env()
+
+
+def _resolve_sweep_trial(project: str, config):
+    """The sweep trial context a trackio.init() call in `project` should
+    attach to (or None), plus the run config with the trial's parameters
+    merged in."""
+    sweep_trial = None
+    try:
+        sweep_trial = resolve_trial_context()
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not resolve the sweep trial context: {e}. Continuing without sweep attachment."
+        )
+    if sweep_trial is not None:
+        if sweep_trial.get("project") not in (None, project):
+            _emit_nonfatal_warning(
+                f"trackio.init() was called with project '{project}' but the active sweep "
+                f"trial belongs to project '{sweep_trial.get('project')}'. The run will "
+                "NOT be attached to the sweep."
+            )
+            sweep_trial = None
+        else:
+            try:
+                base_config = utils.to_json_safe(config or {})
+            except Exception:
+                base_config = {}
+            if not isinstance(base_config, dict):
+                base_config = {}
+            config = {**base_config, **(sweep_trial.get("params") or {})}
+            if sweep_trial.get("metric_name") is None:
+                try:
+                    sweep_record = SQLiteStorage.get_sweep(
+                        project, sweep_trial["sweep_id"]
+                    )
+                    if sweep_record is not None:
+                        sweep_trial = {
+                            **sweep_trial,
+                            "metric_name": sweep_record.get("metric_name"),
+                        }
+                except Exception:
+                    pass
+    return sweep_trial, config
+
+
+def _mark_trial_running_for_run(
+    project: str,
+    sweep_trial: dict,
+    run_id: str,
+    remote_source,
+    remote_client,
+) -> None:
+    """Mark the run's sweep trial as running, locally or through the remote
+    client, warning instead of raising on failure."""
+    try:
+        if remote_source is None:
+            SQLiteStorage.mark_trial_running(
+                project, sweep_trial["sweep_id"], sweep_trial["trial_id"], run_id
+            )
+        elif remote_client is not None:
+            remote_client.predict(
+                api_name="/sweep_mark_trial_running",
+                project=project,
+                sweep_id=sweep_trial["sweep_id"],
+                trial_id=sweep_trial["trial_id"],
+                run_id=run_id,
+            )
+        else:
+            _emit_nonfatal_warning(
+                "trackio.init() could not attach the run to its sweep trial: no "
+                "remote client is available yet. The trial will remain in the "
+                "'assigned' state."
+            )
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not mark sweep trial {sweep_trial['trial_id']} as running: {e}. Logging will continue."
+        )
 
 
 def _trial_child_env(
