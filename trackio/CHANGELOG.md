@@ -1,5 +1,15 @@
 # trackio
 
+## 0.35.0
+
+### Features
+
+- [#645](https://github.com/gradio-app/trackio/pull/645) [`8fe869f`](https://github.com/gradio-app/trackio/commit/8fe869f956515344fef68ee69230b2e192ea7707) - artifact registry storage and publishing API — link artifact versions into typed, cross-project collections with `Run.link_artifact` or `Artifact.link` (and remove links with `Artifact.unlink`), and manage them via `trackio.Registry`.  Thanks @adrien-grl!
+- [#651](https://github.com/gradio-app/trackio/pull/651) [`ae43b85`](https://github.com/gradio-app/trackio/commit/ae43b85ca625a056280278148bab6e34a5c520fa) - add artifact lineage graph.  Thanks @Saba9!
+- [#667](https://github.com/gradio-app/trackio/pull/667) [`e029b80`](https://github.com/gradio-app/trackio/commit/e029b8068b43dea4cd97647d86642abb0b587a1f) - add CLI commands to create, inspect, publish to, promote, and unlink from artifact registries.  Thanks @abidlabs!
+- [#668](https://github.com/gradio-app/trackio/pull/668) [`ac9073f`](https://github.com/gradio-app/trackio/commit/ac9073f283e5d28975246f91879b1e5ed4dbf590) - Add standalone read-only registry dashboard.  Thanks @abidlabs!
+- [#606](https://github.com/gradio-app/trackio/pull/606) [`1dc2dd9`](https://github.com/gradio-app/trackio/commit/1dc2dd9cab0e1603522c43935ebbec6b1f5efb67) - feat(UI): Run comparer - compare (potentially nested) run configs side by side.  Thanks @adrien-grl!
+
 ## 0.34.1
 
 ### Features
