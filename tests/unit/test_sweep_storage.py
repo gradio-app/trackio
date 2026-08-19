@@ -57,6 +57,10 @@ def test_suggest_trial_lifecycle(temp_dir):
     assert second["command"] == "run"
     assert first["params"] != second["params"]
 
+    assert SQLiteStorage.suggest_trial("proj", sweep_id) == {"command": "wait"}
+
+    SQLiteStorage.report_trial("proj", sweep_id, first["trial_id"], "finished")
+    SQLiteStorage.report_trial("proj", sweep_id, second["trial_id"], "finished")
     exhausted = SQLiteStorage.suggest_trial("proj", sweep_id)
     assert exhausted == {"command": "exit", "reason": "exhausted"}
     sweep = SQLiteStorage.get_sweep("proj", sweep_id)
@@ -366,7 +370,10 @@ def test_parquet_roundtrip_preserves_sweeps(temp_dir):
     SQLiteStorage.report_trial(
         "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.3
     )
-    SQLiteStorage.suggest_trial("proj", sweep_id, agent_id="a1")
+    second = SQLiteStorage.suggest_trial("proj", sweep_id, agent_id="a1")
+    SQLiteStorage.report_trial(
+        "proj", sweep_id, second["trial_id"], "finished", metric_value=0.5
+    )
     assert SQLiteStorage.suggest_trial("proj", sweep_id)["reason"] == "exhausted"
     before_sweep = SQLiteStorage.get_sweep("proj", sweep_id)
     assert before_sweep["finish_reason"] == "exhausted"
@@ -425,3 +432,72 @@ def test_sweep_run_memberships_maximize_and_pending(temp_dir):
     assert memberships["run-b"]["trial_state"] == "running"
     assert memberships["run-b"]["metric_value"] is None
     assert not memberships["run-b"]["best"]
+
+
+def test_agent_failed_report_overrides_premature_finished(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.4
+    )
+    assert SQLiteStorage.report_trial("proj", sweep_id, trial["trial_id"], "failed")
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert trials[0]["state"] == "failed"
+    assert trials[0]["metric_value"] == 0.4
+
+
+def test_failed_does_not_override_other_terminal_states(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert SQLiteStorage.report_trial("proj", sweep_id, trial["trial_id"], "failed")
+    assert not SQLiteStorage.report_trial("proj", sweep_id, trial["trial_id"], "failed")
+    assert not SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=1.0
+    )
+
+
+def test_report_trial_backfills_run_id(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert SQLiteStorage.report_trial(
+        "proj",
+        sweep_id,
+        trial["trial_id"],
+        "finished",
+        metric_value=0.2,
+        run_id="run-42",
+    )
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert trials[0]["run_id"] == "run-42"
+    assert "run-42" in SQLiteStorage.get_sweep_run_memberships("proj")
+
+
+def test_mark_trial_running_reattaches_new_run(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config())
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert SQLiteStorage.mark_trial_running(
+        "proj", sweep_id, trial["trial_id"], "run-1"
+    )
+    assert SQLiteStorage.mark_trial_running(
+        "proj", sweep_id, trial["trial_id"], "run-2"
+    )
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert trials[0]["run_id"] == "run-2"
+    assert trials[0]["state"] == "running"
+
+
+def test_exhausted_waits_for_in_flight_trials(temp_dir):
+    sweep_id = SQLiteStorage.create_sweep(
+        "proj",
+        {
+            "method": "grid",
+            "metric": {"name": "loss", "goal": "minimize"},
+            "parameters": {"lr": {"values": [0.1]}},
+        },
+    )
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert SQLiteStorage.suggest_trial("proj", sweep_id) == {"command": "wait"}
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["state"] == "running"
+    SQLiteStorage.report_trial("proj", sweep_id, trial["trial_id"], "failed")
+    exhausted = SQLiteStorage.suggest_trial("proj", sweep_id)
+    assert exhausted == {"command": "exit", "reason": "exhausted"}

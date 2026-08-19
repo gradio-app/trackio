@@ -108,6 +108,7 @@ class SweepClient:
         trial_id: int,
         state: str,
         metric_value: float | None = None,
+        run_id: str | None = None,
     ) -> bool:
         return self._dispatch(
             "sweep_report_trial",
@@ -116,6 +117,7 @@ class SweepClient:
             trial_id=trial_id,
             state=state,
             metric_value=metric_value,
+            run_id=run_id,
         )
 
 
@@ -271,16 +273,16 @@ def _run_command_trial(
         raise RuntimeError(f"Trial command exited with non-zero status {returncode}.")
 
 
-def _finish_current_run() -> float | None:
+def _finish_current_run() -> tuple[float | None, str | None]:
     """Finishes the contextvar run (if any) and returns the last logged value
-    of the sweep metric, so the agent's fallback trial report can carry it
-    when the run's own report could not reach the server."""
+    of the sweep metric plus the run id, so the agent's fallback trial report
+    can carry them when the run's own report could not reach the server."""
     run = context_vars.current_run.get()
     if run is None:
-        return None
+        return None, None
     try:
         run.finish()
-        return run._sweep_metric_last
+        return run._sweep_metric_last, run.id
     finally:
         context_vars.current_run.set(None)
 
@@ -349,6 +351,7 @@ def agent(
         print(f"* Agent {agent_id} starting trial {trial_id} with params: {params}")
         try:
             metric_value = None
+            run_id = None
             if command_mode:
                 _run_command_trial(sweep_config, client, sweep_id, trial_id, params)
             else:
@@ -362,14 +365,18 @@ def agent(
                 token = context_vars.current_sweep_trial.set(trial_context)
                 try:
                     function()
-                    metric_value = _finish_current_run()
+                    metric_value, run_id = _finish_current_run()
                     if metric_value is None:
                         metric_value = trial_context.get("metric_value")
                 finally:
                     context_vars.current_sweep_trial.reset(token)
             try:
                 client.report_trial(
-                    sweep_id, trial_id, "finished", metric_value=metric_value
+                    sweep_id,
+                    trial_id,
+                    "finished",
+                    metric_value=metric_value,
+                    run_id=run_id,
                 )
             except Exception as report_error:
                 _emit_nonfatal_warning(

@@ -1446,10 +1446,11 @@ def _sweep_report_trial(
     trial_id: int,
     state: str,
     metric_value: float | None,
+    run_id: str | None,
 ) -> bool:
     assert_can_mutate_runs(request)
     return SQLiteStorage.report_trial(
-        project, sweep_id, trial_id, state, metric_value=metric_value
+        project, sweep_id, trial_id, state, metric_value=metric_value, run_id=run_id
     )
 
 
@@ -1460,9 +1461,17 @@ async def sweep_report_trial(
     trial_id: int,
     state: str,
     metric_value: float | None = None,
+    run_id: str | None = None,
 ) -> bool:
     return await asyncio.to_thread(
-        _sweep_report_trial, request, project, sweep_id, trial_id, state, metric_value
+        _sweep_report_trial,
+        request,
+        project,
+        sweep_id,
+        trial_id,
+        state,
+        metric_value,
+        run_id,
     )
 
 

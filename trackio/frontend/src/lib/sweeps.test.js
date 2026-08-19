@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeParamSpec,
   flattenParameterSpecs,
+  flattenTrialParams,
   sweepParamSpecs,
   sweepTotalTrials,
   trialParamKeys,
@@ -116,5 +117,24 @@ describe("trialParamKeys", () => {
       { params: { batch: 32, momentum: 0.9 } },
     ]);
     expect(keys).toEqual(["lr", "batch", "momentum"]);
+  });
+});
+
+describe("flattenTrialParams", () => {
+  it("flattens nested param objects to dotted keys", () => {
+    expect(
+      flattenTrialParams({ optimizer: { lr: 0.1, name: "adam" }, seed: 1 }),
+    ).toEqual({ "optimizer.lr": 0.1, "optimizer.name": "adam", seed: 1 });
+  });
+
+  it("keeps arrays and literal dotted keys as values", () => {
+    expect(flattenTrialParams({ "a.b": 2, layers: [64, 32] })).toEqual({
+      "a.b": 2,
+      layers: [64, 32],
+    });
+  });
+
+  it("handles null params", () => {
+    expect(flattenTrialParams(null)).toEqual({});
   });
 });

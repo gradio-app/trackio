@@ -47,8 +47,10 @@ _sweep_unhandled_exception = False
 def _install_sweep_excepthook():
     """Record whether the process is dying from an unhandled exception, so a
     sweep trial finalized from the atexit handler is reported as 'failed'
-    rather than 'finished' (report_trial only accepts the first terminal
-    state, so a premature 'finished' would mask the crash forever)."""
+    rather than 'finished'. This does not catch SystemExit (CPython skips
+    sys.excepthook for it): that case is handled by the sweep agent, whose
+    'failed' report on a non-zero exit code overrides a premature
+    'finished' in report_trial."""
     global _sweep_excepthook_installed
     if _sweep_excepthook_installed:
         return
@@ -1758,6 +1760,11 @@ class Run:
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")
 
+    def _detach_sweep_trial(self):
+        """Stops this run from terminally reporting its sweep trial, so a
+        subsequent trackio.init() in the same trial can take it over."""
+        self._sweep_trial_reported = True
+
     def _report_sweep_trial(self, state: str):
         if (
             self.sweep_id is None
@@ -1774,6 +1781,7 @@ class Run:
                     self._sweep_trial_id,
                     state,
                     metric_value=self._sweep_metric_last,
+                    run_id=self.id,
                 )
             else:
                 with self._client_lock:
@@ -1801,6 +1809,7 @@ class Run:
                     trial_id=self._sweep_trial_id,
                     state=state,
                     metric_value=self._sweep_metric_last,
+                    run_id=self.id,
                 )
         except Exception as e:
             self._warn_once(

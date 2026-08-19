@@ -129,6 +129,14 @@ def _validate_bounds(spec: dict, path: str, positive: bool = False):
         raise SweepConfigError(f"Parameter '{path}': 'min' must be > 0.")
 
 
+def _validate_q_bounds(spec: dict, path: str, lo: float, hi: float):
+    q = spec.get("q", 1.0)
+    if math.ceil(lo / q - 1e-9) > math.floor(hi / q + 1e-9):
+        raise SweepConfigError(
+            f"Parameter '{path}': no multiple of q={q} lies within [{lo}, {hi}]."
+        )
+
+
 def _validate_param_spec(spec: dict, path: str):
     distribution = infer_distribution(spec, path)
     if distribution == "constant":
@@ -146,6 +154,13 @@ def _validate_param_spec(spec: dict, path: str):
                 raise SweepConfigError(
                     f"Parameter '{path}': 'probabilities' must be a list the "
                     "same length as 'values'."
+                )
+            if any(
+                not isinstance(p, (int, float)) or isinstance(p, bool) or p < 0
+                for p in probabilities
+            ):
+                raise SweepConfigError(
+                    f"Parameter '{path}': 'probabilities' must be non-negative numbers."
                 )
             if not math.isclose(sum(probabilities), 1.0, rel_tol=1e-6):
                 raise SweepConfigError(
@@ -165,12 +180,18 @@ def _validate_param_spec(spec: dict, path: str):
         "inv_log_uniform",
     ):
         _validate_bounds(spec, path)
+        if distribution == "q_uniform":
+            _validate_q_bounds(spec, path, spec["min"], spec["max"])
+        elif distribution == "q_log_uniform":
+            _validate_q_bounds(spec, path, math.exp(spec["min"]), math.exp(spec["max"]))
     elif distribution in (
         "log_uniform_values",
         "q_log_uniform_values",
         "inv_log_uniform_values",
     ):
         _validate_bounds(spec, path, positive=True)
+        if distribution == "q_log_uniform_values":
+            _validate_q_bounds(spec, path, spec["min"], spec["max"])
     elif distribution in ("normal", "q_normal", "log_normal", "q_log_normal"):
         for key in ("mu", "sigma"):
             if key in spec and (
@@ -200,19 +221,66 @@ def flatten_parameters(parameters: dict, prefix: str = "") -> dict[str, dict]:
                 raise SweepConfigError(
                     f"Parameter '{path}': nested 'parameters' must be a non-empty dict."
                 )
-            flat.update(flatten_parameters(nested, prefix=f"{path}."))
+            nested_flat = flatten_parameters(nested, prefix=f"{path}.")
+            for nested_path in nested_flat:
+                if nested_path in flat:
+                    raise SweepConfigError(
+                        f"Parameter '{nested_path}' is defined more than once "
+                        "(a dotted name collides with a nested 'parameters' block)."
+                    )
+            flat.update(nested_flat)
         else:
+            if path in flat:
+                raise SweepConfigError(
+                    f"Parameter '{path}' is defined more than once "
+                    "(a dotted name collides with a nested 'parameters' block)."
+                )
             flat[path] = spec
     return flat
 
 
-def unflatten_params(flat_params: dict) -> dict:
+def nested_param_paths(parameters: dict) -> set[str]:
+    """The dotted paths in `flatten_parameters(parameters)` that came from
+    nested `parameters` blocks (as opposed to literal dots in a name)."""
+    paths: set[str] = set()
+    for name, spec in parameters.items():
+        if (
+            isinstance(spec, dict)
+            and "parameters" in spec
+            and isinstance(spec["parameters"], dict)
+            and spec["parameters"]
+        ):
+            paths.update(flatten_parameters({name: spec}))
+    return paths
+
+
+def unflatten_params(flat_params: dict, nested_paths: set[str] | None = None) -> dict:
+    """Rebuilds a nested params dict from dotted paths. Only the paths in
+    `nested_paths` (those produced by nested `parameters` blocks) are re-nested;
+    other keys are kept flat even if they contain literal dots, matching how
+    the user named them. `nested_paths=None` re-nests every dotted path."""
     nested: dict = {}
     for path, value in flat_params.items():
+        if nested_paths is not None and path not in nested_paths:
+            if isinstance(nested.get(path), dict):
+                raise SweepConfigError(
+                    f"Parameter '{path}' conflicts with a nested 'parameters' block."
+                )
+            nested[path] = value
+            continue
         parts = path.split(".")
         node = nested
-        for part in parts[:-1]:
+        for index, part in enumerate(parts[:-1]):
             node = node.setdefault(part, {})
+            if not isinstance(node, dict):
+                raise SweepConfigError(
+                    f"Parameter '{'.'.join(parts[: index + 1])}' is both a "
+                    "value and a nested block."
+                )
+        if isinstance(node.get(parts[-1]), dict):
+            raise SweepConfigError(
+                f"Parameter '{path}' is both a value and a nested block."
+            )
         node[parts[-1]] = value
     return nested
 
@@ -337,6 +405,8 @@ def validate_sweep_config(config: dict) -> dict:
     if not isinstance(parameters, dict) or not parameters:
         raise SweepConfigError("Sweep config requires a non-empty 'parameters' dict.")
     flat_specs = flatten_parameters(parameters)
+    unflatten_params(dict.fromkeys(flat_specs), nested_param_paths(parameters))
+    grid_size = 1
     for path, spec in flat_specs.items():
         _validate_param_spec(spec, path)
         if method == "grid":
@@ -347,6 +417,13 @@ def validate_sweep_config(config: dict) -> dict:
                     "compatible with method 'grid'. Grid search requires "
                     "discrete parameters (value, values, int_uniform, or "
                     "q_uniform)."
+                )
+            grid_size *= grid_cardinality(spec, path)
+            if grid_size > MAX_GRID_CARDINALITY:
+                raise SweepConfigError(
+                    f"Grid sweep has more than {MAX_GRID_CARDINALITY:,} "
+                    "parameter combinations; use method 'random' or 'bayes' "
+                    "for a search space this large."
                 )
 
     metric = config.get("metric")
@@ -437,7 +514,8 @@ def sample_parameter(spec: dict, path: str, rng: np.random.Generator):
     if distribution == "categorical":
         return spec["values"][int(rng.integers(len(spec["values"])))]
     if distribution == "categorical_w_probabilities":
-        index = rng.choice(len(spec["values"]), p=spec["probabilities"])
+        probabilities = np.asarray(spec["probabilities"], dtype=float)
+        index = rng.choice(len(spec["values"]), p=probabilities / probabilities.sum())
         return spec["values"][int(index)]
     if distribution == "int_uniform":
         return int(rng.integers(spec["min"], spec["max"] + 1))
@@ -486,6 +564,29 @@ def sample_parameter(spec: dict, path: str, rng: np.random.Generator):
     raise SweepConfigError(f"Parameter '{path}': unhandled distribution.")
 
 
+MAX_GRID_CARDINALITY = 100_000
+
+
+def grid_cardinality(spec: dict, path: str) -> int:
+    """Number of grid values for a spec, computed without materializing them."""
+    distribution = infer_distribution(spec, path)
+    if distribution == "constant":
+        return 1
+    if distribution == "categorical":
+        return len(spec["values"])
+    if distribution == "int_uniform":
+        return spec["max"] - spec["min"] + 1
+    if distribution == "q_uniform":
+        q = spec.get("q", 1.0)
+        k_lo = math.ceil(spec["min"] / q - 1e-9)
+        k_hi = math.floor(spec["max"] / q + 1e-9)
+        return max(0, k_hi - k_lo + 1)
+    raise SweepConfigError(
+        f"Parameter '{path}': distribution '{distribution}' is not compatible "
+        "with method 'grid'."
+    )
+
+
 def grid_values(spec: dict, path: str) -> list:
     distribution = infer_distribution(spec, path)
     if distribution == "constant":
@@ -514,6 +615,7 @@ class GridSuggester:
     def __init__(self, config: dict):
         self.config = config
         flat_specs = flatten_parameters(config["parameters"])
+        self.nested_paths = nested_param_paths(config["parameters"])
         self.paths = sorted(flat_specs)
         self.value_lists = [grid_values(flat_specs[path], path) for path in self.paths]
 
@@ -530,7 +632,7 @@ class GridSuggester:
             rng.shuffle(combinations)
         for combination in combinations:
             flat_params = dict(zip(self.paths, combination))
-            params = unflatten_params(flat_params)
+            params = unflatten_params(flat_params, self.nested_paths)
             if param_hash(params) not in seen:
                 return params
         return None
@@ -540,6 +642,7 @@ class RandomSuggester:
     def __init__(self, config: dict):
         self.config = config
         self.flat_specs = flatten_parameters(config["parameters"])
+        self.nested_paths = nested_param_paths(config["parameters"])
 
     def suggest(
         self, trials: list[dict], rng: np.random.Generator | None = None
@@ -549,7 +652,7 @@ class RandomSuggester:
             path: sample_parameter(spec, path, rng)
             for path, spec in sorted(self.flat_specs.items())
         }
-        return unflatten_params(flat_params)
+        return unflatten_params(flat_params, self.nested_paths)
 
 
 def _bayes_suggester(config: dict):

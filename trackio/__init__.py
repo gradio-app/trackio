@@ -367,6 +367,12 @@ def init(
 
     previous_run = context_vars.current_run.get()
     if previous_run is not None:
+        if (
+            sweep_trial is not None
+            and previous_run.sweep_id == sweep_trial["sweep_id"]
+            and previous_run._sweep_trial_id == sweep_trial["trial_id"]
+        ):
+            previous_run._detach_sweep_trial()
         try:
             previous_run.finish()
         except Exception as e:

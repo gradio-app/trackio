@@ -11,6 +11,7 @@ from trackio.sweeps import (
     flatten_parameters,
     flatten_params,
     infer_distribution,
+    nested_param_paths,
     sample_parameter,
     unflatten_params,
 )
@@ -167,6 +168,7 @@ class BayesSuggester:
     def __init__(self, config: dict):
         self.config = config
         self.flat_specs = flatten_parameters(config["parameters"])
+        self.nested_paths = nested_param_paths(config["parameters"])
         metric = config.get("metric") or {}
         self.maximize = metric.get("goal") == "maximize"
         self.encoder = _SpaceEncoder(self.flat_specs)
@@ -196,7 +198,7 @@ class BayesSuggester:
                 in_flight.append(flat)
 
         if len(completed) < MIN_COMPLETED_TRIALS or self.encoder.dim == 0:
-            return unflatten_params(self._random_flat_params(rng))
+            return unflatten_params(self._random_flat_params(rng), self.nested_paths)
 
         sign = -1.0 if self.maximize else 1.0
         x_rows = [self.encoder.encode(flat) for flat, _ in completed]
@@ -216,7 +218,7 @@ class BayesSuggester:
 
         gp = _fit_gp(x, y_norm)
         if gp is None:
-            return unflatten_params(self._random_flat_params(rng))
+            return unflatten_params(self._random_flat_params(rng), self.nested_paths)
 
         if in_flight:
             x_fantasy = np.vstack([self.encoder.encode(flat) for flat in in_flight])
@@ -225,11 +227,13 @@ class BayesSuggester:
                 np.vstack([x, x_fantasy]), np.concatenate([y_norm, fantasy_mean])
             )
             if gp is None:
-                return unflatten_params(self._random_flat_params(rng))
+                return unflatten_params(
+                    self._random_flat_params(rng), self.nested_paths
+                )
 
         candidates = [self._random_flat_params(rng) for _ in range(NUM_CANDIDATES)]
         x_candidates = np.vstack([self.encoder.encode(c) for c in candidates])
         mean, std = gp.predict(x_candidates)
         best_observed = float(np.min(y_norm[: len(completed)]))
         ei = _expected_improvement(mean, std, best_observed)
-        return unflatten_params(candidates[int(np.argmax(ei))])
+        return unflatten_params(candidates[int(np.argmax(ei))], self.nested_paths)

@@ -459,6 +459,15 @@ class SQLiteStorage:
         return ProcessLock(lockfile_path)
 
     @staticmethod
+    def _get_sweep_lock(project: str) -> ProcessLock:
+        """Serializes sweep mutations separately from the project lock, so a
+        slow trial suggestion (bayes GP fit, grid scan) never stalls metric
+        logging. SQLite's busy timeout handles write contention between the
+        two lock domains."""
+        lockfile_path = TRACKIO_DIR / f"{canonical_project_name(project)}.sweeps.lock"
+        return ProcessLock(lockfile_path)
+
+    @staticmethod
     def get_project_db_filename(project: str) -> str:
         """Get the database filename for a specific project."""
         return f"{canonical_project_name(project)}{DB_EXT}"
@@ -2127,7 +2136,7 @@ class SQLiteStorage:
         sweep_id = sweeps_module.generate_sweep_id()
         now = datetime.now(timezone.utc).isoformat()
         db_path = SQLiteStorage.init_db(project)
-        with SQLiteStorage._get_process_lock(project):
+        with SQLiteStorage._get_sweep_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
@@ -2301,7 +2310,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return None
-        with SQLiteStorage._get_process_lock(project):
+        with SQLiteStorage._get_sweep_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 try:
@@ -2344,7 +2353,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             raise ValueError(f"Sweep '{sweep_id}' not found in project '{project}'.")
-        with SQLiteStorage._get_process_lock(project):
+        with SQLiteStorage._get_sweep_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 try:
@@ -2402,6 +2411,10 @@ class SQLiteStorage:
                         if run_cap is not None and len(trials) >= run_cap
                         else "exhausted"
                     )
+                    if reason == "exhausted" and any(
+                        trial["state"] in ("assigned", "running") for trial in trials
+                    ):
+                        return {"command": "wait"}
                     cursor.execute(
                         """UPDATE sweeps
                         SET state = 'finished', finish_reason = ?, updated_at = ?
@@ -2443,7 +2456,7 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
-        with SQLiteStorage._get_process_lock(project):
+        with SQLiteStorage._get_sweep_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 try:
@@ -2451,7 +2464,8 @@ class SQLiteStorage:
                         """
                         UPDATE sweep_trials
                         SET state = 'running', run_id = ?, updated_at = ?
-                        WHERE sweep_id = ? AND trial_id = ? AND state = 'assigned'
+                        WHERE sweep_id = ? AND trial_id = ?
+                            AND state IN ('assigned', 'running')
                         """,
                         (
                             run_id,
@@ -2472,6 +2486,7 @@ class SQLiteStorage:
         trial_id: int,
         state: str,
         metric_value: float | None = None,
+        run_id: str | None = None,
     ) -> bool:
         from trackio import sweeps as sweeps_module
 
@@ -2483,28 +2498,49 @@ class SQLiteStorage:
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
             return False
-        with SQLiteStorage._get_process_lock(project):
+        with SQLiteStorage._get_sweep_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
                 try:
                     cursor.execute(
+                        "SELECT state FROM sweep_trials "
+                        "WHERE sweep_id = ? AND trial_id = ?",
+                        (sweep_id, trial_id),
+                    )
+                    previous = cursor.fetchone()
+                    cursor.execute(
                         """
                         UPDATE sweep_trials
-                        SET state = ?, metric_value = ?, updated_at = ?
+                        SET state = ?,
+                            metric_value = COALESCE(?, metric_value),
+                            run_id = COALESCE(?, run_id),
+                            updated_at = ?
                         WHERE sweep_id = ? AND trial_id = ?
-                            AND state IN ('assigned', 'running')
+                            AND (state IN ('assigned', 'running')
+                                 OR (state = 'finished' AND ? = 'failed'))
                         """,
                         (
                             state,
                             metric_value,
+                            run_id,
                             datetime.now(timezone.utc).isoformat(),
                             sweep_id,
                             trial_id,
+                            state,
                         ),
                     )
                 except sqlite3.OperationalError:
                     return False
                 updated = cursor.rowcount > 0
+                if (
+                    updated
+                    and state == "failed"
+                    and previous is not None
+                    and previous["state"] == "finished"
+                ):
+                    SQLiteStorage._reopen_sweep_if_target_no_longer_met(
+                        cursor, sweep_id
+                    )
                 if updated and state == "finished" and metric_value is not None:
                     cursor.execute(
                         """SELECT config FROM sweeps
@@ -2525,6 +2561,39 @@ class SQLiteStorage:
                         )
                 conn.commit()
                 return updated
+
+    @staticmethod
+    def _reopen_sweep_if_target_no_longer_met(
+        cursor: sqlite3.Cursor, sweep_id: str
+    ) -> None:
+        """After a 'failed' report overrides a premature 'finished', a sweep
+        that finished on that trial's metric hitting the target may no longer
+        have any qualifying trial; reopen it so the search continues."""
+        from trackio import sweeps as sweeps_module
+
+        cursor.execute(
+            """SELECT config FROM sweeps
+            WHERE sweep_id = ? AND state = 'finished' AND finish_reason = 'target'""",
+            (sweep_id,),
+        )
+        sweep_row = cursor.fetchone()
+        if sweep_row is None:
+            return
+        cursor.execute(
+            "SELECT state, metric_value FROM sweep_trials WHERE sweep_id = ?",
+            (sweep_id,),
+        )
+        trials = [
+            {"state": row["state"], "metric_value": row["metric_value"]}
+            for row in cursor.fetchall()
+        ]
+        if not sweeps_module.target_met(json_mod.loads(sweep_row["config"]), trials):
+            cursor.execute(
+                """UPDATE sweeps
+                SET state = 'running', finish_reason = NULL, updated_at = ?
+                WHERE sweep_id = ?""",
+                (datetime.now(timezone.utc).isoformat(), sweep_id),
+            )
 
     @staticmethod
     def get_sweep_trials(project: str, sweep_id: str) -> list[dict]:

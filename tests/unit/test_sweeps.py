@@ -464,3 +464,98 @@ class TestParamHash:
 
     def test_differs_for_different_values(self):
         assert param_hash({"a": 1}) != param_hash({"a": 2})
+
+
+class TestValidationRegressions:
+    def test_q_uniform_without_valid_multiple_rejected(self):
+        with pytest.raises(SweepConfigError, match="no multiple of q"):
+            validate_sweep_config(
+                {
+                    "method": "random",
+                    "parameters": {
+                        "dropout": {"distribution": "q_uniform", "min": 0.1, "max": 0.5}
+                    },
+                }
+            )
+
+    def test_q_uniform_with_valid_multiple_samples_in_bounds(self):
+        spec = {"distribution": "q_uniform", "min": 0.1, "max": 0.5, "q": 0.1}
+        validate_sweep_config({"method": "random", "parameters": {"p": spec}})
+        rng = np.random.default_rng(0)
+        for _ in range(50):
+            value = sample_parameter(spec, "p", rng)
+            assert 0.1 - 1e-9 <= value <= 0.5 + 1e-9
+
+    def test_probabilities_near_one_are_normalized(self):
+        spec = {
+            "values": ["a", "b", "c"],
+            "probabilities": [0.3333333, 0.3333333, 0.3333333],
+        }
+        validate_sweep_config({"method": "random", "parameters": {"c": spec}})
+        rng = np.random.default_rng(0)
+        assert sample_parameter(spec, "c", rng) in ("a", "b", "c")
+
+    def test_negative_probabilities_rejected(self):
+        with pytest.raises(SweepConfigError, match="non-negative"):
+            validate_sweep_config(
+                {
+                    "method": "random",
+                    "parameters": {
+                        "c": {"values": ["a", "b"], "probabilities": [1.5, -0.5]}
+                    },
+                }
+            )
+
+    def test_grid_cardinality_capped(self):
+        with pytest.raises(SweepConfigError, match="combinations"):
+            validate_sweep_config(
+                {
+                    "method": "grid",
+                    "parameters": {"seed": {"min": 0, "max": 100_000_000}},
+                }
+            )
+
+
+class TestDottedParameterNames:
+    def test_literal_dotted_name_stays_flat(self):
+        config = validate_sweep_config(
+            {
+                "method": "grid",
+                "parameters": {"optimizer.lr": {"values": [0.1, 0.2]}},
+            }
+        )
+        params = GridSuggester(config).suggest([])
+        assert params["optimizer.lr"] in (0.1, 0.2)
+
+    def test_dotted_name_alongside_plain_name_does_not_crash(self):
+        config = validate_sweep_config(
+            {
+                "method": "random",
+                "parameters": {"a": {"value": 1}, "a.b": {"value": 2}},
+            }
+        )
+        assert RandomSuggester(config).suggest([]) == {"a": 1, "a.b": 2}
+
+    def test_dotted_name_conflicting_with_nested_block_rejected(self):
+        with pytest.raises(SweepConfigError, match="more than once"):
+            validate_sweep_config(
+                {
+                    "method": "random",
+                    "parameters": {
+                        "a.b": {"value": 1},
+                        "a": {"parameters": {"b": {"value": 2}}},
+                    },
+                }
+            )
+
+    def test_plain_name_conflicting_with_nested_block_rejected(self):
+        with pytest.raises(SweepConfigError):
+            validate_sweep_config(
+                {
+                    "method": "random",
+                    "parameters": {
+                        "a": {"value": 1},
+                        "a.b": {"parameters": {"c": {"value": 2}}},
+                    },
+                }
+            )

@@ -16,7 +16,12 @@
     formatRelativeTime,
     formatDuration,
   } from "../lib/format.js";
-  import { sweepTotalTrials, sweepParamSpecs, trialParamKeys } from "../lib/sweeps.js";
+  import {
+    sweepTotalTrials,
+    sweepParamSpecs,
+    trialParamKeys,
+    flattenTrialParams,
+  } from "../lib/sweeps.js";
   import { getMetricsPollIntervalMs, isTabHidden } from "../lib/hostPolling.js";
 
   let { project = null, runMutationAllowed = true } = $props();
@@ -88,7 +93,9 @@
 
   async function loadTrials(sweepId) {
     try {
-      const trials = (await getSweepTrials(project, sweepId)) || [];
+      const trials = ((await getSweepTrials(project, sweepId)) || []).map(
+        (trial) => ({ ...trial, params: flattenTrialParams(trial.params) }),
+      );
       const previous = trialsBySweep[sweepId];
       if (previous && JSON.stringify(previous) === JSON.stringify(trials)) {
         return;

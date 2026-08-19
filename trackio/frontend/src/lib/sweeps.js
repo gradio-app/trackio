@@ -94,6 +94,19 @@ export function sweepParamSpecs(config) {
   );
 }
 
+export function flattenTrialParams(params, prefix = "") {
+  const flat = {};
+  for (const [key, value] of Object.entries(params || {})) {
+    const path = `${prefix}${key}`;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      Object.assign(flat, flattenTrialParams(value, `${path}.`));
+    } else {
+      flat[path] = value;
+    }
+  }
+  return flat;
+}
+
 export function trialParamKeys(trials) {
   const keys = [];
   const seen = new Set();

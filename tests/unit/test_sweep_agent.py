@@ -464,3 +464,59 @@ def test_api_sweeps_accessor(temp_dir):
     assert best is not None
     assert best.config["lr"] == 0.01
     assert best.config["batch_size"] == 8
+
+
+def test_double_init_within_trial_keeps_final_metric(temp_dir):
+    sweep_id = trackio.sweep(
+        {
+            "method": "grid",
+            "metric": {"name": "loss", "goal": "minimize"},
+            "parameters": {"lr": {"values": [0.5]}},
+        },
+        project="proj",
+    )
+    run_ids = []
+
+    def train():
+        trackio.init(project="proj")
+        trackio.log({"loss": 999.0})
+        run = trackio.init(project="proj")
+        run_ids.append(run.id)
+        trackio.log({"loss": 0.25})
+        trackio.finish()
+
+    trackio.agent(sweep_id, function=train, project="proj")
+
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert len(trials) == 1
+    assert trials[0]["state"] == "finished"
+    assert trials[0]["metric_value"] == 0.25
+    assert trials[0]["run_id"] == run_ids[0]
+
+
+def test_command_mode_sys_exit_after_init_marks_trial_failed(temp_dir, monkeypatch):
+    monkeypatch.setenv("TRACKIO_DIR", temp_dir)
+    script = Path(temp_dir) / "sys_exit_after_init.py"
+    script.write_text(
+        "import sys\n"
+        "import trackio\n"
+        'trackio.init(project="proj")\n'
+        'trackio.log({"loss": 1.0})\n'
+        "sys.exit(1)\n"
+    )
+    sweep_id = trackio.sweep(
+        {
+            "method": "grid",
+            "program": str(script),
+            "metric": {"name": "loss", "goal": "minimize", "target": 2.0},
+            "parameters": {"lr": {"values": [0.5]}},
+        },
+        project="proj",
+    )
+
+    trackio.agent(sweep_id, project="proj")
+
+    trials = SQLiteStorage.get_sweep_trials("proj", sweep_id)
+    assert len(trials) == 1
+    assert trials[0]["state"] == "failed"
+    assert SQLiteStorage.get_sweep("proj", sweep_id)["finish_reason"] != "target"
