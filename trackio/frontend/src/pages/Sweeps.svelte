@@ -797,6 +797,8 @@
   }
   .trials-count {
     font-variant-numeric: tabular-nums;
+    color: var(--body-text-color-subdued, #6b7280);
+    font-size: 12px;
   }
   .progress-track {
     position: relative;
