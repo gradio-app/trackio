@@ -16,6 +16,7 @@
 [![PyPI downloads](https://img.shields.io/pypi/dm/trackio)](https://pypi.org/project/trackio/)
 [![PyPI](https://img.shields.io/pypi/v/trackio)](https://pypi.org/project/trackio/)
 ![Python version](https://img.shields.io/badge/python-3.10+-important)
+[![inspect.software](https://raw.githubusercontent.com/inspect-software/badges/main/v1/g/gradio-app/trackio.svg)](https://inspect.software/software/gradio-app/trackio)
 [![Twitter follow](https://img.shields.io/twitter/follow/trackioapp?style=social&label=follow)](https://twitter.com/trackioapp)
 
 </div>
