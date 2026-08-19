@@ -365,6 +365,7 @@
           {@const trialDenominator = totalTrials ?? sweep.num_trials}
           <tr
             class="sweep-row"
+            class:expanded={expandedSweepIds.includes(sweep.sweep_id)}
             onclick={(event) => handleRowClick(event, sweep.sweep_id)}
           >
             <td class="sweep-id-cell">
@@ -507,6 +508,9 @@
             <tr class="trials-row">
               <td colspan="9">
                 <div class="sweep-detail">
+                  <div class="sweep-detail-title">
+                    {sweep.name || sweep.sweep_id}
+                  </div>
                   <div class="sweep-meta">
                     <div class="meta-item">
                       <span class="meta-label">Sweep ID</span>
@@ -738,6 +742,13 @@
   .sweep-row:hover td {
     background: rgba(127, 127, 127, 0.12);
   }
+  .sweep-row.expanded td {
+    background: var(--background-fill-secondary, #f9fafb);
+    border-bottom: none;
+  }
+  .sweep-row.expanded:hover td {
+    background: rgba(127, 127, 127, 0.12);
+  }
   .expand-caret {
     display: inline-block;
     width: 12px;
@@ -889,6 +900,12 @@
   }
   .sweep-detail {
     margin-bottom: 12px;
+  }
+  .sweep-detail-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--body-text-color, #1f2937);
+    margin-bottom: 6px;
   }
   .sweep-meta {
     display: flex;

@@ -4,8 +4,7 @@
   import {
     buildParallelCoordsData,
     buildParallelCoordsSpec,
-    METRIC_COLOR_RANGE_DARK,
-    METRIC_COLOR_RANGE_LIGHT,
+    METRIC_COLOR_STOPS,
   } from "../lib/parallelCoords.js";
   import { isDark, onThemeChange } from "../lib/theme.js";
 
@@ -28,14 +27,12 @@
   let metricAxis = $derived(
     plotData.axes.length > 0 ? plotData.axes[plotData.axes.length - 1] : null,
   );
-  let metricColorRange = $derived(
-    darkMode ? METRIC_COLOR_RANGE_DARK : METRIC_COLOR_RANGE_LIGHT,
-  );
   let legendGradient = $derived.by(() => {
-    const [low, high] = metricColorRange;
-    return metricGoal === "minimize"
-      ? `linear-gradient(to right, ${high}, ${low})`
-      : `linear-gradient(to right, ${low}, ${high})`;
+    const stops =
+      metricGoal === "minimize"
+        ? [...METRIC_COLOR_STOPS].reverse()
+        : METRIC_COLOR_STOPS;
+    return `linear-gradient(to right, ${stops.join(", ")})`;
   });
 
   function cssVar(name, fallback) {
@@ -59,7 +56,7 @@
       gridColor: cssVar("--border-color-primary", "#e5e7eb"),
       labelColor: cssVar("--body-text-color-subdued", "#6b7280"),
       titleColor: cssVar("--body-text-color", "#374151"),
-      metricColorRange,
+      metricColorRange: METRIC_COLOR_STOPS,
     });
 
     try {

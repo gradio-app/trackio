@@ -1,7 +1,14 @@
 import { formatCompactNumber } from "./format.js";
 
-export const METRIC_COLOR_RANGE_LIGHT = ["#93c5fd", "#1e3a8a"];
-export const METRIC_COLOR_RANGE_DARK = ["#2563eb", "#bfdbfe"];
+export const METRIC_COLOR_STOPS = [
+  "#440154",
+  "#443983",
+  "#31688e",
+  "#21918c",
+  "#35b779",
+  "#90d743",
+  "#fde725",
+];
 
 function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
@@ -137,7 +144,7 @@ export function buildParallelCoordsSpec(
     gridColor = "#e5e7eb",
     labelColor = "#6b7280",
     titleColor = "#374151",
-    metricColorRange = METRIC_COLOR_RANGE_LIGHT,
+    metricColorRange = METRIC_COLOR_STOPS,
   } = {},
 ) {
   const axisOrder = axes.map((a) => a.key);

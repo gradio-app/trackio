@@ -557,11 +557,16 @@
       currentPage === "reports" ||
       currentPage === "runs" ||
       currentPage === "run-detail" ||
+      currentPage === "sweeps" ||
       currentPage === "files"
   );
 
   let sidebarVariant = $derived(
-    currentPage === "runs" || currentPage === "files" ? "compact" : "full"
+    currentPage === "runs" ||
+      currentPage === "files" ||
+      currentPage === "sweeps"
+      ? "compact"
+      : "full"
   );
 </script>
 
