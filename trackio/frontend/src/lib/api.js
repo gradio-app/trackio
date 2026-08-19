@@ -283,6 +283,11 @@ export async function getSweepTrials(project, sweepId) {
   return await callApi("/sweep_get_trials", { project, sweep_id: sweepId });
 }
 
+export async function getSweepRunMemberships(project) {
+  if (await isStaticMode()) return staticApi.getSweepRunMemberships(project);
+  return await callApi("/sweep_run_memberships", { project });
+}
+
 export async function setSweepState(project, sweepId, state) {
   if (await isStaticMode()) return staticApi.setSweepState();
   return await callApi("/sweep_set_state", {

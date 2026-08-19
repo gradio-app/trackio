@@ -1,13 +1,18 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
-  import { getRunSummary, getRunArtifacts } from "../lib/api.js";
+  import {
+    getRunSummary,
+    getRunArtifacts,
+    getSweepRunMemberships,
+  } from "../lib/api.js";
   import {
     getQueryParam,
     navigateTo,
     setArtifactSelectionParams,
+    setQueryParam,
   } from "../lib/router.js";
-  import { formatSize } from "../lib/format.js";
+  import { formatSize, formatCompactNumber } from "../lib/format.js";
 
   let { project = null } = $props();
 
@@ -17,6 +22,12 @@
   let loading = $state(false);
   let runArtifacts = $state({ input: [], output: [] });
   let expandedArtifact = $state({});
+  let sweepInfo = $state(null);
+
+  function openSweep(sweepId) {
+    setQueryParam("selected_sweep", sweepId);
+    navigateTo("sweeps");
+  }
 
   function toggleArtifact(key) {
     expandedArtifact[key] = !expandedArtifact[key];
@@ -46,6 +57,7 @@
     if (!project || (!runName && !runId)) {
       summary = null;
       runArtifacts = { input: [], output: [] };
+      sweepInfo = null;
       loading = false;
       return;
     }
@@ -56,6 +68,11 @@
       input: [],
       output: [],
     }));
+    const sweepInfoPromise = runId
+      ? getSweepRunMemberships(project)
+          .then((memberships) => memberships?.[runId] ?? null)
+          .catch(() => null)
+      : Promise.resolve(null);
     try {
       const loadedSummary = await getRunSummary(project, runRef);
       if (seq !== loadSeq) return;
@@ -68,9 +85,13 @@
     } finally {
       if (seq === loadSeq) loading = false;
     }
-    const artifacts = await artifactsPromise;
+    const [artifacts, sweep] = await Promise.all([
+      artifactsPromise,
+      sweepInfoPromise,
+    ]);
     if (seq !== loadSeq) return;
     runArtifacts = artifacts;
+    sweepInfo = sweep;
   }
 
   $effect(() => {
@@ -162,6 +183,27 @@
               : "N/A"}</span
           >
         </div>
+        {#if sweepInfo}
+          <div class="detail-item">
+            <span class="detail-label">Sweep</span>
+            <span class="detail-value">
+              <button
+                class="sweep-link"
+                title="Open sweep {sweepInfo.sweep_id}"
+                onclick={() => openSweep(sweepInfo.sweep_id)}
+                >{sweepInfo.sweep_name || sweepInfo.sweep_id}</button
+              >
+              · trial #{sweepInfo.trial_id}{sweepInfo.metric_value != null
+                ? ` · ${formatCompactNumber(sweepInfo.metric_value)}`
+                : ""}
+              {#if sweepInfo.best}
+                <span class="best-badge" title="Best trial in this sweep"
+                  >★ sweep best</span
+                >
+              {/if}
+            </span>
+          </div>
+        {/if}
       </div>
 
       {#if summary.config}
@@ -250,6 +292,23 @@
   .detail-value {
     font-size: var(--text-md, 14px);
     color: var(--body-text-color, #1f2937);
+  }
+  .sweep-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--link-text-color, #2563eb);
+    cursor: pointer;
+    font-size: inherit;
+  }
+  .sweep-link:hover {
+    text-decoration: underline;
+  }
+  .best-badge {
+    margin-left: 4px;
+    color: #d97706;
+    font-size: 11px;
+    white-space: nowrap;
   }
   .config-block {
     background: var(--background-fill-secondary, #f9fafb);

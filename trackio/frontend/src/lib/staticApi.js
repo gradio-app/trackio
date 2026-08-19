@@ -691,6 +691,30 @@ export async function getSweepTrials(project, sweepId) {
     .sort((a, b) => a.trial_id - b.trial_id);
 }
 
+export async function getSweepRunMemberships(project) {
+  const [sweeps, trialsRaw] = await Promise.all([
+    getSweeps(project),
+    getSweepTrialsData(),
+  ]);
+  const { rows } = parseRows(trialsRaw || []);
+  const sweepsById = new Map(sweeps.map((s) => [s.sweep_id, s]));
+  const memberships = {};
+  for (const trial of rows.map(normalizeSweepTrialRow)) {
+    if (trial.run_id == null) continue;
+    const sweep = sweepsById.get(trial.sweep_id);
+    if (!sweep) continue;
+    memberships[trial.run_id] = {
+      sweep_id: sweep.sweep_id,
+      sweep_name: sweep.name,
+      trial_id: trial.trial_id,
+      trial_state: trial.state,
+      metric_value: trial.metric_value,
+      best: sweep.best_run_id != null && sweep.best_run_id === trial.run_id,
+    };
+  }
+  return memberships;
+}
+
 export async function setSweepState() {
   throw new Error("Not supported in static mode");
 }

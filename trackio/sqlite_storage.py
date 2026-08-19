@@ -2547,6 +2547,53 @@ class SQLiteStorage:
             return [SQLiteStorage._trial_row_to_dict(row) for row in rows]
 
     @staticmethod
+    def get_sweep_run_memberships(project: str) -> dict[str, dict]:
+        """Maps run_id -> sweep membership info for every run spawned by a sweep."""
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return {}
+        with SQLiteStorage._get_connection(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT t.run_id, t.trial_id, t.state, t.metric_value,
+                           s.sweep_id, s.name AS sweep_name, s.metric_goal
+                    FROM sweep_trials t
+                    JOIN sweeps s ON s.sweep_id = t.sweep_id
+                    WHERE t.run_id IS NOT NULL
+                    ORDER BY t.trial_id ASC
+                    """
+                )
+                rows = cursor.fetchall()
+            except sqlite3.OperationalError:
+                return {}
+        best_by_sweep: dict[str, sqlite3.Row] = {}
+        for row in rows:
+            if row["state"] != "finished" or row["metric_value"] is None:
+                continue
+            current = best_by_sweep.get(row["sweep_id"])
+            maximize = row["metric_goal"] == "maximize"
+            if (
+                current is None
+                or (maximize and row["metric_value"] > current["metric_value"])
+                or (not maximize and row["metric_value"] < current["metric_value"])
+            ):
+                best_by_sweep[row["sweep_id"]] = row
+        memberships: dict[str, dict] = {}
+        for row in rows:
+            best = best_by_sweep.get(row["sweep_id"])
+            memberships[row["run_id"]] = {
+                "sweep_id": row["sweep_id"],
+                "sweep_name": row["sweep_name"],
+                "trial_id": row["trial_id"],
+                "trial_state": row["state"],
+                "metric_value": row["metric_value"],
+                "best": best is not None and best["run_id"] == row["run_id"],
+            }
+        return memberships
+
+    @staticmethod
     def _fetch_system_logs_with_cursor(
         cursor: sqlite3.Cursor,
         run_identity: tuple[str, Any],

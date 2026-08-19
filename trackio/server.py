@@ -1474,6 +1474,14 @@ async def sweep_get_trials(project: str, sweep_id: str) -> list[dict[str, Any]]:
     return await asyncio.to_thread(_sweep_get_trials, project, sweep_id)
 
 
+def _sweep_run_memberships(project: str) -> dict[str, Any]:
+    return SQLiteStorage.get_sweep_run_memberships(project)
+
+
+async def sweep_run_memberships(project: str) -> dict[str, Any]:
+    return await asyncio.to_thread(_sweep_run_memberships, project)
+
+
 def delete_run(
     request: Request,
     project: str,
@@ -1568,6 +1576,7 @@ def _api_registry() -> dict[str, Any]:
         "sweep_mark_trial_running": sweep_mark_trial_running,
         "sweep_report_trial": sweep_report_trial,
         "sweep_get_trials": sweep_get_trials,
+        "sweep_run_memberships": sweep_run_memberships,
     }
 
 

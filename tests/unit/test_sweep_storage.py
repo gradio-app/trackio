@@ -384,3 +384,44 @@ def test_parquet_roundtrip_preserves_sweeps(temp_dir):
 
     assert SQLiteStorage.get_sweep("proj", sweep_id) == before_sweep
     assert SQLiteStorage.get_sweep_trials("proj", sweep_id) == before_trials
+
+
+def test_sweep_run_memberships(temp_dir):
+    assert SQLiteStorage.get_sweep_run_memberships("proj") == {}
+
+    sweep_id = SQLiteStorage.create_sweep("proj", grid_config(), name="my-sweep")
+    for run_id, value in (("run-a", 0.8), ("run-b", 0.2)):
+        trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+        SQLiteStorage.mark_trial_running("proj", sweep_id, trial["trial_id"], run_id)
+        SQLiteStorage.report_trial(
+            "proj", sweep_id, trial["trial_id"], "finished", metric_value=value
+        )
+
+    memberships = SQLiteStorage.get_sweep_run_memberships("proj")
+    assert set(memberships) == {"run-a", "run-b"}
+    assert memberships["run-a"]["sweep_id"] == sweep_id
+    assert memberships["run-a"]["sweep_name"] == "my-sweep"
+    assert memberships["run-a"]["trial_state"] == "finished"
+    assert memberships["run-a"]["metric_value"] == 0.8
+    assert not memberships["run-a"]["best"]
+    assert memberships["run-b"]["best"]
+
+
+def test_sweep_run_memberships_maximize_and_pending(temp_dir):
+    config = {**grid_config(), "metric": {"name": "acc", "goal": "maximize"}}
+    sweep_id = SQLiteStorage.create_sweep("proj", config)
+
+    trial = SQLiteStorage.suggest_trial("proj", sweep_id)
+    SQLiteStorage.mark_trial_running("proj", sweep_id, trial["trial_id"], "run-a")
+    SQLiteStorage.report_trial(
+        "proj", sweep_id, trial["trial_id"], "finished", metric_value=0.9
+    )
+
+    running = SQLiteStorage.suggest_trial("proj", sweep_id)
+    SQLiteStorage.mark_trial_running("proj", sweep_id, running["trial_id"], "run-b")
+
+    memberships = SQLiteStorage.get_sweep_run_memberships("proj")
+    assert memberships["run-a"]["best"]
+    assert memberships["run-b"]["trial_state"] == "running"
+    assert memberships["run-b"]["metric_value"] is None
+    assert not memberships["run-b"]["best"]

@@ -31,6 +31,32 @@ export function truncate(text, limit) {
   return sliced + "…";
 }
 
+export function formatRelativeTime(iso, nowMs = Date.now()) {
+  if (!iso) return "—";
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return String(iso);
+  const diffSeconds = Math.max(0, Math.round((nowMs - then.getTime()) / 1000));
+  if (diffSeconds < 5) return "just now";
+  if (diffSeconds < 60) return `${diffSeconds} sec ago`;
+  const diffMinutes = Math.round(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} hr ago`;
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 30) return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  return formatDate(iso);
+}
+
+export function formatDuration(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "—";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 export function formatDate(iso) {
   if (!iso) return "";
   try {
