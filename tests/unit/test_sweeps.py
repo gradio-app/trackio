@@ -261,8 +261,8 @@ class TestExpandCommand:
     def test_default_command(self):
         config = {**grid_config(), "program": "train.py"}
         argv = expand_command(config, {"lr": 0.1, "batch_size": 8})
-        assert argv == [
-            "/usr/bin/env",
+        env_prefix = [] if sys.platform == "win32" else ["/usr/bin/env"]
+        assert argv == env_prefix + [
             sys.executable,
             "train.py",
             "--batch_size=8",
