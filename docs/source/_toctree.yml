@@ -11,6 +11,8 @@
 - sections:
   - local: track
     title: Track
+  - local: traces
+    title: Traces
   - local: artifacts
     title: Artifacts
   - local: registry

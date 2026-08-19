@@ -540,10 +540,18 @@ class SQLiteStorage:
                         metadata TEXT NOT NULL,
                         search_text TEXT NOT NULL,
                         log_id TEXT,
-                        space_id TEXT
+                        space_id TEXT,
+                        spans TEXT NOT NULL DEFAULT '[]'
                     )
                     """
                 )
+
+                try:
+                    cursor.execute(
+                        "ALTER TABLE traces ADD COLUMN spans TEXT NOT NULL DEFAULT '[]'"
+                    )
+                except sqlite3.OperationalError:
+                    pass
 
                 cursor.execute(
                     """
@@ -975,7 +983,7 @@ class SQLiteStorage:
         normalized: list[dict[str, object]] = []
         for row in rows:
             new_row = dict(row)
-            for col in ("messages", "metadata"):
+            for col in ("messages", "metadata", "spans"):
                 value = new_row.get(col)
                 if value is None:
                     continue
@@ -1454,6 +1462,10 @@ class SQLiteStorage:
 
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
             SQLiteStorage.init_db(project_name)
+            for row in rows:
+                row["spans"] = SQLiteStorage._normalize_json_column_value(
+                    row.get("spans") if row.get("spans") is not None else []
+                )
             SQLiteStorage._replace_table_rows(
                 db_path,
                 "traces",
@@ -1471,6 +1483,7 @@ class SQLiteStorage:
                     "search_text",
                     "log_id",
                     "space_id",
+                    "spans",
                 ],
             )
 
@@ -2585,6 +2598,7 @@ class SQLiteStorage:
                     "trace_index": trace_index,
                     "messages": trace.get("messages", []),
                     "metadata": trace.get("metadata", {}),
+                    "spans": trace.get("spans", []),
                     "log_id": log_id,
                     "space_id": space_id,
                 }
@@ -2603,8 +2617,8 @@ class SQLiteStorage:
         cursor.executemany(
             """
             INSERT OR IGNORE INTO traces
-            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id, spans)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -2620,6 +2634,7 @@ class SQLiteStorage:
                     row["search_text"],
                     row["log_id"],
                     row["space_id"],
+                    orjson.dumps(serialize_values(row["spans"])),
                 )
                 for row in trace_rows
             ],
@@ -2644,6 +2659,7 @@ class SQLiteStorage:
 
         visit(trace.get("messages", []))
         visit(trace.get("metadata", {}))
+        visit(trace.get("spans", []))
         return " ".join(parts).lower()
 
     @staticmethod
@@ -2684,6 +2700,7 @@ class SQLiteStorage:
                         "timestamp": timestamp,
                         "messages": candidate.get("messages", []),
                         "metadata": candidate.get("metadata", {}),
+                        "spans": candidate.get("spans", []),
                     }
                     trace_record["_search_text"] = (
                         f"{trace_record['id']} {key} "
@@ -2761,8 +2778,10 @@ class SQLiteStorage:
                         where.append("search_text LIKE ?")
                         params.append(f"%{needle}%")
 
+                has_spans = "spans" in SQLiteStorage._table_columns(conn, "traces")
+                spans_select = ", spans" if has_spans else ""
                 query = f"""
-                    SELECT id, key, trace_index, run_name, run_id, step, timestamp, messages, metadata
+                    SELECT id, key, trace_index, run_name, run_id, step, timestamp, messages, metadata{spans_select}
                     FROM traces
                     WHERE {" AND ".join(where)}
                     ORDER BY {order_by}
@@ -2795,6 +2814,11 @@ class SQLiteStorage:
                 "timestamp": row["timestamp"],
                 "messages": deserialize_values(orjson.loads(row["messages"])),
                 "metadata": deserialize_values(orjson.loads(row["metadata"])),
+                "spans": (
+                    deserialize_values(orjson.loads(row["spans"]))
+                    if "spans" in row.keys()
+                    else []
+                ),
             }
             for row in rows
         ]
@@ -3375,12 +3399,16 @@ class SQLiteStorage:
         for row in trace_rows:
             messages = deserialize_values(orjson.loads(row["messages"]))
             metadata = deserialize_values(orjson.loads(row["metadata"]))
+            spans = deserialize_values(
+                orjson.loads(row["spans"] if "spans" in row.keys() else b"[]")
+            )
             messages = SQLiteStorage._update_media_paths(
                 messages, old_prefix, new_prefix
             )
             metadata = SQLiteStorage._update_media_paths(
                 metadata, old_prefix, new_prefix
             )
+            spans = SQLiteStorage._update_media_paths(spans, old_prefix, new_prefix)
             result.append(
                 (
                     row["id"],
@@ -3395,6 +3423,7 @@ class SQLiteStorage:
                     row["search_text"],
                     row["log_id"],
                     row["space_id"],
+                    orjson.dumps(serialize_values(spans)),
                 )
             )
         return result
@@ -3431,6 +3460,11 @@ class SQLiteStorage:
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
+                trace_columns = SQLiteStorage._table_columns(conn, "traces")
+                if trace_columns and "spans" not in trace_columns:
+                    cursor.execute(
+                        "ALTER TABLE traces ADD COLUMN spans TEXT NOT NULL DEFAULT '[]'"
+                    )
                 supports_run_ids = SQLiteStorage._supports_run_ids(conn)
                 run_identity = SQLiteStorage._resolve_run_identity(
                     conn, run_name=old_name, run_id=run_id
@@ -3540,7 +3574,7 @@ class SQLiteStorage:
                     try:
                         cursor.execute(
                             f"""
-                            SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id
+                            SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id, spans
                             FROM traces WHERE {run_col} = ?
                             """,
                             (run_value,),
@@ -3559,8 +3593,8 @@ class SQLiteStorage:
                         cursor.executemany(
                             """
                             INSERT INTO traces
-                            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id, spans)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             updated_trace_rows,
                         )
@@ -3724,9 +3758,16 @@ class SQLiteStorage:
                     if traces_identity is not None:
                         try:
                             traces_col, traces_val = traces_identity
+                            source_has_trace_spans = (
+                                "spans"
+                                in SQLiteStorage._table_columns(source_conn, "traces")
+                            )
+                            trace_spans_select = (
+                                ", spans" if source_has_trace_spans else ""
+                            )
                             source_cursor.execute(
                                 f"""
-                                SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id
+                                SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id{trace_spans_select}
                                 FROM traces WHERE {traces_col} = ?
                                 """,
                                 (traces_val,),
@@ -3977,8 +4018,8 @@ class SQLiteStorage:
                                 target_cursor.executemany(
                                     """
                                     INSERT OR IGNORE INTO traces
-                                    (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id, spans)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                     """,
                                     updated_trace_rows,
                                 )

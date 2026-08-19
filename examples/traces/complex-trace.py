@@ -1,4 +1,5 @@
 import random
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -18,6 +19,8 @@ for run_idx in range(2):
 
     for step in range(4):
         screenshot = make_screenshot(run_idx * 10 + step)
+        started = datetime.now(timezone.utc)
+        agent_span_id = f"agent_{run_idx}_{step}"
         trackio.log(
             {
                 "agent_trace": trackio.Trace(
@@ -65,7 +68,64 @@ for run_idx in range(2):
                         "environment": "browser",
                         "category": "complex-example",
                         "variant": step,
+                        "session_id": f"demo-session-{run_idx}",
+                        "status": "success",
                     },
+                    spans=[
+                        {
+                            "id": agent_span_id,
+                            "name": "inspect-page",
+                            "kind": "span",
+                            "start_time": started.isoformat(),
+                            "end_time": (started + timedelta(seconds=2.5)).isoformat(),
+                            "status": "success",
+                        },
+                        {
+                            "id": f"plan_{run_idx}_{step}",
+                            "parent_id": agent_span_id,
+                            "name": "provider-request",
+                            "kind": "generation",
+                            "start_time": started.isoformat(),
+                            "end_time": (started + timedelta(seconds=0.8)).isoformat(),
+                            "model": "demo-model",
+                            "input": {
+                                "prompt": "Inspect the page and decide what to do."
+                            },
+                            "output": {"tool": "extract_title"},
+                            "usage": {"input_tokens": 8439, "output_tokens": 188},
+                            "cost_usd": 0.0042,
+                            "status": "success",
+                        },
+                        {
+                            "id": f"call_{run_idx}_{step}",
+                            "parent_id": agent_span_id,
+                            "name": "extract_title",
+                            "kind": "tool",
+                            "start_time": (
+                                started + timedelta(seconds=0.9)
+                            ).isoformat(),
+                            "end_time": (started + timedelta(seconds=1.4)).isoformat(),
+                            "input": {"selector": "title"},
+                            "output": {"title": f"Trackio Demo {run_idx}-{step}"},
+                            "status": "success",
+                        },
+                        {
+                            "id": f"answer_{run_idx}_{step}",
+                            "parent_id": agent_span_id,
+                            "name": "provider-request",
+                            "kind": "generation",
+                            "start_time": (
+                                started + timedelta(seconds=1.5)
+                            ).isoformat(),
+                            "end_time": (started + timedelta(seconds=2.5)).isoformat(),
+                            "model": "demo-model",
+                            "input": {"title": f"Trackio Demo {run_idx}-{step}"},
+                            "output": {"answer": f"The page is demo variant {step}."},
+                            "usage": {"input_tokens": 1024, "output_tokens": 64},
+                            "cost_usd": 0.0008,
+                            "status": "success",
+                        },
+                    ],
                 )
             },
             step=step,

@@ -92,6 +92,10 @@
 
 [[autodoc]] Table
 
+## Trace
+
+[[autodoc]] Trace
+
 ## Histogram
 
 [[autodoc]] Histogram
