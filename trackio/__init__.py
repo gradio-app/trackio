@@ -34,6 +34,7 @@ from trackio.media import (
     TrackioAudio,
     TrackioHtml,
     TrackioImage,
+    TrackioObject3D,
     TrackioVideo,
     get_project_media_path,
 )
@@ -91,6 +92,7 @@ __all__ = [
     "Video",
     "Audio",
     "Html",
+    "Object3D",
     "Table",
     "Trace",
     "Histogram",
@@ -103,6 +105,7 @@ Audio = TrackioAudio
 Image = TrackioImage
 Video = TrackioVideo
 Html = TrackioHtml
+Object3D = TrackioObject3D
 
 
 config = {}
