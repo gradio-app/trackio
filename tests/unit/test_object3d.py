@@ -271,7 +271,9 @@ def test_object3d_enables_media_tab(temp_dir):
     assert flags["media"] is True
 
 
-def test_object3d_upload_uses_standard_single_file_path(tmp_path, temp_dir, monkeypatch):
+def test_object3d_upload_uses_standard_single_file_path(
+    tmp_path, temp_dir, monkeypatch
+):
     source = tmp_path / "scene.stl"
     source.write_text("solid model\nendsolid model\n")
     run = Run(url=None, project="project", client=None, name="run", space_id=None)
