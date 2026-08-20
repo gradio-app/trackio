@@ -204,6 +204,48 @@ Audio can be logged from a file path or a numpy array.
 - Values may be float or integer; floats are peak-normalized and converted to 16-bit PCM
 - `format` can be `"wav"` or `"mp3"` when logging from a numpy array (default `"wav"`)
 
+### Logging 3D objects
+
+Use [`Object3D`] with the same `trackio.log()` API as other media:
+
+```python
+import numpy as np
+import trackio
+
+trackio.log({"scene": trackio.Object3D("path/to/scene.glb", caption="Prediction")})
+
+points = np.random.normal(size=(50_000, 3))
+trackio.log({"point_cloud": trackio.Object3D.from_numpy(points)})
+```
+
+| Format | Mesh | Point cloud | Gaussian splat |
+| --- | --- | --- | --- |
+| `.glb` / `.gltf` | Yes | Via glTF | No |
+| `.obj` | Yes | No | No |
+| `.stl` | Yes | No | No |
+| `.ply` | Yes | Yes | Yes |
+| `.splat` | No | No | Yes |
+
+NumPy arrays must have one of these shapes:
+
+- `(N, 3)` for XYZ coordinates.
+- `(N, 4)` for XYZ plus an integer category from 1 through 14. Trackio applies a deterministic category palette.
+- `(N, 6)` for XYZ plus integer RGB values from 0 through 255.
+
+Coordinates must be finite. Ordinary point clouds are deterministically limited to 300,000 rendered points; their original and rendered counts remain visible. Trackio does not decimate meshes or Gaussian splats.
+
+Models must be self-contained. Embedded glTF data URIs are supported, but external glTF resources, OBJ material libraries, and PLY textures are not. Every object uses the same `<project>/<run>/<step>/<uuid>.<ext>` layout as images, video, and audio.
+
+3D objects also work in tables:
+
+```python
+table = trackio.Table(
+    columns=["sample", "reconstruction"],
+    data=[["chair", trackio.Object3D("chair.gltf")]],
+)
+trackio.log({"reconstructions": table})
+```
+
 ### Logging HTML and figures
 
 You can log HTML using the [`Html`] class.

@@ -22,6 +22,8 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@babylonjs/core": "^8.25.0",
+    "@babylonjs/loaders": "^8.25.0",
     "@dagrejs/dagre": "^3.0.0",
     "hyparquet": "^1.7.0",
     "vega": "^5.30.0",

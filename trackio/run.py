@@ -1081,11 +1081,11 @@ class Run:
                 "trackio.video",
                 "trackio.audio",
                 "trackio.html",
+                "trackio.object3d",
             ]:
                 file_path = value.get("file_path")
                 if file_path:
-                    absolute_path = MEDIA_DIR / file_path
-                    self._queue_upload(absolute_path, step)
+                    self._queue_upload(MEDIA_DIR / file_path, step)
                 return
             for nested in value.values():
                 self._scan_and_queue_media_uploads(nested, step)
