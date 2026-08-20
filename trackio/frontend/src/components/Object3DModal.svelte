@@ -85,7 +85,6 @@
     aria-label={`3D viewer for ${item.caption || item.key || "object"}`}
     tabindex="-1"
     onclick={(event) => event.stopPropagation()}
-    onkeydown={(event) => event.stopPropagation()}
   >
     <header>
       <div>

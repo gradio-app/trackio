@@ -180,7 +180,9 @@ export async function createObject3DViewer(canvas, item, url, updateStatus, sign
         renderedPointCount: result.renderedCount,
       };
     } else {
-      const result = await core.ImportMeshAsync(url, scene);
+      const result = await core.ImportMeshAsync(url, scene, {
+        pluginExtension: `.${item.format}`,
+      });
       if (signal?.aborted) throw new DOMException("Viewer load cancelled", "AbortError");
       loadedMeshes = result.meshes;
       for (const animation of result.animationGroups) animation.start(true);
