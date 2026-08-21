@@ -38,7 +38,7 @@ trackio logbook page "Baseline"
 trackio logbook run -- python train.py --lr 1e-4
 ```
 
-This tees output live and records the exact command, detected script/config files, exit code, duration, and captured output in the logbook. `trackio.init()` inside the script immediately adds a live embedded dashboard cell to the logbook page for that project, so anyone watching the logbook preview sees training metrics in real time.
+This tees output live and creates a private, content-addressed evidence bundle with the exact command, complete stdout/stderr, code and Git state, runtime details, observed Python file reads/writes, output snapshots, exit code, and duration. The page stays compact. When the child uses Trackio, its resolved run/config and artifact input/output lineage are linked automatically; the wrapper adds the dashboard and output artifact cells to the page it explicitly targeted after the command exits.
 
 ### Python API → Alerts
 
