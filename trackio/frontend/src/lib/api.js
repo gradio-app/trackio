@@ -52,7 +52,12 @@ export async function callApi(apiName, params = {}) {
     registerRateLimitHit();
   }
   if (!resp.ok) {
-    throw new Error(`API call ${apiName} failed: ${resp.status}`);
+    let message = `API call ${apiName} failed: ${resp.status}`;
+    try {
+      const body = await resp.json();
+      if (body && body.error) message = body.error;
+    } catch {}
+    throw new Error(message);
   }
   const json = await resp.json();
   if (json.error) {
@@ -199,19 +204,17 @@ export async function getSettings() {
 }
 
 export async function getRegistryBuckets() {
-  if (await isStaticMode()) {
-    return { buckets: [], default_bucket_id: null, unavailable: true };
-  }
+  if (await isStaticMode()) return staticApi.getRegistryBuckets();
   return await callApi("/get_registry_buckets");
 }
 
 export async function getRegistries(bucketId = null) {
-  if (await isStaticMode()) return [];
+  if (await isStaticMode()) return staticApi.getRegistries();
   return await callApi("/get_registries", { bucket_id: bucketId });
 }
 
 export async function getRegistryDetails(registry, bucketId = null) {
-  if (await isStaticMode()) return null;
+  if (await isStaticMode()) return staticApi.getRegistryDetails();
   return await callApi("/get_registry_details", {
     registry,
     bucket_id: bucketId,
@@ -268,6 +271,30 @@ export function getArtifactBlobUrl(project, digest) {
 export async function getTabAvailability(project) {
   if (await isStaticMode()) return staticApi.getTabAvailability(project);
   return await callApi("/get_tab_availability", { project });
+}
+
+export async function getSweeps(project) {
+  if (await isStaticMode()) return staticApi.getSweeps(project);
+  return await callApi("/sweep_list", { project });
+}
+
+export async function getSweepTrials(project, sweepId) {
+  if (await isStaticMode()) return staticApi.getSweepTrials(project, sweepId);
+  return await callApi("/sweep_get_trials", { project, sweep_id: sweepId });
+}
+
+export async function getSweepRunMemberships(project) {
+  if (await isStaticMode()) return staticApi.getSweepRunMemberships(project);
+  return await callApi("/sweep_run_memberships", { project });
+}
+
+export async function setSweepState(project, sweepId, state) {
+  if (await isStaticMode()) return staticApi.setSweepState();
+  return await callApi("/sweep_set_state", {
+    project,
+    sweep_id: sweepId,
+    state,
+  });
 }
 
 export async function getRunMutationStatus() {

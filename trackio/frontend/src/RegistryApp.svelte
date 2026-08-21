@@ -19,9 +19,7 @@
       const settings = await getSettings();
       if (settings?.logo_urls) logoUrls = settings.logo_urls;
       if (settings?.color_palette) setColorPalette(settings.color_palette);
-    } catch {
-      // The registry can still render with the default theme and logo.
-    }
+    } catch {}
   });
 </script>
 

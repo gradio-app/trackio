@@ -5,10 +5,11 @@
     getProjectSummary,
     getRunSummary,
     getRunArtifactCounts,
+    getSweepRunMemberships,
     deleteRun,
     renameRun,
   } from "../lib/api.js";
-  import { openRunDetail } from "../lib/router.js";
+  import { openRunDetail, navigateTo, setQueryParam } from "../lib/router.js";
   import { buildColorMap } from "../lib/stores.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
 
@@ -39,6 +40,13 @@
   let hasArtifacts = $derived(
     runsData.some((r) => r.outputs > 0 || r.inputs > 0),
   );
+
+  let hasSweeps = $derived(runsData.some((r) => r.sweep != null));
+
+  function openSweep(sweepId) {
+    setQueryParam("selected_sweep", sweepId);
+    navigateTo("sweeps");
+  }
 
   let loadSeq = 0;
 
@@ -81,9 +89,10 @@
     try {
       const summary = await getProjectSummary(project);
       const runRecords = summary.runs || [];
-      const [summaries, artifactCounts] = await Promise.all([
+      const [summaries, artifactCounts, sweepMemberships] = await Promise.all([
         Promise.all(runRecords.map((run) => getRunSummary(project, run))),
         getRunArtifactCounts(project).catch(() => []),
+        getSweepRunMemberships(project).catch(() => ({})),
       ]);
       if (seq !== loadSeq) return;
       const countMaps = buildArtifactCountMaps(artifactCounts);
@@ -96,6 +105,10 @@
         name: runRecords[i].name,
         numSteps: s.num_logs || 0,
         lastStep: s.last_step || 0,
+        sweep:
+          runRecords[i].id != null
+            ? (sweepMemberships?.[runRecords[i].id] ?? null)
+            : null,
         ...artifactCountsFor(countMaps, runRecords[i], nameRecordCounts),
       }));
     } catch (e) {
@@ -177,6 +190,9 @@
           <th>Run Name</th>
           <th>Steps</th>
           <th>Last Step</th>
+          {#if hasSweeps}
+            <th>Sweep</th>
+          {/if}
           {#if hasArtifacts}
             <th>Artifacts</th>
           {/if}
@@ -238,6 +254,26 @@
             </td>
             <td>{run.numSteps}</td>
             <td>{run.lastStep}</td>
+            {#if hasSweeps}
+              <td class="sweep-cell">
+                {#if run.sweep}
+                  <button
+                    class="link-btn"
+                    title="Open sweep {run.sweep.sweep_id} (trial #{run.sweep
+                      .trial_id})"
+                    onclick={() => openSweep(run.sweep.sweep_id)}
+                    >{run.sweep.sweep_name || run.sweep.sweep_id}</button
+                  >
+                  {#if run.sweep.best}
+                    <span class="best-badge" title="Best trial in this sweep"
+                      >★</span
+                    >
+                  {/if}
+                {:else}
+                  <span class="art-none">—</span>
+                {/if}
+              </td>
+            {/if}
             {#if hasArtifacts}
               <td>
                 {#if run.outputs > 0 || run.inputs > 0}
@@ -429,5 +465,13 @@
   }
   .art-none {
     color: var(--body-text-color-subdued, #9ca3af);
+  }
+  .sweep-cell {
+    white-space: nowrap;
+  }
+  .best-badge {
+    margin-left: 4px;
+    color: #d97706;
+    font-size: 12px;
   }
 </style>

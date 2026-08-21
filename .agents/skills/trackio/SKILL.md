@@ -13,6 +13,7 @@ Trackio is an experiment tracking library for logging and visualizing ML trainin
 |------|-----------|-----------|
 | **Logging metrics** during training | Python API | [logging_metrics.md](logging_metrics.md) |
 | **Firing alerts** for training diagnostics | Python API | [alerts.md](alerts.md) |
+| **Running hyperparameter sweeps** | Python API + CLI | [sweeps.md](sweeps.md) |
 | **Retrieving metrics & alerts** after/during training | CLI | [retrieving_metrics.md](retrieving_metrics.md) |
 | **Inspecting storage schema and running direct SQL** | CLI | [storage_schema.md](storage_schema.md) |
 | **Sharing an experiment campaign as a logbook** | CLI | [logbook.md](logbook.md) |

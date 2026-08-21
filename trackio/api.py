@@ -48,45 +48,137 @@ class Run:
         return f"<Run {self.name} in project {self.project}>"
 
 
-class Runs:
+class _LazyProjectList:
     def __init__(self, project: str):
         self.project = project
-        self._runs = None
+        self._items = None
 
-    def _load_runs(self):
-        if self._runs is None:
-            records = SQLiteStorage.get_run_records(self.project)
-            self._runs = [
-                Run(
-                    self.project,
-                    str(record["name"]),
-                    run_id=str(record["id"]) if record["id"] is not None else None,
-                )
-                for record in records
-            ]
+    def _load(self) -> list:
+        raise NotImplementedError
 
-    def __iter__(self) -> Iterator[Run]:
-        self._load_runs()
-        return iter(self._runs)
+    def _loaded(self) -> list:
+        if self._items is None:
+            self._items = self._load()
+        return self._items
 
-    def __getitem__(self, index: int) -> Run:
-        self._load_runs()
-        return self._runs[index]
+    def __iter__(self) -> Iterator:
+        return iter(self._loaded())
+
+    def __getitem__(self, index: int):
+        return self._loaded()[index]
 
     def __len__(self) -> int:
-        self._load_runs()
-        return len(self._runs)
+        return len(self._loaded())
 
     def __repr__(self) -> str:
-        self._load_runs()
-        return f"<Runs project={self.project} count={len(self._runs)}>"
+        return (
+            f"<{type(self).__name__} project={self.project} "
+            f"count={len(self._loaded())}>"
+        )
+
+
+class Runs(_LazyProjectList):
+    def _load(self) -> list[Run]:
+        return [
+            Run(
+                self.project,
+                str(record["name"]),
+                run_id=str(record["id"]) if record["id"] is not None else None,
+            )
+            for record in SQLiteStorage.get_run_records(self.project)
+        ]
+
+
+class Sweep:
+    def __init__(self, project: str, sweep_id: str):
+        self.project = project
+        self.sweep_id = sweep_id
+
+    def _record(self) -> dict:
+        record = SQLiteStorage.get_sweep(self.project, self.sweep_id)
+        if record is None:
+            raise ValueError(
+                f"Sweep '{self.sweep_id}' does not exist in project '{self.project}'"
+            )
+        return record
+
+    @property
+    def config(self) -> dict:
+        return self._record()["config"]
+
+    @property
+    def state(self) -> str:
+        return self._record()["state"]
+
+    @property
+    def trials(self) -> list[dict]:
+        return SQLiteStorage.get_sweep_trials(self.project, self.sweep_id)
+
+    def best_run(self) -> Run | None:
+        record = self._record()
+        best_run_id = record.get("best_run_id")
+        if best_run_id is None:
+            return None
+        run_record = next(
+            (
+                r
+                for r in SQLiteStorage.get_run_records(self.project)
+                if r["id"] == best_run_id
+            ),
+            None,
+        )
+        if run_record is None:
+            return None
+        return Run(self.project, str(run_record["name"]), run_id=best_run_id)
+
+    def pause(self) -> "Sweep":
+        SQLiteStorage.set_sweep_state(self.project, self.sweep_id, "paused")
+        return self
+
+    def resume(self) -> "Sweep":
+        SQLiteStorage.set_sweep_state(self.project, self.sweep_id, "running")
+        return self
+
+    def stop(self) -> "Sweep":
+        SQLiteStorage.set_sweep_state(self.project, self.sweep_id, "stopped")
+        return self
+
+    def cancel(self) -> "Sweep":
+        SQLiteStorage.set_sweep_state(self.project, self.sweep_id, "cancelled")
+        return self
+
+    def __repr__(self) -> str:
+        return f"<Sweep {self.sweep_id} in project {self.project}>"
+
+
+class Sweeps(_LazyProjectList):
+    def _load(self) -> list[Sweep]:
+        return [
+            Sweep(self.project, record["sweep_id"])
+            for record in SQLiteStorage.list_sweeps(self.project)
+        ]
+
+
+def _require_project(project: str) -> None:
+    if not SQLiteStorage.get_project_db_path(project).exists():
+        raise ValueError(f"Project '{project}' does not exist")
 
 
 class Api:
     def runs(self, project: str) -> Runs:
-        if not SQLiteStorage.get_project_db_path(project).exists():
-            raise ValueError(f"Project '{project}' does not exist")
+        _require_project(project)
         return Runs(project)
+
+    def sweeps(self, project: str) -> Sweeps:
+        _require_project(project)
+        return Sweeps(project)
+
+    def sweep(self, project: str, sweep_id: str) -> Sweep:
+        if SQLiteStorage.get_sweep(project, sweep_id) is None:
+            raise ValueError(
+                f"Sweep '{sweep_id}' does not exist in project '{project}'"
+            )
+        return Sweep(project, sweep_id)
 
     def alerts(
         self,
@@ -95,8 +187,7 @@ class Api:
         level: str | None = None,
         since: str | None = None,
     ) -> list[dict]:
-        if not SQLiteStorage.get_project_db_path(project).exists():
-            raise ValueError(f"Project '{project}' does not exist")
+        _require_project(project)
         return SQLiteStorage.get_alerts(project, run_name=run, level=level, since=since)
 
     def create_registry(

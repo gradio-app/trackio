@@ -14,6 +14,7 @@
     { id: "media", label: "Media & Tables" },
     { id: "reports", label: "Alerts & Reports" },
     { id: "runs", label: "Runs" },
+    { id: "sweeps", label: "Sweeps" },
     { id: "files", label: "Files" },
     { id: "artifacts", label: "Artifacts" },
   ];

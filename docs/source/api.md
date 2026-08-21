@@ -32,6 +32,14 @@
 
 [[autodoc]] finish
 
+## sweep
+
+[[autodoc]] sweep
+
+## agent
+
+[[autodoc]] agent
+
 ## show
 
 [[autodoc]] show

@@ -95,22 +95,28 @@ class BucketRegistryStorage:
             / f"{registry}.db"
         )
 
-    def _read_manifest(self, registry: str) -> dict | None:
-        """The registry's manifest object, or None when the registry does not
-        exist. Its presence — not the presence of any event — is what makes a
-        registry exist, mirroring the local creation marker."""
+    def _manifest_exists(self, registry: str) -> bool:
+        """Whether the registry's manifest object is in the bucket, from the
+        LIST alone. The manifest's presence — not the presence of any event —
+        is what makes a registry exist, mirroring the local creation marker."""
         validate_registry_name(registry)
         remote_path = _manifest_path(registry)
         try:
             paths = _list_bucket_file_paths(
                 self.bucket_id,
-                prefix=_registry_prefix(registry),
+                prefix=remote_path,
                 token=self._token(),
             )
         except BucketNotFoundError:
+            return False
+        return remote_path in paths
+
+    def _read_manifest(self, registry: str) -> dict | None:
+        """The registry's manifest object, or None when the registry does not
+        exist."""
+        if not self._manifest_exists(registry):
             return None
-        if remote_path not in paths:
-            return None
+        remote_path = _manifest_path(registry)
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             local = Path(tmpdir) / MANIFEST_FILENAME
             huggingface_hub.download_bucket_files(
@@ -180,19 +186,17 @@ class BucketRegistryStorage:
             conn, self._download_events(registry, missing)
         )
 
-    def _require_registry(self, registry: str) -> dict:
-        manifest = self._read_manifest(registry)
-        if manifest is None:
+    def _require_registry(self, registry: str) -> None:
+        if not self._manifest_exists(registry):
             raise ValueError(
                 f"Registry {registry!r} does not exist in bucket "
                 f"{self.bucket_id!r}. Create it first with "
                 f"trackio.Api().create_registry({registry!r}, "
                 f"bucket_id={self.bucket_id!r})."
             )
-        return manifest
 
     def registry_exists(self, registry: str) -> bool:
-        return self._read_manifest(registry) is not None
+        return self._manifest_exists(registry)
 
     def get_registry(self, registry: str) -> dict | None:
         manifest = self._read_manifest(registry)
@@ -508,35 +512,50 @@ class BucketRegistryStorage:
             "latest_version": removed["latest_version"],
         }
 
-    def get_collection(self, registry: str, name: str) -> dict | None:
+    def _read(self, registry: str, fn, default):
+        """Refresh the projection and answer a read from it, or `default`
+        when the registry does not exist."""
         if not self.registry_exists(registry):
+            return default
+        conn = self._connect(registry)
+        try:
+            self._refresh_cursor(conn, registry)
+            conn.commit()
+            return fn(conn)
+        finally:
+            conn.close()
+
+    def get_collection(self, registry: str, name: str) -> dict | None:
+        return self._read(
+            registry,
+            lambda conn: RegistryStorage.get_collection_cursor(conn, name),
+            None,
+        )
+
+    def list_collections(self, registry: str) -> list[dict]:
+        return self._read(registry, RegistryStorage.list_collections_cursor, [])
+
+    def get_events(self, registry: str) -> list[dict]:
+        return self._read(registry, RegistryStorage.get_events_cursor, [])
+
+    def describe_registry(self, registry: str) -> dict | None:
+        """The registry record with its collections and events, from a single
+        manifest read and projection refresh (the individual getters each pay
+        their own bucket round-trips). Returns None when the registry does not
+        exist."""
+        manifest = self._read_manifest(registry)
+        if manifest is None:
             return None
         conn = self._connect(registry)
         try:
             self._refresh_cursor(conn, registry)
             conn.commit()
-            return RegistryStorage.get_collection_cursor(conn, name)
-        finally:
-            conn.close()
-
-    def list_collections(self, registry: str) -> list[dict]:
-        if not self.registry_exists(registry):
-            return []
-        conn = self._connect(registry)
-        try:
-            self._refresh_cursor(conn, registry)
-            conn.commit()
-            return RegistryStorage.list_collections_cursor(conn)
-        finally:
-            conn.close()
-
-    def get_events(self, registry: str) -> list[dict]:
-        if not self.registry_exists(registry):
-            return []
-        conn = self._connect(registry)
-        try:
-            self._refresh_cursor(conn, registry)
-            conn.commit()
-            return RegistryStorage.get_events_cursor(conn)
+            return {
+                "name": registry,
+                "description": manifest.get("description"),
+                "created_at": manifest.get("created_at"),
+                "collections": RegistryStorage.list_collections_cursor(conn),
+                "events": RegistryStorage.get_events_cursor(conn),
+            }
         finally:
             conn.close()

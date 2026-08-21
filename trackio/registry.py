@@ -5,15 +5,22 @@ from trackio.registry_storage import RegistryStorage, validate_registry_name
 from trackio.utils import resolve_registry_bucket_id
 
 
-def registry_backend(bucket_id: str | None):
+def registry_backend(
+    bucket_id: str | None,
+    token: str | bool | None = None,
+    use_env: bool = True,
+):
     """Storage backend for a registry: `RegistryStorage` for a local database,
     or a `BucketRegistryStorage` bound to `bucket_id`. Both expose the same
     operations with the registry name as the first argument, so callers hold one
-    and never branch again."""
-    bucket_id = resolve_registry_bucket_id(bucket_id)
+    and never branch again. `token` is the credential a bucket backend should
+    use; `use_env=False` skips the `TRACKIO_REGISTRY_BUCKET_ID` fallback for
+    callers whose target is already fixed."""
+    if use_env:
+        bucket_id = resolve_registry_bucket_id(bucket_id)
     if bucket_id is None:
         return RegistryStorage
-    return BucketRegistryStorage(bucket_id)
+    return BucketRegistryStorage(bucket_id, token=token)
 
 
 @dataclass(frozen=True)
@@ -137,10 +144,20 @@ class Registry:
         Returns:
             The [`Collection`].
         """
-        self._storage.create_collection(
+        record = self._storage.create_collection(
             self._name, name, artifact_type, description=description
         )
-        return self.collection(name)
+        if not record["created"]:
+            return self.collection(name)
+        return Collection(
+            name=record["name"],
+            type=record["type"],
+            description=record["description"],
+            created_at=record["created_at"],
+            num_links=0,
+            latest_version=None,
+            links=[],
+        )
 
     def collection(self, name: str) -> Collection | None:
         """Describe one collection.

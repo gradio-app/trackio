@@ -161,7 +161,12 @@ def test_interrupted_creation_leaves_no_registry(temp_dir):
     """A database created but never marked — what an interrupted
     `create_registry` leaves behind — does not count as a registry, and
     creating it again completes normally."""
-    RegistryStorage.init_registry_db("models")
+    db_path = SQLiteStorage.init_db(
+        registry_project_name("models"), validate_name=False
+    )
+    with SQLiteStorage._get_connection(db_path, row_factory=None) as conn:
+        RegistryStorage._create_registry_tables_cursor(conn)
+        conn.commit()
     assert RegistryStorage.registry_exists("models") is False
     assert RegistryStorage.get_registry("models") is None
     with pytest.raises(ValueError, match="does not exist"):

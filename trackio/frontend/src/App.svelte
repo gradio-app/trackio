@@ -9,6 +9,7 @@
   import Media from "./pages/Media.svelte";
   import Reports from "./pages/Reports.svelte";
   import Runs from "./pages/Runs.svelte";
+  import Sweeps from "./pages/Sweeps.svelte";
   import RunDetail from "./pages/RunDetail.svelte";
   import Files from "./pages/Files.svelte";
   import ArtifactsSidebar from "./components/ArtifactsSidebar.svelte";
@@ -122,6 +123,7 @@
     "traces",
     "media",
     "reports",
+    "sweeps",
     "files",
     "artifacts",
   ]);
@@ -132,6 +134,7 @@
     "media",
     "reports",
     "runs",
+    "sweeps",
     "files",
     "artifacts",
   ];
@@ -272,6 +275,7 @@
       media: false,
       reports: false,
       runs: false,
+      sweeps: false,
       files: false,
       artifacts: false,
     };
@@ -375,7 +379,10 @@
     urlTick;
     if (currentPage !== "artifacts") return;
     const { name, version } = getArtifactSelectionFromUrl();
-    if (!name || version == null) return;
+    if (!name || version == null) {
+      artifactSelection = null;
+      return;
+    }
     if (isSameArtifactSelection(name, version)) return;
     artifactSelection = { name, version };
   });
@@ -550,11 +557,16 @@
       currentPage === "reports" ||
       currentPage === "runs" ||
       currentPage === "run-detail" ||
+      currentPage === "sweeps" ||
       currentPage === "files"
   );
 
   let sidebarVariant = $derived(
-    currentPage === "runs" || currentPage === "files" ? "compact" : "full"
+    currentPage === "runs" ||
+      currentPage === "files" ||
+      currentPage === "sweeps"
+      ? "compact"
+      : "full"
   );
 </script>
 
@@ -668,6 +680,11 @@
           {runs}
           {filterText}
           onRunsChanged={refreshRunsAndMutation}
+          runMutationAllowed={mutationStatus.allowed}
+        />
+      {:else if currentPage === "sweeps"}
+        <Sweeps
+          project={selectedProject}
           runMutationAllowed={mutationStatus.allowed}
         />
       {:else if currentPage === "run-detail"}

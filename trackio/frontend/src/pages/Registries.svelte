@@ -7,6 +7,7 @@
     getRegistryDetails,
     isStaticMode,
   } from "../lib/api.js";
+  import { formatDate as formatDateShared } from "../lib/format.js";
 
   let source = $state("local");
   let buckets = $state([]);
@@ -30,9 +31,7 @@
   );
 
   function formatDate(value) {
-    if (!value) return "—";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    return formatDateShared(value) || "—";
   }
 
   function sourceLocation(link) {

@@ -7,6 +7,7 @@
   import GradioSlider from "./GradioSlider.svelte";
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
+  import { copyTextToClipboard } from "../lib/clipboard.js";
   import { latestOnlySelection } from "../lib/selection.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
   import { computeGroupByOptions, computeGroupedRuns } from "../lib/grouping.js";
@@ -196,19 +197,7 @@
 
   async function copyText(value, feedbackKey) {
     if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      const textarea = document.createElement("textarea");
-      textarea.value = value;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
-    }
+    await copyTextToClipboard(value);
     copyFeedback = feedbackKey;
     if (copyFeedbackTimer) {
       clearTimeout(copyFeedbackTimer);

@@ -7,10 +7,7 @@ from huggingface_hub.utils import get_token
 
 from trackio import cas, references, utils
 from trackio.registry import registry_backend
-from trackio.registry_storage import (
-    parse_collection_target,
-    registry_project_name,
-)
+from trackio.registry_storage import parse_collection_target, registry_project_name
 from trackio.remote_client import _merge_client_headers, _resolve_src_url
 from trackio.typehints import ETag, Manifest, ManifestEntry, Sha256Digest, URIStr
 
@@ -631,6 +628,11 @@ class Artifact:
         is removed. Aliases pointing at the link go with it, and the
         collection version number is never reused. If the version held
         `latest`, that alias moves to the highest remaining version.
+
+        The registry the link was written to at link time is authoritative:
+        a local link stays local even when `TRACKIO_REGISTRY_BUCKET_ID` is
+        set at unlink time, so the env fallback is deliberately not applied
+        here.
         """
         if not self.is_link:
             raise ValueError(
@@ -638,9 +640,8 @@ class Artifact:
                 "artifact returned by link() or Run.link_artifact, not on a "
                 "source artifact version."
             )
-        registry_backend(self._registry_bucket_id).unlink(
-            self._registry, self._name, self._version
-        )
+        backend = registry_backend(self._registry_bucket_id, use_env=False)
+        backend.unlink(self._registry, self._name, self._version)
 
     def _resolve_link_source(self) -> tuple[str, str, int]:
         """Coordinates ``(project, artifact, version)`` a link operation

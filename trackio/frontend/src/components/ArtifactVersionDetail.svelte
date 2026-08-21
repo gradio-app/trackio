@@ -9,6 +9,7 @@
   } from "../lib/api.js";
   import { getQueryParam, openRunDetail, setQueryParam } from "../lib/router.js";
   import { formatDate, formatSize } from "../lib/format.js";
+  import { copyTextToClipboard } from "../lib/clipboard.js";
 
   let {
     project = null,
@@ -53,11 +54,9 @@
   });
 
   $effect(() => {
-    if (activeTab === "lineage") lineageMounted = true;
-  });
-
-  $effect(() => {
-    if (lineageMounted && !LineageSection) {
+    if (activeTab !== "lineage") return;
+    lineageMounted = true;
+    if (!LineageSection) {
       import("./lineage/LineageSection.svelte").then((m) => {
         LineageSection = m.default;
       });
@@ -111,12 +110,8 @@
   }
 
   async function copy(text, which) {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      return;
-    }
+    const ok = await copyTextToClipboard(text);
+    if (!ok) return;
     copied = which;
     if (copyTimer) clearTimeout(copyTimer);
     copyTimer = setTimeout(() => {

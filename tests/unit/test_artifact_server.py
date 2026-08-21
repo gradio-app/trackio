@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 import trackio.sqlite_storage
@@ -53,12 +54,16 @@ def _commit(
 
 def _insert_metrics_row(project, run_name, run_id):
     db_path = SQLiteStorage.init_db(project)
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            "INSERT INTO metrics (timestamp, run_id, run_name, step, metrics) "
-            "VALUES (?, ?, ?, ?, ?)",
-            ("2026-01-01T00:00:00+00:00", run_id, run_name, 0, "{}"),
-        )
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO metrics (timestamp, run_id, run_name, step, metrics) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("2026-01-01T00:00:00+00:00", run_id, run_name, 0, "{}"),
+            )
+    finally:
+        conn.close()
 
 
 def _create_legacy_project_db(project):
@@ -432,3 +437,29 @@ def test_artifact_lineage_budgets_cap_connected_fanout(temp_dir, monkeypatch):
         edge["source"] in node_ids and edge["target"] in node_ids
         for edge in result["edges"]
     )
+
+
+def test_run_artifacts_does_not_deadlock_on_spaces(temp_dir, monkeypatch):
+    """On Spaces, DB access goes through a non-reentrant per-DB lock; the
+    run-id + run-name lookup used to re-enter it via get_run_records and
+    deadlock the server."""
+    artifact = _commit()
+    _insert_metrics_row("p", "producer", "producer-id")
+    monkeypatch.setenv("SYSTEM", "spaces")
+
+    result: dict = {}
+
+    def call():
+        result["value"] = server.get_run_artifacts(
+            "p", run="producer", run_id="producer-id"
+        )
+
+    worker = threading.Thread(target=call, daemon=True)
+    worker.start()
+    worker.join(timeout=10)
+    try:
+        assert not worker.is_alive(), "get_run_artifacts deadlocked on Spaces"
+        assert [item["name"] for item in result["value"]["output"]] == ["m"]
+        assert artifact["version"] == 0
+    finally:
+        trackio.sqlite_storage._close_all_persistent_connections()

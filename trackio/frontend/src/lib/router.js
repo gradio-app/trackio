@@ -2,7 +2,7 @@ function trackioBase() {
   return window.__trackio_base || "";
 }
 
-function stripBase(pathname) {
+export function stripBase(pathname) {
   const base = trackioBase();
   if (base && pathname.startsWith(base)) {
     return pathname.slice(base.length) || "/";
@@ -35,6 +35,8 @@ export function getPageFromPath() {
       return "files";
     case "artifacts":
       return "artifacts";
+    case "sweeps":
+      return "sweeps";
     case "settings":
       return "settings";
     default:
@@ -54,6 +56,7 @@ export function navigateTo(page) {
     "run-detail": "/run",
     files: "/files",
     artifacts: "/artifacts",
+    sweeps: "/sweeps",
     settings: "/settings",
   };
   const path = trackioBase() + (pathMap[page] || "/");

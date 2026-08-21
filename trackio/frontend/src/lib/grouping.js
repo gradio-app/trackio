@@ -1,6 +1,7 @@
 export const PROMOTED_RESERVED_KEYS = Object.freeze({
   _Group: "Group",
   _Username: "Username",
+  _Sweep: "Sweep",
 });
 
 function shouldHideKey(key) {
