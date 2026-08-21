@@ -85,6 +85,30 @@ Indexes:
 - `idx_system_metrics_log_id` unique partial index on `log_id`
 - `idx_system_metrics_pending` partial index on `space_id`
 
+### `traces`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `TEXT` | Primary key |
+| `run_id` | `TEXT` | Stable run identifier |
+| `timestamp` | `TEXT` | ISO timestamp when the trace was logged |
+| `run_name` | `TEXT` | Run display name |
+| `step` | `INTEGER` | Training or logging step |
+| `key` | `TEXT` | Key used in the `trackio.log()` payload |
+| `trace_index` | `INTEGER` | Position when traces were logged as a list |
+| `messages` | `TEXT` | JSON OpenAI-style messages |
+| `metadata` | `TEXT` | JSON trace metadata |
+| `search_text` | `TEXT` | Flattened text used by trace search |
+| `log_id` | `TEXT` | Optional source log deduplication key |
+| `space_id` | `TEXT` | Optional pending-sync marker |
+| `spans` | `TEXT` | JSON execution spans; defaults to `[]` |
+
+Indexes:
+
+- `idx_traces_run_step` on `(run_id, step)`
+- `idx_traces_run_timestamp` on `(run_id, timestamp)`
+- `idx_traces_search` on `search_text`
+
 ### `project_metadata`
 
 | Column | Type | Notes |

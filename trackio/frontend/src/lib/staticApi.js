@@ -255,6 +255,7 @@ function flattenTraceSearchText(trace) {
 
   visit(trace.messages || []);
   visit(trace.metadata || {});
+  visit(trace.spans || []);
   return parts.join(" ").toLowerCase();
 }
 
@@ -329,6 +330,7 @@ export async function getTraces(_project, run, options = {}) {
       timestamp: row.timestamp,
       messages: parseTraceJsonField(row.messages, []),
       metadata: parseTraceJsonField(row.metadata, {}),
+      spans: parseTraceJsonField(row.spans, []),
     };
     trace._search_text = (row.search_text || `${trace.id} ${trace.key} ${flattenTraceSearchText(trace)}`).toLowerCase();
     return trace;
