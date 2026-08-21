@@ -41,7 +41,6 @@
   let selectedImageIndex = $state(null);
   let loading = $state(false);
   let selectedObject3D = $state(null);
-  let highlightedObjectPath = $state(null);
 
   function createVisibleCounts() {
     return {
@@ -265,10 +264,6 @@
     };
   }
 
-  function selectObject3D(object3d) {
-    highlightedObjectPath = object3d.file_path;
-  }
-
   function openObject3D(object3d, parent = null) {
     selectedObject3D = normalizeObject3D(object3d, parent);
   }
@@ -359,7 +354,7 @@
     {#snippet meta(item)}
       <div class="meta">
         <span class="run-dot" style:background={runColor(item)}></span>
-        <span class="meta-text">Run: {item._run}, Step: {item.step}</span>
+        <span class="meta-text">{item._run}, Step: {item.step}</span>
       </div>
     {/snippet}
     {#if mediaItems.images.length > 0}
@@ -444,13 +439,11 @@
           </svg>
           <span class="section-title">3D Objects ({mediaItems.object3ds.length})</span>
         </summary>
-        <div class="object-gallery">
+        <div class="gallery">
           {#each visibleMediaItems.object3ds as object3d}
             <Object3DCard
               item={object3d}
               color={runColor(object3d)}
-              selected={highlightedObjectPath === object3d.file_path}
-              onselect={() => selectObject3D(object3d)}
               onopen={() => openObject3D(object3d)}
             />
           {/each}
@@ -590,8 +583,6 @@
                             item={normalizeObject3D(cell, tbl)}
                             compact
                             color={runColor(tbl)}
-                            selected={highlightedObjectPath === cell.file_path}
-                            onselect={() => selectObject3D(cell)}
                             onopen={() => openObject3D(cell, tbl)}
                           />
                         {:else if isObject3DList(cell)}
@@ -601,8 +592,6 @@
                                 item={normalizeObject3D(object3d, tbl)}
                                 compact
                                 color={runColor(tbl)}
-                                selected={highlightedObjectPath === object3d.file_path}
-                                onselect={() => selectObject3D(object3d)}
                                 onopen={() => openObject3D(object3d, tbl)}
                               />
                             {/each}
@@ -717,7 +706,7 @@
         {/if}
         <div class="meta image-modal-meta">
           <span class="run-dot" style:background={runColor(selectedImage)}></span>
-          <span class="meta-text">Run: {selectedImage._run}, Step: {selectedImage.step}</span>
+          <span class="meta-text">{selectedImage._run}, Step: {selectedImage.step}</span>
           {#if selectedImageIndex !== null && selectedImageList.length > 1}
             <span class="image-modal-count">{selectedImageIndex + 1} / {selectedImageList.length}</span>
           {/if}
@@ -908,11 +897,6 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 12px;
-  }
-  .object-gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 10px;
   }
   .table-object-list {
     display: flex;

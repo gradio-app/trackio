@@ -1,4 +1,6 @@
 const MAX_POINT_COUNT = 300000;
+const HOME_ALPHA = Math.PI / 4;
+const HOME_BETA = Math.PI / 3;
 
 function normalizedColors(attribute, vertexCount) {
   if (!attribute) return null;
@@ -78,9 +80,19 @@ function createEnvironment(scene, modules, dark) {
   return { grid, axes };
 }
 
-function frameCamera(camera, meshes) {
+function frameCamera(camera, meshes, restoreOrientation = false) {
   const visible = meshes.filter((mesh) => mesh?.getBoundingInfo && mesh.isEnabled());
   if (!visible.length) return;
+  if (restoreOrientation) {
+    camera.alpha = HOME_ALPHA;
+    camera.beta = HOME_BETA;
+    camera.targetScreenOffset.set(0, 0);
+    camera.inertialAlphaOffset = 0;
+    camera.inertialBetaOffset = 0;
+    camera.inertialRadiusOffset = 0;
+    camera.inertialPanningX = 0;
+    camera.inertialPanningY = 0;
+  }
   camera.zoomOn(visible, true);
   camera.lowerRadiusLimit = Math.max(camera.radius * 0.01, 0.001);
   camera.upperRadiusLimit = Math.max(camera.radius * 100, 100);
@@ -144,8 +156,8 @@ export async function createObject3DViewer(canvas, item, url, updateStatus, sign
     : new core.Color4(0.93, 0.945, 0.965, 1);
   const camera = new core.ArcRotateCamera(
     "camera",
-    Math.PI / 4,
-    Math.PI / 3,
+    HOME_ALPHA,
+    HOME_BETA,
     6,
     core.Vector3.Zero(),
     scene,
@@ -206,7 +218,7 @@ export async function createObject3DViewer(canvas, item, url, updateStatus, sign
 
   return {
     resetCamera() {
-      frameCamera(camera, loadedMeshes);
+      frameCamera(camera, loadedMeshes, true);
     },
     setGridVisible(visible) {
       environment.grid.setEnabled(visible);

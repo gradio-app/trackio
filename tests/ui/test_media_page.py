@@ -97,7 +97,9 @@ def test_media_page_shows_every_media_type(media_run):
 
         expect(page.locator(".gallery img").first).to_be_visible()
         expect(page.get_by_text("3D Objects (2)")).to_be_visible()
-        expect(page.locator(".object-card")).to_have_count(3)
+        expect(page.locator(".object-card")).to_have_count(2)
+        expect(page.locator(".object-frame.compact")).to_have_count(1)
+        expect(page.get_by_role("button", name="Open", exact=True)).to_have_count(0)
         expect(page.locator("canvas[aria-label='Interactive 3D scene']")).to_have_count(
             0
         )
@@ -121,9 +123,9 @@ def test_object3d_viewer_opens_renders_and_disposes(media_run, caption):
         page.get_by_role("button", name="Media & Tables", exact=True).click()
 
         card = page.locator(".object-card").filter(has_text=caption)
-        card.click()
-        assert card.evaluate("element => element.classList.contains('selected')")
-        card.press("Enter")
+        frame = card.locator(".object-frame")
+        assert frame.evaluate("el => getComputedStyle(el).cursor") == "zoom-in"
+        frame.click()
 
         expect(
             page.get_by_role("dialog", name=f"3D viewer for {caption}")
@@ -138,4 +140,39 @@ def test_object3d_viewer_opens_renders_and_disposes(media_run, caption):
         expect(canvas).to_have_count(0)
 
         assert errors == []
+        browser.close()
+
+
+def test_reset_camera_restores_the_initial_view(media_run):
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        page.set_default_timeout(15_000)
+        page.goto(media_run)
+        page.get_by_role("button", name="Media & Tables", exact=True).click()
+
+        page.locator(".object-card").filter(has_text="Direct cloud").locator(
+            ".object-frame"
+        ).click()
+        canvas = page.locator("canvas[aria-label='Interactive 3D scene']")
+        expect(canvas).to_have_count(1)
+        expect(page.locator(".status")).to_have_count(0)
+        page.wait_for_timeout(1500)
+        initial = canvas.screenshot()
+
+        box = canvas.bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(
+            box["x"] + box["width"] / 2 + 180, box["y"] + box["height"] / 2 + 90
+        )
+        page.mouse.up()
+        page.wait_for_timeout(1500)
+        orbited = canvas.screenshot()
+        assert orbited != initial, "dragging the canvas should orbit the camera"
+
+        page.get_by_role("button", name="Reset camera", exact=True).click()
+        page.wait_for_timeout(1500)
+        assert canvas.screenshot() == initial, "Reset camera should restore the view"
+
         browser.close()
