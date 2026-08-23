@@ -2796,6 +2796,7 @@ def _handle_skills_add(args):
         "logging_metrics.md",
         "retrieving_metrics.md",
         "storage_schema.md",
+        "traces.md",
         "logbook.md",
     ]
     COMMAND_PREFIX = ".agents/commands"

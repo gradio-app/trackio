@@ -14,7 +14,7 @@ Trackio is an experiment tracking library for logging and visualizing ML trainin
 | **Logging metrics** during training | Python API | [logging_metrics.md](logging_metrics.md) |
 | **Firing alerts** for training diagnostics | Python API | [alerts.md](alerts.md) |
 | **Retrieving metrics & alerts** after/during training | CLI | [retrieving_metrics.md](retrieving_metrics.md) |
-| **Inspecting agent traces** (latency, cost, tool failures) | CLI | [retrieving_metrics.md](retrieving_metrics.md#trace-commands) |
+| **Analyzing agent traces** (latency, cost, tool failures) | CLI | [traces.md](traces.md) |
 | **Inspecting storage schema and running direct SQL** | CLI | [storage_schema.md](storage_schema.md) |
 | **Sharing an experiment campaign as a logbook** | CLI | [logbook.md](logbook.md) |
 
@@ -69,14 +69,30 @@ Use the `trackio` command to query logged metrics and alerts:
 
 **Remote Spaces**: Add `--space <space_id_or_url>` to any `list`/`get`/`query` command to query a remote HF Space instead of local data. Use `--hf-token` for private Spaces.
 
-**Answering "look at the traces and tell me what we can improve"**: start with
-`trackio get trace-summary --project <name>`, which rolls every span up by
-operation (calls, errors, latency, tokens, cost). Then use
-`trackio list traces --search ...` and `trackio get trace --trace-id ...` to
-drill into specific sessions, and `trackio query project --sql` with
-`json_each(traces.spans)` for anything else.
-
 → See [retrieving_metrics.md](retrieving_metrics.md) for all commands, workflows, and JSON output formats.
+
+### CLI → Analyzing agent traces
+
+Traces are agent/LLM sessions: messages plus execution spans (model generations,
+tool calls) carrying latency, status, token usage, and cost. Use these to answer
+questions about **production agent behaviour** rather than training progress:
+*"look at the traces and tell me what we can improve"*, *"why is the agent slow
+or expensive"*, *"what's failing"*.
+
+- `trackio get trace-summary --project <name>` — per-operation rollup (calls, errors, latency, tokens, cost)
+- `trackio list traces --project <name> [--search <text>]` — the trace index
+- `trackio get trace --project <name> --trace-id <id>` — one session's full span tree
+- `trackio query project --sql "... json_each(traces.spans) ..."` — arbitrary span analysis
+
+**Key concept for LLM agents**: no single command answers "what can we improve".
+Follow the funnel — **orient → rollup → quantify → verify**. Read
+`trace-summary` for anomalies (each is a *hypothesis*), then use SQL to measure
+what each one actually costs by comparing affected against unaffected sessions,
+then read one full trace to confirm. Report measured impact, never the raw
+anomaly.
+
+→ See [traces.md](traces.md) for the funnel, the SQL recipes for each hypothesis,
+and reporting rules.
 → See [storage_schema.md](storage_schema.md) for SQLite tables, parquet layout, and direct query examples.
 
 ## Minimal Logging Setup

@@ -89,6 +89,43 @@ Indexes:
 - `timestamp`
 - unique partial index on `alert_id`
 
+### `traces`
+
+- `id` (primary key, `run_id:log_id:key[:index]`)
+- `run_id`
+- `run_name`
+- `timestamp`
+- `step`
+- `key` — the key used in the `trackio.log()` payload
+- `trace_index` — position when traces were logged as a list, else NULL
+- `messages` — JSON, OpenAI-style messages
+- `metadata` — JSON, trace-level metadata
+- `spans` — JSON array of execution spans, defaults to `[]`
+- `search_text` — flattened text backing `--search`
+- `log_id`, `space_id`
+
+Indexes:
+
+- `(run_id, step)`
+- `(run_id, timestamp)`
+- `search_text`
+
+`spans` is a JSON array, so use `json_each` to analyze it. Each span may carry
+`id`, `parent_id`, `name`, `kind` (`span`/`generation`/`tool`), `start_time`,
+`end_time`, `duration_ms`, `status`, `error`, `input`, `output`, `model`,
+`usage.input_tokens`, `usage.output_tokens`, `cost_usd`, and `metadata`:
+
+```bash
+trackio query project --project <name> --sql "
+SELECT json_extract(s.value,'\$.name') AS operation, COUNT(*) AS calls
+FROM traces, json_each(traces.spans) AS s
+GROUP BY operation ORDER BY calls DESC"
+```
+
+Prefer the dedicated commands (`trackio get trace-summary`, `trackio list
+traces`) over hand-written SQL where they cover the question — see
+[traces.md](traces.md).
+
 ## Parquet Layout
 
 Trackio flattens JSON blobs when exporting parquet:

@@ -75,58 +75,30 @@ trackio get system-metric --project <name> --run <name> --json
 
 ### Trace Commands
 
-Traces are agent/LLM sessions: OpenAI-style messages plus execution spans
-(model generations, tool calls) carrying latency, status, token usage, and cost.
-Use these to answer questions about *production agent behaviour* — where latency
-and spend go, which tools fail, how context grows.
+Traces are agent/LLM sessions carrying execution spans (model generations, tool
+calls) with latency, status, token usage, and cost.
 
 ```bash
 trackio list traces --project <name>                          # Newest traces across all runs
 trackio list traces --project <name> --run <name>             # One run
 trackio list traces --project <name> --search "rate limit"    # Match messages, metadata, span names/models/errors
 trackio list traces --project <name> --step 12                # Traces logged at one step
-trackio list traces --project <name> --sort step_desc --limit 100
+trackio list traces --project <name> --sort step_desc --limit 100 --offset 50
 trackio list traces --project <name> --json                   # Adds a per-trace `summary` rollup
 
 trackio get trace --project <name> --trace-id <id>            # Full span tree, per-span cost/tokens/errors
-trackio get trace --project <name> --trace-id <id> --json
-
-trackio get trace-summary --project <name>                    # Per-operation rollup across traces
-trackio get trace-summary --project <name> --run <name> --json
+trackio get trace-summary --project <name> [--run <name>]     # Per-operation rollup
 ```
 
 `list traces` prints the short trace id (the `log_id` segment); `get trace`
-accepts either that or the full stored id.
+accepts either that or the full stored id. `--sort` accepts
+`request_time_desc` (default), `request_time_asc`, `step_asc`, `step_desc`.
 
-`get trace-summary` groups every span by operation name and returns calls,
-errors, avg/max latency in ms, input/output tokens, and cost — the fastest way
-to find what to improve:
-
-```bash
-$ trackio get trace-summary --project paperswithcode-chat
-operation                  | kind       | calls | errors | avg_ms  | max_ms  | input_tokens | output_tokens | cost_usd
-provider-request           | generation | 205   | 0      | 3380.8  | 5535.0  | 2915829      | 63020         | 9.6928
-run-bash-command           | tool       | 157   | 25     | 818.4   | 1548.0  | 0            | 0             | 0.0
-acquire-sandbox            | span       | 48    | 0      | 2438.6  | 10615.0 | 0            | 0             | 0.0
-```
-
-Read that as: input tokens are 98% of all tokens (context is being re-sent, so
-prompt caching is the biggest cost lever), 25 of 157 tool calls fail, and
-`acquire-sandbox` has a 10.6s worst case against a 2.4s average (cold starts).
-
-For anything the rollup does not cover, query the `traces` table directly. The
-`spans` column is JSON, so `json_each` works:
-
-```bash
-# Which tool failures happen, and in how many sessions?
-trackio query project --project <name> --sql "
-SELECT json_extract(s.value,'\$.name') AS op,
-       json_extract(s.value,'\$.error.stderr') AS stderr,
-       COUNT(*) AS failures, COUNT(DISTINCT traces.id) AS sessions
-FROM traces, json_each(traces.spans) AS s
-WHERE json_extract(s.value,'\$.status') = 'error'
-GROUP BY op, stderr ORDER BY failures DESC"
-```
+**To analyze traces** — "what can we improve", "why is the agent slow or
+expensive", "what's failing" — follow the funnel in
+[traces.md](traces.md): orient, roll up, quantify each anomaly with SQL, then
+verify against one full trace. That reference also has the `json_each` recipes
+for tool failures, cost attribution, bimodal latency, and context growth.
 
 ### Query Command
 
@@ -251,7 +223,7 @@ trackio list alerts --project my-project --json --since "2025-06-01T00:00:00"
 # 6. When an alert fires at step N, get all metrics around that point
 trackio get snapshot --project my-project --run my-run --around 200 --window 5 --json
 
-# 7. Review production agent behaviour: rollup first, then drill into a trace
+# 7. Review production agent behaviour (see traces.md for the full funnel)
 trackio get trace-summary --project <name> --json
 trackio list traces --project <name> --search "error" --json
 trackio get trace --project <name> --trace-id <id> --json
