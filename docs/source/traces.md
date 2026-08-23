@@ -96,9 +96,66 @@ Supported span fields:
 | `metadata` | Additional operation metadata |
 
 Trace latency is wall-clock time from the earliest span start to the latest span
-end. Token and cost totals sum the values on individual spans, so `cost_usd` should
-describe the local operation rather than a parent aggregate. Trackio does not
+end; when no span carries an `end_time`, the longest single `duration_ms` is used
+instead. Token and cost totals sum the values on individual spans, so `usage` and
+`cost_usd` should describe the local operation rather than a parent aggregate — a
+parent that repeats its children's totals will double-count. Trackio does not
 maintain a model pricing catalog; instrumentation should supply the actual cost.
 
+A span is reported as failed when its `status` is `error` or `failed`, or when it
+carries an `error`. For spans derived from messages, a tool result marks its
+operation failed when the message sets `is_error`, `error`, or an error `status`;
+OpenAI-style tool results carry no success signal, so those operations are left
+without a status rather than assumed successful.
+
+## Inspect traces from the CLI
+
+The dashboard is not the only way to read traces back. The CLI works against
+local data, or against a Space with `--space`:
+
+```bash
+trackio list traces --project research-agent
+trackio list traces --project research-agent --search "rate limit"
+trackio get trace --project research-agent --trace-id <id>
+trackio get trace-summary --project research-agent
+```
+
+`trackio get trace` prints the execution tree with per-span latency, model,
+tokens, cost, and errors. `trackio get trace-summary` groups every span by
+operation name and reports calls, errors, average and worst-case latency, token
+usage, and cost — useful for finding which operation dominates spend or fails
+most often. Both accept `--json`.
+
+For anything else, `spans` is a JSON column, so `json_each` works with
+[`trackio query project`](./cli_commands):
+
+```bash
+trackio query project --project research-agent --sql "
+SELECT json_extract(s.value, '\$.name') AS operation,
+       SUM(COALESCE(json_extract(s.value, '\$.usage.input_tokens'), 0)) AS input_tokens
+FROM traces, json_each(traces.spans) AS s
+GROUP BY operation ORDER BY input_tokens DESC"
+```
+
+## Trace-level metadata
+
+Spans are the preferred source for latency, cost, and status. When a trace has no
+spans, or its spans omit these values, the dashboard falls back to these
+`metadata` keys:
+
+| Key | Used for |
+|---|---|
+| `status` | Trace status, unless a span reports an error |
+| `duration_ms`, `latency_ms` | Trace latency |
+| `cost_usd` | Trace cost, when no span reports a cost |
+
+## Search
+
+Trace search matches message content, trace metadata, and each span's `id`,
+`name`, `kind`, `model`, `status`, `error`, and `metadata`. Span `input` and
+`output` payloads are not indexed: they routinely repeat the whole conversation
+for every generation, so indexing them would multiply stored trace size for
+little search value.
+
 Nested Trackio media values in messages, metadata, span input, or span output are
-stored alongside the trace.
+stored alongside the trace, and images are rendered inline in the inspector.

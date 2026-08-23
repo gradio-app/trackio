@@ -330,6 +330,29 @@
     return part?.caption || part?.alt || "Trace image";
   }
 
+  function mediaParts(value) {
+    const found = [];
+    function visit(node) {
+      if (!node || typeof node !== "object") return;
+      if (isImagePart(node)) {
+        found.push(node);
+        return;
+      }
+      for (const item of Array.isArray(node) ? node : Object.values(node)) visit(item);
+    }
+    visit(value);
+    return found;
+  }
+
+  function withoutMediaParts(value) {
+    if (!value || typeof value !== "object") return value;
+    if (isImagePart(value)) return `[${imageAlt(value)}]`;
+    if (Array.isArray(value)) return value.map(withoutMediaParts);
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, withoutMediaParts(item)]),
+    );
+  }
+
   function longText(text) {
     return typeof text === "string" && text.length > 500;
   }
@@ -563,6 +586,7 @@
                           <section class="operation-panel">
                             {#if selectedSpan}
                               {@const usage = spanUsage(selectedSpan)}
+                              {@const payload = selectedSpan.error || selectedSpan.output}
                               <header class="operation-header">
                                 <div>
                                   <div class="operation-kind">{selectedSpan.kind}</div>
@@ -589,11 +613,17 @@
                               <div class="io-grid">
                                 <section>
                                   <h4>Input</h4>
-                                  <pre>{formatValue(selectedSpan.input)}</pre>
+                                  {#each mediaParts(selectedSpan.input) as part}
+                                    <img class="trace-image" src={imageSrc(part)} alt={imageAlt(part)} />
+                                  {/each}
+                                  <pre>{formatValue(withoutMediaParts(selectedSpan.input))}</pre>
                                 </section>
                                 <section>
                                   <h4>{selectedSpan.error ? "Error" : "Output"}</h4>
-                                  <pre class:error-output={Boolean(selectedSpan.error)}>{formatValue(selectedSpan.error || selectedSpan.output)}</pre>
+                                  {#each mediaParts(payload) as part}
+                                    <img class="trace-image" src={imageSrc(part)} alt={imageAlt(part)} />
+                                  {/each}
+                                  <pre class:error-output={Boolean(selectedSpan.error)}>{formatValue(withoutMediaParts(payload))}</pre>
                                 </section>
                               </div>
                               {#if selectedSpan.metadata}
@@ -1028,6 +1058,9 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+  .io-grid .trace-image {
+    margin-bottom: 8px;
   }
   .io-grid pre,
   .span-metadata pre {

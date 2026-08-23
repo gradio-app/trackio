@@ -66,9 +66,21 @@ function toolResultByCallId(messages) {
   for (const message of messages || []) {
     if (String(message?.role || "").toLowerCase() !== "tool") continue;
     const callId = message.tool_call_id || message.toolCallId;
-    if (callId) results.set(String(callId), message);
+    if (callId && !results.has(String(callId))) results.set(String(callId), message);
   }
   return results;
+}
+
+function isErrorStatus(status) {
+  return ["error", "failed"].includes(String(status || "").toLowerCase());
+}
+
+function toolResultStatus(result) {
+  if (!result) return null;
+  if (result.is_error === true || result.isError === true) return "error";
+  if (result.error) return "error";
+  if (isErrorStatus(result.status)) return "error";
+  return null;
 }
 
 export function messageToolSpans(messages) {
@@ -90,7 +102,7 @@ export function messageToolSpans(messages) {
         kind: "tool",
         input: parseJsonValue(fn.arguments ?? call?.arguments ?? null),
         output: parseJsonValue(result?.content ?? null),
-        status: result ? (result.isError ? "error" : "success") : null,
+        status: toolResultStatus(result),
         derived_from_messages: true,
       });
     }
@@ -214,10 +226,7 @@ export function traceSummary(trace) {
       totalTokens += usage.totalTokens;
       hasUsage = true;
     }
-    if (
-      ["error", "failed"].includes(String(span?.status || "").toLowerCase()) ||
-      span?.error
-    ) {
+    if (isErrorStatus(span?.status) || span?.error) {
       hasError = true;
     }
   }
@@ -233,9 +242,11 @@ export function traceSummary(trace) {
   const allSucceeded =
     spans.length > 0 &&
     spans.every((span) => String(span?.status || "").toLowerCase() === "success");
+  const metadataStatus =
+    typeof metadata.status === "string" && metadata.status ? metadata.status : null;
   const status = hasError
     ? "error"
-    : metadata.status || (allSucceeded ? "success" : null);
+    : metadataStatus || (allSucceeded ? "success" : null);
 
   return {
     durationMs,

@@ -14,6 +14,7 @@ Trackio is an experiment tracking library for logging and visualizing ML trainin
 | **Logging metrics** during training | Python API | [logging_metrics.md](logging_metrics.md) |
 | **Firing alerts** for training diagnostics | Python API | [alerts.md](alerts.md) |
 | **Retrieving metrics & alerts** after/during training | CLI | [retrieving_metrics.md](retrieving_metrics.md) |
+| **Inspecting agent traces** (latency, cost, tool failures) | CLI | [retrieving_metrics.md](retrieving_metrics.md#trace-commands) |
 | **Inspecting storage schema and running direct SQL** | CLI | [storage_schema.md](storage_schema.md) |
 | **Sharing an experiment campaign as a logbook** | CLI | [logbook.md](logbook.md) |
 
@@ -60,12 +61,20 @@ Use the `trackio` command to query logged metrics and alerts:
 - `trackio get project/run/metric` — retrieve summaries and values
 - `trackio query project --project <name> --sql "SELECT ..."` — run catch-all read-only SQL
 - `trackio list alerts --project <name> --json` — retrieve alerts
+- `trackio list traces` / `get trace` / `get trace-summary` — inspect agent traces and spans
 - `trackio show` — launch the dashboard
 - `trackio sync` — sync to HF Space
 
 **Key concept**: Add `--json` for programmatic output suitable for automation and LLM agents.
 
 **Remote Spaces**: Add `--space <space_id_or_url>` to any `list`/`get`/`query` command to query a remote HF Space instead of local data. Use `--hf-token` for private Spaces.
+
+**Answering "look at the traces and tell me what we can improve"**: start with
+`trackio get trace-summary --project <name>`, which rolls every span up by
+operation (calls, errors, latency, tokens, cost). Then use
+`trackio list traces --search ...` and `trackio get trace --trace-id ...` to
+drill into specific sessions, and `trackio query project --sql` with
+`json_each(traces.spans)` for anything else.
 
 → See [retrieving_metrics.md](retrieving_metrics.md) for all commands, workflows, and JSON output formats.
 → See [storage_schema.md](storage_schema.md) for SQLite tables, parquet layout, and direct query examples.

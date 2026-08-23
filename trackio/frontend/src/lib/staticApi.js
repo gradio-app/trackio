@@ -237,6 +237,16 @@ export async function getLogs(_project, run, options = {}) {
   });
 }
 
+const SEARCHABLE_SPAN_FIELDS = [
+  "id",
+  "name",
+  "kind",
+  "model",
+  "status",
+  "error",
+  "metadata",
+];
+
 function flattenTraceSearchText(trace) {
   const parts = [];
 
@@ -255,7 +265,9 @@ function flattenTraceSearchText(trace) {
 
   visit(trace.messages || []);
   visit(trace.metadata || {});
-  visit(trace.spans || []);
+  for (const span of trace.spans || []) {
+    for (const field of SEARCHABLE_SPAN_FIELDS) visit(span?.[field]);
+  }
   return parts.join(" ").toLowerCase();
 }
 

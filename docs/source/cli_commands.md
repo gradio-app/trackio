@@ -216,7 +216,82 @@ Output in JSON format:
 trackio list reports --project "my-project" --run "my-run" --json
 ```
 
+### List Traces
+
+List [traces](./traces) (agent or conversation sessions) across all runs in a project:
+
+```sh
+trackio list traces --project "my-project"
+```
+
+Each row shows the trace's status, wall-clock latency, cost, operation count, and
+the user request that started it. Filter by run, step, or text:
+
+```sh
+trackio list traces --project "my-project" --run "production"
+trackio list traces --project "my-project" --step 12
+trackio list traces --project "my-project" --search "rate limit"
+```
+
+Search matches message content, trace metadata, and each span's name, kind,
+model, status, and error. Control ordering and paging:
+
+```sh
+trackio list traces --project "my-project" --sort step_desc --limit 100 --offset 50
+```
+
+`--sort` accepts `request_time_desc` (default), `request_time_asc`, `step_asc`,
+and `step_desc`. Adding `--json` includes a `summary` rollup per trace.
+
 ## Get Commands
+
+### Get Trace
+
+Show one trace with its full execution tree:
+
+```sh
+trackio get trace --project "my-project" --trace-id "fe04ed264a8a4bd6afcf266b56d9297e"
+```
+
+```
+Trace fe04ed264a8a4bd6afcf266b56d9297e
+  Run:      production
+  Totals:   error | 25.0s | $0.33 | 101338 in / 1804 out tokens | 21 operation(s)
+
+Execution:
+  answer-research-question [span]  25.0s
+    generate-research-response [span]  23.7s
+      acquire-sandbox [span]  914ms
+      dispatch-model-request [span]  2.18s
+        provider-request [generation]  2.18s  my-model  8347->239 tok  $0.03
+      ERROR run-bash-command [tool]  168ms
+        -> {"exit_code": 2, "stderr": "hf datasets list: error: unrecognized arguments: --full"}
+```
+
+`--trace-id` accepts the short id printed by `trackio list traces` or the full
+stored id. Add `--json` for the complete trace, including span inputs and
+outputs.
+
+### Get Trace Summary
+
+Roll every span up by operation name to see where latency, tokens, and cost go,
+and which operations fail:
+
+```sh
+trackio get trace-summary --project "my-project"
+```
+
+```
+operation                  | kind       | calls | errors | avg_ms  | max_ms  | input_tokens | output_tokens | cost_usd
+provider-request           | generation | 205   | 0      | 3380.8  | 5535.0  | 2915829      | 63020         | 9.6928
+run-bash-command           | tool       | 157   | 25     | 818.4   | 1548.0  | 0            | 0             | 0.0
+acquire-sandbox            | span       | 48    | 0      | 2438.6  | 10615.0 | 0            | 0             | 0.0
+```
+
+Restrict to one run with `--run`, or emit machine-readable rows with `--json`.
+For anything the rollup does not cover, query the `traces` table directly with
+[`trackio query project`](#query-command) — `spans` is a JSON column, so
+`json_each` works.
 
 ### Get Project Summary
 

@@ -123,6 +123,7 @@ class Run:
         self._last_bucket_flush: float | None = None
         self._spilled_metric_ids: set[int] = set()
         self._spilled_system_ids: set[int] = set()
+        self._spilled_trace_ids: set[str] = set()
         self.id = run_id or uuid.uuid4().hex
         self._existing_runs = existing_runs
         self._initial_last_step = initial_last_step
@@ -797,13 +798,21 @@ class Run:
     def _flush_local_buffer(self) -> bool:
         try:
             buffered_logs = SQLiteStorage.get_pending_logs(self.project)
-            if buffered_logs:
+            buffered_traces = SQLiteStorage.get_pending_traces(self.project)
+            if buffered_logs or buffered_traces:
                 self._client.predict(
                     api_name="/bulk_log",
-                    logs=buffered_logs["logs"],
+                    logs=self._pending_entries_with_traces(
+                        buffered_logs, buffered_traces
+                    ),
                     hf_token=self._hf_token_for_remote(),
                 )
-                SQLiteStorage.clear_pending_logs(self.project, buffered_logs["ids"])
+                if buffered_logs:
+                    SQLiteStorage.clear_pending_logs(self.project, buffered_logs["ids"])
+                if buffered_traces:
+                    SQLiteStorage.clear_pending_traces(
+                        self.project, buffered_traces["ids"]
+                    )
 
             buffered_sys = SQLiteStorage.get_pending_system_logs(self.project)
             if buffered_sys:
@@ -839,6 +848,107 @@ class Run:
             for entry_id, entry in zip(pending["ids"], pending["logs"])
             if entry_id not in spilled_ids
         ]
+
+    def _unspilled_entries_with_traces(
+        self, pending: dict | None, pending_traces: dict | None
+    ) -> list[dict]:
+        fresh_logs = None
+        if pending:
+            keep = [
+                (entry_id, entry)
+                for entry_id, entry in zip(pending["ids"], pending["logs"])
+                if entry_id not in self._spilled_metric_ids
+            ]
+            if keep:
+                fresh_logs = {
+                    "ids": [entry_id for entry_id, _ in keep],
+                    "logs": [entry for _, entry in keep],
+                }
+        fresh_traces = None
+        if pending_traces:
+            keep_traces = [
+                trace
+                for trace_id, trace in zip(
+                    pending_traces["ids"], pending_traces["traces"]
+                )
+                if trace_id not in self._spilled_trace_ids
+            ]
+            if keep_traces:
+                fresh_traces = {"traces": keep_traces}
+        return self._pending_entries_with_traces(fresh_logs, fresh_traces)
+
+    @staticmethod
+    def _restore_trace_key(metrics: dict, key: str, traces: list[dict]) -> None:
+        """Put one key's buffered traces back where `trackio.log()` had them.
+
+        A trace's `trace_index` is the position it held in the original list
+        value and it determines the trace's stored id, so indices are preserved
+        exactly; any non-trace items the key kept fill the remaining slots.
+        """
+        indexed = {
+            trace["trace_index"]: trace["payload"]
+            for trace in traces
+            if trace["trace_index"] is not None
+        }
+        if not indexed:
+            metrics[key] = traces[-1]["payload"]
+            return
+
+        kept = metrics.get(key)
+        if isinstance(kept, list):
+            leftovers = list(kept)
+        elif kept is None:
+            leftovers = []
+        else:
+            leftovers = [kept]
+
+        rebuilt: list = [indexed.get(i) for i in range(max(indexed) + 1)]
+        spare = iter(leftovers)
+        for position, value in enumerate(rebuilt):
+            if value is None:
+                rebuilt[position] = next(spare, None)
+        metrics[key] = rebuilt + list(spare)
+
+    def _pending_entries_with_traces(
+        self, pending: dict | None, pending_traces: dict | None
+    ) -> list[dict]:
+        """Fold buffered traces back into the log entries they were logged with.
+
+        Traces live in their own table, so the buffered `metrics` row for a
+        `trackio.log()` call no longer holds them. Rebuilding the original
+        payload lets traces replay through `/bulk_log` and the metric fragment
+        path unchanged, and keeps `log_id` deduplication correct: there is
+        exactly one record per call, carrying both its scalars and its traces.
+        """
+        entries = [dict(entry) for entry in (pending["logs"] if pending else [])]
+        for entry in entries:
+            entry["metrics"] = dict(entry.get("metrics") or {})
+        by_log_id = {entry["log_id"]: entry for entry in entries if entry.get("log_id")}
+
+        grouped: dict[int, dict[str, list[dict]]] = {}
+        order: list[dict] = []
+        for trace in (pending_traces or {}).get("traces", []):
+            entry = by_log_id.get(trace["log_id"]) if trace["log_id"] else None
+            if entry is None:
+                entry = {
+                    "project": trace["project"],
+                    "run": trace["run"],
+                    "run_id": trace["run_id"],
+                    "metrics": {},
+                    "step": trace["step"],
+                    "timestamp": trace["timestamp"],
+                    "config": None,
+                    "log_id": trace["log_id"],
+                }
+                order.append(entry)
+                if trace["log_id"]:
+                    by_log_id[trace["log_id"]] = entry
+            grouped.setdefault(id(entry), {}).setdefault(trace["key"], []).append(trace)
+
+        for entry in entries + order:
+            for key, traces in grouped.get(id(entry), {}).items():
+                self._restore_trace_key(entry["metrics"], key, traces)
+        return entries + order
 
     def _flush_pending_uploads_to_bucket(self) -> None:
         pending = SQLiteStorage.get_pending_uploads(self.project)
@@ -877,13 +987,17 @@ class Run:
         """
         try:
             pending = SQLiteStorage.get_pending_logs(self.project)
-            entries = self._unspilled_pending(pending, self._spilled_metric_ids)
+            pending_traces = SQLiteStorage.get_pending_traces(self.project)
+            entries = self._unspilled_entries_with_traces(pending, pending_traces)
             if entries:
                 records = self._attach_run_config(
                     [fragments.metric_record(entry) for entry in entries]
                 )
                 self._fragment_writer.write_to_bucket(records, self._bucket_id)
-                self._spilled_metric_ids.update(pending["ids"])
+                if pending:
+                    self._spilled_metric_ids.update(pending["ids"])
+                if pending_traces:
+                    self._spilled_trace_ids.update(pending_traces["ids"])
 
             pending_sys = SQLiteStorage.get_pending_system_logs(self.project)
             entries = self._unspilled_pending(pending_sys, self._spilled_system_ids)
@@ -904,15 +1018,22 @@ class Run:
             return
         try:
             pending = SQLiteStorage.get_pending_logs(self.project)
-            if pending:
-                entries = self._unspilled_pending(pending, self._spilled_metric_ids)
+            pending_traces = SQLiteStorage.get_pending_traces(self.project)
+            if pending or pending_traces:
+                entries = self._unspilled_entries_with_traces(pending, pending_traces)
                 if entries:
                     records = self._attach_run_config(
                         [fragments.metric_record(entry) for entry in entries]
                     )
                     self._fragment_writer.write_to_bucket(records, self._bucket_id)
-                SQLiteStorage.clear_pending_logs(self.project, pending["ids"])
-                self._spilled_metric_ids.update(pending["ids"])
+                if pending:
+                    SQLiteStorage.clear_pending_logs(self.project, pending["ids"])
+                    self._spilled_metric_ids.update(pending["ids"])
+                if pending_traces:
+                    SQLiteStorage.clear_pending_traces(
+                        self.project, pending_traces["ids"]
+                    )
+                    self._spilled_trace_ids.update(pending_traces["ids"])
 
             pending_sys = SQLiteStorage.get_pending_system_logs(self.project)
             if pending_sys:

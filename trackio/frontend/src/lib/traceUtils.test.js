@@ -61,7 +61,7 @@ describe("traceUtils", () => {
       name: "hf",
       input: { query: "agent data" },
       output: { matches: 3 },
-      status: "success",
+      status: null,
     });
   });
 
@@ -95,6 +95,40 @@ describe("traceUtils", () => {
       status: "error",
       spanCount: 2,
     });
+  });
+
+  it("does not assume success from an OpenAI-style tool result", () => {
+    const trace = {
+      messages: [
+        {
+          role: "assistant",
+          tool_calls: [{ id: "call-1", function: { name: "hf", arguments: "{}" } }],
+        },
+        { role: "tool", tool_call_id: "call-1", content: "ok" },
+      ],
+    };
+
+    expect(messageToolSpans(trace.messages)[0].status).toBe(null);
+    expect(traceSummary(trace).status).toBe(null);
+  });
+
+  it("marks a derived tool operation failed from an error flag", () => {
+    const spans = messageToolSpans([
+      {
+        role: "assistant",
+        tool_calls: [{ id: "call-1", function: { name: "hf", arguments: "{}" } }],
+      },
+      { role: "tool", tool_call_id: "call-1", is_error: true, content: "boom" },
+    ]);
+
+    expect(spans[0].status).toBe("error");
+    expect(traceSummary({ spans }).status).toBe("error");
+  });
+
+  it("ignores a non-string trace metadata status", () => {
+    expect(traceSummary({ spans: [], metadata: { status: { code: 2 } } }).status).toBe(
+      null,
+    );
   });
 
   it("formats span metrics compactly", () => {
