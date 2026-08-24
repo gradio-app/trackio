@@ -114,7 +114,7 @@ def test_trace_logging_and_query(temp_dir):
                         "status": "success",
                     }
                 ],
-            )
+            ),
         }
     )
     run.log(
