@@ -1,13 +1,13 @@
 ---
 name: hugging-face-trackio
-description: Track and visualize ML training experiments with Trackio. Use when logging metrics during training (Python API), firing alerts for training diagnostics, or retrieving/analyzing logged metrics (CLI). Supports real-time dashboard visualization, alerts with webhooks, HF Space syncing, and JSON output for automation.
+description: Track and visualize ML training experiments and agent traces with Trackio. Use when logging metrics during training, firing alerts for training, or retrieving/analyzing logged data.
 ---
 
 # Trackio - Experiment Tracking for ML Training
 
-Trackio is an experiment tracking library for logging and visualizing ML training metrics. It syncs to Hugging Face Spaces for real-time monitoring dashboards.
+Trackio is an experiment tracking library for logging and visualizing ML training metrics. It can be used locally or optionally syncs to Hugging Face Spaces for real-time monitoring dashboards.
 
-## Three Interfaces
+## Tasks
 
 | Task | Interface | Reference |
 |------|-----------|-----------|
@@ -75,7 +75,7 @@ Use the `trackio` command to query logged metrics and alerts:
 
 Traces are agent/LLM sessions: messages plus execution spans (model generations,
 tool calls) carrying latency, status, token usage, and cost. Use these to answer
-questions about **production agent behaviour** rather than training progress:
+questions about **agent behaviour** rather than training progress:
 *"look at the traces and tell me what we can improve"*, *"why is the agent slow
 or expensive"*, *"what's failing"*.
 
@@ -84,16 +84,7 @@ or expensive"*, *"what's failing"*.
 - `trackio get trace --project <name> --trace-id <id>` — one session's full span tree
 - `trackio query project --sql "... json_each(traces.spans) ..."` — arbitrary span analysis
 
-**Key concept for LLM agents**: no single command answers "what can we improve".
-Follow the funnel — **orient → rollup → quantify → verify**. Read
-`trace-summary` for anomalies (each is a *hypothesis*), then use SQL to measure
-what each one actually costs by comparing affected against unaffected sessions,
-then read one full trace to confirm. Report measured impact, never the raw
-anomaly.
-
-→ See [traces.md](traces.md) for the funnel, the SQL recipes for each hypothesis,
-and reporting rules.
-→ See [storage_schema.md](storage_schema.md) for SQLite tables, parquet layout, and direct query examples.
+Often you might need to run multiple commands to answer a question that a user has about the traces.
 
 ## Minimal Logging Setup
 
