@@ -55,7 +55,7 @@ wandb.finish()
 
 ### Advanced Features
 
-Trackio supports logging Tables, Images, Audio, etc. - same API as wandb:
+Trackio supports logging Tables, Images, Audio, 3D objects, etc. - same API as wandb:
 
 ```diff
 - import wandb

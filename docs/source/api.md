@@ -84,6 +84,10 @@
 
 [[autodoc]] Audio
 
+## Object3D
+
+[[autodoc]] Object3D
+
 ## Html
 
 [[autodoc]] Html

@@ -529,6 +529,7 @@ const MEDIA_TYPES = new Set([
   "trackio.video",
   "trackio.audio",
   "trackio.table",
+  "trackio.object3d",
 ]);
 
 const MARKDOWN_TYPES = new Set(["trackio.markdown"]);

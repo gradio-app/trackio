@@ -2238,6 +2238,7 @@ class SQLiteStorage:
                 "OR CAST(metrics AS TEXT) GLOB ? "
                 "OR CAST(metrics AS TEXT) GLOB ? "
                 "OR CAST(metrics AS TEXT) GLOB ? "
+                "OR CAST(metrics AS TEXT) GLOB ? "
                 "LIMIT 1",
                 (
                     '*"_type":"trackio.image"*',
@@ -2245,6 +2246,7 @@ class SQLiteStorage:
                     '*"_type":"trackio.audio"*',
                     '*"_type":"trackio.table"*',
                     '*"_type":"trackio.html"*',
+                    '*"_type":"trackio.object3d"*',
                 ),
             )
             flags["reports"] = _exists(
@@ -3359,6 +3361,7 @@ class SQLiteStorage:
                 "trackio.video",
                 "trackio.audio",
                 "trackio.html",
+                "trackio.object3d",
             ]:
                 old_path = obj.get("file_path", "")
                 if isinstance(old_path, str):

@@ -1,5 +1,11 @@
 # trackio
 
+## 0.36.0
+
+### Features
+
+- [#674](https://github.com/gradio-app/trackio/pull/674) [`ac5f06c`](https://github.com/gradio-app/trackio/commit/ac5f06c551a051ac435913f3210472d6971b1ed5) - fix: make 3D object cards behave like image cards and fix Reset camera.  Thanks @abidlabs!
+
 ## 0.35.0
 
 ### Features

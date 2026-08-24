@@ -1,5 +1,7 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
+  import Object3DCard from "../components/Object3DCard.svelte";
+  import Object3DModal from "../components/Object3DModal.svelte";
   import WaveformAudio from "../components/WaveformAudio.svelte";
   import { getLogs, getMediaUrl } from "../lib/api.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
@@ -25,6 +27,7 @@
     images: [],
     videos: [],
     audios: [],
+    object3ds: [],
     tables: [],
     htmls: [],
   };
@@ -37,12 +40,14 @@
   let selectedImageList = $state([]);
   let selectedImageIndex = $state(null);
   let loading = $state(false);
+  let selectedObject3D = $state(null);
 
   function createVisibleCounts() {
     return {
       images: PAGE_SIZE,
       videos: PAGE_SIZE,
       audios: PAGE_SIZE,
+      object3ds: PAGE_SIZE,
       tables: PAGE_SIZE,
       htmls: PAGE_SIZE,
     };
@@ -75,6 +80,7 @@
     images: sortMediaItems(rawMediaItems.images),
     videos: sortMediaItems(rawMediaItems.videos),
     audios: sortMediaItems(rawMediaItems.audios),
+    object3ds: sortMediaItems(rawMediaItems.object3ds),
     tables: sortMediaItems(rawMediaItems.tables.filter(isDisplayableTable)),
     htmls: sortMediaItems(rawMediaItems.htmls),
   }));
@@ -98,6 +104,7 @@
     images: filteredImages.slice(0, visibleCounts.images),
     videos: mediaItems.videos.slice(0, visibleCounts.videos),
     audios: mediaItems.audios.slice(0, visibleCounts.audios),
+    object3ds: mediaItems.object3ds.slice(0, visibleCounts.object3ds),
     tables: mediaItems.tables.slice(0, visibleCounts.tables),
     htmls: mediaItems.htmls.slice(0, visibleCounts.htmls),
   }));
@@ -106,6 +113,7 @@
     mediaItems.images.length > 0 ||
       mediaItems.videos.length > 0 ||
       mediaItems.audios.length > 0 ||
+      mediaItems.object3ds.length > 0 ||
       mediaItems.tables.length > 0 ||
       mediaItems.htmls.length > 0,
   );
@@ -146,6 +154,7 @@
       const images = [];
       const videos = [];
       const audios = [];
+      const object3ds = [];
       const tables = [];
       const htmls = [];
       let mediaIndex = 0;
@@ -172,6 +181,9 @@
                 case "trackio.audio":
                   audios.push(item);
                   break;
+                case "trackio.object3d":
+                  object3ds.push(item);
+                  break;
                 case "trackio.table":
                   tables.push(item);
                   break;
@@ -184,7 +196,7 @@
         });
       }
 
-      rawMediaItems = { images, videos, audios, tables, htmls };
+      rawMediaItems = { images, videos, audios, object3ds, tables, htmls };
     } catch (e) {
       console.error("Failed to load media:", e);
     } finally {
@@ -219,6 +231,41 @@
       cell.length > 0 &&
       cell.every((v) => v && typeof v === "object" && v._type === "trackio.image")
     );
+  }
+
+  function isObject3DCell(cell) {
+    return (
+      cell &&
+      typeof cell === "object" &&
+      !Array.isArray(cell) &&
+      cell._type === "trackio.object3d"
+    );
+  }
+
+  function isObject3DList(cell) {
+    return (
+      Array.isArray(cell) &&
+      cell.length > 0 &&
+      cell.every(
+        (value) =>
+          value && typeof value === "object" && value._type === "trackio.object3d",
+      )
+    );
+  }
+
+  function normalizeObject3D(object3d, parent = null) {
+    return {
+      ...object3d,
+      key: object3d.key ?? parent?.key,
+      step: object3d.step ?? parent?.step,
+      _run: object3d._run ?? parent?._run,
+      _runId: object3d._runId ?? parent?._runId,
+      caption: object3d.caption ?? parent?.caption,
+    };
+  }
+
+  function openObject3D(object3d, parent = null) {
+    selectedObject3D = normalizeObject3D(object3d, parent);
   }
 
   function markImageLoaded(event) {
@@ -271,6 +318,10 @@
   }
 
   function handleKeydown(event) {
+    if (selectedObject3D && event.key === "Escape") {
+      selectedObject3D = null;
+      return;
+    }
     if (!selectedImage) return;
     if (event.key === "Escape") closeImage();
     if (event.key === "ArrowLeft") showPreviousImage();
@@ -294,8 +345,8 @@
         <pre><code>{'import trackio\ntrackio.init(project="my-project")\ntrackio.log({"loss": 0.5})\ntrackio.finish()'}</code></pre>
       {:else}
         <h2>No media or tables in this run</h2>
-        <p>Log images, video, audio, and tables by passing Trackio objects to <code>trackio.log()</code>:</p>
-        <pre><code>{'import trackio\n\ntrackio.init(project="my-project")\ntrackio.log({"plot": trackio.Image("figure.png")})\ntrackio.log({"clip": trackio.Video("output.mp4")})\ntrackio.log({"audio": trackio.Audio("speech.wav")})\ntrackio.log({"report": trackio.Html("<h1>Results</h1>")})\n\nimport pandas as pd\ndf = pd.DataFrame({"epoch": [0, 1], "acc": [0.9, 0.95]})\ntrackio.log({"samples": trackio.Table(dataframe=df)})'}</code></pre>
+        <p>Log images, video, audio, 3D objects, and tables by passing Trackio objects to <code>trackio.log()</code>:</p>
+        <pre><code>{'import trackio\n\ntrackio.init(project="my-project")\ntrackio.log({"plot": trackio.Image("figure.png")})\ntrackio.log({"clip": trackio.Video("output.mp4")})\ntrackio.log({"audio": trackio.Audio("speech.wav")})\ntrackio.log({"model": trackio.Object3D("scene.glb")})\ntrackio.log({"report": trackio.Html("<h1>Results</h1>")})\n\nimport pandas as pd\ndf = pd.DataFrame({"epoch": [0, 1], "acc": [0.9, 0.95]})\ntrackio.log({"samples": trackio.Table(dataframe=df)})'}</code></pre>
         <p>Each type appears in its own section here once logged.</p>
       {/if}
     </div>
@@ -303,7 +354,7 @@
     {#snippet meta(item)}
       <div class="meta">
         <span class="run-dot" style:background={runColor(item)}></span>
-        <span class="meta-text">Run: {item._run}, Step: {item.step}</span>
+        <span class="meta-text">{item._run}, Step: {item.step}</span>
       </div>
     {/snippet}
     {#if mediaItems.images.length > 0}
@@ -375,6 +426,32 @@
           <div class="pagination-row">
             <span>Showing {visibleMediaItems.images.length} of {filteredImages.length}</span>
             <button type="button" class="load-more-button" onclick={() => showMore("images")}>Load more</button>
+          </div>
+        {/if}
+      </details>
+    {/if}
+
+    {#if mediaItems.object3ds.length > 0}
+      <details class="section" open>
+        <summary class="section-summary">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-title">3D Objects ({mediaItems.object3ds.length})</span>
+        </summary>
+        <div class="gallery">
+          {#each visibleMediaItems.object3ds as object3d}
+            <Object3DCard
+              item={object3d}
+              color={runColor(object3d)}
+              onopen={() => openObject3D(object3d)}
+            />
+          {/each}
+        </div>
+        {#if visibleCounts.object3ds < mediaItems.object3ds.length}
+          <div class="pagination-row">
+            <span>Showing {visibleMediaItems.object3ds.length} of {mediaItems.object3ds.length}</span>
+            <button type="button" class="load-more-button" onclick={() => showMore("object3ds")}>Load more</button>
           </div>
         {/if}
       </details>
@@ -501,6 +578,24 @@
                               </button>
                             {/each}
                           </div>
+                        {:else if isObject3DCell(cell)}
+                          <Object3DCard
+                            item={normalizeObject3D(cell, tbl)}
+                            compact
+                            color={runColor(tbl)}
+                            onopen={() => openObject3D(cell, tbl)}
+                          />
+                        {:else if isObject3DList(cell)}
+                          <div class="table-object-list">
+                            {#each cell as object3d}
+                              <Object3DCard
+                                item={normalizeObject3D(object3d, tbl)}
+                                compact
+                                color={runColor(tbl)}
+                                onopen={() => openObject3D(object3d, tbl)}
+                              />
+                            {/each}
+                          </div>
                         {:else}
                           {typeof cell === "string" && cell.length > tableTruncateLength
                             ? cell.slice(0, tableTruncateLength) + "…"
@@ -611,7 +706,7 @@
         {/if}
         <div class="meta image-modal-meta">
           <span class="run-dot" style:background={runColor(selectedImage)}></span>
-          <span class="meta-text">Run: {selectedImage._run}, Step: {selectedImage.step}</span>
+          <span class="meta-text">{selectedImage._run}, Step: {selectedImage.step}</span>
           {#if selectedImageIndex !== null && selectedImageList.length > 1}
             <span class="image-modal-count">{selectedImageIndex + 1} / {selectedImageList.length}</span>
           {/if}
@@ -619,6 +714,10 @@
       </div>
     </div>
   </div>
+{/if}
+
+{#if selectedObject3D}
+  <Object3DModal item={selectedObject3D} onclose={() => (selectedObject3D = null)} />
 {/if}
 
 <style>
@@ -798,6 +897,11 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 12px;
+  }
+  .table-object-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
   }
   .gallery-item {
     display: flex;

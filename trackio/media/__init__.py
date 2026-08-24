@@ -2,7 +2,7 @@
 Media module for Trackio.
 
 This module contains all media-related functionality including:
-- TrackioImage, TrackioVideo, TrackioAudio classes
+- TrackioImage, TrackioVideo, TrackioAudio, TrackioObject3D classes
 - Video writing utilities
 - Audio conversion utilities
 """
@@ -11,6 +11,7 @@ from trackio.media.audio import TrackioAudio
 from trackio.media.html import TrackioHtml
 from trackio.media.image import TrackioImage
 from trackio.media.media import TrackioMedia
+from trackio.media.object3d import TrackioObject3D
 from trackio.media.utils import get_project_media_path
 from trackio.media.video import TrackioVideo
 
@@ -23,6 +24,7 @@ __all__ = [
     "TrackioVideo",
     "TrackioAudio",
     "TrackioHtml",
+    "TrackioObject3D",
     "get_project_media_path",
     "write_video",
     "write_audio",
