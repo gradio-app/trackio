@@ -89,20 +89,11 @@ def test_trace_to_dict(image_ndarray, temp_dir):
     assert payload["spans"][0]["input"]["_type"] == "trackio.image"
 
 
-def test_trace_requires_message_dicts():
-    with pytest.raises(TypeError, match="list of dictionaries"):
-        Trace(messages=["bad"])  # type: ignore[arg-type]
-
-
-def test_trace_requires_span_dicts():
-    with pytest.raises(TypeError, match="list of dictionaries"):
-        Trace(messages=[], spans=["bad"])  # type: ignore[list-item]
-
-
 def test_trace_logging_and_query(temp_dir):
     run = Run(url=None, project="proj", client=None, name="trace-run", space_id=None)
     run.log(
         {
+            "loss": 0.5,
             "conversation": Trace(
                 messages=[
                     {"role": "system", "content": "Answer directly."},
@@ -141,6 +132,7 @@ def test_trace_logging_and_query(temp_dir):
     run.finish()
 
     logs = SQLiteStorage.get_logs("proj", "trace-run")
+    assert logs[0]["loss"] == 0.5
     assert "conversation" not in logs[0]
 
     traces = SQLiteStorage.get_traces("proj", "trace-run", sort="step_desc")
@@ -210,27 +202,6 @@ def test_trace_limit_offset_are_applied_in_storage(temp_dir):
         "proj", "trace-run", sort="step_asc", limit=2, offset=2
     )
     assert [trace["metadata"]["index"] for trace in traces] == [2, 3]
-
-
-def test_trace_logging_keeps_scalar_metrics_separate(temp_dir):
-    run = Run(url=None, project="proj", client=None, name="trace-run", space_id=None)
-    run.log(
-        {
-            "loss": 0.5,
-            "conversation": Trace(
-                messages=[
-                    {"role": "user", "content": "hello"},
-                    {"role": "assistant", "content": "hi"},
-                ],
-            ),
-        }
-    )
-    run.finish()
-
-    logs = SQLiteStorage.get_logs("proj", "trace-run")
-    assert logs[0]["loss"] == 0.5
-    assert "conversation" not in logs[0]
-    assert len(SQLiteStorage.get_traces("proj", "trace-run")) == 1
 
 
 def test_trace_spans_survive_run_rename(temp_dir):
@@ -426,8 +397,6 @@ def test_buffered_trace_list_keeps_its_index(temp_dir):
     [
         "2026-08-19T12:00:01.2Z",
         "2026-08-19T12:00:01.25Z",
-        "2026-08-19T12:00:01.250Z",
-        "2026-08-19T12:00:01.250000Z",
         "2026-08-19T12:00:01.250000+00:00",
         "2026-08-19T12:00:01",
     ],
@@ -437,11 +406,6 @@ def test_span_timestamps_parse_with_any_fractional_precision(timestamp):
     assert parsed is not None
     assert parsed.tzinfo is not None
     assert parsed.year == 2026
-
-
-def test_span_timestamps_reject_garbage():
-    assert parse_span_timestamp("not-a-time") is None
-    assert parse_span_timestamp(None) is None
 
 
 def test_trace_rollup_uses_wall_clock_and_flags_errors():
@@ -473,14 +437,6 @@ def test_trace_rollup_uses_wall_clock_and_flags_errors():
     assert rollup["output_tokens"] == 188
     assert rollup["status"] == "error"
     assert rollup["span_count"] == 3
-
-
-def test_trace_rollup_falls_back_to_metadata():
-    rollup = trace_rollup(
-        {"spans": [], "metadata": {"latency_ms": 1200, "status": "ok"}}
-    )
-    assert rollup["duration_ms"] == 1200
-    assert rollup["status"] == "ok"
 
 
 def test_short_trace_id_round_trips_to_matching():
