@@ -1,9 +1,11 @@
+import json
 import os
 import sqlite3
+from pathlib import Path
 
 import pytest
 
-from trackio import Run, Trace, fragments
+from trackio import Run, Trace, agent_sessions, fragments
 from trackio.cli_helpers import (
     format_trace,
     parse_span_timestamp,
@@ -480,3 +482,290 @@ def test_format_trace_renders_span_tree_and_errors():
     assert "answer-question [span]  2.00s" in rendered
     assert "  ERROR run-bash-command [tool]" in rendered
     assert "unrecognized arguments: --full" in rendered
+
+
+def _session_records(path):
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def _session_files(root):
+    return sorted(Path(root).rglob("*.jsonl"))
+
+
+def _log_trace(project, run, trace, **kwargs):
+    SQLiteStorage.bulk_log(
+        project=project,
+        run=run,
+        metrics_list=[{"trace": {"_type": "trackio.trace", **trace}}],
+        **kwargs,
+    )
+
+
+def test_logging_a_trace_writes_a_hub_native_session(temp_dir, monkeypatch, tmp_path):
+    sessions = tmp_path / "sessions"
+    monkeypatch.setenv("TRACKIO_TRACE_SESSIONS_DIR", str(sessions))
+
+    _log_trace(
+        "sts",
+        "run-a",
+        {
+            "messages": [
+                {"role": "system", "content": "be helpful"},
+                {"role": "user", "content": "hello"},
+                {
+                    "role": "assistant",
+                    "content": "looking",
+                    "tool_calls": [
+                        {
+                            "id": "t1",
+                            "function": {"name": "search", "arguments": {"q": "x"}},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "t1", "content": "done"},
+            ],
+            "metadata": {"session_id": "s1"},
+            "spans": [
+                {
+                    "id": "g1",
+                    "name": "provider-request",
+                    "kind": "generation",
+                    "model": "my-model",
+                    "usage": {"input_tokens": 10, "output_tokens": 2},
+                    "cost_usd": 0.5,
+                    "status": "success",
+                }
+            ],
+        },
+    )
+
+    files = _session_files(sessions)
+    assert len(files) == 1
+    assert agent_sessions.is_hub_native_jsonl(files[0])
+
+    header, *entries = _session_records(files[0])
+    assert header["type"] == "session"
+    assert header["version"] == 3
+    assert header["harness"] == "trackio"
+    assert header["name"] == "hello"
+    assert header["trackio"]["run_name"] == "run-a"
+    assert header["trackio"]["metadata"] == {"session_id": "s1"}
+
+    # Every entry chains to the one before it.
+    parents = [e["parentId"] for e in entries]
+    assert parents[0] is None
+    assert parents[1:] == [e["id"] for e in entries[:-1]]
+
+    assert entries[0]["type"] == "model_change"
+    assert entries[0]["modelId"] == "my-model"
+
+    roles = [e["message"]["role"] for e in entries if e["type"] == "message"]
+    assert roles == ["developer", "user", "assistant", "toolResult"]
+
+    assistant = next(
+        e["message"] for e in entries if e.get("message", {}).get("role") == "assistant"
+    )
+    call = next(b for b in assistant["content"] if b["type"] == "toolCall")
+    assert call["arguments"] == {"q": "x"}  # a real object, not a JSON string
+    assert assistant["usage"]["totalTokens"] == 12
+    assert assistant["usage"]["cost"]["total"] == 0.5
+
+    result = next(
+        e["message"]
+        for e in entries
+        if e.get("message", {}).get("role") == "toolResult"
+    )
+    assert result["toolCallId"] == "t1"
+    assert result["toolName"] == "search"
+    assert "isError" not in result
+
+
+def test_tool_failure_marks_the_result_as_an_error(temp_dir, monkeypatch, tmp_path):
+    sessions = tmp_path / "sessions"
+    monkeypatch.setenv("TRACKIO_TRACE_SESSIONS_DIR", str(sessions))
+
+    _log_trace(
+        "sts",
+        "run-a",
+        {
+            "messages": [
+                {"role": "user", "content": "run it"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {"id": "t1", "function": {"name": "bash", "arguments": "{}"}}
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "t1", "content": "boom"},
+            ],
+            "metadata": {},
+            "spans": [
+                {
+                    "id": "span-tool",
+                    "name": "bash",
+                    "kind": "tool",
+                    "status": "error",
+                    "error": {"code": 2},
+                }
+            ],
+        },
+    )
+
+    _, *entries = _session_records(_session_files(sessions)[0])
+    result = next(
+        e["message"]
+        for e in entries
+        if e.get("message", {}).get("role") == "toolResult"
+    )
+    assert result["isError"] is True
+    assert result["toolName"] == "bash"
+
+
+def test_usage_is_paired_per_assistant_turn_not_repeated(
+    temp_dir, monkeypatch, tmp_path
+):
+    """Repeating one span's totals on every turn would double-count in the viewer."""
+    sessions = tmp_path / "sessions"
+    monkeypatch.setenv("TRACKIO_TRACE_SESSIONS_DIR", str(sessions))
+
+    _log_trace(
+        "sts",
+        "run-a",
+        {
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "one"},
+                {"role": "assistant", "content": "two"},
+            ],
+            "metadata": {},
+            "spans": [
+                {
+                    "id": "g1",
+                    "kind": "generation",
+                    "start_time": "2026-08-19T12:00:00Z",
+                    "usage": {"input_tokens": 10, "output_tokens": 1},
+                },
+                {
+                    "id": "g2",
+                    "kind": "generation",
+                    "start_time": "2026-08-19T12:00:05Z",
+                    "usage": {"input_tokens": 20, "output_tokens": 2},
+                },
+            ],
+        },
+    )
+
+    _, *entries = _session_records(_session_files(sessions)[0])
+    totals = [
+        e["message"]["usage"]["totalTokens"]
+        for e in entries
+        if e.get("message", {}).get("role") == "assistant"
+    ]
+    assert totals == [11, 22]
+
+
+def test_session_omits_span_payloads_but_sqlite_keeps_them(
+    temp_dir, monkeypatch, tmp_path
+):
+    sessions = tmp_path / "sessions"
+    monkeypatch.setenv("TRACKIO_TRACE_SESSIONS_DIR", str(sessions))
+    spans = [
+        {
+            "id": "g1",
+            "name": "provider-request",
+            "kind": "generation",
+            "duration_ms": 1234,
+            "metadata": {"cold_start": True},
+            "input": {"messages": ["a very large payload"]},
+        }
+    ]
+
+    _log_trace(
+        "sts",
+        "run-a",
+        {
+            "messages": [{"role": "user", "content": "hello"}],
+            "metadata": {},
+            "spans": spans,
+        },
+    )
+
+    text = _session_files(sessions)[0].read_text()
+    assert "a very large payload" not in text
+
+    stored = SQLiteStorage.get_traces("sts", "run-a")
+    assert stored[0]["spans"] == spans
+
+
+def test_span_only_trace_synthesizes_renderable_entries(
+    temp_dir, monkeypatch, tmp_path
+):
+    sessions = tmp_path / "sessions"
+    monkeypatch.setenv("TRACKIO_TRACE_SESSIONS_DIR", str(sessions))
+
+    _log_trace(
+        "sts",
+        "run-a",
+        {
+            "messages": [],
+            "metadata": {},
+            "spans": [
+                {
+                    "id": "b1",
+                    "name": "run-bash",
+                    "kind": "tool",
+                    "start_time": "2026-08-19T12:00:01Z",
+                    "input": {"command": "ls"},
+                    "output": "ok",
+                }
+            ],
+        },
+    )
+
+    _, *entries = _session_records(_session_files(sessions)[0])
+    roles = [e["message"]["role"] for e in entries]
+    assert roles == ["assistant", "toolResult"]
+    call = entries[0]["message"]["content"][0]
+    assert call["type"] == "toolCall"
+    assert call["arguments"] == {"command": "ls"}
+    assert entries[1]["message"]["toolCallId"] == call["id"]
+
+
+def test_trace_session_write_failure_does_not_break_logging(
+    temp_dir, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("TRACKIO_TRACE_SESSIONS_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setattr(
+        agent_sessions,
+        "write_session",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    with pytest.warns(UserWarning, match="Could not write trace session file"):
+        _log_trace(
+            "sts",
+            "run-a",
+            {
+                "messages": [{"role": "user", "content": "hello"}],
+                "metadata": {},
+                "spans": [],
+            },
+        )
+
+    assert len(SQLiteStorage.get_traces("sts", "run-a")) == 1
+
+
+def test_sts_files_are_not_treated_as_hub_native(tmp_path):
+    """STS is a documented format the viewer does not render, so it needs converting."""
+    sts_file = tmp_path / "sts.jsonl"
+    sts_file.write_text(
+        json.dumps({"type": "session", "harness": "trackio", "id": "abc"}) + "\n"
+    )
+    assert not agent_sessions.is_hub_native_jsonl(sts_file)
+
+    pi_file = tmp_path / "pi.jsonl"
+    pi_file.write_text(
+        json.dumps({"type": "session", "version": 3, "id": "abc"}) + "\n"
+    )
+    assert agent_sessions.is_hub_native_jsonl(pi_file)

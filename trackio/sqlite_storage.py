@@ -44,6 +44,7 @@ from trackio.utils import (
     get_color_palette,
     on_spaces,
     project_media_dir,
+    project_trace_sessions_dir,
     serialize_values,
     warn_dataset_persistence_deprecated,
 )
@@ -1616,6 +1617,7 @@ class SQLiteStorage:
                     )
                 SQLiteStorage._insert_trace_rows(cursor, trace_rows)
                 conn.commit()
+        SQLiteStorage.write_trace_sessions(project, trace_rows)
 
     @staticmethod
     def bulk_log(
@@ -1763,6 +1765,7 @@ class SQLiteStorage:
                         )
 
                 conn.commit()
+        SQLiteStorage.write_trace_sessions(project, trace_rows)
 
     @staticmethod
     def bulk_log_system(
@@ -2643,6 +2646,35 @@ class SQLiteStorage:
                 for row in trace_rows
             ],
         )
+
+    @staticmethod
+    def write_trace_sessions(project: str, trace_rows: list[dict[str, Any]]) -> int:
+        """Write each trace as an STS session file so the Hub can render it.
+
+        These files are a rendering artifact, never the source of truth: the
+        `traces` table stays authoritative and is what every Trackio reader
+        queries. A failure here must not take a `log()` call down with it.
+        """
+        if not trace_rows:
+            return 0
+        from trackio import agent_sessions as sessions  # noqa: PLC4015
+
+        sessions_dir = project_trace_sessions_dir(project)
+        written = 0
+        for row in trace_rows:
+            try:
+                run_dir = sessions_dir / sessions.safe_id(row.get("run_name") or "run")
+                path = run_dir / sessions.trace_session_filename(row.get("id"))
+                sessions.write_session(
+                    path, sessions.trace_to_records(row, project=project)
+                )
+                written += 1
+            except Exception as e:
+                _emit_nonfatal_warning(
+                    f"Could not write trace session file for trace "
+                    f"{row.get('id')!r}: {e}"
+                )
+        return written
 
     @staticmethod
     def _flatten_trace_search_text(trace: dict[str, Any]) -> str:

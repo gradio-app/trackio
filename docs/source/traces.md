@@ -137,6 +137,42 @@ FROM traces, json_each(traces.spans) AS s
 GROUP BY operation ORDER BY input_tokens DESC"
 ```
 
+## Viewing traces on the Hugging Face Hub
+
+Every logged trace is also written as an agent session `.jsonl` file, in the
+format the Hub's agent trace viewer renders. When Trackio runs on a Space, the
+bucket is mounted at `/data`, so these land in the bucket under
+`traces/{project}/{run}/{trace_id}.jsonl` — open one from the bucket's file
+browser to step through the conversation, its tool calls, and their results.
+
+Trackio emits [Pi's session
+format](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/session-format.md)
+(version 3), which the Hub supports natively. The Hub also documents a Session
+Trace Simple Format, but files written to that spec are not currently rendered
+by the viewer.
+
+The session files are a rendering artifact, never the source of truth. The
+`traces` table stays authoritative, and everything else on this page — search,
+the span tree, `trace-summary`, direct SQL — reads from it. What the session
+file carries is the linear conversation, enriched from the spans with the
+details the viewer can display:
+
+| From the span | Appears in the session as |
+|---|---|
+| `model` on a generation | a `model_change` entry |
+| `usage`, `cost_usd` | `usage` on the assistant turn it produced |
+| `status`, `error` on a tool | `isError` on the tool result |
+| `input`, `output` on a tool | the `toolCall` arguments and result, for traces with no `messages` |
+
+Token usage is paired with the assistant turn that produced it rather than
+repeated on every turn, so the viewer does not double-count. Span hierarchy,
+`duration_ms`, per-span `metadata`, and the `kind` of non-tool spans have no
+place in the format and stay in SQLite.
+
+Session files sit beside the `trackio/` prefix rather than inside it, so
+`trackio` CLI commands that sync a bucket down do not pull a second copy of
+every trace. Set `TRACKIO_TRACE_SESSIONS_DIR` to write them somewhere else.
+
 ## Trace-level metadata
 
 Spans are the preferred source for latency, cost, and status. When a trace has no

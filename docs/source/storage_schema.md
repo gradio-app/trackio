@@ -7,6 +7,7 @@ Trackio stores each project in its own SQLite database and can export that data 
 - Local project databases live in `TRACKIO_DIR`, which defaults to `~/.cache/huggingface/trackio`.
 - Each project is stored as a separate SQLite file: `{project}.db`.
 - Media and uploaded files live under `TRACKIO_DIR/media/`.
+- Each trace is additionally written as a Hub-renderable agent session file under `TRACKIO_DIR/traces/` (on a Space, the bucket's `traces/` prefix). These are a rendering artifact for the Hub's agent trace viewer; the `traces` table stays authoritative. See [Traces](./traces).
 - When syncing to Hugging Face, Trackio exports parquet files from the SQLite database before upload.
 
 ## Querying Data Directly
