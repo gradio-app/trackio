@@ -44,6 +44,7 @@ from trackio.utils import (
     get_color_palette,
     on_spaces,
     project_media_dir,
+    project_trace_sessions_dir,
     serialize_values,
     warn_dataset_persistence_deprecated,
 )
@@ -65,6 +66,8 @@ _SQL_IN_CHUNK = 500
 _READ_ONLY_PRAGMAS = frozenset(
     {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo"}
 )
+SEARCHABLE_SPAN_FIELDS = ("id", "name", "kind", "model", "status", "error", "metadata")
+TRACE_PAYLOAD_TYPE = "trackio.trace"
 
 
 def _env_pragma_choice(name: str, whitelist: frozenset[str]) -> str | None:
@@ -540,10 +543,18 @@ class SQLiteStorage:
                         metadata TEXT NOT NULL,
                         search_text TEXT NOT NULL,
                         log_id TEXT,
-                        space_id TEXT
+                        space_id TEXT,
+                        spans TEXT NOT NULL DEFAULT '[]'
                     )
                     """
                 )
+
+                try:
+                    cursor.execute(
+                        "ALTER TABLE traces ADD COLUMN spans TEXT NOT NULL DEFAULT '[]'"
+                    )
+                except sqlite3.OperationalError:
+                    pass
 
                 cursor.execute(
                     """
@@ -975,7 +986,7 @@ class SQLiteStorage:
         normalized: list[dict[str, object]] = []
         for row in rows:
             new_row = dict(row)
-            for col in ("messages", "metadata"):
+            for col in ("messages", "metadata", "spans"):
                 value = new_row.get(col)
                 if value is None:
                     continue
@@ -1454,6 +1465,10 @@ class SQLiteStorage:
 
             rows = SQLiteStorage._read_parquet_rows(parquet_path)
             SQLiteStorage.init_db(project_name)
+            for row in rows:
+                row["spans"] = SQLiteStorage._normalize_json_column_value(
+                    row.get("spans") if row.get("spans") is not None else []
+                )
             SQLiteStorage._replace_table_rows(
                 db_path,
                 "traces",
@@ -1471,6 +1486,7 @@ class SQLiteStorage:
                     "search_text",
                     "log_id",
                     "space_id",
+                    "spans",
                 ],
             )
 
@@ -1601,6 +1617,7 @@ class SQLiteStorage:
                     )
                 SQLiteStorage._insert_trace_rows(cursor, trace_rows)
                 conn.commit()
+        SQLiteStorage.write_trace_sessions(project, trace_rows)
 
     @staticmethod
     def bulk_log(
@@ -1748,6 +1765,7 @@ class SQLiteStorage:
                         )
 
                 conn.commit()
+        SQLiteStorage.write_trace_sessions(project, trace_rows)
 
     @staticmethod
     def bulk_log_system(
@@ -2536,7 +2554,7 @@ class SQLiteStorage:
 
     @staticmethod
     def _is_trace_payload(value: Any) -> bool:
-        return isinstance(value, dict) and value.get("_type") == "trackio.trace"
+        return isinstance(value, dict) and value.get("_type") == TRACE_PAYLOAD_TYPE
 
     @staticmethod
     def _split_trace_metrics(
@@ -2587,6 +2605,7 @@ class SQLiteStorage:
                     "trace_index": trace_index,
                     "messages": trace.get("messages", []),
                     "metadata": trace.get("metadata", {}),
+                    "spans": trace.get("spans", []),
                     "log_id": log_id,
                     "space_id": space_id,
                 }
@@ -2605,8 +2624,8 @@ class SQLiteStorage:
         cursor.executemany(
             """
             INSERT OR IGNORE INTO traces
-            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id, spans)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -2622,13 +2641,50 @@ class SQLiteStorage:
                     row["search_text"],
                     row["log_id"],
                     row["space_id"],
+                    orjson.dumps(serialize_values(row["spans"])),
                 )
                 for row in trace_rows
             ],
         )
 
     @staticmethod
+    def write_trace_sessions(project: str, trace_rows: list[dict[str, Any]]) -> int:
+        """Write each trace as an STS session file so the Hub can render it.
+
+        These files are a rendering artifact, never the source of truth: the
+        `traces` table stays authoritative and is what every Trackio reader
+        queries. A failure here must not take a `log()` call down with it.
+        """
+        if not trace_rows:
+            return 0
+        from trackio import agent_sessions as sessions  # noqa: PLC4015
+
+        sessions_dir = project_trace_sessions_dir(project)
+        written = 0
+        for row in trace_rows:
+            try:
+                run_dir = sessions_dir / sessions.safe_id(row.get("run_name") or "run")
+                path = run_dir / sessions.trace_session_filename(row.get("id"))
+                sessions.write_session(
+                    path, sessions.trace_to_records(row, project=project)
+                )
+                written += 1
+            except Exception as e:
+                _emit_nonfatal_warning(
+                    f"Could not write trace session file for trace "
+                    f"{row.get('id')!r}: {e}"
+                )
+        return written
+
+    @staticmethod
     def _flatten_trace_search_text(trace: dict[str, Any]) -> str:
+        """Flatten a trace into the text that backs trace search.
+
+        Span `input` and `output` payloads are deliberately excluded: they
+        routinely repeat the whole conversation for every generation, so
+        indexing them can multiply a trace's on-disk size several times over
+        for little search value.
+        """
         parts: list[str] = []
 
         def visit(value: Any):
@@ -2646,6 +2702,12 @@ class SQLiteStorage:
 
         visit(trace.get("messages", []))
         visit(trace.get("metadata", {}))
+        for span in trace.get("spans") or []:
+            if not isinstance(span, dict):
+                visit(span)
+                continue
+            for field in SEARCHABLE_SPAN_FIELDS:
+                visit(span.get(field))
         return " ".join(parts).lower()
 
     @staticmethod
@@ -2686,6 +2748,7 @@ class SQLiteStorage:
                         "timestamp": timestamp,
                         "messages": candidate.get("messages", []),
                         "metadata": candidate.get("metadata", {}),
+                        "spans": candidate.get("spans", []),
                     }
                     trace_record["_search_text"] = (
                         f"{trace_record['id']} {key} "
@@ -2763,8 +2826,10 @@ class SQLiteStorage:
                         where.append("search_text LIKE ?")
                         params.append(f"%{needle}%")
 
+                has_spans = "spans" in SQLiteStorage._table_columns(conn, "traces")
+                spans_select = ", spans" if has_spans else ""
                 query = f"""
-                    SELECT id, key, trace_index, run_name, run_id, step, timestamp, messages, metadata
+                    SELECT id, key, trace_index, run_name, run_id, step, timestamp, messages, metadata{spans_select}
                     FROM traces
                     WHERE {" AND ".join(where)}
                     ORDER BY {order_by}
@@ -2797,6 +2862,11 @@ class SQLiteStorage:
                 "timestamp": row["timestamp"],
                 "messages": deserialize_values(orjson.loads(row["messages"])),
                 "metadata": deserialize_values(orjson.loads(row["metadata"])),
+                "spans": (
+                    deserialize_values(orjson.loads(row["spans"]))
+                    if "spans" in row.keys()
+                    else []
+                ),
             }
             for row in rows
         ]
@@ -3378,12 +3448,16 @@ class SQLiteStorage:
         for row in trace_rows:
             messages = deserialize_values(orjson.loads(row["messages"]))
             metadata = deserialize_values(orjson.loads(row["metadata"]))
+            spans = deserialize_values(
+                orjson.loads(row["spans"] if "spans" in row.keys() else b"[]")
+            )
             messages = SQLiteStorage._update_media_paths(
                 messages, old_prefix, new_prefix
             )
             metadata = SQLiteStorage._update_media_paths(
                 metadata, old_prefix, new_prefix
             )
+            spans = SQLiteStorage._update_media_paths(spans, old_prefix, new_prefix)
             result.append(
                 (
                     row["id"],
@@ -3398,6 +3472,7 @@ class SQLiteStorage:
                     row["search_text"],
                     row["log_id"],
                     row["space_id"],
+                    orjson.dumps(serialize_values(spans)),
                 )
             )
         return result
@@ -3434,6 +3509,11 @@ class SQLiteStorage:
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
+                trace_columns = SQLiteStorage._table_columns(conn, "traces")
+                if trace_columns and "spans" not in trace_columns:
+                    cursor.execute(
+                        "ALTER TABLE traces ADD COLUMN spans TEXT NOT NULL DEFAULT '[]'"
+                    )
                 supports_run_ids = SQLiteStorage._supports_run_ids(conn)
                 run_identity = SQLiteStorage._resolve_run_identity(
                     conn, run_name=old_name, run_id=run_id
@@ -3543,7 +3623,7 @@ class SQLiteStorage:
                     try:
                         cursor.execute(
                             f"""
-                            SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id
+                            SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id, spans
                             FROM traces WHERE {run_col} = ?
                             """,
                             (run_value,),
@@ -3562,8 +3642,8 @@ class SQLiteStorage:
                         cursor.executemany(
                             """
                             INSERT INTO traces
-                            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id, spans)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             updated_trace_rows,
                         )
@@ -3727,9 +3807,16 @@ class SQLiteStorage:
                     if traces_identity is not None:
                         try:
                             traces_col, traces_val = traces_identity
+                            source_has_trace_spans = (
+                                "spans"
+                                in SQLiteStorage._table_columns(source_conn, "traces")
+                            )
+                            trace_spans_select = (
+                                ", spans" if source_has_trace_spans else ""
+                            )
                             source_cursor.execute(
                                 f"""
-                                SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id
+                                SELECT id, run_id, timestamp, step, key, trace_index, messages, metadata, search_text, log_id, space_id{trace_spans_select}
                                 FROM traces WHERE {traces_col} = ?
                                 """,
                                 (traces_val,),
@@ -3980,8 +4067,8 @@ class SQLiteStorage:
                                 target_cursor.executemany(
                                     """
                                     INSERT OR IGNORE INTO traces
-                                    (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    (id, run_id, timestamp, run_name, step, key, trace_index, messages, metadata, search_text, log_id, space_id, spans)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                     """,
                                     updated_trace_rows,
                                 )
@@ -4303,6 +4390,14 @@ class SQLiteStorage:
             except sqlite3.OperationalError:
                 pass
             try:
+                cursor.execute(
+                    "SELECT EXISTS(SELECT 1 FROM traces WHERE space_id IS NOT NULL LIMIT 1)"
+                )
+                if cursor.fetchone()[0]:
+                    return True
+            except sqlite3.OperationalError:
+                pass
+            try:
                 cursor.execute("SELECT EXISTS(SELECT 1 FROM pending_uploads LIMIT 1)")
                 if cursor.fetchone()[0]:
                     return True
@@ -4375,6 +4470,63 @@ class SQLiteStorage:
     @staticmethod
     def clear_pending_system_logs(project: str, metric_ids: list[int]) -> None:
         SQLiteStorage._clear_pending(project, "system_metrics", metric_ids)
+
+    @staticmethod
+    def get_pending_traces(project: str) -> dict | None:
+        """Return trace rows still buffered for a remote server.
+
+        Each entry carries the `log_id` of the `trackio.log()` call it came
+        from, so callers can fold the trace payload back into that call's
+        metrics and replay it through the normal logging path.
+        """
+        db_path = SQLiteStorage.get_project_db_path(project)
+        if not db_path.exists():
+            return None
+        with SQLiteStorage._get_connection(db_path) as conn:
+            has_spans = "spans" in SQLiteStorage._table_columns(conn, "traces")
+            spans_select = ", spans" if has_spans else ""
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    f"""SELECT id, run_id, run_name, step, key, trace_index, timestamp,
+                    messages, metadata, log_id, space_id{spans_select}
+                    FROM traces WHERE space_id IS NOT NULL
+                    ORDER BY timestamp, key, trace_index"""
+                )
+            except sqlite3.OperationalError:
+                return None
+            rows = cursor.fetchall()
+            if not rows:
+                return None
+            traces = []
+            ids = []
+            for row in rows:
+                payload = {
+                    "_type": TRACE_PAYLOAD_TYPE,
+                    "messages": deserialize_values(orjson.loads(row["messages"])),
+                    "metadata": deserialize_values(orjson.loads(row["metadata"])),
+                }
+                if has_spans:
+                    payload["spans"] = deserialize_values(orjson.loads(row["spans"]))
+                traces.append(
+                    {
+                        "project": project,
+                        "run": row["run_name"],
+                        "run_id": row["run_id"],
+                        "step": row["step"],
+                        "timestamp": row["timestamp"],
+                        "key": row["key"],
+                        "trace_index": row["trace_index"],
+                        "log_id": row["log_id"],
+                        "payload": payload,
+                    }
+                )
+                ids.append(row["id"])
+            return {"traces": traces, "ids": ids, "space_id": rows[0]["space_id"]}
+
+    @staticmethod
+    def clear_pending_traces(project: str, trace_ids: list[str]) -> None:
+        SQLiteStorage._clear_pending(project, "traces", trace_ids)
 
     @staticmethod
     def _clear_pending(project: str, table: str, ids: list[int]) -> None:

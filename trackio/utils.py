@@ -226,6 +226,28 @@ def project_artifacts_dir(project: str) -> Path:
     return ARTIFACTS_DIR / canonical_project_name(project)
 
 
+def trace_sessions_root() -> Path:
+    """Where per-trace STS session files are written.
+
+    On a Space the bucket is mounted at the parent of `TRACKIO_DIR` (`/data`
+    with `TRACKIO_DIR=/data/trackio`), so writing a sibling `traces/` directory
+    puts the files in the bucket without adding them to the `trackio/` prefix
+    that `download_bucket_to_trackio_dir` pulls down. Trace sessions are a
+    rendering artifact for the Hub's viewer, not something a CLI user needs to
+    sync alongside the database.
+    """
+    override = os.environ.get("TRACKIO_TRACE_SESSIONS_DIR")
+    if override:
+        return Path(override)
+    if on_spaces() and TRACKIO_DIR.name == "trackio":
+        return TRACKIO_DIR.parent / "traces"
+    return TRACKIO_DIR / "traces"
+
+
+def project_trace_sessions_dir(project: str) -> Path:
+    return trace_sessions_root() / canonical_project_name(project)
+
+
 NETWORK_FILESYSTEM_TYPES = {
     "nfs",
     "nfs4",

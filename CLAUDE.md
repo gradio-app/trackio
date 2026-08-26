@@ -84,7 +84,6 @@ When given a GitHub issue to solve, follow this workflow:
 2. **Implement the solution** following the existing code patterns and conventions
 3. **Run tests** to ensure nothing is broken: `pytest`
 4. **Run linting/formatting**: `ruff check --fix --select I && ruff format`
-5. That's it. Never use the `git` commit command after a task is finished.
 
 ### Git Commands for Issue Workflow
 ```bash

@@ -7,6 +7,7 @@ Trackio stores each project in its own SQLite database and can export that data 
 - Local project databases live in `TRACKIO_DIR`, which defaults to `~/.cache/huggingface/trackio`.
 - Each project is stored as a separate SQLite file: `{project}.db`.
 - Media and uploaded files live under `TRACKIO_DIR/media/`.
+- Each trace is additionally written as a Hub-renderable agent session file under `TRACKIO_DIR/traces/` (on a Space, the bucket's `traces/` prefix). These are a rendering artifact for the Hub's agent trace viewer; the `traces` table stays authoritative. See [Traces](./traces).
 - When syncing to Hugging Face, Trackio exports parquet files from the SQLite database before upload.
 
 ## Querying Data Directly
@@ -84,6 +85,30 @@ Indexes:
 - `idx_system_metrics_run_timestamp` on `(run_name, timestamp)`
 - `idx_system_metrics_log_id` unique partial index on `log_id`
 - `idx_system_metrics_pending` partial index on `space_id`
+
+### `traces`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `TEXT` | Primary key |
+| `run_id` | `TEXT` | Stable run identifier |
+| `timestamp` | `TEXT` | ISO timestamp when the trace was logged |
+| `run_name` | `TEXT` | Run display name |
+| `step` | `INTEGER` | Training or logging step |
+| `key` | `TEXT` | Key used in the `trackio.log()` payload |
+| `trace_index` | `INTEGER` | Position when traces were logged as a list |
+| `messages` | `TEXT` | JSON OpenAI-style messages |
+| `metadata` | `TEXT` | JSON trace metadata |
+| `search_text` | `TEXT` | Flattened text used by trace search |
+| `log_id` | `TEXT` | Optional source log deduplication key |
+| `space_id` | `TEXT` | Optional pending-sync marker |
+| `spans` | `TEXT` | JSON execution spans; defaults to `[]` |
+
+Indexes:
+
+- `idx_traces_run_step` on `(run_id, step)`
+- `idx_traces_run_timestamp` on `(run_id, timestamp)`
+- `idx_traces_search` on `search_text`
 
 ### `project_metadata`
 

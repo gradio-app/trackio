@@ -11,6 +11,7 @@ The `trackio` CLI provides direct terminal access to query Trackio experiment tr
 | List metrics | `trackio list metrics --project <name> --run <name>` |
 | List system metrics | `trackio list system-metrics --project <name> --run <name>` |
 | List alerts | `trackio list alerts --project <name> [--run <name>] [--level <level>] [--since <timestamp>]` |
+| List traces | `trackio list traces --project <name> [--run <name>] [--search <text>] [--step <N>]` |
 | Get project summary | `trackio get project --project <name>` |
 | Get run summary | `trackio get run --project <name> --run <name>` |
 | Get metric values | `trackio get metric --project <name> --run <name> --metric <name>` |
@@ -18,6 +19,8 @@ The `trackio` CLI provides direct terminal access to query Trackio experiment tr
 | Get metric around step | `trackio get metric ... --metric <name> --around <N> --window <W>` |
 | Get all metrics snapshot | `trackio get snapshot --project <name> --run <name> --step <N>` |
 | Get system metrics | `trackio get system-metric --project <name> --run <name>` |
+| Get one trace + span tree | `trackio get trace --project <name> --trace-id <id>` |
+| Roll up trace operations | `trackio get trace-summary --project <name> [--run <name>]` |
 | Run direct SQL | `trackio query project --project <name> --sql "SELECT ..."` |
 | Query remote Space | `trackio list projects --space <space_id_or_url>` |
 | Show dashboard | `trackio show [--project <name>]` |
@@ -69,6 +72,33 @@ trackio get system-metric --project <name> --run <name>           # All system m
 trackio get system-metric --project <name> --run <name> --metric <name>  # Specific metric
 trackio get system-metric --project <name> --run <name> --json
 ```
+
+### Trace Commands
+
+Traces are agent/LLM sessions carrying execution spans (model generations, tool
+calls) with latency, status, token usage, and cost.
+
+```bash
+trackio list traces --project <name>                          # Newest traces across all runs
+trackio list traces --project <name> --run <name>             # One run
+trackio list traces --project <name> --search "rate limit"    # Match messages, metadata, span names/models/errors
+trackio list traces --project <name> --step 12                # Traces logged at one step
+trackio list traces --project <name> --sort step_desc --limit 100 --offset 50
+trackio list traces --project <name> --json                   # Adds a per-trace `summary` rollup
+
+trackio get trace --project <name> --trace-id <id>            # Full span tree, per-span cost/tokens/errors
+trackio get trace-summary --project <name> [--run <name>]     # Per-operation rollup
+```
+
+`list traces` prints the short trace id (the `log_id` segment); `get trace`
+accepts either that or the full stored id. `--sort` accepts
+`request_time_desc` (default), `request_time_asc`, `step_asc`, `step_desc`.
+
+**To analyze traces** — "what can we improve", "why is the agent slow or
+expensive", "what's failing" — follow the funnel in
+[traces.md](traces.md): orient, roll up, quantify each anomaly with SQL, then
+verify against one full trace. That reference also has the `json_each` recipes
+for tool failures, cost attribution, bimodal latency, and context growth.
 
 ### Query Command
 
@@ -193,7 +223,12 @@ trackio list alerts --project my-project --json --since "2025-06-01T00:00:00"
 # 6. When an alert fires at step N, get all metrics around that point
 trackio get snapshot --project my-project --run my-run --around 200 --window 5 --json
 
-# 7. Fall back to direct SQL for one-off inspection
+# 7. Review production agent behaviour (see traces.md for the full funnel)
+trackio get trace-summary --project <name> --json
+trackio list traces --project <name> --search "error" --json
+trackio get trace --project <name> --trace-id <id> --json
+
+# 8. Fall back to direct SQL for one-off inspection
 trackio query project --project my-project --sql "SELECT timestamp, run_name, level, title FROM alerts ORDER BY timestamp DESC LIMIT 20" --json
 ```
 

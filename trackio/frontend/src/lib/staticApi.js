@@ -237,6 +237,16 @@ export async function getLogs(_project, run, options = {}) {
   });
 }
 
+const SEARCHABLE_SPAN_FIELDS = [
+  "id",
+  "name",
+  "kind",
+  "model",
+  "status",
+  "error",
+  "metadata",
+];
+
 function flattenTraceSearchText(trace) {
   const parts = [];
 
@@ -255,6 +265,9 @@ function flattenTraceSearchText(trace) {
 
   visit(trace.messages || []);
   visit(trace.metadata || {});
+  for (const span of trace.spans || []) {
+    for (const field of SEARCHABLE_SPAN_FIELDS) visit(span?.[field]);
+  }
   return parts.join(" ").toLowerCase();
 }
 
@@ -329,6 +342,7 @@ export async function getTraces(_project, run, options = {}) {
       timestamp: row.timestamp,
       messages: parseTraceJsonField(row.messages, []),
       metadata: parseTraceJsonField(row.metadata, {}),
+      spans: parseTraceJsonField(row.spans, []),
     };
     trace._search_text = (row.search_text || `${trace.id} ${trace.key} ${flattenTraceSearchText(trace)}`).toLowerCase();
     return trace;

@@ -5,11 +5,15 @@ import os
 import re
 import shutil
 import tempfile
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+
+from trackio import agent_sessions
+from trackio.agent_sessions import is_hub_native_jsonl as _is_hub_native_jsonl
+from trackio.agent_sessions import parse_time as _parse_time
+from trackio.agent_sessions import safe_id as _safe_id
 
 TRACE_SCHEMA_VERSION = 1
 TRACE_CHUNK_SIZE = 200
@@ -191,11 +195,6 @@ def _load_registry(proj: Path) -> dict:
 
 def _save_registry(proj: Path, data: dict) -> None:
     _write_json(_registry_path(proj), data)
-
-
-def _safe_id(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "-", value).strip("-.")
-    return cleaned[:100] or f"session-{uuid.uuid4().hex[:12]}"
 
 
 def _records(path: Path) -> list[dict]:
@@ -786,25 +785,6 @@ def _normalize_generic(records: list[dict]) -> tuple[dict, list[dict]]:
     return meta, events
 
 
-def _parse_time(value: str | int | float | None) -> datetime | None:
-    if value in (None, ""):
-        return None
-    if isinstance(value, (int, float)) or (
-        isinstance(value, str) and re.fullmatch(r"\d+(?:\.\d+)?", value)
-    ):
-        numeric = float(value)
-        if numeric > 10_000_000_000:
-            numeric /= 1000
-        try:
-            return datetime.fromtimestamp(numeric, tz=timezone.utc)
-        except (OverflowError, OSError, ValueError):
-            return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def normalize_trace(path: Path) -> dict:
     records = _records(path)
     provider = _detect_provider(records)
@@ -1316,102 +1296,80 @@ def read_generated(proj: Path) -> dict:
     }
 
 
-def _sts_timestamp(value: str | None) -> int | None:
-    parsed = _parse_time(value)
-    return int(parsed.timestamp() * 1000) if parsed else None
-
-
-def _sts_arguments(value: Any) -> str:
-    if not isinstance(value, str):
-        return json.dumps(value if value is not None else {})
-    try:
-        json.loads(value)
-        return value
-    except json.JSONDecodeError:
-        return json.dumps({"input": value}, ensure_ascii=False)
-
-
-def _is_hub_native_jsonl(path: Path, provider: str | None) -> bool:
-    """Whether Hub's Agent Traces viewer accepts this JSONL without conversion."""
-    if path.suffix.lower() != ".jsonl":
-        return False
-    if provider in {"Codex", "Claude Code", "Pi"}:
-        return True
-    try:
-        with path.open(encoding="utf-8") as handle:
-            first_line = next((line for line in handle if line.strip()), "")
-        header = json.loads(first_line)
-    except (OSError, json.JSONDecodeError):
-        return False
-    if not isinstance(header, dict) or header.get("type") != "session":
-        return False
-    # Session Trace Simple Format requires harness + id. Pi's native format uses
-    # a versioned session header and is also supported directly by the Hub.
-    return bool(
-        header.get("id")
-        and (header.get("harness") or header.get("version") is not None)
+def _write_agent_session(path: Path, index: dict, events: list[dict]) -> None:
+    """Convert normalized logbook events into a Hub-renderable agent session."""
+    session_id = index["id"]
+    chain = agent_sessions._Chain(
+        session_id, agent_sessions.iso_z(index.get("started_at"))
     )
 
+    if index.get("model"):
+        chain.add(
+            {
+                "type": "model_change",
+                "id": agent_sessions.entry_id(session_id, "model"),
+                "modelId": str(index["model"]),
+            },
+            index.get("started_at"),
+        )
 
-def _write_sts_trace(path: Path, index: dict, events: list[dict]) -> None:
-    records = [
-        {
-            "type": "session",
-            "harness": "trackio",
-            "id": index["id"],
-            "name": index.get("title") or index["id"],
-        }
-    ]
-    for event in events:
-        timestamp = _sts_timestamp(event.get("timestamp"))
-        if event.get("kind") in {"user", "assistant"}:
+    for position, event in enumerate(events):
+        kind = event.get("kind")
+        timestamp = event.get("timestamp")
+        text = event.get("text") or ""
+
+        if kind in {"user", "assistant"}:
             message = {
-                "role": event["kind"],
-                "content": event.get("text") or "",
+                "role": kind,
+                "content": [agent_sessions.text_block(text)] if text else [],
             }
-        elif event.get("kind") == "reasoning":
+        elif kind == "reasoning":
             message = {
                 "role": "assistant",
-                "content": "",
-                "reasoningContent": event.get("text") or "",
+                "content": [agent_sessions.thinking_block(text)],
             }
-        elif event.get("kind") == "tool_call":
+        elif kind == "tool_call":
+            call_id = str(event.get("call_id") or event.get("id") or position)
             message = {
                 "role": "assistant",
-                "content": "",
-                "toolCalls": [
-                    {
-                        "id": event.get("call_id") or event.get("id"),
-                        "function": {
-                            "name": event.get("tool_name")
-                            or event.get("title")
-                            or "tool",
-                            "arguments": _sts_arguments(event.get("input")),
-                        },
-                    }
+                "content": [
+                    agent_sessions.tool_call_block(
+                        call_id,
+                        event.get("tool_name") or event.get("title") or "tool",
+                        event.get("input"),
+                    )
                 ],
             }
-        elif event.get("kind") == "tool_result":
+        elif kind == "tool_result":
             message = {
-                "role": "tool",
-                "content": event.get("output") or event.get("text") or "",
+                "role": "toolResult",
+                "toolCallId": str(event.get("call_id") or position),
+                "toolName": str(event.get("tool_name") or event.get("title") or "tool"),
+                "content": [agent_sessions.text_block(event.get("output") or text)],
             }
-            if event.get("call_id"):
-                message["toolCallId"] = event["call_id"]
+            if event.get("is_error") or str(event.get("status") or "").lower() in {
+                "error",
+                "failed",
+            }:
+                message["isError"] = True
         else:
             message = {
-                "role": "system",
-                "content": event.get("title") or event.get("status") or "Status",
+                "role": "developer",
+                "content": [
+                    agent_sessions.text_block(
+                        event.get("title") or event.get("status") or "Status"
+                    )
+                ],
             }
-        if timestamp is not None:
-            message["timestamp"] = timestamp
-        if message["role"] == "assistant" and index.get("model"):
-            message["model"] = index["model"]
-        records.append({"type": "message", "message": message})
-    path.write_text(
-        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
-        encoding="utf-8",
+        chain.message(position, message, timestamp)
+
+    header = agent_sessions.session_header(
+        session_id,
+        timestamp=index.get("started_at"),
+        name=index.get("title") or session_id,
+        cwd=index.get("cwd") or "/",
     )
+    agent_sessions.write_session(path, [header, *chain.records])
 
 
 def prepare_agent_trace_dataset(proj: Path) -> tuple[Path, int]:
@@ -1440,7 +1398,7 @@ def prepare_agent_trace_dataset(proj: Path) -> tuple[Path, int]:
             for chunk in index.get("chunks") or []:
                 chunk_data = _read_json(proj / "logbook" / chunk["file"], {})
                 events.extend(chunk_data.get("events") or [])
-            _write_sts_trace(destination, index, events)
+            _write_agent_session(destination, index, events)
         exported += 1
 
     # Keep the Hub-native JSONL files at the dataset root for the Agent Traces

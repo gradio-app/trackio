@@ -1,19 +1,20 @@
 ---
 name: hugging-face-trackio
-description: Track and visualize ML training experiments with Trackio. Use when logging metrics during training (Python API), firing alerts for training diagnostics, or retrieving/analyzing logged metrics (CLI). Supports real-time dashboard visualization, alerts with webhooks, HF Space syncing, and JSON output for automation.
+description: Track and visualize ML training experiments and agent traces with Trackio. Use when logging metrics during training, firing alerts for training, or retrieving/analyzing logged data.
 ---
 
 # Trackio - Experiment Tracking for ML Training
 
-Trackio is an experiment tracking library for logging and visualizing ML training metrics. It syncs to Hugging Face Spaces for real-time monitoring dashboards.
+Trackio is an experiment tracking library for logging and visualizing ML training metrics. It can be used locally or optionally syncs to Hugging Face Spaces for real-time monitoring dashboards.
 
-## Three Interfaces
+## Tasks
 
 | Task | Interface | Reference |
 |------|-----------|-----------|
 | **Logging metrics** during training | Python API | [logging_metrics.md](logging_metrics.md) |
 | **Firing alerts** for training diagnostics | Python API | [alerts.md](alerts.md) |
 | **Retrieving metrics & alerts** after/during training | CLI | [retrieving_metrics.md](retrieving_metrics.md) |
+| **Analyzing agent traces** (latency, cost, tool failures) | CLI | [traces.md](traces.md) |
 | **Inspecting storage schema and running direct SQL** | CLI | [storage_schema.md](storage_schema.md) |
 | **Sharing an experiment campaign as a logbook** | CLI | [logbook.md](logbook.md) |
 
@@ -60,6 +61,7 @@ Use the `trackio` command to query logged metrics and alerts:
 - `trackio get project/run/metric` — retrieve summaries and values
 - `trackio query project --project <name> --sql "SELECT ..."` — run catch-all read-only SQL
 - `trackio list alerts --project <name> --json` — retrieve alerts
+- `trackio list traces` / `get trace` / `get trace-summary` — inspect agent traces and spans
 - `trackio show` — launch the dashboard
 - `trackio sync` — sync to HF Space
 
@@ -68,7 +70,21 @@ Use the `trackio` command to query logged metrics and alerts:
 **Remote Spaces**: Add `--space <space_id_or_url>` to any `list`/`get`/`query` command to query a remote HF Space instead of local data. Use `--hf-token` for private Spaces.
 
 → See [retrieving_metrics.md](retrieving_metrics.md) for all commands, workflows, and JSON output formats.
-→ See [storage_schema.md](storage_schema.md) for SQLite tables, parquet layout, and direct query examples.
+
+### CLI → Analyzing agent traces
+
+Traces are agent/LLM sessions: messages plus execution spans (model generations,
+tool calls) carrying latency, status, token usage, and cost. Use these to answer
+questions about **agent behaviour** rather than training progress:
+*"look at the traces and tell me what we can improve"*, *"why is the agent slow
+or expensive"*, *"what's failing"*.
+
+- `trackio get trace-summary --project <name>` — per-operation rollup (calls, errors, latency, tokens, cost)
+- `trackio list traces --project <name> [--search <text>]` — the trace index
+- `trackio get trace --project <name> --trace-id <id>` — one session's full span tree
+- `trackio query project --sql "... json_each(traces.spans) ..."` — arbitrary span analysis
+
+Often you might need to run multiple commands to answer a question that a user has about the traces.
 
 ## Minimal Logging Setup
 

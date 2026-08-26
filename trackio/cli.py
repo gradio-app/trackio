@@ -30,6 +30,11 @@ from trackio.cli_helpers import (
     format_spaces,
     format_system_metric_names,
     format_system_metrics,
+    format_trace,
+    format_trace_summary,
+    format_traces,
+    trace_id_matches,
+    trace_rollup,
 )
 from trackio.deploy import sync_incremental
 from trackio.frontend_config import (
@@ -184,6 +189,186 @@ def _extract_reports(
                         }
                     )
     return reports
+
+
+TRACE_SORTS = {
+    "request_time_desc",
+    "request_time_asc",
+    "step_asc",
+    "step_desc",
+}
+
+_TRACE_SUMMARY_SQL = """
+SELECT json_extract(s.value, '$.name') AS operation,
+       json_extract(s.value, '$.kind') AS kind,
+       COUNT(*) AS calls,
+       SUM(CASE WHEN LOWER(COALESCE(json_extract(s.value, '$.status'), '')) IN ('error', 'failed')
+                     OR json_extract(s.value, '$.error') IS NOT NULL
+                THEN 1 ELSE 0 END) AS errors,
+       ROUND(AVG(COALESCE(json_extract(s.value, '$.duration_ms'),
+              (julianday(json_extract(s.value, '$.end_time'))
+               - julianday(json_extract(s.value, '$.start_time'))) * 86400000)), 1) AS avg_ms,
+       ROUND(MAX(COALESCE(json_extract(s.value, '$.duration_ms'),
+              (julianday(json_extract(s.value, '$.end_time'))
+               - julianday(json_extract(s.value, '$.start_time'))) * 86400000)), 1) AS max_ms,
+       SUM(COALESCE(json_extract(s.value, '$.usage.input_tokens'), 0)) AS input_tokens,
+       SUM(COALESCE(json_extract(s.value, '$.usage.output_tokens'), 0)) AS output_tokens,
+       ROUND(SUM(COALESCE(json_extract(s.value, '$.cost_usd'), 0)), 4) AS cost_usd
+FROM traces, json_each(traces.spans) AS s
+{where}
+GROUP BY operation, kind
+ORDER BY cost_usd DESC, calls DESC
+"""
+
+
+def _trace_sort_key(sort):
+    if sort in ("step_asc", "step_desc"):
+        return lambda trace: trace.get("step") or 0, sort == "step_desc"
+    return lambda trace: str(trace.get("timestamp") or ""), sort != "request_time_asc"
+
+
+def _project_run_names(args, remote) -> list[str]:
+    if remote:
+        records = remote.predict(args.project, api_name="/get_runs_for_project")
+        return [r["name"] if isinstance(r, dict) else r for r in records]
+    return SQLiteStorage.get_runs(args.project)
+
+
+def _fetch_traces_for_run(args, remote, run, *, limit, offset, search, sort, step):
+    if remote:
+        return remote.predict(
+            args.project,
+            run,
+            None,
+            search,
+            sort,
+            limit,
+            offset,
+            step,
+            api_name="/get_traces",
+        )
+    return SQLiteStorage.get_traces(
+        args.project,
+        run,
+        search=search,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        step=step,
+    )
+
+
+def _fetch_traces(args, remote, *, limit, offset, search=None, sort=None, step=None):
+    """Fetch traces for one run, or merge across every run in the project.
+
+    Traces are stored per run, so with no `--run` this merges each run's page
+    the way the dashboard does, then re-sorts and slices the combined result.
+    """
+    if not remote:
+        db_path = SQLiteStorage.get_project_db_path(args.project)
+        if not db_path.exists():
+            error_exit(f"Project '{args.project}' not found.")
+
+    run = getattr(args, "run", None)
+    if run:
+        return _fetch_traces_for_run(
+            args,
+            remote,
+            run,
+            limit=limit,
+            offset=offset,
+            search=search,
+            sort=sort,
+            step=step,
+        )
+
+    runs = _project_run_names(args, remote)
+    if not runs:
+        return []
+    per_run_limit = None if limit is None else limit + max(0, offset)
+    merged: list[dict] = []
+    for name in runs:
+        merged.extend(
+            _fetch_traces_for_run(
+                args,
+                remote,
+                name,
+                limit=per_run_limit,
+                offset=0,
+                search=search,
+                sort=sort,
+                step=step,
+            )
+            or []
+        )
+    key, reverse = _trace_sort_key(sort)
+    merged.sort(key=key, reverse=reverse)
+    if offset:
+        merged = merged[offset:]
+    return merged if limit is None else merged[:limit]
+
+
+def _handle_list_traces(args, remote):
+    traces = _fetch_traces(
+        args,
+        remote,
+        limit=args.limit,
+        offset=args.offset,
+        search=args.search,
+        sort=args.sort,
+        step=args.step,
+    )
+    if args.json:
+        print(
+            format_json(
+                {
+                    "project": args.project,
+                    "run": args.run,
+                    "traces": [
+                        {**trace, "summary": trace_rollup(trace)} for trace in traces
+                    ],
+                }
+            )
+        )
+    else:
+        print(format_traces(traces))
+
+
+def _handle_get_trace(args, remote):
+    traces = _fetch_traces(args, remote, limit=None, offset=0)
+    match = next(
+        (trace for trace in traces if trace_id_matches(trace, args.trace_id)), None
+    )
+    if match is None:
+        error_exit(
+            f"Trace '{args.trace_id}' not found in project '{args.project}'. "
+            "Use `trackio list traces` to see available trace ids."
+        )
+    if args.json:
+        print(format_json({**match, "summary": trace_rollup(match)}))
+    else:
+        print(format_trace(match))
+
+
+def _handle_get_trace_summary(args, remote):
+    where = ""
+    if args.run:
+        escaped = args.run.replace("'", "''")
+        where = f"WHERE traces.run_name = '{escaped}'"
+    sql = _TRACE_SUMMARY_SQL.format(where=where)
+    try:
+        if remote:
+            result = remote.predict(args.project, sql, api_name="/query_project")
+        else:
+            result = SQLiteStorage.query_project(args.project, sql)
+    except FileNotFoundError as e:
+        error_exit(str(e))
+    except ValueError as e:
+        error_exit(str(e))
+    if args.json:
+        print(format_json({"project": args.project, "run": args.run, **result}))
+    else:
+        print(format_trace_summary(result))
 
 
 def _handle_query(args):
@@ -887,6 +1072,37 @@ def main():
         help="Only show alerts after this ISO 8601 timestamp",
     )
 
+    list_traces_parser = list_subparsers.add_parser(
+        "traces",
+        help="List agent/conversation traces for a project or run",
+    )
+    list_traces_parser.add_argument("--project", required=True, help="Project name")
+    list_traces_parser.add_argument("--run", required=False, help="Run name (optional)")
+    list_traces_parser.add_argument(
+        "--search",
+        required=False,
+        help="Only show traces matching this text (messages, metadata, span names)",
+    )
+    list_traces_parser.add_argument(
+        "--step", required=False, type=int, help="Only show traces at this step"
+    )
+    list_traces_parser.add_argument(
+        "--sort",
+        required=False,
+        choices=sorted(TRACE_SORTS),
+        default="request_time_desc",
+        help="Sort order (default: request_time_desc)",
+    )
+    list_traces_parser.add_argument(
+        "--limit", required=False, type=int, default=50, help="Maximum traces to return"
+    )
+    list_traces_parser.add_argument(
+        "--offset", required=False, type=int, default=0, help="Traces to skip"
+    )
+    list_traces_parser.add_argument(
+        "--json", action="store_true", help="Output in JSON format"
+    )
+
     list_reports_parser = list_subparsers.add_parser(
         "reports",
         help="List markdown reports for a project or run",
@@ -1104,6 +1320,33 @@ def main():
         "--json",
         action="store_true",
         help="Output in JSON format",
+    )
+
+    get_trace_parser = get_subparsers.add_parser(
+        "trace",
+        help="Get one trace with its full execution span tree",
+    )
+    get_trace_parser.add_argument("--project", required=True, help="Project name")
+    get_trace_parser.add_argument(
+        "--trace-id", required=True, help="Trace id (from `trackio list traces`)"
+    )
+    get_trace_parser.add_argument("--run", required=False, help="Run name (optional)")
+    get_trace_parser.add_argument(
+        "--json", action="store_true", help="Output in JSON format"
+    )
+
+    get_trace_summary_parser = get_subparsers.add_parser(
+        "trace-summary",
+        help="Aggregate trace spans by operation (calls, errors, latency, tokens, cost)",
+    )
+    get_trace_summary_parser.add_argument(
+        "--project", required=True, help="Project name"
+    )
+    get_trace_summary_parser.add_argument(
+        "--run", required=False, help="Run name (optional)"
+    )
+    get_trace_summary_parser.add_argument(
+        "--json", action="store_true", help="Output in JSON format"
     )
 
     get_alerts_parser = get_subparsers.add_parser(
@@ -1788,6 +2031,8 @@ def main():
                 )
             else:
                 print(format_alerts(alerts))
+        elif args.list_type == "traces":
+            _handle_list_traces(args, remote)
         elif args.list_type == "reports":
             if remote:
                 run_records = remote.predict(
@@ -2114,6 +2359,10 @@ def main():
                         )
                     else:
                         print(format_system_metrics(system_metrics))
+        elif args.get_type == "trace":
+            _handle_get_trace(args, remote)
+        elif args.get_type == "trace-summary":
+            _handle_get_trace_summary(args, remote)
         elif args.get_type == "alerts":
             if remote:
                 alerts = remote.predict(
@@ -2547,6 +2796,7 @@ def _handle_skills_add(args):
         "logging_metrics.md",
         "retrieving_metrics.md",
         "storage_schema.md",
+        "traces.md",
         "logbook.md",
     ]
     COMMAND_PREFIX = ".agents/commands"
