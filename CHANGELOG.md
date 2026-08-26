@@ -1,5 +1,11 @@
 # trackio
 
+## 0.37.0
+
+### Features
+
+- [#672](https://github.com/gradio-app/trackio/pull/672) [`784819b`](https://github.com/gradio-app/trackio/commit/784819b610bbd872bf39ed9ef5d62ece2a5966b5) - Add hierarchical execution spans and a trace inspector with per-operation latency, status, token usage, cost, and input/output details.  Thanks @abidlabs!
+
 ## 0.36.0
 
 ### Features
