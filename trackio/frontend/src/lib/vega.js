@@ -1,3 +1,3 @@
 export function escapeVegaField(field) {
-  return field.replace(/[.\\[\]]/g, "\\$&");
+  return field.replace(/[.\\[\]'"]/g, "\\$&");
 }

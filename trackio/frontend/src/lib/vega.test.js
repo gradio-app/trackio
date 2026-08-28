@@ -12,6 +12,8 @@ describe("escapeVegaField", () => {
     "trainer.compute_loss",
     "metrics[0]",
     "literal\\backslash",
+    'say "hi"',
+    "it's",
     "profiling/Time taken: GRPOTrainer.compute_loss",
   ])("makes the literal field %s accessible to Vega", (field) => {
     const row = { [field]: 0.25 };
