@@ -616,9 +616,26 @@ def test_query_project_row_limit(temp_dir):
 
 def test_query_project_normalizes_bytes(temp_dir):
     SQLiteStorage.log(project="qproj", run="r1", metrics={"a": 1})
-    result = SQLiteStorage.query_project("qproj", "SELECT randomblob(4) AS b")
-    assert isinstance(result["rows"][0]["b"], str)
-    assert len(result["rows"][0]["b"]) == 8
+    result = SQLiteStorage.query_project("qproj", "SELECT x'80FF8081' AS b")
+    assert result["rows"][0]["b"] == "80ff8081"
+
+
+def test_query_project_decodes_utf8_blobs(temp_dir):
+    """JSON columns are stored as UTF-8 blobs and must come back readable."""
+    SQLiteStorage.bulk_log(
+        project="qproj",
+        run="r1",
+        metrics_list=[{"a": 1}],
+        config={"lr": 0.01, "_Group": "sweep-1"},
+    )
+    result = SQLiteStorage.query_project(
+        "qproj", "SELECT config FROM configs WHERE run_name = 'r1'"
+    )
+    config = result["rows"][0]["config"]
+    assert isinstance(config, str)
+    parsed = orjson.loads(config)
+    assert parsed["lr"] == 0.01
+    assert parsed["_Group"] == "sweep-1"
 
 
 def test_query_project_missing_project(temp_dir):
