@@ -11,6 +11,8 @@
 - sections:
   - local: track
     title: Track
+  - local: sweeps
+    title: Hyperparameter Sweeps
   - local: traces
     title: Traces
   - local: artifacts
