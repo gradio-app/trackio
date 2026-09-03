@@ -111,6 +111,26 @@ def parse_collection_target(target_path: str) -> tuple[str, str]:
     return registry, collection
 
 
+def resolve_collection_link(links: list[dict], spec: str | None) -> dict:
+    """Pick the link a ``use_artifact`` spec refers to from a collection's
+    ``links`` (as returned by ``get_collection``): ``None`` or ``"latest"`` for
+    the newest version, ``"v<N>"`` for a collection version, anything else for
+    an alias."""
+    if not links:
+        raise ValueError("Collection is empty: nothing has been linked into it.")
+    if spec is None or spec == "latest":
+        return max(links, key=lambda link: int(link["collection_version"]))
+    version_match = re.fullmatch(r"v(\d+)", spec)
+    for link in links:
+        if version_match is not None:
+            if int(link["collection_version"]) == int(version_match.group(1)):
+                return link
+        elif spec in link.get("aliases", []):
+            return link
+    kind = "Version" if version_match is not None else "Alias"
+    raise ValueError(f"{kind} {spec!r} not found in collection.")
+
+
 class RegistryStorage:
     REGISTRY_CREATED_AT_KEY = "registry_created_at"
     REGISTRY_DESCRIPTION_KEY = "registry_description"
