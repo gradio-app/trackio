@@ -26,7 +26,8 @@ from trackio.histogram import Histogram
 from trackio.markdown import Markdown
 from trackio.media import TrackioHtml, TrackioMedia, get_project_media_path
 from trackio.pending_uploads import classify_pending_uploads, replay_pending_uploads
-from trackio.registry_storage import parse_collection_target
+from trackio.registry import registry_backend
+from trackio.registry_storage import parse_collection_target, resolve_collection_link
 from trackio.remote_client import RemoteClient, is_transient_remote_error
 from trackio.sqlite_storage import SQLiteStorage
 from trackio.table import Table
@@ -1503,7 +1504,13 @@ class Run:
         artifact_or_name: Artifact | str,
         type: str | None = None,
     ) -> Artifact:
-        """Resolve an artifact and record this run as a consumer of it."""
+        """Resolve an artifact and record this run as a consumer of it.
+
+        The spec is either a project artifact (`"name"`, `"name:vN"`,
+        `"name:alias"`) or a registry location
+        (`"registry-<registry>/<collection>[:vN|:alias]"`), which resolves
+        through the collection's links to the source version it points at.
+        """
         if isinstance(artifact_or_name, Artifact):
             if not artifact_or_name._logged or artifact_or_name._version is None:
                 raise ValueError(
@@ -1512,6 +1519,8 @@ class Run:
                 )
             spec = f"{artifact_or_name.name}:v{artifact_or_name._version}"
             project = artifact_or_name._project or self.project
+            if artifact_or_name.is_link:
+                spec = f"{project}/{spec}"
         else:
             spec = artifact_or_name
             project = self.project
@@ -1525,6 +1534,9 @@ class Run:
                 )
         else:
             name, version_or_alias = spec, None
+
+        if name.startswith(utils.REGISTRY_PROJECT_PREFIX) and "/" in name:
+            return self._use_registry_artifact(spec, name, version_or_alias, type)
 
         if self._is_local:
             record = SQLiteStorage.get_artifact_manifest(
@@ -1583,6 +1595,74 @@ class Run:
                 f"trackio could not record consumer lineage for {spec!r}: {e}",
             )
 
+        return art
+
+    def _use_registry_artifact(
+        self,
+        spec: str,
+        target_path: str,
+        version_or_alias: str | None,
+        expected_type: str | None,
+    ) -> Artifact:
+        """`use_artifact` for a registry location: follow the collection link
+        to its source version, hydrate the linked artifact, and record this run
+        as a consumer of the source version."""
+        registry, collection = parse_collection_target(target_path)
+        if not self._is_local:
+            raise NotImplementedError(
+                "Resolving a registry location from a run that logs to a Space "
+                "or a self-hosted server is not supported yet. Resolve it from "
+                "a local run, or fetch the source version by its own name."
+            )
+        bucket_id = utils.resolve_registry_bucket_id(None)
+        backend = registry_backend(bucket_id)
+        if not backend.registry_exists(registry):
+            raise ValueError(
+                f"Registry {registry!r} does not exist. Create it first with "
+                f"trackio.Api().create_registry({registry!r})."
+            )
+        record = backend.get_collection(registry, collection)
+        if record is None:
+            raise ValueError(
+                f"Collection {collection!r} not found in registry {registry!r}."
+            )
+        try:
+            link = resolve_collection_link(record["links"], version_or_alias)
+        except ValueError as e:
+            raise ValueError(f"{e} ({spec!r})") from e
+        if link.get("source_space_id") or link.get("source_bucket_id"):
+            raise NotImplementedError(
+                f"Registry location {spec!r} points at a source version stored "
+                "on a Space or a bucket; resolving remote sources is not "
+                "supported yet."
+            )
+        source_spec = f"v{link['source_version']}"
+        source = SQLiteStorage.get_artifact_manifest(
+            link["source_project"], link["source_artifact"], source_spec
+        )
+        if source is None:
+            raise ValueError(
+                f"Registry location {spec!r} points at "
+                f"{link['source_project']}/{link['source_artifact']}:{source_spec}, "
+                "which is not available locally."
+            )
+        self._check_artifact_type(spec, source["type"], expected_type)
+        art = Artifact._from_registry_link(
+            registry, collection, {**link, "source": source}, bucket_id=bucket_id
+        )
+        try:
+            SQLiteStorage.insert_run_artifact_link(
+                project=link["source_project"],
+                run_name=self.name,
+                run_id=self.id,
+                version_id=source["version_id"],
+                direction="input",
+            )
+        except Exception as e:
+            self._warn_once(
+                "artifact-use-lineage",
+                f"trackio could not record consumer lineage for {spec!r}: {e}",
+            )
         return art
 
     def link_artifact(

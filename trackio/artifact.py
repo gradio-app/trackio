@@ -530,15 +530,9 @@ class Artifact:
             raise RuntimeError(
                 "Cannot download an Artifact that has not been logged or fetched."
             )
-        if self.is_link:
-            raise NotImplementedError(
-                "Downloading through a registry location is not supported "
-                "yet; it arrives with registry resolution. Download the "
-                f"source artifact version ({self.source_qualified_name}) "
-                "instead."
-            )
         if self._manifest is None or self._project is None or self._version is None:
             raise RuntimeError("Artifact is missing manifest, project, or version.")
+        blob_project = self.source_project or self._project
 
         if root is None:
             project = utils.canonical_project_name(self._project)
@@ -562,7 +556,7 @@ class Artifact:
                 )
                 continue
             digest = cas.validate_digest(entry["digest"])
-            blob = cas.blob_path(self._project, digest)
+            blob = cas.blob_path(blob_project, digest)
             if not blob.is_file():
                 if self._remote_source is None:
                     raise FileNotFoundError(
@@ -570,9 +564,7 @@ class Artifact:
                         "remotely. The producer machine may not have shipped "
                         "this blob yet."
                     )
-                _fetch_blob_from_remote(
-                    self._remote_source, self._project, digest, blob
-                )
+                _fetch_blob_from_remote(self._remote_source, blob_project, digest, blob)
             _materialize(blob, root_path / logical, entry["size"])
 
         return str(root_path)
