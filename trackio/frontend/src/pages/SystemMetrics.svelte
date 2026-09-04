@@ -40,6 +40,7 @@
 
   let rawDataCache = new Map();
   let refreshTimer = null;
+  let refreshInFlight = false;
 
   let runColorMap = $derived(buildColorMap(allRuns.length ? allRuns : selectedRuns));
 
@@ -265,7 +266,9 @@
     if (!project || selectedRuns.length === 0) return;
     if (isTabHidden()) return;
     if (isRateLimitCooldownActive()) return;
+    if (refreshInFlight) return;
 
+    refreshInFlight = true;
     try {
       const batch = await fetchSystemLogsForRuns(selectedRuns);
       let changed = false;
@@ -283,6 +286,8 @@
       }
     } catch (e) {
       console.error("Failed to refresh system metric logs:", e);
+    } finally {
+      refreshInFlight = false;
     }
   }
 

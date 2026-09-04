@@ -2,6 +2,10 @@
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
   import { buildColorSpecKey } from "../lib/dataProcessing.js";
+  import {
+    createVegaViewManager,
+    observeNearViewport,
+  } from "../lib/chartLifecycle.js";
 
   let {
     data = [],
@@ -19,8 +23,9 @@
   let container = $state(null);
   let plotContainer = $state(null);
   let fullscreenHost = $state(null);
-  let view = $state(null);
   let fullscreen = $state(false);
+  let nearViewport = $state(false);
+  const viewManager = createVegaViewManager();
 
   let legendEntries = $derived.by(() => {
     if (!colorField || !data || data.length === 0) return [];
@@ -144,6 +149,7 @@
   }
 
   function syncViewSize() {
+    const view = viewManager.current;
     if (!view || !container) return;
     view.width(container.clientWidth);
     if (fullscreen) view.height(container.clientHeight);
@@ -152,24 +158,33 @@
 
   async function render() {
     await tick();
-    if (!container || !data || data.length === 0 || !y) return;
+    if (!nearViewport || !container || !data || data.length === 0 || !y) {
+      viewManager.clear();
+      return;
+    }
 
+    const target = container;
     const barData = getBarData();
     if (barData.length === 0) return;
 
     const spec = buildSpec(barData);
 
     try {
-      if (view) {
-        view.finalize();
-        view = null;
+      const result = await viewManager.replace(
+        () =>
+          embed(target, spec, {
+            actions: false,
+            renderer: "canvas",
+          }),
+        target,
+      );
+      if (!result || target !== container) {
+        if (result) viewManager.clear();
+        return;
       }
-      const result = await embed(container, spec, {
-        actions: false,
-        renderer: "canvas",
+      requestAnimationFrame(() => {
+        if (viewManager.current === result.view) syncViewSize();
       });
-      view = result.view;
-      requestAnimationFrame(syncViewSize);
     } catch (e) {
       console.error("Vega render error:", e);
     }
@@ -200,6 +215,7 @@
   }
 
   async function downloadImage() {
+    const view = viewManager.current;
     if (!view) return;
     try {
       const url = await view.toImageURL("png", 4);
@@ -305,7 +321,15 @@
     title;
     fullscreen;
     container;
+    nearViewport;
     render();
+  });
+
+  $effect(() => {
+    if (!container) return;
+    return observeNearViewport(container, (visible) => {
+      nearViewport = visible;
+    });
   });
 
   $effect(() => {
@@ -327,7 +351,7 @@
       document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
       document.removeEventListener("mozfullscreenchange", onFullscreenChange);
       document.removeEventListener("MSFullscreenChange", onFullscreenChange);
-      if (view) view.finalize();
+      viewManager.destroy();
       document.body.style.overflow = "";
     };
   });
@@ -605,6 +629,7 @@
   }
   .plot {
     width: 100%;
+    min-height: 250px;
   }
   .plot :global(.vega-embed) {
     width: 100% !important;
