@@ -8,6 +8,7 @@
     createVegaViewManager,
     observeNearViewport,
   } from "../lib/chartLifecycle.js";
+  import { escapeVegaField } from "../lib/vega.js";
 
   let {
     data = [],
@@ -152,21 +153,28 @@
     const { originalData, smoothedData, hasSmoothed } = splitData();
     lastHasSmoothed = hasSmoothed;
     const xDomain = computeXDomain(originalData);
+    const xVegaField = escapeVegaField(x);
+    const yVegaField = escapeVegaField(y);
+    const colorVegaField = escapeVegaField(colorField);
+    const colorDisplayVegaField = escapeVegaField(
+      colorDisplayField || colorField,
+    );
+    const dashVegaField = escapeVegaField(dashField);
 
     const xEnc = {
-      field: x,
+      field: xVegaField,
       type: "quantitative",
       scale: { zero: false, ...(xDomain ? { domain: xDomain } : {}) },
     };
     const yEnc = {
-      field: y,
+      field: yVegaField,
       type: "quantitative",
       ...(yExtent ? { scale: { domain: yExtent } } : {}),
     };
     const colorEnc = hasColor
       ? {
           color: {
-            field: colorField,
+            field: colorVegaField,
             type: "nominal",
             scale: { domain: colorDomain, range: colorRange },
             legend: null,
@@ -176,7 +184,7 @@
     const dashEnc = hasDash
       ? {
           strokeDash: {
-            field: dashField,
+            field: dashVegaField,
             type: "nominal",
             scale: {
               domain: dashLegendEntries.map((entry) => entry.name),
@@ -200,21 +208,21 @@
     const tooltipEnc = [];
     if (hasColor) {
       tooltipEnc.push({
-        field: colorDisplayField || colorField,
+        field: colorDisplayVegaField,
         type: "nominal",
         title: resolvedColorLabel,
       });
     }
     if (hasDash) {
       tooltipEnc.push({
-        field: dashField,
+        field: dashVegaField,
         type: "nominal",
         title: resolvedDashLabel,
       });
     }
     tooltipEnc.push(
-      { field: x, type: "quantitative", title: x },
-      { field: y, type: "quantitative", title: yTitle },
+      { field: xVegaField, type: "quantitative", title: x },
+      { field: yVegaField, type: "quantitative", title: yTitle },
     );
 
     const hoverParams = [{

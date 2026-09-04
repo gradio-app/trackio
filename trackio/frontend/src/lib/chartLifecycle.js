@@ -12,13 +12,6 @@ function clearElement(element) {
   element.replaceChildren();
 }
 
-/**
- * Owns the Vega view for a chart and makes asynchronous replacements race-safe.
- *
- * Vega embeds are asynchronous. Without a generation check, a slow render can
- * finish after a newer render (or after component teardown) and leave a canvas
- * and its event handlers alive with no reference through which to finalize it.
- */
 export function createVegaViewManager() {
   let current = null;
   let currentElement = null;
@@ -77,10 +70,6 @@ export function createVegaViewManager() {
   };
 }
 
-/**
- * Observe a chart with a generous margin so it is ready before scrolling into
- * view, while charts far outside the viewport can release their canvas.
- */
 export function observeNearViewport(element, onChange) {
   if (typeof IntersectionObserver === "undefined") {
     onChange(true);
