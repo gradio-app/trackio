@@ -668,10 +668,23 @@ def init(
     context_vars.current_run.set(run)
     globals()["config"] = run.config
 
-    # NOTE: trackio.init() deliberately does NOT mutate any logbook that happens
-    # to live in the current directory. Auto-noting a dashboard cell here used to
-    # corrupt curated logbooks (e.g. injecting a stray cell / page). Cells are
-    # added explicitly via the `trackio logbook` CLI instead.
+    # Never mutate curated Logbook pages from the SDK. When this process was
+    # launched by ``trackio logbook run``, record a semantic event in that
+    # wrapper's private evidence bundle; the parent projects it onto the page it
+    # explicitly targeted after the command exits.
+    from trackio.logbook_provenance import record_sdk_event  # noqa: PLC0415
+
+    record_sdk_event(
+        "trackio_run_started",
+        project=run.project,
+        run_name=run.name,
+        trackio_run_id=run.id,
+        group=group,
+        config=run.config,
+        space_id=space_id,
+        server_url=server_base_url,
+        resumed=resumed,
+    )
 
     if _should_embed_local:
         try:

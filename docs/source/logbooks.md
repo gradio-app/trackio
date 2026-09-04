@@ -13,7 +13,7 @@ trackio logbook open
 trackio logbook attach trace <path to current trace>
 
 Work in this workspace's Trackio logbook. Before running any experiment or
-script, create or select the relevant page with `trackio logbook page "..."`. Run every experiment command with `trackio logbook run -- <command>` ratherthan invoking it directly, which will log the code and its outputs into the logbook. 
+script, create or select the relevant page with `trackio logbook page "..."`. Run every experiment command with `trackio logbook run -- <command>` rather than invoking it directly, which will capture the code, complete logs, inputs, outputs, and Trackio lineage into the logbook's private evidence store.
 ```
 
 For more specifics and fine-grained control, keep reading!
@@ -47,8 +47,10 @@ For another supported agent, replace `--codex` with its flag, such as
 
 The skill tells the agent to run code with `trackio logbook run -- ...` rather
 than invoking an experiment command directly. That wrapper records the exact
-command, detected scripts and configuration files, output, exit code, duration,
-and supported output artifacts. For example:
+command, complete stdout and stderr, code and Git state, runtime details, exit
+code, duration, observed Python inputs and outputs, and Trackio artifact lineage.
+Captured files are stored by SHA-256 so later edits cannot change the recorded
+run. For example:
 
 ```sh
 trackio logbook page "Baseline"
@@ -56,8 +58,11 @@ trackio logbook run -- python train.py --learning-rate 0.001
 ```
 
 The training script should still use `trackio.init()`, `trackio.log()`, and
-`trackio.finish()` normally. With a logbook in the workspace, `trackio.init()`
-can also add a live dashboard cell for the active Trackio project.
+`trackio.finish()` normally. When launched through `logbook run`, Trackio links
+the child run, resolved config, used artifacts, and logged artifacts to the
+evidence bundle automatically. The wrapper then adds a live dashboard and
+output artifact cells to the page it explicitly targeted. SDK calls made
+outside the wrapper never mutate Logbook pages.
 
 ### Attach the active session trace
 
@@ -107,8 +112,46 @@ output files in one step:
 trackio logbook run --page "Sweep" -- python train.py --learning-rate 0.001
 ```
 
-Output model and data files are recorded as artifact cells by default. Pass
-`--no-artifacts` to disable that capture.
+Python file writes are observed regardless of extension and copied into the
+private content-addressed evidence store. Non-Python commands use model/data
+filesystem detection as a portable fallback. Up to ten of the largest outputs
+are recorded as artifact cells by default; all captured outputs remain in the
+evidence bundle. Pass `--no-artifacts` to disable the generated artifact cells.
+
+The page keeps a compact output preview, while complete `stdout.log`,
+`stderr.log`, `run.json`, capture events, Git patch, and file blobs live under
+`.trackio/run-evidence/`. That directory is gitignored and is not copied into
+the public Logbook Space. Workspace publication uploads the reviewed artifact
+snapshots separately and verifies their recorded digest and size first.
+Known credential files and private/cache directories are never copied into the
+bundle. When a Python process reads a recognized sensitive file, the evidence
+records only that the path was omitted by policy.
+
+### Run the provenance demo
+
+The repository includes a small deterministic example that exercises the main
+capture paths without downloading a model or dataset. It is an ordinary Python
+script with no Trackio import or instrumentation; the wrapper is the entire
+integration. From the repository root:
+
+```sh
+trackio logbook open --title "Automatic provenance capture" --no-serve
+trackio logbook page "Captured training run"
+trackio logbook cell markdown \
+  "This run demonstrates automatic input, output, metric, and artifact capture."
+trackio logbook run -- python3 examples/generic-training-demo.py
+trackio logbook serve
+```
+
+Open the **Captured training run** page for a screenshot. It contains the exact
+command and output preview plus the automatically captured model snapshot,
+metric history, and evaluation report. Behind the page, the private run bundle
+also contains complete stdout and stderr, the input fixture, Git/runtime
+metadata, provider diagnostics, and immutable snapshots of the outputs despite
+their arbitrary `.snapshot` and `.metrics` extensions.
+
+The demo writes generated files under the repository's gitignored `artifacts/`
+directory. The Logbook and private evidence remain under `.trackio/`.
 
 ## Read a logbook programmatically
 
@@ -135,4 +178,3 @@ trackio logbook publish username/learning-rate-logbook
 
 Published logbooks are static and read-only. The Space stores references to
 trace datasets and artifact buckets by default; use `--public` only when those referenced resources should also be public. Use `--private` to make the Space private.
-

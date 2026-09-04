@@ -1153,7 +1153,9 @@ def _workspace_manifest(
     for tracked in metadata.get("local_path_artifacts") or []:
         try:
             source = Path(tracked["abs_path"]).resolve()
-            relative = source.relative_to(root).as_posix()
+            relative = Path(tracked.get("path") or source.relative_to(root)).as_posix()
+            if relative.startswith("../") or Path(relative).is_absolute():
+                continue
             stat = source.stat()
         except (KeyError, OSError, ValueError):
             continue

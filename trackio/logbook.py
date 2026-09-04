@@ -12,10 +12,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from queue import Queue
 
 PROJECT_DIR_NAME = ".trackio"
 LOGBOOK_SUBDIR = "logbook"
@@ -41,6 +43,7 @@ PRIVATE_STATE_IGNORE_PATTERNS = (
     "/imported_workspace.json",
     "/logbook/traces/",
     "/logbook/workspace.json",
+    "/run-evidence/",
 )
 
 TOC_HEADING = "## Pages"
@@ -728,7 +731,7 @@ def _ensure_project_gitignore(proj: Path) -> None:
         return
     if lines and lines[-1].strip():
         lines.append("")
-    header = "# Agent traces and Workspace state may contain sensitive data."
+    header = "# Private Logbook evidence, traces, and Workspace state may be sensitive."
     if header not in known:
         lines.append(header)
     lines.extend(missing)
@@ -1845,6 +1848,9 @@ def add_path_artifact_cell(
     size: int,
     artifact_type: str | None = None,
     title: str | None = None,
+    captured_path: str | None = None,
+    digest: str | None = None,
+    run_id: str | None = None,
 ) -> None:
     display = _artifact_display_path(path)
     shown = display if "`" in display else f"`{display}`"
@@ -1857,9 +1863,12 @@ def add_path_artifact_cell(
         proj,
         path_artifact={
             "path": display,
-            "abs_path": str(Path(path).resolve()),
+            "abs_path": str(Path(captured_path or path).resolve()),
+            "original_abs_path": str(Path(path).resolve()),
             "size": size,
             "artifact_type": artifact_type,
+            "digest": digest,
+            "run_id": run_id,
         },
     )
     _append_cell(
@@ -1871,6 +1880,8 @@ def add_path_artifact_cell(
         path=display,
         size=size,
         artifact_type=artifact_type,
+        digest=digest,
+        evidence_run_id=run_id,
         auto=True,
     )
 
@@ -2193,6 +2204,7 @@ def add_run_cell(
     code_paths: list[str],
     title: str | None = None,
     artifact_note: str | None = None,
+    evidence: dict | None = None,
 ) -> None:
     command_line = shlex.join(command)
     lines = [
@@ -2205,6 +2217,17 @@ def add_run_cell(
     ]
     if artifact_note:
         lines += [artifact_note, ""]
+    if evidence:
+        inputs = len(evidence.get("inputs") or [])
+        outputs = len(evidence.get("outputs") or [])
+        status = evidence.get("evidence_status", "unknown")
+        lines += [
+            f"Provenance `{evidence['run_id']}` · {status} · "
+            f"{inputs} inputs · {outputs} outputs",
+            "Full stdout, stderr, code, file manifests, and capture diagnostics "
+            "are retained in the private run evidence bundle.",
+            "",
+        ]
     for path in code_paths:
         lines += _code_block_lines(path)
     lines += ["", "````output", *output.split("\n"), "````", ""]
@@ -2222,7 +2245,104 @@ def add_run_cell(
         command=command,
         exit_code=exit_code,
         duration_s=round(duration_s, 3),
+        evidence_run_id=evidence.get("run_id") if evidence else None,
+        evidence_status=evidence.get("evidence_status") if evidence else None,
     )
+
+
+class _BoundedRunOutput:
+    def __init__(self) -> None:
+        self.head = ""
+        self.tail = ""
+        self.total = 0
+
+    def add(self, chunk: str) -> None:
+        self.total += len(chunk)
+        if len(self.head) < RUN_OUTPUT_HEAD:
+            take = min(RUN_OUTPUT_HEAD - len(self.head), len(chunk))
+            self.head += chunk[:take]
+            chunk = chunk[take:]
+        if chunk:
+            self.tail = (self.tail + chunk)[-RUN_OUTPUT_TAIL:]
+
+    def render(self) -> str:
+        if self.total <= RUN_OUTPUT_LIMIT:
+            return self.head + self.tail
+        omitted = self.total - len(self.head) - len(self.tail)
+        return self.head + f"\n... [{omitted} chars elided] ...\n" + self.tail
+
+
+def _stream_process(
+    proc: subprocess.Popen,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> tuple[int, str, bool]:
+    chunks: Queue[tuple[str, str | None]] = Queue()
+    output = _BoundedRunOutput()
+
+    def read_stream(stream, name: str, path: Path) -> None:
+        try:
+            with path.open("a", encoding="utf-8") as log:
+                for chunk in stream:
+                    log.write(chunk)
+                    log.flush()
+                    chunks.put((name, chunk))
+        finally:
+            chunks.put((name, None))
+
+    assert proc.stdout is not None and proc.stderr is not None
+    readers = [
+        threading.Thread(
+            target=read_stream,
+            args=(proc.stdout, "stdout", stdout_path),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=read_stream,
+            args=(proc.stderr, "stderr", stderr_path),
+            daemon=True,
+        ),
+    ]
+    for reader in readers:
+        reader.start()
+
+    interrupted = False
+    completed = 0
+    try:
+        while completed < len(readers):
+            name, chunk = chunks.get()
+            if chunk is None:
+                completed += 1
+                continue
+            output.add(chunk)
+            console = sys.stdout if name == "stdout" else sys.stderr
+            console.write(chunk)
+            console.flush()
+    except KeyboardInterrupt:
+        interrupted = True
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        marker = "\n[interrupted]\n"
+        output.add(marker)
+        sys.stderr.write(marker)
+        sys.stderr.flush()
+        with stderr_path.open("a", encoding="utf-8") as log:
+            log.write(marker)
+        while completed < len(readers):
+            _name, chunk = chunks.get()
+            if chunk is None:
+                completed += 1
+            else:
+                output.add(chunk)
+    finally:
+        for reader in readers:
+            reader.join(timeout=5)
+    exit_code = 130 if interrupted else proc.wait()
+    return exit_code, output.render(), interrupted
 
 
 def run_and_log(
@@ -2234,65 +2354,96 @@ def run_and_log(
 ) -> int:
     if not command:
         raise LogbookError("No command provided. Use: trackio logbook run -- <command>")
+    from trackio.logbook_provenance import RunEvidence  # noqa: PLC0415
+
     slug = resolve_page(proj, page)
     code_paths = _detect_code_paths(command)
+    evidence = RunEvidence.start(proj, command, Path.cwd())
     before = None
+    snapshot_status = "disabled"
     if capture_artifacts and _autonote_enabled():
         try:
             before = _snapshot_output_files(Path.cwd())
+            snapshot_status = "complete" if before is not None else "entry-limit-exceeded"
         except Exception:
             before = None
-    output_parts: list[str] = []
+            snapshot_status = "failed"
     started = time.monotonic()
-    interrupted = False
     try:
         proc = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            errors="replace",
+            env=evidence.child_environment(),
         )
     except FileNotFoundError as e:
+        evidence.fail_to_start(str(e))
         raise LogbookError(f"Command not found: {command[0]}") from e
 
-    try:
-        assert proc.stdout is not None
-        for chunk in proc.stdout:
-            sys.stdout.write(chunk)
-            sys.stdout.flush()
-            output_parts.append(chunk)
-        exit_code = proc.wait()
-    except KeyboardInterrupt:
-        interrupted = True
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        exit_code = 130
-        marker = "\n[interrupted]\n"
-        sys.stdout.write(marker)
-        sys.stdout.flush()
-        output_parts.append(marker)
+    exit_code, output, interrupted = _stream_process(
+        proc, evidence.stdout_path, evidence.stderr_path
+    )
 
     duration_s = time.monotonic() - started
-    output = _truncate_run_output("".join(output_parts))
     changed: list[tuple[str, int]] = []
-    artifact_note = None
     if before is not None:
         try:
             after = _snapshot_output_files(Path.cwd())
-            changed = _diff_output_files(before, after or {})
+            if after is None:
+                snapshot_status = "entry-limit-exceeded"
+            else:
+                changed = _diff_output_files(before, after)
         except Exception:
             changed = []
-        if len(changed) > _MAX_AUTO_ARTIFACT_CELLS:
-            artifact_note = (
-                f"{len(changed)} output files detected; recording the "
-                f"{_MAX_AUTO_ARTIFACT_CELLS} largest."
-            )
-            changed = changed[:_MAX_AUTO_ARTIFACT_CELLS]
+            snapshot_status = "failed"
+    try:
+        evidence_record = evidence.finalize(
+            exit_code=exit_code,
+            duration_s=duration_s,
+            fallback_outputs=changed,
+            code_paths=code_paths,
+            filesystem_snapshot_status=snapshot_status,
+        )
+    except Exception as exc:
+        evidence.record.update(
+            {
+                "state": "failed" if exit_code else "succeeded",
+                "evidence_status": "corrupt",
+                "exit_code": exit_code,
+                "duration_s": round(duration_s, 3),
+                "warnings": [
+                    *evidence.record.get("warnings", []),
+                    f"Provenance finalization failed: {exc}",
+                ],
+            }
+        )
+        evidence._write()
+        evidence_record = evidence.record
+
+    captured_outputs = [
+        entry
+        for entry in evidence_record.get("outputs") or []
+        if entry.get("storage") == "captured"
+    ]
+    captured_outputs = [
+        entry
+        for entry in captured_outputs
+        if not Path(entry["path"]).is_absolute()
+        and ".." not in Path(entry["path"]).parts
+    ]
+    if not (capture_artifacts and _autonote_enabled()):
+        captured_outputs = []
+    captured_outputs.sort(key=lambda entry: (-entry.get("size", 0), entry["path"]))
+    artifact_note = None
+    if len(captured_outputs) > _MAX_AUTO_ARTIFACT_CELLS:
+        artifact_note = (
+            f"{len(captured_outputs)} output files detected and captured in the "
+            "evidence bundle; "
+            f"showing the {_MAX_AUTO_ARTIFACT_CELLS} largest as cells."
+        )
     add_run_cell(
         proj,
         slug,
@@ -2303,18 +2454,49 @@ def run_and_log(
         code_paths,
         title=title,
         artifact_note=artifact_note,
+        evidence=evidence_record,
     )
-    for path, size in changed:
-        try:
-            add_path_artifact_cell(
+    for entry in captured_outputs[:_MAX_AUTO_ARTIFACT_CELLS]:
+        add_path_artifact_cell(
+            proj,
+            slug,
+            entry["original_path"],
+            entry["size"],
+            artifact_type=(
+                _ARTIFACT_TYPE_BY_EXT.get(Path(entry["path"]).suffix.lower())
+                or "artifact"
+            ),
+            captured_path=entry["blob_path"],
+            digest=entry["digest"],
+            run_id=evidence.run_id,
+        )
+
+    linked = evidence_record.get("trackio") or {}
+    for linked_run in linked.get("runs") or []:
+        project = linked_run.get("project")
+        if project and not _page_has_dashboard_cell(proj, slug, project):
+            add_dashboard_cell(
                 proj,
                 slug,
-                path,
-                size,
-                artifact_type=_ARTIFACT_TYPE_BY_EXT.get(Path(path).suffix.lower()),
+                project,
+                space_id=linked_run.get("space_id"),
             )
-        except Exception:
-            pass
+    projected_artifacts: set[str] = set()
+    for artifact in linked.get("artifact_outputs") or []:
+        qualified_name = artifact.get("qualified_name")
+        if (
+            qualified_name
+            and artifact.get("is_local", True)
+            and qualified_name not in projected_artifacts
+        ):
+            projected_artifacts.add(qualified_name)
+            add_artifact_cell(
+                proj,
+                slug,
+                qualified_name,
+                size=artifact.get("size"),
+                artifact_type=artifact.get("artifact_type"),
+            )
     return 130 if interrupted else exit_code
 
 
@@ -2789,7 +2971,10 @@ def _promote_local_deps(
                     print(f"  · skipped local file artifact (missing on disk): {rel}")
 
         except Exception as e:
-            print(f"  · could not push artifacts to bucket: {e}")
+            raise LogbookError(
+                "Could not publish Logbook artifacts with verified integrity: "
+                f"{e}"
+            ) from e
 
     write_metadata(proj, metadata)
 
