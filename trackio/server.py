@@ -366,7 +366,7 @@ def oauth_logout(request: Request):
     return resp
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=256)
 def check_hf_token_has_write_access(hf_token: str | None) -> None:
     """
     Checks if the provided hf_token has write access to the space. If it does not
