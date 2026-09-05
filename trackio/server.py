@@ -366,15 +366,13 @@ def oauth_logout(request: Request):
     return resp
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=256)
 def check_hf_token_has_write_access(hf_token: str | None) -> None:
     """
     Checks if the provided hf_token has write access to the space. If it does not
     have write access, a PermissionError is raised. Otherwise, the function returns None.
 
-    The function is cached in two separate caches to avoid unnecessary API calls to /whoami-v2 which is heavily rate-limited:
-    - A cache of the whoami response for the hf_token using .whoami(token=hf_token, cache=True).
-    - This entire function is cached using @lru_cache(maxsize=32).
+    The result is cached to avoid repeated Hub permission checks for the same token.
     """
     if on_spaces():
         if hf_token is None:
@@ -383,46 +381,23 @@ def check_hf_token_has_write_access(hf_token: str | None) -> None:
             )
         space_token = os.getenv("HF_TOKEN")
         if space_token and hf_token == space_token:
-            # If the HF_TOKEN is the same as the space token, we can assume that the user has write access.
-            # This avoids unnecessary API calls to /whoami-v2 which is heavily rate-limited.
             return
-        who = HfApi.whoami(token=hf_token, cache=True)
         owner_name = os.getenv("SPACE_AUTHOR_NAME")
         repo_name = os.getenv("SPACE_REPO_NAME")
-        orgs = [o["name"] for o in who["orgs"]]
-        if owner_name != who["name"] and owner_name not in orgs:
-            raise PermissionError(
-                "Expected the provided hf_token to be the user owner of the space, or be a member of the org owner of the space"
+        try:
+            HfApi.auth_check(
+                f"{owner_name}/{repo_name}",
+                repo_type="space",
+                token=hf_token,
+                write=True,
             )
-        access_token = who["auth"]["accessToken"]
-        if access_token["role"] == "fineGrained":
-            matched = False
-            for item in access_token["fineGrained"]["scoped"]:
-                if (
-                    item["entity"]["type"] == "space"
-                    and item["entity"]["name"] == f"{owner_name}/{repo_name}"
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-                if (
-                    (
-                        item["entity"]["type"] == "user"
-                        or item["entity"]["type"] == "org"
-                    )
-                    and item["entity"]["name"] == owner_name
-                    and "repo.write" in item["permissions"]
-                ):
-                    matched = True
-                    break
-            if not matched:
-                raise PermissionError(
-                    "Expected the provided hf_token with fine grained permissions to provide write access to the space"
-                )
-        elif access_token["role"] != "write":
+        except hf.errors.HfHubHTTPError as e:
+            status_code = e.response.status_code if e.response is not None else None
+            if status_code not in (401, 403, 404):
+                raise
             raise PermissionError(
-                "Expected the provided hf_token to provide write permissions"
-            )
+                "Expected the provided hf_token to provide write access to the space"
+            ) from e
 
 
 _oauth_write_cache: dict[str, tuple[bool, float]] = {}
