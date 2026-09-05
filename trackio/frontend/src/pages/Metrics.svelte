@@ -56,6 +56,7 @@
 
   let rawDataCache = new Map();
   let refreshTimer = null;
+  let refreshInFlight = false;
   const MAX_BATCH_RUNS = 64;
 
   let colorMap = $derived(buildColorMap(allRuns));
@@ -258,7 +259,9 @@
     if (!project || selectedRuns.length === 0) return;
     if (isTabHidden()) return;
     if (isRateLimitCooldownActive()) return;
+    if (refreshInFlight) return;
 
+    refreshInFlight = true;
     try {
       const batch = await fetchLogsForRuns(selectedRuns);
       let changed = false;
@@ -276,6 +279,8 @@
       }
     } catch (e) {
       console.error("Failed to refresh metric logs:", e);
+    } finally {
+      refreshInFlight = false;
     }
   }
 

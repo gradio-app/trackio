@@ -1,6 +1,10 @@
 <script>
   import { onMount, tick } from "svelte";
   import embed from "vega-embed";
+  import {
+    createVegaViewManager,
+    observeNearViewport,
+  } from "../lib/chartLifecycle.js";
 
   let {
     items = [],
@@ -11,8 +15,9 @@
 
   let container = $state(null);
   let fullscreenHost = $state(null);
-  let view = $state(null);
   let fullscreen = $state(false);
+  let nearViewport = $state(false);
+  const viewManager = createVegaViewManager();
 
   let legendEntries = $derived.by(() => {
     const seen = new Set();
@@ -139,25 +144,32 @@
 
   async function render() {
     await tick();
-    if (!container || !items || items.length === 0) return;
+    if (!nearViewport || !container || !items || items.length === 0) {
+      viewManager.clear();
+      return;
+    }
 
+    const target = container;
     const barData = getBarData();
     if (barData.length === 0) return;
 
     const spec = buildSpec(barData);
 
     try {
-      if (view) {
-        view.finalize();
-        view = null;
+      const result = await viewManager.replace(
+        () =>
+          embed(target, spec, {
+            actions: false,
+            renderer: "canvas",
+          }),
+        target,
+      );
+      if (!result || target !== container) {
+        if (result) viewManager.clear();
+        return;
       }
-      const result = await embed(container, spec, {
-        actions: false,
-        renderer: "canvas",
-      });
-      view = result.view;
       requestAnimationFrame(() => {
-        result.view.resize();
+        if (viewManager.current === result.view) result.view.resize();
       });
     } catch (e) {
       console.error("Vega render error:", e);
@@ -188,6 +200,7 @@
   }
 
   async function downloadImage() {
+    const view = viewManager.current;
     if (!view) return;
     try {
       const url = await view.toImageURL("png", 4);
@@ -239,7 +252,7 @@
       await requestFullscreenEl(fullscreenHost);
       await tick();
       relocateTooltipElement(fullscreenHost);
-      view?.resize();
+      viewManager.current?.resize();
     } catch {
       document.body.style.overflow = "";
       fullscreen = false;
@@ -276,7 +289,7 @@
       relocateTooltipElement(document.body);
     }
     if (active && fullscreen) {
-      tick().then(() => view?.resize());
+      tick().then(() => viewManager.current?.resize());
     }
   }
 
@@ -292,14 +305,22 @@
     title;
     fullscreen;
     container;
+    nearViewport;
     render();
+  });
+
+  $effect(() => {
+    if (!container) return;
+    return observeNearViewport(container, (visible) => {
+      nearViewport = visible;
+    });
   });
 
   $effect(() => {
     if (!container) return;
     const ro = new ResizeObserver(() => {
       queueMicrotask(() => {
-        view?.resize();
+        viewManager.current?.resize();
       });
     });
     ro.observe(container);
@@ -316,7 +337,7 @@
       document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
       document.removeEventListener("mozfullscreenchange", onFullscreenChange);
       document.removeEventListener("MSFullscreenChange", onFullscreenChange);
-      if (view) view.finalize();
+      viewManager.destroy();
       document.body.style.overflow = "";
     };
   });
@@ -550,6 +571,7 @@
   }
   .plot {
     width: 100%;
+    min-height: 250px;
   }
   .plot :global(.vega-embed) {
     width: 100% !important;
