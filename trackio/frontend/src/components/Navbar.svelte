@@ -37,11 +37,28 @@
         )
       : ALL_LINKS,
   );
+
+  let tabsEl = $state(null);
+
+  $effect(() => {
+    currentPage;
+    links;
+    if (!tabsEl) return;
+    const active = tabsEl.querySelector(".nav-link.active");
+    if (!active) return;
+    const strip = tabsEl.getBoundingClientRect();
+    const tab = active.getBoundingClientRect();
+    if (tab.left < strip.left) {
+      tabsEl.scrollLeft -= strip.left - tab.left;
+    } else if (tab.right > strip.right) {
+      tabsEl.scrollLeft += tab.right - strip.right;
+    }
+  });
 </script>
 
 <nav class="navbar">
   <div class="nav-spacer"></div>
-  <div class="nav-tabs">
+  <div class="nav-tabs" bind:this={tabsEl}>
     {#each links as link}
       <button
         class="nav-link"
@@ -85,10 +102,18 @@
   .nav-tabs {
     display: flex;
     gap: 0;
-    flex-shrink: 0;
+    flex-shrink: 1;
+    min-width: 0;
     padding-right: 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .nav-tabs::-webkit-scrollbar {
+    display: none;
   }
   .nav-link {
+    flex-shrink: 0;
     padding: 10px 16px;
     border: none;
     background: none;
