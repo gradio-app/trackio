@@ -33,6 +33,7 @@
   } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
   import { AUTO_PANELS_PER_ROW } from "./lib/plotLayout.js";
+  import { watchNarrowViewport } from "./lib/viewport.js";
   import { reconcileSelectedRuns } from "./lib/selection.js";
   import {
     getPageFromPath,
@@ -393,6 +394,10 @@
       sidebarHidden = false;
     }
 
+    const stopNarrowViewportWatch = watchNarrowViewport(() => {
+      sidebarOpen = false;
+    });
+
     const smoothingParam = getQueryParam("smoothing");
     if (smoothingParam) {
       const s = parseInt(smoothingParam, 10);
@@ -479,6 +484,7 @@
       if (pollTimer) clearInterval(pollTimer);
       if (mutationPollTimer) clearInterval(mutationPollTimer);
       window.removeEventListener("focus", refreshMutationAccess);
+      stopNarrowViewportWatch();
     };
   });
 
