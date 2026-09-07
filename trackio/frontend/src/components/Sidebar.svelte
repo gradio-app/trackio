@@ -17,6 +17,7 @@
 
   let {
     open = $bindable(true),
+    onToggle,
     variant = "full",
     currentPage = "metrics",
     projects = [],
@@ -226,6 +227,7 @@
 
 <SidebarShell
   bind:open
+  {onToggle}
   bind:selectedProject
   {projects}
   {projectLocked}

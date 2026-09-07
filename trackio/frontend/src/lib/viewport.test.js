@@ -23,55 +23,39 @@ function fakeWindow(initialMatches) {
 }
 
 describe("watchNarrowViewport", () => {
-  test("fires immediately when the viewport is already narrow", () => {
+  test("reports the starting width immediately", () => {
     const win = fakeWindow(true);
-    let calls = 0;
-    watchNarrowViewport(() => calls++, win);
-    expect(calls).toBe(1);
+    const seen = [];
+    watchNarrowViewport((narrow) => seen.push(narrow), win);
+    expect(seen).toEqual([true]);
     expect(win.queries).toEqual([NARROW_VIEWPORT_QUERY]);
   });
 
-  test("does not fire on a wide viewport", () => {
+  test("reports a wide start too", () => {
     const win = fakeWindow(false);
-    let calls = 0;
-    watchNarrowViewport(() => calls++, win);
-    expect(calls).toBe(0);
+    const seen = [];
+    watchNarrowViewport((narrow) => seen.push(narrow), win);
+    expect(seen).toEqual([false]);
   });
 
-  test("fires when the viewport crosses into narrow", () => {
+  test("reports crossings in both directions", () => {
     const win = fakeWindow(false);
-    let calls = 0;
-    watchNarrowViewport(() => calls++, win);
+    const seen = [];
+    watchNarrowViewport((narrow) => seen.push(narrow), win);
     win.cross(true);
-    expect(calls).toBe(1);
-  });
-
-  test("does not fire when the viewport crosses back to wide", () => {
-    const win = fakeWindow(true);
-    let calls = 0;
-    watchNarrowViewport(() => calls++, win);
     win.cross(false);
-    expect(calls).toBe(1);
-  });
-
-  test("stays quiet while the viewport remains narrow", () => {
-    const win = fakeWindow(true);
-    let calls = 0;
-    watchNarrowViewport(() => calls++, win);
-    win.cross(false);
-    win.cross(true);
-    expect(calls).toBe(2);
+    expect(seen).toEqual([false, true, false]);
   });
 
   test("removes its listener when stopped", () => {
     const win = fakeWindow(false);
-    let calls = 0;
-    const stop = watchNarrowViewport(() => calls++, win);
+    const seen = [];
+    const stop = watchNarrowViewport((narrow) => seen.push(narrow), win);
     expect(win.listenerCount()).toBe(1);
     stop();
     expect(win.listenerCount()).toBe(0);
     win.cross(true);
-    expect(calls).toBe(0);
+    expect(seen).toEqual([false]);
   });
 
   test("is a no-op without matchMedia", () => {

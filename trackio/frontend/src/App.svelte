@@ -93,6 +93,7 @@
   let urlXAxisApplied = $state(false);
   let sidebarOpen = $state(true);
   let sidebarHidden = $state(false);
+  let sidebarUserControlled = $state(false);
   let navbarHidden = $state(false);
   let hideEmptyTabs = $state(false);
   let urlTick = $state(0);
@@ -387,15 +388,18 @@
     if (sidebarParam === "hidden") {
       sidebarHidden = true;
       sidebarOpen = false;
+      sidebarUserControlled = true;
     } else if (sidebarParam === "collapsed") {
       sidebarHidden = false;
       sidebarOpen = false;
+      sidebarUserControlled = true;
     } else {
       sidebarHidden = false;
     }
 
-    const stopNarrowViewportWatch = watchNarrowViewport(() => {
-      sidebarOpen = false;
+    const stopNarrowViewportWatch = watchNarrowViewport((narrow) => {
+      if (sidebarUserControlled) return;
+      sidebarOpen = !narrow;
     });
 
     const smoothingParam = getQueryParam("smoothing");
@@ -563,12 +567,17 @@
   let sidebarVariant = $derived(
     currentPage === "runs" || currentPage === "files" ? "compact" : "full"
   );
+
+  function markSidebarUserControlled() {
+    sidebarUserControlled = true;
+  }
 </script>
 
 <div class="app">
   {#if showSidebar && !sidebarHidden}
     <Sidebar
       bind:open={sidebarOpen}
+      onToggle={markSidebarUserControlled}
       variant={sidebarVariant}
       {currentPage}
       spacesMode={mutationStatus.spaces}
@@ -603,6 +612,7 @@
   {#if currentPage === "artifacts" && !sidebarHidden}
     <ArtifactsSidebar
       bind:open={sidebarOpen}
+      onToggle={markSidebarUserControlled}
       {projects}
       bind:project={selectedProject}
       projectLocked={projectLocked}
