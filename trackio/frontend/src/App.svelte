@@ -32,6 +32,7 @@
     isTabHidden,
   } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
+  import { AUTO_PANELS_PER_ROW } from "./lib/plotLayout.js";
   import { reconcileSelectedRuns } from "./lib/selection.js";
   import {
     getPageFromPath,
@@ -77,7 +78,7 @@
   let runs = $state([]);
   let selectedRuns = $state([]);
   let smoothing = $state(10);
-  let panelsPerRow = $state(4);
+  let panelsPerRow = $state(AUTO_PANELS_PER_ROW);
   let xAxis = $state("step");
   let logScaleX = $state(false);
   let logScaleY = $state(false);

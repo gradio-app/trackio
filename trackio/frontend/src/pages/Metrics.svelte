@@ -22,6 +22,11 @@
     logsHaveNewData,
   } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
+  import {
+    AUTO_PANELS_PER_ROW,
+    getPlotColumns,
+    isAutoPanels,
+  } from "../lib/plotLayout.js";
 
   let {
     project = null,
@@ -29,7 +34,7 @@
     allRuns = [],
     runConfigs = {},
     smoothing = 10,
-    panelsPerRow = 4,
+    panelsPerRow = AUTO_PANELS_PER_ROW,
     xAxis = "step",
     logScaleX = false,
     logScaleY = false,
@@ -79,8 +84,10 @@
     return computeMetricPlotData(masterData, xColumn, metric, xLim);
   }
 
+  let autoLayout = $derived(isAutoPanels(panelsPerRow));
+
   function getGroupCols(items) {
-    return Math.max(1, Math.min(panelsPerRow, items.length || 1));
+    return getPlotColumns(panelsPerRow, items.length);
   }
 
   function getOrderedMetrics(key, items) {
@@ -372,7 +379,7 @@
         hidden={!showHeaders}
       >
         {#if orderedDirect.length > 0}
-          <div class="plot-grid" style="--cols: {directCols}">
+          <div class="plot-grid" class:auto={autoLayout} style="--cols: {directCols}">
             {#each orderedDirect as metric, i}
               {@const plotResult = getPlotResult(metric)}
               {@const plotData = plotResult.data}
@@ -427,7 +434,7 @@
               open={true}
               hidden={!showHeaders}
             >
-              <div class="plot-grid" style="--cols: {subCols}">
+              <div class="plot-grid" class:auto={autoLayout} style="--cols: {subCols}">
                 {#each orderedSub as metric, i}
                   {@const plotResult = getPlotResult(metric)}
                   {@const plotData = plotResult.data}
@@ -482,7 +489,11 @@
         open={true}
         hidden={!showHeaders}
       >
-        <div class="plot-grid">
+        <div
+          class="plot-grid"
+          class:auto={autoLayout}
+          style="--cols: {getGroupCols(filteredHistogramMetrics)}"
+        >
           {#each filteredHistogramMetrics as metric}
             <HistogramPlot
               items={histogramItems[metric]}
@@ -505,9 +516,28 @@
     min-height: 0;
   }
   .plot-grid {
+    --plot-gap: 16px;
+    --plot-min-width: 300px;
+    --plot-max-cols: 4;
     display: grid;
     grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
-    gap: 16px;
+    gap: var(--plot-gap);
+  }
+  .plot-grid.auto {
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(
+        min(
+          100%,
+          max(
+            var(--plot-min-width),
+            (100% - (var(--plot-max-cols) - 1) * var(--plot-gap)) /
+              var(--plot-max-cols) - 0.01px
+          )
+        ),
+        1fr
+      )
+    );
   }
   .plot-grid :global(.plot-container) {
     min-width: 0;
