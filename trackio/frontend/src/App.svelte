@@ -32,7 +32,10 @@
     isTabHidden,
   } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
-  import { AUTO_PANELS_PER_ROW } from "./lib/plotLayout.js";
+  import {
+    AUTO_PANELS_PER_ROW,
+    parsePlotsPerRow,
+  } from "./lib/plotLayout.js";
   import { watchNarrowViewport } from "./lib/viewport.js";
   import { reconcileSelectedRuns } from "./lib/selection.js";
   import {
@@ -407,6 +410,9 @@
       const s = parseInt(smoothingParam, 10);
       if (!Number.isNaN(s)) smoothing = s;
     }
+
+    const plotsPerRow = parsePlotsPerRow(getQueryParam("plots_per_row"));
+    if (plotsPerRow !== null) panelsPerRow = plotsPerRow;
 
     const xAxisParam = xAxisParamFromUrl();
     if (xAxisParam && xAxisParam.trim()) {

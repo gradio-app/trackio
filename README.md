@@ -259,6 +259,7 @@ Supported query parameters:
 - `xmin` / `xmax`: (numbers, use both together) Set the initial horizontal zoom range on the Metrics plots (shared x-axis window). Both must be valid numbers with `xmin < xmax`.
 - `x_axis`: (string) Set the initial Metrics page x-axis, e.g. `step`, `time`, or a numeric logged metric/column such as `epoch`. The alias `x-axis` is also accepted. If the requested x-axis is unavailable, Trackio falls back to the default `step` axis.
 - `smoothing`: (number) Set the initial value of the smoothing slider (0-20, where 0 = no smoothing).
+- `plots_per_row`: (`auto` or integer from 1 to 6) Set the initial value of the **Plots per row** control. The default is `auto`, which fits plots to the available width.
 - `accordion`: (string: "hidden"). When set to "hidden", hides the section header accordions around metric groups. By default, section headers are visible.
 - `theme`: (string) Dashboard theme, e.g. `light` or `dark` (see theme behavior in the app).
 - `write_token`: (string) One-time token written to a cookie for write access on Hugging Face Spaces deployments; stripped from the URL after load.

@@ -16,6 +16,14 @@ export function isAutoPanels(panelsPerRow) {
   return panelsPerRow === AUTO_PANELS_PER_ROW;
 }
 
+export function parsePlotsPerRow(value) {
+  if (value === AUTO_PANELS_PER_ROW) return AUTO_PANELS_PER_ROW;
+  const count = Number(value);
+  return Number.isInteger(count) && PANELS_PER_ROW_CHOICES.includes(count)
+    ? count
+    : null;
+}
+
 export function getPlotColumns(panelsPerRow, itemCount) {
   const count = Math.max(1, Math.floor(itemCount) || 1);
   if (isAutoPanels(panelsPerRow)) return count;
