@@ -36,7 +36,10 @@
     AUTO_PANELS_PER_ROW,
     parsePlotsPerRow,
   } from "./lib/plotLayout.js";
-  import { watchNarrowViewport } from "./lib/viewport.js";
+  import {
+    getInitialSidebarState,
+    watchNarrowViewport,
+  } from "./lib/viewport.js";
   import { reconcileSelectedRuns } from "./lib/selection.js";
   import {
     getPageFromPath,
@@ -387,23 +390,10 @@
   });
 
   onMount(() => {
-    const sidebarParam = getQueryParam("sidebar");
-    if (sidebarParam === "hidden") {
-      sidebarHidden = true;
-      sidebarOpen = false;
-      sidebarUserControlled = true;
-    } else if (sidebarParam === "collapsed") {
-      sidebarHidden = false;
-      sidebarOpen = false;
-      sidebarUserControlled = true;
-    } else if (sidebarParam === "visible") {
-      sidebarHidden = false;
-      sidebarOpen = true;
-      sidebarUserControlled = true;
-    } else {
-      sidebarHidden = false;
-      sidebarUserControlled = false;
-    }
+    const sidebarState = getInitialSidebarState(getQueryParam("sidebar"));
+    sidebarHidden = sidebarState.hidden;
+    sidebarOpen = sidebarState.open;
+    sidebarUserControlled = !sidebarState.responsive;
 
     const stopNarrowViewportWatch = watchNarrowViewport((narrow) => {
       if (sidebarUserControlled) return;
