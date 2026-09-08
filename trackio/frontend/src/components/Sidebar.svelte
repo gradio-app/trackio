@@ -10,9 +10,14 @@
   import { latestOnlySelection } from "../lib/selection.js";
   import { filterMetricsByRegex } from "../lib/dataProcessing.js";
   import { computeGroupByOptions, computeGroupedRuns } from "../lib/grouping.js";
+  import {
+    AUTO_PANELS_PER_ROW,
+    PANELS_PER_ROW_CHOICES,
+  } from "../lib/plotLayout.js";
 
   let {
     open = $bindable(true),
+    onToggle,
     variant = "full",
     currentPage = "metrics",
     projects = [],
@@ -22,7 +27,7 @@
     availableSystemDevices = [],
     selectedSystemDevices = $bindable([]),
     smoothing = $bindable(10),
-    panelsPerRow = $bindable(4),
+    panelsPerRow = $bindable(AUTO_PANELS_PER_ROW),
     xAxis = $bindable("step"),
     logScaleX = $bindable(false),
     logScaleY = $bindable(false),
@@ -222,6 +227,7 @@
 
 <SidebarShell
   bind:open
+  {onToggle}
   bind:selectedProject
   {projects}
   {projectLocked}
@@ -500,7 +506,8 @@
             <div class="section">
               <Dropdown
                 label="Plots per row"
-                choices={[1, 2, 3, 4, 5, 6]}
+                info="Auto fits plots to the available width, up to 4 per row."
+                choices={PANELS_PER_ROW_CHOICES}
                 bind:value={panelsPerRow}
                 filterable={false}
               />
