@@ -40,9 +40,7 @@
 
   let tabsEl = $state(null);
 
-  $effect(() => {
-    currentPage;
-    links;
+  function revealActiveTab() {
     if (!tabsEl) return;
     const active = tabsEl.querySelector(".nav-link.active");
     if (!active) return;
@@ -53,6 +51,16 @@
     } else if (tab.right > strip.right) {
       tabsEl.scrollLeft += tab.right - strip.right;
     }
+  }
+
+  $effect(() => {
+    currentPage;
+    links;
+    if (!tabsEl) return;
+    revealActiveTab();
+    const observer = new ResizeObserver(revealActiveTab);
+    observer.observe(tabsEl);
+    return () => observer.disconnect();
   });
 </script>
 
