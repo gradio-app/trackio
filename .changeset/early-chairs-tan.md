@@ -1,5 +1,5 @@
 ---
-"trackio": minor
+"trackio": patch
 ---
 
 feat:Fix dotted metric names in line plots
