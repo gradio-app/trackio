@@ -1,3 +1,4 @@
+import re
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from playwright.sync_api import expect, sync_playwright
@@ -92,6 +93,57 @@ def test_share_view_query_params_apply(temp_dir):
             expect(page.locator(".navbar")).to_have_count(0)
             expect(page.locator(".vega-embed")).to_have_count(1)
             expect(page.locator(".metrics-page .legend-dot")).to_have_count(1)
+
+            plots_per_row = _url_with_query(
+                full_url,
+                {
+                    "project": project,
+                    "plots_per_row": "2",
+                },
+            )
+            page.goto(plots_per_row)
+            page.wait_for_load_state("networkidle")
+
+            expect(page.get_by_label("Plots per row")).to_have_value("2")
+            plot_grid = page.locator(".plot-grid").first
+            expect(plot_grid).to_be_visible()
+            assert (
+                plot_grid.evaluate(
+                    "element => element.style.getPropertyValue('--cols').trim()"
+                )
+                == "2"
+            )
+
+            page.set_viewport_size({"width": 600, "height": 800})
+            auto_sidebar = _url_with_query(
+                full_url,
+                {
+                    "project": project,
+                    "metric_filter": "^loss$",
+                    "sidebar": "auto",
+                },
+            )
+            page.goto(auto_sidebar)
+            page.wait_for_load_state("networkidle")
+
+            expect(page.locator(".sidebar-shell")).to_have_class(
+                re.compile(r"\bcollapsed\b")
+            )
+
+            visible_sidebar = _url_with_query(
+                full_url,
+                {
+                    "project": project,
+                    "metric_filter": "^loss$",
+                    "sidebar": "visible",
+                },
+            )
+            page.goto(visible_sidebar)
+            page.wait_for_load_state("networkidle")
+
+            expect(page.locator(".sidebar-shell")).not_to_have_class(
+                re.compile(r"\bcollapsed\b")
+            )
 
             browser.close()
     finally:
