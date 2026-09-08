@@ -396,8 +396,13 @@
       sidebarHidden = false;
       sidebarOpen = false;
       sidebarUserControlled = true;
+    } else if (sidebarParam === "visible") {
+      sidebarHidden = false;
+      sidebarOpen = true;
+      sidebarUserControlled = true;
     } else {
       sidebarHidden = false;
+      sidebarUserControlled = false;
     }
 
     const stopNarrowViewportWatch = watchNarrowViewport((narrow) => {

@@ -91,10 +91,14 @@ You can also filter the dashboard to display only specific projects or metrics u
 
 * `project` (string): Show only a specific project.
 * `metrics` (comma-separated list): Show only specific metrics, e.g., `train_loss,train_accuracy`.
-* `sidebar` (string, `"hidden"` or `"collapsed"`):
+* `sidebar` (string, `"auto"`, `"visible"`, `"collapsed"`, or `"hidden"`):
 
+  * `"auto"` opens or collapses the sidebar based on the viewport width and is the default.
+  * `"visible"` starts with the full sidebar open.
+  * `"collapsed"` starts with only the narrow rail.
   * `"hidden"` hides the sidebar completely.
-  * `"collapsed"` keeps the sidebar initially collapsed, but the user can expand it. By default, the sidebar is visible and open.
+
+  Explicit modes are not changed when the viewport is resized.
 * `footer` (string, `"false"`): When set to `"false"`, hides the Gradio footer. By default, the footer is visible.
 * `xmin` (number): Set the initial minimum value for the x-axis limits across all metrics plots.
 * `xmax` (number): Set the initial maximum value for the x-axis limits across all metrics plots.
