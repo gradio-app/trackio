@@ -214,12 +214,16 @@
     singlePointMetrics = sp;
   }
 
-  async function fetchLogsForRuns(runs, requestOptions = {}) {
+  async function fetchLogsForRuns(
+    runs,
+    requestOptions = {},
+    projectName = project,
+  ) {
     const results = [];
     for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
       const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
       const batch = await getLogsBatch(
-        project,
+        projectName,
         chunk,
         { scalar_only: true },
         requestOptions,
@@ -229,7 +233,7 @@
     return results;
   }
 
-  async function fetchNewRuns() {
+  async function fetchNewRuns(signal) {
     if (!appBootstrapReady) {
       hasLoaded = false;
       return;
@@ -243,20 +247,28 @@
       return;
     }
 
-    const needFetch = selectedRuns.filter((run) => {
+    const requestedProject = project;
+    const requestedRuns = selectedRuns;
+    const needFetch = requestedRuns.filter((run) => {
       const runKey = run.id ?? run.name;
       return !rawDataCache.has(runKey);
     });
     let fetched = false;
     if (needFetch.length > 0) {
       try {
-        const batch = await fetchLogsForRuns(needFetch);
+        const batch = await fetchLogsForRuns(
+          needFetch,
+          { signal },
+          requestedProject,
+        );
+        if (signal.aborted || requestedProject !== project) return;
         for (const entry of batch) {
           const runKey = entry.run_id ?? entry.run;
           rawDataCache.set(runKey, entry.logs);
           fetched = true;
         }
       } catch (e) {
+        if (e?.name === "AbortError") return;
         console.error("Failed to load metric logs:", e);
       }
     }
@@ -274,7 +286,14 @@
     if (isRateLimitCooldownActive()) return;
     try {
       await refreshTask.run(async (signal) => {
-        const batch = await fetchLogsForRuns(selectedRuns, { signal });
+        const requestedProject = project;
+        const requestedRuns = selectedRuns;
+        const batch = await fetchLogsForRuns(
+          requestedRuns,
+          { signal },
+          requestedProject,
+        );
+        if (signal.aborted || requestedProject !== project) return;
         let changed = false;
         for (const entry of batch) {
           const runKey = entry.run_id ?? entry.run;
@@ -288,6 +307,7 @@
         if (changed) {
           processFromCache();
         }
+        hasLoaded = true;
       });
     } catch (e) {
       if (e?.name !== "AbortError") {
@@ -302,7 +322,7 @@
     appBootstrapReady;
     refreshTask.cancel();
     rawDataCache = project ? rawDataCache : new Map();
-    fetchNewRuns();
+    void refreshTask.run(fetchNewRuns);
   });
 
   $effect(() => {

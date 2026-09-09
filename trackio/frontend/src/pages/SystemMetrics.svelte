@@ -189,10 +189,14 @@
     return /\b(404|405|501)\b/.test(msg);
   }
 
-  async function fetchSystemLogsForRuns(runs, requestOptions = {}) {
+  async function fetchSystemLogsForRuns(
+    runs,
+    requestOptions = {},
+    projectName = project,
+  ) {
     if (batchEndpointAvailable && runs.length <= MAX_BATCH_RUNS) {
       try {
-        return await getSystemLogsBatch(project, runs, requestOptions);
+        return await getSystemLogsBatch(projectName, runs, requestOptions);
       } catch (e) {
         if (!isMissingEndpointError(e)) throw e;
         batchEndpointAvailable = false;
@@ -202,14 +206,18 @@
       const results = [];
       for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
         const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
-        const batch = await getSystemLogsBatch(project, chunk, requestOptions);
+        const batch = await getSystemLogsBatch(
+          projectName,
+          chunk,
+          requestOptions,
+        );
         results.push(...batch);
       }
       return results;
     }
     const results = [];
     for (const run of runs) {
-      const logs = await getSystemLogs(project, run, requestOptions);
+      const logs = await getSystemLogs(projectName, run, requestOptions);
       results.push({
         run: run?.name ?? null,
         run_id: run?.id ?? null,
@@ -219,7 +227,7 @@
     return results;
   }
 
-  async function fetchNewRuns() {
+  async function fetchNewRuns(signal) {
     if (!appBootstrapReady) {
       hasLoaded = false;
       return;
@@ -232,14 +240,21 @@
       return;
     }
 
-    const needFetch = selectedRuns.filter((run) => {
+    const requestedProject = project;
+    const requestedRuns = selectedRuns;
+    const needFetch = requestedRuns.filter((run) => {
       const runKey = run.id ?? run.name;
       return !rawDataCache.has(runKey);
     });
     let fetched = false;
     if (needFetch.length > 0) {
       try {
-        const batch = await fetchSystemLogsForRuns(needFetch);
+        const batch = await fetchSystemLogsForRuns(
+          needFetch,
+          { signal },
+          requestedProject,
+        );
+        if (signal.aborted || requestedProject !== project) return;
         for (const entry of batch) {
           const runKey = entry.run_id ?? entry.run;
           rawDataCache.set(runKey, entry.logs);
@@ -247,6 +262,7 @@
         }
         loadError = null;
       } catch (e) {
+        if (e?.name === "AbortError") return;
         console.error("Failed to load system metric logs:", e);
         if (!hasLoaded) {
           loadError = e && e.message ? e.message : "Failed to load system metrics";
@@ -269,7 +285,14 @@
     if (isRateLimitCooldownActive()) return;
     try {
       await refreshTask.run(async (signal) => {
-        const batch = await fetchSystemLogsForRuns(selectedRuns, { signal });
+        const requestedProject = project;
+        const requestedRuns = selectedRuns;
+        const batch = await fetchSystemLogsForRuns(
+          requestedRuns,
+          { signal },
+          requestedProject,
+        );
+        if (signal.aborted || requestedProject !== project) return;
         let changed = false;
         for (const entry of batch) {
           const runKey = entry.run_id ?? entry.run;
@@ -283,6 +306,8 @@
         if (changed) {
           processFromCache();
         }
+        loadError = null;
+        hasLoaded = true;
       });
     } catch (e) {
       if (e?.name !== "AbortError") {
@@ -297,7 +322,7 @@
     appBootstrapReady;
     refreshTask.cancel();
     rawDataCache = project ? rawDataCache : new Map();
-    fetchNewRuns();
+    void refreshTask.run(fetchNewRuns);
   });
 
   $effect(() => {
