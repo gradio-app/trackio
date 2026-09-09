@@ -206,7 +206,7 @@ def test_multiple_runs_display_multiple_plots(temp_dir):
 def test_metric_charts_release_canvases_outside_viewport(temp_dir):
     trackio.init(project="test_chart_visibility", name="run")
     for step in range(2):
-        trackio.log(metrics={f"metric_{i}": i + step for i in range(20)})
+        trackio.log(metrics={f"metric_{i}": i + step for i in range(48)})
     trackio.finish()
 
     app, _, _, full_url = trackio.show(
@@ -221,15 +221,33 @@ def test_metric_charts_release_canvases_outside_viewport(temp_dir):
             page.goto(full_url)
 
             plots = page.locator(".metrics-page .plot")
-            expect(plots).to_have_count(20)
+            expect(plots).to_have_count(48)
             expect(plots.first.locator("canvas")).to_have_count(1)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.vega-embed canvas').length < 48"
+            )
 
             initial_canvas_count = page.locator(".vega-embed canvas").count()
-            assert 0 < initial_canvas_count < 20
+            initial_first_height = plots.first.evaluate(
+                "element => element.getBoundingClientRect().height"
+            )
+            assert 0 < initial_canvas_count < 48
 
             page.locator(".metrics-page").evaluate(
                 "element => { element.scrollTop = element.scrollHeight; }"
             )
+            expect(plots.last.locator("canvas")).to_have_count(1)
+            expect(plots.first.locator("canvas")).to_have_count(0)
+            released_first_height = plots.first.evaluate(
+                "element => element.getBoundingClientRect().height"
+            )
+            scroll_position = page.locator(".metrics-page").evaluate(
+                "element => ({ top: element.scrollTop, max: element.scrollHeight - element.clientHeight })"
+            )
+            assert abs(released_first_height - initial_first_height) < 1
+            assert abs(scroll_position["top"] - scroll_position["max"]) < 10
+
+            page.set_viewport_size({"width": 720, "height": 900})
             expect(plots.last.locator("canvas")).to_have_count(1)
             expect(plots.first.locator("canvas")).to_have_count(0)
 

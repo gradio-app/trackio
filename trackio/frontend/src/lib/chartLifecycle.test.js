@@ -34,17 +34,22 @@ describe("createVegaViewManager", () => {
     expect(manager.current).toBe(second.view);
   });
 
-  test("finalizes a stale render that finishes after a newer render", async () => {
+  test("waits for an active render before starting its replacement", async () => {
     const manager = createVegaViewManager();
     const slow = deferred();
     const stale = fakeResult();
     const latest = fakeResult();
+    const createLatest = vi.fn(async () => latest);
 
     const slowReplace = manager.replace(() => slow.promise);
-    await manager.replace(async () => latest);
+    const latestReplace = manager.replace(createLatest);
+
+    expect(createLatest).not.toHaveBeenCalled();
     slow.resolve(stale);
 
     expect(await slowReplace).toBeNull();
+    expect(await latestReplace).toBe(latest);
+    expect(createLatest).toHaveBeenCalledOnce();
     expect(stale.view.finalize).toHaveBeenCalledOnce();
     expect(latest.view.finalize).not.toHaveBeenCalled();
     expect(manager.current).toBe(latest.view);
@@ -76,21 +81,53 @@ describe("createVegaViewManager", () => {
     expect(element.replaceChildren).toHaveBeenCalledOnce();
   });
 
-  test("does not clear a newer render that shares a stale render's element", async () => {
+  test("keeps only the newest queued replacement", async () => {
     const manager = createVegaViewManager();
     const slow = deferred();
     const stale = fakeResult();
+    const middle = fakeResult();
     const latest = fakeResult();
-    const element = { replaceChildren: vi.fn() };
+    const createMiddle = vi.fn(async () => middle);
+    const createLatest = vi.fn(async () => latest);
 
-    const slowReplace = manager.replace(() => slow.promise, element);
-    await manager.replace(async () => latest, element);
+    const slowReplace = manager.replace(() => slow.promise);
+    const middleReplace = manager.replace(createMiddle);
+    const latestReplace = manager.replace(createLatest);
+
+    expect(await middleReplace).toBeNull();
+    expect(createMiddle).not.toHaveBeenCalled();
     slow.resolve(stale);
-    await slowReplace;
 
+    expect(await slowReplace).toBeNull();
+    expect(await latestReplace).toBe(latest);
     expect(stale.view.finalize).toHaveBeenCalledOnce();
-    expect(element.replaceChildren).not.toHaveBeenCalled();
+    expect(middle.view.finalize).not.toHaveBeenCalled();
+    expect(createLatest).toHaveBeenCalledOnce();
     expect(manager.current).toBe(latest.view);
+  });
+
+  test("preserves chart height while its canvas is cleared", async () => {
+    const manager = createVegaViewManager();
+    const result = fakeResult();
+    const removeProperty = vi.fn(function () {
+      this.height = "";
+    });
+    const element = {
+      getBoundingClientRect: () => ({ height: 312 }),
+      replaceChildren: vi.fn(),
+      style: { height: "", removeProperty },
+    };
+
+    await manager.replace(async () => result, element);
+    manager.clear();
+
+    expect(element.style.height).toBe("312px");
+
+    const replacement = fakeResult();
+    await manager.replace(async () => replacement, element);
+
+    expect(element.style.height).toBe("");
+    expect(removeProperty).toHaveBeenCalledTimes(2);
   });
 
   test("does not start new renders after teardown", async () => {

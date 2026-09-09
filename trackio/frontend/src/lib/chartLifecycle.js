@@ -7,8 +7,21 @@ function finalizeView(view) {
   }
 }
 
-function clearElement(element) {
+function holdElementHeight(element) {
+  if (!element?.style || typeof element.getBoundingClientRect !== "function") {
+    return;
+  }
+  const height = element.getBoundingClientRect().height;
+  if (height > 0) element.style.height = `${height}px`;
+}
+
+function releaseElementHeight(element) {
+  element?.style?.removeProperty("height");
+}
+
+function clearElement(element, holdHeight = false) {
   if (!element) return;
+  if (holdHeight) holdElementHeight(element);
   element.replaceChildren();
 }
 
@@ -17,44 +30,90 @@ export function createVegaViewManager() {
   let currentElement = null;
   let generation = 0;
   let destroyed = false;
+  let rendering = false;
+  let queued = null;
+
+  function cancelQueued() {
+    if (!queued) return;
+    queued.resolve(null);
+    queued = null;
+  }
+
+  async function execute(request) {
+    if (destroyed || request.generation !== generation) return null;
+
+    finalizeView(current);
+    if (currentElement && currentElement !== request.element) {
+      clearElement(currentElement);
+    }
+    current = null;
+    currentElement = null;
+
+    const result = await request.create();
+    const next = result?.view;
+    if (!next) {
+      throw new Error("Vega embed did not return a view");
+    }
+
+    if (destroyed || request.generation !== generation) {
+      finalizeView(next);
+      clearElement(request.element, true);
+      return null;
+    }
+
+    current = next;
+    currentElement = request.element;
+    releaseElementHeight(request.element);
+    return result;
+  }
+
+  function start(request) {
+    rendering = true;
+    void (async () => {
+      try {
+        request.resolve(await execute(request));
+      } catch (error) {
+        request.reject(error);
+      } finally {
+        rendering = false;
+        const next = queued;
+        queued = null;
+        if (next) start(next);
+      }
+    })();
+  }
 
   return {
     get current() {
       return current;
     },
 
-    async replace(create, element = null) {
-      if (destroyed) return null;
+    replace(create, element = null) {
+      if (destroyed) return Promise.resolve(null);
 
-      const renderGeneration = ++generation;
-      finalizeView(current);
-      if (currentElement && currentElement !== element) {
-        clearElement(currentElement);
-      }
-      current = null;
-      currentElement = null;
-
-      const result = await create();
-      const next = result?.view;
-      if (!next) {
-        throw new Error("Vega embed did not return a view");
-      }
-
-      if (destroyed || renderGeneration !== generation) {
-        finalizeView(next);
-        if (element && element !== currentElement) clearElement(element);
-        return null;
-      }
-
-      current = next;
-      currentElement = element;
-      return result;
+      const requestGeneration = ++generation;
+      return new Promise((resolve, reject) => {
+        const request = {
+          create,
+          element,
+          generation: requestGeneration,
+          resolve,
+          reject,
+        };
+        if (rendering) {
+          cancelQueued();
+          queued = request;
+        } else {
+          start(request);
+        }
+      });
     },
 
     clear() {
       generation += 1;
+      cancelQueued();
       finalizeView(current);
-      clearElement(currentElement);
+      clearElement(currentElement, true);
       current = null;
       currentElement = null;
     },
@@ -62,6 +121,7 @@ export function createVegaViewManager() {
     destroy() {
       destroyed = true;
       generation += 1;
+      cancelQueued();
       finalizeView(current);
       clearElement(currentElement);
       current = null;

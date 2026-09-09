@@ -39,7 +39,7 @@ function getOauthSessionHeader() {
   return sid ? { "x-trackio-oauth-session": sid } : {};
 }
 
-export async function callApi(apiName, params = {}) {
+export async function callApi(apiName, params = {}, requestOptions = {}) {
   const cleanApiName = apiName.startsWith("/") ? apiName.slice(1) : apiName;
   const url = `${BASE}/api/${cleanApiName}`;
   const resp = await fetch(url, {
@@ -47,6 +47,7 @@ export async function callApi(apiName, params = {}) {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...getOauthSessionHeader() },
     body: JSON.stringify(params),
+    signal: requestOptions.signal,
   });
   if (resp.status === 429) {
     registerRateLimitHit();
@@ -94,7 +95,12 @@ export async function getLogs(project, run, options = {}) {
   return await callApi("/get_logs", params);
 }
 
-export async function getLogsBatch(project, runs, options = {}) {
+export async function getLogsBatch(
+  project,
+  runs,
+  options = {},
+  requestOptions = {},
+) {
   if (await isStaticMode()) {
     const out = [];
     for (const run of runs) {
@@ -108,7 +114,7 @@ export async function getLogsBatch(project, runs, options = {}) {
     runs: runs.map((run) => normalizeRun(run)),
     ...options,
   };
-  return await callApi("/get_logs_batch", payload);
+  return await callApi("/get_logs_batch", payload, requestOptions);
 }
 
 export async function getTraces(project, run, options = {}) {
@@ -146,13 +152,13 @@ export async function getSystemMetricsForRun(project, run) {
   return await callApi("/get_system_metrics_for_run", params);
 }
 
-export async function getSystemLogs(project, run) {
+export async function getSystemLogs(project, run, requestOptions = {}) {
   const params = { project, ...normalizeRun(run) };
   if (await isStaticMode()) return staticApi.getSystemLogs(project, run);
-  return await callApi("/get_system_logs", params);
+  return await callApi("/get_system_logs", params, requestOptions);
 }
 
-export async function getSystemLogsBatch(project, runs) {
+export async function getSystemLogsBatch(project, runs, requestOptions = {}) {
   if (await isStaticMode()) {
     const out = [];
     for (const run of runs) {
@@ -161,10 +167,14 @@ export async function getSystemLogsBatch(project, runs) {
     }
     return out;
   }
-  return await callApi("/get_system_logs_batch", {
-    project,
-    runs: runs.map((run) => normalizeRun(run)),
-  });
+  return await callApi(
+    "/get_system_logs_batch",
+    {
+      project,
+      runs: runs.map((run) => normalizeRun(run)),
+    },
+    requestOptions,
+  );
 }
 
 export async function getSnapshot(project, run, step) {

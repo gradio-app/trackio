@@ -363,7 +363,11 @@
 
   async function fullRender() {
     await tick();
-    if (!container || !data || data.length === 0 || !y) return;
+    if (!nearViewport || !container || !data || data.length === 0 || !y) {
+      viewManager.clear();
+      lastStructuralKey = null;
+      return;
+    }
 
     const target = container;
     const spec = buildSpec();
