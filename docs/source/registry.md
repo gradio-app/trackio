@@ -1,8 +1,5 @@
 # Registry
 
-> [!NOTE]
-> The registry is under active development ([#607](https://github.com/gradio-app/trackio/issues/607)). Publishing — linking and promoting versions, described on this page — plus CLI commands and read-only dashboard browsing are available today. Resolving registry versions with `use_artifact` is a planned follow-up.
-
 A **registry** is a shared catalog of your best artifact versions. A project lists the artifacts your experiments produced; a registry lists selected artifacts **across** projects.
 
 A registry contains **collections**. Each collection represents one asset — a model you retrain over time, a golden evaluation set — and holds the versions of it you chose to publish. You *link* an artifact version into a collection. A link is a pointer to the source version: nothing is copied. You then promote a linked version through lifecycle stages by moving aliases such as `staging` and `production`.
@@ -94,8 +91,14 @@ linked.source_qualified_name  # "my-experiments/resnet:v0"
 
 Linking a linked artifact links its source version directly (with a warning), so links never chain.
 
-> [!NOTE]
-> Downloading through a registry location is not supported yet; it arrives together with registry resolution. Until then, download the source artifact version.
+Consumers resolve a registry location directly with `use_artifact`, without knowing which project or artifact produced it:
+
+```python
+model = run.use_artifact("registry-models/my-model:production")
+model.download()  # fetches the source version's files
+```
+
+The spec after the collection accepts a collection version (`"v1"`), an alias (`"production"`), or nothing for the newest linked version. Downloading a linked artifact fetches the bytes of the source version it points at.
 
 ### Collection versions
 
@@ -124,7 +127,14 @@ candidate = run.use_artifact("resnet:v3")
 run.link_artifact(candidate, "registry-models/my-model", aliases=["production"])
 ```
 
-Today the candidate is fetched by its source name, as recorded in the collection's links. Fetching it from the registry directly — `use_artifact("registry-models/my-model:v1")` — arrives together with registry resolution; the re-link step stays the same. Rolling an alias back to an older version works the same way.
+You can also fetch it from the registry directly:
+
+```python
+candidate = run.use_artifact("registry-models/my-model:v1")
+run.link_artifact(candidate, "registry-models/my-model", aliases=["production"])
+```
+
+Rolling an alias back to an older version works the same way.
 
 Trackio manages the `latest` alias for you: it always points at the newest linked version.
 
