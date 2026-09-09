@@ -1,5 +1,17 @@
 # trackio
 
+## 0.37.1
+
+### Features
+
+- [#678](https://github.com/gradio-app/trackio/pull/678) [`df9168e`](https://github.com/gradio-app/trackio/commit/df9168e2d0de2b284413a7e81915e7c1f76e49ae) - Fix dotted metric names in line plots.  Thanks @abidlabs!
+- [#685](https://github.com/gradio-app/trackio/pull/685) [`b7b349b`](https://github.com/gradio-app/trackio/commit/b7b349b838dcba093e15bc329717ccbb2e3e8f92) - Fix OAuth token authorization for Space logging.  Thanks @abidlabs!
+- [#686](https://github.com/gradio-app/trackio/pull/686) [`ddcd855`](https://github.com/gradio-app/trackio/commit/ddcd8557f6b55a7569700a083bd5ab2253f65e61) - Responsive auto layout for charts, sidebar, and tabs.  Thanks @pngwn!
+
+### Fixes
+
+- [#680](https://github.com/gradio-app/trackio/pull/680) [`c81e537`](https://github.com/gradio-app/trackio/commit/c81e53765ea3e58bc36e3016f98b74d265926196) - decode UTF-8 blobs in `trackio query` output instead of hex-encoding them, so JSON columns like `config` and `metrics` are readable.  Thanks @B1aZer!
+
 ## 0.37.0
 
 ### Features
