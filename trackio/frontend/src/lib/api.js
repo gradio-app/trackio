@@ -104,7 +104,7 @@ export async function getLogsBatch(
   if (await isStaticMode()) {
     const out = [];
     for (const run of runs) {
-      const logs = await staticApi.getLogs(project, run, options);
+      const logs = await staticApi.getLogs(project, run, options, requestOptions);
       out.push({ ...normalizeRun(run), logs });
     }
     return out;
@@ -154,7 +154,8 @@ export async function getSystemMetricsForRun(project, run) {
 
 export async function getSystemLogs(project, run, requestOptions = {}) {
   const params = { project, ...normalizeRun(run) };
-  if (await isStaticMode()) return staticApi.getSystemLogs(project, run);
+  if (await isStaticMode())
+    return staticApi.getSystemLogs(project, run, requestOptions);
   return await callApi("/get_system_logs", params, requestOptions);
 }
 
@@ -162,7 +163,7 @@ export async function getSystemLogsBatch(project, runs, requestOptions = {}) {
   if (await isStaticMode()) {
     const out = [];
     for (const run of runs) {
-      const logs = await staticApi.getSystemLogs(project, run);
+      const logs = await staticApi.getSystemLogs(project, run, requestOptions);
       out.push({ ...normalizeRun(run), logs });
     }
     return out;

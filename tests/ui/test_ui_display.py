@@ -223,9 +223,7 @@ def test_metric_charts_release_canvases_outside_viewport(temp_dir):
             plots = page.locator(".metrics-page .plot")
             expect(plots).to_have_count(48)
             expect(plots.first.locator("canvas")).to_have_count(1)
-            page.wait_for_function(
-                "() => document.querySelectorAll('.vega-embed canvas').length < 48"
-            )
+            expect(plots.last.locator("canvas")).to_have_count(0)
 
             initial_canvas_count = page.locator(".vega-embed canvas").count()
             initial_first_height = plots.first.evaluate(
@@ -248,6 +246,9 @@ def test_metric_charts_release_canvases_outside_viewport(temp_dir):
             assert abs(scroll_position["top"] - scroll_position["max"]) < 10
 
             page.set_viewport_size({"width": 720, "height": 900})
+            page.locator(".metrics-page").evaluate(
+                "element => { element.scrollTop = element.scrollHeight; }"
+            )
             expect(plots.last.locator("canvas")).to_have_count(1)
             expect(plots.first.locator("canvas")).to_have_count(0)
 

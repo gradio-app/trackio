@@ -48,6 +48,18 @@ describe("createPollingTask", () => {
     expect(await pollingTask.run(async () => {})).toBe(true);
   });
 
+  test("allows the timeout to be disabled for a run", async () => {
+    vi.useFakeTimers();
+    const pollingTask = createPollingTask(1000);
+    const pending = deferred();
+    const run = pollingTask.run(() => pending.promise, null);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    pending.resolve();
+
+    await expect(run).resolves.toBe(true);
+  });
+
   test("cancels an active polling task", async () => {
     const pollingTask = createPollingTask();
     const run = pollingTask.run(waitForAbort);

@@ -322,7 +322,7 @@
     appBootstrapReady;
     refreshTask.cancel();
     rawDataCache = project ? rawDataCache : new Map();
-    void refreshTask.run(fetchNewRuns);
+    void refreshTask.run(fetchNewRuns, null);
   });
 
   $effect(() => {

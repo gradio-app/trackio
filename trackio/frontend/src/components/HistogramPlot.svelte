@@ -571,7 +571,7 @@
   }
   .plot {
     width: 100%;
-    min-height: 250px;
+    min-height: 300px;
   }
   .plot :global(.vega-embed) {
     width: 100% !important;

@@ -137,7 +137,8 @@ export function observeNearViewport(element, onChange) {
   }
 
   const observer = new IntersectionObserver(
-    ([entry]) => onChange(entry?.isIntersecting ?? false),
+    (entries) =>
+      onChange(entries[entries.length - 1]?.isIntersecting ?? false),
     { rootMargin: "600px 0px" },
   );
   observer.observe(element);

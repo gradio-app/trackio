@@ -158,7 +158,7 @@ describe("observeNearViewport", () => {
     const element = {};
 
     const cleanup = observeNearViewport(element, onChange);
-    callback([{ isIntersecting: true }]);
+    callback([{ isIntersecting: false }, { isIntersecting: true }]);
     callback([{ isIntersecting: false }]);
     cleanup();
 
