@@ -9,6 +9,7 @@
   import RunComparer from "../components/RunComparer.svelte";
   import { getLogsBatch } from "../lib/api.js";
   import {
+    createPollingTask,
     getMetricsPollIntervalMs,
     isRateLimitCooldownActive,
     isTabHidden,
@@ -61,6 +62,7 @@
 
   let rawDataCache = new Map();
   let refreshTimer = null;
+  const refreshTask = createPollingTask();
   const MAX_BATCH_RUNS = 64;
 
   let colorMap = $derived(buildColorMap(allRuns));
@@ -212,17 +214,26 @@
     singlePointMetrics = sp;
   }
 
-  async function fetchLogsForRuns(runs) {
+  async function fetchLogsForRuns(
+    runs,
+    requestOptions = {},
+    projectName = project,
+  ) {
     const results = [];
     for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
       const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
-      const batch = await getLogsBatch(project, chunk, { scalar_only: true });
+      const batch = await getLogsBatch(
+        projectName,
+        chunk,
+        { scalar_only: true },
+        requestOptions,
+      );
       results.push(...batch);
     }
     return results;
   }
 
-  async function fetchNewRuns() {
+  async function fetchNewRuns(signal) {
     if (!appBootstrapReady) {
       hasLoaded = false;
       return;
@@ -236,20 +247,28 @@
       return;
     }
 
-    const needFetch = selectedRuns.filter((run) => {
+    const requestedProject = project;
+    const requestedRuns = selectedRuns;
+    const needFetch = requestedRuns.filter((run) => {
       const runKey = run.id ?? run.name;
       return !rawDataCache.has(runKey);
     });
     let fetched = false;
     if (needFetch.length > 0) {
       try {
-        const batch = await fetchLogsForRuns(needFetch);
+        const batch = await fetchLogsForRuns(
+          needFetch,
+          { signal },
+          requestedProject,
+        );
+        if (signal.aborted || requestedProject !== project) return;
         for (const entry of batch) {
           const runKey = entry.run_id ?? entry.run;
           rawDataCache.set(runKey, entry.logs);
           fetched = true;
         }
       } catch (e) {
+        if (e?.name === "AbortError") return;
         console.error("Failed to load metric logs:", e);
       }
     }
@@ -265,24 +284,35 @@
     if (!project || selectedRuns.length === 0) return;
     if (isTabHidden()) return;
     if (isRateLimitCooldownActive()) return;
-
     try {
-      const batch = await fetchLogsForRuns(selectedRuns);
-      let changed = false;
-      for (const entry of batch) {
-        const runKey = entry.run_id ?? entry.run;
-        const logs = entry.logs;
-        const prev = rawDataCache.get(runKey);
-        if (!prev || logsHaveNewData(prev, logs)) {
-          rawDataCache.set(runKey, logs);
-          changed = true;
+      await refreshTask.run(async (signal) => {
+        const requestedProject = project;
+        const requestedRuns = selectedRuns;
+        const batch = await fetchLogsForRuns(
+          requestedRuns,
+          { signal },
+          requestedProject,
+        );
+        if (signal.aborted || requestedProject !== project) return;
+        let changed = false;
+        for (const entry of batch) {
+          const runKey = entry.run_id ?? entry.run;
+          const logs = entry.logs;
+          const prev = rawDataCache.get(runKey);
+          if (!prev || logsHaveNewData(prev, logs)) {
+            rawDataCache.set(runKey, logs);
+            changed = true;
+          }
         }
-      }
-      if (changed) {
-        processFromCache();
-      }
+        if (changed) {
+          processFromCache();
+        }
+        hasLoaded = true;
+      });
     } catch (e) {
-      console.error("Failed to refresh metric logs:", e);
+      if (e?.name !== "AbortError") {
+        console.error("Failed to refresh metric logs:", e);
+      }
     }
   }
 
@@ -290,8 +320,9 @@
     project;
     selectedRuns;
     appBootstrapReady;
+    refreshTask.cancel();
     rawDataCache = project ? rawDataCache : new Map();
-    fetchNewRuns();
+    void refreshTask.run(fetchNewRuns, null);
   });
 
   $effect(() => {
@@ -320,6 +351,7 @@
     );
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
+      refreshTask.cancel();
     };
   });
 
