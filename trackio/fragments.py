@@ -243,11 +243,30 @@ def import_records(records: list[dict]) -> int:
     return imported
 
 
-def import_inbox_dir(inbox_dir: Path | None = None) -> int:
+def import_inbox_dir(inbox_dir: Path | None = None, batch_size: int = 100) -> int:
     inbox = inbox_dir or local_inbox_dir()
     if not inbox.exists():
         return 0
     imported = 0
+    batch_records: list[dict] = []
+    batch_paths: list[Path] = []
+
+    def _flush_batch() -> int:
+        nonlocal batch_records, batch_paths
+        if not batch_paths:
+            return 0
+        count = 0
+        if batch_records:
+            count = import_records(batch_records)
+        for p in batch_paths:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        batch_records = []
+        batch_paths = []
+        return count
+
     for fragment_path in sorted(inbox.rglob("*.jsonl")):
         try:
             data = fragment_path.read_bytes()
@@ -255,11 +274,13 @@ def import_inbox_dir(inbox_dir: Path | None = None) -> int:
             continue
         records = parse_fragment_bytes(data)
         if records:
-            imported += import_records(records)
-        try:
-            fragment_path.unlink()
-        except OSError:
-            pass
+            batch_records.extend(records)
+        batch_paths.append(fragment_path)
+
+        if len(batch_paths) >= batch_size:
+            imported += _flush_batch()
+
+    imported += _flush_batch()
     for writer_dir in inbox.glob("*"):
         if writer_dir.is_dir():
             try:
