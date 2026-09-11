@@ -81,6 +81,23 @@ describe("createVegaViewManager", () => {
     expect(element.replaceChildren).toHaveBeenCalledOnce();
   });
 
+  test("removes a finalized canvas when its replacement fails", async () => {
+    const manager = createVegaViewManager();
+    const result = fakeResult();
+    const element = { replaceChildren: vi.fn() };
+
+    await manager.replace(async () => result, element);
+
+    await expect(
+      manager.replace(async () => {
+        throw new Error("embed failed");
+      }, element),
+    ).rejects.toThrow("embed failed");
+    expect(result.view.finalize).toHaveBeenCalledOnce();
+    expect(element.replaceChildren).toHaveBeenCalledOnce();
+    expect(manager.current).toBeNull();
+  });
+
   test("keeps only the newest queued replacement", async () => {
     const manager = createVegaViewManager();
     const slow = deferred();

@@ -49,11 +49,16 @@ export function createVegaViewManager() {
     current = null;
     currentElement = null;
 
-    const result = await request.create();
-    const next = result?.view;
-    if (!next) {
-      throw new Error("Vega embed did not return a view");
+    let result;
+    try {
+      result = await request.create();
+      if (!result?.view) throw new Error("Vega embed did not return a view");
+    } catch (error) {
+      clearElement(request.element);
+      releaseElementHeight(request.element);
+      throw error;
     }
+    const next = result.view;
 
     if (destroyed || request.generation !== generation) {
       finalizeView(next);
