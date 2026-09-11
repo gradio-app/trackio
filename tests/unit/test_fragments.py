@@ -162,3 +162,32 @@ def test_network_filesystem_jsonl_end_to_end(temp_dir, monkeypatch):
         assert logs[1]["acc"] == 0.9
     finally:
         app.close()
+
+
+def test_import_inbox_dir_batching(temp_dir):
+    writer = fragments.FragmentWriter()
+    for i in range(5):
+        records = [
+            fragments.metric_record(
+                {
+                    "project": "proj",
+                    "run": "run1",
+                    "run_id": "rid1",
+                    "metrics": {"step_metric": i},
+                    "step": i,
+                    "timestamp": f"2026-06-10T00:00:0{i}+00:00",
+                    "config": None,
+                    "log_id": f"batch-log-{i}",
+                }
+            )
+        ]
+        writer.write_local(records)
+
+    inbox_files = list(fragments.local_inbox_dir().rglob("*.jsonl"))
+    assert len(inbox_files) == 5
+
+    imported = fragments.import_inbox_dir(batch_size=2)
+    assert imported == 5
+    assert list(fragments.local_inbox_dir().rglob("*.jsonl")) == []
+    logs = SQLiteStorage.get_logs("proj", "run1")
+    assert len(logs) == 5
