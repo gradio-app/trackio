@@ -5,6 +5,7 @@
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import { getSystemLogs, getSystemLogsBatch } from "../lib/api.js";
   import {
+    createPollingTask,
     getMetricsPollIntervalMs,
     isRateLimitCooldownActive,
     isTabHidden,
@@ -40,6 +41,7 @@
 
   let rawDataCache = new Map();
   let refreshTimer = null;
+  const refreshTask = createPollingTask();
 
   let runColorMap = $derived(buildColorMap(allRuns.length ? allRuns : selectedRuns));
 
@@ -187,10 +189,14 @@
     return /\b(404|405|501)\b/.test(msg);
   }
 
-  async function fetchSystemLogsForRuns(runs) {
+  async function fetchSystemLogsForRuns(
+    runs,
+    requestOptions = {},
+    projectName = project,
+  ) {
     if (batchEndpointAvailable && runs.length <= MAX_BATCH_RUNS) {
       try {
-        return await getSystemLogsBatch(project, runs);
+        return await getSystemLogsBatch(projectName, runs, requestOptions);
       } catch (e) {
         if (!isMissingEndpointError(e)) throw e;
         batchEndpointAvailable = false;
@@ -200,14 +206,18 @@
       const results = [];
       for (let i = 0; i < runs.length; i += MAX_BATCH_RUNS) {
         const chunk = runs.slice(i, i + MAX_BATCH_RUNS);
-        const batch = await getSystemLogsBatch(project, chunk);
+        const batch = await getSystemLogsBatch(
+          projectName,
+          chunk,
+          requestOptions,
+        );
         results.push(...batch);
       }
       return results;
     }
     const results = [];
     for (const run of runs) {
-      const logs = await getSystemLogs(project, run);
+      const logs = await getSystemLogs(projectName, run, requestOptions);
       results.push({
         run: run?.name ?? null,
         run_id: run?.id ?? null,
@@ -217,7 +227,7 @@
     return results;
   }
 
-  async function fetchNewRuns() {
+  async function fetchNewRuns(signal) {
     if (!appBootstrapReady) {
       hasLoaded = false;
       return;
@@ -230,14 +240,21 @@
       return;
     }
 
-    const needFetch = selectedRuns.filter((run) => {
+    const requestedProject = project;
+    const requestedRuns = selectedRuns;
+    const needFetch = requestedRuns.filter((run) => {
       const runKey = run.id ?? run.name;
       return !rawDataCache.has(runKey);
     });
     let fetched = false;
     if (needFetch.length > 0) {
       try {
-        const batch = await fetchSystemLogsForRuns(needFetch);
+        const batch = await fetchSystemLogsForRuns(
+          needFetch,
+          { signal },
+          requestedProject,
+        );
+        if (signal.aborted || requestedProject !== project) return;
         for (const entry of batch) {
           const runKey = entry.run_id ?? entry.run;
           rawDataCache.set(runKey, entry.logs);
@@ -245,6 +262,7 @@
         }
         loadError = null;
       } catch (e) {
+        if (e?.name === "AbortError") return;
         console.error("Failed to load system metric logs:", e);
         if (!hasLoaded) {
           loadError = e && e.message ? e.message : "Failed to load system metrics";
@@ -265,24 +283,36 @@
     if (!project || selectedRuns.length === 0) return;
     if (isTabHidden()) return;
     if (isRateLimitCooldownActive()) return;
-
     try {
-      const batch = await fetchSystemLogsForRuns(selectedRuns);
-      let changed = false;
-      for (const entry of batch) {
-        const runKey = entry.run_id ?? entry.run;
-        const logs = entry.logs;
-        const prev = rawDataCache.get(runKey);
-        if (!prev || logsHaveNewData(prev, logs)) {
-          rawDataCache.set(runKey, logs);
-          changed = true;
+      await refreshTask.run(async (signal) => {
+        const requestedProject = project;
+        const requestedRuns = selectedRuns;
+        const batch = await fetchSystemLogsForRuns(
+          requestedRuns,
+          { signal },
+          requestedProject,
+        );
+        if (signal.aborted || requestedProject !== project) return;
+        let changed = false;
+        for (const entry of batch) {
+          const runKey = entry.run_id ?? entry.run;
+          const logs = entry.logs;
+          const prev = rawDataCache.get(runKey);
+          if (!prev || logsHaveNewData(prev, logs)) {
+            rawDataCache.set(runKey, logs);
+            changed = true;
+          }
         }
-      }
-      if (changed) {
-        processFromCache();
-      }
+        if (changed) {
+          processFromCache();
+        }
+        loadError = null;
+        hasLoaded = true;
+      });
     } catch (e) {
-      console.error("Failed to refresh system metric logs:", e);
+      if (e?.name !== "AbortError") {
+        console.error("Failed to refresh system metric logs:", e);
+      }
     }
   }
 
@@ -290,8 +320,9 @@
     project;
     selectedRuns;
     appBootstrapReady;
+    refreshTask.cancel();
     rawDataCache = project ? rawDataCache : new Map();
-    fetchNewRuns();
+    void refreshTask.run(fetchNewRuns, null);
   });
 
   $effect(() => {
@@ -339,6 +370,7 @@
     );
     return () => {
       if (refreshTimer) clearInterval(refreshTimer);
+      refreshTask.cancel();
     };
   });
 

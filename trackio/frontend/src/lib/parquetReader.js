@@ -11,10 +11,10 @@ function coerceBigInts(row) {
   return out;
 }
 
-export async function readParquet(url, headers = {}) {
+export async function readParquet(url, headers = {}, signal) {
   if (cache.has(url)) return cache.get(url);
 
-  const resp = await fetch(url, { headers });
+  const resp = await fetch(url, { headers, signal });
   if (!resp.ok) {
     if (resp.status === 404) {
       cache.set(url, []);

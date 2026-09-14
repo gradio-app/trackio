@@ -43,15 +43,19 @@ export function getReadOnlySource() {
   };
 }
 
-async function getMetricsData() {
+async function getMetricsData(signal) {
   if (metricsData) return metricsData;
-  metricsData = await readParquet(resolveUrl("metrics.parquet"));
+  metricsData = await readParquet(resolveUrl("metrics.parquet"), {}, signal);
   return metricsData;
 }
 
-async function getSystemData() {
+async function getSystemData(signal) {
   if (systemData) return systemData;
-  systemData = await readParquet(resolveUrl("aux/system_metrics.parquet"));
+  systemData = await readParquet(
+    resolveUrl("aux/system_metrics.parquet"),
+    {},
+    signal,
+  );
   return systemData;
 }
 
@@ -204,8 +208,9 @@ function parseHistogramValue(value) {
   return null;
 }
 
-export async function getLogs(_project, run, options = {}) {
-  const raw = await getMetricsData();
+export async function getLogs(_project, run, options = {}, requestOptions = {}) {
+  requestOptions.signal?.throwIfAborted();
+  const raw = await getMetricsData(requestOptions.signal);
   const { rows } = parseRows(raw);
   const runRows = rows.filter((r) => matchesRun(r, run));
   const scalarOnly = options.scalar_only === true;
@@ -460,8 +465,9 @@ export async function getSystemMetricsForRun(_project, run) {
   return [...present];
 }
 
-export async function getSystemLogs(_project, run) {
-  const raw = await getSystemData();
+export async function getSystemLogs(_project, run, requestOptions = {}) {
+  requestOptions.signal?.throwIfAborted();
+  const raw = await getSystemData(requestOptions.signal);
   const { rows } = parseRows(raw);
   const runRows = rows.filter((r) => matchesRun(r, run));
 
