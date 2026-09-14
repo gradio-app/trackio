@@ -1032,6 +1032,7 @@ def deploy_as_static_space(
         "mode": "static",
         "project": project,
         "private": bool(private),
+        "version": trackio.__version__,
     }
     if bucket_id is not None:
         config["bucket_id"] = bucket_id

@@ -181,6 +181,7 @@ def test_deploy_as_static_space_config_omits_hf_token(tmp_path, monkeypatch):
     )
 
     config = _get_uploaded_config(fake_api)
+    assert config["version"] == deploy.trackio.__version__
     assert "hf_token" not in config
     assert "token" not in config
     assert "hf_supersecrettoken" not in json.dumps(config)
