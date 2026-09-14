@@ -215,3 +215,108 @@ def test_space_backed_run_publishes_into_a_bucket_registry(temp_dir, bucket):
     assert (
         BucketRegistryStorage(BUCKET).get_collection("models", "churn")["links"] == []
     )
+
+
+def test_linked_artifact_keeps_remote_source_for_download(
+    temp_dir, tmp_path, bucket, monkeypatch
+):
+    BucketRegistryStorage(BUCKET).create_registry("models")
+    run = Run(
+        url="fake_url",
+        project="exp",
+        client=None,
+        name="run",
+        server_base_url="https://trackio.example.test",
+        existing_runs=[],
+        initial_last_step=0,
+    )
+    artifact = trackio.Artifact(name="m", type="model")
+    artifact._hydrate_from_db(
+        project="exp",
+        version=3,
+        aliases=["latest"],
+        manifest=[{"path": "w.bin", "digest": "a" * 64, "size": 3}],
+        manifest_digest="a" * 64,
+        size_bytes=3,
+    )
+    artifact._remote_source = {
+        "space_id": None,
+        "server_base_url": "https://trackio.example.test",
+        "write_token": "secret",
+    }
+    linked = run.link_artifact(artifact, "registry-models/churn", bucket_id=BUCKET)
+
+    fetched = {}
+
+    def fetch(remote_source, project, digest, target_path):
+        fetched.update(remote_source=remote_source, project=project, digest=digest)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(b"abc")
+
+    monkeypatch.setattr("trackio.artifact._fetch_blob_from_remote", fetch)
+    linked.download(tmp_path / "download")
+
+    assert fetched == {
+        "remote_source": artifact._remote_source,
+        "project": "exp",
+        "digest": "a" * 64,
+    }
+    assert (tmp_path / "download" / "w.bin").read_bytes() == b"abc"
+
+
+def test_self_hosted_source_is_persisted_and_rejected_on_later_resolution(
+    temp_dir, bucket, monkeypatch
+):
+    BucketRegistryStorage(BUCKET).create_registry("models")
+    run = Run(
+        url="fake_url",
+        project="exp",
+        client=None,
+        name="run",
+        server_base_url="https://trackio.example.test",
+        existing_runs=[],
+        initial_last_step=0,
+    )
+    artifact = trackio.Artifact(name="m", type="model")
+    artifact._hydrate_from_db(
+        project="exp",
+        version=3,
+        aliases=["latest"],
+        manifest=[],
+        manifest_digest="a" * 64,
+        size_bytes=0,
+    )
+    artifact._remote_source = {
+        "space_id": None,
+        "server_base_url": "https://trackio.example.test",
+        "write_token": None,
+    }
+    run.link_artifact(artifact, "registry-models/churn", bucket_id=BUCKET)
+
+    link = BucketRegistryStorage(BUCKET).get_collection("models", "churn")["links"][0]
+    assert link["source_server_base_url"] == "https://trackio.example.test"
+
+    monkeypatch.setenv("TRACKIO_REGISTRY_BUCKET_ID", BUCKET)
+    consumer = trackio.init(project="deploy", name="deploy")
+    with pytest.raises(NotImplementedError, match="self-hosted server"):
+        consumer.use_artifact("registry-models/churn")
+    trackio.finish()
+
+
+def test_linked_artifact_instance_reuses_its_registry_bucket(
+    temp_dir, tmp_path, bucket
+):
+    BucketRegistryStorage(BUCKET).create_registry("models")
+    weights = tmp_path / "weights.bin"
+    weights.write_bytes(b"weights")
+    producer = trackio.init(project="exp", name="producer")
+    artifact = trackio.log_artifact(weights, name="m", type="model")
+    linked = producer.link_artifact(artifact, "registry-models/churn", bucket_id=BUCKET)
+    trackio.finish()
+
+    consumer = trackio.init(project="deploy", name="consumer")
+    resolved = consumer.use_artifact(linked)
+    trackio.finish()
+
+    assert resolved.source_qualified_name == "exp/m:v0"
+    assert resolved._registry_bucket_id == BUCKET
