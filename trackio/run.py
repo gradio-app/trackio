@@ -1481,11 +1481,24 @@ class Run:
         if not self._is_local:
             artifact._remote_source = self._remote_source_dict()
 
-        # NOTE: log_artifact() deliberately does NOT mutate any logbook in the
-        # current directory. Auto-noting an artifact cell here used to create a
-        # stray sidebar page named after the project, corrupting curated
-        # logbooks. Artifacts are recorded in a logbook explicitly, e.g. via
-        # `trackio logbook cell artifact` / logbook.add_path_artifact_cell().
+        from trackio.logbook_provenance import record_sdk_event  # noqa: PLC0415
+
+        record_sdk_event(
+            "trackio_artifact_output",
+            project=self.project,
+            run_name=self.name,
+            trackio_run_id=self.id,
+            qualified_name=artifact.qualified_name,
+            artifact_type=artifact.type,
+            version=artifact.version,
+            aliases=list(artifact.aliases),
+            size=artifact.size,
+            manifest_digest=artifact.manifest_digest,
+            manifest=artifact.manifest,
+            is_local=self._is_local,
+            space_id=self._space_id,
+            server_url=self._server_base_url,
+        )
 
         return artifact
 
@@ -1582,6 +1595,25 @@ class Run:
                 "artifact-use-lineage",
                 f"trackio could not record consumer lineage for {spec!r}: {e}",
             )
+
+        from trackio.logbook_provenance import record_sdk_event  # noqa: PLC0415
+
+        record_sdk_event(
+            "trackio_artifact_input",
+            project=project,
+            run_name=self.name,
+            trackio_run_id=self.id,
+            qualified_name=art.qualified_name,
+            artifact_type=art.type,
+            version=art.version,
+            aliases=list(art.aliases),
+            size=art.size,
+            manifest_digest=art.manifest_digest,
+            manifest=art.manifest,
+            is_local=self._is_local,
+            space_id=self._space_id,
+            server_url=self._server_base_url,
+        )
 
         return art
 
@@ -1834,3 +1866,11 @@ class Run:
                     )
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.finish() failed: {e}")
+        from trackio.logbook_provenance import record_sdk_event  # noqa: PLC0415
+
+        record_sdk_event(
+            "trackio_run_finished",
+            project=self.project,
+            run_name=self.name,
+            trackio_run_id=self.id,
+        )
