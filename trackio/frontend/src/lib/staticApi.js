@@ -26,6 +26,10 @@ export async function initialize(cfg) {
   config = cfg;
 }
 
+export function getTrackioVersion() {
+  return config?.version || null;
+}
+
 export function getReadOnlySource() {
   if (!config || config.mode !== "static") return null;
   if (config.bucket_id) {
