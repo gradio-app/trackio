@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 import trackio
@@ -120,7 +122,9 @@ def test_linked_artifact_default_download_root_uses_registry_location(
     out = consumer.use_artifact("registry-models/churn-model:v1").download()
     trackio.finish()
 
-    assert out.endswith("registry-models/churn-model_v1")
+    out_path = Path(out)
+    assert out_path.name == "churn-model_v1"
+    assert out_path.parent.name == "registry-models"
 
 
 def test_use_artifact_accepts_linked_artifact_instance(temp_dir, tmp_path):
