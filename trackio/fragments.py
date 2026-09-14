@@ -195,7 +195,7 @@ def import_records(records: list[dict]) -> int:
     for (project, run, run_id), group in _group_by_run(metric_records).items():
         if not project or not run:
             continue
-        config = next((r["config"] for r in group if r.get("config")), None)
+        config = next((r["config"] for r in reversed(group) if r.get("config")), None)
         has_timestamps = all(r.get("timestamp") for r in group)
         SQLiteStorage.bulk_log(
             project=project,
