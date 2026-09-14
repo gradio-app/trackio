@@ -1,3 +1,4 @@
+import re
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from playwright.sync_api import expect, sync_playwright
@@ -12,6 +13,12 @@ def _url_with_query(base_url: str, params: dict[str, str]) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, path, "", query, ""))
 
 
+def _grid_column_count(grid) -> int:
+    return grid.evaluate(
+        "element => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length"
+    )
+
+
 def test_share_view_query_params_apply(temp_dir):
     project = "test_share_qp"
     run_ids_by_name: dict[str, list[str]] = {}
@@ -19,7 +26,15 @@ def test_share_view_query_params_apply(temp_dir):
         run = trackio.init(project=project, name=name)
         run_ids_by_name.setdefault(name, []).append(run.id)
         for _ in range(3):
-            trackio.log(metrics={"loss": 0.1, "accuracy": 0.9})
+            trackio.log(
+                metrics={
+                    "loss": 0.1,
+                    "accuracy": 0.9,
+                    "precision": 0.8,
+                    "recall": 0.7,
+                    "f1": 0.75,
+                }
+            )
         trackio.finish()
 
     alpha_ids = run_ids_by_name["run-alpha"]
@@ -92,6 +107,104 @@ def test_share_view_query_params_apply(temp_dir):
             expect(page.locator(".navbar")).to_have_count(0)
             expect(page.locator(".vega-embed")).to_have_count(1)
             expect(page.locator(".metrics-page .legend-dot")).to_have_count(1)
+
+            plots_per_row = _url_with_query(
+                full_url,
+                {
+                    "project": project,
+                    "plots_per_row": "2",
+                },
+            )
+            page.goto(plots_per_row)
+            page.wait_for_load_state("networkidle")
+
+            expect(page.get_by_label("Plots per row")).to_have_value("2")
+            plot_grid = page.locator(".plot-grid").first
+            expect(plot_grid).to_be_visible()
+            assert (
+                plot_grid.evaluate(
+                    "element => element.style.getPropertyValue('--cols').trim()"
+                )
+                == "2"
+            )
+
+            page.set_viewport_size({"width": 600, "height": 800})
+            auto_plots = _url_with_query(
+                full_url,
+                {
+                    "project": project,
+                    "plots_per_row": "auto",
+                    "sidebar": "hidden",
+                },
+            )
+            page.goto(auto_plots)
+            page.wait_for_load_state("networkidle")
+
+            auto_grid = page.locator(".plot-grid.auto").first
+            expect(auto_grid).to_be_visible()
+            assert _grid_column_count(auto_grid) == 1
+
+            page.set_viewport_size({"width": 1800, "height": 900})
+            page.wait_for_function(
+                """() => {
+                    const grid = document.querySelector('.plot-grid.auto');
+                    return grid && getComputedStyle(grid).gridTemplateColumns
+                        .split(' ').filter(Boolean).length === 4;
+                }"""
+            )
+            assert _grid_column_count(auto_grid) == 4
+
+            page.set_viewport_size({"width": 600, "height": 800})
+            auto_sidebar = _url_with_query(
+                full_url,
+                {
+                    "project": project,
+                    "metric_filter": "^loss$",
+                    "sidebar": "auto",
+                },
+            )
+            page.goto(auto_sidebar)
+            page.wait_for_load_state("networkidle")
+
+            expect(page.locator(".sidebar-shell")).to_have_class(
+                re.compile(r"\bcollapsed\b")
+            )
+
+            page.set_viewport_size({"width": 1200, "height": 800})
+            expect(page.locator(".sidebar-shell")).not_to_have_class(
+                re.compile(r"\bcollapsed\b")
+            )
+
+            page.get_by_title("Collapse sidebar").click()
+            expect(page.locator(".sidebar-shell")).to_have_class(
+                re.compile(r"\bcollapsed\b")
+            )
+
+            page.set_viewport_size({"width": 600, "height": 800})
+            expect(page.locator(".sidebar-shell")).to_have_class(
+                re.compile(r"\bcollapsed\b")
+            )
+
+            page.set_viewport_size({"width": 1200, "height": 800})
+            expect(page.locator(".sidebar-shell")).to_have_class(
+                re.compile(r"\bcollapsed\b")
+            )
+
+            page.set_viewport_size({"width": 600, "height": 800})
+            visible_sidebar = _url_with_query(
+                full_url,
+                {
+                    "project": project,
+                    "metric_filter": "^loss$",
+                    "sidebar": "visible",
+                },
+            )
+            page.goto(visible_sidebar)
+            page.wait_for_load_state("networkidle")
+
+            expect(page.locator(".sidebar-shell")).not_to_have_class(
+                re.compile(r"\bcollapsed\b")
+            )
 
             browser.close()
     finally:

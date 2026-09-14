@@ -4,6 +4,7 @@
 
   let {
     open = $bindable(true),
+    onToggle,
     projects = [],
     selectedProject = $bindable(null),
     projectLocked = false,
@@ -19,7 +20,10 @@
   <button
     class="toggle-btn"
     title={open ? "Collapse sidebar" : "Expand sidebar"}
-    onclick={() => (open = !open)}
+    onclick={() => {
+      open = !open;
+      onToggle?.(open);
+    }}
   >
     {#if open}
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

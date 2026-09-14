@@ -17,6 +17,7 @@
 
   let {
     open = $bindable(true),
+    onToggle,
     project = $bindable(null),
     projects = [],
     projectLocked = false,
@@ -183,6 +184,7 @@
 
 <SidebarShell
   bind:open
+  {onToggle}
   bind:selectedProject={project}
   {projects}
   {projectLocked}

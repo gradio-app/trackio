@@ -32,6 +32,14 @@
     isTabHidden,
   } from "./lib/hostPolling.js";
   import { setColorPalette } from "./lib/stores.js";
+  import {
+    AUTO_PANELS_PER_ROW,
+    parsePlotsPerRow,
+  } from "./lib/plotLayout.js";
+  import {
+    getInitialSidebarState,
+    watchNarrowViewport,
+  } from "./lib/viewport.js";
   import { reconcileSelectedRuns } from "./lib/selection.js";
   import {
     getPageFromPath,
@@ -77,7 +85,7 @@
   let runs = $state([]);
   let selectedRuns = $state([]);
   let smoothing = $state(10);
-  let panelsPerRow = $state(4);
+  let panelsPerRow = $state(AUTO_PANELS_PER_ROW);
   let xAxis = $state("step");
   let logScaleX = $state(false);
   let logScaleY = $state(false);
@@ -91,6 +99,7 @@
   let urlXAxisApplied = $state(false);
   let sidebarOpen = $state(true);
   let sidebarHidden = $state(false);
+  let sidebarUserControlled = $state(false);
   let navbarHidden = $state(false);
   let hideEmptyTabs = $state(false);
   let urlTick = $state(0);
@@ -381,22 +390,24 @@
   });
 
   onMount(() => {
-    const sidebarParam = getQueryParam("sidebar");
-    if (sidebarParam === "hidden") {
-      sidebarHidden = true;
-      sidebarOpen = false;
-    } else if (sidebarParam === "collapsed") {
-      sidebarHidden = false;
-      sidebarOpen = false;
-    } else {
-      sidebarHidden = false;
-    }
+    const sidebarState = getInitialSidebarState(getQueryParam("sidebar"));
+    sidebarHidden = sidebarState.hidden;
+    sidebarOpen = sidebarState.open;
+    sidebarUserControlled = !sidebarState.responsive;
+
+    const stopNarrowViewportWatch = watchNarrowViewport((narrow) => {
+      if (sidebarUserControlled) return;
+      sidebarOpen = !narrow;
+    });
 
     const smoothingParam = getQueryParam("smoothing");
     if (smoothingParam) {
       const s = parseInt(smoothingParam, 10);
       if (!Number.isNaN(s)) smoothing = s;
     }
+
+    const plotsPerRow = parsePlotsPerRow(getQueryParam("plots_per_row"));
+    if (plotsPerRow !== null) panelsPerRow = plotsPerRow;
 
     const xAxisParam = xAxisParamFromUrl();
     if (xAxisParam && xAxisParam.trim()) {
@@ -478,6 +489,7 @@
       if (pollTimer) clearInterval(pollTimer);
       if (mutationPollTimer) clearInterval(mutationPollTimer);
       window.removeEventListener("focus", refreshMutationAccess);
+      stopNarrowViewportWatch();
     };
   });
 
@@ -556,12 +568,17 @@
   let sidebarVariant = $derived(
     currentPage === "runs" || currentPage === "files" ? "compact" : "full"
   );
+
+  function markSidebarUserControlled() {
+    sidebarUserControlled = true;
+  }
 </script>
 
 <div class="app">
   {#if showSidebar && !sidebarHidden}
     <Sidebar
       bind:open={sidebarOpen}
+      onToggle={markSidebarUserControlled}
       variant={sidebarVariant}
       {currentPage}
       spacesMode={mutationStatus.spaces}
@@ -596,6 +613,7 @@
   {#if currentPage === "artifacts" && !sidebarHidden}
     <ArtifactsSidebar
       bind:open={sidebarOpen}
+      onToggle={markSidebarUserControlled}
       {projects}
       bind:project={selectedProject}
       projectLocked={projectLocked}

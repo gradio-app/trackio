@@ -3068,7 +3068,11 @@ class SQLiteStorage:
     @staticmethod
     def _normalize_query_value(value: Any) -> Any:
         if isinstance(value, (bytes, bytearray, memoryview)):
-            return bytes(value).hex()
+            raw = bytes(value)
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return raw.hex()
         return value
 
     @staticmethod
