@@ -38,6 +38,8 @@
   function sourceLocation(link) {
     if (link.source_space_id) return `Space · ${link.source_space_id}`;
     if (link.source_bucket_id) return `Bucket · ${link.source_bucket_id}`;
+    if (link.source_server_base_url)
+      return `Server · ${link.source_server_base_url}`;
     return "Local";
   }
 

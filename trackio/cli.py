@@ -745,6 +745,7 @@ def _handle_registry(args):
                 aliases=[args.alias],
                 source_space_id=link.get("source_space_id"),
                 source_bucket_id=link.get("source_bucket_id"),
+                source_server_base_url=link.get("source_server_base_url"),
             )
             if args.json:
                 print(format_json(result))

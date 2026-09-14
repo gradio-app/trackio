@@ -473,7 +473,7 @@ def test_link_of_linked_artifact_links_the_source(temp_dir, tmp_path):
     assert links[0]["source_version"] == 0
 
 
-def test_download_on_linked_artifact_raises(temp_dir, tmp_path):
+def test_download_on_linked_artifact_fetches_source_bytes(temp_dir, tmp_path):
     weights = tmp_path / "model.pt"
     weights.write_bytes(b"weights")
     trackio.Api().create_registry("models")
@@ -482,9 +482,12 @@ def test_download_on_linked_artifact_raises(temp_dir, tmp_path):
     linked = run.link_artifact(artifact, "registry-models/churn")
     trackio.finish()
 
-    with pytest.raises(NotImplementedError, match="registry resolution"):
-        linked.download()
-    assert Path(artifact.download(tmp_path / "dl"), "model.pt").exists()
+    linked_dir = linked.download(tmp_path / "linked-dl")
+    source_dir = artifact.download(tmp_path / "source-dl")
+    assert (Path(linked_dir) / "model.pt").read_bytes() == b"weights"
+    assert (Path(linked_dir) / "model.pt").read_bytes() == (
+        Path(source_dir) / "model.pt"
+    ).read_bytes()
 
 
 def test_artifact_link_local(temp_dir, tmp_path):

@@ -34,6 +34,16 @@ export async function isStaticMode() {
   return _staticModePromise;
 }
 
+export async function getTrackioVersion() {
+  if (await isStaticMode()) return staticApi.getTrackioVersion();
+  const resp = await fetch(`${BASE}/version`);
+  if (!resp.ok) {
+    throw new Error(`Version request failed: ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data.version || null;
+}
+
 function getOauthSessionHeader() {
   const sid = sessionStorage.getItem("trackio_oauth_session");
   return sid ? { "x-trackio-oauth-session": sid } : {};

@@ -370,6 +370,7 @@ class BucketRegistryStorage:
         run_id: str | None = None,
         source_space_id: str | None = None,
         source_bucket_id: str | None = None,
+        source_server_base_url: str | None = None,
     ) -> dict:
         validate_collection_name(collection)
         validate_collection_type(type)
@@ -413,6 +414,7 @@ class BucketRegistryStorage:
                     **source,
                     "source_space_id": source_space_id,
                     "source_bucket_id": source_bucket_id,
+                    "source_server_base_url": source_server_base_url,
                     "run_name": run_name,
                     "run_id": run_id,
                 },
