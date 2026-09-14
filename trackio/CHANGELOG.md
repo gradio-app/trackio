@@ -1,5 +1,12 @@
 # trackio
 
+## 0.38.0
+
+### Features
+
+- [#684](https://github.com/gradio-app/trackio/pull/684) [`10011b0`](https://github.com/gradio-app/trackio/commit/10011b0590e2a7ebd552837b16f253a665c2128d) - Reduce dashboard canvas GPU memory and render churn.  Thanks @abidlabs!
+- [#688](https://github.com/gradio-app/trackio/pull/688) [`e332a26`](https://github.com/gradio-app/trackio/commit/e332a262a45facc371443d7f16e4f7d39e5869a3) - Show Trackio version beneath dashboard logo.  Thanks @abidlabs!
+
 ## 0.37.1
 
 ### Features
