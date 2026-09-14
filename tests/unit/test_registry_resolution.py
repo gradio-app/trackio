@@ -46,7 +46,7 @@ def test_resolve_collection_link_specs():
 
 
 def test_use_artifact_resolves_alias_from_registry(temp_dir, tmp_path):
-    a0, a1 = _publish(tmp_path)
+    _, a1 = _publish(tmp_path)
     consumer = trackio.init(project="deploy", name="deploy-1")
     art = consumer.use_artifact("registry-models/churn-model:production")
     trackio.finish()
@@ -64,6 +64,19 @@ def test_use_artifact_resolves_alias_from_registry(temp_dir, tmp_path):
     assert art.source_qualified_name == a1.qualified_name
     assert art.source_project == "churn-experiments"
 
+    deploy_inputs = SQLiteStorage.get_run_artifacts("deploy", "deploy-1", consumer.id)[
+        "input"
+    ]
+    assert [(item["project"], item["name"]) for item in deploy_inputs] == [
+        ("churn-experiments", "resnet")
+    ]
+    assert [record["name"] for record in SQLiteStorage.get_run_records("deploy")] == [
+        "deploy-1"
+    ]
+    assert [
+        record["name"] for record in SQLiteStorage.get_run_records("churn-experiments")
+    ] == ["exp-1"]
+
     consumers = SQLiteStorage.get_artifact_consumers(
         "churn-experiments",
         SQLiteStorage.get_artifact_manifest("churn-experiments", "resnet", "v1")[
@@ -71,6 +84,7 @@ def test_use_artifact_resolves_alias_from_registry(temp_dir, tmp_path):
         ],
     )
     assert [c["run_name"] for c in consumers] == ["deploy-1"]
+    assert [c["project"] for c in consumers] == ["deploy"]
 
 
 def test_use_artifact_registry_version_and_latest(temp_dir, tmp_path):
@@ -110,7 +124,7 @@ def test_linked_artifact_default_download_root_uses_registry_location(
 
 
 def test_use_artifact_accepts_linked_artifact_instance(temp_dir, tmp_path):
-    a0, a1 = _publish(tmp_path)
+    _, a1 = _publish(tmp_path)
     linked = trackio.Api().registry("models")
     consumer = trackio.init(project="deploy", name="deploy-5")
     first = consumer.use_artifact("registry-models/churn-model:production")

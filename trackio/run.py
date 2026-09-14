@@ -1521,9 +1521,11 @@ class Run:
             project = artifact_or_name._project or self.project
             if artifact_or_name.is_link:
                 spec = f"{project}/{spec}"
+            registry_bucket_id = artifact_or_name._registry_bucket_id
         else:
             spec = artifact_or_name
             project = self.project
+            registry_bucket_id = None
 
         if ":" in spec:
             name, version_or_alias = spec.split(":", 1)
@@ -1536,7 +1538,13 @@ class Run:
             name, version_or_alias = spec, None
 
         if name.startswith(utils.REGISTRY_PROJECT_PREFIX) and "/" in name:
-            return self._use_registry_artifact(spec, name, version_or_alias, type)
+            return self._use_registry_artifact(
+                spec,
+                name,
+                version_or_alias,
+                type,
+                bucket_id=registry_bucket_id,
+            )
 
         if self._is_local:
             record = SQLiteStorage.get_artifact_manifest(
@@ -1578,6 +1586,7 @@ class Run:
                     run_id=self.id,
                     version_id=record["version_id"],
                     direction="input",
+                    run_project=self.project,
                 )
             else:
                 with self._client_lock:
@@ -1603,6 +1612,7 @@ class Run:
         target_path: str,
         version_or_alias: str | None,
         expected_type: str | None,
+        bucket_id: str | None = None,
     ) -> Artifact:
         """`use_artifact` for a registry location: follow the collection link
         to its source version, hydrate the linked artifact, and record this run
@@ -1614,7 +1624,7 @@ class Run:
                 "or a self-hosted server is not supported yet. Resolve it from "
                 "a local run, or fetch the source version by its own name."
             )
-        bucket_id = utils.resolve_registry_bucket_id(None)
+        bucket_id = utils.resolve_registry_bucket_id(bucket_id)
         backend = registry_backend(bucket_id)
         if not backend.registry_exists(registry):
             raise ValueError(
@@ -1630,11 +1640,15 @@ class Run:
             link = resolve_collection_link(record["links"], version_or_alias)
         except ValueError as e:
             raise ValueError(f"{e} ({spec!r})") from e
-        if link.get("source_space_id") or link.get("source_bucket_id"):
+        if (
+            link.get("source_space_id")
+            or link.get("source_bucket_id")
+            or link.get("source_server_base_url")
+        ):
             raise NotImplementedError(
                 f"Registry location {spec!r} points at a source version stored "
-                "on a Space or a bucket; resolving remote sources is not "
-                "supported yet."
+                "on a Space, bucket, or self-hosted server; resolving remote "
+                "sources is not supported yet."
             )
         source_spec = f"v{link['source_version']}"
         source = SQLiteStorage.get_artifact_manifest(
@@ -1657,6 +1671,7 @@ class Run:
                 run_id=self.id,
                 version_id=source["version_id"],
                 direction="input",
+                run_project=self.project,
             )
         except Exception as e:
             self._warn_once(
@@ -1721,8 +1736,10 @@ class Run:
             (`manifest`, `manifest_digest`, `size`, `metadata`) is the
             source version's, and the `source_project`, `source_name`,
             `source_version`, and `source_qualified_name` properties point
-            back at it. Calling `download()` on it is not supported yet;
-            download the source version instead.
+            back at it. `download()` fetches the source version's files. When
+            the source was fetched from a Space or self-hosted server, this
+            works on the linked artifact returned by this call; resolving that
+            registry location in a later process is not supported yet.
         """
         registry, collection = parse_collection_target(target_path)
         if not isinstance(artifact, Artifact):

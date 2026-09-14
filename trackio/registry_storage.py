@@ -305,6 +305,7 @@ class RegistryStorage:
                 source_version INTEGER NOT NULL,
                 source_space_id TEXT,
                 source_bucket_id TEXT,
+                source_server_base_url TEXT,
                 created_at TEXT NOT NULL,
                 UNIQUE(collection_id, source_project, source_artifact,
                        source_version),
@@ -340,6 +341,7 @@ class RegistryStorage:
                 "collection_links": {
                     "source_space_id": "TEXT",
                     "source_bucket_id": "TEXT",
+                    "source_server_base_url": "TEXT",
                 },
             },
         )
@@ -645,8 +647,9 @@ class RegistryStorage:
         cursor.execute(
             """INSERT INTO collection_links
             (collection_id, collection_version, source_project, source_artifact,
-             source_version, source_space_id, source_bucket_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+             source_version, source_space_id, source_bucket_id,
+             source_server_base_url, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 collection_id,
                 collection_version,
@@ -655,6 +658,7 @@ class RegistryStorage:
                 int(payload["source_version"]),
                 payload.get("source_space_id"),
                 payload.get("source_bucket_id"),
+                payload.get("source_server_base_url"),
                 ts,
             ),
         )
@@ -791,6 +795,7 @@ class RegistryStorage:
         run_id: str | None = None,
         source_space_id: str | None = None,
         source_bucket_id: str | None = None,
+        source_server_base_url: str | None = None,
     ) -> dict:
         """Link one artifact version into `registry`/`collection` and return
         the link record.
@@ -803,10 +808,11 @@ class RegistryStorage:
         automatically and always follows the newest linked version; passing
         it in `aliases` is a no-op rather than an error (matching wandb).
 
-        The source's storage coordinates (`source_space_id` /
-        `source_bucket_id`, None for a local project) are recorded on the link,
-        because where the bytes live cannot be derived from the source
-        coordinates alone once a registry is shared across machines."""
+        The source's storage coordinates (`source_space_id`,
+        `source_bucket_id`, or `source_server_base_url`; all None for a local
+        project) are recorded on the link because where the bytes live cannot
+        be derived from the source coordinates alone once a registry is shared
+        across machines."""
         validate_collection_name(collection)
         validate_collection_type(type)
         user_aliases = [
@@ -832,6 +838,7 @@ class RegistryStorage:
                         **source,
                         "source_space_id": source_space_id,
                         "source_bucket_id": source_bucket_id,
+                        "source_server_base_url": source_server_base_url,
                         "run_name": run_name,
                         "run_id": run_id,
                     },
@@ -1008,7 +1015,7 @@ class RegistryStorage:
         link_rows = conn.execute(
             f"""SELECT id, collection_id, collection_version, source_project,
                source_artifact, source_version, source_space_id,
-               source_bucket_id, created_at
+               source_bucket_id, source_server_base_url, created_at
             FROM collection_links {where}
             ORDER BY collection_id, collection_version DESC""",
             params,
@@ -1032,6 +1039,7 @@ class RegistryStorage:
                     "source_version": int(link["source_version"]),
                     "source_space_id": link["source_space_id"],
                     "source_bucket_id": link["source_bucket_id"],
+                    "source_server_base_url": link["source_server_base_url"],
                     "aliases": sorted(aliases_by_link.get(int(link["id"]), [])),
                     "created_at": link["created_at"],
                 }

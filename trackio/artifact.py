@@ -689,8 +689,9 @@ class Artifact:
             run_id=run_id,
             source_space_id=remote_source.get("space_id"),
             source_bucket_id=remote_source.get("bucket_id"),
+            source_server_base_url=remote_source.get("server_base_url"),
         )
-        return Artifact._from_registry_link(
+        linked = Artifact._from_registry_link(
             registry,
             collection,
             {
@@ -706,6 +707,9 @@ class Artifact:
             },
             bucket_id=bucket_id,
         )
+        if self._remote_source is not None:
+            linked._remote_source = dict(self._remote_source)
+        return linked
 
     @classmethod
     def _from_registry_link(

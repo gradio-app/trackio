@@ -707,7 +707,12 @@ async function getLinkOwnership() {
     getRunsJson(),
     getArtifactTables(),
   ]);
-  return buildRunOwnership(runs, links);
+  return buildRunOwnership(
+    runs,
+    links.filter(
+      (link) => link.run_project == null || link.run_project === config.project,
+    ),
+  );
 }
 
 export async function getRunArtifacts(_project, run) {
@@ -719,6 +724,9 @@ export async function getRunArtifacts(_project, run) {
   const versionsById = new Map(versions.map((v) => [Number(v.id), v]));
   const artifactsById = new Map(artifacts.map((a) => [Number(a.id), a]));
   const runLinks = links
+    .filter(
+      (link) => link.run_project == null || link.run_project === config.project,
+    )
     .filter((l) =>
       target.id != null
         ? canonicalLinkRunId(l, ownership) === target.id
@@ -736,6 +744,7 @@ export async function getRunArtifacts(_project, run) {
     seen.add(dedupeKey);
     result[link.direction].push({
       version_id: Number(version.id),
+      project: config.project,
       name: art.name,
       type: art.type,
       version: Number(version.version),
@@ -752,6 +761,7 @@ export async function getRunArtifactCounts() {
   const byKey = new Map();
   const seenByKey = new Map();
   for (const link of links) {
+    if (link.run_project != null && link.run_project !== config.project) continue;
     const runId = canonicalLinkRunId(link, ownership);
     const runName = link.run_name ?? null;
     const key = JSON.stringify([runId, runName]);
@@ -783,6 +793,7 @@ export async function getArtifactConsumers(_project, versionId) {
     .map((l) => ({
       run_name: l.run_name ?? null,
       run_id: l.run_id ?? null,
+      project: l.run_project ?? config.project,
       created_at: l.created_at,
     }));
 }

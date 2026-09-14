@@ -100,6 +100,8 @@ model.download()  # fetches the source version's files
 
 The spec after the collection accepts a collection version (`"v1"`), an alias (`"production"`), or nothing for the newest linked version. Downloading a linked artifact fetches the bytes of the source version it points at.
 
+Registry locations can currently be resolved only by local runs, and only when the source artifact is available locally. Sources stored on a Space, in a bucket, or on a self-hosted server can be published into a bucket-backed registry, but resolving those links in a later process is not supported yet. The linked artifact returned directly by `link_artifact` retains its Space or self-hosted source and can download from it.
+
 ### Collection versions
 
 Each new link gets the next version number in the collection, starting at `v0`. Collection versions are independent of the source artifacts' own version numbers, because linked versions typically come from different artifacts and projects.
@@ -199,7 +201,7 @@ Object storage has no compare-and-swap, so writers cannot take a lock — they c
 - **Version numbers are assigned by the fold, not by the writer.** Concurrent links are ordered by their event id (timestamp, then writer, then sequence), so each gets a distinct, never-reused number. A version reported by one writer can shift once a concurrent writer's events are folded in.
 - **Alias moves are last-writer-wins** under that same order, `latest` included. Two people promoting `production` at the same instant is settled by event order.
 
-Links stay pure pointers: nothing is copied into the registry bucket, so resolving a version reads the source project's storage, which has to stay reachable. Copying (pinning) a version's bytes into the registry is a planned follow-up.
+Links stay pure pointers: nothing is copied into the registry bucket, so the source project's storage has to stay reachable. Resolving links whose source is remote is not supported yet. Copying (pinning) a version's bytes into the registry is a planned follow-up.
 
 ## Inspect a registry
 
@@ -217,7 +219,7 @@ registry.collection("my-model").links
 #   "aliases": ["latest", "production"], ...}]
 ```
 
-Each link records where the version came from (`source_project`, `source_artifact`, `source_version`), the source's storage coordinates when it is not local (`source_space_id`, `source_bucket_id`), and the aliases currently on it. A link is a pure pointer to that source version; resolving it (a follow-up) reads the source version directly.
+Each link records where the version came from (`source_project`, `source_artifact`, `source_version`), the source's storage coordinates when it is not local (`source_space_id`, `source_bucket_id`, or `source_server_base_url`), and the aliases currently on it. A link is a pure pointer to that source version.
 
 ## Command-line interface
 

@@ -388,6 +388,7 @@ class SQLiteStorage:
             "id",
             "run_id",
             "run_name",
+            "run_project",
             "artifact_version_id",
             "direction",
             "created_at",
@@ -640,6 +641,7 @@ class SQLiteStorage:
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         run_id TEXT,
                         run_name TEXT,
+                        run_project TEXT,
                         artifact_version_id INTEGER NOT NULL REFERENCES artifact_versions(id),
                         direction TEXT NOT NULL CHECK(direction IN ('input', 'output')),
                         created_at TEXT NOT NULL
@@ -664,11 +666,24 @@ class SQLiteStorage:
                     ON run_artifact_links(artifact_version_id)
                     """
                 )
+                try:
+                    cursor.execute(
+                        "ALTER TABLE run_artifact_links ADD COLUMN run_project TEXT"
+                    )
+                except sqlite3.OperationalError:
+                    pass
+                cursor.execute("DROP INDEX IF EXISTS idx_run_artifact_links_unique")
                 cursor.execute(
-                    """
-                    CREATE UNIQUE INDEX IF NOT EXISTS idx_run_artifact_links_unique
-                    ON run_artifact_links(run_id, artifact_version_id, direction)
-                    """
+                    """CREATE UNIQUE INDEX IF NOT EXISTS
+                    idx_run_artifact_links_unique
+                    ON run_artifact_links(
+                        COALESCE(run_project, ''), COALESCE(run_id, ''),
+                        COALESCE(run_name, ''), artifact_version_id, direction
+                    )"""
+                )
+                cursor.execute(
+                    """CREATE INDEX IF NOT EXISTS idx_run_artifact_links_project_run
+                    ON run_artifact_links(run_project, run_id, run_name)"""
                 )
                 for col in (
                     f"kind TEXT NOT NULL DEFAULT '{MEDIA_UPLOAD_KIND}'",
@@ -836,7 +851,8 @@ class SQLiteStorage:
 
     @staticmethod
     def get_run_records(project: str) -> list[dict[str, str | None]]:
-        """Every run in `project`, from metrics plus artifact link rows.
+        """Every run in `project`, from metrics plus artifact link rows,
+        including links to artifacts owned by another local project.
 
         Link rows carry caller-supplied identities, so they only add a run
         entry when they introduce a run unknown to metrics: rows whose run_id
@@ -852,12 +868,29 @@ class SQLiteStorage:
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
                 cursor = conn.cursor()
+                link_columns = SQLiteStorage._table_columns(conn, "run_artifact_links")
                 has_links = (
-                    bool(SQLiteStorage._table_columns(conn, "run_artifact_links"))
+                    bool(link_columns)
                     and cursor.execute(
                         "SELECT 1 FROM run_artifact_links LIMIT 1"
                     ).fetchone()
                     is not None
+                )
+                has_run_project = "run_project" in link_columns
+                local_link_scope = (
+                    "(l.run_project IS NULL OR l.run_project = :run_project)"
+                    if has_run_project
+                    else "1 = 1"
+                )
+                local_link_scope_unaliased = (
+                    "(run_project IS NULL OR run_project = :run_project)"
+                    if has_run_project
+                    else "1 = 1"
+                )
+                query_params = (
+                    {"run_project": canonical_project_name(project)}
+                    if has_run_project
+                    else {}
                 )
                 if SQLiteStorage._supports_run_ids(conn):
                     sources = [
@@ -868,7 +901,8 @@ class SQLiteStorage:
                             """
                             SELECT run_id, run_name, created_at
                             FROM run_artifact_links AS l
-                            WHERE run_name IS NOT NULL
+                            WHERE {local_link_scope}
+                              AND run_name IS NOT NULL
                               AND l.run_name NOT IN (
                                 SELECT run_name FROM metrics
                                 WHERE run_name IS NOT NULL
@@ -881,8 +915,12 @@ class SQLiteStorage:
                                 SELECT run_name FROM run_artifact_links
                                 WHERE run_id IS NOT NULL
                                   AND run_name IS NOT NULL
+                                  AND {local_link_scope_unaliased}
                               ))
-                            """
+                            """.format(
+                                local_link_scope=local_link_scope,
+                                local_link_scope_unaliased=local_link_scope_unaliased,
+                            )
                         )
                     cursor.execute(
                         f"""
@@ -890,9 +928,10 @@ class SQLiteStorage:
                         FROM ({" UNION ALL ".join(sources)})
                         GROUP BY run_id, run_name
                         ORDER BY created_at ASC
-                        """
+                        """,
+                        query_params,
                     )
-                    return [
+                    records = [
                         {
                             "id": row["run_id"],
                             "name": row["run_name"],
@@ -900,33 +939,88 @@ class SQLiteStorage:
                         }
                         for row in cursor.fetchall()
                     ]
-
-                sources = ["SELECT run_name, timestamp AS created_at FROM metrics"]
-                if has_links:
-                    sources.append(
-                        "SELECT run_name, created_at FROM run_artifact_links "
-                        "WHERE run_name IS NOT NULL"
+                else:
+                    sources = ["SELECT run_name, timestamp AS created_at FROM metrics"]
+                    if has_links:
+                        sources.append(
+                            "SELECT run_name, created_at FROM run_artifact_links AS l "
+                            f"WHERE run_name IS NOT NULL AND {local_link_scope}"
+                        )
+                    cursor.execute(
+                        f"""
+                        SELECT run_name, MIN(created_at) AS created_at
+                        FROM ({" UNION ALL ".join(sources)})
+                        GROUP BY run_name
+                        ORDER BY created_at ASC
+                        """,
+                        query_params,
                     )
-                cursor.execute(
-                    f"""
-                    SELECT run_name, MIN(created_at) AS created_at
-                    FROM ({" UNION ALL ".join(sources)})
-                    GROUP BY run_name
-                    ORDER BY created_at ASC
-                    """
-                )
-                return [
-                    {
-                        "id": row["run_name"],
-                        "name": row["run_name"],
-                        "created_at": row["created_at"],
-                    }
-                    for row in cursor.fetchall()
-                ]
+                    records = [
+                        {
+                            "id": row["run_name"],
+                            "name": row["run_name"],
+                            "created_at": row["created_at"],
+                        }
+                        for row in cursor.fetchall()
+                    ]
+            external_records = SQLiteStorage._get_cross_project_run_records(project)
+            known_ids = {record["id"] for record in records if record["id"] is not None}
+            known_names = {
+                record["name"] for record in records if record["name"] is not None
+            }
+            for record in external_records:
+                if record["id"] in known_ids or record["name"] in known_names:
+                    continue
+                records.append(record)
+                if record["id"] is not None:
+                    known_ids.add(record["id"])
+                if record["name"] is not None:
+                    known_names.add(record["name"])
+            records.sort(key=lambda record: record["created_at"] or "")
+            return records
         except sqlite3.OperationalError as e:
             if "no such table: metrics" in str(e):
                 return []
             raise
+
+    @staticmethod
+    def _get_cross_project_run_records(
+        project: str,
+    ) -> list[dict[str, str | None]]:
+        target_project = canonical_project_name(project)
+        target_db = SQLiteStorage.get_project_db_path(project)
+        by_identity: dict[tuple[str | None, str | None], dict[str, str | None]] = {}
+        for source_db in TRACKIO_DIR.glob(f"*{DB_EXT}"):
+            if source_db == target_db:
+                continue
+            try:
+                with SQLiteStorage._get_connection(source_db) as conn:
+                    if "run_project" not in SQLiteStorage._table_columns(
+                        conn, "run_artifact_links"
+                    ):
+                        continue
+                    rows = conn.execute(
+                        """SELECT run_id, run_name,
+                            MIN(created_at) AS created_at
+                        FROM run_artifact_links
+                        WHERE run_project = ? AND run_name IS NOT NULL
+                        GROUP BY run_id, run_name""",
+                        (target_project,),
+                    ).fetchall()
+            except sqlite3.OperationalError:
+                continue
+            for row in rows:
+                identity = (row["run_id"], row["run_name"])
+                previous = by_identity.get(identity)
+                if previous is None or (row["created_at"] or "") < (
+                    previous["created_at"] or ""
+                ):
+                    by_identity[identity] = {
+                        "id": row["run_id"] or row["run_name"],
+                        "name": row["run_name"],
+                        "created_at": row["created_at"],
+                    }
+        return list(by_identity.values())
 
     @staticmethod
     def get_latest_run_record_by_name(
@@ -4947,6 +5041,7 @@ class SQLiteStorage:
         version_id: int,
         direction: str,
         now: str,
+        run_project: str | None = None,
     ) -> None:
         if direction not in ("input", "output"):
             raise ValueError(
@@ -4954,21 +5049,23 @@ class SQLiteStorage:
             )
         conn.execute(
             """INSERT OR IGNORE INTO run_artifact_links
-            (run_id, run_name, artifact_version_id, direction, created_at)
-            SELECT ?, ?, ?, ?, ?
+            (run_id, run_name, run_project, artifact_version_id, direction, created_at)
+            SELECT ?, ?, ?, ?, ?, ?
             WHERE NOT EXISTS (
                 SELECT 1 FROM run_artifact_links
-                WHERE run_id IS ? AND run_name IS ?
+                WHERE run_id IS ? AND run_name IS ? AND run_project IS ?
                   AND artifact_version_id = ? AND direction = ?
             )""",
             (
                 run_id,
                 run_name,
+                run_project,
                 version_id,
                 direction,
                 now,
                 run_id,
                 run_name,
+                run_project,
                 version_id,
                 direction,
             ),
@@ -4981,13 +5078,22 @@ class SQLiteStorage:
         run_id: str | None,
         version_id: int,
         direction: str,
+        run_project: str | None = None,
     ) -> None:
         db_path = SQLiteStorage.init_db(project)
         now = datetime.now(timezone.utc).isoformat()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 SQLiteStorage._insert_run_artifact_link_cursor(
-                    conn, run_name, run_id, version_id, direction, now
+                    conn,
+                    run_name,
+                    run_id,
+                    version_id,
+                    direction,
+                    now,
+                    canonical_project_name(run_project)
+                    if run_project is not None
+                    else None,
                 )
                 conn.commit()
 
@@ -5127,9 +5233,10 @@ class SQLiteStorage:
         run_name: str | None,
         run_id: str | None,
     ) -> dict[str, list[dict]]:
-        """Artifact links for one run. Orphan link rows — a NULL run_id, or a
-        run_id that belongs to no run record — are attributed by name, but only
-        when this run is the sole run record with that name, mirroring
+        """Artifact links for one run, including artifacts owned by another
+        local project. Orphan link rows — a NULL run_id, or a run_id that
+        belongs to no run record — are attributed by name, but only when this
+        run is the sole run record with that name, mirroring
         get_run_artifact_counts."""
         SQLiteStorage._ensure_hub_loaded()
         empty = {"input": [], "output": []}
@@ -5137,6 +5244,9 @@ class SQLiteStorage:
         if not db_path.exists():
             return empty
         with SQLiteStorage._get_connection(db_path) as conn:
+            has_run_project = "run_project" in SQLiteStorage._table_columns(
+                conn, "run_artifact_links"
+            )
             with_clause = ""
             if not SQLiteStorage._supports_run_ids(conn):
                 name = run_name if run_name is not None else run_id
@@ -5195,6 +5305,11 @@ class SQLiteStorage:
                             ))
                         """
                         params = (val, run_name)
+            if has_run_project:
+                where = (
+                    f"({where}) AND (ral.run_project IS NULL OR ral.run_project = ?)"
+                )
+                params = (*params, canonical_project_name(project))
             cursor = conn.cursor()
             try:
                 rows = cursor.execute(
@@ -5217,6 +5332,7 @@ class SQLiteStorage:
                 result[row["direction"]].append(
                     {
                         "version_id": int(row["version_id"]),
+                        "project": canonical_project_name(project),
                         "name": row["name"],
                         "type": row["type"],
                         "version": int(row["version"]),
@@ -5224,7 +5340,71 @@ class SQLiteStorage:
                         "created_at": row["created_at"],
                     }
                 )
+        external = SQLiteStorage._get_cross_project_run_artifacts(
+            project, run_name, run_id
+        )
+        for direction in ("input", "output"):
+            result[direction].extend(external[direction])
+            result[direction].sort(key=lambda item: item["created_at"] or "")
+        return result
+
+    @staticmethod
+    def _get_cross_project_run_artifacts(
+        project: str,
+        run_name: str | None,
+        run_id: str | None,
+    ) -> dict[str, list[dict]]:
+        result: dict[str, list[dict]] = {"input": [], "output": []}
+        target_project = canonical_project_name(project)
+        if run_id is not None:
+            identity_where = "ral.run_id = ?"
+            identity_params = (run_id,)
+        elif run_name is not None:
+            identity_where = "ral.run_name = ?"
+            identity_params = (run_name,)
+        else:
             return result
+        target_db = SQLiteStorage.get_project_db_path(project)
+        for source_db in TRACKIO_DIR.glob(f"*{DB_EXT}"):
+            if source_db == target_db:
+                continue
+            try:
+                with SQLiteStorage._get_connection(source_db) as conn:
+                    if "run_project" not in SQLiteStorage._table_columns(
+                        conn, "run_artifact_links"
+                    ):
+                        continue
+                    rows = conn.execute(
+                        f"""SELECT ral.direction,
+                            MIN(ral.created_at) AS created_at,
+                            av.id AS version_id, av.version, av.size_bytes,
+                            a.name, a.type
+                        FROM run_artifact_links ral
+                        JOIN artifact_versions av
+                          ON av.id = ral.artifact_version_id
+                        JOIN artifacts a ON a.id = av.artifact_id
+                        WHERE ral.run_project = ? AND {identity_where}
+                        GROUP BY ral.direction, av.id
+                        ORDER BY created_at""",
+                        (target_project, *identity_params),
+                    ).fetchall()
+            except sqlite3.OperationalError:
+                continue
+            for row in rows:
+                if row["direction"] not in result:
+                    continue
+                result[row["direction"]].append(
+                    {
+                        "version_id": int(row["version_id"]),
+                        "project": source_db.stem,
+                        "name": row["name"],
+                        "type": row["type"],
+                        "version": int(row["version"]),
+                        "size_bytes": int(row["size_bytes"]),
+                        "created_at": row["created_at"],
+                    }
+                )
+        return result
 
     @staticmethod
     def _link_run_identity_maps(
@@ -5303,22 +5483,73 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
         with SQLiteStorage._get_connection(db_path) as conn:
+            target_project = canonical_project_name(project)
+            has_run_project = "run_project" in SQLiteStorage._table_columns(
+                conn, "run_artifact_links"
+            )
+            local_scope = (
+                "WHERE run_project IS NULL OR run_project = ?"
+                if has_run_project
+                else ""
+            )
+            local_params = (target_project,) if has_run_project else ()
             try:
                 rows = conn.execute(
                     """SELECT DISTINCT run_id, run_name,
                         artifact_version_id, direction
-                    FROM run_artifact_links"""
+                    FROM run_artifact_links """
+                    + local_scope,
+                    local_params,
                 ).fetchall()
             except sqlite3.OperationalError:
                 return []
+            normalized_rows = [
+                {
+                    "run_id": row["run_id"],
+                    "run_name": row["run_name"],
+                    "artifact_version_id": row["artifact_version_id"],
+                    "artifact_project": target_project,
+                    "direction": row["direction"],
+                }
+                for row in rows
+            ]
+            for source_db in TRACKIO_DIR.glob(f"*{DB_EXT}"):
+                if source_db == db_path:
+                    continue
+                try:
+                    with SQLiteStorage._get_connection(source_db) as source_conn:
+                        if "run_project" not in SQLiteStorage._table_columns(
+                            source_conn, "run_artifact_links"
+                        ):
+                            continue
+                        external_rows = source_conn.execute(
+                            """SELECT DISTINCT run_id, run_name,
+                                artifact_version_id, direction
+                            FROM run_artifact_links
+                            WHERE run_project = ?""",
+                            (target_project,),
+                        ).fetchall()
+                except sqlite3.OperationalError:
+                    continue
+                normalized_rows.extend(
+                    {
+                        "run_id": row["run_id"],
+                        "run_name": row["run_name"],
+                        "artifact_version_id": row["artifact_version_id"],
+                        "artifact_project": source_db.stem,
+                        "direction": row["direction"],
+                    }
+                    for row in external_rows
+                )
             legacy_metrics, record_ids, ids_by_name = (
                 SQLiteStorage._link_run_identity_maps(
-                    conn, {(row["run_id"], row["run_name"]) for row in rows}
+                    conn,
+                    {(row["run_id"], row["run_name"]) for row in normalized_rows},
                 )
             )
             counts: dict[tuple, dict] = {}
             links_by_key: dict[tuple, set] = {}
-            for row in rows:
+            for row in normalized_rows:
                 run_name = row["run_name"]
                 run_id = SQLiteStorage._canonical_link_run_id(
                     row["run_id"], run_name, legacy_metrics, record_ids, ids_by_name
@@ -5333,7 +5564,11 @@ class SQLiteStorage:
                         "output": 0,
                     },
                 )
-                link = (row["artifact_version_id"], row["direction"])
+                link = (
+                    row["artifact_project"],
+                    row["artifact_version_id"],
+                    row["direction"],
+                )
                 seen = links_by_key.setdefault(key, set())
                 if link in seen:
                     continue
@@ -5352,9 +5587,16 @@ class SQLiteStorage:
         if not db_path.exists():
             return []
         with SQLiteStorage._get_connection(db_path) as conn:
+            run_project_expr = (
+                "run_project"
+                if "run_project"
+                in SQLiteStorage._table_columns(conn, "run_artifact_links")
+                else "NULL"
+            )
             try:
                 rows = conn.execute(
-                    """SELECT run_name, run_id, created_at
+                    f"""SELECT run_name, run_id,
+                        {run_project_expr} AS run_project, created_at
                     FROM run_artifact_links
                     WHERE artifact_version_id = ? AND direction = 'input'
                     ORDER BY created_at""",
@@ -5366,6 +5608,7 @@ class SQLiteStorage:
                 {
                     "run_name": r["run_name"],
                     "run_id": r["run_id"],
+                    "project": r["run_project"] or canonical_project_name(project),
                     "created_at": r["created_at"],
                 }
                 for r in rows
@@ -5390,6 +5633,12 @@ class SQLiteStorage:
         if not db_path.exists():
             return empty
         with SQLiteStorage._get_connection(db_path) as conn:
+            lineage_run_project_expr = (
+                "run_project"
+                if "run_project"
+                in SQLiteStorage._table_columns(conn, "run_artifact_links")
+                else "NULL"
+            )
             truncated = False
             row_budget_hit = False
             link_rows_read = 0
@@ -5412,7 +5661,9 @@ class SQLiteStorage:
                     return []
                 try:
                     rows = conn.execute(
-                        f"""SELECT id, run_id, run_name, artifact_version_id,
+                        f"""SELECT id, run_id, run_name,
+                            {lineage_run_project_expr} AS run_project,
+                            artifact_version_id,
                             direction, created_at
                         FROM run_artifact_links
                         WHERE direction IN ('input', 'output') AND ({where})
@@ -5588,6 +5839,8 @@ class SQLiteStorage:
                         run_meta[run_key] = {
                             "run_id": run_id,
                             "run_name": row["run_name"],
+                            "project": row["run_project"]
+                            or canonical_project_name(project),
                             "created_at": row["created_at"],
                         }
                     created_at = edge_meta.get(edge_key)
@@ -5657,15 +5910,16 @@ class SQLiteStorage:
                 )
             for run_key in sorted(run_keys):
                 meta = run_meta[run_key]
-                nodes.append(
-                    {
-                        "id": run_key,
-                        "kind": "run",
-                        "run_id": meta["run_id"],
-                        "run_name": meta["run_name"],
-                        "created_at": meta["created_at"],
-                    }
-                )
+                node = {
+                    "id": run_key,
+                    "kind": "run",
+                    "run_id": meta["run_id"],
+                    "run_name": meta["run_name"],
+                    "created_at": meta["created_at"],
+                }
+                if meta["project"] != canonical_project_name(project):
+                    node["project"] = meta["project"]
+                nodes.append(node)
 
             edges = [
                 {
