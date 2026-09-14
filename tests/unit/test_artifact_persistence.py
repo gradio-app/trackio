@@ -92,10 +92,61 @@ def test_artifact_metadata_survives_parquet_roundtrip(temp_dir):
     SQLiteStorage.export_to_parquet()
 
     db_path = SQLiteStorage.get_project_db_path("proj")
-    for table in SQLiteStorage._ARTIFACT_PARQUET_TABLES:
+    for table in (
+        "artifacts",
+        "artifact_versions",
+        "artifact_aliases",
+        "run_artifact_links",
+    ):
         assert (Path(temp_dir) / f"{db_path.stem}_{table}.parquet").exists()
 
     os.unlink(db_path)
     SQLiteStorage.import_from_parquet()
 
     assert _snapshot("proj") == before
+
+
+def test_cross_project_artifact_links_survive_parquet_roundtrip(temp_dir):
+    SQLiteStorage.init_db("source")
+    SQLiteStorage.init_db("consumer")
+    artifact_id = SQLiteStorage.create_or_get_artifact("source", "model", "model", None)
+    version_id, _, _ = SQLiteStorage.insert_artifact_version(
+        "source",
+        artifact_id,
+        [{"path": "w.bin", "digest": "d" * 64, "size": 9}],
+        None,
+        "rid-train",
+        "train",
+    )
+    SQLiteStorage.insert_run_artifact_link(
+        "source",
+        "deploy",
+        "rid-deploy",
+        version_id,
+        "input",
+        run_project="consumer",
+    )
+
+    before = SQLiteStorage.get_run_artifacts("consumer", "deploy", "rid-deploy")
+    assert [(item["project"], item["name"]) for item in before["input"]] == [
+        ("source", "model")
+    ]
+
+    SQLiteStorage._dataset_import_attempted = True
+    SQLiteStorage.export_to_parquet()
+
+    consumer_db = SQLiteStorage.get_project_db_path("consumer")
+    assert (Path(temp_dir) / "consumer_external_run_artifact_links.parquet").exists()
+    os.unlink(SQLiteStorage.get_project_db_path("source"))
+    os.unlink(consumer_db)
+    SQLiteStorage.import_from_parquet()
+
+    assert SQLiteStorage.get_run_artifacts("consumer", "deploy", "rid-deploy") == before
+    assert SQLiteStorage.get_run_artifact_counts("consumer") == [
+        {
+            "run_id": "rid-deploy",
+            "run_name": "deploy",
+            "input": 1,
+            "output": 0,
+        }
+    ]
