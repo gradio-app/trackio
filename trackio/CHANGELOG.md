@@ -1,5 +1,11 @@
 # trackio
 
+## 0.38.1
+
+### Features
+
+- [#692](https://github.com/gradio-app/trackio/pull/692) [`217a949`](https://github.com/gradio-app/trackio/commit/217a94957cce97a3822a908560f49c435b5b5117) - Fix CommitOperationAdd import with huggingface_hub 1.32.  Thanks @abidlabs!
+
 ## 0.38.0
 
 ### Features
