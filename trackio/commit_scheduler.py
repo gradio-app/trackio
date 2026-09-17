@@ -9,12 +9,8 @@ from pathlib import Path
 from threading import Lock, Thread
 from typing import Callable, Dict, List, Union
 
-from huggingface_hub.hf_api import (
-    DEFAULT_IGNORE_PATTERNS,
-    CommitInfo,
-    CommitOperationAdd,
-    HfApi,
-)
+from huggingface_hub import CommitOperationAdd
+from huggingface_hub.hf_api import DEFAULT_IGNORE_PATTERNS, CommitInfo, HfApi
 from huggingface_hub.utils import filter_repo_objects
 
 logger = logging.getLogger(__name__)
