@@ -1386,6 +1386,7 @@ class Run:
         name: str | None = None,
         type: str | None = None,
         aliases: list[str] | None = None,
+        overwrite: bool = False,
     ) -> Artifact:
         if isinstance(artifact_or_path, Artifact):
             if name is not None or type is not None:
@@ -1410,6 +1411,8 @@ class Run:
                 "Artifact has already been logged or fetched; "
                 "construct a new Artifact() to log again."
             )
+        if not isinstance(overwrite, bool):
+            raise ValueError(f"overwrite must be a boolean, got {overwrite!r}.")
 
         user_aliases = cas.validate_aliases(aliases)
 
@@ -1426,6 +1429,7 @@ class Run:
                 aliases=user_aliases,
                 run_name=self.name,
                 run_id=self.id,
+                overwrite=overwrite,
             )
         else:
             self._wait_for_client_ready()
@@ -1458,17 +1462,22 @@ class Run:
 
             self._drain_pending_uploads()
 
+            log_kwargs: dict[str, Any] = {
+                "project": self.project,
+                "name": artifact.name,
+                "type": artifact.type,
+                "description": artifact.description,
+                "metadata": artifact.metadata,
+                "manifest": manifest,
+                "aliases": user_aliases,
+                "run_name": self.name,
+                "run_id": self.id,
+                "hf_token": self._hf_token_for_remote(),
+            }
+            if overwrite:
+                log_kwargs["overwrite"] = True
             record = self._artifact_log_with_retry(
-                project=self.project,
-                name=artifact.name,
-                type=artifact.type,
-                description=artifact.description,
-                metadata=artifact.metadata,
-                manifest=manifest,
-                aliases=user_aliases,
-                run_name=self.name,
-                run_id=self.id,
-                hf_token=self._hf_token_for_remote(),
+                **log_kwargs,
             )
 
         artifact._hydrate_from_db(

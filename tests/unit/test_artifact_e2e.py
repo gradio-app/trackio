@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import trackio
+from trackio import cas
+from trackio.sqlite_storage import SQLiteStorage
 
 
 def test_master_plan_example_runs_verbatim(temp_dir, tmp_path, monkeypatch):
@@ -80,3 +82,34 @@ def test_multi_version_lifecycle_with_alias_rotation(temp_dir, tmp_path):
     assert trackio.use_artifact("m:v1").version == "v1"
     assert trackio.use_artifact("m:v2").version == "v2"
     trackio.finish()
+
+
+def test_overwrite_prunes_versions_and_unreferenced_blobs(temp_dir, tmp_path):
+    checkpoint = tmp_path / "checkpoint.bin"
+    shared = tmp_path / "shared.bin"
+    checkpoint.write_bytes(b"checkpoint-v0")
+    shared.write_bytes(b"shared")
+    trackio.init(project="art-overwrite", name="trainer")
+    model = trackio.Artifact(name="model", type="model")
+    model.add_file(checkpoint)
+    model.add_file(shared)
+    trackio.log_artifact(model)
+    trackio.log_artifact(shared, name="shared", type="dataset")
+    trackio.finish()
+
+    first = SQLiteStorage.get_artifact_manifest("art-overwrite", "model", "v0")
+    first_digests = {entry["path"]: entry["digest"] for entry in first["manifest"]}
+    checkpoint.write_bytes(b"checkpoint-v1")
+    trackio.init(project="art-overwrite", name="trainer")
+    logged = trackio.log_artifact(
+        checkpoint, name="model", type="model", overwrite=True
+    )
+    trackio.finish()
+
+    artifacts = SQLiteStorage.list_artifacts("art-overwrite")
+    assert logged.version == "v1"
+    assert next(a for a in artifacts if a["name"] == "model")["num_versions"] == 1
+    assert SQLiteStorage.get_artifact_manifest("art-overwrite", "model", "v0") is None
+    assert not cas.blob_path("art-overwrite", first_digests["checkpoint.bin"]).exists()
+    assert cas.blob_path("art-overwrite", first_digests["shared.bin"]).is_file()
+    assert cas.blob_path("art-overwrite", logged.manifest[0]["digest"]).is_file()

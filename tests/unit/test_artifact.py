@@ -46,7 +46,9 @@ def test_insert_artifact_version_dedupes(temp_dir):
     assert created_2 is False
 
 
-def _commit_version(manifest, aliases=None, metadata=None, description=None):
+def _commit_version(
+    manifest, aliases=None, metadata=None, description=None, overwrite=False
+):
     return SQLiteStorage.commit_artifact_version(
         project="p",
         name="m",
@@ -57,6 +59,7 @@ def _commit_version(manifest, aliases=None, metadata=None, description=None):
         aliases=aliases,
         run_name="r",
         run_id=None,
+        overwrite=overwrite,
     )
 
 
@@ -68,6 +71,23 @@ def test_relog_older_content_does_not_regress_latest(temp_dir):
     _commit_version(a)
     latest = SQLiteStorage.resolve_artifact_version("p", "m", "latest")
     assert latest["version"] == 1
+
+
+def test_overwrite_keeps_only_resulting_version(temp_dir):
+    a = [{"path": "w", "digest": "aaa", "size": 1}]
+    b = [{"path": "w", "digest": "bbb", "size": 1}]
+    first = _commit_version(a, aliases=["old"])
+    _commit_version(b)
+    second = _commit_version(a, aliases=["current"], overwrite=True)
+
+    assert second["version"] == 2
+    assert sorted(second["aliases"]) == ["current", "latest"]
+    assert SQLiteStorage.get_artifact_manifest("p", "m", "v0") is None
+    assert SQLiteStorage.get_artifact_manifest("p", "m", "v1") is None
+    assert SQLiteStorage.list_artifacts("p")[0]["num_versions"] == 1
+    outputs = SQLiteStorage.get_run_artifacts("p", "r", None)["output"]
+    assert [output["version_id"] for output in outputs] == [second["version_id"]]
+    assert first["version_id"] != second["version_id"]
 
 
 def test_relog_with_alias_tags_existing_version_without_moving_latest(temp_dir):
