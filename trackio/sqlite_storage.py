@@ -4934,6 +4934,7 @@ class SQLiteStorage:
         producer_run_id: str | None,
         producer_run_name: str | None,
         now: str,
+        minimum_version: int = 0,
     ) -> tuple[int, int, bool]:
         canonical, manifest_digest, size_bytes = SQLiteStorage._canonical_manifest(
             manifest
@@ -4957,7 +4958,11 @@ class SQLiteStorage:
             "SELECT MAX(version) AS m FROM artifact_versions WHERE artifact_id = ?",
             (artifact_id,),
         ).fetchone()
-        next_version = 0 if row["m"] is None else int(row["m"]) + 1
+        next_version = (
+            minimum_version
+            if row["m"] is None
+            else max(int(row["m"]) + 1, minimum_version)
+        )
         cursor.execute(
             """INSERT INTO artifact_versions
             (artifact_id, version, manifest_digest, manifest, metadata,
@@ -5223,26 +5228,83 @@ class SQLiteStorage:
         aliases: list[str] | None,
         run_name: str | None,
         run_id: str | None,
+        overwrite: bool = False,
     ) -> dict:
         """Commit a new artifact version and return its full manifest record.
         `latest` advances only when a new version is created, so re-logging
         identical or older content never regresses `latest`. Moving aliases are
         reassigned the same way: a content-dedup hit to an older version never
         drags an existing alias backward, but a first-time or forward tag lands.
+        When `overwrite` is true, every other version and any now-unreferenced
+        blobs are removed after the resulting version is committed.
         """
         db_path = SQLiteStorage.init_db(project)
         now = datetime.now(timezone.utc).isoformat()
+        blobs_to_delete: set[Sha256Digest] = set()
         with SQLiteStorage._get_process_lock(project):
             with SQLiteStorage._get_connection(db_path) as conn:
                 artifact_id = SQLiteStorage._create_or_get_artifact_cursor(
                     conn, name, type, description, now
                 )
+                minimum_version = 0
+                if overwrite:
+                    obsolete_rows = conn.execute(
+                        """SELECT manifest, version FROM artifact_versions
+                        WHERE artifact_id = ?""",
+                        (artifact_id,),
+                    ).fetchall()
+                    if obsolete_rows:
+                        minimum_version = (
+                            max(int(row["version"]) for row in obsolete_rows) + 1
+                        )
+                        obsolete_digests = {
+                            Sha256Digest(entry["digest"])
+                            for row in obsolete_rows
+                            for entry in orjson.loads(row["manifest"])
+                            if not references.is_reference_entry(entry)
+                        }
+                        conn.execute(
+                            "DELETE FROM artifact_aliases WHERE artifact_id = ?",
+                            (artifact_id,),
+                        )
+                        conn.execute(
+                            """DELETE FROM run_artifact_links
+                            WHERE artifact_version_id IN (
+                                SELECT id FROM artifact_versions
+                                WHERE artifact_id = ?
+                            )""",
+                            (artifact_id,),
+                        )
+                        conn.execute(
+                            "DELETE FROM artifact_versions WHERE artifact_id = ?",
+                            (artifact_id,),
+                        )
+                    else:
+                        obsolete_digests = set()
                 version_id, version_int, created = (
                     SQLiteStorage._insert_artifact_version_cursor(
-                        conn, artifact_id, manifest, metadata, run_id, run_name, now
+                        conn,
+                        artifact_id,
+                        manifest,
+                        metadata,
+                        run_id,
+                        run_name,
+                        now,
+                        minimum_version=minimum_version,
                     )
                 )
-                if created:
+                if overwrite:
+                    referenced_digests = {
+                        Sha256Digest(entry["digest"])
+                        for row in conn.execute(
+                            "SELECT manifest FROM artifact_versions"
+                        ).fetchall()
+                        for entry in orjson.loads(row["manifest"])
+                        if not references.is_reference_entry(entry)
+                    }
+                    blobs_to_delete = obsolete_digests - referenced_digests
+
+                if created or overwrite:
                     SQLiteStorage._reassign_alias_cursor(
                         conn, artifact_id, "latest", version_id
                     )
@@ -5254,9 +5316,22 @@ class SQLiteStorage:
                     conn, run_name, run_id, version_id, "output", now
                 )
                 conn.commit()
-                return SQLiteStorage._get_artifact_manifest_cursor(
+                record = SQLiteStorage._get_artifact_manifest_cursor(
                     conn, name, f"v{version_int}"
                 )
+            for digest in blobs_to_delete:
+                try:
+                    blob = cas.blob_path(project, digest)
+                    blob.unlink(missing_ok=True)
+                    try:
+                        blob.parent.rmdir()
+                    except OSError:
+                        pass
+                except OSError as exc:
+                    _emit_nonfatal_warning(
+                        f"Could not remove pruned artifact blob {digest}: {exc}"
+                    )
+            return record
 
     @staticmethod
     def _get_artifact_manifest_cursor(
