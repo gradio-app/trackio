@@ -4336,6 +4336,7 @@ class SQLiteStorage:
         at_time: str | None = None,
         window: int | float | None = None,
         run_id: str | None = None,
+        max_points: int | None = None,
     ) -> list[dict]:
         """Get values for a specific metric in a project/run with optional filtering.
 
@@ -4344,6 +4345,8 @@ class SQLiteStorage:
           - around_step + window: return rows where step is in [around_step - window, around_step + window]
           - at_time + window: return rows within ±window seconds of the ISO timestamp
           - No filters: return all rows
+
+        max_points evenly subsamples the matching rows, always keeping the first and last.
         """
         db_path = SQLiteStorage.get_project_db_path(project)
         if not db_path.exists():
@@ -4389,7 +4392,19 @@ class SQLiteStorage:
                             "value": metrics[metric_name],
                         }
                     )
-            return results
+            return SQLiteStorage._subsample_evenly(results, max_points)
+
+    @staticmethod
+    def _subsample_evenly(rows: list[Any], max_points: int | None) -> list[Any]:
+        if max_points is None or max_points < 1 or len(rows) <= max_points:
+            return rows
+        if max_points == 1:
+            return [rows[-1]]
+        last = len(rows) - 1
+        indices = sorted(
+            {round(i * last / (max_points - 1)) for i in range(max_points)}
+        )
+        return [rows[i] for i in indices]
 
     @staticmethod
     def get_snapshot(

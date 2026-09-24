@@ -366,6 +366,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="plot-container bar-plot"
+  data-metric={y}
   class:hidden-plot={fullscreen}
   bind:this={plotContainer}
   draggable={draggable ? "true" : undefined}

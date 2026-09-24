@@ -641,3 +641,26 @@ def test_query_project_decodes_utf8_blobs(temp_dir):
 def test_query_project_missing_project(temp_dir):
     with pytest.raises(FileNotFoundError):
         SQLiteStorage.query_project("nonexistent", "SELECT 1")
+
+
+def test_get_metric_values_max_points_keeps_ends_within_range(temp_dir):
+    project = "proj_metric_values_max_points"
+    SQLiteStorage.bulk_log(
+        project,
+        "run",
+        [{"loss": float(i)} for i in range(1000)],
+        steps=list(range(1000)),
+    )
+
+    rows = SQLiteStorage.get_metric_values(
+        project, "run", "loss", around_step=500, window=100, max_points=11
+    )
+
+    assert len(rows) == 11
+    assert rows[0]["step"] == 400
+    assert rows[-1]["step"] == 600
+    assert [row["step"] for row in rows] == sorted(row["step"] for row in rows)
+    assert (
+        len(SQLiteStorage.get_metric_values(project, "run", "loss", max_points=None))
+        == 1000
+    )
