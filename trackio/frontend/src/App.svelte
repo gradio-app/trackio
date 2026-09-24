@@ -102,6 +102,7 @@
   let sidebarUserControlled = $state(false);
   let navbarHidden = $state(false);
   let hideEmptyTabs = $state(false);
+  let narrowViewport = $state(false);
   let urlTick = $state(0);
   let alerts = $state([]);
   let pollTimer = $state(null);
@@ -396,6 +397,7 @@
     sidebarUserControlled = !sidebarState.responsive;
 
     const stopNarrowViewportWatch = watchNarrowViewport((narrow) => {
+      narrowViewport = narrow;
       if (sidebarUserControlled) return;
       sidebarOpen = !narrow;
     });
@@ -630,7 +632,7 @@
         {currentPage}
         {tabAvailability}
         optionalEmptyTabs={OPTIONAL_EMPTY_TABS}
-        {hideEmptyTabs}
+        hideEmptyTabs={hideEmptyTabs || narrowViewport}
         onNavigate={handleNavigate}
       />
     {/if}
