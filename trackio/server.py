@@ -948,6 +948,7 @@ def get_metric_values(
     at_time: str | None = None,
     window: int | None = None,
     run_id: str | None = None,
+    max_points: int | None = None,
 ) -> list[dict[str, Any]]:
     return SQLiteStorage.get_metric_values(
         project,
@@ -958,6 +959,7 @@ def get_metric_values(
         at_time=at_time,
         window=window,
         run_id=run_id,
+        max_points=max_points,
     )
 
 

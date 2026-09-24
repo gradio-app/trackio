@@ -52,6 +52,10 @@
   import Settings from "./pages/Settings.svelte";
   import { initTheme, isDark, onThemeChange } from "./lib/theme.js";
   import { applyUrlTokens } from "./lib/urlTokens.js";
+  import {
+    registerSnapshotProvider,
+    startViewStateBridge,
+  } from "./lib/viewState.js";
 
   function metricFilterFromLegacyMetricsParam(metricsParam) {
     if (!metricsParam) return "";
@@ -444,6 +448,22 @@
 
     applyUrlTokens();
 
+    const unregisterAppSnapshot = registerSnapshotProvider("app", () => ({
+      page: currentPage,
+      project: selectedProject,
+      space_id: spaceId,
+      runs: selectedRunRecords.map((run) => ({
+        name: run.name,
+        id: run.id ?? null,
+      })),
+      x_axis: xAxis,
+      smoothing,
+      log_x: logScaleX,
+      log_y: logScaleY,
+      metric_filter: metricFilter,
+    }));
+    const stopViewStateBridge = startViewStateBridge();
+
     (async () => {
       const staticMode = await isStaticMode();
 
@@ -492,6 +512,8 @@
       if (mutationPollTimer) clearInterval(mutationPollTimer);
       window.removeEventListener("focus", refreshMutationAccess);
       stopNarrowViewportWatch();
+      stopViewStateBridge();
+      unregisterAppSnapshot();
     };
   });
 

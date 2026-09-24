@@ -23,6 +23,7 @@
     logsHaveNewData,
   } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
+  import { registerSnapshotProvider } from "../lib/viewState.js";
   import {
     AUTO_PANELS_PER_ROW,
     getPlotColumns,
@@ -59,6 +60,7 @@
   let hasLoaded = $state(false);
   let metricOrder = $state({});
   let dragState = $state({ group: null, index: -1 });
+  let pageElement = $state(null);
 
   let rawDataCache = new Map();
   let refreshTimer = null;
@@ -355,6 +357,72 @@
     };
   });
 
+  function visibleMetricNames() {
+    const names = [];
+    for (const groupName of groupNames) {
+      const group = metricGroups[groupName];
+      names.push(...getOrderedMetrics(`${groupName}:direct`, group.direct));
+      for (const [subName, subMetrics] of Object.entries(group.subgroups)) {
+        names.push(...getOrderedMetrics(`${groupName}:${subName}`, subMetrics));
+      }
+    }
+    return names;
+  }
+
+  function visibleClipRect(el) {
+    let clip = { top: 0, left: 0, bottom: window.innerHeight, right: window.innerWidth };
+    for (let node = el; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.overflowY === "visible" && style.overflowX === "visible") continue;
+      const rect = node.getBoundingClientRect();
+      clip = {
+        top: Math.max(clip.top, rect.top),
+        left: Math.max(clip.left, rect.left),
+        bottom: Math.min(clip.bottom, rect.bottom),
+        right: Math.min(clip.right, rect.right),
+      };
+    }
+    return clip;
+  }
+
+  function metricsOnScreen() {
+    if (!pageElement) return [];
+    const clip = visibleClipRect(pageElement);
+    const names = [];
+    for (const el of pageElement.querySelectorAll(".plot-container[data-metric]")) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      const visibleHeight = Math.min(rect.bottom, clip.bottom) - Math.max(rect.top, clip.top);
+      const visibleWidth = Math.min(rect.right, clip.right) - Math.max(rect.left, clip.left);
+      if (visibleHeight >= rect.height / 2 && visibleWidth >= rect.width / 2) {
+        names.push(el.dataset.metric);
+      }
+    }
+    return [...new Set(names)];
+  }
+
+  function latestX() {
+    let latest = null;
+    for (const row of masterData) {
+      if (row.data_type && row.data_type !== "original") continue;
+      const value = row[xColumn];
+      if (typeof value === "number" && (latest === null || value > latest)) {
+        latest = value;
+      }
+    }
+    return latest;
+  }
+
+  onMount(() =>
+    registerSnapshotProvider("metrics", () => ({
+      x_axis: xColumn,
+      x_range: xLim ? [xLim[0], xLim[1]] : null,
+      metrics: visibleMetricNames(),
+      metrics_on_screen: metricsOnScreen(),
+      latest_x: latestX(),
+    })),
+  );
+
   function handlePlotSelect(range) {
     if (range && range.length === 2) {
       xLim = range;
@@ -367,7 +435,7 @@
 
 </script>
 
-<div class="metrics-page">
+<div class="metrics-page" bind:this={pageElement}>
   {#if !appBootstrapReady || !hasLoaded}
     <LoadingTrackio />
   {:else if !project}
