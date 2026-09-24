@@ -112,22 +112,34 @@ describe("startEmbedBridge", () => {
     ]);
   });
 
-  it("ignores messages that are not from its parent or not in the protocol", () => {
+  it("answers any window that asks, and ignores off-protocol messages", () => {
     const win = fakeWindow();
     let asked = 0;
-    cleanups.push(startEmbedBridge({ win, snapshot: () => (asked++, {}) }));
+    cleanups.push(startEmbedBridge({ win, snapshot: () => (asked++, { project: "p" }) }));
 
-    const stranger = { postMessage: () => {} };
-    win.dispatch({ data: { protocol: EMBED_PROTOCOL, type: "getState" }, source: stranger, origin: "x" });
-    win.dispatch({ data: { type: "getState" }, source: win.parent, origin: "x" });
+    const replies = [];
+    const opener = { postMessage: (message, origin) => replies.push({ message, origin }) };
+    win.dispatch({ data: { protocol: EMBED_PROTOCOL, type: "getState", id: 1 }, source: opener, origin: "https://notebook.example" });
+    win.dispatch({ data: { type: "getState" }, source: opener, origin: "x" });
 
-    expect(asked).toBe(0);
+    expect(asked).toBe(1);
+    expect(replies).toHaveLength(1);
+    expect(replies[0].origin).toBe("https://notebook.example");
   });
 
-  it("does nothing when the dashboard is not embedded", () => {
+  it("works outside a frame: exposes window.trackio.getViewState and announces to an opener", () => {
     const win = fakeWindow();
     win.parent = win;
-    startEmbedBridge({ win });
+    const openerMessages = [];
+    win.opener = { postMessage: (message) => openerMessages.push(message) };
+    const stop = startEmbedBridge({ win, snapshot: () => ({ project: "p" }) });
+
+    expect(win.trackio.getViewState()).toEqual({ project: "p" });
+    expect(openerMessages[0]).toMatchObject({ protocol: EMBED_PROTOCOL, type: "ready" });
+    expect(win.listenerCount()).toBe(1);
+
+    stop();
+    expect(win.trackio.getViewState).toBeUndefined();
     expect(win.listenerCount()).toBe(0);
   });
 });

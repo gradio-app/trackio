@@ -81,22 +81,28 @@ export function buildSnapshot({ location = window.location, now = new Date() } =
   };
 }
 
-function isEmbedded(win) {
+function readSafely(read) {
   try {
-    return win.parent && win.parent !== win;
+    return read();
   } catch {
-    return true;
+    return null;
   }
 }
 
-export function startEmbedBridge({ win = window, snapshot = buildSnapshot } = {}) {
-  if (!isEmbedded(win)) return () => {};
+function announceTargets(win) {
+  const parent = readSafely(() => win.parent);
+  const opener = readSafely(() => win.opener);
+  const targets = [];
+  if (parent && parent !== win) targets.push(parent);
+  if (opener && opener !== parent) targets.push(opener);
+  return targets;
+}
 
+export function startEmbedBridge({ win = window, snapshot = buildSnapshot } = {}) {
   function onMessage(event) {
     const msg = event.data;
     if (!msg || msg.protocol !== EMBED_PROTOCOL) return;
-    if (event.source !== win.parent) return;
-    if (msg.type !== "getState") return;
+    if (msg.type !== "getState" || !event.source) return;
     let reply;
     try {
       reply = {
@@ -115,18 +121,29 @@ export function startEmbedBridge({ win = window, snapshot = buildSnapshot } = {}
         error: String(error),
       };
     }
-    event.source.postMessage(reply, event.origin === "null" ? "*" : event.origin);
+    event.source.postMessage(reply, event.origin && event.origin !== "null" ? event.origin : "*");
   }
 
   win.addEventListener("message", onMessage);
-  win.parent.postMessage(
-    {
-      protocol: EMBED_PROTOCOL,
-      version: EMBED_PROTOCOL_VERSION,
-      type: "ready",
-      capabilities: ["getState"],
-    },
-    "*",
-  );
-  return () => win.removeEventListener("message", onMessage);
+  const api = { getViewState: () => snapshot(), protocolVersion: EMBED_PROTOCOL_VERSION };
+  win.trackio = Object.assign(win.trackio || {}, api);
+
+  for (const target of announceTargets(win)) {
+    target.postMessage(
+      {
+        protocol: EMBED_PROTOCOL,
+        version: EMBED_PROTOCOL_VERSION,
+        type: "ready",
+        capabilities: ["getState"],
+      },
+      "*",
+    );
+  }
+  return () => {
+    win.removeEventListener("message", onMessage);
+    if (win.trackio?.getViewState === api.getViewState) {
+      delete win.trackio.getViewState;
+      delete win.trackio.protocolVersion;
+    }
+  };
 }
