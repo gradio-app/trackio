@@ -1,5 +1,5 @@
-export const EMBED_PROTOCOL = "trackio-embed";
-export const EMBED_PROTOCOL_VERSION = 1;
+export const VIEW_PROTOCOL = "trackio-view";
+export const VIEW_PROTOCOL_VERSION = 1;
 
 const providers = new Map();
 
@@ -98,24 +98,24 @@ function announceTargets(win) {
   return targets;
 }
 
-export function startEmbedBridge({ win = window, snapshot = buildSnapshot } = {}) {
+export function startViewStateBridge({ win = window, snapshot = buildSnapshot } = {}) {
   function onMessage(event) {
     const msg = event.data;
-    if (!msg || msg.protocol !== EMBED_PROTOCOL) return;
+    if (!msg || msg.protocol !== VIEW_PROTOCOL) return;
     if (msg.type !== "getState" || !event.source) return;
     let reply;
     try {
       reply = {
-        protocol: EMBED_PROTOCOL,
-        version: EMBED_PROTOCOL_VERSION,
+        protocol: VIEW_PROTOCOL,
+        version: VIEW_PROTOCOL_VERSION,
         type: "state",
         id: msg.id ?? null,
         state: snapshot(),
       };
     } catch (error) {
       reply = {
-        protocol: EMBED_PROTOCOL,
-        version: EMBED_PROTOCOL_VERSION,
+        protocol: VIEW_PROTOCOL,
+        version: VIEW_PROTOCOL_VERSION,
         type: "error",
         id: msg.id ?? null,
         error: String(error),
@@ -125,14 +125,14 @@ export function startEmbedBridge({ win = window, snapshot = buildSnapshot } = {}
   }
 
   win.addEventListener("message", onMessage);
-  const api = { getViewState: () => snapshot(), protocolVersion: EMBED_PROTOCOL_VERSION };
+  const api = { getViewState: () => snapshot(), protocolVersion: VIEW_PROTOCOL_VERSION };
   win.trackio = Object.assign(win.trackio || {}, api);
 
   for (const target of announceTargets(win)) {
     target.postMessage(
       {
-        protocol: EMBED_PROTOCOL,
-        version: EMBED_PROTOCOL_VERSION,
+        protocol: VIEW_PROTOCOL,
+        version: VIEW_PROTOCOL_VERSION,
         type: "ready",
         capabilities: ["getState"],
       },

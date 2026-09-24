@@ -23,7 +23,7 @@
     logsHaveNewData,
   } from "../lib/dataProcessing.js";
   import { buildColorMap } from "../lib/stores.js";
-  import { registerSnapshotProvider } from "../lib/embedBridge.js";
+  import { registerSnapshotProvider } from "../lib/viewState.js";
   import {
     AUTO_PANELS_PER_ROW,
     getPlotColumns,

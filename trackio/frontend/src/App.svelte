@@ -54,8 +54,8 @@
   import { applyUrlTokens } from "./lib/urlTokens.js";
   import {
     registerSnapshotProvider,
-    startEmbedBridge,
-  } from "./lib/embedBridge.js";
+    startViewStateBridge,
+  } from "./lib/viewState.js";
 
   function metricFilterFromLegacyMetricsParam(metricsParam) {
     if (!metricsParam) return "";
@@ -462,7 +462,7 @@
       log_y: logScaleY,
       metric_filter: metricFilter,
     }));
-    const stopEmbedBridge = startEmbedBridge();
+    const stopViewStateBridge = startViewStateBridge();
 
     (async () => {
       const staticMode = await isStaticMode();
@@ -512,7 +512,7 @@
       if (mutationPollTimer) clearInterval(mutationPollTimer);
       window.removeEventListener("focus", refreshMutationAccess);
       stopNarrowViewportWatch();
-      stopEmbedBridge();
+      stopViewStateBridge();
       unregisterAppSnapshot();
     };
   });
