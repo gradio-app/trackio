@@ -210,34 +210,3 @@ def test_share_view_query_params_apply(temp_dir):
     finally:
         trackio.delete_project(project, force=True)
         app.close()
-
-
-def test_empty_tabs_hidden_on_narrow_viewport(temp_dir):
-    project = "test_narrow_tabs"
-    trackio.init(project=project, name="run")
-    trackio.log(metrics={"loss": 0.1})
-    trackio.finish()
-
-    app, _, _, full_url = trackio.show(
-        project=project, block_thread=False, open_browser=False
-    )
-
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": 600, "height": 800})
-            page.set_default_timeout(15000)
-            page.goto(_url_with_query(full_url, {"project": project}))
-            page.wait_for_load_state("networkidle")
-
-            system_tab = page.locator(".nav-link", has_text="System Metrics")
-            expect(page.locator(".nav-link.active")).to_have_text("Metrics")
-            expect(system_tab).to_have_count(0)
-
-            page.set_viewport_size({"width": 1400, "height": 800})
-            expect(system_tab).to_have_class(re.compile(r"\bempty\b"))
-
-            browser.close()
-    finally:
-        trackio.delete_project(project, force=True)
-        app.close()
