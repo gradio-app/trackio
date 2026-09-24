@@ -1,5 +1,13 @@
 # trackio
 
+## 0.39.0
+
+### Features
+
+- [#697](https://github.com/gradio-app/trackio/pull/697) [`89c9b1b`](https://github.com/gradio-app/trackio/commit/89c9b1b8e644a4ee8e5ae3e86a77d54e8a09360b) - Let an embedding page ask the dashboard for its current view.  Thanks @abidlabs!
+- [#693](https://github.com/gradio-app/trackio/pull/693) [`3db5e38`](https://github.com/gradio-app/trackio/commit/3db5e38a9fd731959b96793c7aebba6c3481615e) - Add overwrite option to log_artifact.  Thanks @abidlabs!
+- [#696](https://github.com/gradio-app/trackio/pull/696) [`81ae55f`](https://github.com/gradio-app/trackio/commit/81ae55fe1fe94e3c4205f9bd892a85cfc73b0ee2) - Hide empty dashboard tabs on narrow viewports.  Thanks @abidlabs!
+
 ## 0.38.1
 
 ### Features
