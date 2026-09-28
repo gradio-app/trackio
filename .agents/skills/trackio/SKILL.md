@@ -69,7 +69,7 @@ Use the `trackio` command to query logged metrics and alerts:
 
 **Remote Spaces**: Add `--space <space_id_or_url>` to any `list`/`get`/`query` command to query a remote HF Space instead of local data. Use `--hf-token` for private Spaces.
 
-**What's on screen**: a dashboard (Trackio 0.39+) reports what the user is looking at (project, selected runs, `x_axis`, zoomed `x_range`, `metrics_on_screen`) via `window.trackio.getViewState()` in the page, or to a framing/opener page that posts `{protocol: "trackio-view", type: "getState", id}` and reads the `{type: "state", id, state}` reply; use it to scope `get`/`query` calls to that view.
+**What's on screen**: if a Trackio dashboard is embedded in an iframe, you can get what the user is looking at (project, selected runs, `x_axis`, zoomed `x_range`, `metrics_on_screen`) via `window.trackio.getViewState()` in the page, or to a framing/opener page that posts `{protocol: "trackio-view", type: "getState", id}` and reads the `{type: "state", id, state}` reply; use it to scope `get`/`query` calls to that view.
 
 → See [retrieving_metrics.md](retrieving_metrics.md) for all commands, workflows, and JSON output formats.
 
