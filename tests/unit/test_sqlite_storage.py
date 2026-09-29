@@ -157,6 +157,50 @@ def test_dense_metric_survives_many_distinct_signatures(temp_dir):
     assert sum(1 for row in logs if "train/loss" in row) > 1000
 
 
+def test_spaces_logs_cache_invalidated_by_writes_without_mtime_change(
+    temp_dir, monkeypatch
+):
+    monkeypatch.setattr(trackio.sqlite_storage, "on_spaces", lambda: True)
+    monkeypatch.setenv("TRACKIO_DISABLE_LOGS_CACHE", "0")
+    project, run_id = "cache-proj", "run-1"
+    runs = [{"run": "run", "run_id": run_id}]
+
+    def logged_values():
+        single = SQLiteStorage.get_logs(
+            project, run_id=run_id, max_points=3000, scalar_only=True
+        )
+        batch = SQLiteStorage.get_logs_batch(
+            project, runs, max_points=3000, scalar_only=True
+        )[0]["logs"]
+        system = SQLiteStorage.get_system_logs(project, run_id=run_id)
+        system_batch = SQLiteStorage.get_system_logs_batch(project, runs)[0]["logs"]
+        return (
+            [row["step"] for row in single],
+            [row["step"] for row in batch],
+            [row["gpu"] for row in system],
+            [row["gpu"] for row in system_batch],
+        )
+
+    try:
+        SQLiteStorage.bulk_log(
+            project, "run", [{"reward": 0.1}], steps=[0], run_id=run_id
+        )
+        SQLiteStorage.bulk_log_system(project, "run", [{"gpu": 1}], run_id=run_id)
+        db_path = SQLiteStorage.get_project_db_path(project)
+        stat = db_path.stat()
+        assert logged_values() == ([0], [0], [1], [1])
+
+        SQLiteStorage.bulk_log(
+            project, "run", [{"reward": 0.2}], steps=[1], run_id=run_id
+        )
+        SQLiteStorage.bulk_log_system(project, "run", [{"gpu": 2}], run_id=run_id)
+        os.utime(db_path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+        assert logged_values() == ([0, 1], [0, 1], [1, 2], [1, 2])
+    finally:
+        trackio.sqlite_storage._close_all_persistent_connections()
+
+
 def test_get_projects_and_runs(temp_dir):
     SQLiteStorage.log(project="proj1", run="run1", metrics={"a": 1})
     SQLiteStorage.log(project="proj2", run="run2", metrics={"b": 2})

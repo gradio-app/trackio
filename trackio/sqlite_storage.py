@@ -226,8 +226,11 @@ class ProcessLock:
             self.lockfile.close()
 
 
-_LOGS_READ_CACHE: dict[tuple[Any, ...], tuple[int, list[dict[str, Any]]]] = {}
+_LOGS_READ_CACHE: dict[
+    tuple[Any, ...], tuple[tuple[int, int], list[dict[str, Any]]]
+] = {}
 _LOGS_READ_CACHE_LOCK = Lock()
+_DB_WRITE_GENERATIONS: dict[str, int] = {}
 _LOGS_READ_CACHE_MAX_KEYS = 512
 _LOGS_READ_CACHE_MAX_ROWS_PER_ENTRY = 4000
 _METRIC_BUDGET_REFINEMENT_PASSES = 4
@@ -254,6 +257,20 @@ def _sqlite_db_invalidation_mtime_ns(db_path: Path) -> int | None:
     return m
 
 
+def _bump_db_write_generation(db_path: Path) -> None:
+    key = str(db_path)
+    with _LOGS_READ_CACHE_LOCK:
+        _DB_WRITE_GENERATIONS[key] = _DB_WRITE_GENERATIONS.get(key, 0) + 1
+
+
+def _logs_read_cache_token(db_path: Path) -> tuple[int, int] | None:
+    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
+    if mtime_ns is None:
+        return None
+    with _LOGS_READ_CACHE_LOCK:
+        return mtime_ns, _DB_WRITE_GENERATIONS.get(str(db_path), 0)
+
+
 def _logs_read_cache_key(
     project: str,
     run: str | None,
@@ -276,15 +293,15 @@ def _logs_read_cache_get(
 ) -> list[dict[str, Any]] | None:
     if not _spaces_logs_read_cache_enabled():
         return None
-    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
-    if mtime_ns is None:
+    token = _logs_read_cache_token(db_path)
+    if token is None:
         return None
     with _LOGS_READ_CACHE_LOCK:
         item = _LOGS_READ_CACHE.get(key)
         if item is None:
             return None
-        cached_mtime, logs = item
-        if cached_mtime != mtime_ns:
+        cached_token, logs = item
+        if cached_token != token:
             del _LOGS_READ_CACHE[key]
             return None
     return [{**d} for d in logs]
@@ -297,17 +314,19 @@ def _logs_read_cache_put(
         return
     if len(logs) > _LOGS_READ_CACHE_MAX_ROWS_PER_ENTRY:
         return
-    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
-    if mtime_ns is None:
+    token = _logs_read_cache_token(db_path)
+    if token is None:
         return
     snapshot = [{**d} for d in logs]
     with _LOGS_READ_CACHE_LOCK:
         while len(_LOGS_READ_CACHE) >= _LOGS_READ_CACHE_MAX_KEYS:
             _LOGS_READ_CACHE.pop(next(iter(_LOGS_READ_CACHE)))
-        _LOGS_READ_CACHE[key] = (mtime_ns, snapshot)
+        _LOGS_READ_CACHE[key] = (token, snapshot)
 
 
-_SYSTEM_LOGS_READ_CACHE: dict[tuple[Any, ...], tuple[int, list[dict[str, Any]]]] = {}
+_SYSTEM_LOGS_READ_CACHE: dict[
+    tuple[Any, ...], tuple[tuple[int, int], list[dict[str, Any]]]
+] = {}
 
 
 def _system_logs_read_cache_key(
@@ -330,15 +349,15 @@ def _system_logs_read_cache_get(
 ) -> list[dict[str, Any]] | None:
     if not _spaces_logs_read_cache_enabled():
         return None
-    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
-    if mtime_ns is None:
+    token = _logs_read_cache_token(db_path)
+    if token is None:
         return None
     with _LOGS_READ_CACHE_LOCK:
         item = _SYSTEM_LOGS_READ_CACHE.get(key)
         if item is None:
             return None
-        cached_mtime, logs = item
-        if cached_mtime != mtime_ns:
+        cached_token, logs = item
+        if cached_token != token:
             del _SYSTEM_LOGS_READ_CACHE[key]
             return None
     return [{**d} for d in logs]
@@ -351,14 +370,14 @@ def _system_logs_read_cache_put(
         return
     if len(logs) > _LOGS_READ_CACHE_MAX_ROWS_PER_ENTRY:
         return
-    mtime_ns = _sqlite_db_invalidation_mtime_ns(db_path)
-    if mtime_ns is None:
+    token = _logs_read_cache_token(db_path)
+    if token is None:
         return
     snapshot = [{**d} for d in logs]
     with _LOGS_READ_CACHE_LOCK:
         while len(_SYSTEM_LOGS_READ_CACHE) >= _LOGS_READ_CACHE_MAX_KEYS:
             _SYSTEM_LOGS_READ_CACHE.pop(next(iter(_SYSTEM_LOGS_READ_CACHE)))
-        _SYSTEM_LOGS_READ_CACHE[key] = (mtime_ns, snapshot)
+        _SYSTEM_LOGS_READ_CACHE[key] = (token, snapshot)
 
 
 class SQLiteStorage:
@@ -427,8 +446,13 @@ class SQLiteStorage:
             try:
                 conn = _get_or_create_persistent_conn(db_path, timeout=timeout)
                 conn.row_factory = row_factory
-                with conn:
-                    yield conn
+                changes_before = conn.total_changes
+                try:
+                    with conn:
+                        yield conn
+                finally:
+                    if conn.total_changes != changes_before:
+                        _bump_db_write_generation(db_path)
             finally:
                 access_lock.release()
         else:
@@ -2184,12 +2208,12 @@ class SQLiteStorage:
                     logs = SQLiteStorage._fetch_system_logs_with_cursor(
                         cursor, run_identity, max_points
                     )
+                _system_logs_read_cache_put(db_path, cache_key, logs)
         except sqlite3.OperationalError as e:
             if "no such table: system_metrics" in str(e):
                 return []
             raise
 
-        _system_logs_read_cache_put(db_path, cache_key, logs)
         return [{**d} for d in logs]
 
     @staticmethod
@@ -2617,12 +2641,12 @@ class SQLiteStorage:
                     logs = SQLiteStorage._fetch_metric_logs_with_cursor(
                         cursor, run_identity, max_points, scalar_only=scalar_only
                     )
+                _logs_read_cache_put(db_path, cache_key, logs)
         except sqlite3.OperationalError as e:
             if "no such table: metrics" in str(e):
                 return []
             raise
 
-        _logs_read_cache_put(db_path, cache_key, logs)
         return [{**d} for d in logs]
 
     @staticmethod
