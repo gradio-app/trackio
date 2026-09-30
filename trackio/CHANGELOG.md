@@ -1,5 +1,11 @@
 # trackio
 
+## 0.40.0
+
+### Features
+
+- [#700](https://github.com/gradio-app/trackio/pull/700) [`9f8215d`](https://github.com/gradio-app/trackio/commit/9f8215dcebf3544338c58265d768d113c70f10b2) - Invalidate the Spaces logs cache on every committed write.  Thanks @abidlabs!
+
 ## 0.39.0
 
 ### Features
