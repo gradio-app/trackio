@@ -12,6 +12,7 @@ from huggingface_hub.utils import get_session
 import trackio
 from trackio import freeze, show, sync
 from trackio import logbook as lb
+from trackio.bump import BumpError, bump
 from trackio.cli_helpers import (
     error_exit,
     format_alerts,
@@ -917,6 +918,25 @@ def main():
         "--frontend",
         required=False,
         help="Custom frontend directory to deploy to the frozen static Space.",
+    )
+
+    bump_parser = subparsers.add_parser(
+        "bump",
+        help="Upgrade a Trackio Space to the local Trackio version and migrate its data.",
+    )
+    bump_parser.add_argument(
+        "space_id",
+        help="The Trackio Space to upgrade (e.g. username/space_id).",
+    )
+    bump_parser.add_argument(
+        "--new-space",
+        required=False,
+        help="Leave the Space untouched and create this Space from a copy of its data.",
+    )
+    bump_parser.add_argument(
+        "--new-bucket",
+        required=False,
+        help="The bucket for --new-space. Defaults to {new_space}-bucket.",
     )
 
     config_parser = subparsers.add_parser(
@@ -1876,6 +1896,7 @@ def main():
         "status",
         "sync",
         "freeze",
+        "bump",
         "skills",
         "registry",
     ) and _get_space(args):
@@ -1911,6 +1932,17 @@ def main():
             private=args.private,
             frontend_dir=args.frontend,
         )
+    elif args.command == "bump":
+        if args.new_bucket and not args.new_space:
+            parser.error("--new-bucket requires --new-space")
+        try:
+            bump(
+                args.space_id,
+                new_space_id=args.new_space,
+                new_bucket_id=args.new_bucket,
+            )
+        except BumpError as e:
+            error_exit(str(e))
     elif args.command == "config":
         _handle_config(args)
     elif args.command == "list":

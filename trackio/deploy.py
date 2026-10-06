@@ -335,6 +335,27 @@ def _is_trackio_installed_from_source() -> bool:
         return True
 
 
+def _upload_source_tree(hf_api: huggingface_hub.HfApi, space_id: str) -> None:
+    hf_api.upload_folder(
+        repo_id=space_id,
+        repo_type="space",
+        folder_path=files("trackio"),
+        path_in_repo="trackio",
+        ignore_patterns=[
+            "README.md",
+            "frontend/node_modules/**",
+            "frontend/src/**",
+            "frontend/.gitignore",
+            "frontend/package.json",
+            "frontend/package-lock.json",
+            "frontend/vite.config.js",
+            "frontend/svelte.config.js",
+            "**/__pycache__/**",
+            "*.pyc",
+        ],
+    )
+
+
 def deploy_as_space(
     space_id: str,
     space_storage: huggingface_hub.SpaceStorage | None = None,
@@ -428,24 +449,7 @@ def deploy_as_space(
                 "The Trackio frontend build is missing. From the repository root run "
                 "`cd trackio/frontend && npm ci && npm run build`, then deploy again."
             )
-        hf_api.upload_folder(
-            repo_id=space_id,
-            repo_type="space",
-            folder_path=trackio_path,
-            path_in_repo="trackio",
-            ignore_patterns=[
-                "README.md",
-                "frontend/node_modules/**",
-                "frontend/src/**",
-                "frontend/.gitignore",
-                "frontend/package.json",
-                "frontend/package-lock.json",
-                "frontend/vite.config.js",
-                "frontend/svelte.config.js",
-                "**/__pycache__/**",
-                "*.pyc",
-            ],
-        )
+        _upload_source_tree(hf_api, space_id)
 
     if resolved_frontend.is_custom:
         _upload_frontend_folder(
