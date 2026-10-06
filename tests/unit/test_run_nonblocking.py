@@ -1,6 +1,7 @@
 import importlib
 import threading
 from collections import defaultdict
+from unittest.mock import Mock
 
 import pytest
 
@@ -41,13 +42,15 @@ def run_factory(monkeypatch, temp_dir):
     monkeypatch.delenv("TRACKIO_WEBHOOK_MIN_LEVEL", raising=False)
     runs = []
 
-    def create(client):
+    def create(client, *, bucket_id=None):
         run = trackio_run.Run(
             url="http://trackio.invalid",
             project="nonblocking-test",
             client=client,
             name="regression",
-            server_base_url="http://trackio.invalid",
+            server_base_url=None if bucket_id else "http://trackio.invalid",
+            space_id="user/space" if bucket_id else None,
+            bucket_id=bucket_id,
             initial_last_step=0,
             config={"test": True},
         )
@@ -135,11 +138,54 @@ def test_logging_continues_during_buffered_retry(run_factory):
     assert not storage.SQLiteStorage.has_pending_data(run.project)
 
 
-def test_finish_reaches_its_timeout_during_slow_upload(run_factory, monkeypatch):
-    client = SlowClient("/bulk_log")
-    run = run_factory(client)
-    run.log({"loss": 1.0}, step=1)
+def assert_recoverable_batches(run, slow_api):
+    logs = storage.SQLiteStorage.get_logs(run.project, run.name)
+    assert [entry["step"] for entry in logs] == (
+        [1, 2] if slow_api == "/bulk_log" else [2]
+    )
+    assert logs[-1]["loss"] == 0.5
+    assert storage.SQLiteStorage.get_run_config(run.project, run.name)["test"] is True
+
+    system_logs = storage.SQLiteStorage.get_system_logs(run.project, run.name)
+    assert sorted(entry["cpu"] for entry in system_logs) == (
+        [1, 2] if slow_api == "/bulk_log_system" else [2]
+    )
+
+    uploads = storage.SQLiteStorage.get_pending_uploads(run.project)
+    assert uploads is not None
+    assert sorted(entry["step"] for entry in uploads["uploads"]) == (
+        [1, 2] if slow_api == "/bulk_upload_media" else [2]
+    )
+
+    alerts = storage.SQLiteStorage.get_alerts(run.project)
+    assert sorted(entry["step"] for entry in alerts) == (
+        [1, 2] if slow_api == "/bulk_alert" else [2]
+    )
+
+
+@pytest.mark.parametrize("slow_api", APIS)
+@pytest.mark.parametrize("storage_mode", ["sqlite", "jsonl"])
+@pytest.mark.parametrize("late_failure", [False, True])
+def test_finish_preserves_inflight_and_queued_batches(
+    run_factory, monkeypatch, tmp_path, slow_api, storage_mode, late_failure
+):
+    monkeypatch.setenv("TRACKIO_STORAGE_MODE", storage_mode)
+    bucket_write = Mock(side_effect=AssertionError("Shutdown must save locally"))
+    monkeypatch.setattr(
+        trackio_run.fragments.FragmentWriter, "write_to_bucket", bucket_write
+    )
+    monkeypatch.setattr(
+        trackio_run.fragments, "upload_media_files_to_bucket", bucket_write
+    )
+    monkeypatch.setattr(trackio_run.Run, "_drain_pending_to_bucket", bucket_write)
+    client = SlowClient(slow_api, fail_call=1 if late_failure else None)
+    run = run_factory(client, bucket_id="user/bucket")
+    upload = tmp_path / "media.txt"
+    upload.write_text("test media")
+    enqueue(run, slow_api, upload, 1)
     assert client.entered.wait(2)
+    for api_name in APIS:
+        enqueue(run, api_name, upload, 2)
     actual_join = run._client_thread.join
     join_timeouts = []
 
@@ -159,7 +205,22 @@ def test_finish_reaches_its_timeout_during_slow_upload(run_factory, monkeypatch)
     try:
         assert finished.wait(1), "finish() blocked outside its bounded join"
         assert join_timeouts == [30]
+        assert not client.release.is_set()
+        run.finish()
+        assert join_timeouts == [30]
+        bucket_write.assert_not_called()
+        if storage_mode == "jsonl":
+            assert trackio_run.fragments.import_inbox_dir() == (
+                3 if slow_api == "/bulk_upload_media" else 4
+            )
+        assert_recoverable_batches(run, slow_api)
     finally:
         client.release.set()
         finisher.join(timeout=5)
         actual_join(timeout=5)
+
+    assert not run._client_thread.is_alive()
+    run.finish()
+    assert join_timeouts == [30]
+    bucket_write.assert_not_called()
+    assert_recoverable_batches(run, slow_api)

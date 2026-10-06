@@ -166,6 +166,11 @@ class Run:
         self._queued_system_logs: list[SystemLogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._queued_alerts: list[AlertEntry] = []
+        self._inflight_logs: list[LogEntry] = []
+        self._inflight_system_logs: list[SystemLogEntry] = []
+        self._inflight_uploads: list[UploadEntry] = []
+        self._inflight_alerts: list[AlertEntry] = []
+        self._sender_timed_out = False
         self._stop_flag = threading.Event()
         self._config_logged = False
         max_step = self._safe_get_max_step_for_run()
@@ -468,9 +473,11 @@ class Run:
                 f"trackio failed to flush system logs for run '{self.name}': {e}. User code will continue, but this batch could not be persisted.",
             )
 
-    def _write_alerts_to_sqlite(self, alerts: list[AlertEntry]):
+    def _write_alerts_to_sqlite(
+        self, alerts: list[AlertEntry], *, local_only: bool = False
+    ):
         records = [fragments.alert_record(entry) for entry in alerts]
-        if self._remote_storage_key and self._bucket_id is not None:
+        if self._remote_storage_key and self._bucket_id is not None and not local_only:
             try:
                 self._fragment_writer.write_to_bucket(
                     self._stamped_records(records), self._bucket_id
@@ -522,7 +529,7 @@ class Run:
 
     def _batch_sender(self):
         consecutive_failures = 0
-        while (
+        while not self._sender_timed_out and (
             not self._stop_flag.is_set()
             or len(self._queued_logs) > 0
             or len(self._queued_system_logs) > 0
@@ -564,7 +571,10 @@ class Run:
                 failed = False
 
                 with self._client_lock:
+                    if self._sender_timed_out:
+                        return
                     logs_to_send = self._queued_logs.copy()
+                    self._inflight_logs = logs_to_send
                     self._queued_logs.clear()
                 if logs_to_send:
                     try:
@@ -574,11 +584,18 @@ class Run:
                             hf_token=self._hf_token_for_remote(),
                         )
                     except Exception:
-                        self._persist_logs_locally(logs_to_send)
+                        if not self._sender_timed_out:
+                            self._persist_logs_locally(logs_to_send)
                         failed = True
+                    finally:
+                        with self._client_lock:
+                            self._inflight_logs = []
 
                 with self._client_lock:
+                    if self._sender_timed_out:
+                        return
                     system_logs_to_send = self._queued_system_logs.copy()
+                    self._inflight_system_logs = system_logs_to_send
                     self._queued_system_logs.clear()
                 if system_logs_to_send:
                     try:
@@ -588,11 +605,18 @@ class Run:
                             hf_token=self._hf_token_for_remote(),
                         )
                     except Exception:
-                        self._persist_system_logs_locally(system_logs_to_send)
+                        if not self._sender_timed_out:
+                            self._persist_system_logs_locally(system_logs_to_send)
                         failed = True
+                    finally:
+                        with self._client_lock:
+                            self._inflight_system_logs = []
 
                 with self._client_lock:
+                    if self._sender_timed_out:
+                        return
                     uploads_to_send = self._queued_uploads.copy()
+                    self._inflight_uploads = uploads_to_send
                     self._queued_uploads.clear()
                 if uploads_to_send:
                     try:
@@ -602,11 +626,18 @@ class Run:
                             hf_token=self._hf_token_for_remote(),
                         )
                     except Exception:
-                        self._persist_uploads_locally(uploads_to_send)
+                        if not self._sender_timed_out:
+                            self._persist_uploads_locally(uploads_to_send)
                         failed = True
+                    finally:
+                        with self._client_lock:
+                            self._inflight_uploads = []
 
                 with self._client_lock:
+                    if self._sender_timed_out:
+                        return
                     alerts_to_send = self._queued_alerts.copy()
+                    self._inflight_alerts = alerts_to_send
                     self._queued_alerts.clear()
                 if alerts_to_send:
                     try:
@@ -616,14 +647,18 @@ class Run:
                             hf_token=self._hf_token_for_remote(),
                         )
                     except Exception:
-                        self._write_alerts_to_sqlite(alerts_to_send)
+                        if not self._sender_timed_out:
+                            self._write_alerts_to_sqlite(alerts_to_send)
                         failed = True
+                    finally:
+                        with self._client_lock:
+                            self._inflight_alerts = []
 
                 if failed:
                     consecutive_failures += 1
                 else:
                     consecutive_failures = 0
-                    if self._has_local_buffer:
+                    if self._has_local_buffer and not self._sender_timed_out:
                         flushed = self._flush_local_buffer()
                         if (
                             not flushed
@@ -638,9 +673,11 @@ class Run:
                     f"trackio's remote logging thread hit an internal error: {e}. User code will continue while Trackio retries in the background.",
                 )
 
-    def _persist_records_as_fragments(self, records: list[dict], warning_key: str):
+    def _persist_records_as_fragments(
+        self, records: list[dict], warning_key: str, *, local_only: bool = False
+    ):
         records = self._stamped_records(records)
-        if self._bucket_id is not None:
+        if self._bucket_id is not None and not local_only:
             try:
                 self._fragment_writer.write_to_bucket(records, self._bucket_id)
                 return
@@ -648,7 +685,7 @@ class Run:
                 pass
         self._write_records_to_local_inbox(records, warning_key)
 
-    def _persist_logs_locally(self, logs: list[LogEntry]):
+    def _persist_logs_locally(self, logs: list[LogEntry], *, local_only: bool = False):
         if not self._remote_storage_key:
             return
         if self._storage_mode == "jsonl":
@@ -657,6 +694,7 @@ class Run:
                     [fragments.metric_record(entry) for entry in logs]
                 ),
                 "persist-logs-fragment",
+                local_only=local_only,
             )
             return
         try:
@@ -694,13 +732,16 @@ class Run:
                 f"trackio could not persist failed remote metric logs locally for run '{self.name}': {e}. User code will continue, but this batch could be lost.",
             )
 
-    def _persist_system_logs_locally(self, logs: list[SystemLogEntry]):
+    def _persist_system_logs_locally(
+        self, logs: list[SystemLogEntry], *, local_only: bool = False
+    ):
         if not self._remote_storage_key:
             return
         if self._storage_mode == "jsonl":
             self._persist_records_as_fragments(
                 [fragments.system_metric_record(entry) for entry in logs],
                 "persist-system-logs-fragment",
+                local_only=local_only,
             )
             return
         try:
@@ -739,10 +780,16 @@ class Run:
             return str(file_data.path)
         return str(file_data)
 
-    def _persist_uploads_locally(self, uploads: list[UploadEntry]):
+    def _persist_uploads_locally(
+        self, uploads: list[UploadEntry], *, local_only: bool = False
+    ):
         if not self._remote_storage_key:
             return
-        if self._storage_mode == "jsonl" and self._bucket_id is not None:
+        if (
+            self._storage_mode == "jsonl"
+            and self._bucket_id is not None
+            and not local_only
+        ):
             try:
                 fragments.upload_media_files_to_bucket(
                     self._bucket_id,
@@ -1856,7 +1903,32 @@ class Run:
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log_system() failed: {e}")
 
+    def _persist_pending_on_shutdown(self):
+        with self._client_lock:
+            if self._sender_timed_out:
+                return
+            self._sender_timed_out = True
+            logs = self._inflight_logs + self._queued_logs
+            system_logs = self._inflight_system_logs + self._queued_system_logs
+            uploads = self._inflight_uploads + self._queued_uploads
+            alerts = self._inflight_alerts + self._queued_alerts
+            self._queued_logs.clear()
+            self._queued_system_logs.clear()
+            self._queued_uploads.clear()
+            self._queued_alerts.clear()
+
+        if logs:
+            self._persist_logs_locally(logs, local_only=True)
+        if system_logs:
+            self._persist_system_logs_locally(system_logs, local_only=True)
+        if uploads:
+            self._persist_uploads_locally(uploads, local_only=True)
+        if alerts:
+            self._write_alerts_to_sqlite(alerts, local_only=True)
+
     def finish(self):
+        if self._sender_timed_out:
+            return
         try:
             if self._gpu_monitor is not None:
                 try:
@@ -1901,13 +1973,11 @@ class Run:
                     else:
                         self._client_thread.join(timeout=5)
                     if self._client_thread.is_alive():
-                        with self._client_lock:
-                            if self._client is None:
-                                self._flush_queues_inline()
-                        if client_connected or self._bucket_id is None:
-                            _emit_nonfatal_warning(
-                                "Could not flush all logs to the remote server in time. Some data may be buffered locally."
-                            )
+                        self._persist_pending_on_shutdown()
+                        _emit_nonfatal_warning(
+                            "Could not flush all logs to the remote server in time. Some data may be buffered locally."
+                        )
+                        return
                 else:
                     with self._client_lock:
                         self._flush_queues_inline()
