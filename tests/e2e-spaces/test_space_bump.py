@@ -2,6 +2,7 @@ import secrets
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import huggingface_hub
@@ -33,6 +34,17 @@ def _cleanup(space_id, bucket_id):
         huggingface_hub.delete_bucket(bucket_id)
     except Exception:
         pass
+
+
+def _delete_stale_copies(namespace, max_age_hours=2):
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    prefix = f"{namespace}/bump_inplace_"
+    for space in huggingface_hub.list_spaces(author=namespace, search="bump_inplace_"):
+        if space.id.startswith(prefix) and space.created_at < cutoff:
+            huggingface_hub.delete_repo(space.id, repo_type="space", missing_ok=True)
+    for bucket in huggingface_hub.list_buckets(namespace):
+        if bucket.id.startswith(prefix) and bucket.created_at < cutoff:
+            huggingface_hub.delete_bucket(bucket.id, missing_ok=True)
 
 
 def _temp_ids(namespace, label):
@@ -134,6 +146,7 @@ def _create_legacy_copy(version, space_id, bucket_id):
 @pytest.mark.parametrize("version", sorted(LEGACY_SPACES))
 def test_bump_in_place_migrates_legacy_data_and_inbox(version):
     namespace = LEGACY_SPACES[version]["space_id"].split("/")[0]
+    _delete_stale_copies(namespace)
     space_id, bucket_id = _temp_ids(namespace, "inplace")
 
     try:
