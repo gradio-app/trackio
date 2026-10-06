@@ -926,7 +926,14 @@ def main():
     )
     bump_parser.add_argument(
         "space_id",
-        help="The Trackio Space to upgrade (e.g. username/space_id).",
+        nargs="?",
+        help="The Trackio Space to upgrade (e.g. username/space_id). Can also be passed as --space.",
+    )
+    bump_parser.add_argument(
+        "--space",
+        dest="space",
+        default=argparse.SUPPRESS,
+        help="The Trackio Space to upgrade, as an alternative to the positional argument.",
     )
     bump_parser.add_argument(
         "--new-space",
@@ -1896,7 +1903,6 @@ def main():
         "status",
         "sync",
         "freeze",
-        "bump",
         "skills",
         "registry",
     ) and _get_space(args):
@@ -1933,11 +1939,20 @@ def main():
             frontend_dir=args.frontend,
         )
     elif args.command == "bump":
+        space_id = args.space_id or _get_space(args)
+        if not space_id:
+            parser.error(
+                "trackio bump requires a Space ID, e.g. trackio bump user/space"
+            )
+        if args.space_id and _get_space(args) and args.space_id != _get_space(args):
+            parser.error(
+                "Pass the Space ID either as an argument or with --space, not both"
+            )
         if args.new_bucket and not args.new_space:
             parser.error("--new-bucket requires --new-space")
         try:
             bump(
-                args.space_id,
+                space_id,
                 new_space_id=args.new_space,
                 new_bucket_id=args.new_bucket,
             )

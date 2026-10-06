@@ -23,7 +23,7 @@ For private Spaces, pass `--hf-token` or ensure you are logged in via `huggingfa
 trackio list projects --space username/private-space --hf-token hf_xxxxx
 ```
 
-> **Note:** The `show`, `status`, `sync`, `freeze`, `bump`, `skills`, `registry`, and `list spaces` commands do not support `--space`. Use `trackio list spaces` to discover Trackio dashboards on the Hugging Face Hub, then pass one of those Space IDs to commands such as `trackio list projects --space username/my-space`.
+> **Note:** The `show`, `status`, `sync`, `freeze`, `skills`, `registry`, and `list spaces` commands do not support `--space`. Use `trackio list spaces` to discover Trackio dashboards on the Hugging Face Hub, then pass one of those Space IDs to commands such as `trackio list projects --space username/my-space`.
 
 ## Registry Commands
 
@@ -118,6 +118,8 @@ Upgrade an existing Trackio Space to the Trackio version installed locally:
 trackio bump username/my-space
 ```
 
+`trackio bump --space username/my-space` does the same thing.
+
 The Space is paused while it upgrades, so training jobs keep logging to the Space's bucket inbox. Its databases are backed up to `trackio-backups/` in the same bucket, its Trackio pin is updated, and it restarts so the new version migrates the data. If the upgraded Space fails to start or reports fewer rows than before, the backup and the previous Space files are restored.
 
 To keep the original Space untouched, copy it and its bucket into a new Space running the local version instead:
@@ -128,7 +130,7 @@ trackio bump username/my-space --new-space username/my-space-v2 --new-bucket use
 
 | Flag | Description |
 |------|-------------|
-| `space_id` | The Trackio Space to upgrade (required) |
+| `space_id` | The Trackio Space to upgrade (required, or pass it with `--space`) |
 | `--new-space` | Create this Space from a copy of `space_id` instead of upgrading in place |
 | `--new-bucket` | The bucket for `--new-space`. Defaults to `{new_space}-bucket` |
 

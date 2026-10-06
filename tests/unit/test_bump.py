@@ -188,3 +188,39 @@ def test_db_inventory_counts_rows_per_table_and_run(tmp_path):
 def test_bump_rejects_new_bucket_without_new_space():
     with pytest.raises(BumpError, match="requires new_space_id"):
         bump_module.bump("u/s", new_bucket_id="u/b")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["trackio", "bump", "u/s"],
+        ["trackio", "bump", "--space", "u/s"],
+        ["trackio", "--space", "u/s", "bump"],
+        ["trackio", "bump", "u/s", "--space", "u/s"],
+    ],
+)
+def test_cli_bump_accepts_positional_or_space_flag(monkeypatch, argv):
+    from trackio import cli
+
+    calls = []
+    monkeypatch.setattr(cli, "bump", lambda *a, **k: calls.append((a, k)))
+    monkeypatch.setattr("sys.argv", argv)
+    cli.main()
+    assert calls == [(("u/s",), {"new_space_id": None, "new_bucket_id": None})]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["trackio", "bump"],
+        ["trackio", "bump", "u/s", "--space", "u/other"],
+    ],
+)
+def test_cli_bump_rejects_missing_or_conflicting_space(monkeypatch, argv):
+    from trackio import cli
+
+    monkeypatch.setattr(cli, "bump", MagicMock())
+    monkeypatch.setattr("sys.argv", argv)
+    with pytest.raises(SystemExit):
+        cli.main()
+    cli.bump.assert_not_called()
