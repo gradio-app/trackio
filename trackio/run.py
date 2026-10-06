@@ -561,72 +561,76 @@ class Run:
                                 self._queued_alerts.clear()
                         return
 
-                    failed = False
+                failed = False
 
-                    if self._queued_logs:
-                        logs_to_send = self._queued_logs.copy()
-                        self._queued_logs.clear()
-                        try:
-                            self._client.predict(
-                                api_name="/bulk_log",
-                                logs=logs_to_send,
-                                hf_token=self._hf_token_for_remote(),
-                            )
-                        except Exception:
-                            self._persist_logs_locally(logs_to_send)
-                            failed = True
+                with self._client_lock:
+                    logs_to_send = self._queued_logs.copy()
+                    self._queued_logs.clear()
+                if logs_to_send:
+                    try:
+                        self._client.predict(
+                            api_name="/bulk_log",
+                            logs=logs_to_send,
+                            hf_token=self._hf_token_for_remote(),
+                        )
+                    except Exception:
+                        self._persist_logs_locally(logs_to_send)
+                        failed = True
 
-                    if self._queued_system_logs:
-                        system_logs_to_send = self._queued_system_logs.copy()
-                        self._queued_system_logs.clear()
-                        try:
-                            self._client.predict(
-                                api_name="/bulk_log_system",
-                                logs=system_logs_to_send,
-                                hf_token=self._hf_token_for_remote(),
-                            )
-                        except Exception:
-                            self._persist_system_logs_locally(system_logs_to_send)
-                            failed = True
+                with self._client_lock:
+                    system_logs_to_send = self._queued_system_logs.copy()
+                    self._queued_system_logs.clear()
+                if system_logs_to_send:
+                    try:
+                        self._client.predict(
+                            api_name="/bulk_log_system",
+                            logs=system_logs_to_send,
+                            hf_token=self._hf_token_for_remote(),
+                        )
+                    except Exception:
+                        self._persist_system_logs_locally(system_logs_to_send)
+                        failed = True
 
-                    if self._queued_uploads:
-                        uploads_to_send = self._queued_uploads.copy()
-                        self._queued_uploads.clear()
-                        try:
-                            self._client.predict(
-                                api_name="/bulk_upload_media",
-                                uploads=uploads_to_send,
-                                hf_token=self._hf_token_for_remote(),
-                            )
-                        except Exception:
-                            self._persist_uploads_locally(uploads_to_send)
-                            failed = True
+                with self._client_lock:
+                    uploads_to_send = self._queued_uploads.copy()
+                    self._queued_uploads.clear()
+                if uploads_to_send:
+                    try:
+                        self._client.predict(
+                            api_name="/bulk_upload_media",
+                            uploads=uploads_to_send,
+                            hf_token=self._hf_token_for_remote(),
+                        )
+                    except Exception:
+                        self._persist_uploads_locally(uploads_to_send)
+                        failed = True
 
-                    if self._queued_alerts:
-                        alerts_to_send = self._queued_alerts.copy()
-                        self._queued_alerts.clear()
-                        try:
-                            self._client.predict(
-                                api_name="/bulk_alert",
-                                alerts=alerts_to_send,
-                                hf_token=self._hf_token_for_remote(),
-                            )
-                        except Exception:
-                            self._write_alerts_to_sqlite(alerts_to_send)
-                            failed = True
+                with self._client_lock:
+                    alerts_to_send = self._queued_alerts.copy()
+                    self._queued_alerts.clear()
+                if alerts_to_send:
+                    try:
+                        self._client.predict(
+                            api_name="/bulk_alert",
+                            alerts=alerts_to_send,
+                            hf_token=self._hf_token_for_remote(),
+                        )
+                    except Exception:
+                        self._write_alerts_to_sqlite(alerts_to_send)
+                        failed = True
 
-                    if failed:
-                        consecutive_failures += 1
-                    else:
-                        consecutive_failures = 0
-                        if self._has_local_buffer:
-                            flushed = self._flush_local_buffer()
-                            if (
-                                not flushed
-                                and self._stop_flag.is_set()
-                                and self._bucket_id is not None
-                            ):
-                                return
+                if failed:
+                    consecutive_failures += 1
+                else:
+                    consecutive_failures = 0
+                    if self._has_local_buffer:
+                        flushed = self._flush_local_buffer()
+                        if (
+                            not flushed
+                            and self._stop_flag.is_set()
+                            and self._bucket_id is not None
+                        ):
+                            return
             except Exception as e:
                 consecutive_failures += 1
                 self._warn_once(
