@@ -24,7 +24,7 @@ def _fake_api_with_files(tmp_path, files):
 @pytest.mark.parametrize(
     "requirements, expected",
     [
-        ("trackio[spaces,mcp]==0.39.0", "0.39.0"),
+        ("trackio[spaces]==0.21.0\nhuggingface_hub<1.32", "0.21.0"),
         ("gradio\ntrackio == 0.40.1\n", "0.40.1"),
         ("trackio[spaces]==1.2.3rc1", "1.2.3rc1"),
     ],
@@ -47,10 +47,10 @@ def test_space_version_from_source_deploy(tmp_path):
 
 def test_check_bumpable(monkeypatch):
     monkeypatch.setattr(trackio, "__version__", "0.41.0")
-    assert bump_module._check_bumpable("u/s", "0.39.0") == "0.39.0"
+    assert bump_module._check_bumpable("u/s", "0.21.0") == "0.21.0"
     assert bump_module._check_bumpable("u/s", "0.41.0") == "0.41.0"
-    with pytest.raises(BumpError, match="older than 0.39.0"):
-        bump_module._check_bumpable("u/s", "0.38.1")
+    with pytest.raises(BumpError, match="older than 0.21.0"):
+        bump_module._check_bumpable("u/s", "0.20.0")
     with pytest.raises(BumpError, match="newer than the local"):
         bump_module._check_bumpable("u/s", "0.42.0")
     with pytest.raises(BumpError, match="Could not determine"):

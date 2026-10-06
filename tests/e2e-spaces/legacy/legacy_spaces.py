@@ -1,7 +1,13 @@
 LEGACY_SPACES = {
-    "0.39.0": {
-        "space_id": "trackio-tests/trackio-0.39.0",
-        "bucket_id": "trackio-tests/trackio-0.39.0-bucket",
+    "0.21.0": {
+        "space_id": "trackio-tests/trackio-0.21.0",
+        "bucket_id": "trackio-tests/trackio-0.21.0-bucket",
+        "extra_requirements": ["huggingface_hub<1.32"],
+    },
+    "0.37.1": {
+        "space_id": "trackio-tests/trackio-0.37.1",
+        "bucket_id": "trackio-tests/trackio-0.37.1-bucket",
+        "extra_requirements": ["huggingface_hub<1.32"],
     },
 }
 

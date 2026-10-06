@@ -72,6 +72,7 @@ def test_schema_migrations_upgrade_legacy_database_once_in_order(temp_dir, monke
 
 def test_failed_schema_migration_keeps_last_completed_version(temp_dir, monkeypatch):
     db_path = SQLiteStorage.init_db("proj")
+    _set_user_version(db_path, 1)
 
     def create_kept(cursor):
         cursor.execute("CREATE TABLE kept (id INTEGER)")
@@ -89,6 +90,127 @@ def test_failed_schema_migration_keeps_last_completed_version(temp_dir, monkeypa
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master")}
     assert "kept" in tables
     assert "discarded" not in tables
+
+
+_TRACKIO_0_21_SCHEMA = """
+CREATE TABLE metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
+    run_name TEXT NOT NULL, step INTEGER NOT NULL, metrics TEXT NOT NULL
+);
+CREATE TABLE configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, run_name TEXT NOT NULL,
+    config TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(run_name)
+);
+CREATE INDEX idx_metrics_run_step ON metrics(run_name, step);
+CREATE INDEX idx_configs_run_name ON configs(run_name);
+CREATE INDEX idx_metrics_run_timestamp ON metrics(run_name, timestamp);
+CREATE TABLE system_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
+    run_name TEXT NOT NULL, metrics TEXT NOT NULL
+);
+CREATE INDEX idx_system_metrics_run_timestamp ON system_metrics(run_name, timestamp);
+CREATE TABLE project_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE pending_uploads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, space_id TEXT NOT NULL, run_name TEXT,
+    step INTEGER, file_path TEXT NOT NULL, relative_path TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
+    run_name TEXT NOT NULL, title TEXT NOT NULL, text TEXT,
+    level TEXT NOT NULL DEFAULT 'warn', step INTEGER, alert_id TEXT
+);
+CREATE INDEX idx_alerts_run ON alerts(run_name);
+CREATE INDEX idx_alerts_timestamp ON alerts(timestamp);
+CREATE UNIQUE INDEX idx_alerts_alert_id ON alerts(alert_id) WHERE alert_id IS NOT NULL;
+"""
+
+
+def _write_trackio_0_21_project(project):
+    db_path = SQLiteStorage.get_project_db_path(project)
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(_TRACKIO_0_21_SCHEMA)
+        for run, losses in (("run-a", [1.0, 0.5]), ("run-b", [0.9])):
+            conn.execute(
+                "INSERT INTO configs (run_name, config, created_at) VALUES (?, ?, ?)",
+                (run, orjson.dumps({"lr": 0.1, "run": run}).decode(), "2025-01-01"),
+            )
+            for step, loss in enumerate(losses):
+                conn.execute(
+                    "INSERT INTO metrics (timestamp, run_name, step, metrics) "
+                    "VALUES (?, ?, ?, ?)",
+                    (f"2025-01-01T00:00:0{step}", run, step, f'{{"loss": {loss}}}'),
+                )
+        conn.execute(
+            "INSERT INTO alerts (timestamp, run_name, title) VALUES (?, ?, ?)",
+            ("2025-01-01T00:00:09", "run-b", "plateau"),
+        )
+        conn.execute(
+            "INSERT INTO pending_uploads (space_id, run_name, file_path, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("u/s", "run-a", "a.png", "2025-01-01"),
+        )
+    return db_path
+
+
+def _schema_shape(db_path):
+    with sqlite3.connect(db_path) as conn:
+        tables = [
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ]
+        shape = {}
+        for table in tables:
+            columns = sorted(
+                tuple(row[1:]) for row in conn.execute(f"PRAGMA table_info({table})")
+            )
+            indexes = sorted(
+                (
+                    row[1],
+                    row[2],
+                    row[4],
+                    tuple(
+                        info[2]
+                        for info in conn.execute(f"PRAGMA index_info('{row[1]}')")
+                    ),
+                )
+                for row in conn.execute(f"PRAGMA index_list({table})")
+            )
+            shape[table] = (columns, indexes)
+        return shape
+
+
+def test_trackio_0_21_database_migrates_to_current_schema(temp_dir):
+    legacy_path = _write_trackio_0_21_project("legacy")
+    SQLiteStorage.init_db("legacy")
+    fresh_path = SQLiteStorage.init_db("fresh")
+
+    assert _user_version(legacy_path) == trackio.sqlite_storage.SCHEMA_VERSION
+    assert _schema_shape(legacy_path) == _schema_shape(fresh_path)
+
+
+def test_trackio_0_21_runs_get_one_id_shared_across_tables(temp_dir):
+    db_path = _write_trackio_0_21_project("legacy")
+    SQLiteStorage.init_db("legacy")
+
+    runs = SQLiteStorage.get_run_records("legacy")
+    ids = {run["name"]: run["id"] for run in runs}
+    assert sorted(ids) == ["run-a", "run-b"]
+    assert len(set(ids.values())) == 2
+    with sqlite3.connect(db_path) as conn:
+        for table in ("metrics", "configs", "alerts", "pending_uploads"):
+            pairs = set(conn.execute(f"SELECT run_name, run_id FROM {table}"))
+            assert pairs <= set(ids.items()), table
+
+    assert [log["loss"] for log in SQLiteStorage.get_logs("legacy", "run-a")] == [
+        1.0,
+        0.5,
+    ]
+    assert [a["title"] for a in SQLiteStorage.get_alerts("legacy")] == ["plateau"]
+    configs = SQLiteStorage.get_all_run_configs("legacy")
+    assert configs[ids["run-b"]]["lr"] == 0.1
 
 
 def test_newer_schema_version_is_left_untouched(temp_dir):

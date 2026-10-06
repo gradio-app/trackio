@@ -32,7 +32,7 @@ from trackio.remote_client import RemoteClient, _space_id_to_url
 from trackio.sqlite_storage import DB_EXT, SCHEMA_VERSION, SQLiteStorage
 from trackio.utils import preprocess_space_and_dataset_ids
 
-MIN_BUMPABLE_VERSION = "0.39.0"
+MIN_BUMPABLE_VERSION = "0.21.0"
 BACKUP_PREFIX = "trackio-backups"
 DB_PREFIX = "trackio/"
 _JOURNAL_SUFFIX = "-journal"
@@ -146,6 +146,24 @@ def _db_inventory(db_path: Path) -> dict:
         conn.close()
 
 
+def _download_settled_bucket_file(
+    bucket_id: str, remote_path: str, local_path: Path, timeout: int = 180
+) -> None:
+    deadline = time.time() + timeout
+    while True:
+        try:
+            huggingface_hub.download_bucket_files(
+                bucket_id,
+                files=[(remote_path, str(local_path))],
+                token=huggingface_hub.utils.get_token(),
+            )
+            return
+        except Exception:
+            if time.time() > deadline:
+                raise
+            time.sleep(10)
+
+
 def bucket_inventory(bucket_id: str, prefix: str = DB_PREFIX) -> dict[str, dict]:
     """
     Downloads every project database under `prefix` in a bucket and returns, per
@@ -157,11 +175,7 @@ def bucket_inventory(bucket_id: str, prefix: str = DB_PREFIX) -> dict[str, dict]
         for remote_path in db_paths:
             filename = remote_path.rsplit("/", 1)[-1]
             local_path = Path(work_dir) / filename
-            huggingface_hub.download_bucket_files(
-                bucket_id,
-                files=[(remote_path, str(local_path))],
-                token=huggingface_hub.utils.get_token(),
-            )
+            _download_settled_bucket_file(bucket_id, remote_path, local_path)
             inventory[filename] = _db_inventory(local_path)
     return inventory
 
@@ -507,7 +521,7 @@ def bump(
 
     Args:
         space_id (`str`):
-            The Trackio Space to upgrade. Must run Trackio 0.39.0 or newer with a
+            The Trackio Space to upgrade. Must run Trackio 0.21.0 or newer with a
             bucket mounted at `/data`.
         new_space_id (`str`, *optional*):
             Create this Space from a copy of `space_id` instead of upgrading in place.

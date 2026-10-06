@@ -134,7 +134,7 @@ trackio bump username/my-space --new-space username/my-space-v2 --new-bucket use
 | `--new-space` | Create this Space from a copy of `space_id` instead of upgrading in place |
 | `--new-bucket` | The bucket for `--new-space`. Defaults to `{new_space}-bucket` |
 
-> **Note:** `bump` supports Gradio Spaces running Trackio 0.39.0 or newer with a bucket mounted at `/data`, and never downgrades a Space.
+> **Note:** `bump` supports Gradio Spaces running Trackio 0.21.0 or newer with a bucket mounted at `/data`, and never downgrades a Space. Older Spaces stored their data in a Hugging Face Dataset instead of a bucket.
 
 ## List Commands
 
