@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from huggingface_hub.errors import HfHubHTTPError
+from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
 import trackio
 from trackio import bump as bump_module
@@ -60,6 +60,92 @@ def test_check_bumpable(monkeypatch):
         bump_module._check_bumpable("u/s", "0.42.0")
     with pytest.raises(BumpError, match="Could not determine"):
         bump_module._check_bumpable("u/s", None)
+
+
+def test_check_bumpable_rejects_prereleases(monkeypatch):
+    monkeypatch.setattr(trackio, "__version__", "1.0.0")
+    with pytest.raises(BumpError, match="not a final release"):
+        bump_module._check_bumpable("u/s", "0.39.0rc1")
+    monkeypatch.setattr(trackio, "__version__", "1.0.0rc1")
+    with pytest.raises(BumpError, match="not a final"):
+        bump_module._check_bumpable("u/s", "1.0.0")
+
+
+def _fake_space_api():
+    api = MagicMock()
+    api.get_space_runtime.return_value = SimpleNamespace(stage="PAUSED")
+    return api
+
+
+def test_in_place_backup_failure_restarts_unchanged_space(monkeypatch):
+    api = _fake_space_api()
+    monkeypatch.setattr(
+        bump_module, "_bucket_db_paths", lambda bucket_id: ["trackio/p.db"]
+    )
+
+    def fail_copy(*args, **kwargs):
+        raise OSError("bucket unavailable")
+
+    monkeypatch.setattr(bump_module, "_copy_bucket_paths", fail_copy)
+    upload = MagicMock()
+    monkeypatch.setattr(bump_module, "_upload_runtime_files", upload)
+
+    with pytest.raises(BumpError, match="before anything was changed"):
+        bump_module._bump_in_place("u/s", "u/b", "0.39.0", api, timeout=10)
+
+    api.pause_space.assert_called_once_with("u/s")
+    api.restart_space.assert_called_once_with("u/s")
+    upload.assert_not_called()
+
+
+@pytest.mark.parametrize("bucket_existed", [False, True])
+def test_new_space_failure_removes_created_resources(monkeypatch, bucket_existed):
+    api = MagicMock()
+    api.space_info.side_effect = [
+        RepositoryNotFoundError("missing", response=MagicMock(status_code=404)),
+        SimpleNamespace(private=False),
+    ]
+    api.bucket_info.return_value = SimpleNamespace(private=False)
+    bucket_files = {"u/b": ["trackio/p.db", "traces/p/s.json"], "u/new-b": []}
+    monkeypatch.setattr(
+        bump_module,
+        "_list_bucket_file_paths",
+        lambda bucket_id, prefix=None: bucket_files[bucket_id],
+    )
+    monkeypatch.setattr(
+        bump_module.deploy, "_bucket_exists", lambda bucket_id, api: bucket_existed
+    )
+    monkeypatch.setattr(bump_module, "create_bucket_if_not_exists", MagicMock())
+    copies = []
+
+    def copy_files(source, destination):
+        copies.append((source, destination))
+        bucket_files["u/new-b"] = list(bucket_files["u/b"])
+
+    monkeypatch.setattr(bump_module.huggingface_hub, "copy_files", copy_files)
+    batch = MagicMock()
+    monkeypatch.setattr(bump_module.huggingface_hub, "batch_bucket_files", batch)
+    monkeypatch.setattr(bump_module, "bucket_inventory", lambda bucket_id: {})
+
+    def fail_deploy(*args, **kwargs):
+        raise RuntimeError("build failed")
+
+    monkeypatch.setattr(bump_module.deploy, "deploy_as_space", fail_deploy)
+
+    with pytest.raises(BumpError, match="was not modified"):
+        bump_module._bump_into_new_space(
+            "u/s", "u/b", "u/new", "u/new-b", api, timeout=10
+        )
+
+    assert copies == [("hf://buckets/u/b/", "hf://buckets/u/new-b/")]
+    api.delete_repo.assert_called_once_with("u/new", repo_type="space", missing_ok=True)
+    if bucket_existed:
+        api.delete_bucket.assert_not_called()
+        batch.assert_called_once_with(
+            "u/new-b", delete=["trackio/p.db", "traces/p/s.json"]
+        )
+    else:
+        api.delete_bucket.assert_called_once_with("u/new-b", missing_ok=True)
 
 
 def test_bucket_db_paths_only_lists_top_level_databases(monkeypatch):

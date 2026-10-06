@@ -39,7 +39,7 @@ _JOURNAL_SUFFIX = "-journal"
 _REQUIREMENT_PATTERN = re.compile(
     r"^\s*trackio(?:\[[^\]]*\])?\s*==\s*([0-9][0-9A-Za-z.+\-]*)\s*$"
 )
-_VERSION_PATTERN = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
+_VERSION_PATTERN = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 _MANAGED_VARIABLES = frozenset({"TRACKIO_DIR", "TRACKIO_BUCKET_ID"})
 _FAILURE_STAGES = frozenset(
     ("NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR")
@@ -84,6 +84,11 @@ def get_space_trackio_version(
 
 def _check_bumpable(space_id: str, space_version: str | None) -> str:
     local = _version_tuple(trackio.__version__)
+    if local is None:
+        raise BumpError(
+            f"The local Trackio version {trackio.__version__!r} is not a final "
+            "release, so it cannot be compared safely with the Space's version."
+        )
     if space_version is None:
         raise BumpError(
             f"Could not determine which Trackio version Space '{space_id}' runs. "
@@ -92,7 +97,8 @@ def _check_bumpable(space_id: str, space_version: str | None) -> str:
     remote = _version_tuple(space_version)
     if remote is None:
         raise BumpError(
-            f"Space '{space_id}' pins an unrecognized Trackio version: {space_version!r}."
+            f"Space '{space_id}' pins Trackio {space_version!r}, which is not a final "
+            "release that `trackio bump` can compare safely."
         )
     if remote < _version_tuple(MIN_BUMPABLE_VERSION):
         raise BumpError(
@@ -325,14 +331,23 @@ def _bump_in_place(
         hf_api.pause_space(space_id)
         _wait_for_stage(space_id, frozenset({"PAUSED"}), 300, hf_api)
 
-        db_paths = _bucket_db_paths(bucket_id)
-        backups = [(path, backup_prefix + path[len(DB_PREFIX) :]) for path in db_paths]
-        _copy_bucket_paths(bucket_id, backups)
-        print(
-            f"* Backed up {len(db_paths)} database files to "
-            f"hf://buckets/{bucket_id}/{backup_prefix}"
-        )
-        inventory = bucket_inventory(bucket_id, prefix=backup_prefix)
+        try:
+            db_paths = _bucket_db_paths(bucket_id)
+            backups = [
+                (path, backup_prefix + path[len(DB_PREFIX) :]) for path in db_paths
+            ]
+            _copy_bucket_paths(bucket_id, backups)
+            print(
+                f"* Backed up {len(db_paths)} database files to "
+                f"hf://buckets/{bucket_id}/{backup_prefix}"
+            )
+            inventory = bucket_inventory(bucket_id, prefix=backup_prefix)
+        except Exception as e:
+            hf_api.restart_space(space_id)
+            raise BumpError(
+                f"Backing up '{space_id}' failed before anything was changed, so the "
+                f"Space was restarted on Trackio {space_version}: {e}"
+            ) from e
 
         try:
             print(
@@ -410,29 +425,56 @@ def _bump_into_new_space(
         pass
 
     private = bool(hf_api.space_info(space_id).private)
-    create_bucket_if_not_exists(
-        new_bucket_id, private=bool(hf_api.bucket_info(bucket_id).private)
-    )
-    if _list_bucket_file_paths(bucket_id, prefix=DB_PREFIX):
-        print(f"* Copying hf://buckets/{bucket_id} to hf://buckets/{new_bucket_id}")
-        huggingface_hub.copy_files(
-            f"hf://buckets/{bucket_id}/{DB_PREFIX}",
-            f"hf://buckets/{new_bucket_id}/{DB_PREFIX}",
+    created_bucket = not deploy._bucket_exists(new_bucket_id, hf_api)
+    try:
+        create_bucket_if_not_exists(
+            new_bucket_id, private=bool(hf_api.bucket_info(bucket_id).private)
         )
-    inventory = bucket_inventory(new_bucket_id)
+        if _list_bucket_file_paths(bucket_id):
+            print(f"* Copying hf://buckets/{bucket_id} to hf://buckets/{new_bucket_id}")
+            huggingface_hub.copy_files(
+                f"hf://buckets/{bucket_id}/",
+                f"hf://buckets/{new_bucket_id}/",
+            )
+        inventory = bucket_inventory(new_bucket_id)
 
-    print(f"* Creating {new_space_id} with Trackio {trackio.__version__}")
-    deploy.deploy_as_space(new_space_id, bucket_id=new_bucket_id, private=private)
-    for key, variable in hf_api.get_space_variables(space_id).items():
-        if key not in _MANAGED_VARIABLES:
-            hf_api.add_space_variable(new_space_id, key, variable.value)
-    _wait_for_stage(new_space_id, frozenset({"RUNNING"}), timeout, hf_api)
-    verify_space_serves_inventory(new_space_id, inventory)
+        print(f"* Creating {new_space_id} with Trackio {trackio.__version__}")
+        deploy.deploy_as_space(new_space_id, bucket_id=new_bucket_id, private=private)
+        for key, variable in hf_api.get_space_variables(space_id).items():
+            if key not in _MANAGED_VARIABLES:
+                hf_api.add_space_variable(new_space_id, key, variable.value)
+        _wait_for_stage(new_space_id, frozenset({"RUNNING"}), timeout, hf_api)
+        verify_space_serves_inventory(new_space_id, inventory)
+    except Exception as e:
+        print(f"* Bump failed ({e}); removing {new_space_id} and its copied data")
+        try:
+            _remove_new_space(new_space_id, new_bucket_id, created_bucket, hf_api)
+        except Exception as cleanup_error:
+            print(f"* Could not remove {new_space_id}: {cleanup_error}")
+        raise BumpError(
+            f"Copying '{space_id}' into '{new_space_id}' failed and the new Space "
+            f"was removed; '{space_id}' was not modified: {e}"
+        ) from e
     print(
         f"* {new_space_id} runs Trackio {trackio.__version__} with a copy of "
         f"{space_id}'s data: {deploy.SPACE_URL.format(space_id=new_space_id)}"
     )
     return new_space_id
+
+
+def _remove_new_space(
+    new_space_id: str,
+    new_bucket_id: str,
+    created_bucket: bool,
+    hf_api: huggingface_hub.HfApi,
+) -> None:
+    hf_api.delete_repo(new_space_id, repo_type="space", missing_ok=True)
+    if created_bucket:
+        hf_api.delete_bucket(new_bucket_id, missing_ok=True)
+        return
+    copied = _list_bucket_file_paths(new_bucket_id)
+    if copied:
+        huggingface_hub.batch_bucket_files(new_bucket_id, delete=copied)
 
 
 def bump(
