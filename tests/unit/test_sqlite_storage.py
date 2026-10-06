@@ -23,6 +23,111 @@ def test_init_creates_metrics_table(temp_dir):
         cursor.execute("SELECT * FROM metrics")
 
 
+def _user_version(db_path):
+    with sqlite3.connect(db_path) as conn:
+        return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _set_user_version(db_path, version):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(f"PRAGMA user_version = {version}")
+
+
+def _register_migrations(monkeypatch, migrations):
+    monkeypatch.setattr(trackio.sqlite_storage, "_SCHEMA_MIGRATIONS", migrations)
+    monkeypatch.setattr(trackio.sqlite_storage, "SCHEMA_VERSION", 1 + len(migrations))
+
+
+def test_init_db_records_schema_version(temp_dir):
+    db_path = SQLiteStorage.init_db("proj")
+    assert _user_version(db_path) == trackio.sqlite_storage.SCHEMA_VERSION
+
+
+def test_schema_migrations_upgrade_legacy_database_once_in_order(temp_dir, monkeypatch):
+    SQLiteStorage.bulk_log("proj", "run", [{"loss": 1.0}, {"loss": 0.5}])
+    db_path = SQLiteStorage.get_project_db_path("proj")
+    _set_user_version(db_path, 0)
+    applied = []
+
+    def add_loss_column(cursor):
+        applied.append(2)
+        cursor.execute("ALTER TABLE metrics ADD COLUMN loss REAL")
+
+    def backfill_loss(cursor):
+        applied.append(3)
+        cursor.execute("UPDATE metrics SET loss = json_extract(metrics, '$.loss')")
+
+    _register_migrations(monkeypatch, {2: add_loss_column, 3: backfill_loss})
+    SQLiteStorage.init_db("proj")
+    SQLiteStorage.init_db("proj")
+
+    assert applied == [2, 3]
+    assert _user_version(db_path) == 3
+    with sqlite3.connect(db_path) as conn:
+        losses = [
+            row[0] for row in conn.execute("SELECT loss FROM metrics ORDER BY id")
+        ]
+    assert losses == [1.0, 0.5]
+
+
+def test_failed_schema_migration_keeps_last_completed_version(temp_dir, monkeypatch):
+    db_path = SQLiteStorage.init_db("proj")
+
+    def create_kept(cursor):
+        cursor.execute("CREATE TABLE kept (id INTEGER)")
+
+    def create_then_fail(cursor):
+        cursor.execute("CREATE TABLE discarded (id INTEGER)")
+        raise RuntimeError("migration failed")
+
+    _register_migrations(monkeypatch, {2: create_kept, 3: create_then_fail})
+    with pytest.raises(RuntimeError, match="migration failed"):
+        SQLiteStorage.init_db("proj")
+
+    assert _user_version(db_path) == 2
+    with sqlite3.connect(db_path) as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master")}
+    assert "kept" in tables
+    assert "discarded" not in tables
+
+
+def test_newer_schema_version_is_left_untouched(temp_dir):
+    db_path = SQLiteStorage.init_db("proj")
+    newer = trackio.sqlite_storage.SCHEMA_VERSION + 5
+    _set_user_version(db_path, newer)
+    SQLiteStorage.init_db("proj")
+    assert _user_version(db_path) == newer
+
+
+def test_migrate_all_projects_upgrades_databases_nobody_writes_to(
+    temp_dir, monkeypatch
+):
+    paths = []
+    for project in ("first", "second"):
+        SQLiteStorage.bulk_log(project, "run", [{"loss": 1.0}])
+        paths.append(SQLiteStorage.get_project_db_path(project))
+        _set_user_version(paths[-1], 1)
+
+    _register_migrations(
+        monkeypatch, {2: lambda cursor: cursor.execute("CREATE TABLE added (id)")}
+    )
+    SQLiteStorage.migrate_all_projects()
+
+    assert [_user_version(p) for p in paths] == [2, 2]
+
+
+def test_query_project_reads_but_cannot_set_schema_version(temp_dir):
+    SQLiteStorage.init_db("proj")
+    result = SQLiteStorage.query_project("proj", "PRAGMA user_version")
+    assert result["rows"] == [{"user_version": trackio.sqlite_storage.SCHEMA_VERSION}]
+    with pytest.raises(Exception):
+        SQLiteStorage.query_project("proj", "PRAGMA user_version = 99")
+    assert (
+        _user_version(SQLiteStorage.get_project_db_path("proj"))
+        == trackio.sqlite_storage.SCHEMA_VERSION
+    )
+
+
 def test_log_and_get_metrics(temp_dir):
     metrics = {"acc": 0.9}
     SQLiteStorage.log(project="proj1", run="run1", metrics=metrics)

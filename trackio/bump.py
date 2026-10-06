@@ -29,7 +29,7 @@ import trackio
 from trackio import deploy
 from trackio.bucket_storage import _list_bucket_file_paths, create_bucket_if_not_exists
 from trackio.remote_client import RemoteClient, _space_id_to_url
-from trackio.sqlite_storage import DB_EXT, SQLiteStorage
+from trackio.sqlite_storage import DB_EXT, SCHEMA_VERSION, SQLiteStorage
 from trackio.utils import preprocess_space_and_dataset_ids
 
 MIN_BUMPABLE_VERSION = "0.39.0"
@@ -190,9 +190,10 @@ def verify_space_serves_inventory(
     space_id: str, inventory: dict[str, dict], timeout: int = 300
 ) -> None:
     """
-    Checks that a running Space serves the local Trackio version and that every
-    table of every project database still holds at least the rows recorded in
-    `inventory`. Rows can only grow, since the Space may import inbox fragments.
+    Checks that a running Space serves the local Trackio version, that every
+    project database reached the local `SCHEMA_VERSION`, and that every table
+    still holds at least the rows recorded in `inventory`. Rows can only grow,
+    since the Space may import inbox fragments.
     """
     expected_version = trackio.__version__
     deadline = time.time() + timeout
@@ -215,6 +216,15 @@ def verify_space_serves_inventory(
         if project is None:
             raise BumpError(
                 f"Space '{space_id}' no longer lists the project stored in {filename}."
+            )
+        result = client.predict(
+            project, "PRAGMA user_version", api_name="/query_project"
+        )
+        schema_version = result["rows"][0]["user_version"]
+        if schema_version != SCHEMA_VERSION:
+            raise BumpError(
+                f"Project '{project}' is at schema version {schema_version} after the "
+                f"bump, expected {SCHEMA_VERSION}."
             )
         for table, count in expected["tables"].items():
             result = client.predict(

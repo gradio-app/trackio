@@ -6,7 +6,8 @@ import shutil
 import sqlite3
 import time
 import uuid
-from collections.abc import Iterator
+import warnings
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,6 +51,8 @@ from trackio.utils import (
 )
 
 DB_EXT = ".db"
+SCHEMA_VERSION = 1
+_SCHEMA_MIGRATIONS: dict[int, Callable[[sqlite3.Cursor], None]] = {}
 
 _JOURNAL_MODE_WHITELIST = frozenset(
     {"wal", "delete", "truncate", "persist", "memory", "off"}
@@ -66,6 +69,7 @@ _SQL_IN_CHUNK = 500
 _READ_ONLY_PRAGMAS = frozenset(
     {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo"}
 )
+_READ_ONLY_VALUE_PRAGMAS = frozenset({"user_version"})
 SEARCHABLE_SPAN_FIELDS = ("id", "name", "kind", "model", "status", "error", "metadata")
 TRACE_PAYLOAD_TYPE = "trackio.trace"
 
@@ -847,8 +851,55 @@ class SQLiteStorage:
                         ON {table}(space_id) WHERE space_id IS NOT NULL"""
                     )
 
+                SQLiteStorage._apply_schema_migrations(cursor)
                 conn.commit()
         return db_path
+
+    @staticmethod
+    def _apply_schema_migrations(cursor: sqlite3.Cursor) -> None:
+        """
+        Upgrades a database to `SCHEMA_VERSION`, recorded in `PRAGMA user_version`.
+
+        Version 1 is the schema `init_db()` creates; databases written before
+        versioning existed report version 0 and reach version 1 through the
+        idempotent statements above. `_SCHEMA_MIGRATIONS[n]` upgrades a database
+        from version `n - 1` to `n`, for every `n` from 2 to `SCHEMA_VERSION`. Each
+        step runs in its own savepoint together with its version bump, so a failed
+        step leaves the database at the last version that completed. Databases
+        already at a newer version than this Trackio knows are left untouched.
+        """
+        version = cursor.execute("PRAGMA user_version").fetchone()[0]
+        if version >= SCHEMA_VERSION:
+            return
+        if version < 1:
+            cursor.execute("PRAGMA user_version = 1")
+            version = 1
+        for target in range(version + 1, SCHEMA_VERSION + 1):
+            cursor.execute("SAVEPOINT trackio_schema_migration")
+            try:
+                _SCHEMA_MIGRATIONS[target](cursor)
+                cursor.execute(f"PRAGMA user_version = {target}")
+            except BaseException:
+                cursor.execute("ROLLBACK TO trackio_schema_migration")
+                cursor.execute("RELEASE trackio_schema_migration")
+                raise
+            cursor.execute("RELEASE trackio_schema_migration")
+
+    @staticmethod
+    def migrate_all_projects() -> None:
+        """
+        Brings every project database in `TRACKIO_DIR` to `SCHEMA_VERSION`, so a
+        server never reads a project in an older schema, even one nobody writes to.
+        """
+        for project in SQLiteStorage.get_projects():
+            try:
+                SQLiteStorage.init_db(project)
+            except Exception as e:
+                warnings.warn(
+                    f"Could not migrate project '{project}' to schema version "
+                    f"{SCHEMA_VERSION}: {e}",
+                    stacklevel=2,
+                )
 
     @staticmethod
     def _require_pyarrow():
@@ -3219,7 +3270,7 @@ class SQLiteStorage:
         db_name: str | None,
         source: str | None,
     ) -> int:
-        del arg2, db_name, source
+        del db_name, source
         if action_code in {
             sqlite3.SQLITE_SELECT,
             sqlite3.SQLITE_READ,
@@ -3230,6 +3281,8 @@ class SQLiteStorage:
         if action_code == pragma_code:
             pragma_name = (arg1 or "").lower()
             if pragma_name in _READ_ONLY_PRAGMAS:
+                return sqlite3.SQLITE_OK
+            if pragma_name in _READ_ONLY_VALUE_PRAGMAS and arg2 is None:
                 return sqlite3.SQLITE_OK
         return sqlite3.SQLITE_DENY
 

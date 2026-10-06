@@ -1468,6 +1468,7 @@ def build_starlette_app_only(
     resolved_frontend = resolve_frontend_dir(frontend_dir)
     mount_frontend(starlette_app, frontend_dir=resolved_frontend.path)
     starlette_app.add_middleware(CompressionMiddleware)
+    SQLiteStorage.migrate_all_projects()
     start_inbox_poller()
     return starlette_app, write_token
 
