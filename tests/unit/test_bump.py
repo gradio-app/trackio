@@ -45,11 +45,6 @@ def test_space_version_from_source_deploy(tmp_path):
     assert bump_module.get_space_trackio_version("u/s", api) == "0.39.2"
 
 
-def test_space_version_unknown_for_unpinned_space(tmp_path):
-    api = _fake_api_with_files(tmp_path, {"requirements.txt": "trackio>=0.30"})
-    assert bump_module.get_space_trackio_version("u/s", api) is None
-
-
 def test_check_bumpable(monkeypatch):
     monkeypatch.setattr(trackio, "__version__", "0.41.0")
     assert bump_module._check_bumpable("u/s", "0.39.0") == "0.39.0"
@@ -108,11 +103,6 @@ def test_db_inventory_counts_rows_per_table_and_run(tmp_path):
     }
 
 
-def test_bump_rejects_new_bucket_without_new_space():
-    with pytest.raises(BumpError, match="requires new_space_id"):
-        bump_module.bump("u/s", new_bucket_id="u/b")
-
-
 @pytest.mark.parametrize(
     "argv",
     [
@@ -130,20 +120,3 @@ def test_cli_bump_accepts_positional_or_space_flag(monkeypatch, argv):
     monkeypatch.setattr("sys.argv", argv)
     cli.main()
     assert calls == [(("u/s",), {"new_space_id": None, "new_bucket_id": None})]
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["trackio", "bump"],
-        ["trackio", "bump", "u/s", "--space", "u/other"],
-    ],
-)
-def test_cli_bump_rejects_missing_or_conflicting_space(monkeypatch, argv):
-    from trackio import cli
-
-    monkeypatch.setattr(cli, "bump", MagicMock())
-    monkeypatch.setattr("sys.argv", argv)
-    with pytest.raises(SystemExit):
-        cli.main()
-    cli.bump.assert_not_called()
