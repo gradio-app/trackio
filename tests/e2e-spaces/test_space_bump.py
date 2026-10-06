@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 import huggingface_hub
@@ -42,12 +43,14 @@ def _duplicate(legacy, space_id, bucket_id):
         ],
         space_volumes=[Volume(type="bucket", source=bucket_id, mount_path="/data")],
     )
+    while str(huggingface_hub.HfApi().get_space_runtime(space_id).stage) != "RUNNING":
+        time.sleep(10)
 
 
 @pytest.mark.parametrize("version", sorted(LEGACY_SPACES))
 def test_bump_migrates_legacy_space(test_space_id, version):
     namespace, name = test_space_id.split("/")
-    space_id = f"{namespace}/bump_in_place_{name.removeprefix('test_')}"
+    space_id = f"{namespace}/bump_in_place_{name.removeprefix('test_')}_{version}"
     bucket_id = f"{space_id}-bucket"
     _delete(space_id, bucket_id)
 

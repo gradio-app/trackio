@@ -6,7 +6,6 @@ import shutil
 import sqlite3
 import time
 import uuid
-import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -1046,16 +1045,16 @@ class SQLiteStorage:
         """
         Brings every project database in `TRACKIO_DIR` to `SCHEMA_VERSION`, so a
         server never reads a project in an older schema, even one nobody writes to.
+        Raises if any project cannot be migrated, so the server does not start.
         """
         for project in SQLiteStorage.get_projects():
             try:
                 SQLiteStorage.init_db(project)
             except Exception as e:
-                warnings.warn(
+                raise RuntimeError(
                     f"Could not migrate project '{project}' to schema version "
-                    f"{SCHEMA_VERSION}: {e}",
-                    stacklevel=2,
-                )
+                    f"{SCHEMA_VERSION}: {e}"
+                ) from e
 
     @staticmethod
     def _require_pyarrow():

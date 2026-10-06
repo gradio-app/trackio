@@ -335,12 +335,15 @@ def _is_trackio_installed_from_source() -> bool:
         return True
 
 
-def _upload_source_tree(hf_api: huggingface_hub.HfApi, space_id: str) -> None:
-    hf_api.upload_folder(
+def _upload_source_tree(
+    hf_api: huggingface_hub.HfApi, space_id: str, parent_commit: str | None = None
+) -> huggingface_hub.CommitInfo:
+    return hf_api.upload_folder(
         repo_id=space_id,
         repo_type="space",
         folder_path=files("trackio"),
         path_in_repo="trackio",
+        parent_commit=parent_commit,
         ignore_patterns=[
             "README.md",
             "frontend/node_modules/**",

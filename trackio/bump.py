@@ -146,24 +146,6 @@ def _db_inventory(db_path: Path) -> dict:
         conn.close()
 
 
-def _download_settled_bucket_file(
-    bucket_id: str, remote_path: str, local_path: Path, timeout: int = 180
-) -> None:
-    deadline = time.time() + timeout
-    while True:
-        try:
-            huggingface_hub.download_bucket_files(
-                bucket_id,
-                files=[(remote_path, str(local_path))],
-                token=huggingface_hub.utils.get_token(),
-            )
-            return
-        except Exception:
-            if time.time() > deadline:
-                raise
-            time.sleep(10)
-
-
 def bucket_inventory(bucket_id: str, prefix: str = DB_PREFIX) -> dict[str, dict]:
     """
     Downloads every project database under `prefix` in a bucket and returns, per
@@ -175,7 +157,11 @@ def bucket_inventory(bucket_id: str, prefix: str = DB_PREFIX) -> dict[str, dict]
         for remote_path in db_paths:
             filename = remote_path.rsplit("/", 1)[-1]
             local_path = Path(work_dir) / filename
-            _download_settled_bucket_file(bucket_id, remote_path, local_path)
+            huggingface_hub.download_bucket_files(
+                bucket_id,
+                files=[(remote_path, str(local_path))],
+                token=huggingface_hub.utils.get_token(),
+            )
             inventory[filename] = _db_inventory(local_path)
     return inventory
 
@@ -294,9 +280,11 @@ def _wait_for_stage(
 
 
 def _runtime_operations(
-    space_id: str, hf_api: huggingface_hub.HfApi
+    space_id: str, hf_api: huggingface_hub.HfApi, revision: str
 ) -> list[huggingface_hub.CommitOperationAdd]:
-    repo_files = set(hf_api.list_repo_files(space_id, repo_type="space"))
+    repo_files = set(
+        hf_api.list_repo_files(space_id, repo_type="space", revision=revision)
+    )
     has_custom_frontend = any(
         f.startswith(deploy._CUSTOM_SPACE_FRONTEND_DIR + "/") for f in repo_files
     )
@@ -315,17 +303,6 @@ def _runtime_operations(
             "app.py", io.BytesIO(app_py.encode("utf-8"))
         ),
     ]
-
-
-def _upload_runtime_files(space_id: str, hf_api: huggingface_hub.HfApi) -> None:
-    hf_api.create_commit(
-        space_id,
-        operations=_runtime_operations(space_id, hf_api),
-        commit_message=f"Bump Trackio to {trackio.__version__}",
-        repo_type="space",
-    )
-    if deploy._is_trackio_installed_from_source():
-        deploy._upload_source_tree(hf_api, space_id)
 
 
 def _copy_bucket_paths(bucket_id: str, pairs: list[tuple[str, str]]) -> None:
@@ -347,9 +324,14 @@ def _bump_in_place(
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     backup_prefix = f"{BACKUP_PREFIX}/{space_version}-to-{local_version}-{stamp}/"
 
+    base_commit = hf_api.repo_info(space_id, repo_type="space").sha
     with tempfile.TemporaryDirectory() as snapshot_dir:
         hf_api.snapshot_download(
-            space_id, repo_type="space", local_dir=snapshot_dir, max_workers=4
+            space_id,
+            repo_type="space",
+            revision=base_commit,
+            local_dir=snapshot_dir,
+            max_workers=4,
         )
         print(f"* Pausing {space_id}; new logs will queue in the bucket inbox")
         hf_api.pause_space(space_id)
@@ -373,11 +355,22 @@ def _bump_in_place(
                 f"Space was restarted on Trackio {space_version}: {e}"
             ) from e
 
+        bump_commit = None
         try:
             print(
                 f"* Updating {space_id} from Trackio {space_version} to {local_version}"
             )
-            _upload_runtime_files(space_id, hf_api)
+            bump_commit = hf_api.create_commit(
+                space_id,
+                operations=_runtime_operations(space_id, hf_api, base_commit),
+                commit_message=f"Bump Trackio to {local_version}",
+                repo_type="space",
+                parent_commit=base_commit,
+            ).oid
+            if deploy._is_trackio_installed_from_source():
+                bump_commit = deploy._upload_source_tree(
+                    hf_api, space_id, parent_commit=bump_commit
+                ).oid
             hf_api.restart_space(space_id)
             print("* Waiting for the Space to rebuild and migrate its data")
             _wait_for_stage(space_id, frozenset({"RUNNING"}), timeout, hf_api)
@@ -389,6 +382,7 @@ def _bump_in_place(
                 bucket_id,
                 backups,
                 Path(snapshot_dir),
+                bump_commit,
                 hf_api,
                 timeout,
             )
@@ -409,21 +403,26 @@ def _rollback(
     bucket_id: str,
     backups: list[tuple[str, str]],
     snapshot_dir: Path,
+    bump_commit: str | None,
     hf_api: huggingface_hub.HfApi,
     timeout: int,
 ) -> None:
     hf_api.pause_space(space_id)
     _wait_for_stage(space_id, frozenset({"PAUSED"}), 300, hf_api)
     _copy_bucket_paths(bucket_id, [(backup, path) for path, backup in backups])
-    hf_api.upload_folder(
-        repo_id=space_id,
-        repo_type="space",
-        folder_path=snapshot_dir,
-        ignore_patterns=[".cache/**"],
-        delete_patterns=["*", "**/*"],
-        commit_message="Roll back failed Trackio bump",
-    )
-    hf_api.restart_space(space_id)
+    try:
+        if bump_commit is not None:
+            hf_api.upload_folder(
+                repo_id=space_id,
+                repo_type="space",
+                folder_path=snapshot_dir,
+                ignore_patterns=[".cache/**"],
+                delete_patterns=["*", "**/*"],
+                commit_message="Roll back failed Trackio bump",
+                parent_commit=bump_commit,
+            )
+    finally:
+        hf_api.restart_space(space_id)
     _wait_for_stage(space_id, frozenset({"RUNNING"}) | _FAILURE_STAGES, timeout, hf_api)
 
 

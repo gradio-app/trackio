@@ -43,17 +43,18 @@ jobs:
           except huggingface_hub.errors.RepositoryNotFoundError:
               print(f"Test Space does not exist: {space_id}")
 
-          bump_space_id = f"trackio-tests/bump_in_place_{os.environ['PR_NUMBER']}"
-          huggingface_hub.delete_repo(
-              bump_space_id,
-              repo_type="space",
-              missing_ok=True,
-              token=os.environ["HF_TOKEN"],
-          )
-          huggingface_hub.delete_bucket(
-              f"{bump_space_id}-bucket",
-              missing_ok=True,
-              token=os.environ["HF_TOKEN"],
-          )
-          print(f"Deleted bump test Space and bucket: {bump_space_id}")
+          prefix = f"trackio-tests/bump_in_place_{os.environ['PR_NUMBER']}_"
+          token = os.environ["HF_TOKEN"]
+          for space in huggingface_hub.list_spaces(
+              author="trackio-tests", search=prefix.split("/")[1], token=token
+          ):
+              if space.id.startswith(prefix):
+                  huggingface_hub.delete_repo(
+                      space.id, repo_type="space", missing_ok=True, token=token
+                  )
+                  print(f"Deleted bump test Space: {space.id}")
+          for bucket in huggingface_hub.list_buckets("trackio-tests", token=token):
+              if bucket.id.startswith(prefix):
+                  huggingface_hub.delete_bucket(bucket.id, missing_ok=True, token=token)
+                  print(f"Deleted bump test bucket: {bucket.id}")
           PY
