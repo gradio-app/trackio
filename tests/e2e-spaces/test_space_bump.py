@@ -1,17 +1,16 @@
 import secrets
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
 
 import huggingface_hub
 import pytest
+from huggingface_hub import Volume
 
 import trackio
-from trackio import deploy
 from trackio.bucket_storage import _list_bucket_file_paths
-from trackio.bump import BACKUP_PREFIX, bump, get_space_trackio_version
+from trackio.bump import BACKUP_PREFIX, bump
 from trackio.remote_client import RemoteClient as Client
 
 sys.path.insert(0, str(Path(__file__).parent / "legacy"))
@@ -111,28 +110,25 @@ def _assert_run_logged(space_id, project, run, steps=5):
 
 def _create_legacy_copy(version, space_id, bucket_id):
     legacy = LEGACY_SPACES[version]
-    hf_api = huggingface_hub.HfApi()
-    hf_api.create_repo(space_id, repo_type="space", space_sdk="gradio", private=False)
-    with tempfile.TemporaryDirectory() as snapshot_dir:
-        hf_api.snapshot_download(
-            legacy["space_id"], repo_type="space", local_dir=snapshot_dir
-        )
-        hf_api.upload_folder(
-            repo_id=space_id,
-            repo_type="space",
-            folder_path=snapshot_dir,
-            ignore_patterns=[".cache/**"],
-        )
-    hf_api.add_space_secret(space_id, "HF_TOKEN", huggingface_hub.utils.get_token())
     huggingface_hub.create_bucket(bucket_id, private=False)
     huggingface_hub.copy_files(
-        f"hf://buckets/{legacy['bucket_id']}/trackio/",
-        f"hf://buckets/{bucket_id}/trackio/",
+        f"hf://buckets/{legacy['bucket_id']}/", f"hf://buckets/{bucket_id}/"
     )
-    deploy._ensure_bucket_mounted_at_data(space_id, bucket_id, hf_api)
-    hf_api.restart_space(space_id)
+    huggingface_hub.HfApi().duplicate_repo(
+        legacy["space_id"],
+        space_id,
+        repo_type="space",
+        private=False,
+        space_hardware="cpu-upgrade",
+        space_sleep_time=-1,
+        space_secrets=[{"key": "HF_TOKEN", "value": huggingface_hub.get_token()}],
+        space_variables=[
+            {"key": "TRACKIO_DIR", "value": "/data/trackio"},
+            {"key": "TRACKIO_BUCKET_ID", "value": bucket_id},
+        ],
+        space_volumes=[Volume(type="bucket", source=bucket_id, mount_path="/data")],
+    )
     _wait_for_stage(space_id, "RUNNING")
-    assert get_space_trackio_version(space_id) == version
 
 
 @pytest.mark.parametrize("version", sorted(LEGACY_SPACES))

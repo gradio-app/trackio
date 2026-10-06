@@ -9,6 +9,7 @@ Run with the release being seeded, for example:
 import sys
 from pathlib import Path
 
+import huggingface_hub
 import numpy as np
 
 import trackio
@@ -46,6 +47,8 @@ def main(version: str) -> None:
             if run == "run-b":
                 trackio.alert(title=ALERT_TITLE, text="seeded alert")
             trackio.finish()
+    hf_api = huggingface_hub.HfApi()
+    hf_api.request_space_hardware(target["space_id"], "cpu-upgrade", sleep_time=-1)
 
 
 if __name__ == "__main__":
