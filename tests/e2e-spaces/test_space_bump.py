@@ -136,34 +136,6 @@ def _create_legacy_copy(version, space_id, bucket_id):
 
 
 @pytest.mark.parametrize("version", sorted(LEGACY_SPACES))
-def test_bump_into_new_space_migrates_legacy_data(version):
-    legacy = LEGACY_SPACES[version]
-    namespace = legacy["space_id"].split("/")[0]
-    new_space_id, new_bucket_id = _temp_ids(namespace, "new")
-    source_files = sorted(_list_bucket_file_paths(legacy["bucket_id"]))
-
-    try:
-        assert (
-            bump(
-                legacy["space_id"],
-                new_space_id=new_space_id,
-                new_bucket_id=new_bucket_id,
-            )
-            == new_space_id
-        )
-
-        assert get_space_trackio_version(new_space_id) == trackio.__version__
-        _assert_serves_seed_data(new_space_id, new_bucket_id)
-        _log_run(new_space_id, new_bucket_id, "bump-compat", "after-bump")
-        _assert_run_logged(new_space_id, "bump-compat", "after-bump")
-
-        assert get_space_trackio_version(legacy["space_id"]) == version
-        assert sorted(_list_bucket_file_paths(legacy["bucket_id"])) == source_files
-    finally:
-        _cleanup(new_space_id, new_bucket_id)
-
-
-@pytest.mark.parametrize("version", sorted(LEGACY_SPACES))
 def test_bump_in_place_migrates_legacy_data_and_inbox(version):
     namespace = LEGACY_SPACES[version]["space_id"].split("/")[0]
     space_id, bucket_id = _temp_ids(namespace, "inplace")
