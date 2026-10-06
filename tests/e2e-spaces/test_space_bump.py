@@ -15,7 +15,7 @@ from trackio.bump import BACKUP_PREFIX, bump, get_space_trackio_version
 from trackio.remote_client import RemoteClient as Client
 
 sys.path.insert(0, str(Path(__file__).parent / "legacy"))
-from data import (  # noqa: E402
+from legacy_spaces import (  # noqa: E402
     ALERT_TITLE,
     IMAGE_STEP,
     LEGACY_SPACES,

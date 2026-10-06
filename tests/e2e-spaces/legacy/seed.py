@@ -14,7 +14,7 @@ import numpy as np
 import trackio
 
 sys.path.insert(0, str(Path(__file__).parent))
-from data import (  # noqa: E402
+from legacy_spaces import (  # noqa: E402
     ALERT_TITLE,
     IMAGE_STEP,
     LEGACY_SPACES,
