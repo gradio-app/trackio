@@ -157,6 +157,19 @@ def _safe_get_runs_for_init(
         return []
 
 
+def _migrate_local_project_for_init(project: str) -> None:
+    if utils.get_storage_mode() == "jsonl":
+        return
+    if not SQLiteStorage.get_project_db_path(project).exists():
+        return
+    try:
+        SQLiteStorage.init_db(project)
+    except Exception as e:
+        _emit_nonfatal_warning(
+            f"trackio.init() could not migrate the local database for project '{project}': {e}."
+        )
+
+
 def _safe_get_latest_run_for_init(
     project: str,
     name: str,
@@ -534,6 +547,7 @@ def init(
                 f"trackio.init() could not create a remote client for '{server_base_url}': {e}. Continuing with local fallback metadata lookups."
             )
 
+    _migrate_local_project_for_init(project)
     existing_run_records = _safe_get_runs_for_init(
         project,
         space_id,

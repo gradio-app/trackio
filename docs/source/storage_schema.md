@@ -30,7 +30,7 @@ The same command works against a remote Space:
 trackio query project --project "my-project" --sql "SELECT COUNT(*) AS num_alerts FROM alerts" --space username/my-space --json
 ```
 
-`trackio query` only accepts read-only `SELECT`, `WITH`, and safe schema `PRAGMA` queries.
+`trackio query` only accepts read-only `SELECT`, `WITH`, and safe schema `PRAGMA` queries, including reading `PRAGMA user_version`.
 
 ## SQLite Schema
 
@@ -346,6 +346,32 @@ Inspect stored configs:
 ```sh
 trackio query project --project "my-project" --sql "SELECT run_name, created_at, config FROM configs ORDER BY created_at DESC"
 ```
+
+## Schema Versions and Migrations
+
+Each project database records its schema version in `PRAGMA user_version`:
+
+```sh
+trackio query project --project "my-project" --sql "PRAGMA user_version"
+```
+
+`SQLiteStorage.init_db()` brings a database up to `SCHEMA_VERSION` (defined in `trackio/sqlite_storage.py`) whenever it is opened for writing, and a Trackio server migrates every project database when it starts. Databases written before versioning existed report version 0 and are brought to version 1 by the additive `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE ... ADD COLUMN` statements in `init_db()`. Version 2 gives databases written before Trackio 0.24 a `run_id` on every run-scoped table: those versions identified a run only by its name, so each run name becomes one run with a new id.
+
+To change the schema or rewrite existing data in a way those statements cannot express, add a step to `_SCHEMA_MIGRATIONS` and increment `SCHEMA_VERSION`:
+
+```python
+def _split_loss_column(cursor):
+    cursor.execute("ALTER TABLE metrics ADD COLUMN loss REAL")
+    cursor.execute("UPDATE metrics SET loss = json_extract(metrics, '$.loss')")
+
+
+SCHEMA_VERSION = 3
+_SCHEMA_MIGRATIONS = {2: _migrate_add_run_ids, 3: _split_loss_column}
+```
+
+`_SCHEMA_MIGRATIONS[n]` upgrades a database from version `n - 1` to `n`. Each step runs in its own savepoint together with its version bump, so a failed step leaves the database at the last version that completed. A database at a newer version than the running Trackio knows is left untouched.
+
+`trackio bump` relies on this: after restarting a Space on the local Trackio version, it checks that every project database reports the local `SCHEMA_VERSION`. The e2e test in `tests/e2e-spaces/test_space_bump.py` runs every migration against data written by Trackio 0.21.0 and 0.37.1.
 
 ## Stability Notes
 

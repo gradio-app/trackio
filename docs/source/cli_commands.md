@@ -110,6 +110,32 @@ trackio freeze --space-id "username/my-space" --project "my-project" --new-space
 > The frozen Space is a snapshot. Later metrics synced to the original Gradio Space do not appear in the frozen static Space unless you run `freeze` again.
 > Static frozen snapshots require public destination data, so `trackio freeze --private` is not supported.
 
+### Bump
+
+Upgrade an existing Trackio Space to the Trackio version installed locally:
+
+```sh
+trackio bump username/my-space
+```
+
+`trackio bump --space username/my-space` does the same thing.
+
+The Space is paused while it upgrades, so training jobs keep logging to the Space's bucket inbox. Its databases are backed up to `trackio-backups/` in the same bucket, its Trackio pin is updated, and it restarts so the new version migrates the data. If the upgraded Space fails to start or reports fewer rows than before, the backup and the previous Space files are restored.
+
+To keep the original Space untouched, copy it and its bucket into a new Space running the local version instead:
+
+```sh
+trackio bump username/my-space --new-space username/my-space-v2 --new-bucket username/my-space-v2-bucket
+```
+
+| Flag | Description |
+|------|-------------|
+| `space_id` | The Trackio Space to upgrade (required, or pass it with `--space`) |
+| `--new-space` | Create this Space from a copy of `space_id` instead of upgrading in place |
+| `--new-bucket` | The bucket for `--new-space`. Defaults to `{new_space}-bucket` |
+
+> **Note:** `bump` supports Gradio Spaces running Trackio 0.21.0 or newer with a bucket mounted at `/data`, and never downgrades a Space. Older Spaces stored their data in a Hugging Face Dataset instead of a bucket.
+
 ## List Commands
 
 ### List All Projects
