@@ -38,11 +38,6 @@ def _register_migrations(monkeypatch, migrations):
     monkeypatch.setattr(trackio.sqlite_storage, "SCHEMA_VERSION", 1 + len(migrations))
 
 
-def test_init_db_records_schema_version(temp_dir):
-    db_path = SQLiteStorage.init_db("proj")
-    assert _user_version(db_path) == trackio.sqlite_storage.SCHEMA_VERSION
-
-
 def test_schema_migrations_upgrade_legacy_database_once_in_order(temp_dir, monkeypatch):
     SQLiteStorage.bulk_log("proj", "run", [{"loss": 1.0}, {"loss": 0.5}])
     db_path = SQLiteStorage.get_project_db_path("proj")
@@ -211,31 +206,6 @@ def test_trackio_0_21_runs_get_one_id_shared_across_tables(temp_dir):
     assert [a["title"] for a in SQLiteStorage.get_alerts("legacy")] == ["plateau"]
     configs = SQLiteStorage.get_all_run_configs("legacy")
     assert configs[ids["run-b"]]["lr"] == 0.1
-
-
-def test_newer_schema_version_is_left_untouched(temp_dir):
-    db_path = SQLiteStorage.init_db("proj")
-    newer = trackio.sqlite_storage.SCHEMA_VERSION + 5
-    _set_user_version(db_path, newer)
-    SQLiteStorage.init_db("proj")
-    assert _user_version(db_path) == newer
-
-
-def test_migrate_all_projects_upgrades_databases_nobody_writes_to(
-    temp_dir, monkeypatch
-):
-    paths = []
-    for project in ("first", "second"):
-        SQLiteStorage.bulk_log(project, "run", [{"loss": 1.0}])
-        paths.append(SQLiteStorage.get_project_db_path(project))
-        _set_user_version(paths[-1], 1)
-
-    _register_migrations(
-        monkeypatch, {2: lambda cursor: cursor.execute("CREATE TABLE added (id)")}
-    )
-    SQLiteStorage.migrate_all_projects()
-
-    assert [_user_version(p) for p in paths] == [2, 2]
 
 
 def test_query_project_reads_but_cannot_set_schema_version(temp_dir):

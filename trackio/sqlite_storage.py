@@ -462,10 +462,6 @@ _RUN_ID_TABLES = {
 }
 
 
-def _columns(cursor: sqlite3.Cursor, table: str) -> list[str]:
-    return [row[1] for row in cursor.execute(f"PRAGMA table_info({table})")]
-
-
 def _migrate_add_run_ids(cursor: sqlite3.Cursor) -> None:
     """
     Schema version 2: gives databases written before Trackio 0.24 a `run_id` on
@@ -477,7 +473,8 @@ def _migrate_add_run_ids(cursor: sqlite3.Cursor) -> None:
     legacy = [
         table
         for table in (*_RUN_ID_TABLES, "pending_uploads")
-        if (columns := _columns(cursor, table)) and "run_id" not in columns
+        if (columns := SQLiteStorage._table_columns(cursor.connection, table))
+        and "run_id" not in columns
     ]
     if not legacy:
         return
@@ -486,7 +483,7 @@ def _migrate_add_run_ids(cursor: sqlite3.Cursor) -> None:
         "CREATE TEMP TABLE trackio_run_ids (run_name TEXT PRIMARY KEY, run_id TEXT)"
     )
     for table in _RUN_ID_TABLES:
-        columns = _columns(cursor, table)
+        columns = SQLiteStorage._table_columns(cursor.connection, table)
         if table in legacy or not columns:
             continue
         order = " ORDER BY timestamp DESC" if "timestamp" in columns else ""
@@ -515,11 +512,10 @@ def _migrate_add_run_ids(cursor: sqlite3.Cursor) -> None:
         create_table, indexes = _RUN_ID_TABLES[table]
         cursor.execute(f"ALTER TABLE {table} RENAME TO trackio_legacy_{table}")
         cursor.execute(create_table)
-        copied = [
-            column
-            for column in _columns(cursor, f"trackio_legacy_{table}")
-            if column in _columns(cursor, table)
-        ]
+        copied = sorted(
+            SQLiteStorage._table_columns(cursor.connection, f"trackio_legacy_{table}")
+            & SQLiteStorage._table_columns(cursor.connection, table)
+        )
         column_list = ", ".join(copied)
         source_list = ", ".join(f"legacy.{column}" for column in copied)
         cursor.execute(

@@ -166,12 +166,6 @@ def bucket_inventory(bucket_id: str, prefix: str = DB_PREFIX) -> dict[str, dict]
     return inventory
 
 
-def _remote_client(space_id: str) -> RemoteClient:
-    return RemoteClient(
-        space_id, hf_token=huggingface_hub.utils.get_token(), verbose=False
-    )
-
-
 def _served_version(space_id: str) -> str | None:
     headers = {}
     if token := huggingface_hub.utils.get_token():
@@ -208,7 +202,9 @@ def verify_space_serves_inventory(
             f"Space '{space_id}' serves Trackio {served}, expected {expected_version}."
         )
 
-    client = _remote_client(space_id)
+    client = RemoteClient(
+        space_id, hf_token=huggingface_hub.utils.get_token(), verbose=False
+    )
     projects = client.predict(api_name="/get_all_projects")
     by_filename = {SQLiteStorage.get_project_db_filename(p): p for p in projects}
     for filename, expected in inventory.items():
@@ -431,6 +427,7 @@ def _bump_into_new_space(
     bucket_id: str,
     new_space_id: str,
     new_bucket_id: str,
+    private: bool,
     hf_api: huggingface_hub.HfApi,
     timeout: int,
 ) -> str:
@@ -447,7 +444,6 @@ def _bump_into_new_space(
     except BucketNotFoundError:
         pass
 
-    private = bool(hf_api.space_info(space_id).private)
     created_bucket = not deploy._bucket_exists(new_bucket_id, hf_api)
     try:
         create_bucket_if_not_exists(
@@ -563,6 +559,7 @@ def bump(
             bucket_id,
             new_space_id,
             auto_bucket_id,
+            bool(info.private),
             hf_api,
             timeout,
         )

@@ -1948,8 +1948,6 @@ def main():
             parser.error(
                 "Pass the Space ID either as an argument or with --space, not both"
             )
-        if args.new_bucket and not args.new_space:
-            parser.error("--new-bucket requires --new-space")
         try:
             bump(
                 space_id,
