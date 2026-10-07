@@ -30,7 +30,7 @@ from trackio import deploy
 from trackio.bucket_storage import _list_bucket_file_paths, create_bucket_if_not_exists
 from trackio.remote_client import RemoteClient, _space_id_to_url
 from trackio.sqlite_storage import DB_EXT, SCHEMA_VERSION, SQLiteStorage
-from trackio.utils import preprocess_space_and_dataset_ids
+from trackio.utils import PAUSE_WRITES_VARIABLE, preprocess_space_and_dataset_ids
 
 MIN_BUMPABLE_VERSION = "0.21.0"
 BACKUP_PREFIX = "trackio-backups"
@@ -41,6 +41,7 @@ _REQUIREMENT_PATTERN = re.compile(
 )
 _VERSION_PATTERN = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 _MANAGED_VARIABLES = frozenset({"TRACKIO_DIR", "TRACKIO_BUCKET_ID"})
+_RUN_COUNT_PAGE_SIZE = 5000
 _FAILURE_STAGES = frozenset(
     ("NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR")
 )
@@ -166,7 +167,7 @@ def bucket_inventory(bucket_id: str, prefix: str = DB_PREFIX) -> dict[str, dict]
     return inventory
 
 
-def _served_version(space_id: str) -> str | None:
+def _served_version_info(space_id: str) -> dict:
     headers = {}
     if token := huggingface_hub.utils.get_token():
         headers["Authorization"] = f"Bearer {token}"
@@ -175,33 +176,48 @@ def _served_version(space_id: str) -> str | None:
             _space_id_to_url(space_id) + "version", headers=headers, timeout=30
         )
         response.raise_for_status()
-        return response.json().get("version")
+        return response.json()
     except (httpx.HTTPError, ValueError):
-        return None
+        return {}
 
 
-def verify_space_serves_inventory(
-    space_id: str, inventory: dict[str, dict], timeout: int = 300
-) -> None:
+def _wait_for_version_info(space_id: str, expected: dict, timeout: int = 300) -> None:
+    deadline = time.time() + timeout
+    info = {}
+    while time.time() < deadline:
+        info = _served_version_info(space_id)
+        if all(info.get(key) == value for key, value in expected.items()):
+            return
+        time.sleep(5)
+    raise BumpError(
+        f"Space '{space_id}' reports {info or 'nothing'}, expected {expected}."
+    )
+
+
+def _metric_rows_per_run(client: RemoteClient, project: str) -> dict[str, int]:
+    counts = {}
+    offset = 0
+    while True:
+        rows = client.predict(
+            project,
+            "SELECT run_name, COUNT(*) AS n FROM metrics GROUP BY run_name "
+            f"ORDER BY run_name LIMIT {_RUN_COUNT_PAGE_SIZE} OFFSET {offset}",
+            api_name="/query_project",
+        )["rows"]
+        counts.update((row["run_name"], row["n"]) for row in rows)
+        if len(rows) < _RUN_COUNT_PAGE_SIZE:
+            return counts
+        offset += _RUN_COUNT_PAGE_SIZE
+
+
+def verify_space_serves_inventory(space_id: str, inventory: dict[str, dict]) -> None:
     """
     Checks that a running Space serves the local Trackio version, that every
     project database reached the local `SCHEMA_VERSION`, and that every table
     still holds at least the rows recorded in `inventory`. Rows can only grow,
     since the Space may import inbox fragments.
     """
-    expected_version = trackio.__version__
-    deadline = time.time() + timeout
-    served = None
-    while time.time() < deadline:
-        served = _served_version(space_id)
-        if served == expected_version:
-            break
-        time.sleep(5)
-    if served != expected_version:
-        raise BumpError(
-            f"Space '{space_id}' serves Trackio {served}, expected {expected_version}."
-        )
-
+    _wait_for_version_info(space_id, {"version": trackio.__version__})
     client = RemoteClient(
         space_id, hf_token=huggingface_hub.utils.get_token(), verbose=False
     )
@@ -234,12 +250,7 @@ def verify_space_serves_inventory(
                     f"Project '{project}' table '{table}' has {actual} rows after the "
                     f"bump, expected at least {count}."
                 )
-        result = client.predict(
-            project,
-            "SELECT run_name, COUNT(*) AS n FROM metrics GROUP BY run_name",
-            api_name="/query_project",
-        )
-        actual_runs = {row["run_name"]: row["n"] for row in result["rows"]}
+        actual_runs = _metric_rows_per_run(client, project)
         for run, count in expected["metric_rows_per_run"].items():
             if actual_runs.get(run, 0) < count:
                 raise BumpError(
@@ -291,7 +302,7 @@ def _runtime_operations(
     app_py = deploy._space_app_py(
         deploy._CUSTOM_SPACE_FRONTEND_DIR if has_custom_frontend else None
     )
-    return [
+    operations = [
         huggingface_hub.CommitOperationAdd(
             "requirements.txt", io.BytesIO(requirements.encode("utf-8"))
         ),
@@ -299,6 +310,14 @@ def _runtime_operations(
             "app.py", io.BytesIO(app_py.encode("utf-8"))
         ),
     ]
+    if (
+        "trackio/__init__.py" in repo_files
+        and not deploy._is_trackio_installed_from_source()
+    ):
+        operations.append(
+            huggingface_hub.CommitOperationDelete("trackio/", is_folder=True)
+        )
+    return operations
 
 
 def _copy_bucket_paths(bucket_id: str, pairs: list[tuple[str, str]]) -> None:
@@ -367,9 +386,11 @@ def _bump_in_place(
                 bump_commit = deploy._upload_source_tree(
                     hf_api, space_id, parent_commit=bump_commit
                 ).oid
+            hf_api.add_space_variable(space_id, PAUSE_WRITES_VARIABLE, "1")
             hf_api.restart_space(space_id)
             print("* Waiting for the Space to rebuild and migrate its data")
             _wait_for_stage(space_id, frozenset({"RUNNING"}), timeout, hf_api)
+            _wait_for_version_info(space_id, {"writes_paused": True})
             verify_space_serves_inventory(space_id, inventory)
         except Exception as e:
             print(f"* Bump failed ({e}); restoring Trackio {space_version}")
@@ -387,6 +408,18 @@ def _bump_in_place(
                 f"{space_version}: {e}"
             ) from e
 
+    print("* Verified; resuming writes and importing the queued inbox")
+    hf_api.delete_space_variable(space_id, PAUSE_WRITES_VARIABLE)
+    try:
+        _wait_for_stage(space_id, frozenset({"RUNNING"}), timeout, hf_api)
+        _wait_for_version_info(
+            space_id, {"version": local_version, "writes_paused": False}, timeout
+        )
+    except BumpError as e:
+        raise BumpError(
+            f"{space_id} was upgraded to Trackio {local_version} and verified, but "
+            f"did not resume writes: {e} Restart the Space once it is healthy."
+        ) from e
     print(
         f"* {space_id} now runs Trackio {local_version}: "
         f"{deploy.SPACE_URL.format(space_id=space_id)}"
@@ -407,6 +440,7 @@ def _rollback(
     _wait_for_stage(space_id, frozenset({"PAUSED"}), 300, hf_api)
     _copy_bucket_paths(bucket_id, [(backup, path) for path, backup in backups])
     try:
+        _delete_space_variable(space_id, PAUSE_WRITES_VARIABLE, hf_api)
         if bump_commit is not None:
             hf_api.upload_folder(
                 repo_id=space_id,
@@ -420,6 +454,13 @@ def _rollback(
     finally:
         hf_api.restart_space(space_id)
     _wait_for_stage(space_id, frozenset({"RUNNING"}) | _FAILURE_STAGES, timeout, hf_api)
+
+
+def _delete_space_variable(
+    space_id: str, key: str, hf_api: huggingface_hub.HfApi
+) -> None:
+    if key in hf_api.get_space_variables(space_id):
+        hf_api.delete_space_variable(space_id, key)
 
 
 def _bump_into_new_space(

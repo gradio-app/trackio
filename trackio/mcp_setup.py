@@ -7,6 +7,7 @@ from typing import Any
 
 from starlette.routing import Mount
 
+from trackio import utils
 from trackio.sqlite_storage import SQLiteStorage
 
 
@@ -17,6 +18,8 @@ def _assert_mcp_mutation_access(
 ) -> None:
     import trackio.server as trackio_server  # noqa: PLC0415
 
+    if utils.writes_paused():
+        raise ValueError(utils.WRITES_PAUSED_MESSAGE)
     if os.getenv("SYSTEM") == "spaces":
         try:
             trackio_server.check_hf_token_has_write_access(hf_token)

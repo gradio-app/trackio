@@ -102,6 +102,8 @@ def _inbox_poll_loop() -> None:
 
 def start_inbox_poller() -> None:
     global _inbox_poller_thread
+    if utils.writes_paused():
+        return
     with _inbox_poller_lock:
         if _inbox_poller_thread is not None and _inbox_poller_thread.is_alive():
             return
@@ -1364,6 +1366,24 @@ CSS = ""
 HEAD = ""
 
 
+WRITE_APIS = frozenset(
+    {
+        "upload_db_to_space",
+        "bulk_upload_media",
+        "bulk_upload_artifact_blob",
+        "artifact_log",
+        "log_artifact_use",
+        "log",
+        "bulk_log",
+        "bulk_log_system",
+        "bulk_alert",
+        "delete_run",
+        "rename_run",
+        "force_sync",
+    }
+)
+
+
 def _api_registry() -> dict[str, Any]:
     return {
         "get_run_mutation_status": get_run_mutation_status,
@@ -1453,6 +1473,7 @@ def build_starlette_app_only(
         oauth_routes,
         _api_registry(),
         extra_routes=mcp_routes,
+        write_apis=WRITE_APIS,
         mcp_lifespan=mcp_lifespan,
         mcp_enabled=mcp_enabled,
         allowed_file_roots=[

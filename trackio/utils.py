@@ -304,6 +304,17 @@ def is_network_filesystem(path: Path) -> bool:
     return any(sub in fstype for sub in NETWORK_FILESYSTEM_SUBSTRINGS)
 
 
+PAUSE_WRITES_VARIABLE = "TRACKIO_PAUSE_WRITES"
+WRITES_PAUSED_MESSAGE = (
+    "This Trackio Space is finishing an upgrade and is not accepting writes yet. "
+    "Logs are kept in the bucket inbox until it is."
+)
+
+
+def writes_paused() -> bool:
+    return os.environ.get(PAUSE_WRITES_VARIABLE) == "1"
+
+
 def get_inbox_poll_interval() -> float:
     try:
         interval = float(os.environ.get("TRACKIO_INBOX_POLL_INTERVAL", "15"))

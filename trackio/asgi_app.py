@@ -142,6 +142,7 @@ async def version_handler(request: Request) -> Response:
         {
             "version": _TRACKIO_PACKAGE_VERSION,
             "api_version": HTTP_API_VERSION,
+            "writes_paused": utils.writes_paused(),
             "api_transport": "http",
             "mcp_enabled": mcp_enabled,
             "mcp_path": "/mcp" if mcp_enabled else None,
@@ -288,6 +289,8 @@ async def run_api_request(request: Request, api_name: str) -> Response:
     fn = api_registry.get(api_name)
     if fn is None:
         return JSONResponse({"error": f"Unknown API: {api_name}"}, status_code=404)
+    if api_name in request.app.state.write_apis and utils.writes_paused():
+        return JSONResponse({"error": utils.WRITES_PAUSED_MESSAGE}, status_code=503)
 
     try:
         body = await request.json()
@@ -455,6 +458,7 @@ def create_trackio_starlette_app(
     oauth_routes: list[Route],
     api_registry: dict[str, Any],
     extra_routes: list[Any] | None = None,
+    write_apis: frozenset[str] = frozenset(),
     mcp_lifespan: Any = None,
     mcp_enabled: bool = False,
     allowed_file_roots: list[str | Path] | None = None,
@@ -522,6 +526,7 @@ def create_trackio_starlette_app(
     routes.extend(extra_routes or [])
     app = Starlette(routes=routes, lifespan=mcp_lifespan)
     app.state.api_registry = api_registry
+    app.state.write_apis = write_apis
     app.state.mcp_enabled = mcp_enabled
     app.state.allowed_file_roots = _normalize_allowed_file_roots(allowed_file_roots)
     app.state.upload_authorizer = upload_authorizer
