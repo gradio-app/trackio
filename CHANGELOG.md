@@ -1,5 +1,11 @@
 # trackio
 
+## 0.41.0
+
+### Features
+
+- [#703](https://github.com/gradio-app/trackio/pull/703) [`6bdb2d1`](https://github.com/gradio-app/trackio/commit/6bdb2d1f857473c191e76ef011ecc0c14fa01926) - Add `trackio bump` to upgrade a Space to the local Trackio version.  Thanks @abidlabs!
+
 ## 0.40.0
 
 ### Features
