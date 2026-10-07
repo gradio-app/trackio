@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade huggingface_hub
 
-      - name: Delete PR test Space if exists
+      - name: Delete PR test Spaces if they exist
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -42,4 +42,19 @@ jobs:
               print(f"Deleted test Space: {space_id}")
           except huggingface_hub.errors.RepositoryNotFoundError:
               print(f"Test Space does not exist: {space_id}")
+
+          prefix = f"trackio-tests/bump_in_place_{os.environ['PR_NUMBER']}_"
+          token = os.environ["HF_TOKEN"]
+          for space in huggingface_hub.list_spaces(
+              author="trackio-tests", search=prefix.split("/")[1], token=token
+          ):
+              if space.id.startswith(prefix):
+                  huggingface_hub.delete_repo(
+                      space.id, repo_type="space", missing_ok=True, token=token
+                  )
+                  print(f"Deleted bump test Space: {space.id}")
+          for bucket in huggingface_hub.list_buckets("trackio-tests", token=token):
+              if bucket.id.startswith(prefix):
+                  huggingface_hub.delete_bucket(bucket.id, missing_ok=True, token=token)
+                  print(f"Deleted bump test bucket: {bucket.id}")
           PY

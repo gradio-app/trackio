@@ -201,7 +201,7 @@ def test_legacy_project_without_run_id_still_resumes_and_logs(temp_dir):
     run = init(project=project, name="legacy-run", resume="must")
 
     assert run.name == "legacy-run"
-    assert run.id == "legacy-run"
+    assert run.id == SQLiteStorage.get_run_records(project)[0]["id"] != "legacy-run"
     assert run._next_step == 1
 
     run.log({"loss": 0.4})

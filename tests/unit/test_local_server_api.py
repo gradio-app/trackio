@@ -657,3 +657,29 @@ def test_local_dashboard_supports_mcp(temp_dir):
     finally:
         trackio.delete_project(project, force=True)
         app.close()
+
+
+def test_paused_writes_are_rejected_as_unavailable_while_reads_work(
+    temp_dir, monkeypatch
+):
+    monkeypatch.setenv(trackio_utils.PAUSE_WRITES_VARIABLE, "1")
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    base = url.rstrip("/")
+    try:
+        response = httpx.post(
+            f"{base}/api/bulk_log",
+            json={
+                "logs": [{"project": "p", "run": "r", "metrics": {"loss": 1.0}}],
+                "hf_token": None,
+            },
+            headers={"x-trackio-write-token": app.write_token},
+            timeout=5,
+        )
+        assert response.status_code == 503
+        assert httpx.post(
+            f"{base}/api/get_all_projects", json={}, timeout=5
+        ).json() == {"data": []}
+        assert httpx.get(f"{base}/version", timeout=5).json()["writes_paused"] is True
+        assert SQLiteStorage.get_projects() == []
+    finally:
+        app.close()

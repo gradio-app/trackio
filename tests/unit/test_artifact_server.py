@@ -204,7 +204,7 @@ def test_legacy_metrics_db_resolves_artifact_links_by_name(temp_dir):
     assert [artifact["name"] for artifact in output] == ["m"]
     assert SQLiteStorage.get_run_artifact_counts("p") == [
         {
-            "run_id": None,
+            "run_id": records[0]["id"],
             "run_name": "legacy-run",
             "input": 0,
             "output": 1,
@@ -343,11 +343,12 @@ def test_artifact_lineage_canonicalizes_run_identities(temp_dir):
     artifact = _commit(project="legacy", run_name="legacy-run", run_id="client-uuid")
     result = SQLiteStorage.get_artifact_lineage("legacy", artifact["version_id"])
     run_nodes = [node for node in result["nodes"] if node["kind"] == "run"]
+    legacy_run_id = SQLiteStorage.get_run_records("legacy")[0]["id"]
     assert run_nodes == [
         {
-            "id": "run:name:legacy-run",
+            "id": f"run:{legacy_run_id}",
             "kind": "run",
-            "run_id": None,
+            "run_id": legacy_run_id,
             "run_name": "legacy-run",
             "created_at": run_nodes[0]["created_at"],
         }
