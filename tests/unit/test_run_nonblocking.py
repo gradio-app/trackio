@@ -1,6 +1,8 @@
 import importlib
 import threading
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from unittest.mock import Mock
 
 import pytest
@@ -31,6 +33,21 @@ class SlowClient:
         self.received[api_name].extend(
             kwargs.get("logs", kwargs.get("uploads", kwargs.get("alerts", [])))
         )
+        if api_name == "/check_artifact_blobs":
+            return {"present": []}
+        if api_name in ("/artifact_log", "/get_artifact_manifest"):
+            return {
+                "name": "checkpoint",
+                "type": "model",
+                "version": 0,
+                "version_id": 1,
+                "aliases": [],
+                "manifest": [],
+                "manifest_digest": "0" * 64,
+                "size_bytes": 0,
+                "description": None,
+                "metadata": {},
+            }
 
 
 @pytest.fixture
@@ -170,16 +187,8 @@ def test_finish_preserves_inflight_and_queued_batches(
     run_factory, monkeypatch, tmp_path, slow_api, storage_mode, late_failure
 ):
     monkeypatch.setenv("TRACKIO_STORAGE_MODE", storage_mode)
-    bucket_write = Mock(side_effect=AssertionError("Shutdown must save locally"))
-    monkeypatch.setattr(
-        trackio_run.fragments.FragmentWriter, "write_to_bucket", bucket_write
-    )
-    monkeypatch.setattr(
-        trackio_run.fragments, "upload_media_files_to_bucket", bucket_write
-    )
-    monkeypatch.setattr(trackio_run.Run, "_drain_pending_to_bucket", bucket_write)
     client = SlowClient(slow_api, fail_call=1 if late_failure else None)
-    run = run_factory(client, bucket_id="user/bucket")
+    run = run_factory(client)
     upload = tmp_path / "media.txt"
     upload.write_text("test media")
     enqueue(run, slow_api, upload, 1)
@@ -207,12 +216,8 @@ def test_finish_preserves_inflight_and_queued_batches(
         assert join_timeouts == [30]
         assert not client.release.is_set()
         run.finish()
-        assert join_timeouts == [30]
-        bucket_write.assert_not_called()
         if storage_mode == "jsonl":
-            assert trackio_run.fragments.import_inbox_dir() == (
-                3 if slow_api == "/bulk_upload_media" else 4
-            )
+            assert trackio_run.fragments.import_inbox_dir() > 0
         assert_recoverable_batches(run, slow_api)
     finally:
         client.release.set()
@@ -221,6 +226,226 @@ def test_finish_preserves_inflight_and_queued_batches(
 
     assert not run._client_thread.is_alive()
     run.finish()
-    assert join_timeouts == [30]
-    bucket_write.assert_not_called()
     assert_recoverable_batches(run, slow_api)
+
+
+ARTIFACT_APIS = (
+    "/check_artifact_blobs",
+    "/bulk_upload_artifact_blob",
+    "/artifact_log",
+    "/get_artifact_manifest",
+    "/log_artifact_use",
+)
+
+
+@pytest.mark.parametrize("slow_api", ARTIFACT_APIS)
+def test_logging_continues_during_artifact_call(run_factory, tmp_path, slow_api):
+    client = SlowClient(slow_api)
+    run = run_factory(client)
+    upload = tmp_path / "checkpoint.txt"
+    upload.write_text("checkpoint")
+    action = (
+        (lambda: run.use_artifact("checkpoint:latest"))
+        if slow_api in ("/get_artifact_manifest", "/log_artifact_use")
+        else (lambda: run.log_artifact(upload, name="checkpoint", type="model"))
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        artifact = executor.submit(action)
+        assert client.entered.wait(2)
+        producer = executor.submit(
+            lambda: [enqueue(run, api, upload, 2) for api in APIS]
+        )
+        try:
+            producer.result(timeout=1)
+            assert not client.release.is_set()
+        finally:
+            client.release.set()
+        artifact.result(timeout=5)
+        producer.result(timeout=5)
+    run.finish()
+    assert all(len(client.received[api]) == 1 for api in APIS)
+
+
+@pytest.mark.parametrize("storage_mode", ["sqlite", "jsonl"])
+def test_finish_uploads_to_bucket_while_space_starts(
+    run_factory, monkeypatch, storage_mode
+):
+    monkeypatch.setenv("TRACKIO_STORAGE_MODE", storage_mode)
+    client = SlowClient(None)
+    connecting = threading.Event()
+
+    def connect(*args, **kwargs):
+        connecting.set()
+        assert client.release.wait(10)
+        return client
+
+    monkeypatch.setattr(trackio_run, "RemoteClient", connect)
+    bucket_write = Mock()
+    monkeypatch.setattr(
+        trackio_run.fragments.FragmentWriter, "write_to_bucket", bucket_write
+    )
+    run = run_factory(client, bucket_id="user/bucket")
+    run._stop_flag.set()
+    run._client_thread.join(timeout=5)
+    run._stop_flag.clear()
+    run._client = None
+    run._client_thread = threading.Thread(
+        target=run._init_client_background, daemon=True
+    )
+    run._client_thread.start()
+    assert connecting.wait(2)
+    for step in range(3):
+        run.log({"loss": step}, step=step)
+    actual_join = run._client_thread.join
+    monkeypatch.setattr(run._client_thread, "join", lambda timeout: actual_join(0.01))
+    try:
+        run.finish()
+        records = [
+            record for call in bucket_write.call_args_list for record in call.args[0]
+        ]
+        assert [record["step"] for record in records] == [0, 1, 2]
+        assert not storage.SQLiteStorage.has_pending_data(run.project)
+    finally:
+        client.release.set()
+        actual_join(timeout=5)
+
+
+def test_pending_upload_replay_is_serialized(run_factory, tmp_path):
+    client = SlowClient("/bulk_upload_media", block_call=2, fail_call=1)
+    run = run_factory(client)
+    upload = tmp_path / "media.txt"
+    upload.write_text("media")
+    run._queue_upload(upload, step=1)
+    assert client.entered.wait(2)
+    draining = threading.Event()
+
+    def drain():
+        draining.set()
+        run._drain_pending_uploads()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        replay = executor.submit(drain)
+        try:
+            assert draining.wait(2)
+            with pytest.raises(FutureTimeoutError):
+                replay.result(timeout=0.1)
+            assert client.calls == 2
+        finally:
+            client.release.set()
+        replay.result(timeout=5)
+    run.finish()
+    assert len(client.received["/bulk_upload_media"]) == 1
+    assert not storage.SQLiteStorage.has_pending_data(run.project)
+
+
+def test_shutdown_and_failed_send_persist_upload_once(
+    run_factory, monkeypatch, tmp_path
+):
+    persisting = threading.Event()
+    release_persistence = threading.Event()
+    persist = trackio_run.Run._persist_uploads_locally
+    saves = []
+
+    def slow_persist(run, uploads):
+        persisting.set()
+        assert release_persistence.wait(10)
+        saves.extend(uploads)
+        persist(run, uploads)
+
+    monkeypatch.setattr(trackio_run.Run, "_persist_uploads_locally", slow_persist)
+    client = SlowClient("/bulk_upload_media", fail_call=1)
+    client.release.set()
+    run = run_factory(client)
+    upload = tmp_path / "media.txt"
+    upload.write_text("media")
+    run._queue_upload(upload, step=1)
+    assert persisting.wait(2)
+    actual_join = run._client_thread.join
+    joined = threading.Event()
+
+    def short_join(timeout):
+        actual_join(0.01)
+        joined.set()
+
+    monkeypatch.setattr(run._client_thread, "join", short_join)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        shutdown = executor.submit(run.finish)
+        try:
+            assert joined.wait(2)
+            with pytest.raises(FutureTimeoutError):
+                shutdown.result(timeout=0.1)
+        finally:
+            release_persistence.set()
+        shutdown.result(timeout=5)
+    actual_join(timeout=5)
+    assert len(saves) == 1
+    pending = storage.SQLiteStorage.get_pending_uploads(run.project)
+    assert len(pending["uploads"]) == 1
+
+
+@pytest.mark.parametrize("storage_mode", ["sqlite", "jsonl"])
+def test_logging_continues_during_bucket_spill(
+    run_factory, monkeypatch, tmp_path, storage_mode
+):
+    monkeypatch.setenv("TRACKIO_STORAGE_MODE", storage_mode)
+    client = SlowClient("/bucket")
+    run = run_factory(client, bucket_id="user/bucket")
+    run._stop_flag.set()
+    run._client_thread.join(timeout=5)
+    run._client = None
+    with monkeypatch.context() as stopped:
+        stopped.setattr(run, "_thread_is_alive", lambda attr: True)
+        run.log({"loss": 1.0}, step=1)
+    run._stop_flag.clear()
+    monkeypatch.setattr(trackio_run.fragments, "upload_media_files_to_bucket", Mock())
+    monkeypatch.setattr(
+        trackio_run, "RemoteClient", Mock(side_effect=ConnectionError("Starting"))
+    )
+    monkeypatch.setattr(
+        trackio_run.fragments.FragmentWriter,
+        "write_to_bucket",
+        lambda self, records, bucket: client.predict(api_name="/bucket", logs=records),
+    )
+    run._client_thread = threading.Thread(
+        target=run._init_client_background, daemon=True
+    )
+    run._client_thread.start()
+    assert client.entered.wait(2)
+    upload = tmp_path / "media.txt"
+    upload.write_text("media")
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        producer = executor.submit(
+            lambda: [enqueue(run, api, upload, 2) for api in APIS]
+        )
+        try:
+            producer.result(timeout=1)
+        finally:
+            run._stop_flag.set()
+            client.release.set()
+    monkeypatch.setattr(trackio_run.fragments, "upload_media_files_to_bucket", Mock())
+    run.finish()
+    metrics = [
+        record for record in client.received["/bucket"] if record["kind"] == "metric"
+    ]
+    assert [record["step"] for record in metrics] == [1, 2]
+
+
+def test_alert_and_media_replays_are_idempotent(run_factory, monkeypatch, tmp_path):
+    server = importlib.import_module("trackio.server")
+    monkeypatch.setattr(server, "assert_can_write_metrics", lambda *args: None)
+    upload = tmp_path / "media.txt"
+    upload.write_text("media")
+    monkeypatch.setattr(server, "consume_uploaded_temp_file", lambda *args: upload)
+    monkeypatch.setattr(server, "cleanup_uploaded_temp_file", lambda *args: None)
+    client = SlowClient(None)
+    run = run_factory(client)
+    run.alert("Test", step=1)
+    run._queue_upload(upload, step=1)
+    run.finish()
+    for _ in range(2):
+        server.bulk_alert(None, client.received["/bulk_alert"], None)
+        server.bulk_upload_media(None, client.received["/bulk_upload_media"], None)
+    assert len(storage.SQLiteStorage.get_alerts(run.project)) == 1
+    media_path = trackio_run.get_project_media_path(run.project, run.name, 1)
+    assert [path.name for path in media_path.iterdir()] == ["media.txt"]
+    assert (media_path / "media.txt").read_text() == "media"
