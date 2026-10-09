@@ -276,15 +276,17 @@ def test_log_does_not_crash_on_bad_metrics(temp_dir, monkeypatch):
 
     monkeypatch.setattr(utils, "serialize_values", exploding_serialize)
 
-    with pytest.warns(UserWarning, match="trackio.log\\(\\) failed to process metrics"):
+    with pytest.warns(UserWarning, match="skipped metric 'bad'"):
         run.log({"bad": 1})
 
     run.log({"loss": 0.5})
     run.finish()
 
     logs = SQLiteStorage.get_logs("proj", "safe-run")
-    assert len(logs) == 1
-    assert logs[0]["loss"] == 0.5
+    assert len(logs) == 2
+    assert "bad" not in logs[0]
+    assert logs[1]["loss"] == 0.5
+    assert [row["step"] for row in logs] == [0, 1]
 
 
 def test_init_survives_storage_read_failures(temp_dir, monkeypatch):
@@ -321,3 +323,84 @@ def test_local_flush_failure_does_not_crash(temp_dir, monkeypatch):
 
     with pytest.warns(UserWarning, match="trackio failed to flush metric logs"):
         run.finish()
+
+
+@pytest.mark.parametrize("storage", ["sqlite", "jsonl", "remote"])
+@pytest.mark.parametrize(
+    "invalid", ["object", "complex", "array", "nested", "cycle", "integer", "media"]
+)
+def test_invalid_metric_preserves_other_metrics(
+    temp_dir, monkeypatch, storage, invalid
+):
+    import numpy as np
+
+    from trackio import fragments
+
+    cycle = []
+    cycle.append(cycle)
+    values = {
+        "object": object(),
+        "complex": 1 + 2j,
+        "array": np.array([1, 2]),
+        "nested": {"value": object()},
+        "cycle": cycle,
+        "integer": 2**100,
+        "media": Markdown("report"),
+    }
+    if invalid == "media":
+        monkeypatch.setattr(
+            values[invalid],
+            "_to_dict",
+            MagicMock(side_effect=ValueError("broken media")),
+        )
+    monkeypatch.setenv(
+        "TRACKIO_STORAGE_MODE", "jsonl" if storage == "jsonl" else "sqlite"
+    )
+    client = DummyClient() if storage == "remote" else None
+    if client:
+        import json
+
+        client.predict.side_effect = lambda **kwargs: json.dumps(
+            kwargs, allow_nan=False
+        )
+    run = Run(
+        url="fake_url" if client else None,
+        project="invalid-metrics",
+        client=client,
+        name="run",
+        space_id="user/space" if client else None,
+    )
+    try:
+        run.log({"loss": 1.0})
+        with pytest.warns(UserWarning, match="skipped metric 'bad'"):
+            run.log({"loss": 0.9, "bad": values[invalid], "accuracy": 0.8})
+        run.log({"loss": 0.8})
+    finally:
+        run.finish()
+
+    if client:
+        entries = [
+            entry
+            for call in client.predict.call_args_list
+            if call.kwargs.get("api_name") == "/bulk_log"
+            for entry in call.kwargs["logs"]
+        ]
+        rows = [{"step": entry["step"], **entry["metrics"]} for entry in entries]
+    elif storage == "jsonl":
+        import orjson
+
+        entries = [
+            orjson.loads(line)
+            for path in sorted(fragments.local_inbox_dir().rglob("*.jsonl"))
+            for line in path.read_bytes().splitlines()
+        ]
+        rows = [{"step": entry["step"], **entry["metrics"]} for entry in entries]
+    else:
+        rows = SQLiteStorage.get_logs("invalid-metrics", "run")
+    assert [(row["step"], row["loss"]) for row in rows] == [
+        (0, 1.0),
+        (1, 0.9),
+        (2, 0.8),
+    ]
+    assert rows[1]["accuracy"] == 0.8
+    assert all("bad" not in row for row in rows)
