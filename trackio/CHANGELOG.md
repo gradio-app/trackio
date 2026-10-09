@@ -1,5 +1,14 @@
 # trackio
 
+## 0.42.0
+
+### Features
+
+- [#713](https://github.com/gradio-app/trackio/pull/713) [`38d2f20`](https://github.com/gradio-app/trackio/commit/38d2f203dffb26fd06c30cec8d34a6469fd54760) - Add bulk run deletion in the dashboard.  Thanks @abidlabs!
+- [#712](https://github.com/gradio-app/trackio/pull/712) [`4f79532`](https://github.com/gradio-app/trackio/commit/4f795321f07e42e37fdad6354341eef9d324d415) - Fix invalid metrics dropping log entries and batches.  Thanks @abidlabs!
+- [#714](https://github.com/gradio-app/trackio/pull/714) [`9afa480`](https://github.com/gradio-app/trackio/commit/9afa48094fcbb7f1d51cf68ff81ab3e9ab1a7d35) - Add actionable stubs for unsupported W&B classes.  Thanks @abidlabs!
+- [#708](https://github.com/gradio-app/trackio/pull/708) [`9fced05`](https://github.com/gradio-app/trackio/commit/9fced05c85b4102c7a8d04c0f2f91bebf606966a) - Avoid scanning metric history when listing runs.  Thanks @abidlabs!
+
 ## 0.41.0
 
 ### Features
