@@ -41,6 +41,41 @@ BUCKET_FLUSH_INTERVAL = 30
 ARTIFACT_LOG_RETRY_BACKOFFS = (0.5, 1.0, 2.0)
 
 
+class _PendingBatch:
+    """Share one fallback write between the sender and shutdown."""
+
+    def __init__(self, entries, api_name, parameter, persist):
+        self.entries = entries
+        self.api_name = api_name
+        self.parameter = parameter
+        self._persist = persist
+        self._lock = threading.Lock()
+        self._handled = False
+
+    def persist(self):
+        with self._lock:
+            if not self._handled:
+                self._persist(self.entries)
+                self._handled = True
+
+    def send(self, client, hf_token) -> bool:
+        with self._lock:
+            if self._handled:
+                return True
+        try:
+            client.predict(
+                api_name=self.api_name,
+                hf_token=hf_token,
+                **{self.parameter: self.entries},
+            )
+        except Exception:
+            self.persist()
+            return False
+        with self._lock:
+            self._handled = True
+        return True
+
+
 class Run:
     def __init__(
         self,
@@ -109,6 +144,7 @@ class Run:
         self.url = url
         self.project = project
         self._client_lock = threading.Lock()
+        self._queue_lock = threading.Lock()
         self._warning_lock = threading.Lock()
         self._warned_failures: set[str] = set()
         self._local_sender_thread: threading.Thread | None = None
@@ -166,6 +202,7 @@ class Run:
         self._queued_system_logs: list[SystemLogEntry] = []
         self._queued_uploads: list[UploadEntry] = []
         self._queued_alerts: list[AlertEntry] = []
+        self._sending_batch: list[_PendingBatch] | None = None
         self._stop_flag = threading.Event()
         self._config_logged = False
         max_step = self._safe_get_max_step_for_run()
@@ -297,70 +334,68 @@ class Run:
         thread = getattr(self, attr_name, None)
         return isinstance(thread, threading.Thread) and thread.is_alive()
 
+    def _take_queued_batches(self) -> list[_PendingBatch]:
+        with self._queue_lock:
+            logs, self._queued_logs = self._queued_logs, []
+            system_logs, self._queued_system_logs = self._queued_system_logs, []
+            uploads, self._queued_uploads = self._queued_uploads, []
+            alerts, self._queued_alerts = self._queued_alerts, []
+            batches = list(self._sending_batch or ())
+            for entries, api_name, parameter, persist in (
+                (
+                    logs,
+                    "/bulk_log",
+                    "logs",
+                    self._write_logs_to_sqlite
+                    if self._is_local
+                    else self._persist_logs_locally,
+                ),
+                (
+                    system_logs,
+                    "/bulk_log_system",
+                    "logs",
+                    self._write_system_logs_to_sqlite
+                    if self._is_local
+                    else self._persist_system_logs_locally,
+                ),
+                (
+                    uploads,
+                    "/bulk_upload_media",
+                    "uploads",
+                    self._persist_uploads_locally,
+                ),
+                (alerts, "/bulk_alert", "alerts", self._write_alerts_to_sqlite),
+            ):
+                if entries:
+                    batches.append(_PendingBatch(entries, api_name, parameter, persist))
+            self._sending_batch = batches
+            return batches
+
+    def _complete_batch(self, batches: list[_PendingBatch]) -> bool:
+        with self._queue_lock:
+            if self._sending_batch is not batches:
+                return False
+            self._sending_batch = None
+            return True
+
     def _flush_queues_inline(self) -> None:
-        if self._is_local:
-            if self._queued_logs:
-                logs_to_send = self._queued_logs.copy()
-                self._queued_logs.clear()
-                self._write_logs_to_sqlite(logs_to_send)
-
-            if self._queued_system_logs:
-                system_logs_to_send = self._queued_system_logs.copy()
-                self._queued_system_logs.clear()
-                self._write_system_logs_to_sqlite(system_logs_to_send)
-
-            if self._queued_alerts:
-                alerts_to_send = self._queued_alerts.copy()
-                self._queued_alerts.clear()
-                self._write_alerts_to_sqlite(alerts_to_send)
-            return
-
-        if self._queued_logs:
-            logs_to_send = self._queued_logs.copy()
-            self._queued_logs.clear()
-            self._persist_logs_locally(logs_to_send)
-
-        if self._queued_system_logs:
-            system_logs_to_send = self._queued_system_logs.copy()
-            self._queued_system_logs.clear()
-            self._persist_system_logs_locally(system_logs_to_send)
-
-        if self._queued_uploads:
-            uploads_to_send = self._queued_uploads.copy()
-            self._queued_uploads.clear()
-            self._persist_uploads_locally(uploads_to_send)
-
-        if self._queued_alerts:
-            alerts_to_send = self._queued_alerts.copy()
-            self._queued_alerts.clear()
-            self._write_alerts_to_sqlite(alerts_to_send)
+        batches = self._take_queued_batches()
+        for batch in batches:
+            batch.persist()
+        self._complete_batch(batches)
 
     def _local_batch_sender(self):
         while (
             not self._stop_flag.is_set()
-            or len(self._queued_logs) > 0
-            or len(self._queued_system_logs) > 0
-            or len(self._queued_alerts) > 0
+            or self._queued_logs
+            or self._queued_system_logs
+            or self._queued_alerts
         ):
             if not self._stop_flag.is_set():
                 self._stop_flag.wait(timeout=BATCH_SEND_INTERVAL)
-
             try:
                 with self._client_lock:
-                    if self._queued_logs:
-                        logs_to_send = self._queued_logs.copy()
-                        self._queued_logs.clear()
-                        self._write_logs_to_sqlite(logs_to_send)
-
-                    if self._queued_system_logs:
-                        system_logs_to_send = self._queued_system_logs.copy()
-                        self._queued_system_logs.clear()
-                        self._write_system_logs_to_sqlite(system_logs_to_send)
-
-                    if self._queued_alerts:
-                        alerts_to_send = self._queued_alerts.copy()
-                        self._queued_alerts.clear()
-                        self._write_alerts_to_sqlite(alerts_to_send)
+                    self._flush_queues_inline()
             except Exception as e:
                 self._warn_once(
                     "local-sender-loop",
@@ -524,10 +559,10 @@ class Run:
         consecutive_failures = 0
         while (
             not self._stop_flag.is_set()
-            or len(self._queued_logs) > 0
-            or len(self._queued_system_logs) > 0
-            or len(self._queued_uploads) > 0
-            or len(self._queued_alerts) > 0
+            or self._queued_logs
+            or self._queued_system_logs
+            or self._queued_uploads
+            or self._queued_alerts
             or self._has_local_buffer
         ):
             if not self._stop_flag.is_set():
@@ -540,80 +575,23 @@ class Run:
                 self._stop_flag.wait(timeout=sleep_time)
             elif self._has_local_buffer:
                 self._stop_flag.wait(timeout=BATCH_SEND_INTERVAL)
-
             try:
                 with self._client_lock:
                     if self._client is None:
                         if self._stop_flag.is_set():
-                            if self._queued_logs:
-                                self._persist_logs_locally(self._queued_logs)
-                                self._queued_logs.clear()
-                            if self._queued_system_logs:
-                                self._persist_system_logs_locally(
-                                    self._queued_system_logs
-                                )
-                                self._queued_system_logs.clear()
-                            if self._queued_uploads:
-                                self._persist_uploads_locally(self._queued_uploads)
-                                self._queued_uploads.clear()
-                            if self._queued_alerts:
-                                self._write_alerts_to_sqlite(self._queued_alerts)
-                                self._queued_alerts.clear()
+                            self._flush_queues_inline()
                         return
 
+                    batches = self._take_queued_batches()
                     failed = False
-
-                    if self._queued_logs:
-                        logs_to_send = self._queued_logs.copy()
-                        self._queued_logs.clear()
-                        try:
-                            self._client.predict(
-                                api_name="/bulk_log",
-                                logs=logs_to_send,
-                                hf_token=self._hf_token_for_remote(),
-                            )
-                        except Exception:
-                            self._persist_logs_locally(logs_to_send)
+                    for batch in batches:
+                        with self._queue_lock:
+                            if self._sending_batch is not batches:
+                                return
+                        if not batch.send(self._client, self._hf_token_for_remote()):
                             failed = True
-
-                    if self._queued_system_logs:
-                        system_logs_to_send = self._queued_system_logs.copy()
-                        self._queued_system_logs.clear()
-                        try:
-                            self._client.predict(
-                                api_name="/bulk_log_system",
-                                logs=system_logs_to_send,
-                                hf_token=self._hf_token_for_remote(),
-                            )
-                        except Exception:
-                            self._persist_system_logs_locally(system_logs_to_send)
-                            failed = True
-
-                    if self._queued_uploads:
-                        uploads_to_send = self._queued_uploads.copy()
-                        self._queued_uploads.clear()
-                        try:
-                            self._client.predict(
-                                api_name="/bulk_upload_media",
-                                uploads=uploads_to_send,
-                                hf_token=self._hf_token_for_remote(),
-                            )
-                        except Exception:
-                            self._persist_uploads_locally(uploads_to_send)
-                            failed = True
-
-                    if self._queued_alerts:
-                        alerts_to_send = self._queued_alerts.copy()
-                        self._queued_alerts.clear()
-                        try:
-                            self._client.predict(
-                                api_name="/bulk_alert",
-                                alerts=alerts_to_send,
-                                hf_token=self._hf_token_for_remote(),
-                            )
-                        except Exception:
-                            self._write_alerts_to_sqlite(alerts_to_send)
-                            failed = True
+                    if not self._complete_batch(batches):
+                        return
 
                     if failed:
                         consecutive_failures += 1
@@ -1160,11 +1138,11 @@ class Run:
                     "relative_path": relative_path,
                     "uploaded_file": handle_file(file_path),
                 }
-                with self._client_lock:
+                with self._queue_lock:
                     self._queued_uploads.append(upload_entry)
                     self._ensure_sender_alive()
-                    if not self._thread_is_alive("_client_thread"):
-                        self._flush_queues_inline()
+                if not self._thread_is_alive("_client_thread"):
+                    self._flush_queues_inline()
         except Exception as e:
             self._warn_once(
                 "queue-upload",
@@ -1314,13 +1292,13 @@ class Run:
                 "log_id": uuid.uuid4().hex,
             }
 
-            with self._client_lock:
+            with self._queue_lock:
                 self._queued_logs.append(log_entry)
                 self._ensure_sender_alive()
-                if not self._thread_is_alive(
-                    "_local_sender_thread" if self._is_local else "_client_thread"
-                ):
-                    self._flush_queues_inline()
+            if not self._thread_is_alive(
+                "_local_sender_thread" if self._is_local else "_client_thread"
+            ):
+                self._flush_queues_inline()
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log() failed to process metrics: {e}")
 
@@ -1800,13 +1778,13 @@ class Run:
                 "alert_id": uuid.uuid4().hex,
             }
 
-            with self._client_lock:
+            with self._queue_lock:
                 self._queued_alerts.append(alert_entry)
                 self._ensure_sender_alive()
-                if not self._thread_is_alive(
-                    "_local_sender_thread" if self._is_local else "_client_thread"
-                ):
-                    self._flush_queues_inline()
+            if not self._thread_is_alive(
+                "_local_sender_thread" if self._is_local else "_client_thread"
+            ):
+                self._flush_queues_inline()
 
             url = webhook_url or self._webhook_url
             if url and should_send_webhook(level, self._webhook_min_level):
@@ -1842,13 +1820,13 @@ class Run:
                 "log_id": uuid.uuid4().hex,
             }
 
-            with self._client_lock:
+            with self._queue_lock:
                 self._queued_system_logs.append(system_log_entry)
                 self._ensure_sender_alive()
-                if not self._thread_is_alive(
-                    "_local_sender_thread" if self._is_local else "_client_thread"
-                ):
-                    self._flush_queues_inline()
+            if not self._thread_is_alive(
+                "_local_sender_thread" if self._is_local else "_client_thread"
+            ):
+                self._flush_queues_inline()
         except Exception as e:
             _emit_nonfatal_warning(f"trackio.log_system() failed: {e}")
 
@@ -1883,11 +1861,9 @@ class Run:
                             "Could not flush all logs within 30s. Some data may be buffered locally."
                         )
                 else:
-                    with self._client_lock:
-                        self._flush_queues_inline()
+                    self._flush_queues_inline()
             else:
-                with self._client_lock:
-                    client_connected = self._client is not None
+                client_connected = self._client is not None
                 if self._client_thread is not None:
                     if client_connected:
                         print(
@@ -1897,16 +1873,13 @@ class Run:
                     else:
                         self._client_thread.join(timeout=5)
                     if self._client_thread.is_alive():
-                        with self._client_lock:
-                            if self._client is None:
-                                self._flush_queues_inline()
+                        self._flush_queues_inline()
                         if client_connected or self._bucket_id is None:
                             _emit_nonfatal_warning(
                                 "Could not flush all logs to the remote server in time. Some data may be buffered locally."
                             )
                 else:
-                    with self._client_lock:
-                        self._flush_queues_inline()
+                    self._flush_queues_inline()
 
                 try:
                     has_pending = SQLiteStorage.has_pending_data(self.project)
