@@ -1003,6 +1003,12 @@ class SQLiteStorage:
                     )
 
                 SQLiteStorage._apply_schema_migrations(cursor)
+                if SQLiteStorage._supports_run_ids(conn):
+                    cursor.execute(
+                        """CREATE INDEX IF NOT EXISTS idx_metrics_run_record
+                        ON metrics(run_id, run_name, timestamp)"""
+                    )
+
                 conn.commit()
         return db_path
 
@@ -1177,8 +1183,36 @@ class SQLiteStorage:
                         ).fetchall()
                     ]
                 if SQLiteStorage._supports_run_ids(conn):
+                    # Seek to the first metric of each run instead of aggregating
+                    # every logged value. Keep the scan fallback for downloaded or
+                    # read-only databases that have not passed through init_db.
+                    has_record_index = cursor.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'index' "
+                        "AND name = 'idx_metrics_run_record'"
+                    ).fetchone()
+                    metric_runs = "SELECT run_id, run_name, timestamp FROM metrics"
+                    if has_record_index:
+                        metric_runs = """
+                            SELECT run_id, run_name, timestamp FROM metrics
+                            WHERE id = (
+                                SELECT id FROM metrics
+                                ORDER BY run_id, run_name, timestamp LIMIT 1
+                            )
+                            UNION ALL
+                            SELECT m.run_id, m.run_name, m.timestamp
+                            FROM metric_runs AS previous
+                            JOIN metrics AS m ON m.id = COALESCE(
+                                (SELECT id FROM metrics
+                                 WHERE run_id = previous.run_id
+                                   AND run_name > previous.run_name
+                                 ORDER BY run_name, timestamp LIMIT 1),
+                                (SELECT id FROM metrics
+                                 WHERE run_id > previous.run_id
+                                 ORDER BY run_id, run_name, timestamp LIMIT 1)
+                            )
+                        """
                     sources = [
-                        "SELECT run_id, run_name, timestamp AS created_at FROM metrics"
+                        "SELECT run_id, run_name, timestamp AS created_at FROM metric_runs"
                     ]
                     if has_links:
                         sources.append(
@@ -1188,11 +1222,11 @@ class SQLiteStorage:
                             WHERE {local_link_scope}
                               AND run_name IS NOT NULL
                               AND l.run_name NOT IN (
-                                SELECT run_name FROM metrics
+                                SELECT run_name FROM metric_runs
                                 WHERE run_name IS NOT NULL
                               )
                               AND (l.run_id IS NULL OR NOT EXISTS (
-                                SELECT 1 FROM metrics m
+                                SELECT 1 FROM metric_runs m
                                 WHERE m.run_id = l.run_id
                               ))
                               AND (l.run_id IS NOT NULL OR l.run_name NOT IN (
@@ -1208,6 +1242,7 @@ class SQLiteStorage:
                         )
                     cursor.execute(
                         f"""
+                        WITH RECURSIVE metric_runs AS ({metric_runs})
                         SELECT run_id, run_name, MIN(created_at) AS created_at
                         FROM ({" UNION ALL ".join(sources)})
                         GROUP BY run_id, run_name
