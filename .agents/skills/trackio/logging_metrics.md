@@ -44,7 +44,7 @@ trackio logbook page "Baseline"
 trackio logbook run -- python train.py --lr 1e-4
 ```
 
-The script should still call `trackio.init()`, `trackio.log()`, and `trackio.finish()` normally. The wrapper captures provenance around the run: exact command, detected script/config files, live output, stored truncated output, exit code, and duration.
+The script should still call `trackio.init()`, `trackio.log()`, and `trackio.finish()` normally. The wrapper captures provenance around the run: exact command, complete stdout/stderr, code and Git state, runtime details, observed Python file reads/writes, immutable output snapshots, exit code, and duration. The page shows a compact preview while the full evidence stays private under `.trackio/run-evidence/`. Trackio runs and artifact lineage inside the child are linked automatically.
 
 ### Key Functions
 
