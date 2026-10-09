@@ -1,4 +1,5 @@
 import io
+import sys
 from pathlib import Path
 
 import pytest
@@ -137,3 +138,29 @@ def test_plotly_figure_logging(temp_dir):
     saved = Path(temp_dir) / "media" / entries[0]["plot"]["file_path"]
     assert saved.is_file()
     assert "plotly" in saved.read_text(encoding="utf-8").lower()
+
+
+@pytest.mark.parametrize("module_present", [False, True])
+def test_none_metric_logging_without_pyplot(temp_dir, monkeypatch, module_present):
+    if module_present:
+        monkeypatch.setitem(sys.modules, "matplotlib.pyplot", None)
+    else:
+        monkeypatch.delitem(sys.modules, "matplotlib.pyplot", raising=False)
+
+    assert not TrackioHtml.is_loggable_figure(None)
+    run = Run(
+        url=None, project=PROJECT_NAME, client=None, name="run-none", space_id=None
+    )
+    try:
+        run.log({"loss": 1.0, "maybe_nan_metric": 0.5})
+        run.log({"loss": 0.9, "maybe_nan_metric": None})
+        run.log({"loss": 0.8, "maybe_nan_metric": 0.4})
+    finally:
+        run.finish()
+
+    logs = SQLiteStorage.get_logs(PROJECT_NAME, "run-none")
+    assert [(row["step"], row["loss"], row["maybe_nan_metric"]) for row in logs] == [
+        (0, 1.0, 0.5),
+        (1, 0.9, None),
+        (2, 0.8, 0.4),
+    ]

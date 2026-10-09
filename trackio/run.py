@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import huggingface_hub
+import orjson
 from gradio_client import handle_file
 
 from trackio import cas, fragments, references, utils
@@ -1260,40 +1261,60 @@ class Run:
 
             metrics = new_metrics
             media_step = step if step is not None else self._next_step
-            for key, value in metrics.items():
-                if isinstance(value, Table):
-                    metrics[key] = value._to_dict(
-                        project=self.project, run=self.name, step=media_step
-                    )
-                    self._scan_and_queue_media_uploads(metrics[key], media_step)
-                elif isinstance(value, Trace):
-                    metrics[key] = value._to_dict(
-                        project=self.project, run=self.name, step=media_step
-                    )
-                    self._scan_and_queue_media_uploads(metrics[key], media_step)
-                elif (
-                    isinstance(value, list)
-                    and value
-                    and all(isinstance(item, Trace) for item in value)
-                ):
-                    converted = [
-                        item._to_dict(
+            for key, value in list(metrics.items()):
+                try:
+                    if isinstance(value, Table):
+                        metrics[key] = value._to_dict(
                             project=self.project, run=self.name, step=media_step
                         )
-                        for item in value
-                    ]
-                    metrics[key] = converted
-                    for item in converted:
-                        self._scan_and_queue_media_uploads(item, media_step)
-                elif isinstance(value, Histogram):
-                    metrics[key] = value._to_dict()
-                elif isinstance(value, Markdown):
-                    metrics[key] = value._to_dict()
-                elif TrackioHtml.is_loggable_figure(value):
-                    metrics[key] = self._process_media(TrackioHtml(value), media_step)
-                elif isinstance(value, TrackioMedia):
-                    metrics[key] = self._process_media(value, media_step)
-            metrics = utils.serialize_values(metrics)
+                        self._scan_and_queue_media_uploads(metrics[key], media_step)
+                    elif isinstance(value, Trace):
+                        metrics[key] = value._to_dict(
+                            project=self.project, run=self.name, step=media_step
+                        )
+                        self._scan_and_queue_media_uploads(metrics[key], media_step)
+                    elif (
+                        isinstance(value, list)
+                        and value
+                        and all(isinstance(item, Trace) for item in value)
+                    ):
+                        converted = [
+                            item._to_dict(
+                                project=self.project, run=self.name, step=media_step
+                            )
+                            for item in value
+                        ]
+                        metrics[key] = converted
+                        for item in converted:
+                            self._scan_and_queue_media_uploads(item, media_step)
+                    elif isinstance(value, Histogram):
+                        metrics[key] = value._to_dict()
+                    elif isinstance(value, Markdown):
+                        metrics[key] = value._to_dict()
+                    elif TrackioHtml.is_loggable_figure(value):
+                        metrics[key] = self._process_media(
+                            TrackioHtml(value), media_step
+                        )
+                    elif isinstance(value, TrackioMedia):
+                        metrics[key] = self._process_media(value, media_step)
+                except Exception as e:
+                    del metrics[key]
+                    _emit_nonfatal_warning(f"trackio.log() skipped metric {key!r}: {e}")
+            try:
+                serialized = utils.serialize_values(metrics)
+                serialized = orjson.loads(orjson.dumps(serialized))
+            except Exception:
+                serialized = {}
+                for key, value in metrics.items():
+                    try:
+                        item = utils.serialize_values({key: value})
+                        item = orjson.loads(orjson.dumps(item))
+                        serialized.update(item)
+                    except Exception as e:
+                        _emit_nonfatal_warning(
+                            f"trackio.log() skipped metric {key!r}: {e}"
+                        )
+            metrics = serialized
 
             if step is None:
                 step = self._next_step
