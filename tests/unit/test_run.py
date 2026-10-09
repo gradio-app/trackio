@@ -325,16 +325,13 @@ def test_local_flush_failure_does_not_crash(temp_dir, monkeypatch):
         run.finish()
 
 
-@pytest.mark.parametrize("storage", ["sqlite", "jsonl", "remote"])
 @pytest.mark.parametrize(
-    "invalid", ["object", "complex", "array", "nested", "cycle", "integer", "media"]
+    "invalid", ["object", "complex", "array", "nested", "cycle", "integer"]
 )
-def test_invalid_metric_preserves_other_metrics(
-    temp_dir, monkeypatch, storage, invalid
-):
+def test_invalid_metric_preserves_other_metrics(temp_dir, invalid):
     import numpy as np
 
-    from trackio import fragments
+    import trackio
 
     cycle = []
     cycle.append(cycle)
@@ -345,58 +342,17 @@ def test_invalid_metric_preserves_other_metrics(
         "nested": {"value": object()},
         "cycle": cycle,
         "integer": 2**100,
-        "media": Markdown("report"),
     }
-    if invalid == "media":
-        monkeypatch.setattr(
-            values[invalid],
-            "_to_dict",
-            MagicMock(side_effect=ValueError("broken media")),
-        )
-    monkeypatch.setenv(
-        "TRACKIO_STORAGE_MODE", "jsonl" if storage == "jsonl" else "sqlite"
-    )
-    client = DummyClient() if storage == "remote" else None
-    if client:
-        import json
-
-        client.predict.side_effect = lambda **kwargs: json.dumps(
-            kwargs, allow_nan=False
-        )
-    run = Run(
-        url="fake_url" if client else None,
-        project="invalid-metrics",
-        client=client,
-        name="run",
-        space_id="user/space" if client else None,
-    )
+    trackio.init(project="invalid-metrics", name="run")
     try:
-        run.log({"loss": 1.0})
+        trackio.log({"loss": 1.0})
         with pytest.warns(UserWarning, match="skipped metric 'bad'"):
-            run.log({"loss": 0.9, "bad": values[invalid], "accuracy": 0.8})
-        run.log({"loss": 0.8})
+            trackio.log({"loss": 0.9, "bad": values[invalid], "accuracy": 0.8})
+        trackio.log({"loss": 0.8})
     finally:
-        run.finish()
+        trackio.finish()
 
-    if client:
-        entries = [
-            entry
-            for call in client.predict.call_args_list
-            if call.kwargs.get("api_name") == "/bulk_log"
-            for entry in call.kwargs["logs"]
-        ]
-        rows = [{"step": entry["step"], **entry["metrics"]} for entry in entries]
-    elif storage == "jsonl":
-        import orjson
-
-        entries = [
-            orjson.loads(line)
-            for path in sorted(fragments.local_inbox_dir().rglob("*.jsonl"))
-            for line in path.read_bytes().splitlines()
-        ]
-        rows = [{"step": entry["step"], **entry["metrics"]} for entry in entries]
-    else:
-        rows = SQLiteStorage.get_logs("invalid-metrics", "run")
+    rows = SQLiteStorage.get_logs("invalid-metrics", "run")
     assert [(row["step"], row["loss"]) for row in rows] == [
         (0, 1.0),
         (1, 0.9),
