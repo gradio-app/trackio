@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Fix log entries dropped for null metrics
+feat:Fix invalid metrics dropping log entries and batches
