@@ -2,8 +2,10 @@ import sqlite3
 import time
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
+import trackio
 from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -329,10 +331,6 @@ def test_local_flush_failure_does_not_crash(temp_dir, monkeypatch):
     "invalid", ["object", "complex", "array", "nested", "cycle", "integer"]
 )
 def test_invalid_metric_preserves_other_metrics(temp_dir, invalid):
-    import numpy as np
-
-    import trackio
-
     cycle = []
     cycle.append(cycle)
     values = {
