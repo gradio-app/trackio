@@ -15,6 +15,17 @@ from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
+from trackio._unsupported import (
+    ArtifactTTL,
+    Classes,
+    Config,
+    EvalTable,
+    Graph,
+    JoinedTable,
+    Molecule,
+    Plotly,
+    Settings,
+)
 from trackio.alerts import AlertLevel
 from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
@@ -85,6 +96,15 @@ __all__ = [
     "import_tf_events",
     "save",
     "Artifact",
+    "ArtifactTTL",
+    "Classes",
+    "Config",
+    "EvalTable",
+    "Graph",
+    "JoinedTable",
+    "Molecule",
+    "Plotly",
+    "Settings",
     "ReferenceHandler",
     "ResolvedReference",
     "register_reference_handler",
