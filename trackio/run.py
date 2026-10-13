@@ -11,6 +11,7 @@ import huggingface_hub
 from gradio_client import handle_file
 
 from trackio import cas, fragments, references, utils
+from trackio._batching import _PendingBatch
 from trackio.alerts import (
     AlertLevel,
     format_alert_terminal,
@@ -39,41 +40,6 @@ BATCH_SEND_INTERVAL = 0.5
 MAX_BACKOFF = 30
 BUCKET_FLUSH_INTERVAL = 30
 ARTIFACT_LOG_RETRY_BACKOFFS = (0.5, 1.0, 2.0)
-
-
-class _PendingBatch:
-    """Share one fallback write between the sender and shutdown."""
-
-    def __init__(self, entries, api_name, parameter, persist):
-        self.entries = entries
-        self.api_name = api_name
-        self.parameter = parameter
-        self._persist = persist
-        self._lock = threading.Lock()
-        self._handled = False
-
-    def persist(self):
-        with self._lock:
-            if not self._handled:
-                self._persist(self.entries)
-                self._handled = True
-
-    def send(self, client, hf_token) -> bool:
-        with self._lock:
-            if self._handled:
-                return True
-        try:
-            client.predict(
-                api_name=self.api_name,
-                hf_token=hf_token,
-                **{self.parameter: self.entries},
-            )
-        except Exception:
-            self.persist()
-            return False
-        with self._lock:
-            self._handled = True
-        return True
 
 
 class Run:
@@ -387,9 +353,9 @@ class Run:
     def _local_batch_sender(self):
         while (
             not self._stop_flag.is_set()
-            or self._queued_logs
-            or self._queued_system_logs
-            or self._queued_alerts
+            or len(self._queued_logs) > 0
+            or len(self._queued_system_logs) > 0
+            or len(self._queued_alerts) > 0
         ):
             if not self._stop_flag.is_set():
                 self._stop_flag.wait(timeout=BATCH_SEND_INTERVAL)
@@ -559,10 +525,10 @@ class Run:
         consecutive_failures = 0
         while (
             not self._stop_flag.is_set()
-            or self._queued_logs
-            or self._queued_system_logs
-            or self._queued_uploads
-            or self._queued_alerts
+            or len(self._queued_logs) > 0
+            or len(self._queued_system_logs) > 0
+            or len(self._queued_uploads) > 0
+            or len(self._queued_alerts) > 0
             or self._has_local_buffer
         ):
             if not self._stop_flag.is_set():
