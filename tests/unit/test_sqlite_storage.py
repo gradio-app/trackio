@@ -905,3 +905,70 @@ def test_get_metric_values_max_points_keeps_ends_within_range(temp_dir):
         len(SQLiteStorage.get_metric_values(project, "run", "loss", max_points=None))
         == 1000
     )
+
+
+@pytest.mark.parametrize("use_index", [True, False])
+def test_run_records_preserve_metric_only_runs_and_first_timestamps(
+    temp_dir, use_index
+):
+    db_path = SQLiteStorage.init_db("records")
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO metrics (run_id, run_name, timestamp, step, metrics) "
+            "VALUES (?, ?, ?, ?, '{}')",
+            [
+                ("b", "same name", "2026-01-03", 0),
+                ("a", "same name", "2026-01-02", 0),
+                ("a", "same name", "2026-01-01", 1),
+                ("a", "other name", "2026-01-04", 2),
+            ],
+        )
+        if not use_index:
+            conn.execute("DROP INDEX idx_metrics_run_record")
+    assert SQLiteStorage.get_run_records("records") == [
+        {"id": "a", "name": "same name", "created_at": "2026-01-01"},
+        {"id": "b", "name": "same name", "created_at": "2026-01-03"},
+        {"id": "a", "name": "other name", "created_at": "2026-01-04"},
+    ]
+
+
+def test_run_records_query_work_does_not_grow_with_metric_count(temp_dir, monkeypatch):
+    from contextlib import contextmanager
+
+    db_path = SQLiteStorage.init_db("records")
+    assert SQLiteStorage.get_run_records("records") == []
+    original_connection = SQLiteStorage._get_connection
+    instructions = 0
+
+    def progress():
+        nonlocal instructions
+        instructions += 1
+        return 0
+
+    @contextmanager
+    def measured_connection(*args, **kwargs):
+        with original_connection(*args, **kwargs) as conn:
+            conn.set_progress_handler(progress, 1)
+            try:
+                yield conn
+            finally:
+                conn.set_progress_handler(None, 0)
+
+    monkeypatch.setattr(SQLiteStorage, "_get_connection", measured_connection)
+
+    def add_metrics(start, stop):
+        with sqlite3.connect(db_path) as conn:
+            conn.executemany(
+                "INSERT INTO metrics (run_id, run_name, timestamp, step, metrics) "
+                "VALUES ('run-id', 'no-config', '2026-01-01', ?, '{}')",
+                ((step,) for step in range(start, stop)),
+            )
+
+    add_metrics(0, 100)
+    expected = SQLiteStorage.get_run_records("records")
+    small_query_work = instructions
+    add_metrics(100, 20000)
+    instructions = 0
+    assert SQLiteStorage.get_run_records("records") == expected
+    # Count SQLite VM instructions rather than using a noisy wall-clock budget.
+    assert instructions < small_query_work * 3

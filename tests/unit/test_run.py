@@ -2,8 +2,10 @@ import sqlite3
 import time
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
+import trackio
 from trackio import Markdown, Run, init, utils
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -276,15 +278,17 @@ def test_log_does_not_crash_on_bad_metrics(temp_dir, monkeypatch):
 
     monkeypatch.setattr(utils, "serialize_values", exploding_serialize)
 
-    with pytest.warns(UserWarning, match="trackio.log\\(\\) failed to process metrics"):
+    with pytest.warns(UserWarning, match="skipped metric 'bad'"):
         run.log({"bad": 1})
 
     run.log({"loss": 0.5})
     run.finish()
 
     logs = SQLiteStorage.get_logs("proj", "safe-run")
-    assert len(logs) == 1
-    assert logs[0]["loss"] == 0.5
+    assert len(logs) == 2
+    assert "bad" not in logs[0]
+    assert logs[1]["loss"] == 0.5
+    assert [row["step"] for row in logs] == [0, 1]
 
 
 def test_init_survives_storage_read_failures(temp_dir, monkeypatch):
@@ -321,3 +325,36 @@ def test_local_flush_failure_does_not_crash(temp_dir, monkeypatch):
 
     with pytest.warns(UserWarning, match="trackio failed to flush metric logs"):
         run.finish()
+
+
+@pytest.mark.parametrize(
+    "invalid", ["object", "complex", "array", "nested", "cycle", "integer"]
+)
+def test_invalid_metric_preserves_other_metrics(temp_dir, invalid):
+    cycle = []
+    cycle.append(cycle)
+    values = {
+        "object": object(),
+        "complex": 1 + 2j,
+        "array": np.array([1, 2]),
+        "nested": {"value": object()},
+        "cycle": cycle,
+        "integer": 2**100,
+    }
+    trackio.init(project="invalid-metrics", name="run")
+    try:
+        trackio.log({"loss": 1.0})
+        with pytest.warns(UserWarning, match="skipped metric 'bad'"):
+            trackio.log({"loss": 0.9, "bad": values[invalid], "accuracy": 0.8})
+        trackio.log({"loss": 0.8})
+    finally:
+        trackio.finish()
+
+    rows = SQLiteStorage.get_logs("invalid-metrics", "run")
+    assert [(row["step"], row["loss"]) for row in rows] == [
+        (0, 1.0),
+        (1, 0.9),
+        (2, 0.8),
+    ]
+    assert rows[1]["accuracy"] == 0.8
+    assert all("bad" not in row for row in rows)

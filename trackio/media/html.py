@@ -87,7 +87,8 @@ class TrackioHtml(TrackioMedia):
 
     @staticmethod
     def is_pyplot_module(obj: Any) -> bool:
-        return obj is sys.modules.get("matplotlib.pyplot")
+        module = sys.modules.get("matplotlib.pyplot")
+        return module is not None and obj is module
 
     @staticmethod
     def is_loggable_figure(obj: Any) -> bool:
