@@ -1,5 +1,11 @@
 # trackio
 
+## 0.43.0
+
+### Features
+
+- [#704](https://github.com/gradio-app/trackio/pull/704) [`2a59322`](https://github.com/gradio-app/trackio/commit/2a593225aec40c7b73b9a4ca39cfb0fd172cfdf3) - Fix logging blocked by slow remote requests.  Thanks @Vermeille!
+
 ## 0.42.0
 
 ### Features
