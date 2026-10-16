@@ -88,7 +88,7 @@
   .filter-heading, .dialog-heading, .dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .active-filters { max-height: 112px; overflow-y: auto; margin-top: 6px; padding: 6px 8px; background: var(--input-background-fill); border: 1px solid var(--border-color-primary); border-radius: 6px; }
   .filter-summary { overflow-wrap: anywhere; line-height: 1.5; }
-  dialog { margin: auto; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); box-sizing: border-box; padding: 20px; border: 1px solid var(--border-color-primary); border-radius: 12px; background: var(--body-background-fill, white); color: var(--body-text-color); box-shadow: 0 12px 40px #0003; font-size: 13px; }
+  dialog { margin: auto; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); box-sizing: border-box; padding: 20px; border: 1px solid var(--border-color-primary); border-radius: 12px; background: var(--background-fill-primary, white); color: var(--body-text-color); box-shadow: 0 12px 40px #0003; font-size: 13px; }
   dialog::backdrop { background: #0006; }
   h2 { font-size: 16px; margin: 0; }
   p { line-height: 1.5; margin: 8px 0; }
