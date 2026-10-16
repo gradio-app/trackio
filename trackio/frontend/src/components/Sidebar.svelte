@@ -88,6 +88,7 @@
     };
   }
 
+  let hasRunFilter = $derived(Boolean(filterText.trim()) || configFilters.some((group) => group.some((rule) => rule.key)));
   let configMatch = $derived(compileConfigFilter(configFilters));
   let configRuns = $derived(filterRunsByConfig(runs, runConfigs, configMatch));
   let filteredRuns = $derived.by(() => {
@@ -366,7 +367,7 @@
                   latestOnly = false;
                 }}
               />
-              <span class="section-label">Runs ({filteredRunIds.length})</span>
+              <span class="section-label">Runs ({filteredRunIds.length}{hasRunFilter ? `/${runs.length}` : ""})</span>
             </label>
             <label class="latest-toggle">
               <span>Latest only</span>
