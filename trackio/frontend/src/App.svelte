@@ -1,4 +1,5 @@
 <script>
+  import { compileConfigFilter, filterRunsByConfig } from "./lib/runFilters.js";
   import { onMount } from "svelte";
   import Navbar from "./components/Navbar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -98,6 +99,12 @@
   let showHeaders = $state(true);
   let showComparer = $state(false);
   let filterText = $state("");
+  let configFilters = $state([]);
+
+  $effect(() => {
+    selectedProject;
+    configFilters = [];
+  });
   let metricColumns = $state([]);
   let requestedUrlXAxis = $state(null);
   let urlXAxisApplied = $state(false);
@@ -175,8 +182,10 @@
     return axis === "step" || axis === "time" || metricColumns.includes(axis);
   }
 
+  let configMatch = $derived(compileConfigFilter(configFilters));
+  let selectedRunIds = $derived(new Set(selectedRuns));
   let selectedRunRecords = $derived(
-    runs.filter((run) => selectedRuns.includes(runKey(run))),
+    filterRunsByConfig(runs, runConfigs, configMatch).filter((run) => selectedRunIds.has(runKey(run))),
   );
 
   function handleNavigate(page) {
@@ -624,6 +633,7 @@
       bind:realtimeEnabled
       bind:showHeaders
       bind:showComparer
+      bind:configFilters
       bind:filterText
       {metricColumns}
       {availableSystemDevices}
@@ -709,6 +719,8 @@
           project={selectedProject}
           {runs}
           {filterText}
+          {configFilters}
+          {runConfigs}
           onRunsChanged={refreshRunsAndMutation}
           runMutationAllowed={mutationStatus.allowed}
         />
