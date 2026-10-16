@@ -1,4 +1,6 @@
 <script>
+  import ConfigFilters from "./ConfigFilters.svelte";
+  import { compileConfigFilter, filterRunsByConfig, filterRunsByName } from "../lib/runFilters.js";
   import { onMount } from "svelte";
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
   import Dropdown from "./Dropdown.svelte";
@@ -8,7 +10,6 @@
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
   import { latestOnlySelection } from "../lib/selection.js";
-  import { filterMetricsByRegex } from "../lib/dataProcessing.js";
   import { computeGroupByOptions, computeGroupedRuns } from "../lib/grouping.js";
   import {
     AUTO_PANELS_PER_ROW,
@@ -37,6 +38,7 @@
     showComparer = $bindable(false),
     filterText = $bindable(""),
     runConfigs = {},
+    configFilters = $bindable([]),
     metricColumns = [],
     spacesMode = false,
     runMutationAllowed = true,
@@ -85,14 +87,15 @@
     };
   }
 
-  let filteredRuns = $derived.by(() => {
-    if (!filterText || !filterText.trim()) return runs;
-    const matches = new Set(filterMetricsByRegex(runs.map((r) => r.name), filterText));
-    return runs.filter((r) => matches.has(r.name));
-  });
+  let hasRunFilter = $derived(Boolean(filterText.trim()) || configFilters.some((group) => group.some((rule) => rule.key)));
+  let configMatch = $derived(compileConfigFilter(configFilters));
+  let configRuns = $derived(filterRunsByConfig(runs, runConfigs, configMatch));
+  let filteredRuns = $derived(filterRunsByName(configRuns, filterText));
 
   let runColorMap = $derived(buildColorMap(runs));
   let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
+  let selectedIds = $derived(new Set(selectedRuns));
+  let selectedVisibleCount = $derived(filteredRunIds.filter((id) => selectedIds.has(id)).length);
 
   let groupByRaw = $state(null);
 
@@ -177,10 +180,10 @@
     if (metricFilter?.trim()) {
       params.set("metric_filter", metricFilter.trim());
     }
-    const runIds = selectedRunIdsForShare(selectedRuns, runs);
-    if (runIds.length) {
-      params.set("run_ids", runIds.join(","));
-    }
+    const runIds = selectedRunIdsForShare(selectedRuns, filteredRuns);
+    params.set("run_ids", runIds.join(","));
+    if (filterText.trim()) params.set("run_filter", filterText);
+    if (configFilters.length) params.set("config_filter", JSON.stringify(configFilters));
     if (smoothing != null && smoothing !== 10) {
       params.set("smoothing", smoothing.toString());
     }
@@ -243,6 +246,7 @@
             placeholder="e.g., baseline|exp-.*|v2"
             bind:value={filterText}
           />
+          <ConfigFilters configs={runConfigs} bind:groups={configFilters} matchCount={filteredRuns.length} />
         </div>
       {/if}
 
@@ -347,10 +351,10 @@
               <input
                 type="checkbox"
                 class="select-all-cb"
-                checked={selectedRuns.length === filteredRunIds.length && filteredRunIds.length > 0}
-                use:setIndeterminate={selectedRuns.length > 0 && selectedRuns.length < filteredRunIds.length}
+                checked={selectedVisibleCount === filteredRunIds.length && filteredRunIds.length > 0}
+                use:setIndeterminate={selectedVisibleCount > 0 && selectedVisibleCount < filteredRunIds.length}
                 onchange={() => {
-                  if (selectedRuns.length === filteredRunIds.length) {
+                  if (selectedVisibleCount === filteredRunIds.length) {
                     selectedRuns = [];
                   } else {
                     selectedRuns = [...filteredRunIds];
@@ -358,7 +362,7 @@
                   latestOnly = false;
                 }}
               />
-              <span class="section-label">Runs ({filteredRunIds.length})</span>
+              <span class="section-label">Runs ({filteredRunIds.length}{hasRunFilter ? `/${runs.length}` : ""})</span>
             </label>
             <label class="latest-toggle">
               <span>Latest only</span>
@@ -374,6 +378,7 @@
             placeholder="Type to filter..."
             showLabel={false}
           />
+          <ConfigFilters configs={runConfigs} bind:groups={configFilters} matchCount={filteredRuns.length} />
           <div class="group-by-row">
             <Dropdown
               label="Group by"

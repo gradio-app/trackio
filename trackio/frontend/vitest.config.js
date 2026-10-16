@@ -7,7 +7,7 @@ export default defineConfig({
   test: {
     projects: [
       { extends: true, test: { name: "unit", environment: "node", include: ["src/lib/**/*.test.js"] } },
-      { extends: true, test: { name: "components", environment: "jsdom", include: ["src/pages/**/*.test.js"] } },
+      { extends: true, test: { name: "components", environment: "jsdom", include: ["src/pages/**/*.test.js", "src/components/**/*.test.js"] } },
     ],
   },
 });
