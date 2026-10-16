@@ -1,3 +1,31 @@
+import { filterMetricsByRegex } from "./dataProcessing.js";
+
+export function configKeyLabel(key) {
+  return JSON.parse(key).map((part, i) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(part)
+    ? `${i ? "." : ""}${part}` : `[${JSON.stringify(part)}]`).join("");
+}
+
+export function parseConfigFilters(value) {
+  try {
+    const groups = JSON.parse(value);
+    if (!Array.isArray(groups) || !groups.every((group) => Array.isArray(group) && group.every((rule) => {
+      if (!rule || typeof rule.key !== "string" || typeof rule.value !== "string") return false;
+      const path = JSON.parse(rule.key);
+      return Array.isArray(path) && path.length > 0 && path.every((key) => typeof key === "string")
+        && ["=", "!=", ">", ">=", "<", "<=", "contains"].includes(rule.operator);
+    }))) return [];
+    return groups;
+  } catch {
+    return [];
+  }
+}
+
+export function filterRunsByName(runs, pattern) {
+  if (!pattern.trim()) return runs;
+  const names = new Set(filterMetricsByRegex(runs.map((run) => run.name), pattern));
+  return runs.filter((run) => names.has(run.name));
+}
+
 export function configFilterKeys(configs) {
   const keys = new Set();
   function visit(value, path = []) {
@@ -12,7 +40,7 @@ export function configFilterKeys(configs) {
     }
   }
   for (const config of Object.values(configs)) visit(config);
-  return [...keys].map((value) => ({ value, label: JSON.parse(value).join(".") }))
+  return [...keys].map((value) => ({ value, label: configKeyLabel(value) }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 

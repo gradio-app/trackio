@@ -1,6 +1,12 @@
 import { expect, it, vi } from "vitest";
 import { mount, tick, unmount } from "svelte";
 import ConfigFilters from "./ConfigFilters.svelte";
+import ConfigFiltersTestHarness from "./ConfigFiltersTestHarness.svelte";
+import { configFilterKeys } from "../lib/runFilters.js";
+vi.mock("../lib/runFilters.js", async (importOriginal) => {
+  const original = await importOriginal();
+  return { ...original, configFilterKeys: vi.fn(original.configFilterKeys) };
+});
 
 it("applies draft groups, preserves active filters on cancel, and clears the summary", async () => {
   const target = document.createElement("div");
@@ -53,6 +59,36 @@ it("applies draft groups, preserves active filters on cancel, and clears the sum
     await click("Clear");
     expect(target.querySelector(".active-filters")).toBeNull();
     expect(target.querySelector('[role="status"]')).toBeNull();
+  } finally {
+    await unmount(component);
+    target.remove();
+  }
+});
+
+it("does not rediscover keys on polls after Apply, Cancel, or Escape", async () => {
+  const target = document.createElement("div");
+  document.body.appendChild(target);
+  const component = mount(ConfigFiltersTestHarness, { target });
+  await tick();
+  const dialog = target.querySelector("dialog");
+  dialog.showModal = () => { dialog.open = true; };
+  dialog.close = () => { dialog.open = false; dialog.dispatchEvent(new Event("close")); };
+  const click = async (text) => {
+    [...target.querySelectorAll("button")].find((button) => button.textContent === text).click();
+    await tick();
+  };
+  try {
+    for (const action of ["Apply filters", "Cancel", "Escape"]) {
+      await click("Config filters");
+      await click("+ Add filter");
+      expect(target.querySelectorAll("option").length).toBeGreaterThan(0);
+      if (action === "Escape") { dialog.close(); await tick(); }
+      else await click(action);
+      configFilterKeys.mockClear();
+      await click("Poll configs");
+      expect(configFilterKeys).not.toHaveBeenCalled();
+      expect(target.querySelectorAll("option")).toHaveLength(0);
+    }
   } finally {
     await unmount(component);
     target.remove();

@@ -30,6 +30,8 @@ export function buildViewUrl(location, view) {
     "project",
     "selected_project",
     "run_ids",
+    "run_filter",
+    "config_filter",
     "runs",
     "x_axis",
     "x-axis",
@@ -42,9 +44,11 @@ export function buildViewUrl(location, view) {
     params.delete(key);
   }
   if (view.project) params.set("project", view.project);
-  if (view.runs?.length) {
+  if (Array.isArray(view.runs)) {
     params.set("run_ids", view.runs.map((r) => r.id ?? r.name).join(","));
   }
+  if (view.run_filter) params.set("run_filter", view.run_filter);
+  if (view.config_filter?.length) params.set("config_filter", JSON.stringify(view.config_filter));
   if (view.x_axis) params.set("x_axis", view.x_axis);
   if (view.x_range) {
     params.set("xmin", String(view.x_range[0]));
@@ -70,6 +74,9 @@ export function buildSnapshot({ location = window.location, now = new Date() } =
     log_x: app.log_x ?? false,
     log_y: app.log_y ?? false,
     metric_filter: app.metric_filter || null,
+    run_filter: app.run_filter || null,
+    config_filter: app.config_filter ?? [],
+    total_runs: app.total_runs ?? null,
     metrics: metrics.metrics ?? [],
     metrics_on_screen: metrics.metrics_on_screen ?? [],
     latest_x: metrics.latest_x ?? null,

@@ -1,8 +1,9 @@
 <script>
-  import { configFilterKeys } from "../lib/runFilters.js";
+  import { configFilterKeys, configKeyLabel } from "../lib/runFilters.js";
 
   let { configs = {}, groups = $bindable([]), matchCount = null } = $props();
-  let keys = $derived(configFilterKeys(configs));
+  let open = $state(false);
+  let keys = $derived(open ? configFilterKeys(configs) : []);
   let activeGroups = $derived(groups.map((group) => group.filter((rule) => rule.key)).filter((group) => group.length));
   let count = $derived(activeGroups.flat().length);
   let dialog;
@@ -10,12 +11,19 @@
 
   function edit() {
     draft = groups.map((group) => group.map((rule) => ({ ...rule })));
+    open = true;
     dialog.showModal();
+  }
+
+  function close() {
+    open = false;
+    draft = [];
+    dialog.close();
   }
 
   function apply() {
     groups = draft.map((group) => group.filter((rule) => rule.key)).filter((group) => group.length);
-    dialog.close();
+    close();
   }
   const newRule = () => ({ key: "", operator: "=", value: "" });
 
@@ -35,7 +43,7 @@
       {#each activeGroups as group, i}
         {#if i > 0}<div class="join">OR</div>{/if}
         {#each group as rule, j}
-          <div class="filter-summary">{j > 0 ? "AND " : ""}{JSON.parse(rule.key).join(".")} {rule.operator} {JSON.stringify(rule.value)}</div>
+          <div class="filter-summary">{j > 0 ? "AND " : ""}{configKeyLabel(rule.key)} {rule.operator} {JSON.stringify(rule.value)}</div>
         {/each}
       {/each}
     </div>
@@ -43,12 +51,13 @@
   {/if}
 </div>
 
-<dialog bind:this={dialog} aria-labelledby="config-filter-title">
+<dialog bind:this={dialog} aria-labelledby="config-filter-title" onclose={() => { open = false; draft = []; }}>
+  {#if open}
   <div class="dialog-heading">
     <h2 id="config-filter-title">Config filters</h2>
-    <button aria-label="Close configuration filters" onclick={() => dialog.close()}>×</button>
+    <button aria-label="Close configuration filters" onclick={close}>×</button>
   </div>
-  <p>Match all conditions in a group, or any of the groups.</p>
+  <p>Match all conditions in a group, or any of the groups. Missing keys never match; numeric comparisons require number values.</p>
   <div class="editor">
   {#each draft as group, i}
     {#if i > 0}<div class="join">OR</div>{/if}
@@ -78,9 +87,10 @@
   </div>
   </div>
   <div class="dialog-actions">
-    <button onclick={() => dialog.close()}>Cancel</button>
+    <button onclick={close}>Cancel</button>
     <button class="apply" onclick={apply}>Apply filters</button>
   </div>
+  {/if}
 </dialog>
 
 <style>
@@ -105,7 +115,7 @@
   .join { font-size: 10px; margin: 6px 0; opacity: 0.7; }
   .actions { display: flex; gap: 6px; margin-top: 8px; }
   .dialog-actions { justify-content: flex-end; padding-top: 16px; }
-  .apply { background: var(--button-primary-background-fill, #f97316); color: var(--button-primary-text-color, white); }
+  .apply { background: var(--color-accent, #f97316); color: white; }
   @media (max-width: 480px) {
     .rule { grid-template-columns: 68px minmax(0, 1fr) 24px; }
     .rule select:first-child { grid-column: 1 / 3; }

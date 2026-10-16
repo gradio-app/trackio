@@ -1,6 +1,6 @@
 <script>
   import ConfigFilters from "./ConfigFilters.svelte";
-  import { compileConfigFilter, filterRunsByConfig } from "../lib/runFilters.js";
+  import { compileConfigFilter, filterRunsByConfig, filterRunsByName } from "../lib/runFilters.js";
   import { onMount } from "svelte";
   import ColoredCheckbox from "./ColoredCheckbox.svelte";
   import Dropdown from "./Dropdown.svelte";
@@ -10,7 +10,6 @@
   import GradioTextbox from "./GradioTextbox.svelte";
   import { buildColorMap, getColorForIndex } from "../lib/stores.js";
   import { latestOnlySelection } from "../lib/selection.js";
-  import { filterMetricsByRegex } from "../lib/dataProcessing.js";
   import { computeGroupByOptions, computeGroupedRuns } from "../lib/grouping.js";
   import {
     AUTO_PANELS_PER_ROW,
@@ -91,11 +90,7 @@
   let hasRunFilter = $derived(Boolean(filterText.trim()) || configFilters.some((group) => group.some((rule) => rule.key)));
   let configMatch = $derived(compileConfigFilter(configFilters));
   let configRuns = $derived(filterRunsByConfig(runs, runConfigs, configMatch));
-  let filteredRuns = $derived.by(() => {
-    if (!filterText || !filterText.trim()) return configRuns;
-    const matches = new Set(filterMetricsByRegex(configRuns.map((r) => r.name), filterText));
-    return configRuns.filter((r) => matches.has(r.name));
-  });
+  let filteredRuns = $derived(filterRunsByName(configRuns, filterText));
 
   let runColorMap = $derived(buildColorMap(runs));
   let filteredRunIds = $derived(filteredRuns.map((r) => r.id ?? r.name));
@@ -185,10 +180,10 @@
     if (metricFilter?.trim()) {
       params.set("metric_filter", metricFilter.trim());
     }
-    const runIds = selectedRunIdsForShare(selectedRuns, runs);
-    if (runIds.length) {
-      params.set("run_ids", runIds.join(","));
-    }
+    const runIds = selectedRunIdsForShare(selectedRuns, filteredRuns);
+    params.set("run_ids", runIds.join(","));
+    if (filterText.trim()) params.set("run_filter", filterText);
+    if (configFilters.length) params.set("config_filter", JSON.stringify(configFilters));
     if (smoothing != null && smoothing !== 10) {
       params.set("smoothing", smoothing.toString());
     }
