@@ -250,7 +250,7 @@
             placeholder="e.g., baseline|exp-.*|v2"
             bind:value={filterText}
           />
-          <ConfigFilters configs={runConfigs} bind:groups={configFilters} />
+          <ConfigFilters configs={runConfigs} bind:groups={configFilters} matchCount={filteredRuns.length} />
         </div>
       {/if}
 
@@ -382,7 +382,7 @@
             placeholder="Type to filter..."
             showLabel={false}
           />
-          <ConfigFilters configs={runConfigs} bind:groups={configFilters} />
+          <ConfigFilters configs={runConfigs} bind:groups={configFilters} matchCount={filteredRuns.length} />
           <div class="group-by-row">
             <Dropdown
               label="Group by"
