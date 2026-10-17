@@ -441,14 +441,18 @@ export async function getRunSummary(_project, run) {
     metrics,
     config: runConfig,
     last_step: runMeta.last_step,
-    console_logs: await getConsoleLogs(runMeta.name),
+    console_logs: await getConsoleLogs(
+      runMeta.name,
+      runMeta.id ?? runMeta.run_id ?? runMeta.name,
+    ),
   };
 }
 
-export async function getConsoleLogs(runName) {
+export async function getConsoleLogs(runName, runId) {
   const logs = await Promise.all(
-    ["stdout.log", "stderr.log"].map(async (name) => {
-      const path = `${runName}/${name}`;
+    ["stdout", "stderr"].map(async (stream) => {
+      const name = `${stream}.log`;
+      const path = `${runName}/${stream}-${runId}.log`;
       try {
         const resp = await fetch(getMediaUrl(path), { method: "HEAD" });
         const size = Number(resp.headers.get("content-length"));

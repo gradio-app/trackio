@@ -65,7 +65,7 @@
           {#if file.size != null}
             <span class="file-size">{formatSize(file.size)}</span>
           {/if}
-          <a class="download-btn" href={getFileUrl(file.path)} download title="Download">
+          <a class="download-btn" href={getFileUrl(file.path)} download={file.name} title="Download">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M8 1v9m0 0L5 7m3 3l3-3M2 12v1a2 2 0 002 2h8a2 2 0 002-2v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>

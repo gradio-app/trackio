@@ -135,7 +135,7 @@ export TRACKIO_INBOX_POLL_INTERVAL="30"
 
 ### `TRACKIO_DISABLE_CONSOLE_CAPTURE`
 
-By default, `trackio.init()` captures everything written to `stdout` and `stderr` until `trackio.finish()` (prints, logging, warnings, exceptions) into `stdout.log` and `stderr.log` files stored with the run's media, and uploads them for runs logged to a Space. Limitation: Output written directly by subprocesses is not captured. Set to `1`, `true`, or `yes` to disable capturing.
+By default, `trackio.init()` captures everything written to `stdout` and `stderr` until `trackio.finish()` (prints, logging, warnings, exceptions) into `stdout-<run id>.log` and `stderr-<run id>.log` files stored with the run's media (shown as `stdout.log` and `stderr.log` on the run page), and uploads them for runs logged to a Space. Limitation: Output written directly by subprocesses is not captured. Set to `1`, `true`, or `yes` to disable capturing.
 
 ```bash
 export TRACKIO_DISABLE_CONSOLE_CAPTURE="1"

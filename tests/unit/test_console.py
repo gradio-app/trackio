@@ -6,6 +6,11 @@ from trackio import Run
 from trackio.media import get_project_media_path
 
 
+def _log(run: Run, stream: str = "stdout"):
+    log_dir = get_project_media_path(project=run.project, run=run.name)
+    return log_dir / f"{stream}-{run.id}.log"
+
+
 def test_run_captures_console_output(temp_dir, capsys):
     logger = logging.getLogger("trackio-console-test")
     handler = logging.StreamHandler(sys.stderr)
@@ -19,11 +24,10 @@ def test_run_captures_console_output(temp_dir, capsys):
     finally:
         logger.removeHandler(handler)
 
-    log_dir = get_project_media_path(project="proj", run="run1")
-    stdout_log = (log_dir / "stdout.log").read_text()
+    stdout_log = _log(run).read_text()
     assert "loss 0.5" in stdout_log
     assert "after finish" not in stdout_log
-    assert "from logging" in (log_dir / "stderr.log").read_text()
+    assert "from logging" in _log(run, "stderr").read_text()
     assert "loss 0.5" in capsys.readouterr().out
     assert "write" not in vars(sys.stdout)
 
@@ -34,8 +38,7 @@ def test_console_capture_disabled_by_env(temp_dir, monkeypatch):
     print("not captured")
     run.finish()
 
-    log_dir = get_project_media_path(project="proj", run="run1")
-    assert not (log_dir / "stdout.log").exists()
+    assert not _log(run).exists()
 
 
 def test_new_run_takes_over_console_capture(temp_dir):
@@ -46,11 +49,32 @@ def test_new_run_takes_over_console_capture(temp_dir):
     print("still to second")
     second.finish()
 
-    first_log = get_project_media_path(project="proj", run="first") / "stdout.log"
-    second_log = get_project_media_path(project="proj", run="second") / "stdout.log"
-    assert "to second" not in first_log.read_text()
-    assert "to second" in second_log.read_text()
-    assert "still to second" in second_log.read_text()
+    assert "to second" not in _log(first).read_text()
+    assert "to second" in _log(second).read_text()
+    assert "still to second" in _log(second).read_text()
+
+
+def test_runs_with_the_same_name_keep_separate_logs(temp_dir):
+    first = Run(url=None, project="proj", client=None, name="baseline", space_id=None)
+    print("first attempt")
+    first.finish()
+    second = Run(url=None, project="proj", client=None, name="baseline", space_id=None)
+    print("second attempt")
+    second.finish()
+    resumed = Run(
+        url=None,
+        project="proj",
+        client=None,
+        name="baseline",
+        space_id=None,
+        run_id=first.id,
+    )
+    print("first resumed")
+    resumed.finish()
+
+    assert "second attempt" not in _log(first).read_text()
+    assert "first resumed" in _log(first).read_text()
+    assert "first attempt" not in _log(second).read_text()
 
 
 def test_remote_run_uploads_console_logs(temp_dir, monkeypatch):
@@ -68,5 +92,4 @@ def test_remote_run_uploads_console_logs(temp_dir, monkeypatch):
     print("remote output")
     run.finish()
 
-    log_dir = get_project_media_path(project="proj", run="run1")
-    assert uploads == [log_dir / "stdout.log"]
+    assert uploads == [_log(run)]

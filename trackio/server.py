@@ -1027,7 +1027,7 @@ def get_run_summary(
             run = record["name"]
 
     num_logs = SQLiteStorage.get_log_count(project, run, run_id=run_id)
-    console_logs = _run_console_logs(project, run)
+    console_logs = _run_console_logs(project, run, run_id)
     if num_logs == 0:
         return {
             "project": project,
@@ -1056,16 +1056,27 @@ def get_run_summary(
     }
 
 
-def _run_console_logs(project: str, run: str | None) -> list[dict[str, Any]]:
+def _run_console_logs(
+    project: str, run: str | None, run_id: str | None
+) -> list[dict[str, Any]]:
     if not run:
         return []
+    if run_id is None:
+        records = [
+            r for r in SQLiteStorage.get_run_records(project) if r["name"] == run
+        ]
+        if not records:
+            return []
+        run_id = max(records, key=lambda r: r["created_at"] or "")["id"]
     media_dir = utils.project_media_dir(project).resolve()
     run_dir = (media_dir / run).resolve()
     if not run_dir.is_relative_to(media_dir):
         return []
     return [
-        {"name": path.name, "path": str(path), "size": path.stat().st_size}
-        for path in console.log_paths(run_dir)
+        {"name": f"{stream}.log", "path": str(path), "size": path.stat().st_size}
+        for stream, path in zip(
+            console.STREAM_NAMES, console.log_paths(run_dir, run_id)
+        )
         if path.is_file() and path.stat().st_size > 0
     ]
 

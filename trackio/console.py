@@ -8,8 +8,8 @@ STREAM_NAMES = (
 )
 
 
-def log_paths(log_dir: Path) -> tuple[Path, ...]:
-    return tuple(log_dir / f"{name}.log" for name in STREAM_NAMES)
+def log_paths(log_dir: Path, run_id: str) -> tuple[Path, ...]:
+    return tuple(log_dir / f"{name}-{run_id}.log" for name in STREAM_NAMES)
 
 
 class ConsoleCapture:
@@ -29,8 +29,8 @@ class ConsoleCapture:
         self._paths: tuple[Path, ...] | None = None
         self._patched: dict = {}
 
-    def attach(self, log_dir: Path) -> tuple[Path, ...]:
-        paths = log_paths(log_dir)
+    def attach(self, log_dir: Path, run_id: str) -> tuple[Path, ...]:
+        paths = log_paths(log_dir, run_id)
         logs = {
             name: path.open("a", encoding="utf-8", errors="replace", buffering=1)
             for name, path in zip(STREAM_NAMES, paths)
@@ -110,8 +110,8 @@ class ConsoleCapture:
 _capture = ConsoleCapture()
 
 
-def attach(log_dir: Path) -> tuple[Path, ...]:
-    return _capture.attach(log_dir)
+def attach(log_dir: Path, run_id: str) -> tuple[Path, ...]:
+    return _capture.attach(log_dir, run_id)
 
 
 def detach(paths: tuple[Path, ...]) -> None:

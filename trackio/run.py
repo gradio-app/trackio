@@ -260,7 +260,7 @@ class Run:
             return
         try:
             log_dir = get_project_media_path(project=self.project, run=self.name)
-            self._console_log_paths = console.attach(log_dir)
+            self._console_log_paths = console.attach(log_dir, self.id)
         except Exception as e:
             self._warn_once(
                 "console-capture-start",
