@@ -133,6 +133,14 @@ How often (in seconds) the dashboard server and Trackio Spaces check for new JSO
 export TRACKIO_INBOX_POLL_INTERVAL="30"
 ```
 
+### `TRACKIO_DISABLE_RUN_COMMAND`
+
+By default, `trackio.init()` records the command that launched the run (e.g. `python train.py --lr 0.05`) in the run config as `_RunCommand`. Limitation: This is not recorded in notebooks. Set to `1`, `true`, or `yes` to disable this, for example when CLI arguments contain secrets.
+
+```bash
+export TRACKIO_DISABLE_RUN_COMMAND="1"
+```
+
 ### `TRACKIO_SQLITE_*` (advanced)
 
 Override the PRAGMAs Trackio sets on its SQLite connections. These are mainly useful on unusual filesystems; invalid values are ignored.

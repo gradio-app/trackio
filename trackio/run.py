@@ -163,6 +163,8 @@ class Run:
 
         self.config["_Username"] = self._get_username()
         self.config["_Created"] = datetime.now(timezone.utc).isoformat()
+        if (run_command := utils.get_run_command()) is not None:
+            self.config["_RunCommand"] = run_command
         self.config["_Group"] = self.group
 
         self._queued_logs: list[LogEntry] = []

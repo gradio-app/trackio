@@ -40,6 +40,56 @@ def test_run_log_writes_to_sqlite_locally(temp_dir):
     assert run.id is not None
 
 
+def test_run_record_command(temp_dir, monkeypatch):
+    monkeypatch.setattr(
+        "sys.orig_argv",
+        [
+            "/usr/bin/python",
+            "train.py",
+            "--lr",
+            "0.05",
+            "--batch-size",
+            "32",
+            "--early-stop",
+        ],
+    )
+
+    run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
+    run.log({})
+    run.finish()
+
+    config = SQLiteStorage.get_run_config("proj", "run1")
+    assert config is not None
+    assert (
+        config["_RunCommand"]
+        == "python train.py --lr 0.05 --batch-size 32 --early-stop"
+    )
+
+
+def test_run_not_record_command_in_notebook(temp_dir, monkeypatch):
+    monkeypatch.setattr("trackio.utils.is_in_notebook", lambda: True)
+
+    run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
+    run.log({})
+    run.finish()
+
+    config = SQLiteStorage.get_run_config("proj", "run1")
+    assert config is not None
+    assert "_RunCommand" not in config
+
+
+def test_run_not_record_command_when_disabled(temp_dir, monkeypatch):
+    monkeypatch.setenv("TRACKIO_DISABLE_RUN_COMMAND", "1")
+
+    run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
+    run.log({})
+    run.finish()
+
+    config = SQLiteStorage.get_run_config("proj", "run1")
+    assert config is not None
+    assert "_RunCommand" not in config
+
+
 def test_markdown_logging(temp_dir):
     run = Run(url=None, project="proj", client=None, name="run-report", space_id=None)
     run.log({"loss": 0.1, "summary": Markdown("# Training summary")})
