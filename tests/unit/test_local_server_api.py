@@ -371,6 +371,31 @@ def test_local_dashboard_file_endpoint_only_serves_trackio_paths(
         app.close()
 
 
+def test_run_summary_exposes_console_logs(temp_dir):
+    project = "test_console_logs"
+    trackio.init(project=project, name="run-1")
+    print("hello from training")
+    trackio.log(metrics={"loss": 0.1})
+    trackio.finish()
+
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+
+    try:
+        client = Client(url, verbose=False)
+        summary = client.predict(project, "run-1", api_name="/get_run_summary")
+        assert [log["name"] for log in summary["console_logs"]] == ["stdout.log"]
+
+        response = httpx.get(
+            f"{url.rstrip('/')}/file",
+            params={"path": summary["console_logs"][0]["path"]},
+            timeout=5,
+        )
+        assert "hello from training" in response.text
+    finally:
+        trackio.delete_project(project, force=True)
+        app.close()
+
+
 def test_local_dashboard_upload_api_accepts_only_server_uploaded_paths(temp_dir):
     project = "test_local_upload_guard"
     source_path = Path(tempfile.gettempdir()) / "trackio-upload-source.txt"

@@ -133,6 +133,22 @@ How often (in seconds) the dashboard server and Trackio Spaces check for new JSO
 export TRACKIO_INBOX_POLL_INTERVAL="30"
 ```
 
+### `TRACKIO_DISABLE_CONSOLE_CAPTURE`
+
+By default, `trackio.init()` captures everything written to `stdout` and `stderr` until `trackio.finish()` (prints, logging, warnings, exceptions) into `stdout-<run id>.log` and `stderr-<run id>.log` files stored with the run's media (shown as `stdout.log` and `stderr.log` on the run page), and uploads them for runs logged to a Space. Limitation: Output written directly by subprocesses is not captured. Set to `1`, `true`, or `yes` to disable capturing.
+
+```bash
+export TRACKIO_DISABLE_CONSOLE_CAPTURE="1"
+```
+
+### `TRACKIO_DISABLE_RUN_COMMAND`
+
+By default, `trackio.init()` records the command that launched the run (e.g. `python train.py --lr 0.05`) in the run config as `_RunCommand`. Limitation: This is not recorded in notebooks. Set to `1`, `true`, or `yes` to disable this, for example when CLI arguments contain secrets.
+
+```bash
+export TRACKIO_DISABLE_RUN_COMMAND="1"
+```
+
 ### `TRACKIO_SQLITE_*` (advanced)
 
 Override the PRAGMAs Trackio sets on its SQLite connections. These are mainly useful on unusual filesystems; invalid values are ignored.

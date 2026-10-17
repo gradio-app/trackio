@@ -2,6 +2,8 @@ import math
 import os
 import re
 import secrets
+import shlex
+import sys
 import time
 import warnings
 from datetime import datetime, timezone
@@ -323,6 +325,16 @@ def get_inbox_poll_interval() -> float:
     return max(interval, 5.0)
 
 
+def console_capture_disabled() -> bool:
+    flag = os.environ.get("TRACKIO_DISABLE_CONSOLE_CAPTURE", "").strip().lower()
+    return flag in ("1", "true", "yes")
+
+
+def run_command_disabled() -> bool:
+    flag = os.environ.get("TRACKIO_DISABLE_RUN_COMMAND", "").strip().lower()
+    return flag in ("1", "true", "yes")
+
+
 def get_storage_mode() -> str:
     """
     Resolve how Trackio should persist data locally: "sqlite" (write directly to
@@ -568,7 +580,7 @@ def generate_readable_name(used_names: list[str], space_id: str | None = None) -
     return name
 
 
-def is_in_notebook():
+def is_in_notebook() -> bool:
     """
     Detect if code is running in a notebook environment (Jupyter, Colab, etc.).
     """
@@ -583,6 +595,19 @@ def is_in_notebook():
     except ImportError:
         pass
     return False
+
+
+def get_run_command() -> str | None:
+    """
+    Return the command line that started this process, using shlex, or None in
+    a notebook, where the command line is kernel plumbing rather than a cli command.
+    """
+    if not sys.orig_argv or is_in_notebook() or run_command_disabled():
+        return None
+
+    command, *rest_args = sys.orig_argv
+    command = os.path.basename(command)
+    return shlex.join([command, *rest_args])
 
 
 def block_main_thread_until_keyboard_interrupt():

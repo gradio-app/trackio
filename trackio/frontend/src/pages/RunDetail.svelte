@@ -1,6 +1,7 @@
 <script>
   import LoadingTrackio from "../components/LoadingTrackio.svelte";
   import ArtifactVersionDetail from "../components/ArtifactVersionDetail.svelte";
+  import FileList from "../components/FileList.svelte";
   import { getRunSummary, getRunArtifacts } from "../lib/api.js";
   import {
     getQueryParam,
@@ -167,6 +168,11 @@
       {#if summary.config}
         <h3>Configuration</h3>
         <pre class="config-block">{JSON.stringify(summary.config, null, 2)}</pre>
+      {/if}
+
+      {#if summary.console_logs?.length}
+        <h3>Console output</h3>
+        <FileList files={summary.console_logs} tail />
       {/if}
 
       {#if runArtifacts.output.length > 0}
