@@ -76,3 +76,10 @@ def test_disable_run_command_from_env(monkeypatch):
     assert utils.get_run_command() == "python train.py --lr 0.1"
     monkeypatch.setenv("TRACKIO_DISABLE_RUN_COMMAND", "true")
     assert utils.get_run_command() is None
+
+
+def test_disable_console_capture_from_env(monkeypatch):
+    monkeypatch.delenv("TRACKIO_DISABLE_CONSOLE_CAPTURE", raising=False)
+    assert not utils.console_capture_disabled()
+    monkeypatch.setenv("TRACKIO_DISABLE_CONSOLE_CAPTURE", "yes")
+    assert utils.console_capture_disabled()

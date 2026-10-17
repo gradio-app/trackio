@@ -325,6 +325,11 @@ def get_inbox_poll_interval() -> float:
     return max(interval, 5.0)
 
 
+def console_capture_disabled() -> bool:
+    flag = os.environ.get("TRACKIO_DISABLE_CONSOLE_CAPTURE", "").strip().lower()
+    return flag in ("1", "true", "yes")
+
+
 def run_command_disabled() -> bool:
     flag = os.environ.get("TRACKIO_DISABLE_RUN_COMMAND", "").strip().lower()
     return flag in ("1", "true", "yes")

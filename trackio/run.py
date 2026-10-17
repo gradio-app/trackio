@@ -11,7 +11,7 @@ import huggingface_hub
 import orjson
 from gradio_client import handle_file
 
-from trackio import cas, fragments, references, utils
+from trackio import cas, console, fragments, references, utils
 from trackio._batching import _PendingBatch
 from trackio.alerts import (
     AlertLevel,
@@ -184,6 +184,9 @@ class Run:
             webhook_min_level or os.environ.get("TRACKIO_WEBHOOK_MIN_LEVEL")
         )
 
+        self._console_log_paths: tuple[Path, ...] | None = None
+        self._start_console_capture()
+
         if self._is_local:
             self._start_background_thread(
                 "_local_sender_thread",
@@ -251,6 +254,35 @@ class Run:
                 return
             self._warned_failures.add(key)
         _emit_nonfatal_warning(message)
+
+    def _start_console_capture(self) -> None:
+        if utils.console_capture_disabled():
+            return
+        try:
+            log_dir = get_project_media_path(project=self.project, run=self.name)
+            self._console_log_paths = console.attach(log_dir)
+        except Exception as e:
+            self._warn_once(
+                "console-capture-start",
+                f"trackio.init() could not start capturing console output: {e}. Continuing without console logs.",
+            )
+
+    def _stop_console_capture(self) -> None:
+        paths, self._console_log_paths = self._console_log_paths, None
+        if paths is None:
+            return
+        try:
+            console.detach(paths)
+        except Exception as e:
+            self._warn_once(
+                "console-capture-stop",
+                f"trackio.finish() could not stop capturing console output cleanly: {e}.",
+            )
+        if self._is_local:
+            return
+        for path in paths:
+            if path.exists() and path.stat().st_size > 0:
+                self._queue_upload(path, step=None)
 
     def _safe_get_existing_runs(self) -> list[str]:
         if self._existing_runs is not None:
@@ -1838,6 +1870,8 @@ class Run:
                         "finish-cpu-monitor",
                         f"trackio.finish() could not stop automatic CPU logging cleanly: {e}.",
                     )
+
+            self._stop_console_capture()
 
             self._stop_flag.set()
 
