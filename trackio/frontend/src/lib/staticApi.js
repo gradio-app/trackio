@@ -441,7 +441,25 @@ export async function getRunSummary(_project, run) {
     metrics,
     config: runConfig,
     last_step: runMeta.last_step,
+    console_logs: await getConsoleLogs(runMeta.name),
   };
+}
+
+export async function getConsoleLogs(runName) {
+  const logs = await Promise.all(
+    ["stdout.log", "stderr.log"].map(async (name) => {
+      const path = `${runName}/${name}`;
+      try {
+        const resp = await fetch(getMediaUrl(path), { method: "HEAD" });
+        const size = Number(resp.headers.get("content-length"));
+        if (!resp.ok || size === 0) return null;
+        return { name, path, size: size || null };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return logs.filter(Boolean);
 }
 
 export async function getAlerts() {

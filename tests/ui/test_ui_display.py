@@ -161,6 +161,39 @@ def test_runs_table_shows_run_data(temp_dir):
         app.close()
 
 
+def test_run_detail_shows_console_output(temp_dir):
+    trackio.init(project="test_console_output", name="console-run")
+    print("training started")
+    trackio.log(metrics={"loss": 0.5})
+    trackio.finish()
+
+    app, _, _, full_url = trackio.show(
+        project="test_console_output", block_thread=False, open_browser=False
+    )
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            page.set_default_timeout(5000)
+            page.goto(full_url)
+
+            page.get_by_role("button", name="Runs", exact=True).click()
+            page.locator(".runs-table .link-btn", has_text="console-run").click()
+
+            detail = page.locator(".run-detail-page")
+            expect(detail.get_by_text("Console output")).to_be_visible()
+            expect(detail.locator(".download-btn")).to_have_count(1)
+
+            detail.get_by_role("button", name="stdout.log").click()
+            expect(detail.locator(".preview-code")).to_contain_text("training started")
+
+            browser.close()
+    finally:
+        trackio.delete_project("test_console_output", force=True)
+        app.close()
+
+
 def test_multiple_runs_display_multiple_plots(temp_dir):
     for i in range(2):
         trackio.init(project="test_multi", name=f"run-{i}")
