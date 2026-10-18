@@ -18,6 +18,7 @@ def test_run_captures_console_output(temp_dir, capsys):
     try:
         run = Run(url=None, project="proj", client=None, name="run1", space_id=None)
         print("loss 0.5")
+        sys.stdout.writelines(["via writelines\n"])
         logger.warning("from logging")
         run.finish()
         print("after finish")
@@ -26,6 +27,7 @@ def test_run_captures_console_output(temp_dir, capsys):
 
     stdout_log = _log(run).read_text()
     assert "loss 0.5" in stdout_log
+    assert "via writelines" in stdout_log
     assert "after finish" not in stdout_log
     assert "from logging" in _log(run, "stderr").read_text()
     assert "loss 0.5" in capsys.readouterr().out
@@ -75,6 +77,13 @@ def test_runs_with_the_same_name_keep_separate_logs(temp_dir):
     assert "second attempt" not in _log(first).read_text()
     assert "first resumed" in _log(first).read_text()
     assert "first attempt" not in _log(second).read_text()
+
+
+def test_finish_restores_write_patched_by_another_lib(temp_dir, monkeypatch):
+    other_write = MagicMock(wraps=sys.stdout.write)
+    monkeypatch.setattr(sys.stdout, "write", other_write)
+    Run(url=None, project="proj", client=None, name="run1", space_id=None).finish()
+    assert sys.stdout.write is other_write
 
 
 def test_remote_run_uploads_console_logs(temp_dir, monkeypatch):

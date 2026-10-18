@@ -80,31 +80,29 @@ class ConsoleCapture:
         self._unpatch(name)
         try:
             original_write = stream.write
+            previous = vars(stream).get("write")
 
             def write(text):
                 written = original_write(text)
                 self.write(name, text)
                 return written
 
-            def writelines(lines):
-                for line in lines:
-                    write(line)
-
             stream.write = write
-            stream.writelines = writelines
         except (AttributeError, TypeError):
             return
-        self._patched[name] = (stream, write, writelines)
+        self._patched[name] = (stream, write, previous)
 
     def _unpatch(self, name: str) -> None:
         patched = self._patched.pop(name, None)
         if patched is None:
             return
-        stream, write, writelines = patched
-        attributes = getattr(stream, "__dict__", {})
-        for attribute, value in (("write", write), ("writelines", writelines)):
-            if attributes.get(attribute) is value:
-                delattr(stream, attribute)
+        stream, write, previous = patched
+        if getattr(stream, "__dict__", {}).get("write") is not write:
+            return
+        if previous is None:
+            del stream.write
+        else:
+            stream.write = previous
 
 
 _capture = ConsoleCapture()
