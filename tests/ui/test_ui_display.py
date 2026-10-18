@@ -182,6 +182,7 @@ def test_run_detail_shows_console_output(temp_dir):
             page.locator(".runs-table .link-btn", has_text="console-run").click()
 
             detail = page.locator(".run-detail-page")
+            expect(detail.get_by_role("heading", name="Command")).to_be_visible()
             expect(detail.get_by_text("Console output")).to_be_visible()
             expect(detail.locator(".download-btn")).to_have_count(1)
 

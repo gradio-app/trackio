@@ -165,6 +165,11 @@
         </div>
       </div>
 
+      {#if summary.config?._RunCommand}
+        <h3>Command</h3>
+        <pre class="config-block">{summary.config._RunCommand}</pre>
+      {/if}
+
       {#if summary.config}
         <h3>Configuration</h3>
         <pre class="config-block">{JSON.stringify(summary.config, null, 2)}</pre>
