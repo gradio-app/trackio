@@ -370,6 +370,10 @@ Aggregated metrics:
 - `temp/{label}` - Temperature sensor readings in Celsius (if available)
 - `gpu/detected` - Whether an Apple GPU was detected (0/1)
 
+### Console output and launch command
+
+The command that launched a run and everything it prints to `stdout` and `stderr` are saved with the run and shown on the run page under **Command** and **Console output**. Set `TRACKIO_DISABLE_RUN_COMMAND=1` or `TRACKIO_DISABLE_CONSOLE_CAPTURE=1` to turn either off, for example when they could contain secrets.
+
 ## Finishing a Run
 
 When your run is complete, finalize it with [`finish`].
