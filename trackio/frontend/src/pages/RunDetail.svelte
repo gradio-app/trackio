@@ -239,7 +239,11 @@
       {#if command}
         <h3>Command</h3>
         <div class="command-block">
-          <code>{command}</code>
+          <code
+            >{#each command.split(" ") as part, i}{#if i > 0}{" "}{/if}<span class="command-arg"
+                >{part}</span
+              >{/each}</code
+          >
           <button
             class="icon-btn"
             class:copied={commandCopied}
@@ -411,7 +415,10 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color, #1f2937);
-    white-space: pre-wrap;
+  }
+  .command-arg {
+    display: inline-block;
+    max-width: 100%;
     overflow-wrap: anywhere;
   }
   .icon-btn {
