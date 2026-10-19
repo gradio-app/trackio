@@ -1124,6 +1124,162 @@ class SQLiteStorage:
         return ("run_name", resolved)
 
     @staticmethod
+    def _query_run_records(
+        conn: sqlite3.Connection, project: str
+    ) -> list[dict[str, str | None]]:
+        cursor = conn.cursor()
+        link_columns = SQLiteStorage._table_columns(conn, "run_artifact_links")
+        has_links = (
+            bool(link_columns)
+            and cursor.execute("SELECT 1 FROM run_artifact_links LIMIT 1").fetchone()
+            is not None
+        )
+        has_run_project = "run_project" in link_columns
+        local_link_scope = (
+            "(l.run_project IS NULL OR l.run_project = :run_project)"
+            if has_run_project
+            else "1 = 1"
+        )
+        local_link_scope_unaliased = (
+            "(run_project IS NULL OR run_project = :run_project)"
+            if has_run_project
+            else "1 = 1"
+        )
+        query_params = (
+            {"run_project": canonical_project_name(project)} if has_run_project else {}
+        )
+        external_records = []
+        if SQLiteStorage._table_columns(conn, "external_run_artifact_links"):
+            external_records = [
+                {
+                    "id": row["run_id"] or row["run_name"],
+                    "name": row["run_name"],
+                    "created_at": row["created_at"],
+                }
+                for row in cursor.execute(
+                    """SELECT run_id, run_name,
+                        MIN(created_at) AS created_at
+                    FROM external_run_artifact_links
+                    WHERE run_name IS NOT NULL
+                    GROUP BY run_id, run_name"""
+                ).fetchall()
+            ]
+        if SQLiteStorage._supports_run_ids(conn):
+            # Seek to the first metric of each run instead of aggregating
+            # every logged value. Keep the scan fallback for downloaded or
+            # read-only databases that have not passed through init_db.
+            has_record_index = cursor.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'index' "
+                "AND name = 'idx_metrics_run_record'"
+            ).fetchone()
+            metric_runs = "SELECT run_id, run_name, timestamp FROM metrics"
+            if has_record_index:
+                metric_runs = """
+                    SELECT run_id, run_name, timestamp FROM metrics
+                    WHERE id = (
+                        SELECT id FROM metrics
+                        ORDER BY run_id, run_name, timestamp LIMIT 1
+                    )
+                    UNION ALL
+                    SELECT m.run_id, m.run_name, m.timestamp
+                    FROM metric_runs AS previous
+                    JOIN metrics AS m ON m.id = COALESCE(
+                        (SELECT id FROM metrics
+                         WHERE run_id = previous.run_id
+                           AND run_name > previous.run_name
+                         ORDER BY run_name, timestamp LIMIT 1),
+                        (SELECT id FROM metrics
+                         WHERE run_id > previous.run_id
+                         ORDER BY run_id, run_name, timestamp LIMIT 1)
+                    )
+                """
+            sources = [
+                "SELECT run_id, run_name, timestamp AS created_at FROM metric_runs"
+            ]
+            if has_links:
+                sources.append(
+                    """
+                    SELECT run_id, run_name, created_at
+                    FROM run_artifact_links AS l
+                    WHERE {local_link_scope}
+                      AND run_name IS NOT NULL
+                      AND l.run_name NOT IN (
+                        SELECT run_name FROM metric_runs
+                        WHERE run_name IS NOT NULL
+                      )
+                      AND (l.run_id IS NULL OR NOT EXISTS (
+                        SELECT 1 FROM metric_runs m
+                        WHERE m.run_id = l.run_id
+                      ))
+                      AND (l.run_id IS NOT NULL OR l.run_name NOT IN (
+                        SELECT run_name FROM run_artifact_links
+                        WHERE run_id IS NOT NULL
+                          AND run_name IS NOT NULL
+                          AND {local_link_scope_unaliased}
+                      ))
+                    """.format(
+                        local_link_scope=local_link_scope,
+                        local_link_scope_unaliased=local_link_scope_unaliased,
+                    )
+                )
+            cursor.execute(
+                f"""
+                WITH RECURSIVE metric_runs AS ({metric_runs})
+                SELECT run_id, run_name, MIN(created_at) AS created_at
+                FROM ({" UNION ALL ".join(sources)})
+                GROUP BY run_id, run_name
+                ORDER BY created_at ASC
+                """,
+                query_params,
+            )
+            records = [
+                {
+                    "id": row["run_id"],
+                    "name": row["run_name"],
+                    "created_at": row["created_at"],
+                }
+                for row in cursor.fetchall()
+            ]
+        else:
+            sources = ["SELECT run_name, timestamp AS created_at FROM metrics"]
+            if has_links:
+                sources.append(
+                    "SELECT run_name, created_at FROM run_artifact_links AS l "
+                    f"WHERE run_name IS NOT NULL AND {local_link_scope}"
+                )
+            cursor.execute(
+                f"""
+                SELECT run_name, MIN(created_at) AS created_at
+                FROM ({" UNION ALL ".join(sources)})
+                GROUP BY run_name
+                ORDER BY created_at ASC
+                """,
+                query_params,
+            )
+            records = [
+                {
+                    "id": row["run_name"],
+                    "name": row["run_name"],
+                    "created_at": row["created_at"],
+                }
+                for row in cursor.fetchall()
+            ]
+        known_ids = {record["id"] for record in records if record["id"] is not None}
+        known_names = {
+            record["name"] for record in records if record["name"] is not None
+        }
+        for record in external_records:
+            if record["id"] in known_ids or record["name"] in known_names:
+                continue
+            records.append(record)
+            if record["id"] is not None:
+                known_ids.add(record["id"])
+            if record["name"] is not None:
+                known_names.add(record["name"])
+        records.sort(key=lambda record: record["created_at"] or "")
+        return records
+
+    @staticmethod
     def get_run_records(project: str) -> list[dict[str, str | None]]:
         """Every run in `project`, from metrics plus artifact link rows,
         including links to artifacts owned by another local project.
@@ -1141,161 +1297,7 @@ class SQLiteStorage:
 
         try:
             with SQLiteStorage._get_connection(db_path) as conn:
-                cursor = conn.cursor()
-                link_columns = SQLiteStorage._table_columns(conn, "run_artifact_links")
-                has_links = (
-                    bool(link_columns)
-                    and cursor.execute(
-                        "SELECT 1 FROM run_artifact_links LIMIT 1"
-                    ).fetchone()
-                    is not None
-                )
-                has_run_project = "run_project" in link_columns
-                local_link_scope = (
-                    "(l.run_project IS NULL OR l.run_project = :run_project)"
-                    if has_run_project
-                    else "1 = 1"
-                )
-                local_link_scope_unaliased = (
-                    "(run_project IS NULL OR run_project = :run_project)"
-                    if has_run_project
-                    else "1 = 1"
-                )
-                query_params = (
-                    {"run_project": canonical_project_name(project)}
-                    if has_run_project
-                    else {}
-                )
-                external_records = []
-                if SQLiteStorage._table_columns(conn, "external_run_artifact_links"):
-                    external_records = [
-                        {
-                            "id": row["run_id"] or row["run_name"],
-                            "name": row["run_name"],
-                            "created_at": row["created_at"],
-                        }
-                        for row in cursor.execute(
-                            """SELECT run_id, run_name,
-                                MIN(created_at) AS created_at
-                            FROM external_run_artifact_links
-                            WHERE run_name IS NOT NULL
-                            GROUP BY run_id, run_name"""
-                        ).fetchall()
-                    ]
-                if SQLiteStorage._supports_run_ids(conn):
-                    # Seek to the first metric of each run instead of aggregating
-                    # every logged value. Keep the scan fallback for downloaded or
-                    # read-only databases that have not passed through init_db.
-                    has_record_index = cursor.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type = 'index' "
-                        "AND name = 'idx_metrics_run_record'"
-                    ).fetchone()
-                    metric_runs = "SELECT run_id, run_name, timestamp FROM metrics"
-                    if has_record_index:
-                        metric_runs = """
-                            SELECT run_id, run_name, timestamp FROM metrics
-                            WHERE id = (
-                                SELECT id FROM metrics
-                                ORDER BY run_id, run_name, timestamp LIMIT 1
-                            )
-                            UNION ALL
-                            SELECT m.run_id, m.run_name, m.timestamp
-                            FROM metric_runs AS previous
-                            JOIN metrics AS m ON m.id = COALESCE(
-                                (SELECT id FROM metrics
-                                 WHERE run_id = previous.run_id
-                                   AND run_name > previous.run_name
-                                 ORDER BY run_name, timestamp LIMIT 1),
-                                (SELECT id FROM metrics
-                                 WHERE run_id > previous.run_id
-                                 ORDER BY run_id, run_name, timestamp LIMIT 1)
-                            )
-                        """
-                    sources = [
-                        "SELECT run_id, run_name, timestamp AS created_at FROM metric_runs"
-                    ]
-                    if has_links:
-                        sources.append(
-                            """
-                            SELECT run_id, run_name, created_at
-                            FROM run_artifact_links AS l
-                            WHERE {local_link_scope}
-                              AND run_name IS NOT NULL
-                              AND l.run_name NOT IN (
-                                SELECT run_name FROM metric_runs
-                                WHERE run_name IS NOT NULL
-                              )
-                              AND (l.run_id IS NULL OR NOT EXISTS (
-                                SELECT 1 FROM metric_runs m
-                                WHERE m.run_id = l.run_id
-                              ))
-                              AND (l.run_id IS NOT NULL OR l.run_name NOT IN (
-                                SELECT run_name FROM run_artifact_links
-                                WHERE run_id IS NOT NULL
-                                  AND run_name IS NOT NULL
-                                  AND {local_link_scope_unaliased}
-                              ))
-                            """.format(
-                                local_link_scope=local_link_scope,
-                                local_link_scope_unaliased=local_link_scope_unaliased,
-                            )
-                        )
-                    cursor.execute(
-                        f"""
-                        WITH RECURSIVE metric_runs AS ({metric_runs})
-                        SELECT run_id, run_name, MIN(created_at) AS created_at
-                        FROM ({" UNION ALL ".join(sources)})
-                        GROUP BY run_id, run_name
-                        ORDER BY created_at ASC
-                        """,
-                        query_params,
-                    )
-                    records = [
-                        {
-                            "id": row["run_id"],
-                            "name": row["run_name"],
-                            "created_at": row["created_at"],
-                        }
-                        for row in cursor.fetchall()
-                    ]
-                else:
-                    sources = ["SELECT run_name, timestamp AS created_at FROM metrics"]
-                    if has_links:
-                        sources.append(
-                            "SELECT run_name, created_at FROM run_artifact_links AS l "
-                            f"WHERE run_name IS NOT NULL AND {local_link_scope}"
-                        )
-                    cursor.execute(
-                        f"""
-                        SELECT run_name, MIN(created_at) AS created_at
-                        FROM ({" UNION ALL ".join(sources)})
-                        GROUP BY run_name
-                        ORDER BY created_at ASC
-                        """,
-                        query_params,
-                    )
-                    records = [
-                        {
-                            "id": row["run_name"],
-                            "name": row["run_name"],
-                            "created_at": row["created_at"],
-                        }
-                        for row in cursor.fetchall()
-                    ]
-            known_ids = {record["id"] for record in records if record["id"] is not None}
-            known_names = {
-                record["name"] for record in records if record["name"] is not None
-            }
-            for record in external_records:
-                if record["id"] in known_ids or record["name"] in known_names:
-                    continue
-                records.append(record)
-                if record["id"] is not None:
-                    known_ids.add(record["id"])
-                if record["name"] is not None:
-                    known_names.add(record["name"])
-            records.sort(key=lambda record: record["created_at"] or "")
-            return records
+                return SQLiteStorage._query_run_records(conn, project)
         except sqlite3.OperationalError as e:
             if "no such table: metrics" in str(e):
                 return []
@@ -5739,7 +5741,7 @@ class SQLiteStorage:
                 where = f"ral.{col} = ?"
                 params = (val,)
                 if col == "run_id" and run_name is not None:
-                    records = SQLiteStorage.get_run_records(project)
+                    records = SQLiteStorage._query_run_records(conn, project)
                     same_name = [r["id"] for r in records if r["name"] == run_name]
                     if same_name == [val]:
                         with_clause = """
