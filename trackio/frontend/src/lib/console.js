@@ -4,12 +4,6 @@ function pad(value) {
   return String(value).padStart(2, "0");
 }
 
-/**
- * Formats a UTC ISO timestamp from a console log line in the viewer's
- * local time zone.
- * @param {string} iso
- * @returns {string}
- */
 export function formatConsoleTime(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -19,13 +13,6 @@ export function formatConsoleTime(iso) {
   );
 }
 
-/**
- * Splits captured console output (one `<UTC timestamp> <text>` entry per
- * line) into rows for the run page's console viewer. Lines without a
- * timestamp prefix are kept with an empty time.
- * @param {string} text
- * @returns {Array<{time: string, text: string}>}
- */
 export function parseConsoleLines(text) {
   if (!text) return [];
   const lines = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n");

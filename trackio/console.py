@@ -71,15 +71,9 @@ def _timestamp() -> str:
 
 
 class ConsoleCapture:
-    """Tees `sys.stdout` and `sys.stderr` into log files stored with the run.
-
-    The `write` method of the existing stream objects is wrapped rather than the
-    streams being replaced, so logging handlers created before `trackio.init()`
-    (which hold a reference to the original stream) are captured as well. Output
-    is written to `console-<session>-<index>.log` files in the run's media
-    directory every `interval` seconds; the current file is rewritten until it
-    reaches `MAX_CHUNK_BYTES`, then a new one is started.
-    """
+    """Wraps the `write` method of the existing `sys.stdout` and `sys.stderr`
+    objects instead of replacing them, so logging handlers created before
+    `trackio.init()` are captured too."""
 
     def __init__(self, run: "Run", interval: float = FLUSH_INTERVAL):
         self._run = run
