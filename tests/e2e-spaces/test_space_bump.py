@@ -34,8 +34,7 @@ def _duplicate(legacy, space_id, bucket_id):
         legacy["space_id"],
         space_id,
         repo_type="space",
-        space_hardware="cpu-upgrade",
-        space_sleep_time=-1,
+        space_hardware="cpu-basic",
         space_secrets=[{"key": "HF_TOKEN", "value": huggingface_hub.get_token()}],
         space_variables=[
             {"key": "TRACKIO_DIR", "value": "/data/trackio"},
