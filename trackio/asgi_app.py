@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -320,7 +321,12 @@ async def run_api_request(request: Request, api_name: str) -> Response:
     _maybe_apply_hf_token_from_authorization(request, fn, args, kwargs)
 
     try:
-        result = _invoke_handler(fn, request, args=args, kwargs=kwargs)
+        if api_name in request.app.state.threaded_apis:
+            result = await asyncio.to_thread(
+                _invoke_handler, fn, request, args=args, kwargs=kwargs
+            )
+        else:
+            result = _invoke_handler(fn, request, args=args, kwargs=kwargs)
         if inspect.isawaitable(result):
             result = await result
         return JSONResponse({"data": _json_safe(result)})
@@ -459,6 +465,7 @@ def create_trackio_starlette_app(
     api_registry: dict[str, Any],
     extra_routes: list[Any] | None = None,
     write_apis: frozenset[str] = frozenset(),
+    threaded_apis: frozenset[str] = frozenset(),
     mcp_lifespan: Any = None,
     mcp_enabled: bool = False,
     allowed_file_roots: list[str | Path] | None = None,
@@ -527,6 +534,7 @@ def create_trackio_starlette_app(
     app = Starlette(routes=routes, lifespan=mcp_lifespan)
     app.state.api_registry = api_registry
     app.state.write_apis = write_apis
+    app.state.threaded_apis = threaded_apis
     app.state.mcp_enabled = mcp_enabled
     app.state.allowed_file_roots = _normalize_allowed_file_roots(allowed_file_roots)
     app.state.upload_authorizer = upload_authorizer

@@ -1366,6 +1366,10 @@ CSS = ""
 HEAD = ""
 
 
+THREADED_APIS = frozenset(
+    {"get_logs", "get_logs_batch", "get_system_logs", "get_system_logs_batch"}
+)
+
 WRITE_APIS = frozenset(
     {
         "upload_db_to_space",
@@ -1474,6 +1478,7 @@ def build_starlette_app_only(
         _api_registry(),
         extra_routes=mcp_routes,
         write_apis=WRITE_APIS,
+        threaded_apis=THREADED_APIS,
         mcp_lifespan=mcp_lifespan,
         mcp_enabled=mcp_enabled,
         allowed_file_roots=[

@@ -8,6 +8,7 @@ let _staticModePromise = null;
 let _mediaDir = "";
 
 async function _detectStaticMode() {
+  if (window.__trackio_static === false) return false;
   try {
     const resp = await fetch(`${BASE}/config.json`);
     if (resp.ok) {
@@ -72,19 +73,19 @@ export async function callApi(apiName, params = {}, requestOptions = {}) {
   return json.data;
 }
 
-export async function getAllProjects() {
+export async function getAllProjects(requestOptions = {}) {
   if (await isStaticMode()) return staticApi.getAllProjects();
-  return await callApi("/get_all_projects");
+  return await callApi("/get_all_projects", {}, requestOptions);
 }
 
-export async function getRunsForProject(project) {
+export async function getRunsForProject(project, requestOptions = {}) {
   if (await isStaticMode()) return staticApi.getRunsForProject(project);
-  return await callApi("/get_runs_for_project", { project });
+  return await callApi("/get_runs_for_project", { project }, requestOptions);
 }
 
-export async function getRunConfigs(project) {
+export async function getRunConfigs(project, requestOptions = {}) {
   if (await isStaticMode()) return staticApi.getRunConfigs(project);
-  return await callApi("/get_run_configs", { project });
+  return await callApi("/get_run_configs", { project }, requestOptions);
 }
 
 function normalizeRun(run) {
@@ -150,10 +151,10 @@ export async function getRunSummary(project, run) {
   return await callApi("/get_run_summary", params);
 }
 
-export async function getAlerts(project, run, level, since) {
+export async function getAlerts(project, run, level, since, requestOptions = {}) {
   const params = { project, ...normalizeRun(run), level, since };
   if (await isStaticMode()) return staticApi.getAlerts(project, run, level, since);
-  return await callApi("/get_alerts", params);
+  return await callApi("/get_alerts", params, requestOptions);
 }
 
 export async function getSystemMetricsForRun(project, run) {
@@ -286,9 +287,9 @@ export function getArtifactBlobUrl(project, digest) {
   return `${BASE}/artifact_blob/${encodeURIComponent(project)}/${encodeURIComponent(digest)}`;
 }
 
-export async function getTabAvailability(project) {
+export async function getTabAvailability(project, requestOptions = {}) {
   if (await isStaticMode()) return staticApi.getTabAvailability(project);
-  return await callApi("/get_tab_availability", { project });
+  return await callApi("/get_tab_availability", { project }, requestOptions);
 }
 
 export async function getRunMutationStatus() {

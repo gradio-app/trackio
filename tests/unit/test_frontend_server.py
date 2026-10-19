@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import trackio.frontend_server as frontend_server
 from trackio.frontend_server import _render_index_html
 
 _HTML = """<!DOCTYPE html>
@@ -24,6 +25,7 @@ def test_render_index_html_no_root_path_leaves_absolute_refs(tmp_path):
     assert 'href="/assets/index-abc123.css"' in out
     assert 'href="/static/trackio/trackio_logo_light.png"' in out
     assert "window.__trackio_base" not in out
+    assert "window.__trackio_static" not in out
 
 
 def test_render_index_html_with_root_path_prefixes_refs(tmp_path):
@@ -42,3 +44,10 @@ def test_render_index_html_live_reload_endpoint_is_prefixed(tmp_path):
 def test_render_index_html_live_reload_endpoint_unprefixed_by_default(tmp_path):
     out = _render_index_html(_write_html(tmp_path))
     assert '"/__trackio/frontend_version"' in out
+
+
+def test_render_index_html_marks_bundled_frontend_as_served(tmp_path, monkeypatch):
+    monkeypatch.setattr(frontend_server, "BUNDLED_FRONTEND_DIR", tmp_path)
+    out = _render_index_html(_write_html(tmp_path))
+    assert "window.__trackio_static = false" in out
+    assert "/__trackio/frontend_version" in out

@@ -50,7 +50,7 @@
     metricColumns = $bindable([]),
   } = $props();
 
-  let masterData = $state([]);
+  let masterData = $state.raw([]);
   let xColumn = $state("step");
   let metrics = $state([]);
   let histogramMetrics = $state([]);

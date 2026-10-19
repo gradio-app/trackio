@@ -8,12 +8,14 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
+from starlette.testclient import TestClient
 
 import trackio
 import trackio.context_vars as context_vars
 import trackio.server as trackio_server
 import trackio.utils as trackio_utils
 from trackio import Api
+from trackio.asgi_app import create_trackio_starlette_app
 from trackio.remote_client import RemoteClient as Client
 from trackio.sqlite_storage import SQLiteStorage
 
@@ -215,6 +217,55 @@ def test_registry_bucket_picker_does_not_block_other_api_requests(
     finally:
         release.set()
         app.close()
+
+
+def test_slow_api_request_does_not_block_other_api_requests(temp_dir, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+
+    def get_logs_batch(*args, **kwargs):
+        entered.set()
+        release.wait(timeout=5)
+        return []
+
+    monkeypatch.setattr(SQLiteStorage, "get_logs_batch", get_logs_batch)
+    app, url, _, _ = trackio.show(block_thread=False, open_browser=False)
+    api = f"{url.rstrip('/')}/api"
+
+    try:
+        with ThreadPoolExecutor() as executor:
+            body = {"project": "p", "runs": []}
+            slow = executor.submit(httpx.post, f"{api}/get_logs_batch", json=body)
+            assert entered.wait(timeout=2)
+            response = httpx.post(f"{api}/get_all_projects", json={}, timeout=2)
+            release.set()
+
+            assert response.status_code == 200
+            assert slow.result(timeout=2).status_code == 200
+    finally:
+        release.set()
+        app.close()
+
+
+def test_only_threaded_apis_run_off_the_event_loop(temp_dir):
+    threads = {}
+
+    async def on_loop():
+        threads["loop"] = threading.get_ident()
+
+    def heavy():
+        threads["heavy"] = threading.get_ident()
+
+    def light():
+        threads["light"] = threading.get_ident()
+
+    registry = {"on_loop": on_loop, "heavy": heavy, "light": light}
+    client = TestClient(
+        create_trackio_starlette_app([], registry, threaded_apis=frozenset({"heavy"}))
+    )
+    for name in registry:
+        assert client.post(f"/api/{name}", json={}).status_code == 200
+
+    assert threads["light"] == threads["loop"] != threads["heavy"]
 
 
 def test_get_run_configs_returns_config_per_run(temp_dir):

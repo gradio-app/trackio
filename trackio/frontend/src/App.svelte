@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import Navbar from "./components/Navbar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import AlertPanel from "./components/AlertPanel.svelte";
@@ -27,6 +27,7 @@
     setMediaDir,
   } from "./lib/api.js";
   import {
+    createPollingTask,
     getAppPollIntervalMs,
     isRateLimitCooldownActive,
     isTabHidden,
@@ -110,6 +111,7 @@
   let urlTick = $state(0);
   let alerts = $state([]);
   let pollTimer = $state(null);
+  const pollTask = createPollingTask();
   let mutationStatus = $state({
     spaces: false,
     allowed: true,
@@ -206,9 +208,9 @@
     }
   }
 
-  async function refreshProjects() {
+  async function refreshProjects(signal, request = getAllProjects({ signal })) {
     try {
-      const data = await getAllProjects();
+      const data = await request;
       projects = data || [];
       if (projects.length > 0 && !selectedProject) {
         const paramProject = lockedProjectName();
@@ -218,7 +220,7 @@
       }
       applyLockedProject();
     } catch (e) {
-      console.error("Failed to load projects:", e);
+      if (e?.name !== "AbortError") console.error("Failed to load projects:", e);
     }
   }
 
@@ -227,7 +229,24 @@
     await refreshMutationAccess();
   }
 
-  async function refreshRuns() {
+  let runsLoad = null;
+
+  function loadProjectRuns() {
+    if (runsLoad?.project !== selectedProject) {
+      runsLoad?.controller.abort();
+      const controller = new AbortController();
+      runsLoad = {
+        project: selectedProject,
+        controller,
+        done: refreshRuns(controller.signal).finally(() => {
+          if (runsLoad?.controller === controller) runsLoad = null;
+        }),
+      };
+    }
+    return runsLoad.done;
+  }
+
+  async function refreshRuns(signal) {
     const project = selectedProject;
     if (!project) {
       runs = [];
@@ -243,8 +262,8 @@
     }
     try {
       const [data, configs] = await Promise.all([
-        getRunsForProject(project),
-        getRunConfigs(project).catch(() => null),
+        getRunsForProject(project, { signal }),
+        getRunConfigs(project, { signal }).catch(() => null),
       ]);
       if (selectedProject !== project) return;
       const newRuns = [...(data || [])].reverse();
@@ -264,15 +283,16 @@
         runConfigsProject = project;
       }
     } catch (e) {
-      console.error("Failed to load runs:", e);
+      if (e?.name !== "AbortError") console.error("Failed to load runs:", e);
     }
   }
 
-  async function refreshAlerts() {
-    if (!selectedProject) return;
+  async function refreshAlerts(signal) {
+    const project = selectedProject;
+    if (!project) return;
     try {
-      const data = await getAlerts(selectedProject, null, null, null);
-      alerts = (data || []).slice(-20);
+      const data = await getAlerts(project, null, null, null, { signal });
+      if (project === selectedProject) alerts = (data || []).slice(-20);
     } catch {
       // ignore
     }
@@ -291,7 +311,8 @@
     };
   }
 
-  async function refreshTabAvailability({ force = false } = {}) {
+  async function refreshTabAvailability({ force = false, signal } = {}) {
+    if (signal?.aborted) return;
     const now = Date.now();
     if (
       !force &&
@@ -307,7 +328,7 @@
     }
 
     try {
-      const flags = await getTabAvailability(selectedProject);
+      const flags = await getTabAvailability(selectedProject, { signal });
       if (requestId !== tabAvailabilityRequestId) return;
       const availability = {
         ...initialAvailability(),
@@ -325,7 +346,7 @@
         openedFirstNonEmptyTab = true;
       }
     } catch (e) {
-      if (requestId !== tabAvailabilityRequestId) return;
+      if (requestId !== tabAvailabilityRequestId || e?.name === "AbortError") return;
       console.error("Failed to load tab availability:", e);
       tabAvailability = initialAvailability();
     }
@@ -333,14 +354,16 @@
 
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
+    pollTimer = setInterval(() => {
       if (!realtimeEnabled) return;
       if (isTabHidden()) return;
       if (isRateLimitCooldownActive()) return;
-      await refreshProjects();
-      await refreshRuns();
-      await refreshAlerts();
-      await refreshTabAvailability();
+      void pollTask.run(async (signal) => {
+        await refreshProjects(signal);
+        await refreshRuns(signal);
+        await refreshAlerts(signal);
+        await refreshTabAvailability({ signal });
+      });
     }, getAppPollIntervalMs());
   }
 
@@ -368,7 +391,7 @@
     selectedProject;
     availableSystemDevices = [];
     selectedSystemDevices = [];
-    refreshRuns();
+    untrack(loadProjectRuns);
   });
 
   $effect(() => {
@@ -478,8 +501,11 @@
       }
 
       try {
+        const settingsRequest = getSettings();
+        const projectsRequest = getAllProjects();
+        projectsRequest.catch(() => {});
         try {
-          const settings = await getSettings();
+          const settings = await settingsRequest;
           if (settings) {
             if (settings.logo_urls) logoUrls = settings.logo_urls;
             if (settings.color_palette) setColorPalette(settings.color_palette);
@@ -491,10 +517,10 @@
         } catch {
           // settings endpoint may not be available
         }
-        await refreshProjects();
-        await refreshRuns();
+        await refreshProjects(undefined, projectsRequest);
+        await loadProjectRuns();
 
-        await refreshAlerts();
+        refreshAlerts();
         await refreshTabAvailability({ force: true });
       } catch (e) {
         console.error("Failed to load projects:", e);

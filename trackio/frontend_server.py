@@ -11,6 +11,8 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route, get_route_path
 from starlette.staticfiles import StaticFiles
 
+from trackio.frontend_config import BUNDLED_FRONTEND_DIR
+
 ASSETS_DIR = Path(__file__).parent / "assets"
 
 _logger = logging.getLogger(__name__)
@@ -76,19 +78,27 @@ def _prefix_absolute_refs(html: str, root_path: str) -> str:
     )
 
 
+def _inject_head_script(html: str, script: str) -> str:
+    if "<head>" in html:
+        return html.replace("<head>", f"<head>\n    {script}", 1)
+    return script + html
+
+
 def _inject_base_script(html: str, root_path: str) -> str:
     if not root_path:
         return html
     script = f"<script>window.__trackio_base = {json.dumps(root_path)};</script>"
-    if "<head>" in html:
-        return html.replace("<head>", f"<head>\n    {script}", 1)
-    return script + html
+    return _inject_head_script(html, script)
 
 
 def _render_index_html(path: Path, root_path: str = "") -> str:
     html = path.read_text(encoding="utf-8")
     html = _prefix_absolute_refs(html, root_path)
     html = _inject_base_script(html, root_path)
+    if path.resolve().is_relative_to(BUNDLED_FRONTEND_DIR.resolve()):
+        html = _inject_head_script(
+            html, "<script>window.__trackio_static = false;</script>"
+        )
     return _inject_live_reload(html, root_path)
 
 
