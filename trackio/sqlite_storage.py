@@ -4144,15 +4144,23 @@ class SQLiteStorage:
         Artifacts stay in the source project: the run's artifact link rows are
         deleted there and producer references on artifact versions are cleared,
         so the moved run no longer appears in the source project's run list.
+
+        Returns False without changing anything when both names resolve to the
+        same project (see ``canonical_project_name``).
         """
+        if canonical_project_name(project) == canonical_project_name(new_project):
+            return False
         source_db_path = SQLiteStorage.get_project_db_path(project)
         if not source_db_path.exists():
             return False
 
         target_db_path = SQLiteStorage.init_db(new_project)
 
-        with SQLiteStorage._get_process_lock(project):
-            with SQLiteStorage._get_process_lock(new_project):
+        first_lock, second_lock = sorted(
+            (project, new_project), key=canonical_project_name
+        )
+        with SQLiteStorage._get_process_lock(first_lock):
+            with SQLiteStorage._get_process_lock(second_lock):
                 with SQLiteStorage._get_connection(source_db_path) as source_conn:
                     source_cursor = source_conn.cursor()
 
