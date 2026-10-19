@@ -416,13 +416,11 @@ The complete documentation and API reference for each version of Trackio can be 
 
 ## Contribute
 
-We welcome contributions to Trackio! Whether you're fixing bugs, adding features, or improving documentation, your contributions help make Trackio better for the entire machine learning community.
+We have paused accepting pull requests from outside the Trackio maintainer team. The best way to help is to [open a detailed issue](https://github.com/gradio-app/trackio/issues/new) with a minimal reproduction or a clear feature request. See our [Contributing Guide](CONTRIBUTING.md) for what to include.
 
 <p align="center">
   <img src="https://contrib.rocks/image?repo=gradio-app/trackio" />
 </p>
-
-To start contributing, see our [Contributing Guide](CONTRIBUTING.md).
 
 ### Development Setup
 
@@ -438,7 +436,7 @@ Trackio is designed to be extremely forkable. The Trackio the **backend** is wri
 
 If you deploy your Trackio dashboard to Hugging Face Spaces (by setting a `space_id` in `trackio.init()`), the Space UI reflects **your** checkout of Trackio—including any changes to the Python backend and the built Svelte assets.
 
-To get started, follow the [Contributing Guide](#CONTRIBUTING.md) instructions to set up Trackio locally, then make your changes and run `trackio show` to preview them locally.
+To get started, follow the [Development Setup](CONTRIBUTING.md#development-setup) instructions to set up Trackio locally, then make your changes and run `trackio show` to preview them locally.
 
 ## Pronunciation
 
