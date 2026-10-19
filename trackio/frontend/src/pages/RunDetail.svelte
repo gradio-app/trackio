@@ -412,7 +412,7 @@
     font-size: var(--text-sm, 12px);
     color: var(--body-text-color, #1f2937);
     white-space: pre-wrap;
-    word-break: break-all;
+    overflow-wrap: anywhere;
   }
   .icon-btn {
     display: flex;
