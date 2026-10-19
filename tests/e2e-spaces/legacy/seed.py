@@ -40,7 +40,6 @@ def _deploy(target: dict) -> None:
         repo_id=space_id,
         repo_type="space",
     )
-    hf_api.request_space_hardware(space_id, "cpu-upgrade", sleep_time=-1)
     while str(hf_api.get_space_runtime(space_id).stage) != "RUNNING":
         time.sleep(10)
 
