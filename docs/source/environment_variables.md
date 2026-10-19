@@ -172,6 +172,16 @@ export TRACKIO_WEBHOOK_MIN_LEVEL="warn"
 
 With `warn`, only `WARN` and `ERROR` alerts are sent to webhook URLs.
 
+### `TRACKIO_CAPTURE_CONSOLE`
+
+When set to `1` or `true`, Trackio captures everything written to stdout and stderr during a run and shows it on the run's page in the dashboard. Equivalent to passing `capture_console=True` to `trackio.init()`; an explicit `capture_console` argument takes precedence.
+
+```bash
+export TRACKIO_CAPTURE_CONSOLE=1
+```
+
+See [Capturing console output and the launch command](track.md#capturing-console-output-and-the-launch-command) for more details.
+
 ### `TRACKIO_BUCKET_ID`
 
 The ID of the Hugging Face Bucket (e.g. `username/bucketname`) used to persist Trackio data when running on a Hugging Face Space. This is normally set automatically on the Space when it is created via `trackio.init(space_id=...)` or `trackio.sync(...)`; a bucket is auto-generated from the Space ID unless an explicit `bucket_id` is provided.

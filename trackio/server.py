@@ -32,6 +32,7 @@ from trackio.asgi_app import (
     consume_uploaded_temp_file,
     create_trackio_starlette_app,
 )
+from trackio.console import DEFAULT_MAX_CHARS, read_console_output
 from trackio.exceptions import TrackioAPIError
 from trackio.media import get_project_media_path
 from trackio.registry_bucket import BucketRegistryStorage
@@ -1052,6 +1053,28 @@ def get_run_summary(
     }
 
 
+def get_console_output(
+    project: str,
+    run: str | None = None,
+    run_id: str | None = None,
+    max_chars: int | None = DEFAULT_MAX_CHARS,
+) -> dict[str, Any]:
+    if run_id is not None:
+        record = next(
+            (
+                record
+                for record in SQLiteStorage.get_run_records(project)
+                if record["id"] == run_id
+            ),
+            None,
+        )
+        if record is not None:
+            run = record["name"]
+    if not run:
+        return {"enabled": False, "text": "", "truncated": False}
+    return read_console_output(project, run, max_chars=max_chars)
+
+
 def get_system_metrics_for_run(
     project: str, run: str | None = None, run_id: str | None = None
 ) -> list[str]:
@@ -1412,6 +1435,7 @@ def _api_registry() -> dict[str, Any]:
         "get_all_projects": get_all_projects,
         "get_project_summary": get_project_summary,
         "get_run_summary": get_run_summary,
+        "get_console_output": get_console_output,
         "get_system_metrics_for_run": get_system_metrics_for_run,
         "get_system_logs": get_system_logs,
         "get_system_logs_batch": get_system_logs_batch,

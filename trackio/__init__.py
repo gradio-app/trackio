@@ -31,6 +31,7 @@ from trackio.api import Api
 from trackio.apple_gpu import apple_gpu_available
 from trackio.apple_gpu import log_apple_gpu as _log_apple_gpu
 from trackio.artifact import Artifact
+from trackio.console import resolve_capture_console
 from trackio.cpu import cpu_available
 from trackio.cpu import log_cpu as _log_cpu
 from trackio.deploy import freeze, sync
@@ -291,6 +292,7 @@ def init(
     cpu_log_interval: float = 10.0,
     webhook_url: str | None = None,
     webhook_min_level: AlertLevel | str | None = None,
+    capture_console: bool | None = None,
 ) -> Run:
     """
     Creates a new Trackio project and returns a [`Run`] object.
@@ -387,6 +389,12 @@ def init(
             For example, `AlertLevel.WARN` sends only `WARN` and `ERROR`
             alerts to the webhook destination. Can also be set via
             `TRACKIO_WEBHOOK_MIN_LEVEL`.
+        capture_console (`bool` or `None`, *optional*, defaults to `None`):
+            Whether to capture everything the script writes to stdout and stderr
+            (including `print()` and `logging` output) and store it with the run. The
+            output is shown in the run's page of the dashboard, where it can also be
+            downloaded. If `None` (default), console capture is enabled only when the
+            `TRACKIO_CAPTURE_CONSOLE` environment variable is set to `1` or `true`.
     Returns:
         `Run`: A [`Run`] object that can be used to log metrics and finish the run.
     """
@@ -672,6 +680,7 @@ def init(
         cpu_log_interval=cpu_log_interval,
         webhook_url=webhook_url,
         webhook_min_level=webhook_min_level,
+        capture_console=resolve_capture_console(capture_console),
     )
 
     if space_id is not None:

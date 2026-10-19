@@ -370,6 +370,41 @@ Aggregated metrics:
 - `temp/{label}` - Temperature sensor readings in Celsius (if available)
 - `gpu/detected` - Whether an Apple GPU was detected (0/1)
 
+### Capturing console output and the launch command
+
+Trackio records the command used to launch each run (for example `python train.py --lr 1e-3`) and shows it at the top of the run's page in the dashboard, with a button to copy it. Values of arguments whose names look like secrets (such as `--hub_token`, `--api-key`, or `password=...`) are replaced with `REDACTED`. The command is stored in the run's config under the reserved `_Command` key.
+
+Trackio can also capture everything your script writes to stdout and stderr, including `print()` calls, `logging` output, and tracebacks, so you can follow a run's logs from the dashboard when you are away from the terminal. Console capture is off by default. Turn it on with `capture_console=True`:
+
+```python
+import logging
+
+import trackio
+
+logging.basicConfig(level=logging.INFO)
+
+trackio.init(project="my_project", capture_console=True)
+
+for step in range(100):
+    loss = ...
+    logging.info("step %d loss=%.4f", step, loss)
+    trackio.log({"loss": loss})
+
+trackio.finish()
+```
+
+Or enable it without changing your code by setting the [`TRACKIO_CAPTURE_CONSOLE`](environment_variables.md#trackiocaptureconsole) environment variable:
+
+```bash
+TRACKIO_CAPTURE_CONSOLE=1 python train.py
+```
+
+The captured output appears in the **Console output** section of the run's page (open a run from the **Runs** page). It refreshes every 10 seconds while the run is in progress, and the **Download** button saves the full log as a text file. Each line is stored with the UTC time it was written; the dashboard shows it in your local time. Output is saved every 10 seconds and when the run finishes, works for local runs as well as runs logged to a Space or a self-hosted server, and is capped at 20 MB per run.
+
+Console capture works by wrapping the `write` method of `sys.stdout` and `sys.stderr`, so it also picks up `logging` handlers configured before `trackio.init()` was called. Output written directly to the underlying file descriptors, such as messages from C extensions or subprocesses, is not captured.
+
+> **Note:** If you log to a public Space, captured console output is visible to anyone who can view the dashboard. Make sure your script doesn't print secrets before enabling console capture.
+
 ## Finishing a Run
 
 When your run is complete, finalize it with [`finish`].
