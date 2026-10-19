@@ -2,4 +2,4 @@
 "trackio": minor
 ---
 
-feat:Fix Spaces deadlock when opening a run's artifacts
+feat:Fix Spaces deadlocks in run artifacts and move_run
