@@ -2192,6 +2192,7 @@ source = { editable = "." }
 dependencies = [
     { name = "brotli" },
     { name = "gradio-client" },
+    { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -2235,6 +2236,7 @@ tensorboard = [
 requires-dist = [
     { name = "brotli", specifier = ">=1.0.0,<2.0.0" },
     { name = "gradio-client", specifier = ">=2.0.0,<3.0.0" },
+    { name = "httpx", specifier = ">=0.24.1,<1" },
     { name = "huggingface-hub", specifier = ">=1.10.0,<3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0,<2.0.0" },
     { name = "numpy", specifier = "<3.0.0" },

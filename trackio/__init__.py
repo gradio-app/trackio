@@ -11,7 +11,6 @@ from typing import Any
 
 import huggingface_hub
 from gradio_client import handle_file
-from huggingface_hub import SpaceStorage
 from huggingface_hub.errors import LocalTokenNotFoundError
 
 from trackio import context_vars, deploy, utils
@@ -277,7 +276,6 @@ def init(
     group: str | None = None,
     space_id: str | None = None,
     server_url: str | None = None,
-    space_storage: SpaceStorage | None = None,
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     config: dict | None = None,
@@ -325,9 +323,6 @@ def init(
             When set, metrics are sent to that server over HTTP instead of creating or syncing
             to a Hugging Face Space. Can also be set via the ``TRACKIO_SERVER_URL`` environment
             variable. Ignored when ``space_id`` or ``TRACKIO_SPACE_ID`` is set.
-        space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
-            Legacy persistent storage tier (huggingface_hub 1.x only).
-            With huggingface_hub 2.x, use `bucket_id` instead.
         dataset_id (`str`, *optional*):
             Deprecated: persisting trackio data to a Hugging Face Dataset will be
             removed in a future version of trackio. Use `bucket_id` (a Hugging
@@ -524,7 +519,6 @@ def init(
             try:
                 if deploy.create_space_if_not_exists(
                     space_id,
-                    space_storage,
                     dataset_id,
                     bucket_id,
                     private,

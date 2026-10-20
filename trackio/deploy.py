@@ -360,7 +360,6 @@ def _upload_source_tree(
 
 def deploy_as_space(
     space_id: str,
-    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
@@ -376,15 +375,6 @@ def deploy_as_space(
     if dataset_id is not None:
         warn_dataset_persistence_deprecated()
 
-    storage_kwargs = {}
-    if space_storage is not None:
-        if int(huggingface_hub.__version__.split(".")[0]) >= 2:
-            raise ValueError(
-                "space_storage is no longer supported by huggingface_hub 2.x. "
-                "Use bucket_id for persistent storage instead."
-            )
-        storage_kwargs["space_storage"] = space_storage
-
     trackio_path = files("trackio")
 
     hf_api = huggingface_hub.HfApi()
@@ -394,7 +384,6 @@ def deploy_as_space(
             space_id,
             private=private,
             space_sdk="gradio",
-            **storage_kwargs,
             repo_type="space",
             exist_ok=True,
         )
@@ -406,7 +395,6 @@ def deploy_as_space(
                 space_id,
                 private=private,
                 space_sdk="gradio",
-                **storage_kwargs,
                 repo_type="space",
                 exist_ok=True,
             )
@@ -505,7 +493,6 @@ def deploy_as_space(
 
 def create_space_if_not_exists(
     space_id: str,
-    space_storage: huggingface_hub.SpaceStorage | None = None,
     dataset_id: str | None = None,
     bucket_id: str | None = None,
     private: bool | None = None,
@@ -518,9 +505,6 @@ def create_space_if_not_exists(
     Args:
         space_id (`str`):
             The ID of the Space to create.
-        space_storage ([`~huggingface_hub.SpaceStorage`], *optional*):
-            Legacy persistent storage tier (huggingface_hub 1.x only).
-            With huggingface_hub 2.x, use `bucket_id` instead.
         dataset_id (`str`, *optional*):
             Deprecated: persisting trackio data to a Hugging Face Dataset will be
             removed in a future version of trackio. Use `bucket_id` (a Hugging
@@ -563,7 +547,6 @@ def create_space_if_not_exists(
         if resolved_frontend.is_custom:
             deploy_as_space(
                 space_id,
-                space_storage,
                 dataset_id,
                 bucket_id,
                 private,
@@ -584,7 +567,6 @@ def create_space_if_not_exists(
     )
     deploy_as_space(
         space_id,
-        space_storage,
         dataset_id,
         bucket_id,
         private,
